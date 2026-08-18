@@ -14,12 +14,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:audioplayers/audioplayers.dart'; 
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
-import 'package:permission_handler/permission_handler.dart'; // NOUVEAU: Indispensable pour vérifier les accès
+import 'package:permission_handler/permission_handler.dart'; 
 
 import 'package:thix_id/models/network_post.dart';
 import 'package:thix_id/features/network/data/network_service_provider.dart';
 import 'package:thix_id/features/network/presentation/providers/feed_provider.dart';
 import 'package:thix_id/services/ai/ai_service.dart';
+// NOUVEAU : Import de la page des certifications
+import 'package:thix_id/presentation/certification/certification_tiers_page.dart'; 
 
 class _C {
   static const bg = Color(0xFFF7F9FC);
@@ -269,6 +271,8 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
             style: ElevatedButton.styleFrom(backgroundColor: _C.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () {
               Navigator.pop(ctx);
+              // Redirection vers la page des offres
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const CertificationTiersPage()));
             },
             child: const Text('Voir les offres', style: TextStyle(color: _C.textDark, fontWeight: FontWeight.bold)),
           ),
@@ -292,7 +296,11 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Compris', style: TextStyle(color: _C.textSecondary))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: _C.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-            onPressed: () { Navigator.pop(ctx); },
+            onPressed: () { 
+              Navigator.pop(ctx); 
+              // Redirection vers la page des offres
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const CertificationTiersPage()));
+            },
             child: const Text('Mettre à niveau', style: TextStyle(color: _C.textDark, fontWeight: FontWeight.bold)),
           ),
         ],
@@ -320,12 +328,12 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
           children: [
             Icon(Icons.privacy_tip_outlined, color: Colors.black, size: 28),
             SizedBox(width: 10),
-            Text("Autorisation", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+            Text("Autorisation requise", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
           ],
         ),
         content: Text(
           explanation,
-          style: const TextStyle(color: Colors.black87, fontSize: 16),
+          style: const TextStyle(color: Colors.black87, fontSize: 16, height: 1.4),
         ),
         actions: [
           TextButton(
@@ -390,7 +398,7 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
     // 🚨 VÉRIFICATION SÉCURITÉ PLAY STORE
     final hasPerm = await _checkPermissionWithDisclosure(
       Permission.microphone,
-      "Pour enregistrer un message vocal, THIX ID a besoin d'accéder à votre microphone."
+      "Pour vous permettre d'enregistrer et de partager un message vocal dans votre publication, THIX ID a besoin d'accéder à votre microphone."
     );
     if (!hasPerm) {
       if (mounted) setState(() => _errorMessage = 'Permission microphone refusée.');
@@ -472,11 +480,10 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
     // 🚨 VÉRIFICATION SÉCURITÉ PLAY STORE AVANT OUVERTURE CAMÉRA
     final hasPerm = await _checkPermissionWithDisclosure(
       Permission.camera,
-      "Pour prendre une photo depuis l'application, THIX ID a besoin d'accéder à votre caméra."
+      "Pour vous permettre de prendre une photo directement depuis l'application et l'ajouter à votre publication, THIX ID a besoin d'accéder à votre caméra."
     );
     if (!hasPerm) return;
 
-    // Utilisation corrigée: ImagePicker ouvre la vraie caméra (contrairement à FilePicker)
     try {
       final ImagePicker picker = ImagePicker();
       final XFile? photo = await picker.pickImage(source: ImageSource.camera);
