@@ -663,14 +663,15 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with WidgetsBindi
     );
   }
 
-  // ── INFOS BAS GAUCHE (Titre, Auteur, Tags) ──
+    // ── INFOS BAS GAUCHE (Titre, Auteur, Tags) ──
   Widget _buildBottomInfo(MediaContent item) {
-    final creatorId = item.userId;
+    final String creatorId = item.userId ?? ''; // <-- CORRECTION ICI
     final creatorProfile = creatorId.isNotEmpty ? ref.watch(userProfileProvider(creatorId)).valueOrNull : null;
     final creatorIsOfficial = creatorId.isEmpty;
     String displayName = creatorIsOfficial ? 'THIX' : (creatorProfile?['full_name'] ?? creatorProfile?['username'] ?? 'Créateur');
 
     return Column(
+
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -711,7 +712,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with WidgetsBindi
     );
   }
 
-  // ── RIGHT SIDEBAR (Actions: Like, Comment, Share) ──
+    // ── RIGHT SIDEBAR (Actions: Like, Comment, Share) ──
   Widget _buildRightSidebar(MediaContent cur) {
     final isLiked = _likedMediaIds.contains(cur.id);
     final isSaved = _savedMediaIds.contains(cur.id);
@@ -719,7 +720,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with WidgetsBindi
     MediaCounts? live = ref.watch(mediaCountsStreamProvider(cur.id)).valueOrNull;
     int displayLikes = _localLikeCounts[cur.id] ?? live?.likeCount ?? cur.likeCount;
 
-    final creatorId = cur.userId;
+    final String creatorId = cur.userId ?? ''; // <-- CORRECTION ICI
     final creatorProfile = creatorId.isNotEmpty ? ref.watch(userProfileProvider(creatorId)).valueOrNull : null;
     final currentUid = Supabase.instance.client.auth.currentUser?.id;
     final isFollowing = creatorId.isNotEmpty ? (ref.watch(isFollowingProvider(creatorId)).valueOrNull ?? true) : true;
@@ -727,6 +728,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with WidgetsBindi
     final showPlusBtn = !creatorIsOfficial && creatorId.isNotEmpty && creatorId != currentUid && !isFollowing && !_newlyFollowedIds.contains(creatorId);
 
     return Column(
+
       mainAxisSize: MainAxisSize.min,
       children: [
         // Avatar avec bouton follow
