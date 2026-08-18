@@ -1,0 +1,27 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "thix-id",
+          "appId": "1:27116360434:android:5e44da9f1323350943766b",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "thix-id",
+          "configurations": {
+            "android": "1:27116360434:android:5e44da9f1323350943766b",
+            "ios": "1:27116360434:ios:e0f53c667476124743766b",
+            "web": "1:27116360434:web:926a689f227db09243766b"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

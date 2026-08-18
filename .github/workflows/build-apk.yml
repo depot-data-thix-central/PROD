@@ -1,0 +1,48 @@
+name: Build Flutter APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      # ✅ CORRECTION ICI : Retrait de --no-enable-impeller
+      - name: Build release App Bundle
+        run: flutter build appbundle --release
+
+      # ✅ CORRECTION ICI : Retrait de --no-enable-impeller
+      - name: Build release APKs (split by ABI)
+        run: flutter build apk --release --split-per-abi
+
+      - name: Upload App Bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: build/app/outputs/bundle/release/app-release.aab
+
+      - name: Upload split APKs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apks-split
+          path: build/app/outputs/flutter-apk/*.apk

@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "27116360434",
+    "project_id": "thix-id",
+    "storage_bucket": "thix-id.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:27116360434:android:5e44da9f1323350943766b",
+        "android_client_info": {
+          "package_name": "com.thixid.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "27116360434-tq1hnd6akt5vrln537rraff4rlj1nqdr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCbpBpwxtZDuRd-Fzp7BcV8HvUWExGZZsA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "27116360434-tq1hnd6akt5vrln537rraff4rlj1nqdr.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head><!-- PLAYABLE_TOUCH_PATCH_V1 --><script>
+(function() {
+  if (window.__playableTouchPatchInstalled) return;
+  window.__playableTouchPatchInstalled = true;
+  var origAdd = EventTarget.prototype.addEventListener;
+  var blockedTypes = { touchstart: 1, touchmove: 1, wheel: 1 };
+  EventTarget.prototype.addEventListener = function(type, listener, options) {
+    if (blockedTypes[type]) {
+      if (options === undefined || options === null) {
+        options = { passive: true };
+      } else if (typeof options === 'boolean') {
+        options = { capture: options, passive: true };
+      } else {
+        options = Object.assign({}, options, { passive: true });
+      }
+    }
+    return origAdd.call(this, type, listener, options);
+  };
+})();
+</script><script>window.Intl=window.Intl||{};Intl.t=function(s){return(Intl._locale&&Intl._locale[s])||s;};</script>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#0A1F44">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/Icon-192.png">
+  <title>THIX ID CENTRAL</title>
+  <style>
+    html,body{margin:0;padding:0;height:100%;background:#0A1F44;overflow:hidden}
+  </style>
+
+  <!-- 🌟 SCRIPT AGORA OBLIGATOIRE POUR FLUTTER WEB 🌟 -->
+  <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
+
+</head>
+<body>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
