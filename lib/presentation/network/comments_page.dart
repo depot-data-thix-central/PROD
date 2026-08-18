@@ -15,6 +15,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path_provider/path_provider.dart'; 
 import 'package:path/path.dart' as p;             
+import 'package:permission_handler/permission_handler.dart'; // NOUVEAU : Autorisations
 
 import 'package:thix_id/models/network_post.dart';
 import 'package:thix_id/models/comment.dart';
@@ -28,6 +29,7 @@ import 'package:timeago/timeago.dart' as timeago;
 import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
 import 'package:thix_id/features/network/presentation/providers/user_profile_providers.dart';
+import 'package:thix_id/presentation/certification/certification_tiers_page.dart'; // NOUVEAU : Offres
 
 class _C {
   static const bg = Color(0xFFF5F8FA);
@@ -59,7 +61,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
   String? _replyingTo;
   String? _replyingToName;
 
-  // 🌟 État pour gérer les réponses déployées (façon Facebook)
+  // 🌟 État pour gérer les réponses déployées
   final Set<String> _expandedComments = {};
 
   // ─── MÉDIAS (Audio & Photo) ───
@@ -75,6 +77,11 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
 
   // ─── STICKERS ───
   bool _showStickers = false;
+
+  // ─── LOGIQUE DES LIMITES ET SÉCURITÉ ───
+  bool _isLoadingLimits = true;
+  String _userTier = 'gratuit'; 
+  bool get _isFree => _userTier == 'gratuit' || _userTier == 'none';
 
   static const List<String> _emojis = [
     '😀','😃','😄','😁','😆','😅','😂','🤣','🥲','🥹',
@@ -126,9 +133,8 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
   @override
   void initState() {
     super.initState();
-    _controller.addListener(() {
-      setState(() {});
-    });
+    _loadUserLimits();
+    _controller.addListener(_onTextChanged);
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 400) {
         ref.read(commentsProvider(widget.postId).notifier).loadMore();
@@ -141,10 +147,43 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
   void dispose() { 
     _recordTimer?.cancel();
     _audioRecorder.dispose();
+    _controller.removeListener(_onTextChanged);
     _controller.dispose(); 
     _scrollController.dispose(); 
     _focusNode.dispose(); 
     super.dispose(); 
+  }
+
+  Future<void> _loadUserLimits() async {
+    try {
+      final uid = Supabase.instance.client.auth.currentUser?.id ?? widget.currentProfileId;
+      final profile = await Supabase.instance.client
+          .from('profiles')
+          .select('certification_tier')
+          .eq('id', uid)
+          .maybeSingle();
+      
+      final tier = (profile?['certification_tier']?.toString().toLowerCase()) ?? 'gratuit';
+      
+      if (mounted) {
+        setState(() {
+          _userTier = tier;
+          _isLoadingLimits = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingLimits = false);
+    }
+  }
+
+  void _onTextChanged() {
+    final text = _controller.text;
+    if (_isFree && text.length > 280) {
+      _controller.text = text.substring(0, 280);
+      _controller.selection = TextSelection.collapsed(offset: 280);
+      HapticFeedback.lightImpact();
+    }
+    setState(() {});
   }
 
   Future<void> _loadPost() async {
@@ -156,46 +195,133 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     }
   }
 
-  // ─── LOGIQUE AUDIO (Limite de 30 secondes stricte & Fix Mobile) ───
+  // ─── DIALOGUES DE SÉCURITÉ ET D'ABONNEMENT ───
+  void _showUpgradeDialog(String featureName, String requiredTier) {
+    HapticFeedback.heavyImpact();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.workspace_premium_rounded, color: _C.gold, size: 28),
+            const SizedBox(width: 8),
+            const Text('Fonctionnalité bloquée', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          "$featureName est réservée aux comptes $requiredTier et supérieurs.\n\nMettez à niveau votre compte pour débloquer de nouveaux outils et retirer la limite de 280 caractères.",
+          style: const TextStyle(fontSize: 14, color: _C.textDark, height: 1.4),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Plus tard', style: TextStyle(color: _C.textGrey))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: _C.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const CertificationTiersPage()));
+            },
+            child: const Text('Voir les offres', style: TextStyle(color: _C.textDark, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _checkPermissionWithDisclosure(Permission permission, String explanation) async {
+    if (kIsWeb) return true;
+    var status = await permission.status;
+    if (status.isGranted) return true;
+
+    if (!mounted) return false;
+
+    bool? userAgreed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.privacy_tip_outlined, color: Colors.black, size: 28),
+            SizedBox(width: 10),
+            Text("Autorisation requise", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          explanation,
+          style: const TextStyle(color: Colors.black87, fontSize: 16, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Annuler", style: TextStyle(color: Colors.black54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              elevation: 0,
+              side: const BorderSide(color: Colors.black, width: 1),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Compris", style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (userAgreed != true) return false;
+    var newStatus = await permission.request();
+    return newStatus.isGranted;
+  }
+
+  // ─── LOGIQUE AUDIO (Limite de 30 secondes stricte) ───
   Future<void> _startRecording() async {
+    if (_isFree) {
+      _showUpgradeDialog('Les commentaires vocaux', 'Standard');
+      return;
+    }
+
+    final hasPerm = await _checkPermissionWithDisclosure(
+      Permission.microphone,
+      "Pour vous permettre d'enregistrer et de poster une note vocale dans les commentaires, THIX ID a besoin d'accéder à votre microphone."
+    );
+    if (!hasPerm) return;
+
     try {
-      if (await _audioRecorder.hasPermission()) {
-        
-        // 🌟 FIX : Générer un vrai fichier pour le Mobile (Android/iOS)
-        String path = '';
-        if (!kIsWeb) {
-          final dir = await getTemporaryDirectory();
-          path = p.join(dir.path, 'comment_audio_${DateTime.now().millisecondsSinceEpoch}.m4a');
-        }
-
-        await _audioRecorder.start(
-          const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000),
-          path: path,
-        );
-
-        setState(() {
-          _isRecording = true;
-          _recordDuration = 0;
-          _audioBytes = null;
-          _localAudioPath = null;
-          _showStickers = false;
-        });
-        
-        _recordTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-          setState(() => _recordDuration++);
-          // 🌟 Arrêt forcé après 30 secondes exactement
-          if (_recordDuration >= 30) {
-            _stopRecording();
-          }
-        });
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Permission microphone requise')));
+      String path = '';
+      if (!kIsWeb) {
+        final dir = await getTemporaryDirectory();
+        path = p.join(dir.path, 'comment_audio_${DateTime.now().millisecondsSinceEpoch}.m4a');
       }
+
+      await _audioRecorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000),
+        path: path,
+      );
+
+      setState(() {
+        _isRecording = true;
+        _recordDuration = 0;
+        _audioBytes = null;
+        _localAudioPath = null;
+        _showStickers = false;
+      });
+      
+      _recordTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (!mounted) return;
+        setState(() => _recordDuration++);
+        if (_recordDuration >= 30) {
+          _stopRecording();
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Durée maximale atteinte (30s)')));
+        }
+      });
     } catch (e) {
       debugPrint('Erreur record: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erreur lors du démarrage du micro')));
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erreur lors du démarrage du micro')));
     }
   }
 
@@ -203,7 +329,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     _recordTimer?.cancel();
     try {
       final path = await _audioRecorder.stop();
-      setState(() => _isRecording = false);
+      if (mounted) setState(() => _isRecording = false);
       if (path != null) {
         Uint8List bytes;
         if (kIsWeb) {
@@ -213,10 +339,12 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
           final file = XFile(path);
           bytes = await file.readAsBytes();
         }
-        setState(() {
-          _audioBytes = bytes;
-          _localAudioPath = path;
-        });
+        if (mounted) {
+          setState(() {
+            _audioBytes = bytes;
+            _localAudioPath = path;
+          });
+        }
       }
     } catch (e) {
       debugPrint('Erreur stop record: $e');
@@ -268,7 +396,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
         imageUrl: imageUrl,
       );
 
-      // Si on répond à un commentaire, on s'assure qu'il est "déployé" pour voir la réponse
+      // Déploie automatiquement les réponses si on vient de répondre
       if (_replyingTo != null) {
         _expandedComments.add(_replyingTo!);
       }
@@ -481,7 +609,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     );
   }
 
-  // ─── THREAD STYLE FACEBOOK (Empilement optimisé) ───
+  // ─── THREAD STYLE FACEBOOK (Imbrication / Nesting optimisé) ───
   Widget _buildCommentThread(Comment comment, String? currentUserId) {
     final hasReplies = comment.replies.isNotEmpty;
     final isExpanded = _expandedComments.contains(comment.id);
@@ -549,18 +677,18 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         SizedBox(
-          width: 44,
+          width: 52, // Ajustement de la largeur pour la marge d'imbrication
           height: 36,
           child: Stack(
             children: [
               Positioned(
-                left: 22,
+                left: 28,
                 top: 0,
                 bottom: 0,
                 child: Container(width: 2, color: Colors.grey.shade300)
               ),
               Positioned(
-                left: 22,
+                left: 28,
                 top: 18,
                 child: Container(width: 14, height: 2, color: Colors.grey.shade300)
               ),
@@ -585,7 +713,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     );
   }
 
-  // ─── BARRE DE SAISIE SÉCURISÉE (Avec Pré-écoute et Limite 30s) ───
+  // ─── BARRE DE SAISIE SÉCURISÉE (Avec Pré-écoute, Limite 30s & Limite Gratuit 280) ───
   Widget _buildInputBar() {
     final hasTextOrImage = _controller.text.trim().isNotEmpty || _imageBytes != null;
 
@@ -664,37 +792,63 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
               )
             // 🌟 3. MODE NORMAL (Texte / Bouton Magique)
             else
-              Row(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  IconButton(icon: const Icon(Icons.camera_alt_rounded, color: Colors.grey), onPressed: _pickImage),
-                  IconButton(
-                    icon: Icon(_showStickers ? Icons.keyboard_rounded : Icons.emoji_emotions_rounded, color: _showStickers ? const Color(0xFF2D6CDF) : Colors.grey),
-                    onPressed: () { FocusScope.of(context).unfocus(); setState(() => _showStickers = !_showStickers); },
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      IconButton(icon: const Icon(Icons.camera_alt_rounded, color: Colors.grey), onPressed: _pickImage),
+                      IconButton(
+                        icon: Icon(_showStickers ? Icons.keyboard_rounded : Icons.emoji_emotions_rounded, color: _showStickers ? const Color(0xFF2D6CDF) : Colors.grey),
+                        onPressed: () { FocusScope.of(context).unfocus(); setState(() => _showStickers = !_showStickers); },
+                      ),
+                      Expanded(
+                        child: TextField(
+                          controller: _controller, focusNode: _focusNode, maxLines: 4, minLines: 1,
+                          maxLength: _isFree ? 280 : null, // Limite appliquée nativement
+                          onTap: () { if (_showStickers) setState(() => _showStickers = false); },
+                          decoration: InputDecoration(
+                            counterText: "", // Masque le compteur par défaut pour faire un UI propre
+                            hintText: _replyingTo != null ? 'Votre réponse...' : 'Votre commentaire...', 
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none), 
+                            filled: true, 
+                            fillColor: Colors.grey[100], 
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10)
+                          )
+                        )
+                      ),
+                      const SizedBox(width: 8),
+                      
+                      GestureDetector(
+                        onTap: () {
+                          if (_isSubmitting) return;
+                          if (hasTextOrImage) _submitComment();
+                          else _startRecording();
+                        },
+                        child: CircleAvatar(
+                          radius: 20, backgroundColor: hasTextOrImage ? const Color(0xFF2D6CDF) : const Color(0xFFE3B23C), 
+                          child: _isSubmitting 
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) 
+                              : Icon(hasTextOrImage ? Icons.send_rounded : Icons.mic_rounded, color: Colors.white, size: 20),
+                        ),
+                      ),
+                    ]
                   ),
-                  Expanded(
-                    child: TextField(
-                      controller: _controller, focusNode: _focusNode, maxLines: 4, minLines: 1,
-                      onTap: () { if (_showStickers) setState(() => _showStickers = false); },
-                      decoration: InputDecoration(hintText: _replyingTo != null ? 'Votre réponse...' : 'Votre commentaire...', border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none), filled: true, fillColor: Colors.grey[100], contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10))
-                    )
-                  ),
-                  const SizedBox(width: 8),
-                  
-                  GestureDetector(
-                    onTap: () {
-                      if (_isSubmitting) return;
-                      if (hasTextOrImage) _submitComment();
-                      else _startRecording();
-                    },
-                    child: CircleAvatar(
-                      radius: 20, backgroundColor: hasTextOrImage ? const Color(0xFF2D6CDF) : const Color(0xFFE3B23C), 
-                      child: _isSubmitting 
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) 
-                          : Icon(hasTextOrImage ? Icons.send_rounded : Icons.mic_rounded, color: Colors.white, size: 20),
+                  // Affichage du compteur personnalisé pour les comptes gratuits
+                  if (_isFree && _controller.text.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 55, top: 4),
+                      child: Text(
+                        '${_controller.text.length} / 280',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: _controller.text.length >= 280 ? _C.red : Colors.grey.shade500,
+                        ),
+                      ),
                     ),
-                  ),
-                ]
+                ],
               ),
           ]
         ),
@@ -772,21 +926,21 @@ class _CommentBubble extends ConsumerWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 🌟 LIGNE EN "L" POUR LES RÉPONSES
+          // 🌟 LIGNE EN "L" POUR LES RÉPONSES (Imbrication)
           if (isReply)
             SizedBox(
-              width: 44,
+              width: 52, // Marge pour protéger l'espace d'affichage
               child: Stack(
                 children: [
                   Positioned(
-                    left: 22, 
+                    left: 28, 
                     top: 0, 
                     bottom: isLastReply ? null : 0, 
                     height: isLastReply ? 24 : null, 
                     child: Container(width: 2, color: Colors.grey.shade300)
                   ),
                   Positioned(
-                    left: 22, 
+                    left: 28, 
                     top: 24, 
                     child: Container(width: 14, height: 2, color: Colors.grey.shade300)
                   ),
