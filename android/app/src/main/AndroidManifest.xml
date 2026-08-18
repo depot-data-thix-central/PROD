@@ -13,7 +13,6 @@
     <!-- ========================================================= -->
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- La caméra n'est pas obligatoire pour installer THIX ID. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
@@ -26,13 +25,10 @@
     <!-- ========================================================= -->
     <!-- 4. BLUETOOTH (Requis par Agora pour les casques sans fil) -->
     <!-- ========================================================= -->
-    <!-- Android 11 et inférieur -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <!-- Android 12+ -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
-    <!-- THIX ID peut fonctionner sans Bluetooth. -->
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
     <!-- ========================================================= -->
@@ -41,7 +37,6 @@
     <!-- ========================================================= -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <!-- Requis pour continuer à suivre la position lors d'une alerte THIX SOS en arrière-plan -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <!-- ========================================================= -->
@@ -50,7 +45,6 @@
     <!-- ========================================================= -->
     <uses-permission android:name="android.permission.NFC" />
 
-    <!-- NFC n'est pas obligatoire pour utiliser le reste de THIX ID -->
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
 
     <!-- ========================================================= -->
@@ -64,22 +58,15 @@
     <!-- 8. STOCKAGE & MÉDIAS                                      -->
     <!-- Importation de documents d'identité et photos de profil   -->
     <!-- ========================================================= -->
-    <!-- Android 12 et inférieur -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <!-- Android 13+ (Permissions granulaires) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
     <!-- ========================================================= -->
     <!-- 9. NOTIFICATIONS & SYSTÈME                                -->
     <!-- ========================================================= -->
-    <!-- Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    
-    <!-- Alertes THIX SOS / événements -->
     <uses-permission android:name="android.permission.VIBRATE" />
-    
-    <!-- Empêche l'écran de s'éteindre pendant un Live Agora -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- ========================================================= -->
@@ -87,9 +74,10 @@
     <!-- ========================================================= -->
     <application
         android:name="${applicationName}"
-        android:label="Thix Hub"
+        android:label="THIX ID"
         android:icon="@mipmap/ic_launcher"
-        android:allowBackup="false"
+        android:extractNativeLibs="true"
+        android:allowBackup="true"
         android:fullBackupContent="false"
         android:usesCleartextTraffic="false"
         android:supportsRtl="true"
@@ -118,7 +106,6 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- Désactive Impeller pour corriger le dédoublement/ghosting du texte en release -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="false" />
@@ -129,13 +116,11 @@
     <!-- QUERIES (Intégration avec les applications externes)      -->
     <!-- ========================================================= -->
     <queries>
-        <!-- Requis pour le traitement de texte natif par le moteur Flutter -->
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
         
-        <!-- Requis pour le module de reconnaissance vocale (Speech to text) -->
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
