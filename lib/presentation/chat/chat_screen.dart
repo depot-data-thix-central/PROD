@@ -21,7 +21,7 @@ import 'package:path/path.dart' as p;
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
 import 'package:thix_id/services/chat/audio_service.dart';
-import 'package:thix_id/services/chat/connection_service.dart'; // ✅ Sécurité ajoutée
+import 'package:thix_id/services/chat/connection_service.dart'; 
 import 'package:thix_id/models/chat/chat_message.dart';
 import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/models/chat/user_status.dart';
@@ -190,7 +190,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   bool _isTyping = false;
   bool _otherUserTyping = false;
   bool _isSending = false;
-  bool _isConnectionValid = true; // Sécurité de la connexion
+  bool _isConnectionValid = true; 
 
   final AudioRecorder _audioRecorder = AudioRecorder();
   Timer? _recordTimer;
@@ -401,7 +401,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
       final me = _chatService.currentUserId;
 
-      // 1. Marquer LIVRÉ (orange) tout de suite
       for (final m in updated) {
         if (m.senderId != me && !m.isDelivered && !m.isDeleted) {
           unawaited(
@@ -412,8 +411,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         }
       }
 
-      // 2. Marquer LU (rouge) avec un petit délai
-      //    pour laisser le temps à l’orange d’apparaître chez l’expéditeur
       Future.delayed(const Duration(milliseconds: 800), () {
         if (mounted) _markAsRead();
       });
@@ -458,10 +455,70 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     });
   }
 
-  void _startCall(CallType type) {
+  // ─── GESTION DES PERMISSIONS PLAY STORE (PROMINENT DISCLOSURE) ───
+  Future<bool> _checkPermissionWithDisclosure(Permission permission, String explanation) async {
+    if (kIsWeb) return true;
+    var status = await permission.status;
+    if (status.isGranted) return true;
+
+    if (!mounted) return false;
+
+    bool? userAgreed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.privacy_tip_outlined, color: Colors.black, size: 28),
+            const SizedBox(width: 10),
+            Text(context.trAuthRequired, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          explanation,
+          style: const TextStyle(color: Colors.black87, fontSize: 16, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(context.trCancel, style: const TextStyle(color: Colors.black54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              elevation: 0,
+              side: const BorderSide(color: Colors.black, width: 1),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(context.trUnderstood, style: const TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (userAgreed != true) return false;
+    var newStatus = await permission.request();
+    return newStatus.isGranted;
+  }
+
+  Future<void> _startCall(CallType type) async {
     if (!_isConnectionValid) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Impossible d\'appeler : connexion inactive.'), backgroundColor: ThixPolicy.danger));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(context.trCallInactive), backgroundColor: ThixPolicy.danger));
       return;
+    }
+
+    // 🚨 VÉRIFICATIONS SÉCURITÉ PLAY STORE
+    final hasMic = await _checkPermissionWithDisclosure(Permission.microphone, context.trMicCallDisclosure);
+    if (!hasMic) return;
+
+    if (type == CallType.video) {
+      final hasCam = await _checkPermissionWithDisclosure(Permission.camera, context.trCamCallDisclosure);
+      if (!hasCam) return;
     }
 
     final myId = _chatService.currentUserId;
@@ -480,17 +537,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   Future<void> _startRecording() async {
     if (!_isConnectionValid) return; 
-    try {
-      final hasPermission = await _audioRecorder.hasPermission();
-      if (!hasPermission) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Permission microphone requise'), backgroundColor: ThixPolicy.danger),
-          );
-        }
-        return;
-      }
 
+    // 🚨 VÉRIFICATIONS SÉCURITÉ PLAY STORE
+    final hasPerm = await _checkPermissionWithDisclosure(Permission.microphone, context.trMicDisclosure);
+    if (!hasPerm) return;
+
+    try {
       String recordPath;
       if (kIsWeb) {
         recordPath = 'audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
@@ -520,7 +572,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       debugPrint('Erreur record: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Impossible de démarrer l\'enregistrement.'), backgroundColor: ThixPolicy.danger),
+          SnackBar(content: Text(context.trRecordingError), backgroundColor: ThixPolicy.danger),
         );
       }
     }
@@ -551,7 +603,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       debugPrint('Erreur stop record: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur lors de l\'enregistrement.'), backgroundColor: ThixPolicy.danger),
+          SnackBar(content: Text(context.trRecordingError), backgroundColor: ThixPolicy.danger),
         );
       }
     }
@@ -561,8 +613,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     if (!_isConnectionValid) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Connexion inactive — impossible d\'envoyer.'),
+          SnackBar(
+            content: Text(context.trSendInactive),
             backgroundColor: ThixPolicy.danger,
           ),
         );
@@ -588,7 +640,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
           ephemeralDuration: _ephemeralDuration,
           replyToId: _replyToId.isEmpty ? null : _replyToId,
         );
-        // ✅ CORRIGÉ ICI
         ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([msg]);
       } 
       else if (_selectedFiles.isNotEmpty) {
@@ -635,7 +686,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 ephemeralDuration: _ephemeralDuration,
                 replyToId: i == 0 && _replyToId.isNotEmpty ? _replyToId : null,
               );
-              // ✅ CORRIGÉ ICI
               ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([msg]);
             }
           }
@@ -663,7 +713,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
               ephemeralDuration: _ephemeralDuration,
               replyToId: _replyToId.isEmpty ? null : _replyToId,
             );
-            // ✅ CORRIGÉ ICI
             ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([msg]);
           }
         }
@@ -676,7 +725,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
           isEphemeral: _isEphemeral,
           ephemeralDuration: _isEphemeral ? _ephemeralDuration : null,
         );
-        // ✅ CORRIGÉ ICI
         ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([msg]);
       }
 
@@ -695,7 +743,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Envoi impossible: $e'),
+            content: Text('${context.trSendError} $e'),
             backgroundColor: ThixPolicy.danger,
           ),
         );
@@ -728,16 +776,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 children: [
                   Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
                   const SizedBox(height: 16),
-                  const Text('Message éphémère', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                  Text(context.trEphemeralMessage, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
                   const SizedBox(height: 12),
                   
                   if (!showCustomInput) ...[
                     ...[
-                      ('Désactivé', null),
-                      ('10 secondes', 10),
-                      ('1 minute', 60),
-                      ('1 heure', 3600),
-                      ('24 heures', 86400),
+                      (context.trDisabled, null),
+                      (context.trSeconds10, 10),
+                      (context.trMinute1, 60),
+                      (context.trHour1, 3600),
+                      (context.trHours24, 86400),
                     ].map((e) {
                       final selected = _ephemeralDuration == e.$2;
                       return ListTile(
@@ -750,7 +798,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                       );
                     }),
                     ListTile(
-                      title: const Text('Personnalisé...', style: TextStyle(color: ThixPolicy.primary, fontWeight: FontWeight.w600)),
+                      title: Text(context.trCustomTime, style: const TextStyle(color: ThixPolicy.primary, fontWeight: FontWeight.w600)),
                       leading: const Icon(Icons.timer_outlined, color: ThixPolicy.primary),
                       onTap: () => setModalState(() => showCustomInput = true),
                     ),
@@ -762,7 +810,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                           Expanded(
                             child: TextField(
                               controller: customTimeCtrl, keyboardType: TextInputType.number, autofocus: true,
-                              decoration: InputDecoration(labelText: 'Durée en secondes', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16)),
+                              decoration: InputDecoration(labelText: context.trDurationSeconds, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16)),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -774,15 +822,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                 setState(() { _ephemeralDuration = val; _isEphemeral = true; });
                                 Navigator.pop(ctx);
                               } else {
-                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nombre invalide.'), backgroundColor: ThixPolicy.warning));
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(context.trInvalidNumber), backgroundColor: ThixPolicy.warning));
                               }
                             },
-                            child: const Text('Valider', style: TextStyle(color: Colors.white)),
+                            child: Text(context.trValidate, style: const TextStyle(color: Colors.white)),
                           )
                         ],
                       ),
                     ),
-                    TextButton(onPressed: () => setModalState(() => showCustomInput = false), child: const Text('Retour', style: TextStyle(color: ThixPolicy.textSecondary)))
+                    TextButton(onPressed: () => setModalState(() => showCustomInput = false), child: Text(context.trBack, style: const TextStyle(color: ThixPolicy.textSecondary)))
                   ]
                 ],
               ),
@@ -799,17 +847,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Message sécurisé'),
+        title: Text(context.trSecureMessage),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: msgCtrl, decoration: const InputDecoration(labelText: 'Message'), maxLines: 3),
+            TextField(controller: msgCtrl, decoration: InputDecoration(labelText: context.trMessage), maxLines: 3),
             const SizedBox(height: 12),
-            TextField(controller: passCtrl, decoration: const InputDecoration(labelText: 'Mot de passe'), obscureText: true),
+            TextField(controller: passCtrl, decoration: InputDecoration(labelText: context.trPassword), obscureText: true),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(context.trCancel)),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary),
             onPressed: () async {
@@ -820,15 +868,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 final msg = await _chatService.sendMessage(
                       conversationId: widget.conversationId, content: enc, replyToId: _replyToId.isEmpty ? null : _replyToId, isEphemeral: _isEphemeral, ephemeralDuration: _ephemeralDuration,
                     );
-                // ✅ CORRIGÉ ICI
                 ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([msg]);
                 if (mounted) setState(() => _replyToId = '');
                 _scrollToBottom();
               } catch (e) {
-                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: ThixPolicy.danger));
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${context.trError} $e'), backgroundColor: ThixPolicy.danger));
               }
             },
-            child: const Text('Envoyer', style: TextStyle(color: Colors.white)),
+            child: Text(context.trSend, style: const TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -842,7 +889,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         setState(() => _selectedFiles.addAll(result.files));
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: ThixPolicy.danger));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${context.trError} $e'), backgroundColor: ThixPolicy.danger));
     }
   }
 
@@ -875,8 +922,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   String _getPresenceText(UserStatus status) {
     final lastSeen = status.lastSeenAt.toLocal();
     final diff = DateTime.now().difference(lastSeen);
-    if (status.status == 'online' && diff.inMinutes <= 2) return 'En ligne';
-    return 'Vu ${_formatLastSeen(lastSeen)}';
+    if (status.status == 'online' && diff.inMinutes <= 2) return context.trOnline;
+    return '${context.trSeenAt} ${_formatLastSeen(lastSeen)}';
   }
 
   bool get _isOnline {
@@ -889,9 +936,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final today = DateTime(now.year, now.month, now.day);
     final day = DateTime(localDate.year, localDate.month, localDate.day);
     
-    if (day == today) return 'à ${DateFormat('HH:mm').format(localDate)}';
-    if (day == today.subtract(const Duration(days: 1))) return 'hier à ${DateFormat('HH:mm').format(localDate)}';
-    return 'le ${DateFormat('dd/MM/yyyy').format(localDate)}';
+    if (day == today) return '${context.trAt} ${DateFormat('HH:mm').format(localDate)}';
+    if (day == today.subtract(const Duration(days: 1))) return '${context.trYesterdayAt} ${DateFormat('HH:mm').format(localDate)}';
+    return '${context.trOn} ${DateFormat('dd/MM/yyyy').format(localDate)}';
   }
 
   @override
@@ -935,7 +982,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                           return _CallBubble(
                             message: msg,
                             isOwn: isOwn,
-                            onCallback: () => _startCall(msg.mediaType == 'call_video' ? CallType.video : CallType.audio),
+                            onCallback: () { _startCall(msg.mediaType == 'call_video' ? CallType.video : CallType.audio); },
                           );
                         }
 
@@ -954,7 +1001,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                                 if (mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text('Suppression impossible: $e'),
+                                      content: Text('${context.trDeleteImpossible} $e'),
                                       backgroundColor: ThixPolicy.danger,
                                     ),
                                   );
@@ -980,7 +1027,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 onClose: () => setState(() => _replyToId = ''),
               ),
 
-              // ✅ SÉCURITÉ : Affiche la bannière bloquée si on n'a plus le droit de parler
               if (_isConnectionValid) 
                 _buildInputBar()
               else 
@@ -994,7 +1040,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     );
   }
 
-  // ✅ Banniére si bloqué / retiré
   Widget _buildBlockedBanner() {
     return Container(
       width: double.infinity,
@@ -1003,19 +1048,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         color: Colors.white,
         border: Border(top: BorderSide(color: ThixPolicy.border)),
       ),
-      child: const Column(
+      child: Column(
         children: [
-          Icon(Icons.person_off_rounded, color: ThixPolicy.textSecondary, size: 32),
-          SizedBox(height: 12),
+          const Icon(Icons.person_off_rounded, color: ThixPolicy.textSecondary, size: 32),
+          const SizedBox(height: 12),
           Text(
-            "Vous ne pouvez plus répondre à cette conversation",
-            style: TextStyle(color: ThixPolicy.textMain, fontWeight: FontWeight.w700, fontSize: 14),
+            context.trCannotReply,
+            style: const TextStyle(color: ThixPolicy.textMain, fontWeight: FontWeight.w700, fontSize: 14),
             textAlign: TextAlign.center,
           ),
-          SizedBox(height: 4),
+          const SizedBox(height: 4),
           Text(
-            "La connexion a été interrompue ou cet utilisateur n'est plus dans votre réseau.",
-            style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 13),
+            context.trConnectionInterrupted,
+            style: const TextStyle(color: ThixPolicy.textSecondary, fontSize: 13),
             textAlign: TextAlign.center,
           ),
         ],
@@ -1046,7 +1091,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ✅ AJOUT DE LA CERTIFICATION VIA UN CONSUMER
                 Consumer(
                   builder: (context, ref, _) {
                     CertificationTier? tier;
@@ -1098,7 +1142,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 if (!widget.conversation.isGroup && _otherParticipant != null)
                   Text(_getPresenceText(_otherParticipant!), style: TextStyle(fontSize: 12, color: _isOnline ? ThixPolicy.success : ThixPolicy.textSecondary, fontWeight: _isOnline ? FontWeight.w600 : FontWeight.w400))
                 else if (widget.conversation.isGroup)
-                  Text('${_groupMembers.length} membres', style: const TextStyle(fontSize: 12, color: ThixPolicy.textSecondary)),
+                  Text('${_groupMembers.length} ${context.trMembers}', style: const TextStyle(fontSize: 12, color: ThixPolicy.textSecondary)),
               ],
             ),
           ),
@@ -1116,9 +1160,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
             else if (v == 'group') GoRouter.of(context).go('/chat/group/${widget.conversationId}/info');
           },
           itemBuilder: (_) => [
-            const PopupMenuItem(value: 'escalate', child: Row(children: [Icon(Icons.arrow_upward, color: ThixPolicy.warning, size: 20), SizedBox(width: 10), Text('Escalader')])),
-            const PopupMenuItem(value: 'history', child: Row(children: [Icon(Icons.history, color: ThixPolicy.primary, size: 20), SizedBox(width: 10), Text('Historique')])),
-            if (widget.conversation.isGroup) const PopupMenuItem(value: 'group', child: Row(children: [Icon(Icons.info_outline, color: ThixPolicy.textSecondary, size: 20), SizedBox(width: 10), Text('Infos groupe')])),
+            PopupMenuItem(value: 'escalate', child: Row(children: [const Icon(Icons.arrow_upward, color: ThixPolicy.warning, size: 20), const SizedBox(width: 10), Text(context.trEscalate)])),
+            PopupMenuItem(value: 'history', child: Row(children: [const Icon(Icons.history, color: ThixPolicy.primary, size: 20), const SizedBox(width: 10), Text(context.trHistory)])),
+            if (widget.conversation.isGroup) PopupMenuItem(value: 'group', child: Row(children: [const Icon(Icons.info_outline, color: ThixPolicy.textSecondary, size: 20), const SizedBox(width: 10), Text(context.trGroupInfo)])),
           ],
         ),
       ],
@@ -1145,11 +1189,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Row(
                   children: [
-                    _optionButton(Icons.attach_file_rounded, 'Fichier', _pickFile),
-                    _optionButton(Icons.sentiment_satisfied_alt_rounded, 'Sticker', () { FocusScope.of(context).unfocus(); setState(() => _showStickers = !_showStickers); }, isActive: _showStickers),
-                    _optionButton(Icons.timer_outlined, 'Éphémère', _showEphemeralTimerDialog, isActive: _isEphemeral),
-                    _optionButton(Icons.lock_outline_rounded, 'Protégé', _showPasswordProtectDialog),
-                    if (_isAgent) _optionButton(Icons.note_alt_outlined, 'Note Int.', _toggleInternalNoteMode, isActive: _isInternalNoteMode),
+                    _optionButton(Icons.attach_file_rounded, context.trFile, _pickFile),
+                    _optionButton(Icons.sentiment_satisfied_alt_rounded, context.trSticker, () { FocusScope.of(context).unfocus(); setState(() => _showStickers = !_showStickers); }, isActive: _showStickers),
+                    _optionButton(Icons.timer_outlined, context.trEphemeral, _showEphemeralTimerDialog, isActive: _isEphemeral),
+                    _optionButton(Icons.lock_outline_rounded, context.trProtected, _showPasswordProtectDialog),
+                    if (_isAgent) _optionButton(Icons.note_alt_outlined, context.trInternalNote, _toggleInternalNoteMode, isActive: _isInternalNoteMode),
                   ],
                 ),
               ),
@@ -1180,7 +1224,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                           const Icon(Icons.mic, color: ThixPolicy.danger), const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Enregistrement... ${(_recordDuration ~/ 60).toString().padLeft(2, '0')}:${(_recordDuration % 60).toString().padLeft(2, '0')}', 
+                              '${context.trRecording} ${(_recordDuration ~/ 60).toString().padLeft(2, '0')}:${(_recordDuration % 60).toString().padLeft(2, '0')}', 
                               style: const TextStyle(color: ThixPolicy.danger, fontWeight: FontWeight.w800)
                             )
                           ),
@@ -1197,7 +1241,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                             child: TextField(
                               controller: _inputController, focusNode: _inputFocus, maxLines: 5, minLines: 1, textCapitalization: TextCapitalization.sentences,
                               onTap: () { if (_showStickers) setState(() => _showStickers = false); },
-                              decoration: const InputDecoration(hintText: 'Écrire un message...', hintStyle: TextStyle(color: ThixPolicy.textSecondary), border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+                              decoration: InputDecoration(hintText: context.trWriteMessage, hintStyle: const TextStyle(color: ThixPolicy.textSecondary), border: InputBorder.none, contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
                             ),
                           ),
                         ),
@@ -1250,13 +1294,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         length: 3, 
         child: Column(
           children: [
-            const TabBar(
+            TabBar(
               labelColor: ThixPolicy.primary,
               indicatorColor: ThixPolicy.primary,
               tabs: [
-                Tab(text: 'Émojis'),
-                Tab(text: 'Réactions'),
-                Tab(text: 'Drapeaux'),
+                Tab(text: context.trEmojis),
+                Tab(text: context.trReactions),
+                Tab(text: context.trFlags),
               ]
             ),
             Expanded(
@@ -1299,7 +1343,7 @@ class _CallBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isVideo = message.mediaType == 'call_video';
-    final isMissed = message.content.toLowerCase().contains('manqué');
+    final isMissed = message.content.toLowerCase().contains('manqué') || message.content.toLowerCase().contains('missed');
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -1477,11 +1521,11 @@ class _TypingPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(color: Colors.white.withOpacity(0.95), borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 2))]),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _Dot(), SizedBox(width: 3), _Dot(delay: 120), SizedBox(width: 3), _Dot(delay: 240), SizedBox(width: 8),
-          Text("écrit…", style: TextStyle(fontSize: 12, color: ThixPolicy.primary, fontStyle: FontStyle.italic, fontWeight: FontWeight.w500)),
+          const _Dot(), const SizedBox(width: 3), const _Dot(delay: 120), const SizedBox(width: 3), const _Dot(delay: 240), const SizedBox(width: 8),
+          Text(context.trTyping, style: const TextStyle(fontSize: 12, color: ThixPolicy.primary, fontStyle: FontStyle.italic, fontWeight: FontWeight.w500)),
         ],
       ),
     );
@@ -1647,4 +1691,73 @@ class _ThixChatBackgroundPainter extends CustomPainter {
     }
   }
   @override bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ============================================================================
+// EXTENSION DE LOCALISATION (i18n PROXY)
+// Remplacez ces retours par votre gestionnaire de langue officiel plus tard
+// ex: AppLocalizations.of(this)?.writeMessage ?? 'Écrire un message...'
+// ============================================================================
+extension ChatL10n on BuildContext {
+  String get trWriteMessage => 'Écrire un message...';
+  String get trRecording => 'Enregistrement...';
+  String get trCancel => 'Annuler';
+  String get trUnderstood => 'Compris';
+  String get trAuthRequired => 'Autorisation requise';
+  String get trMicDisclosure => 'Pour vous permettre d\'enregistrer et d\'envoyer des notes vocales, THIX ID a besoin d\'accéder à votre microphone.';
+  String get trMicCallDisclosure => 'Pour passer un appel, THIX ID a besoin d\'accéder à votre microphone.';
+  String get trCamCallDisclosure => 'Pour passer un appel vidéo, THIX ID a besoin d\'accéder à votre caméra.';
+  String get trCallInactive => 'Impossible d\'appeler : connexion inactive.';
+  String get trSendInactive => 'Connexion inactive — impossible d\'envoyer.';
+  String get trRecordingError => 'Impossible de démarrer l\'enregistrement.';
+  String get trError => 'Erreur:';
+  String get trSendError => 'Envoi impossible:';
+  String get trDeleteImpossible => 'Suppression impossible:';
+  String get trTyping => 'écrit...';
+  
+  // AppBar & Banner
+  String get trCannotReply => 'Vous ne pouvez plus répondre à cette conversation';
+  String get trConnectionInterrupted => 'La connexion a été interrompue ou cet utilisateur n\'est plus dans votre réseau.';
+  String get trMembers => 'membres';
+  String get trOnline => 'En ligne';
+  String get trSeenAt => 'Vu';
+  String get trAt => 'à';
+  String get trYesterdayAt => 'hier à';
+  String get trOn => 'le';
+  
+  // Menu 
+  String get trEscalate => 'Escalader';
+  String get trHistory => 'Historique';
+  String get trGroupInfo => 'Infos groupe';
+  
+  // Input bar options
+  String get trFile => 'Fichier';
+  String get trSticker => 'Sticker';
+  String get trEphemeral => 'Éphémère';
+  String get trProtected => 'Protégé';
+  String get trInternalNote => 'Note Int.';
+  
+  // Ephemeral Dialog
+  String get trEphemeralMessage => 'Message éphémère';
+  String get trDisabled => 'Désactivé';
+  String get trSeconds10 => '10 secondes';
+  String get trMinute1 => '1 minute';
+  String get trHour1 => '1 heure';
+  String get trHours24 => '24 heures';
+  String get trCustomTime => 'Personnalisé...';
+  String get trDurationSeconds => 'Durée en secondes';
+  String get trValidate => 'Valider';
+  String get trInvalidNumber => 'Nombre invalide.';
+  String get trBack => 'Retour';
+  
+  // Secure Dialog
+  String get trSecureMessage => 'Message sécurisé';
+  String get trMessage => 'Message';
+  String get trPassword => 'Mot de passe';
+  String get trSend => 'Envoyer';
+
+  // Sticker tabs
+  String get trEmojis => 'Émojis';
+  String get trReactions => 'Réactions';
+  String get trFlags => 'Drapeaux';
 }
