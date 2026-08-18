@@ -731,7 +731,12 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with WidgetsBindi
       children: [
         // Avatar avec bouton follow
         GestureDetector(
-          onTap: () { if (creatorId.isNotEmpty && !creatorIsOfficial) Navigator.push(context, MaterialPageRoute(builder: (_) => UserProfilePage(userId: creatorId))); },
+          onTap: () { 
+  if (creatorId != null && creatorId.isNotEmpty && !creatorIsOfficial) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => UserProfilePage(userId: creatorId))); 
+  }
+},
+
           child: SizedBox(
             width: 48, height: 60,
             child: Stack(
