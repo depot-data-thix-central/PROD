@@ -256,6 +256,13 @@ import 'package:thix_id/presentation/thix_retrouve/pages/declarer_objet_page.dar
 import 'package:thix_id/presentation/thix_retrouve/pages/carte_signalements_page.dart';
 import 'package:thix_id/presentation/thix_retrouve/models/objet_model.dart';
 import 'package:thix_id/presentation/thix_ia/thix_ia_screen.dart';
+import 'package:thix_id/presentation/thix_sos/thix_sos_screen.dart';
+import 'package:thix_id/presentation/thix_sos/pages/sos_actif_page.dart';
+import 'package:thix_id/presentation/thix_sos/pages/mes_secours_page.dart';
+import 'package:thix_id/presentation/thix_sos/pages/ajouter_secours_page.dart';
+import 'package:thix_id/presentation/thix_sos/pages/mes_incidents_page.dart';
+import 'package:thix_id/presentation/thix_sos/pages/sos_pin_page.dart';
+import 'package:thix_id/presentation/thix_sos/pages/chambre_crise_page.dart';
 
 // === ADMIN SYSTEM GLOBAL ===
 import 'package:thix_id/presentation/admin/admin_page.dart';
@@ -599,7 +606,64 @@ class AppRouter {
 
         // === THIX IA ===
         GoRoute(path: '/thix_ia', name: 'thix_ia', builder: (context, state) => const ThixIaScreen()),
-
+// THIX SOS
+GoRoute(
+  path: '/thix-sos',
+  name: 'thixSos',
+  builder: (context, state) => const ThixSosScreen(),
+  routes: [
+    GoRoute(
+      path: 'actif/:id',
+      name: 'thixSosActif',
+      builder: (context, state) => SosActifPage(
+        incidentId: state.pathParameters['id']!,
+      ),
+    ),
+    GoRoute(
+      path: 'chambre/:id',
+      name: 'thixSosChambre',
+      builder: (context, state) => ChambreCrisePage(
+        incidentId: state.pathParameters['id']!,
+      ),
+    ),
+    GoRoute(
+      path: 'pin/:id',
+      name: 'thixSosPin',
+      builder: (context, state) {
+        final mode = state.uri.queryParameters['mode'] == 'resolve'
+            ? SosPinMode.resolve
+            : SosPinMode.cancel;
+        return SosPinPage(
+          incidentId: state.pathParameters['id']!,
+          mode: mode,
+        );
+      },
+    ),
+    GoRoute(
+      path: 'secours',
+      name: 'thixSosSecours',
+      builder: (context, state) => const MesSecoursPage(),
+      routes: [
+        GoRoute(
+          path: 'ajouter',
+          name: 'thixSosAjouterSecours',
+          builder: (context, state) {
+            final circle = int.tryParse(
+                  state.uri.queryParameters['circle'] ?? '1',
+                ) ??
+                1;
+            return AjouterSecoursPage(initialCircle: circle);
+          },
+        ),
+      ],
+    ),
+    GoRoute(
+      path: 'incidents',
+      name: 'thixSosIncidents',
+      builder: (context, state) => const MesIncidentsPage(),
+    ),
+  ],
+),
         // === ADMIN SYSTEM GLOBAL ===
         GoRoute(path: '/admin', builder: (context, state) => const thix_admin.AdminHomePage()),
         GoRoute(path: '/admin/articles', builder: (context, state) => const thix_admin_list.AdminArticlesListPage()),
