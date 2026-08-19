@@ -24,9 +24,11 @@ import 'admin_administrative_form_page.dart';
 import 'admin_achievement_form_page.dart';
 import 'admin_media_form_page.dart';
 
+// === NOUVEAU MODULE CONNECTÉ ===
+import 'admin_news_page.dart';
+
 // === MODULES À VENIR ===
 // import 'admin_history_page.dart';
-// import 'admin_news_page.dart';
 // import 'admin_agencies_page.dart';
 
 class AdminDashboardPage extends StatelessWidget {
@@ -99,20 +101,24 @@ class AdminDashboardPage extends StatelessWidget {
                     MaterialPageRoute(builder: (_) => const AdminProvincesPage()),
                   ),
                 ),
+                // ✅ CARTE ACTUALITÉS CONNECTÉE
+                _adminCard(
+                  context,
+                  icon: Icons.newspaper,
+                  label: 'Actualités',
+                  subtitle: 'Gérer les articles "À la Une"',
+                  color: Colors.teal,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AdminNewsPage()),
+                  ),
+                ),
                 _adminCard(
                   context,
                   icon: Icons.history_edu,
                   label: 'Figures Historiques',
                   subtitle: 'Bientôt disponible',
                   color: Colors.orange,
-                  onTap: () => _showComingSoon(context),
-                ),
-                _adminCard(
-                  context,
-                  icon: Icons.newspaper,
-                  label: 'Actualités',
-                  subtitle: 'Bientôt disponible',
-                  color: Colors.teal,
                   onTap: () => _showComingSoon(context),
                 ),
                 _adminCard(
@@ -267,68 +273,28 @@ class AdminDashboardPage extends StatelessWidget {
     final provinceId = 'temp-id'; // À remplacer par l'ID réel
     switch (section) {
       case 'government':
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AdminGovernmentFormPage(provinceId: provinceId),
-          ),
-        );
+        Navigator.push(context, MaterialPageRoute(builder: (_) => AdminGovernmentFormPage(provinceId: provinceId)));
         break;
       case 'economic':
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AdminEconomicFormPage(provinceId: provinceId),
-          ),
-        );
+        Navigator.push(context, MaterialPageRoute(builder: (_) => AdminEconomicFormPage(provinceId: provinceId)));
         break;
       case 'budget':
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AdminBudgetFormPage(provinceId: provinceId),
-          ),
-        );
+        Navigator.push(context, MaterialPageRoute(builder: (_) => AdminBudgetFormPage(provinceId: provinceId)));
         break;
       case 'tourism':
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AdminTourismFormPage(provinceId: provinceId),
-          ),
-        );
+        Navigator.push(context, MaterialPageRoute(builder: (_) => AdminTourismFormPage(provinceId: provinceId)));
         break;
       case 'emergency':
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AdminEmergencyFormPage(provinceId: provinceId),
-          ),
-        );
+        Navigator.push(context, MaterialPageRoute(builder: (_) => AdminEmergencyFormPage(provinceId: provinceId)));
         break;
       case 'administrative':
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AdminAdministrativeFormPage(provinceId: provinceId),
-          ),
-        );
+        Navigator.push(context, MaterialPageRoute(builder: (_) => AdminAdministrativeFormPage(provinceId: provinceId)));
         break;
       case 'achievement':
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AdminAchievementFormPage(provinceId: provinceId),
-          ),
-        );
+        Navigator.push(context, MaterialPageRoute(builder: (_) => AdminAchievementFormPage(provinceId: provinceId)));
         break;
       case 'media':
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AdminMediaFormPage(provinceId: provinceId),
-          ),
-        );
+        Navigator.push(context, MaterialPageRoute(builder: (_) => AdminMediaFormPage(provinceId: provinceId)));
         break;
     }
   }
