@@ -276,6 +276,7 @@ import 'package:thix_id/presentation/admin/admin_article_form_page.dart' as thix
 import 'package:thix_id/presentation/education/education_routes.dart';
 import 'package:thix_id/presentation/thix_money/thix_money_router.dart';
 import 'package:thix_id/presentation/thix_weeding/thix_weeding_routes.dart';
+import 'package:thix_id/presentation/thix_home_swipe_screen.dart';
 
 class NoTransitionPage<T> extends Page<T> {
   final Widget child;
@@ -439,10 +440,10 @@ class AppRouter {
 
         // === THIX RETROUVE ===
         GoRoute(
-          path: '/thix-retrouve',
-          name: 'thixRetrouve',
-          pageBuilder: (_, __) => const NoTransitionPage(child: ThixRetrouveScreen()),
-        ),
+  path: '/home-swipe',
+  name: 'homeSwipe',
+  builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 0),
+),
         GoRoute(
           path: '/thix-retrouve/detail',
           name: 'thixRetrouveDetail',
