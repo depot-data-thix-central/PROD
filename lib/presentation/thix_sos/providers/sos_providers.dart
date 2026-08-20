@@ -1,10 +1,11 @@
 /// THIX SOS — Riverpod providers (production)
 import 'dart:async';
-
+import 'package:flutter/foundation.dart'; // Pour debugPrint
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/sos_models.dart';
 import '../services/sos_service.dart';
+import '../services/sos_call_bridge.dart'; // Protocole Chat + Appels
 
 // ── Service ───────────────────────────────────────────────────
 final sosServiceProvider = Provider<SosService>((ref) {
@@ -87,6 +88,19 @@ class TriggerSosNotifier extends StateNotifier<AsyncValue<SosIncident?>> {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final incident = await _ref.read(sosServiceProvider).triggerSos();
+
+      // Protocole Chat + Appels (ne bloque pas l'UI si échec partiel)
+      try {
+        final result = await SosCallBridge(
+          sos: _ref.read(sosServiceProvider),
+        ).activateProtocol(incident);
+        debugPrint(
+          'SOS protocol: chat=${result.conversationId} calls=${result.answeredOrRinging}/${result.calls.length}',
+        );
+      } catch (e) {
+        debugPrint('SOS protocol partial failure: $e');
+      }
+
       _ref.invalidate(activeSosProvider);
       _ref.invalidate(sosHistoryProvider);
       return incident;
@@ -143,6 +157,7 @@ class SosHeartbeatController extends StateNotifier<bool> {
     super.dispose();
   }
 }
+
 // ── Actions contacts ──────────────────────────────────────────
 final sosContactActionsProvider = Provider<SosContactActions>((ref) {
   return SosContactActions(ref);
