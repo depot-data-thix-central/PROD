@@ -37,6 +37,13 @@ final sosContactsCountProvider = Provider.autoDispose<Map<int, int>>((ref) {
   );
 });
 
+// ── Recherche Profil (THIX ID) ────────────────────────────────
+final thixIdLookupProvider =
+    FutureProvider.autoDispose.family<Map<String, dynamic>?, String>((ref, thixId) async {
+  if (thixId.trim().isEmpty) return null;
+  return ref.watch(sosServiceProvider).lookupProfileByThixId(thixId);
+});
+
 // ── Incident actif ────────────────────────────────────────────
 final activeSosProvider =
     FutureProvider.autoDispose<SosIncident?>((ref) async {
