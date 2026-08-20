@@ -13,15 +13,19 @@ import 'providers/sos_providers.dart';
 import 'widgets/cercle_card.dart';
 import 'widgets/sos_button.dart';
 import 'widgets/status_banner.dart';
+// TODO: Assure-toi d'importer le widget NearbyAlertsCard
+// import 'widgets/nearby_alerts_card.dart'; 
 
-// Palette entreprise
-const _bg = Color(0xFF0A0A0F);
-const _card = Color(0xFF14141C);
-const _cardBorder = Color(0xFF252532);
-const _red = Color(0xFFEF4444);
-const _redDark = Color(0xFFB91C1C);
+// --- Palette Entreprise / Dark Mode ---
+const _bg = Color(0xFF030508); // Vrai noir (fond)
+const _card = Color(0xFF0E121B); // Bleu/Gris très profond
+const _cardBorder = Color(0xFF1C2333); // Bordure subtile et nette
+const _red = Color(0xFFE50914); // Rouge urgence pur
+const _redDark = Color(0xFF8A050C);
+const _green = Color(0xFF10B981);
+const _accent = Color(0xFF3B82F6);
 const _white = Colors.white;
-const _muted = Color(0xFF9CA3AF);
+const _muted = Color(0xFF8B94A3); // Gris bleuté pour le texte secondaire
 
 class ThixSosScreen extends ConsumerWidget {
   const ThixSosScreen({super.key});
@@ -50,7 +54,7 @@ class ThixSosScreen extends ConsumerWidget {
       body: SafeArea(
         child: Column(
           children: [
-            const _Header(),
+            const _HeaderOfficiel(), // Nouvel en-tête basé sur ton design
             Expanded(
               child: RefreshIndicator(
                 color: _red,
@@ -62,11 +66,11 @@ class ThixSosScreen extends ConsumerWidget {
                 },
                 child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Bannière statut
+                      // Bannière statut (Verte = Sécurité)
                       activeAsync.when(
                         data: (incident) => StatusBanner(
                           incident: incident,
@@ -76,9 +80,9 @@ class ThixSosScreen extends ConsumerWidget {
                         loading: () => const StatusBanner(),
                         error: (_, __) => const StatusBanner(),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 28),
 
-                      // Bouton SOS
+                      // Bouton SOS Central
                       SosButton(
                         enabled: !isTriggering,
                         isLoading: isTriggering,
@@ -101,10 +105,8 @@ class ThixSosScreen extends ConsumerWidget {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text(
-                                  err?.toString() ??
-                                      'Échec du déclenchement SOS',
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
+                                  err?.toString() ?? 'Échec du déclenchement SOS',
+                                  style: GoogleFonts.inter(color: _white),
                                 ),
                                 backgroundColor: _redDark,
                               ),
@@ -114,10 +116,8 @@ class ThixSosScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'Maintenir 2 secondes pour déclencher',
+                        'Appuyer et maintenir 2 secondes',
                         textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.inter(
                           fontSize: 12,
                           color: _muted,
@@ -126,149 +126,109 @@ class ThixSosScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 28),
 
-                      // Mes secours
+                      // Mes Secours (Cercles)
+                      _SectionLabel('MES SECOURS', actionText: 'Gérer', onAction: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => const MesSecoursPage()));
+                      }),
+                      const SizedBox(height: 12),
                       contactsAsync.when(
                         data: (contacts) => CerclesList(
                           contacts: contacts,
-                          onManage: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const MesSecoursPage(),
-                              ),
-                            );
-                          },
+                          onManage: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesSecoursPage())),
                           onCircleTap: (circle) {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
-                                builder: (_) => AjouterSecoursPage(
-                                  initialCircle: circle,
-                                ),
-                              ),
+                              MaterialPageRoute(builder: (_) => AjouterSecoursPage(initialCircle: circle)),
                             ).then((ok) {
-                              if (ok == true) {
-                                ref.invalidate(sosContactsProvider);
-                              }
+                              if (ok == true) ref.invalidate(sosContactsProvider);
                             });
                           },
                         ),
-                        loading: () => const Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Center(
-                            child: CircularProgressIndicator(color: _red),
-                          ),
-                        ),
-                        error: (e, _) => Text(
-                          'Erreur secours',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(color: _red),
+                        loading: () => const Center(child: CircularProgressIndicator(color: _red)),
+                        error: (e, _) => Text('Erreur secours', style: GoogleFonts.inter(color: _red)),
+                      ),
+                      const SizedBox(height: 28),
+
+                      // --- NOUVEAU : Alertes à proximité (Carte) ---
+                      _SectionLabel('ALERTES À PROXIMITÉ', actionText: 'Voir sur la carte', onAction: () => _soon(context, 'Carte')),
+                      const SizedBox(height: 12),
+                      const NearbyAlertsCard(), // Le widget demandé inséré ici
+                      const SizedBox(height: 28),
+
+                      // --- NOUVEAU : Actions Rapides (Scroll Horizontal) ---
+                      _SectionLabel('ACTIONS RAPIDES'),
+                      const SizedBox(height: 12),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        child: Row(
+                          children: [
+                            _QuickActionChip(icon: Icons.location_on, label: 'Partager', color: _green, onTap: () => _soon(context, 'Partager')),
+                            const SizedBox(width: 8),
+                            _QuickActionChip(icon: Icons.timer, label: 'Safe Check', color: Colors.orange, onTap: () => _soon(context, 'Safe Check')),
+                            const SizedBox(width: 8),
+                            _QuickActionChip(icon: Icons.route, label: 'Mes trajets', color: Colors.purpleAccent, onTap: () => _soon(context, 'Trajets')),
+                            const SizedBox(width: 8),
+                            _QuickActionChip(icon: Icons.campaign, label: 'Signaler', color: _red, onTap: () => _soon(context, 'Signaler')),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 28),
 
-                      // Actions rapides
-                      _SectionLabel('ACTIONS RAPIDES'),
-                      const SizedBox(height: 12),
+                      // --- NOUVEAU : Grille 2x2 des modules Thix ---
                       Row(
                         children: [
                           Expanded(
-                            child: _ActionTile(
-                              icon: Icons.location_on_outlined,
-                              label: 'Partager position',
-                              color: const Color(0xFF34D399),
-                              onTap: () => _soon(context, 'Partage de position'),
+                            child: _NavCardCompact(
+                              icon: Icons.chat_bubble_rounded,
+                              iconColor: Colors.purpleAccent,
+                              title: 'THIX CHAT SOS',
+                              subtitle: 'Conversations d\'urgence',
+                              onTap: () => _soon(context, 'Chat SOS'),
                             ),
                           ),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: 12),
                           Expanded(
-                            child: _ActionTile(
-                              icon: Icons.timer_outlined,
-                              label: 'Safe Check',
-                              color: const Color(0xFFFBBF24),
-                              onTap: () => _soon(context, 'Safe Check'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _ActionTile(
-                              icon: Icons.route_outlined,
-                              label: 'Mes trajets',
-                              color: const Color(0xFF60A5FA),
-                              onTap: () => _soon(context, 'Trajets'),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _ActionTile(
-                              icon: Icons.history,
-                              label: 'Mes incidents',
-                              color: _red,
+                            child: _NavCardCompact(
+                              icon: Icons.shield,
+                              iconColor: _accent,
+                              title: 'CHAMBRE DE CRISE',
+                              subtitle: 'Accédez à vos incidents',
                               onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const MesIncidentsPage(),
-                                  ),
-                                );
+                                final incident = activeAsync.valueOrNull;
+                                if (incident != null && incident.isActive) {
+                                  Navigator.push(context, MaterialPageRoute(builder: (_) => ChambreCrisePage(incidentId: incident.id)));
+                                } else {
+                                  Navigator.push(context, MaterialPageRoute(builder: (_) => const MesIncidentsPage()));
+                                }
                               },
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 28),
-
-                      // Chat SOS
-                      _NavCard(
-                        icon: Icons.chat_bubble_outline,
-                        iconColor: const Color(0xFFA78BFA),
-                        title: 'THIX CHAT SOS',
-                        subtitle: activeAsync.maybeWhen(
-                          data: (i) => i != null && i.isActive
-                              ? 'Incident actif — ouvrir le chat'
-                              : 'Conversations d’urgence',
-                          orElse: () => 'Conversations d’urgence',
-                        ),
-                        onTap: () => _soon(context, 'Chat SOS'),
-                      ),
-                      const SizedBox(height: 10),
-
-                      // Chambre de crise
-                      _NavCard(
-                        icon: Icons.desktop_windows_outlined,
-                        iconColor: _red,
-                        title: 'CHAMBRE DE CRISE',
-                        subtitle: activeAsync.maybeWhen(
-                          data: (i) => i != null && i.isActive
-                              ? 'SOS en cours — ouvrir'
-                              : 'Aucun incident en cours',
-                          orElse: () => 'Aucun incident en cours',
-                        ),
-                        onTap: () {
-                          final incident = activeAsync.valueOrNull;
-                          if (incident != null && incident.isActive) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ChambreCrisePage(
-                                  incidentId: incident.id,
-                                ),
-                              ),
-                            );
-                          } else {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const MesIncidentsPage(),
-                              ),
-                            );
-                          }
-                        },
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _NavCardCompact(
+                              icon: Icons.search_rounded,
+                              iconColor: Colors.amber,
+                              title: 'THIX RECHERCHE',
+                              subtitle: 'Avis officiels & disparitions',
+                              onTap: () => _soon(context, 'Thix Recherche'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _NavCardCompact(
+                              icon: Icons.folder_special,
+                              iconColor: Colors.teal,
+                              title: 'MES INCIDENTS',
+                              subtitle: 'Historique et rapports',
+                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesIncidentsPage())),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -285,57 +245,62 @@ class ThixSosScreen extends ConsumerWidget {
   static void _soon(BuildContext context, String label) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          '$label — bientôt disponible',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        backgroundColor: _card,
+        content: Text('$label — bientôt disponible', style: GoogleFonts.inter(color: _white)),
+        backgroundColor: _cardBorder,
         behavior: SnackBarBehavior.floating,
       ),
     );
   }
 }
 
-// ───────────────────────── Header ─────────────────────────
-
-class _Header extends StatelessWidget {
-  const _Header();
+// ───────────────────────── NOUVEAU : Header Officiel ─────────────────────────
+class _HeaderOfficiel extends StatelessWidget {
+  const _HeaderOfficiel();
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          IconButton(
-            icon: const Icon(Icons.menu, color: _muted),
-            onPressed: () => Navigator.of(context).maybePop(),
-          ),
-          Expanded(
-            child: Text(
-              'THIX SOS',
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-                color: _white,
-                letterSpacing: 0.5,
+          Icon(Icons.menu, color: _white, size: 28),
+          // Logo texte stylisé (Peut être remplacé par un Image.asset si tu as le logo X THIX)
+          Column(
+            children: [
+              Text(
+                'X THIX',
+                style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900, color: _white, letterSpacing: 1.2),
               ),
-            ),
+              Text(
+                'CONNECTER • PROTÉGER • AGIR',
+                style: GoogleFonts.inter(fontSize: 8, fontWeight: FontWeight.w600, color: _muted, letterSpacing: 1.5),
+              ),
+            ],
           ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined, color: _muted),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Paramètres SOS — bientôt'),
-                  backgroundColor: _card,
-                ),
-              );
-            },
+          Row(
+            children: [
+              Stack(
+                children: [
+                  const Icon(Icons.notifications_none_rounded, color: _white, size: 28),
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(color: _red, shape: BoxShape.circle),
+                      child: Text('3', style: GoogleFonts.inter(fontSize: 10, color: _white, fontWeight: FontWeight.bold)),
+                    ),
+                  )
+                ],
+              ),
+              const SizedBox(width: 16),
+              const CircleAvatar(
+                radius: 16,
+                backgroundColor: _cardBorder,
+                backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=11'), // Avatar placeholder
+              ),
+            ],
           ),
         ],
       ),
@@ -343,87 +308,72 @@ class _Header extends StatelessWidget {
   }
 }
 
-// ───────────────────────── Section ─────────────────────────
-
+// ───────────────────────── Section Label (avec Action optionnelle) ─────────────────────────
 class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text);
+  const _SectionLabel(this.text, {this.actionText, this.onAction});
   final String text;
+  final String? actionText;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      text,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: GoogleFonts.inter(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        color: _muted,
-        letterSpacing: 1.0,
-      ),
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          text,
+          style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.bold, color: _muted, letterSpacing: 1.2),
+        ),
+        if (actionText != null)
+          GestureDetector(
+            onTap: onAction,
+            child: Text(
+              actionText!,
+              style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: _accent),
+            ),
+          ),
+      ],
     );
   }
 }
 
-// ───────────────────────── Action tile ─────────────────────────
-
-class _ActionTile extends StatelessWidget {
-  const _ActionTile({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
+// ───────────────────────── NOUVEAU : Action Rapide (Chip) ─────────────────────────
+class _QuickActionChip extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
   final VoidCallback onTap;
 
+  const _QuickActionChip({required this.icon, required this.label, required this.color, required this.onTap});
+
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: _card,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 88),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: _cardBorder),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: color, size: 22),
-              const SizedBox(height: 10),
-              Text(
-                label,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: _white,
-                  height: 1.25,
-                ),
-              ),
-            ],
-          ),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: _card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _cardBorder),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 8),
+            Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: _white)),
+          ],
         ),
       ),
     );
   }
 }
 
-// ───────────────────────── Nav card ─────────────────────────
-
-class _NavCard extends StatelessWidget {
-  const _NavCard({
+// ───────────────────────── Nav Card (Format Grille 2x2 Épuré) ─────────────────────────
+class _NavCardCompact extends StatelessWidget {
+  const _NavCardCompact({
     required this.icon,
     required this.iconColor,
     required this.title,
@@ -439,61 +389,25 @@ class _NavCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: _card,
+    return InkWell(
+      onTap: onTap,
       borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: _cardBorder),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: iconColor, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: _white,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        color: _muted,
-                        height: 1.3,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right, color: Color(0xFF4B5563), size: 20),
-            ],
-          ),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: _card,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _cardBorder),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: iconColor, size: 28),
+            const SizedBox(height: 12),
+            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _white)),
+            const SizedBox(height: 4),
+            Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 10, color: _muted, height: 1.3)),
+          ],
         ),
       ),
     );
@@ -501,7 +415,6 @@ class _NavCard extends StatelessWidget {
 }
 
 // ───────────────────────── Bottom nav ─────────────────────────
-
 class _BottomNav extends StatelessWidget {
   const _BottomNav({required this.currentIndex});
   final int currentIndex;
@@ -516,49 +429,21 @@ class _BottomNav extends StatelessWidget {
       child: BottomNavigationBar(
         currentIndex: currentIndex,
         onTap: (i) {
-          if (i == 0) {
-            Navigator.of(context).popUntil((r) => r.isFirst);
-          } else if (i == currentIndex) {
-            return;
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Bientôt disponible'),
-                backgroundColor: _card,
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
+          if (i == 0) Navigator.of(context).popUntil((r) => r.isFirst);
         },
         backgroundColor: _bg,
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: _red,
+        selectedItemColor: _white, // Le menu sélectionné est blanc pour contraster
         unselectedItemColor: _muted,
-        selectedLabelStyle:
-            GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600),
+        selectedLabelStyle: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700),
         unselectedLabelStyle: GoogleFonts.inter(fontSize: 10),
         elevation: 0,
         items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            label: 'Accueil',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble_outline),
-            label: 'Chat',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.sos, size: 28),
-            label: 'SOS',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.map_outlined),
-            label: 'Carte',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            label: 'Profil',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Accueil'),
+          BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), label: 'Chat'),
+          BottomNavigationBarItem(icon: Icon(Icons.sos, size: 28, color: _red), label: 'SOS'), // L'icône SOS reste rouge
+          BottomNavigationBarItem(icon: Icon(Icons.map_outlined), label: 'Carte'),
+          BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profil'),
         ],
       ),
     );
