@@ -50,6 +50,19 @@ class SosService {
     return SosContact.fromJson(Map<String, dynamic>.from(res));
   }
 
+  Future<void> setCallingCircle(String incidentId, int circle) async {
+    final status = circle == 1
+        ? 'calling_circle_1'
+        : circle == 2
+            ? 'calling_circle_2'
+            : 'calling_circle_3';
+
+    await _client.from('sos_incidents').update({
+      'status': status,
+      'active_circle': circle,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', incidentId);
+  }
   // ── Incident actif ──────────────────────────────────────────
   Future<SosIncident?> getActiveIncident() async {
     final uid = _uid;
