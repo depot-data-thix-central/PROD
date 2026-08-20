@@ -147,6 +147,81 @@ class SosService {
     }
   }
 
+/// Recherche un profil THIX par son THIX ID (interne, Supabase only)
+  Future<Map<String, dynamic>?> lookupProfileByThixId(String thixId) async {
+    final normalized = thixId.trim().toUpperCase();
+    if (normalized.isEmpty) return null;
+
+    try {
+      // Adapte les colonnes si besoin (full_name / display_name / avatar_url)
+      final res = await _client
+          .from('profiles')
+          .select(
+            'id, thix_id, full_name, display_name, first_name, last_name, avatar_url, photo_url',
+          )
+          .ilike('thix_id', normalized)
+          .maybeSingle();
+
+      if (res == null) return null;
+      return Map<String, dynamic>.from(res);
+    } catch (e, st) {
+      debugPrint('SosService.lookupProfileByThixId: $e\n$st');
+      throw SosServiceException('Impossible de rechercher ce THIX ID', e);
+    }
+  }
+
+  /// Ajout secours lié à un compte THIX
+  Future<SosContact> addContactFromThixProfile({
+    required String thixId,
+    required String contactUserId,
+    required String name,
+    required int circle,
+    String? photoUrl,
+    String? phone,
+    String? relation,
+  }) async {
+    _ensureAuth();
+    if (circle < 1 || circle > 3) {
+      throw SosServiceException('Cercle invalide (1, 2 ou 3)');
+    }
+
+    // Éviter les doublons (même user dans le même cercle)
+    final existing = await _client
+        .from(_tableContacts)
+        .select('id')
+        .eq('owner_id', _uid!)
+        .eq('thix_id', thixId.trim().toUpperCase())
+        .eq('circle', circle)
+        .maybeSingle();
+
+    if (existing != null) {
+      throw SosServiceException('Ce secours est déjà dans le cercle $circle');
+    }
+
+    try {
+      final res = await _client
+          .from(_tableContacts)
+          .insert({
+            'owner_id': _uid,
+            'name': name.trim(),
+            'circle': circle,
+            'phone': phone?.trim(),
+            'thix_id': thixId.trim().toUpperCase(),
+            'photo_url': photoUrl,
+            'relation': relation?.trim(),
+            // si colonne ajoutée en SQL :
+            // 'contact_user_id': contactUserId,
+          })
+          .select()
+          .single();
+
+      return SosContact.fromJson(Map<String, dynamic>.from(res));
+    } catch (e, st) {
+      debugPrint('SosService.addContactFromThixProfile: $e\n$st');
+      throw SosServiceException('Impossible d\'ajouter le secours', e);
+    }
+  }
+  
   // ═══════════════════════════════════════════════════════════
   // INCIDENTS
   // ═══════════════════════════════════════════════════════════
