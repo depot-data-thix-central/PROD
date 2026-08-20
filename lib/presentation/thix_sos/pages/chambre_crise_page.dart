@@ -434,7 +434,7 @@ class _LiveMapCard extends StatelessWidget {
   }
 
   String _fmtTime(DateTime d) =>
-      '\( {d.hour.toString().padLeft(2, '0')}: \){d.minute.toString().padLeft(2, '0')}:${d.second.toString().padLeft(2, '0')}';
+      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}:${d.second.toString().padLeft(2, '0')}';
 }
 
 class _ResponderTile extends StatelessWidget {
