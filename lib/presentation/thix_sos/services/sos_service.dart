@@ -151,29 +151,27 @@ class SosService {
       throw SosServiceException('Impossible de supprimer le secours', e);
     }
   }
-
   /// Recherche un profil THIX par son THIX ID (interne, Supabase only)
   Future<Map<String, dynamic>?> lookupProfileByThixId(String thixId) async {
     final normalized = thixId.trim().toUpperCase();
     if (normalized.isEmpty) return null;
 
     try {
-      // Adapte les colonnes si besoin (full_name / display_name / avatar_url)
+      // On ne demande QUE les colonnes qui existent vraiment dans Supabase
       final res = await _client
           .from('profiles')
-          .select(
-            'id, thix_id, full_name, display_name, first_name, last_name, avatar_url, photo_url',
-          )
+          .select('id, thix_id, full_name, avatar_url') // Modifiez avatar_url si besoin !
           .ilike('thix_id', normalized)
           .maybeSingle();
 
       if (res == null) return null;
       return Map<String, dynamic>.from(res);
     } catch (e, st) {
-      debugPrint('SosService.lookupProfileByThixId: $e\n$st');
+      debugPrint('SosService.lookupProfileByThixId ERREUR: $e\n$st');
       throw SosServiceException('Impossible de rechercher ce THIX ID', e);
     }
   }
+
 
   /// Ajout secours lié à un compte THIX
   Future<SosContact> addContactFromThixProfile({
