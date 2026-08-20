@@ -113,22 +113,19 @@ class RechercheService {
   }
 
   Future<List<PersonneRecherchee>> getMesAlertes() async {
-    final userId = SupabaseConfig.currentUser?.id;
-    if (userId == null) return [];
-    try {
-      final res = await _client
-          .from(_table)
-          .select()
-          .eq('created_by', userId)
-          .order('created_at', ascending: false);
-      return (res as List)
-          .map((e) => PersonneRecherchee.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-    } catch (e) {
-      return [];
-    }
-  }
+  final userId = SupabaseConfig.currentUser?.id;
+  if (userId == null) return [];
 
+  final res = await _client
+      .from(_table)
+      .select()
+      .eq('created_by', userId)
+      .order('created_at', ascending: false);
+
+  return (res as List)
+      .map((e) => PersonneRecherchee.fromJson(Map<String, dynamic>.from(e)))
+      .toList();
+}
   /// Upload d'une seule photo
   Future<String?> uploadPhoto({
     required Uint8List bytes,
