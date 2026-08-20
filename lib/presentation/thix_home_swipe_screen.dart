@@ -1,14 +1,15 @@
-/// Conteneur principal — swipe SOS ↔ RETROUVE
+/// Conteneur principal — swipe SOS ↔ RECHERCHE ↔ RETROUVE
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'thix_sos/thix_sos_screen.dart';
+import 'thix_recherche/thix_recherche_screen.dart';
 import 'thix_retrouve/thix_retrouve_screen.dart';
 
 class ThixHomeSwipeScreen extends StatefulWidget {
   const ThixHomeSwipeScreen({super.key, this.initialPage = 0});
 
-  /// 0 = SOS, 1 = RETROUVE
+  /// 0 = SOS, 1 = RECHERCHE, 2 = RETROUVE
   final int initialPage;
 
   @override
@@ -22,7 +23,7 @@ class _ThixHomeSwipeScreenState extends State<ThixHomeSwipeScreen> {
   @override
   void initState() {
     super.initState();
-    _page = widget.initialPage.clamp(0, 1);
+    _page = widget.initialPage.clamp(0, 2);
     _pageController = PageController(initialPage: _page);
   }
 
@@ -42,8 +43,13 @@ class _ThixHomeSwipeScreenState extends State<ThixHomeSwipeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Fond sombre pour SOS, clair pour RECHERCHE & RETROUVE
+    final bgColor = _page == 0
+        ? const Color(0xFF0A0A0F)
+        : const Color(0xFFF8F9FC);
+
     return Scaffold(
-      backgroundColor: _page == 0 ? const Color(0xFF0A0A0F) : const Color(0xFFF8F9FC),
+      backgroundColor: bgColor,
       body: Column(
         children: [
           // Indicateur de section (sous la status bar)
@@ -54,7 +60,8 @@ class _ThixHomeSwipeScreenState extends State<ThixHomeSwipeScreen> {
               child: _SectionIndicator(
                 current: _page,
                 onSos: () => _goTo(0),
-                onRetrouve: () => _goTo(1),
+                onRecherche: () => _goTo(1),
+                onRetrouve: () => _goTo(2),
               ),
             ),
           ),
@@ -68,7 +75,9 @@ class _ThixHomeSwipeScreenState extends State<ThixHomeSwipeScreen> {
               children: const [
                 // Page 0 — THIX SOS
                 _KeepAlive(child: ThixSosScreen()),
-                // Page 1 — THIX RETROUVE
+                // Page 1 — THIX RECHERCHE (milieu)
+                _KeepAlive(child: ThixRechercheScreen()),
+                // Page 2 — THIX RETROUVE
                 _KeepAlive(child: ThixRetrouveScreen()),
               ],
             ),
@@ -104,43 +113,58 @@ class _SectionIndicator extends StatelessWidget {
   const _SectionIndicator({
     required this.current,
     required this.onSos,
+    required this.onRecherche,
     required this.onRetrouve,
   });
 
   final int current;
   final VoidCallback onSos;
+  final VoidCallback onRecherche;
   final VoidCallback onRetrouve;
 
   @override
   Widget build(BuildContext context) {
-    final isSos = current == 0;
+    final isDark = current == 0; // SOS = thème sombre
 
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: isSos ? Colors.white10 : Colors.black.withOpacity(0.06),
+        color: isDark ? Colors.white10 : Colors.black.withOpacity(0.06),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
+          // ——— SOS ———
           Expanded(
             child: _Tab(
               label: 'SOS',
               icon: Icons.sos,
-              selected: isSos,
+              selected: current == 0,
               selectedColor: const Color(0xFFEF4444),
               onTap: onSos,
-              dark: isSos,
+              dark: isDark,
             ),
           ),
+          // ——— RECHERCHE (milieu) ———
+          Expanded(
+            child: _Tab(
+              label: 'RECHERCHE',
+              icon: Icons.person_search,
+              selected: current == 1,
+              selectedColor: const Color(0xFF2563EB),
+              onTap: onRecherche,
+              dark: isDark,
+            ),
+          ),
+          // ——— RETROUVE ———
           Expanded(
             child: _Tab(
               label: 'RETROUVE',
               icon: Icons.search,
-              selected: !isSos,
+              selected: current == 2,
               selectedColor: const Color(0xFFF59E0B),
               onTap: onRetrouve,
-              dark: isSos,
+              dark: isDark,
             ),
           ),
         ],
@@ -169,7 +193,9 @@ class _Tab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected ? selectedColor.withOpacity(dark ? 0.25 : 0.15) : Colors.transparent,
+      color: selected
+          ? selectedColor.withOpacity(dark ? 0.25 : 0.15)
+          : Colors.transparent,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         onTap: onTap,
@@ -181,21 +207,26 @@ class _Tab extends StatelessWidget {
             children: [
               Icon(
                 icon,
-                size: 16,
+                size: 15,
                 color: selected
                     ? selectedColor
                     : (dark ? Colors.white38 : Colors.black38),
               ),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                  color: selected
-                      ? selectedColor
-                      : (dark ? Colors.white38 : Colors.black38),
-                  letterSpacing: 0.4,
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight:
+                        selected ? FontWeight.w800 : FontWeight.w600,
+                    color: selected
+                        ? selectedColor
+                        : (dark ? Colors.white38 : Colors.black38),
+                    letterSpacing: 0.3,
+                  ),
                 ),
               ),
             ],
