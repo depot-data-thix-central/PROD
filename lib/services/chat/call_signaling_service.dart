@@ -116,7 +116,8 @@ class CallSignalingService {
     );
 
     if (res.status != 200) {
-      debugPrint('agora-token error status=\( {res.status} data= \){res.data}');
+      // ✅ CORRECTION ICI : Remplacement de \( ... \) par ${...}
+      debugPrint('agora-token error status=${res.status} data=${res.data}');
       throw Exception(
         'agora-token failed (${res.status}): ${res.data}',
       );
@@ -428,7 +429,8 @@ class CallSignalingService {
         return CallStatus.rejected;
       case 'cancelled':
       case 'canceled':
-        return CallStatus.cancelled;
+        // ✅ CORRECTION ICI : Remplacement par 'canceled' avec 1 seul 'l' pour coller à ton Enum
+        return CallStatus.canceled;
       case 'ended':
         return CallStatus.ended;
       case 'missed':
