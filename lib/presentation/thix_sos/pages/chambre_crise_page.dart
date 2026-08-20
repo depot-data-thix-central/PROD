@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/foundation.dart';
-import 'package:go_router/go_router.dart';
 import 'package:thix_id/nav.dart';
 import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
@@ -66,7 +65,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
       final incident =
           await ref.read(sosServiceProvider).getIncidentById(widget.incidentId);
       // si colonne chat_conversation_id exposée plus tard sur le modèle
-      // _resolvedConversationId = incident?.chatConversationId;
+      _resolvedConversationId = incident?.chatConversationId;
     } catch (_) {}
   }
 
@@ -683,7 +682,8 @@ class _LiveMapCard extends StatelessWidget {
 
   String _fmt(DateTime d) {
     final l = d.toLocal();
-    return '\( {l.hour.toString().padLeft(2, '0')}: \){l.minute.toString().padLeft(2, '0')}:${l.second.toString().padLeft(2, '0')}';
+    // Correction de l'interpolation ici
+    return '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}:${l.second.toString().padLeft(2, '0')}';
   }
 }
 
@@ -901,8 +901,9 @@ class _EventTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = event.createdAt.toLocal();
+    // Correction de l'interpolation ici aussi !
     final time =
-        '\( {t.hour.toString().padLeft(2, '0')}: \){t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
