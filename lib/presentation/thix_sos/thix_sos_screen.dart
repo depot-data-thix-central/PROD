@@ -13,8 +13,8 @@ import 'providers/sos_providers.dart';
 import 'widgets/cercle_card.dart';
 import 'widgets/sos_button.dart';
 import 'widgets/status_banner.dart';
-// TODO: Assure-toi d'importer le widget NearbyAlertsCard
-// import 'widgets/nearby_alerts_card.dart'; 
+
+ import 'widgets/nearby_alerts_card.dart'; 
 
 // --- Palette Entreprise / Dark Mode ---
 const _bg = Color(0xFF030508); // Vrai noir (fond)
