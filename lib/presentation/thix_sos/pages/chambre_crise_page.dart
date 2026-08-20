@@ -147,7 +147,6 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
 
     if (convId != null && convId.isNotEmpty) {
       try {
-        // CORRECTION ICI : Ajout de Supabase.instance.client
         await ChatService(Supabase.instance.client).sendMessage(
           conversationId: convId,
           content: text,
@@ -260,7 +259,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                         ),
                         const SizedBox(height: 8),
                         if (circleContacts.isEmpty)
-                          _EmptyBox(
+                          const _EmptyBox(
                             'Aucun secours dans ce cercle.\nAjoutez des contacts THIX.',
                           )
                         else
@@ -357,10 +356,10 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                             ),
                           ),
                           error: (_, __) =>
-                              _EmptyBox('Impossible de charger les événements'),
+                              const _EmptyBox('Impossible de charger les événements'),
                           data: (events) {
                             if (events.isEmpty) {
-                              return _EmptyBox('Aucun événement');
+                              return const _EmptyBox('Aucun événement');
                             }
                             return Column(
                               children: events
@@ -736,15 +735,6 @@ class _LiveMapCard extends StatelessWidget {
 
   String _fmt(DateTime d) {
     final l = d.toLocal();
-    return '${l.hour.toString().padLeft(2, '0')}:'
-        '${l.minute.toString().padLeft(2, '0')}:'
-        '${l.second.toString().padLeft(2, '0')}';
-  }
-}
-
-  String _fmt(DateTime d) {
-    final l = d.toLocal();
-    // Correction de l'interpolation ici
     return '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}:${l.second.toString().padLeft(2, '0')}';
   }
 }
@@ -963,7 +953,6 @@ class _EventTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = event.createdAt.toLocal();
-    // Correction de l'interpolation ici aussi !
     final time =
         '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
 
@@ -984,7 +973,7 @@ class _EventTile extends StatelessWidget {
             height: 8,
             margin: const EdgeInsets.only(top: 4, right: 10),
             decoration: const BoxDecoration(
-              color: Color(0xFFEF4444),
+              color: const Color(0xFFEF4444),
               shape: BoxShape.circle,
             ),
           ),
