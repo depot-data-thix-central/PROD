@@ -60,7 +60,8 @@ class RechercheService {
       return list;
     });
   }
-/// Mettre à jour une alerte (propriétaire)
+
+  /// Mettre à jour une alerte (propriétaire)
   Future<PersonneRecherchee?> updateAlerte({
     required String id,
     required Map<String, dynamic> data,
@@ -78,15 +79,6 @@ class RechercheService {
     return PersonneRecherchee.fromJson(Map<String, dynamic>.from(res));
   }
 
-  /// Marquer comme retrouvée
-  Future<void> marquerRetrouvee(String id) async {
-    await _client.from(_table).update({
-      'statut': StatutAlerte.retrouvee.name,
-      'is_active': false,
-      'updated_at': DateTime.now().toIso8601String(),
-    }).eq('id', id);
-  }
-
   /// Soft delete (archive)
   Future<void> archiverAlerte(String id) async {
     await _client.from(_table).update({
@@ -100,6 +92,7 @@ class RechercheService {
   Future<void> supprimerAlerte(String id) async {
     await _client.from(_table).delete().eq('id', id);
   }
+  
   Future<PersonneRecherchee?> getById(String id) async {
     try {
       final res =
@@ -113,19 +106,20 @@ class RechercheService {
   }
 
   Future<List<PersonneRecherchee>> getMesAlertes() async {
-  final userId = SupabaseConfig.currentUser?.id;
-  if (userId == null) return [];
+    final userId = SupabaseConfig.currentUser?.id;
+    if (userId == null) return [];
 
-  final res = await _client
-      .from(_table)
-      .select()
-      .eq('created_by', userId)
-      .order('created_at', ascending: false);
+    final res = await _client
+        .from(_table)
+        .select()
+        .eq('created_by', userId)
+        .order('created_at', ascending: false);
 
-  return (res as List)
-      .map((e) => PersonneRecherchee.fromJson(Map<String, dynamic>.from(e)))
-      .toList();
-}
+    return (res as List)
+        .map((e) => PersonneRecherchee.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
   /// Upload d'une seule photo
   Future<String?> uploadPhoto({
     required Uint8List bytes,
@@ -224,6 +218,7 @@ class RechercheService {
     }
   }
 
+  /// Marquer comme retrouvée (Unique méthode conservée avec gestion d'erreur)
   Future<void> marquerRetrouvee(String id) async {
     try {
       await _client.from(_table).update({
