@@ -1,4 +1,4 @@
-/// Pont SOS → THIX Call (Agora / rpc_start_call)
+/// Pont SOS → THIX Chat + Call (Agora / rpc_start_call) — production
 import 'package:flutter/foundation.dart';
 import 'package:thix_id/models/chat/call_status.dart';
 import 'package:thix_id/services/chat/call_signaling_service.dart';
@@ -16,7 +16,9 @@ class SosCallBridge {
   final SosService _sos;
   final CallSignalingService _signaling;
 
-  /// Après trigger SOS : chat + appels cercle 1
+  /// Protocole complet au déclenchement SOS :
+  /// 1) Chat groupe SOS
+  /// 2) Appels audio vers Cercle 1
   Future<SosActivationResult> activateProtocol(SosIncident incident) async {
     final contacts = await _sos.getContactsByCircle(1);
     final userIds = <String>[];
@@ -33,18 +35,55 @@ class SosCallBridge {
         publicId: incident.publicId,
         participantUserIds: userIds,
       );
+    } else {
+      debugPrint('SosCallBridge: aucun user_id cercle 1 — chat non créé');
     }
 
+    final calls = await callCircle(
+      incident: incident,
+      contacts: contacts,
+    );
+
+    return SosActivationResult(
+      incident: incident,
+      conversationId: conversationId,
+      calls: calls.calls,
+    );
+  }
+
+  /// Appelle tous les secours d'un cercle (1, 2 ou 3)
+  Future<SosActivationResult> callCircle({
+    required SosIncident incident,
+    required List<SosContact> contacts,
+  }) async {
     final callResults = <SosCallAttempt>[];
+
+    if (contacts.isEmpty) {
+      debugPrint(
+        'SosCallBridge.callCircle: aucun contact cercle ${incident.activeCircle}',
+      );
+      return SosActivationResult(
+        incident: incident,
+        conversationId: null,
+        calls: callResults,
+      );
+    }
 
     for (final c in contacts) {
       final calleeId = await _sos.resolveContactUserId(c);
-      if (calleeId == null) {
-        callResults.add(SosCallAttempt(
-          contactName: c.name,
-          success: false,
-          error: 'Pas de compte THIX lié',
-        ));
+      if (calleeId == null || calleeId.isEmpty) {
+        callResults.add(
+          SosCallAttempt(
+            contactName: c.name,
+            success: false,
+            error: 'Pas de compte THIX lié',
+          ),
+        );
+        await _sos.logEventPublic(incident.id, 'CALL_SKIPPED', {
+          'circle': incident.activeCircle,
+          'contact': c.name,
+          'reason': 'no_thix_user',
+        });
         continue;
       }
 
@@ -53,31 +92,51 @@ class SosCallBridge {
           calleeId: calleeId,
           type: CallType.audio,
         );
-        callResults.add(SosCallAttempt(
-          contactName: c.name,
-          success: true,
-          inviteId: invite.id,
-          channelName: invite.channelName,
-        ));
-        await _sos./* private log via public method if needed */ 
-            getEvents(incident.id); // no-op keep
-      } catch (e) {
-        debugPrint('SosCallBridge call ${c.name}: $e');
-        callResults.add(SosCallAttempt(
-          contactName: c.name,
-          success: false,
-          error: e.toString(),
-        ));
+
+        callResults.add(
+          SosCallAttempt(
+            contactName: c.name,
+            success: true,
+            inviteId: invite.id,
+            channelName: invite.channelName,
+          ),
+        );
+
+        await _sos.logEventPublic(incident.id, 'CALL_STARTED', {
+          'circle': incident.activeCircle,
+          'contact': c.name,
+          'contact_user_id': calleeId,
+          'invite_id': invite.id,
+          'channel': invite.channelName,
+        });
+      } catch (e, st) {
+        debugPrint('SosCallBridge.callCircle ${c.name}: $e\n$st');
+        callResults.add(
+          SosCallAttempt(
+            contactName: c.name,
+            success: false,
+            error: e.toString(),
+          ),
+        );
+        await _sos.logEventPublic(incident.id, 'CALL_FAILED', {
+          'circle': incident.activeCircle,
+          'contact': c.name,
+          'error': e.toString(),
+        });
       }
     }
 
     return SosActivationResult(
       incident: incident,
-      conversationId: conversationId,
+      conversationId: null,
       calls: callResults,
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────
+// Résultats
+// ─────────────────────────────────────────────────────────────
 
 class SosCallAttempt {
   final String contactName;
@@ -106,5 +165,10 @@ class SosActivationResult {
     required this.calls,
   });
 
-  int get answeredOrRinging => calls.where((c) => c.success).length;
+  int get ringingCount => calls.where((c) => c.success).length;
+
+  int get failedCount => calls.where((c) => !c.success).length;
+
+  /// Alias rétrocompat
+  int get answeredOrRinging => ringingCount;
 }
