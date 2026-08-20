@@ -184,6 +184,28 @@ class CallSignalingService {
     });
   }
 
+  Future<void> markMissed(String inviteId) async {
+    try {
+      await _db.rpc('rpc_miss_call', params: {'p_invite_id': inviteId});
+    } catch (_) {
+      // fallback si RPC absente
+      await _db.from('call_invites').update({
+        'status': 'missed',
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', inviteId);
+    }
+  }
+
+  Future<void> markOngoing(String inviteId) async {
+    try {
+      await _db.rpc('rpc_ongoing_call', params: {'p_invite_id': inviteId});
+    } catch (_) {
+      await _db.from('call_invites').update({
+        'status': 'ongoing',
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', inviteId);
+    }
+  }
   // ============================================================
   // REALTIME — incoming (callee)
   // ============================================================
