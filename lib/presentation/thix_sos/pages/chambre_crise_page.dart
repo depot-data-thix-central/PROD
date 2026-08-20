@@ -593,8 +593,7 @@ class _EventTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = event.createdAt;
     final time =
-        '\( {t.hour.toString().padLeft(2, '0')}: \){t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
-
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
