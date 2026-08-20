@@ -81,7 +81,7 @@ class SosCallBridge {
 
     // Marquer le statut incident (côté service si dispo)
     try {
-      await _sos.setCallingCircle(incident.id, circle);
+      await _sos.escalateToCircle(incident.id, circle);
     } catch (_) {}
 
     for (final c in contacts) {
