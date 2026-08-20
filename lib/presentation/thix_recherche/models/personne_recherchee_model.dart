@@ -4,15 +4,10 @@ enum TypeAlerte { disparue, recherchee }
 
 enum StatutAlerte { active, retrouvee, archivee }
 
-/// Catégories :
-/// - disparition → usage grand public
-/// - WANTED → autorités
 enum CategorieAlerte {
-  // Disparition
   disparitionInquietante,
   fugue,
   enlevement,
-  // WANTED
   homicide,
   volBraquage,
   escroquerie,
@@ -78,17 +73,16 @@ extension CategorieAlerteX on CategorieAlerte {
     }
   }
 
-  /// Catégories affichées selon le type d’alerte
   static List<CategorieAlerte> forType(TypeAlerte type) {
     if (type == TypeAlerte.disparue) {
-      return [
+      return const [
         CategorieAlerte.disparitionInquietante,
         CategorieAlerte.fugue,
         CategorieAlerte.enlevement,
         CategorieAlerte.autre,
       ];
     }
-    return [
+    return const [
       CategorieAlerte.homicide,
       CategorieAlerte.volBraquage,
       CategorieAlerte.escroquerie,
@@ -135,7 +129,7 @@ class PersonneRecherchee {
   final String nom;
   final String? prenom;
   final int? age;
-  final String? sexe; // F | M | X
+  final String? sexe;
   final double? tailleCm;
   final TypeAlerte typeAlerte;
   final StatutAlerte statut;
@@ -201,7 +195,6 @@ class PersonneRecherchee {
     return parts.join(' • ');
   }
 
-  /// Photo principale (galerie ou ancien champ)
   String? get displayPhotoUrl {
     if (photoUrls.isNotEmpty) return photoUrls.first;
     return photoUrl;
@@ -231,16 +224,19 @@ class PersonneRecherchee {
   }
 
   factory PersonneRecherchee.fromJson(Map<String, dynamic> json) {
-    final urls = (json['photo_urls'] as List?)
-            ?.map((e) => e.toString())
-            .where((e) => e.isNotEmpty)
-            .toList() ??
-        <String>[];
+    final rawUrls = json['photo_urls'];
+    final urls = <String>[];
+    if (rawUrls is List) {
+      for (final e in rawUrls) {
+        final s = e.toString();
+        if (s.isNotEmpty) urls.add(s);
+      }
+    }
 
     final single = json['photo_url'] as String?;
     final photoUrls = urls.isNotEmpty
         ? urls
-        : (single != null && single.isNotEmpty ? [single] : <String>[]);
+        : (single != null && single.isNotEmpty ? <String>[single] : <String>[]);
 
     return PersonneRecherchee(
       id: json['id'] as String,
@@ -276,25 +272,29 @@ class PersonneRecherchee {
     );
   }
 
-  Map<String, dynamic> toInsertJson() => {
-        'nom': nom.trim(),
-        'prenom': prenom?.trim(),
-        'age': age,
-        'sexe': sexe,
-        'taille_cm': tailleCm,
-        'type_alerte': typeAlerte.name,
-        'statut': statut.name,
-        'categorie': categorie?.dbValue,
-        'latitude': latitude,
-        'longitude': longitude,
-        'photo_urls': photoUrls,
-        'photo_url':
-            photoUrl ?? (photoUrls.isNotEmpty ? photoUrls.first : null),
-        'derniere_zone': derniereZone?.trim(),
-        'derniere_vue_at': derniereVueAt?.toIso8601String(),
-        'description': description?.trim(),
-        'contact_info': contactInfo?.trim(),
-        'created_by': createdBy,
-        'is_active': isActive,
-      };
+  Map<String, dynamic> toInsertJson() {
+    final mainPhoto =
+        photoUrl ?? (photoUrls.isNotEmpty ? photoUrls.first : null);
+
+    return <String, dynamic>{
+      'nom': nom.trim(),
+      'prenom': prenom?.trim(),
+      'age': age,
+      'sexe': sexe,
+      'taille_cm': tailleCm,
+      'type_alerte': typeAlerte.name,
+      'statut': statut.name,
+      'categorie': categorie?.dbValue,
+      'latitude': latitude,
+      'longitude': longitude,
+      'photo_urls': photoUrls,
+      'photo_url': mainPhoto,
+      'derniere_zone': derniereZone?.trim(),
+      'derniere_vue_at': derniereVueAt?.toIso8601String(),
+      'description': description?.trim(),
+      'contact_info': contactInfo?.trim(),
+      'created_by': createdBy,
+      'is_active': isActive,
+    };
+  }
 }
