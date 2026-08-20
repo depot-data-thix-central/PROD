@@ -38,20 +38,10 @@ class SosService {
     final n = 10000 + Random().nextInt(90000);
     return 'SOS #THX-$n';
   }
+
+  // Correction apportée ici : utilisation de _logEvent existant
   Future<void> logEventPublic(String incidentId, String eventType, Map<String, dynamic> metadata) async {
-    try {
-      await supabase // ou votre instance de client Supabase
-          .from('sos_events') // remplacez par le nom exact de votre table
-          .insert({
-        'incident_id': incidentId,
-        'event_type': eventType,
-        'metadata': metadata,
-        'created_at': DateTime.now().toIso8601String(),
-      });
-    } catch (e) {
-      debugPrint('Erreur logEventPublic : $e');
-      // On ne lance pas d'exception pour ne pas bloquer le processus d'urgence
-    }
+    await _logEvent(incidentId, eventType, metadata);
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -162,7 +152,7 @@ class SosService {
     }
   }
 
-/// Recherche un profil THIX par son THIX ID (interne, Supabase only)
+  /// Recherche un profil THIX par son THIX ID (interne, Supabase only)
   Future<Map<String, dynamic>?> lookupProfileByThixId(String thixId) async {
     final normalized = thixId.trim().toUpperCase();
     if (normalized.isEmpty) return null;
@@ -236,6 +226,7 @@ class SosService {
       throw SosServiceException('Impossible d\'ajouter le secours', e);
     }
   }
+
   /// Résout le user_id d'un contact (colonne ou lookup thix_id)
   Future<String?> resolveContactUserId(SosContact c) async {
     // Si tu stockes contact_user_id dans le JSON / modèle, utilise-le.
@@ -312,14 +303,13 @@ class SosService {
     }
   }
 
+  // Correction apportée ici : syntaxe d'interpolation standard Dart
   String _generateUuid() {
-    // Si tu as le package uuid :
-    // return const Uuid().v4();
-    // Fallback simple :
     final r = Random();
     String h() => r.nextInt(0x10000).toRadixString(16).padLeft(4, '0');
-    return '\( {h()} \){h()}-\( {h()}- \){h()}-\( {h()}- \){h()}\( {h()} \){h()}';
+    return '${h()}${h()}-${h()}-${h()}-${h()}-${h()}${h()}${h()}';
   }
+
   // ═══════════════════════════════════════════════════════════
   // INCIDENTS
   // ═══════════════════════════════════════════════════════════
