@@ -97,34 +97,40 @@ class SosEscalationController {
     if (next > 3) return;
 
     try {
-      // Vérifier que l'incident est encore actif
       final incident = await _sos.getIncidentById(_incidentId!);
       if (incident == null || !incident.isActive) {
         stop();
         return;
       }
 
-      // TODO: si tu as un flag "taken_over" côté serveur, le lire ici
-      // if (incident.status == SosStatus.takenOver) { markTakenOver(); return; }
+      // Prise en charge serveur
+      if (incident.status == SosStatus.takenOver) {
+        markTakenOver();
+        return;
+      }
 
       _currentCircle = next;
       await _sos.escalateToCircle(_incidentId!, next);
       onEvent?.call('Escalade → Cercle $next');
 
-      // Appels THIX vers le nouveau cercle
       final contacts = await _sos.getContactsByCircle(next);
+
+      final incidentForCall = incident.copyWith(
+        status: next == 2
+            ? SosStatus.callingCircle2
+            : SosStatus.callingCircle3,
+        activeCircle: next,
+      );
+
       final result = await _bridge.callCircle(
-        incident: incident.copyWith(
-          status: next == 2
-              ? SosStatus.callingCircle2
-              : SosStatus.callingCircle3,
-          activeCircle: next,
-        ),
+        incident: incidentForCall,
+        circle: next, // ← requis par SosCallBridge
         contacts: contacts,
       );
 
       debugPrint(
-        'Escalade cercle $next: \( {result.answeredOrRinging}/ \){result.calls.length} appels',
+        'Escalade cercle $next: '
+        '\( {result.answeredOrRinging}/ \){result.calls.length} appels',
       );
 
       onEvent?.call(
@@ -135,7 +141,6 @@ class SosEscalationController {
     } catch (e, st) {
       debugPrint('SosEscalationController._escalate: $e\n$st');
       onEvent?.call('Erreur escalade: $e');
-      // On tente quand même le cercle suivant plus tard
       _scheduleNext();
     }
   }
