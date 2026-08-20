@@ -229,14 +229,26 @@ static const String certification = '/certification';
       '/thix-reservation/delivery/admin/shipments';
   static const String deliveryAdminScan = '/thix-reservation/delivery/admin/scan';
   
-  // THIX RETROUVE
-  static const String thixRetrouve = '/thix-retrouve';
-  static const String thixRetrouveDetail = '/thix-retrouve/detail';
-  static const String thixRetrouveMesRecherches = '/thix-retrouve/mes-recherches';
-  static const String thixRetrouveCarte = '/thix-retrouve/carte';
-  static const String thixRetrouveDeclarerPerdu = '/thix-retrouve/declarer-perdu';
-  static const String thixRetrouveDeclarerTrouve = '/thix-retrouve/declarer-trouve';
-  static const String thixRetrouveAiMatch = '/thix-retrouve/ai-match';
+  // ── THIX SOS + RETROUVE ──────────────────────────────────────
+static const String homeSwipe = '/home-swipe';
+static const String thixSos = '/thix-sos';
+static const String thixRetrouve = '/thix-retrouve';
+
+// RETROUVE sous-routes
+static const String thixRetrouveDetail = '/thix-retrouve/detail';
+static const String thixRetrouveMesRecherches = '/thix-retrouve/mes-recherches';
+static const String thixRetrouveCarte = '/thix-retrouve/carte';
+static const String thixRetrouveDeclarerPerdu = '/thix-retrouve/declarer-perdu';
+static const String thixRetrouveDeclarerTrouve = '/thix-retrouve/declarer-trouve';
+static const String thixRetrouveAiMatch = '/thix-retrouve/ai-match';
+
+// SOS sous-routes
+static const String thixSosActif = '/thix-sos/actif';
+static const String thixSosChambre = '/thix-sos/chambre';
+static const String thixSosPin = '/thix-sos/pin';
+static const String thixSosSecours = '/thix-sos/secours';
+static const String thixSosAjouterSecours = '/thix-sos/secours/ajouter';
+static const String thixSosIncidents = '/thix-sos/incidents';
 
   static const String call = '/call';
   static const String callIncoming = '/call/incoming';
