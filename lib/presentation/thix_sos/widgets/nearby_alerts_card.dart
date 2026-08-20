@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:thix_id/presentation/thix_sos/providers/sos_providers.dart';
 
 import 'package:thix_id/presentation/thix_recherche/models/personne_recherchee_model.dart';
 import 'package:thix_id/presentation/thix_recherche/providers/recherche_providers.dart';
