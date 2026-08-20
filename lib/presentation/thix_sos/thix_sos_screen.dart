@@ -152,7 +152,7 @@ class ThixSosScreen extends ConsumerWidget {
                       // --- NOUVEAU : Alertes à proximité (Carte) ---
                       _SectionLabel('ALERTES À PROXIMITÉ', actionText: 'Voir sur la carte', onAction: () => _soon(context, 'Carte')),
                       const SizedBox(height: 12),
-                      const NearbyAlertsCard(), // Le widget demandé inséré ici
+                      NearbyAlertsCard(), // Le widget demandé inséré ici
                       const SizedBox(height: 28),
 
                       // --- NOUVEAU : Actions Rapides (Scroll Horizontal) ---
