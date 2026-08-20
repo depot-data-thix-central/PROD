@@ -1,4 +1,53 @@
 /// THIX RECHERCHE — Modèle production
+
+enum CategorieAlerte {
+  disparitionInquietante,
+  fugue,
+  enlevement,
+  autre,
+}
+
+extension CategorieAlerteX on CategorieAlerte {
+  String get dbValue {
+    switch (this) {
+      case CategorieAlerte.disparitionInquietante:
+        return 'disparition_inquietante';
+      case CategorieAlerte.fugue:
+        return 'fugue';
+      case CategorieAlerte.enlevement:
+        return 'enlevement';
+      case CategorieAlerte.autre:
+        return 'autre';
+    }
+  }
+
+  String get labelFr {
+    switch (this) {
+      case CategorieAlerte.disparitionInquietante:
+        return 'Disparition inquiétante';
+      case CategorieAlerte.fugue:
+        return 'Fugue';
+      case CategorieAlerte.enlevement:
+        return 'Enlèvement';
+      case CategorieAlerte.autre:
+        return 'Autre';
+    }
+  }
+
+  static CategorieAlerte fromDb(String? v) {
+    switch (v) {
+      case 'fugue':
+        return CategorieAlerte.fugue;
+      case 'enlevement':
+        return CategorieAlerte.enlevement;
+      case 'autre':
+        return CategorieAlerte.autre;
+      default:
+        return CategorieAlerte.disparitionInquietante;
+    }
+  }
+}
+
 enum TypeAlerte { disparue, recherchee }
 
 enum StatutAlerte { active, retrouvee, archivee }
@@ -12,7 +61,15 @@ class PersonneRecherchee {
   final double? tailleCm;
   final TypeAlerte typeAlerte;
   final StatutAlerte statut;
-  final String? photoUrl;
+  
+  // --- Nouveaux champs ---
+  final CategorieAlerte? categorie;
+  final double? latitude;
+  final double? longitude;
+  final List<String> photoUrls; // 0..3
+  // -----------------------
+  
+  final String? photoUrl; // Conservé pour rétrocompatibilité
   final String? derniereZone;
   final DateTime? derniereVueAt;
   final String? description;
@@ -31,6 +88,10 @@ class PersonneRecherchee {
     this.tailleCm,
     required this.typeAlerte,
     required this.statut,
+    this.categorie,
+    this.latitude,
+    this.longitude,
+    this.photoUrls = const [],
     this.photoUrl,
     this.derniereZone,
     this.derniereVueAt,
@@ -74,7 +135,6 @@ class PersonneRecherchee {
     if (date == null) return 'Dernière vue : $derniereZone';
     
     final l = date.toLocal();
-    // CORRECTION ICI : Remplacement de \( ... \) par l'interpolation Dart standard ${...}
     final d = '${l.day.toString().padLeft(2, '0')}/${l.month.toString().padLeft(2, '0')}/${l.year}';
     final h = '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
     
@@ -105,6 +165,17 @@ class PersonneRecherchee {
         (e) => e.name == json['statut'],
         orElse: () => StatutAlerte.active,
       ),
+      
+      // --- Parsing des nouveaux champs ---
+      categorie: CategorieAlerteX.fromDb(json['categorie'] as String?),
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
+      photoUrls: (json['photo_urls'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          (json['photo_url'] != null ? [json['photo_url'] as String] : []),
+      // -----------------------------------
+      
       photoUrl: json['photo_url'] as String?,
       derniereZone: json['derniere_zone'] as String?,
       derniereVueAt: DateTime.tryParse(json['derniere_vue_at'] as String? ?? ''),
@@ -127,7 +198,16 @@ class PersonneRecherchee {
         'taille_cm': tailleCm,
         'type_alerte': typeAlerte.name,
         'statut': statut.name,
-        'photo_url': photoUrl,
+        
+        // --- Ajout à l'insertion ---
+        'categorie': categorie?.dbValue,
+        'latitude': latitude,
+        'longitude': longitude,
+        'photo_urls': photoUrls,
+        // ---------------------------
+        
+        // On s'assure que Supabase reçoit au moins la première image dans l'ancienne colonne si elle existe
+        'photo_url': photoUrl ?? (photoUrls.isNotEmpty ? photoUrls.first : null), 
         'derniere_zone': derniereZone?.trim(),
         'derniere_vue_at': derniereVueAt?.toIso8601String(),
         'description': description?.trim(),
