@@ -12,6 +12,7 @@ import 'package:thix_id/services/chat/chat_service.dart';
 import '../models/sos_models.dart';
 import '../providers/sos_providers.dart';
 import 'sos_pin_page.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ChambreCrisePage extends ConsumerStatefulWidget {
   const ChambreCrisePage({
@@ -131,7 +132,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
     // context.push('/call', extra: {'userId': userId, 'name': contact.name});
   }
 
-  Future<void> _sendQuickMessage(SosIncident incident, String text) async {
+    Future<void> _sendQuickMessage(SosIncident incident, String text) async {
     if (_sentQuick.contains(text)) return;
     setState(() => _sentQuick.add(text));
 
@@ -145,7 +146,8 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
 
     if (convId != null && convId.isNotEmpty) {
       try {
-        await ChatService().sendMessage(
+        // CORRECTION ICI : Ajout de Supabase.instance.client
+        await ChatService(Supabase.instance.client).sendMessage(
           conversationId: convId,
           content: text,
         );
@@ -163,6 +165,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
       ),
     );
   }
+
 
   void _endSos() {
     Navigator.push(
