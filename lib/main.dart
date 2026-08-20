@@ -16,6 +16,7 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/services/local_notification_service.dart';
 import 'package:thix_id/services/push_notification_service.dart';
 import 'package:thix_id/presentation/chat/call/global_call_listener.dart';
+import 'package:thix_id/presentation/common/global_notification_listener.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -171,11 +172,16 @@ class _MyAppState extends ConsumerState<MyApp> {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        // ← écoute globale des appels entrants
+        // ← écoute globale des appels entrants + des notifications
+        // (le pop local se déclenche même si l'utilisateur n'a jamais
+        // ouvert le panneau de notifications, tant que ce listener
+        // reste monté au-dessus du Navigator).
         builder: (context, child) {
-          return GlobalCallListener(
-            navigatorKey: rootNavigatorKey,
-            child: child ?? const SizedBox.shrink(),
+          return GlobalNotificationListener(
+            child: GlobalCallListener(
+              navigatorKey: rootNavigatorKey,
+              child: child ?? const SizedBox.shrink(),
+            ),
           );
         },
       ),
