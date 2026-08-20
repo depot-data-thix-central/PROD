@@ -1,18 +1,24 @@
-/// THIX SOS — Chambre de crise (vue victime) — production
+/// THIX SOS — Chambre de crise (victime) — production complète
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:go_router/go_router.dart';
 
 import '../models/sos_models.dart';
 import '../providers/sos_providers.dart';
 import 'sos_pin_page.dart';
 
 class ChambreCrisePage extends ConsumerStatefulWidget {
-  const ChambreCrisePage({super.key, required this.incidentId});
+  const ChambreCrisePage({
+    super.key,
+    required this.incidentId,
+    this.conversationId,
+  });
 
   final String incidentId;
+  final String? conversationId;
 
   @override
   ConsumerState<ChambreCrisePage> createState() => _ChambreCrisePageState();
@@ -21,17 +27,43 @@ class ChambreCrisePage extends ConsumerStatefulWidget {
 class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
   Timer? _uiTimer;
   Duration _elapsed = Duration.zero;
+  String? _resolvedConversationId;
+
+  // Messages rapides déjà envoyés (évite spam UI)
+  final Set<String> _sentQuick = {};
 
   @override
   void initState() {
     super.initState();
+    _resolvedConversationId = widget.conversationId;
+
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       final incident =
           ref.read(sosIncidentProvider(widget.incidentId)).valueOrNull;
       if (incident != null && mounted) {
-        setState(() => _elapsed = DateTime.now().difference(incident.startedAt));
+        var d = DateTime.now().difference(incident.startedAt.toLocal());
+        if (d.isNegative) d = Duration.zero;
+        setState(() => _elapsed = d);
       }
     });
+
+    // Heartbeat
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref
+          .read(sosHeartbeatControllerProvider.notifier)
+          .start(widget.incidentId);
+      _loadConversationId();
+    });
+  }
+
+  Future<void> _loadConversationId() async {
+    if (_resolvedConversationId != null) return;
+    try {
+      final incident =
+          await ref.read(sosServiceProvider).getIncidentById(widget.incidentId);
+      // si colonne chat_conversation_id exposée plus tard sur le modèle
+      // _resolvedConversationId = incident?.chatConversationId;
+    } catch (_) {}
   }
 
   @override
@@ -45,6 +77,98 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
     final m = (_elapsed.inMinutes % 60).toString().padLeft(2, '0');
     final s = (_elapsed.inSeconds % 60).toString().padLeft(2, '0');
     return '$h:$m:$s';
+  }
+
+  Future<void> _openChat() async {
+    final id = _resolvedConversationId;
+    if (id == null || id.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Conversation SOS pas encore disponible'),
+          backgroundColor: Color(0xFF16161F),
+        ),
+      );
+      return;
+    }
+    // Adapte la route à ton chat existant
+    try {
+      context.push('/chat/$id');
+    } catch (_) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Ouvrir chat: $id'),
+          backgroundColor: const Color(0xFF16161F),
+        ),
+      );
+    }
+  }
+
+  Future<void> _callContact(SosContact contact) async {
+    final userId =
+        await ref.read(sosServiceProvider).resolveContactUserId(contact);
+    if (userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${contact.name} : pas de compte THIX'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    // Branche sur ton CallProvider si exposé globalement
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Appel THIX vers ${contact.name}…'),
+        backgroundColor: const Color(0xFF16161F),
+      ),
+    );
+    // Exemple si tu as une route :
+    // context.push('/call', extra: {'userId': userId, 'name': contact.name});
+  }
+
+  Future<void> _sendQuickMessage(String text) async {
+    if (_sentQuick.contains(text)) return;
+    setState(() => _sentQuick.add(text));
+
+    await ref.read(sosServiceProvider).logEventPublic(
+      widget.incidentId,
+      'QUICK_MESSAGE',
+      {'text': text},
+    );
+
+    // TODO: aussi insert dans messages du chat SOS si conversationId connu
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        backgroundColor: const Color(0xFF16161F),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _endSos() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SosPinPage(
+          incidentId: widget.incidentId,
+          mode: SosPinMode.resolve,
+        ),
+      ),
+    );
+  }
+
+  void _cancelSos() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SosPinPage(
+          incidentId: widget.incidentId,
+          mode: SosPinMode.cancel,
+        ),
+      ),
+    );
   }
 
   @override
@@ -73,131 +197,215 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
               );
             }
 
-            final contacts = contactsAsync.valueOrNull ?? [];
+            final circleContacts = contactsAsync.maybeWhen(
+              data: (all) =>
+                  all.where((c) => c.circle == incident.activeCircle).toList(),
+              orElse: () => <SosContact>[],
+            );
 
             return Column(
               children: [
                 _Header(
                   publicId: incident.publicId,
                   elapsed: _elapsedLabel,
+                  status: incident.status,
                   onBack: () => Navigator.pop(context),
-                  onEnd: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => SosPinPage(
-                          incidentId: incident.id,
-                          mode: SosPinMode.resolve,
-                        ),
-                      ),
-                    );
-                  },
+                  onEnd: _endSos,
                 ),
                 Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-                    children: [
-                      // Statut
-                      _StatusRow(incident: incident),
-                      const SizedBox(height: 16),
+                  child: RefreshIndicator(
+                    color: const Color(0xFFEF4444),
+                    backgroundColor: const Color(0xFF16161F),
+                    onRefresh: () async {
+                      ref.invalidate(sosIncidentProvider(widget.incidentId));
+                      ref.invalidate(sosEventsProvider(widget.incidentId));
+                      ref.invalidate(sosContactsProvider);
+                    },
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                      children: [
+                        // Zone statut
+                        _StatusStrip(incident: incident),
+                        const SizedBox(height: 16),
 
-                      // Carte live
-                      _section('LOCALISATION EN DIRECT'),
-                      const SizedBox(height: 8),
-                      _LiveMapCard(incident: incident),
-                      const SizedBox(height: 20),
+                        // Carte live
+                        _section('LOCALISATION EN DIRECT'),
+                        const SizedBox(height: 8),
+                        _LiveMapCard(incident: incident),
+                        const SizedBox(height: 20),
 
-                      // Secours connectés
-                      _section('SECOURS — CERCLE ${incident.activeCircle}'),
-                      const SizedBox(height: 8),
-                      if (contacts.where((c) => c.circle == incident.activeCircle).isEmpty)
-                        _EmptyBox('Aucun secours dans ce cercle')
-                      else
-                        ...contacts
-                            .where((c) => c.circle == incident.activeCircle)
-                            .map((c) => _ResponderTile(contact: c)),
-
-                      const SizedBox(height: 20),
-
-                      // Actions com
-                      _section('COMMUNICATION'),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _ComButton(
-                              icon: Icons.chat_bubble_outline,
-                              label: 'Chat SOS',
-                              color: const Color(0xFFA78BFA),
-                              onTap: () {},
+                        // Secours cercle actif
+                        _section(
+                          'SECOURS — CERCLE ${incident.activeCircle}',
+                        ),
+                        const SizedBox(height: 8),
+                        if (circleContacts.isEmpty)
+                          _EmptyBox(
+                            'Aucun secours dans ce cercle.\nAjoutez des contacts THIX.',
+                          )
+                        else
+                          ...circleContacts.map(
+                            (c) => _ResponderTile(
+                              contact: c,
+                              onCall: () => _callContact(c),
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _ComButton(
-                              icon: Icons.phone_in_talk,
-                              label: 'Appel',
-                              color: const Color(0xFF34D399),
-                              onTap: () {},
+                        const SizedBox(height: 20),
+
+                        // Communication
+                        _section('COMMUNICATION'),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _ComButton(
+                                icon: Icons.chat_bubble_outline,
+                                label: 'Chat SOS',
+                                color: const Color(0xFFA78BFA),
+                                onTap: _openChat,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _ComButton(
+                                icon: Icons.phone_in_talk,
+                                label: 'Rappeler',
+                                color: const Color(0xFF34D399),
+                                onTap: () {
+                                  if (circleContacts.isNotEmpty) {
+                                    _callContact(circleContacts.first);
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _ComButton(
+                                icon: Icons.videocam_outlined,
+                                label: 'Vidéo',
+                                color: const Color(0xFF60A5FA),
+                                onTap: () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Appel vidéo — bientôt',
+                                      ),
+                                      backgroundColor: Color(0xFF16161F),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Messages rapides victime
+                        _section('MESSAGES RAPIDES'),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final msg in _quickMessages)
+                              _QuickMsg(
+                                label: msg,
+                                sent: _sentQuick.contains(msg),
+                                onTap: () => _sendQuickMessage(msg),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Heartbeat / batterie
+                        _section('ÉTAT SYSTÈME'),
+                        const SizedBox(height: 8),
+                        _SystemRow(incident: incident),
+                        const SizedBox(height: 20),
+
+                        // Timeline
+                        _section('ÉVÉNEMENTS'),
+                        const SizedBox(height: 8),
+                        eventsAsync.when(
+                          loading: () => const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                color: Color(0xFFEF4444),
+                                strokeWidth: 2,
+                              ),
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _ComButton(
-                              icon: Icons.videocam_outlined,
-                              label: 'Vidéo',
-                              color: const Color(0xFF60A5FA),
-                              onTap: () {},
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
+                          error: (_, __) =>
+                              _EmptyBox('Impossible de charger les événements'),
+                          data: (events) {
+                            if (events.isEmpty) {
+                              return _EmptyBox('Aucun événement');
+                            }
+                            return Column(
+                              children: events
+                                  .take(30)
+                                  .map((e) => _EventTile(event: e))
+                                  .toList(),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 24),
 
-                      // Messages rapides
-                      _section('MESSAGES RAPIDES'),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: const [
-                          _QuickMsg('🚨 J\'AI BESOIN D\'AIDE'),
-                          _QuickMsg('🤫 JE NE PEUX PAS PARLER'),
-                          _QuickMsg('📍 JE SUIS ICI'),
-                          _QuickMsg('🏥 JE SUIS BLESSÉ'),
-                          _QuickMsg('👤 JE SUIS SUIVI'),
-                          _QuickMsg('🟢 JE VAIS BIEN'),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Timeline events
-                      _section('ÉVÉNEMENTS'),
-                      const SizedBox(height: 8),
-                      eventsAsync.when(
-                        loading: () => const Padding(
-                          padding: EdgeInsets.all(16),
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              color: Color(0xFFEF4444),
-                              strokeWidth: 2,
+                        // Annuler
+                        Material(
+                          color: const Color(0xFF16161F),
+                          borderRadius: BorderRadius.circular(14),
+                          child: InkWell(
+                            onTap: _cancelSos,
+                            borderRadius: BorderRadius.circular(14),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(0xFFEF4444)
+                                      .withOpacity(0.35),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.lock_outline,
+                                    color: Color(0xFFEF4444),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'ANNULER LE SOS',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFFEF4444),
+                                          ),
+                                        ),
+                                        Text(
+                                          'Code de sécurité requis',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12,
+                                            color: Colors.white38,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                        error: (_, __) => _EmptyBox('Impossible de charger les événements'),
-                        data: (events) {
-                          if (events.isEmpty) {
-                            return _EmptyBox('Aucun événement');
-                          }
-                          return Column(
-                            children: events
-                                .take(20)
-                                .map((e) => _EventTile(event: e))
-                                .toList(),
-                          );
-                        },
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -207,6 +415,17 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
       ),
     );
   }
+
+  static const _quickMessages = [
+    '🚨 J\'AI BESOIN D\'AIDE',
+    '🤫 JE NE PEUX PAS PARLER',
+    '📍 JE SUIS ICI',
+    '🏥 JE SUIS BLESSÉ',
+    '👤 JE SUIS SUIVI',
+    '🚪 JE SUIS ENFERMÉ',
+    '📞 APPELEZ LES SECOURS',
+    '🟢 JE VAIS BIEN',
+  ];
 
   Widget _section(String title) {
     return Text(
@@ -221,18 +440,22 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
   }
 }
 
-// ── Header ────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// Widgets
+// ═══════════════════════════════════════════════════════════════
 
 class _Header extends StatelessWidget {
   const _Header({
     required this.publicId,
     required this.elapsed,
+    required this.status,
     required this.onBack,
     required this.onEnd,
   });
 
   final String publicId;
   final String elapsed;
+  final SosStatus status;
   final VoidCallback onBack;
   final VoidCallback onEnd;
 
@@ -240,7 +463,7 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(4, 4, 12, 14),
+      padding: const EdgeInsets.fromLTRB(4, 4, 8, 14),
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [Color(0xFF7F1D1D), Color(0xFF450A0A)],
@@ -305,64 +528,70 @@ class _Header extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 6),
+          Text(
+            status.labelFr.toUpperCase(),
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFFFECACA),
+              letterSpacing: 0.5,
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _StatusRow extends StatelessWidget {
-  const _StatusRow({required this.incident});
+class _StatusStrip extends StatelessWidget {
+  const _StatusStrip({required this.incident});
   final SosIncident incident;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFF16161F),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEF4444).withOpacity(0.2),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              '🔴 ${incident.status.labelFr.toUpperCase()}',
+    return Row(
+      children: [
+        _chip(
+          Icons.location_on,
+          'Localisation',
+          incident.hasLocation ? 'ACTIVE' : 'EN ATTENTE',
+          incident.hasLocation,
+        ),
+        const SizedBox(width: 8),
+        _chip(Icons.favorite, 'Heartbeat', 'ACTIVE', true),
+        const SizedBox(width: 8),
+        _chip(Icons.cloud_done, 'Cloud', 'ACTIVE', true),
+      ],
+    );
+  }
+
+  Widget _chip(IconData icon, String label, String value, bool on) {
+    final color = on ? const Color(0xFF34D399) : Colors.white38;
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFF16161F),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white10),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(height: 4),
+            Text(label,
+                style: GoogleFonts.inter(fontSize: 10, color: Colors.white38)),
+            Text(
+              value,
               style: GoogleFonts.inter(
-                fontSize: 11,
+                fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: const Color(0xFFFECACA),
+                color: color,
               ),
             ),
-          ),
-          const Spacer(),
-          if (incident.batteryPct != null)
-            Row(
-              children: [
-                Icon(
-                  Icons.battery_std,
-                  size: 16,
-                  color: incident.batteryPct! < 20
-                      ? const Color(0xFFEF4444)
-                      : const Color(0xFF34D399),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '${incident.batteryPct}%',
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: Colors.white70,
-                  ),
-                ),
-              ],
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -393,7 +622,8 @@ class _LiveMapCard extends StatelessWidget {
               top: 12,
               right: 12,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
                   color: Colors.black54,
                   borderRadius: BorderRadius.circular(8),
@@ -418,7 +648,7 @@ class _LiveMapCard extends StatelessWidget {
                     ),
                     if (incident.lastLocationAt != null)
                       Text(
-                        'MAJ ${_fmtTime(incident.lastLocationAt!)}',
+                        'MAJ ${_fmt(incident.lastLocationAt!)}',
                         style: GoogleFonts.inter(
                           fontSize: 10,
                           color: Colors.white38,
@@ -433,13 +663,16 @@ class _LiveMapCard extends StatelessWidget {
     );
   }
 
-  String _fmtTime(DateTime d) =>
-      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}:${d.second.toString().padLeft(2, '0')}';
+  String _fmt(DateTime d) {
+    final l = d.toLocal();
+    return '\( {l.hour.toString().padLeft(2, '0')}: \){l.minute.toString().padLeft(2, '0')}:${l.second.toString().padLeft(2, '0')}';
+  }
 }
 
 class _ResponderTile extends StatelessWidget {
-  const _ResponderTile({required this.contact});
+  const _ResponderTile({required this.contact, required this.onCall});
   final SosContact contact;
+  final VoidCallback onCall;
 
   @override
   Widget build(BuildContext context) {
@@ -460,7 +693,9 @@ class _ResponderTile extends StatelessWidget {
                 contact.photoUrl != null ? NetworkImage(contact.photoUrl!) : null,
             child: contact.photoUrl == null
                 ? Text(
-                    contact.name.isNotEmpty ? contact.name[0].toUpperCase() : '?',
+                    contact.name.isNotEmpty
+                        ? contact.name[0].toUpperCase()
+                        : '?',
                     style: const TextStyle(color: Colors.white, fontSize: 13),
                   )
                 : null,
@@ -479,18 +714,20 @@ class _ResponderTile extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  contact.available ? 'Disponible' : 'Indisponible',
+                  contact.thixId ??
+                      (contact.available ? 'Disponible' : 'Indisponible'),
                   style: GoogleFonts.inter(
                     fontSize: 12,
-                    color: contact.available
-                        ? const Color(0xFF34D399)
-                        : Colors.white38,
+                    color: const Color(0xFF34D399),
                   ),
                 ),
               ],
             ),
           ),
-          const Icon(Icons.phone, color: Color(0xFF34D399), size: 20),
+          IconButton(
+            onPressed: onCall,
+            icon: const Icon(Icons.phone, color: Color(0xFF34D399)),
+          ),
         ],
       ),
     );
@@ -545,41 +782,95 @@ class _ComButton extends StatelessWidget {
 }
 
 class _QuickMsg extends StatelessWidget {
-  const _QuickMsg(this.label);
+  const _QuickMsg({
+    required this.label,
+    required this.onTap,
+    this.sent = false,
+  });
+
   final String label;
+  final VoidCallback onTap;
+  final bool sent;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFF16161F),
+      color: sent
+          ? const Color(0xFF14532D).withOpacity(0.5)
+          : const Color(0xFF16161F),
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
-        onTap: () {
-          // TODO: envoyer message SOS chat
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(label),
-              backgroundColor: const Color(0xFF16161F),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        },
+        onTap: sent ? null : onTap,
         borderRadius: BorderRadius.circular(20),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white12),
+            border: Border.all(
+              color: sent
+                  ? const Color(0xFF34D399).withOpacity(0.4)
+                  : Colors.white12,
+            ),
           ),
           child: Text(
             label,
             style: GoogleFonts.inter(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: Colors.white70,
+              color: sent ? const Color(0xFF34D399) : Colors.white70,
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SystemRow extends StatelessWidget {
+  const _SystemRow({required this.incident});
+  final SosIncident incident;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF16161F),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.favorite, color: Color(0xFFEF4444), size: 18),
+          const SizedBox(width: 8),
+          Text(
+            'HEARTBEAT',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Colors.white70,
+            ),
+          ),
+          const Spacer(),
+          if (incident.batteryPct != null) ...[
+            Icon(
+              Icons.battery_std,
+              size: 16,
+              color: incident.batteryPct! < 20
+                  ? const Color(0xFFEF4444)
+                  : const Color(0xFF34D399),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '${incident.batteryPct}%',
+              style: GoogleFonts.inter(fontSize: 12, color: Colors.white70),
+            ),
+          ] else
+            Text(
+              'Cercle ${incident.activeCircle}',
+              style: GoogleFonts.inter(fontSize: 12, color: Colors.white54),
+            ),
+        ],
       ),
     );
   }
@@ -591,9 +882,10 @@ class _EventTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = event.createdAt;
+    final t = event.createdAt.toLocal();
     final time =
-        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
+        '\( {t.hour.toString().padLeft(2, '0')}: \){t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -647,7 +939,11 @@ class _EmptyBox extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: GoogleFonts.inter(fontSize: 13, color: Colors.white38),
+        style: GoogleFonts.inter(
+          fontSize: 13,
+          color: Colors.white38,
+          height: 1.35,
+        ),
       ),
     );
   }
