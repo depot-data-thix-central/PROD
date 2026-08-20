@@ -264,15 +264,14 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   }
 
   Future<void> _openEmergency() async {
-    final auth = context.read<AuthController>();
-    if (auth.isAuthenticated) {
-      context.push('/thix-retrouve');
-      return;
-    }
-    if (!mounted) return;
-    context.push(AppRoutes.login);
+  final auth = context.read<AuthController>();
+  if (auth.isAuthenticated) {
+    context.push('/home-swipe'); // sélecteur SOS ↔ RETROUVE
+    return;
   }
-
+  if (!mounted) return;
+  context.push(AppRoutes.login);
+}
   void _openDocumentVault() {
     final auth = context.read<AuthController>();
     if (auth.isAuthenticated) {
@@ -316,39 +315,91 @@ class _HomePagePremiumState extends State<HomePagePremium> {
       final counters = NotificationCountersService();
       ThixSection? section;
       switch (serviceKey) {
-        case 'thixMedia': section = ThixSection.media; break;
-        case 'thixMarket': section = ThixSection.market; break;
-        case 'formations': section = ThixSection.formations; break;
-        case 'emplois': section = ThixSection.jobs; break;
-        case 'thixInfo': section = ThixSection.info; break;
-        case 'opportunites': section = ThixSection.opportunities; break;
-        case 'evenements': section = ThixSection.events; break;
-        case 'reseauPro': section = ThixSection.network; break;
-        case 'thixSante': section = ThixSection.health; break;
-        case 'thixMoney': section = ThixSection.money; break;
-        case 'monPays': section = ThixSection.monPays; break;
-        case 'reservation': section = ThixSection.reservation; break;
+        case 'thixMedia':
+          section = ThixSection.media;
+          break;
+        case 'thixMarket':
+          section = ThixSection.market;
+          break;
+        case 'formations':
+          section = ThixSection.formations;
+          break;
+        case 'emplois':
+          section = ThixSection.jobs;
+          break;
+        case 'thixInfo':
+          section = ThixSection.info;
+          break;
+        case 'opportunites':
+          section = ThixSection.opportunities;
+          break;
+        case 'evenements':
+          section = ThixSection.events;
+          break;
+        case 'reseauPro':
+          section = ThixSection.network;
+          break;
+        case 'thixSante':
+          section = ThixSection.health;
+          break;
+        case 'thixMoney':
+          section = ThixSection.money;
+          break;
+        case 'monPays':
+          section = ThixSection.monPays;
+          break;
+        case 'reservation':
+          section = ThixSection.reservation;
+          break;
       }
       if (section != null) {
         counters.markSectionSeen(uid: uid, section: section);
       }
     }
-    
+
     switch (serviceKey) {
-      case 'thixMedia': context.push(AppRoutes.thixMedia); break;
-      case 'thixMarket': context.push(AppRoutes.thixMarket); break;
-      case 'formations': context.push(AppRoutes.trainingHome); break;
-      case 'emplois': context.push(AppRoutes.jobs); break;
-      case 'thixInfo': context.push(AppRoutes.thixInfo); break;
-      case 'opportunites': context.push(AppRoutes.opportunities); break;
-      case 'evenements': context.push('/thix-event'); break;
-      case 'reseauPro': context.go(AppRoutes.network); break;
-      case 'thixSante': context.push(AppRoutes.thixSante); break;
-      case 'thixMoney': context.push(AppRoutes.thixMoney); break;
-      case 'monPays': context.push(AppRoutes.monPays); break;
-      case 'reservation': context.push(AppRoutes.reservation); break;
-      case 'thixRetrouve': context.push(AppRoutes.thixRetrouve); break;
-      default: break;
+      case 'thixMedia':
+        context.push(AppRoutes.thixMedia);
+        break;
+      case 'thixMarket':
+        context.push(AppRoutes.thixMarket);
+        break;
+      case 'formations':
+        context.push(AppRoutes.trainingHome);
+        break;
+      case 'emplois':
+        context.push(AppRoutes.jobs);
+        break;
+      case 'thixInfo':
+        context.push(AppRoutes.thixInfo);
+        break;
+      case 'opportunites':
+        context.push(AppRoutes.opportunities);
+        break;
+      case 'evenements':
+        context.push('/thix-event');
+        break;
+      case 'reseauPro':
+        context.go(AppRoutes.network);
+        break;
+      case 'thixSante':
+        context.push(AppRoutes.thixSante);
+        break;
+      case 'thixMoney':
+        context.push(AppRoutes.thixMoney);
+        break;
+      case 'monPays':
+        context.push(AppRoutes.monPays);
+        break;
+      case 'reservation':
+        context.push(AppRoutes.reservation);
+        break;
+      case 'thixRetrouve':
+        // Sélecteur SOS ↔ RETROUVE
+        context.push('/home-swipe');
+        break;
+      default:
+        break;
     }
   }
 
