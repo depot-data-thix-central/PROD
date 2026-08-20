@@ -133,7 +133,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
     // context.push('/call', extra: {'userId': userId, 'name': contact.name});
   }
 
-    Future<void> _sendQuickMessage(SosIncident incident, String text) async {
+   Future<void> _sendQuickMessage(SosIncident incident, String text) async {
     if (_sentQuick.contains(text)) return;
     setState(() => _sentQuick.add(text));
 
@@ -166,7 +166,6 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
       ),
     );
   }
-
 
   void _endSos() {
     Navigator.push(
