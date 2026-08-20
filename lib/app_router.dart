@@ -438,46 +438,119 @@ class AppRouter {
         GoRoute(path: '/jobs/:jobId', name: 'jobDetails', pageBuilder: (_, state) => NoTransitionPage(child: JobDetailsPage(jobId: state.pathParameters['jobId'] ?? '', applied: (state.uri.queryParameters['applied'] ?? '') == '1'))),
         GoRoute(path: '/jobs/:jobId/apply', name: 'jobApply', pageBuilder: (_, state) => NoTransitionPage(child: JobApplyPage(jobId: state.pathParameters['jobId'] ?? ''))),
 
-        // === THIX RETROUVE ===
-        GoRoute(
+        // ============================================================
+// THIX SOS + RETROUVE (sélecteur swipe)
+// ============================================================
+
+// Entrée principale → sélecteur (SOS en page 0)
+GoRoute(
   path: '/home-swipe',
   name: 'homeSwipe',
   builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 0),
 ),
+
+// Alias SOS
+GoRoute(
+  path: '/thix-sos',
+  name: 'thixSos',
+  builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 0),
+  routes: [
+    GoRoute(
+      path: 'actif/:id',
+      name: 'thixSosActif',
+      builder: (context, state) => SosActifPage(
+        incidentId: state.pathParameters['id']!,
+      ),
+    ),
+    GoRoute(
+      path: 'chambre/:id',
+      name: 'thixSosChambre',
+      builder: (context, state) => ChambreCrisePage(
+        incidentId: state.pathParameters['id']!,
+      ),
+    ),
+    GoRoute(
+      path: 'pin/:id',
+      name: 'thixSosPin',
+      builder: (context, state) {
+        final mode = state.uri.queryParameters['mode'] == 'resolve'
+            ? SosPinMode.resolve
+            : SosPinMode.cancel;
+        return SosPinPage(
+          incidentId: state.pathParameters['id']!,
+          mode: mode,
+        );
+      },
+    ),
+    GoRoute(
+      path: 'secours',
+      name: 'thixSosSecours',
+      builder: (context, state) => const MesSecoursPage(),
+      routes: [
         GoRoute(
-          path: '/thix-retrouve/detail',
-          name: 'thixRetrouveDetail',
-          pageBuilder: (_, __) => const NoTransitionPage(child: ObjectDetailPage()),
+          path: 'ajouter',
+          name: 'thixSosAjouterSecours',
+          builder: (context, state) {
+            final circle = int.tryParse(
+                  state.uri.queryParameters['circle'] ?? '1',
+                ) ??
+                1;
+            return AjouterSecoursPage(initialCircle: circle);
+          },
         ),
-        GoRoute(
-          path: '/thix-retrouve/ai-match',
-          name: 'thixRetrouveAiMatch',
-          pageBuilder: (_, __) => const NoTransitionPage(child: AiMatchPage()),
-        ),
-        GoRoute(
-          path: '/thix-retrouve/mes-recherches',
-          name: 'thixRetrouveMesRecherches',
-          pageBuilder: (_, __) => const NoTransitionPage(child: MesRecherchesPage()),
-        ),
-        GoRoute(
-          path: '/thix-retrouve/declarer-perdu',
-          name: 'thixRetrouveDeclarerPerdu',
-          pageBuilder: (_, __) => const NoTransitionPage(
-            child: DeclarerObjetPage(type: StatutObjet.perdu),
-          ),
-        ),
-        GoRoute(
-          path: '/thix-retrouve/declarer-trouve',
-          name: 'thixRetrouveDeclarerTrouve',
-          pageBuilder: (_, __) => const NoTransitionPage(
-            child: DeclarerObjetPage(type: StatutObjet.trouve),
-          ),
-        ),
-        GoRoute(
-          path: '/thix-retrouve/carte',
-          name: 'thixRetrouveCarte',
-          pageBuilder: (_, __) => const NoTransitionPage(child: CarteSignalementsPage()),
-        ),
+      ],
+    ),
+    GoRoute(
+      path: 'incidents',
+      name: 'thixSosIncidents',
+      builder: (context, state) => const MesIncidentsPage(),
+    ),
+  ],
+),
+
+// RETROUVE → même sélecteur, page RETROUVE
+GoRoute(
+  path: '/thix-retrouve',
+  name: 'thixRetrouve',
+  builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 1),
+  routes: [
+    GoRoute(
+      path: 'detail',
+      name: 'thixRetrouveDetail',
+      pageBuilder: (_, __) => const NoTransitionPage(child: ObjectDetailPage()),
+    ),
+    GoRoute(
+      path: 'ai-match',
+      name: 'thixRetrouveAiMatch',
+      pageBuilder: (_, __) => const NoTransitionPage(child: AiMatchPage()),
+    ),
+    GoRoute(
+      path: 'mes-recherches',
+      name: 'thixRetrouveMesRecherches',
+      pageBuilder: (_, __) => const NoTransitionPage(child: MesRecherchesPage()),
+    ),
+    GoRoute(
+      path: 'declarer-perdu',
+      name: 'thixRetrouveDeclarerPerdu',
+      pageBuilder: (_, __) => const NoTransitionPage(
+        child: DeclarerObjetPage(type: StatutObjet.perdu),
+      ),
+    ),
+    GoRoute(
+      path: 'declarer-trouve',
+      name: 'thixRetrouveDeclarerTrouve',
+      pageBuilder: (_, __) => const NoTransitionPage(
+        child: DeclarerObjetPage(type: StatutObjet.trouve),
+      ),
+    ),
+    GoRoute(
+      path: 'carte',
+      name: 'thixRetrouveCarte',
+      pageBuilder: (_, __) =>
+          const NoTransitionPage(child: CarteSignalementsPage()),
+    ),
+  ],
+),
         // === THIX SANTE ===
         GoRoute(path: AppRoutes.thixSante, redirect: (_, __) => AppRoutes.thixSanteDashboard),
         GoRoute(path: AppRoutes.thixSanteDashboard, builder: (c, s) => const PatientDashboardPage()),
@@ -605,66 +678,6 @@ class AppRouter {
           GoRoute(path: 'live/create', name: 'marketCreateLive', pageBuilder: (_, __) => const NoTransitionPage(child: CreateLivePage())),
         ]),
 
-        // === THIX IA ===
-        GoRoute(path: '/thix_ia', name: 'thix_ia', builder: (context, state) => const ThixIaScreen()),
-// THIX SOS
-GoRoute(
-  path: '/thix-sos',
-  name: 'thixSos',
-  builder: (context, state) => const ThixSosScreen(),
-  routes: [
-    GoRoute(
-      path: 'actif/:id',
-      name: 'thixSosActif',
-      builder: (context, state) => SosActifPage(
-        incidentId: state.pathParameters['id']!,
-      ),
-    ),
-    GoRoute(
-      path: 'chambre/:id',
-      name: 'thixSosChambre',
-      builder: (context, state) => ChambreCrisePage(
-        incidentId: state.pathParameters['id']!,
-      ),
-    ),
-    GoRoute(
-      path: 'pin/:id',
-      name: 'thixSosPin',
-      builder: (context, state) {
-        final mode = state.uri.queryParameters['mode'] == 'resolve'
-            ? SosPinMode.resolve
-            : SosPinMode.cancel;
-        return SosPinPage(
-          incidentId: state.pathParameters['id']!,
-          mode: mode,
-        );
-      },
-    ),
-    GoRoute(
-      path: 'secours',
-      name: 'thixSosSecours',
-      builder: (context, state) => const MesSecoursPage(),
-      routes: [
-        GoRoute(
-          path: 'ajouter',
-          name: 'thixSosAjouterSecours',
-          builder: (context, state) {
-            final circle = int.tryParse(
-                  state.uri.queryParameters['circle'] ?? '1',
-                ) ??
-                1;
-            return AjouterSecoursPage(initialCircle: circle);
-          },
-        ),
-      ],
-    ),
-    GoRoute(
-      path: 'incidents',
-      name: 'thixSosIncidents',
-      builder: (context, state) => const MesIncidentsPage(),
-    ),
-  ],
-),
         // === ADMIN SYSTEM GLOBAL ===
         GoRoute(path: '/admin', builder: (context, state) => const thix_admin.AdminHomePage()),
         GoRoute(path: '/admin/articles', builder: (context, state) => const thix_admin_list.AdminArticlesListPage()),
