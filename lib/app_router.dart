@@ -264,6 +264,12 @@ import 'package:thix_id/presentation/thix_sos/pages/mes_incidents_page.dart';
 import 'package:thix_id/presentation/thix_sos/pages/sos_pin_page.dart';
 import 'package:thix_id/presentation/thix_sos/pages/chambre_crise_page.dart';
 
+import 'package:thix_id/presentation/thix_recherche/thix_recherche_screen.dart';
+import 'package:thix_id/presentation/thix_recherche/pages/detail_personne_page.dart';
+import 'package:thix_id/presentation/thix_recherche/pages/signaler_page.dart';
+import 'package:thix_id/presentation/thix_recherche/pages/creer_alerte_page.dart';
+import 'package:thix_id/presentation/thix_recherche/pages/mes_alertes_page.dart';
+
 // === ADMIN SYSTEM GLOBAL ===
 import 'package:thix_id/presentation/admin/admin_page.dart';
 import 'package:thix_id/presentation/admin/admin_routes.dart';
@@ -548,6 +554,37 @@ GoRoute(
       name: 'thixRetrouveCarte',
       pageBuilder: (_, __) =>
           const NoTransitionPage(child: CarteSignalementsPage()),
+    ),
+  ],
+),
+   GoRoute(
+  path: '/thix-recherche',
+  name: 'thixRecherche',
+  builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 1),
+  routes: [
+    GoRoute(
+      path: 'detail/:id',
+      name: 'thixRechercheDetail',
+      builder: (context, state) => DetailPersonnePage(
+        personneId: state.pathParameters['id']!,
+      ),
+    ),
+    GoRoute(
+      path: 'signaler/:id',
+      name: 'thixRechercheSignaler',
+      builder: (context, state) => SignalerPage(
+        personneId: state.pathParameters['id']!,
+      ),
+    ),
+    GoRoute(
+      path: 'creer',
+      name: 'thixRechercheCreer',
+      builder: (context, state) => const CreerAlertePage(),
+    ),
+    GoRoute(
+      path: 'mes-alertes',
+      name: 'thixRechercheMesAlertes',
+      builder: (context, state) => const MesAlertesPage(),
     ),
   ],
 ),
