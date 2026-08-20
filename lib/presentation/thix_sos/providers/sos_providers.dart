@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/sos_models.dart';
 import '../services/sos_service.dart';
 import '../services/sos_call_bridge.dart'; // Protocole Chat + Appels
+import '../services/sos_escalation_controller.dart'; // Assurez-vous d'avoir cet import
 
 // ── Service ───────────────────────────────────────────────────
 final sosServiceProvider = Provider<SosService>((ref) {
@@ -89,14 +90,18 @@ class TriggerSosNotifier extends StateNotifier<AsyncValue<SosIncident?>> {
     state = await AsyncValue.guard(() async {
       final incident = await _ref.read(sosServiceProvider).triggerSos();
 
-      // Protocole Chat + Appels (ne bloque pas l'UI si échec partiel)
+      // Protocole Chat + Appels + Escalade
       try {
         final result = await SosCallBridge(
           sos: _ref.read(sosServiceProvider),
         ).activateProtocol(incident);
+        
         debugPrint(
           'SOS protocol: chat=${result.conversationId} calls=${result.answeredOrRinging}/${result.calls.length}',
         );
+
+        // Escalade auto 15s → cercle 2 → 3
+        _ref.read(sosEscalationProvider).start(incident.id, startCircle: 1);
       } catch (e) {
         debugPrint('SOS protocol partial failure: $e');
       }
@@ -246,6 +251,7 @@ class SosResolveNotifier extends StateNotifier<AsyncValue<void>> {
     state = await AsyncValue.guard(() async {
       await _ref.read(sosServiceProvider).resolveIncident(incidentId);
       _ref.read(sosHeartbeatControllerProvider.notifier).stop();
+      _ref.read(sosEscalationProvider).stop(); // Arrêt de l'escalade
       _ref.invalidate(activeSosProvider);
       _ref.invalidate(sosHistoryProvider);
     });
@@ -257,6 +263,7 @@ class SosResolveNotifier extends StateNotifier<AsyncValue<void>> {
     state = await AsyncValue.guard(() async {
       await _ref.read(sosServiceProvider).cancelIncident(incidentId);
       _ref.read(sosHeartbeatControllerProvider.notifier).stop();
+      _ref.read(sosEscalationProvider).stop(); // Arrêt de l'escalade
       _ref.invalidate(activeSosProvider);
       _ref.invalidate(sosHistoryProvider);
     });
