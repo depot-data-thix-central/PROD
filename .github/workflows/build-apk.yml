@@ -3,7 +3,11 @@ name: Build Flutter APK
 on:
   workflow_dispatch:
   push:
-    branches: [ "main" ]
+    branches: [main]
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-apk:
@@ -23,26 +27,35 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
       - name: Flutter pub get
         run: flutter pub get
 
-      # ✅ CORRECTION ICI : Retrait de --no-enable-impeller
+      - name: Generate code (build_runner)
+        run: |
+          if grep -q "build_runner" pubspec.yaml; then
+            dart run build_runner build --delete-conflicting-outputs
+          else
+            echo "No build_runner — skip"
+          fi
+
       - name: Build release App Bundle
         run: flutter build appbundle --release
 
-      # ✅ CORRECTION ICI : Retrait de --no-enable-impeller
       - name: Build release APKs (split by ABI)
         run: flutter build apk --release --split-per-abi
 
-      - name: Upload App Bundle artifact
+      - name: Upload App Bundle
         uses: actions/upload-artifact@v4
         with:
           name: app-release-aab
           path: build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
 
-      - name: Upload split APKs artifact
+      - name: Upload split APKs
         uses: actions/upload-artifact@v4
         with:
           name: app-release-apks-split
           path: build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
