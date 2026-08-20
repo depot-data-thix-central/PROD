@@ -158,6 +158,17 @@ class SosHeartbeatController extends StateNotifier<bool> {
   }
 }
 
+// ── Escalade SOS (Cercles) ────────────────────────────────────
+final sosEscalationProvider =
+    Provider.autoDispose<SosEscalationController>((ref) {
+  final controller = SosEscalationController(
+    sos: ref.watch(sosServiceProvider),
+    delayPerCircle: const Duration(seconds: 15), // configurable
+  );
+  ref.onDispose(controller.dispose);
+  return controller;
+});
+
 // ── Actions contacts ──────────────────────────────────────────
 final sosContactActionsProvider = Provider<SosContactActions>((ref) {
   return SosContactActions(ref);
