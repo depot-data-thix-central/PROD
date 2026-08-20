@@ -4,10 +4,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-
 import '../models/sos_models.dart';
 import '../providers/sos_providers.dart';
 import '../thix_sos_screen.dart';
+import 'package:go_router/go_router.dart';
+import 'package:thix_id/nav.dart';
+import 'package:thix_id/models/chat/chat_conversation.dart';
+import 'chambre_crise_page.dart';
+
 
 class SosActifPage extends ConsumerStatefulWidget {
   const SosActifPage({super.key, required this.incidentId});
@@ -344,7 +348,28 @@ class _SosActifPageState extends ConsumerState<SosActifPage> {
                           subtitle: 'Ouvrir la conversation d\'urgence',
                           icon: Icons.chat_bubble_outline,
                           color: const Color(0xFFA78BFA),
-                          onTap: () {},
+                          onTap: () {
+  final convId = incident.chatConversationId;
+  if (convId == null || convId.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Conversation SOS pas encore créée'),
+        backgroundColor: Color(0xFF16161F),
+      ),
+    );
+    return;
+  }
+  context.push(
+    AppRoutes.chatDetail(convId),
+    extra: ChatConversation(
+      id: convId,
+      isGroup: true,
+      groupName: 'THIX CHAT ${incident.publicId}',
+      participantIds: const [],
+      updatedAt: DateTime.now(),
+    ),
+  );
+},
                         ),
                         const SizedBox(height: 10),
                         _ActionBar(
@@ -353,7 +378,17 @@ class _SosActifPageState extends ConsumerState<SosActifPage> {
                           icon: Icons.desktop_windows_outlined,
                           color: const Color(0xFFEF4444),
                           filled: true,
-                          onTap: () {},
+                          onTap: () {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => ChambreCrisePage(
+        incidentId: incident.id,
+        conversationId: incident.chatConversationId,
+      ),
+    ),
+  );
+},
                         ),
                         const SizedBox(height: 16),
 
