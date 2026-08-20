@@ -6,6 +6,7 @@ import 'providers/recherche_providers.dart';
 import 'widgets/alerte_card.dart';
 import 'pages/detail_personne_page.dart';
 import 'pages/signaler_page.dart';
+import 'pages/creer_alerte_page.dart'; // Ajout de l'import pour la page de création
 
 class ThixRechercheScreen extends ConsumerWidget {
   const ThixRechercheScreen({super.key});
@@ -17,6 +18,29 @@ class ThixRechercheScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FC),
+      // Ajout du bouton flottant ici
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () async {
+          final ok = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const CreerAlertePage()),
+          );
+
+          // Si la page de création retourne "true", on rafraîchit la liste
+          if (ok == true) {
+            ref.invalidate(alertesActivesProvider);
+          }
+        },
+        backgroundColor: const Color(0xFF111827),
+        icon: const Icon(Icons.person_add_alt_1, color: Colors.white),
+        label: Text(
+          'Signaler un disparu',
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
+          ),
+        ),
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -141,7 +165,7 @@ class ThixRechercheScreen extends ConsumerWidget {
                       );
                     }
                     return ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 80), // J'ai augmenté le padding du bas pour que la liste ne soit pas cachée par le bouton flottant
                       itemCount: list.length + 1,
                       itemBuilder: (context, i) {
                         if (i == list.length) {
