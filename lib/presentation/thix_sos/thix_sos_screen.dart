@@ -1,4 +1,4 @@
-/// THIX SOS — Homepage (production) — navigations branchées
+/// THIX SOS — Homepage production (design entreprise)
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -14,6 +14,15 @@ import 'widgets/cercle_card.dart';
 import 'widgets/sos_button.dart';
 import 'widgets/status_banner.dart';
 
+// Palette entreprise
+const _bg = Color(0xFF0A0A0F);
+const _card = Color(0xFF14141C);
+const _cardBorder = Color(0xFF252532);
+const _red = Color(0xFFEF4444);
+const _redDark = Color(0xFFB91C1C);
+const _white = Colors.white;
+const _muted = Color(0xFF9CA3AF);
+
 class ThixSosScreen extends ConsumerWidget {
   const ThixSosScreen({super.key});
 
@@ -24,7 +33,6 @@ class ThixSosScreen extends ConsumerWidget {
     final triggerState = ref.watch(triggerSosProvider);
     final isTriggering = triggerState.isLoading;
 
-    // Si SOS déjà actif → rediriger
     ref.listen(activeSosProvider, (prev, next) {
       next.whenData((incident) {
         if (incident != null && incident.isActive && context.mounted) {
@@ -38,25 +46,15 @@ class ThixSosScreen extends ConsumerWidget {
     });
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0F),
+      backgroundColor: _bg,
       body: SafeArea(
         child: Column(
           children: [
-            _Header(
-              onSettings: () {
-                // Paramètres SOS (PIN, etc.) — page à venir
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Paramètres SOS bientôt disponibles'),
-                    backgroundColor: Color(0xFF16161F),
-                  ),
-                );
-              },
-            ),
+            const _Header(),
             Expanded(
               child: RefreshIndicator(
-                color: const Color(0xFFEF4444),
-                backgroundColor: const Color(0xFF16161F),
+                color: _red,
+                backgroundColor: _card,
                 onRefresh: () async {
                   ref.invalidate(sosContactsProvider);
                   ref.invalidate(activeSosProvider);
@@ -64,8 +62,9 @@ class ThixSosScreen extends ConsumerWidget {
                 },
                 child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       // Bannière statut
                       activeAsync.when(
@@ -77,20 +76,20 @@ class ThixSosScreen extends ConsumerWidget {
                         loading: () => const StatusBanner(),
                         error: (_, __) => const StatusBanner(),
                       ),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 24),
 
                       // Bouton SOS
                       SosButton(
                         enabled: !isTriggering,
                         isLoading: isTriggering,
                         onTriggered: () async {
-                          final incident =
-                              await ref.read(triggerSosProvider.notifier).trigger();
+                          final incident = await ref
+                              .read(triggerSosProvider.notifier)
+                              .trigger();
                           if (incident != null && context.mounted) {
                             ref
                                 .read(sosHeartbeatControllerProvider.notifier)
                                 .start(incident.id);
-
                             Navigator.of(context).pushReplacement(
                               MaterialPageRoute(
                                 builder: (_) =>
@@ -104,21 +103,25 @@ class ThixSosScreen extends ConsumerWidget {
                                 content: Text(
                                   err?.toString() ??
                                       'Échec du déclenchement SOS',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                backgroundColor: const Color(0xFFDC2626),
+                                backgroundColor: _redDark,
                               ),
                             );
                           }
                         },
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 12),
                       Text(
-                        'Appuyez et maintenez 2 secondes\npour déclencher le SOS',
+                        'Maintenir 2 secondes pour déclencher',
                         textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: Colors.white38,
-                          height: 1.4,
+                          fontSize: 12,
+                          color: _muted,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                       const SizedBox(height: 28),
@@ -139,8 +142,9 @@ class ThixSosScreen extends ConsumerWidget {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) =>
-                                    AjouterSecoursPage(initialCircle: circle),
+                                builder: (_) => AjouterSecoursPage(
+                                  initialCircle: circle,
+                                ),
                               ),
                             ).then((ok) {
                               if (ok == true) {
@@ -149,59 +153,41 @@ class ThixSosScreen extends ConsumerWidget {
                             });
                           },
                         ),
-                        loading: () => const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(24),
-                            child: CircularProgressIndicator(
-                              color: Color(0xFFEF4444),
-                            ),
+                        loading: () => const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Center(
+                            child: CircularProgressIndicator(color: _red),
                           ),
                         ),
                         error: (e, _) => Text(
-                          'Erreur secours: $e',
-                          style: const TextStyle(color: Colors.redAccent),
+                          'Erreur secours',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(color: _red),
                         ),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 28),
 
                       // Actions rapides
-                      _sectionTitle('ACTIONS RAPIDES'),
-                      const SizedBox(height: 10),
+                      _SectionLabel('ACTIONS RAPIDES'),
+                      const SizedBox(height: 12),
                       Row(
                         children: [
                           Expanded(
                             child: _ActionTile(
                               icon: Icons.location_on_outlined,
-                              label: 'Partager\nma position',
+                              label: 'Partager position',
                               color: const Color(0xFF34D399),
-                              onTap: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Partage de position — bientôt disponible',
-                                    ),
-                                    backgroundColor: Color(0xFF16161F),
-                                  ),
-                                );
-                              },
+                              onTap: () => _soon(context, 'Partage de position'),
                             ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: _ActionTile(
                               icon: Icons.timer_outlined,
-                              label: 'Safe Check\nJe suis arrivé',
+                              label: 'Safe Check',
                               color: const Color(0xFFFBBF24),
-                              onTap: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Safe Check — bientôt disponible',
-                                    ),
-                                    backgroundColor: Color(0xFF16161F),
-                                  ),
-                                );
-                              },
+                              onTap: () => _soon(context, 'Safe Check'),
                             ),
                           ),
                         ],
@@ -211,27 +197,18 @@ class ThixSosScreen extends ConsumerWidget {
                         children: [
                           Expanded(
                             child: _ActionTile(
-                              icon: Icons.route,
-                              label: 'Mes trajets\nPartages actifs',
+                              icon: Icons.route_outlined,
+                              label: 'Mes trajets',
                               color: const Color(0xFF60A5FA),
-                              onTap: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Trajets — bientôt disponible',
-                                    ),
-                                    backgroundColor: Color(0xFF16161F),
-                                  ),
-                                );
-                              },
+                              onTap: () => _soon(context, 'Trajets'),
                             ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: _ActionTile(
                               icon: Icons.history,
-                              label: 'Mes incidents\nHistorique SOS',
-                              color: const Color(0xFFF87171),
+                              label: 'Mes incidents',
+                              color: _red,
                               onTap: () {
                                 Navigator.push(
                                   context,
@@ -244,7 +221,7 @@ class ThixSosScreen extends ConsumerWidget {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 28),
 
                       // Chat SOS
                       _NavCard(
@@ -253,33 +230,24 @@ class ThixSosScreen extends ConsumerWidget {
                         title: 'THIX CHAT SOS',
                         subtitle: activeAsync.maybeWhen(
                           data: (i) => i != null && i.isActive
-                              ? 'Incident ${i.publicId}\nOuvrir la conversation'
-                              : 'Aucun incident actif\nVos conversations d\'urgence',
-                          orElse: () =>
-                              'Aucun incident actif\nVos conversations d\'urgence',
+                              ? 'Incident actif — ouvrir le chat'
+                              : 'Conversations d’urgence',
+                          orElse: () => 'Conversations d’urgence',
                         ),
-                        onTap: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Chat SOS — bientôt disponible'),
-                              backgroundColor: Color(0xFF16161F),
-                            ),
-                          );
-                        },
+                        onTap: () => _soon(context, 'Chat SOS'),
                       ),
                       const SizedBox(height: 10),
 
                       // Chambre de crise
                       _NavCard(
                         icon: Icons.desktop_windows_outlined,
-                        iconColor: const Color(0xFFF87171),
+                        iconColor: _red,
                         title: 'CHAMBRE DE CRISE',
                         subtitle: activeAsync.maybeWhen(
                           data: (i) => i != null && i.isActive
-                              ? 'SOS en cours\nOuvrir la chambre de crise'
-                              : 'Aucun incident en cours\nAccédez à vos incidents',
-                          orElse: () =>
-                              'Aucun incident en cours\nAccédez à vos incidents',
+                              ? 'SOS en cours — ouvrir'
+                              : 'Aucun incident en cours',
+                          orElse: () => 'Aucun incident en cours',
                         ),
                         onTap: () {
                           final incident = activeAsync.valueOrNull;
@@ -287,8 +255,9 @@ class ThixSosScreen extends ConsumerWidget {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) =>
-                                    ChambreCrisePage(incidentId: incident.id),
+                                builder: (_) => ChambreCrisePage(
+                                  incidentId: incident.id,
+                                ),
                               ),
                             );
                           } else {
@@ -309,104 +278,94 @@ class ThixSosScreen extends ConsumerWidget {
           ],
         ),
       ),
-      bottomNavigationBar: _BottomNav(
-        currentIndex: 2,
-        onTap: (i) {
-          if (i == 0) {
-            // Accueil app
-            Navigator.of(context).popUntil((r) => r.isFirst);
-          } else if (i == 1) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Chat — bientôt disponible'),
-                backgroundColor: Color(0xFF16161F),
-              ),
-            );
-          } else if (i == 3) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Carte SOS — bientôt disponible'),
-                backgroundColor: Color(0xFF16161F),
-              ),
-            );
-          } else if (i == 4) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Profil'),
-                backgroundColor: Color(0xFF16161F),
-              ),
-            );
-          }
-        },
-      ),
+      bottomNavigationBar: const _BottomNav(currentIndex: 2),
     );
   }
 
-  Widget _sectionTitle(String text) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Text(
-        text,
-        style: GoogleFonts.inter(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: Colors.white54,
-          letterSpacing: 0.6,
+  static void _soon(BuildContext context, String label) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '$label — bientôt disponible',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
+        backgroundColor: _card,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
 }
 
+// ───────────────────────── Header ─────────────────────────
+
 class _Header extends StatelessWidget {
-  const _Header({this.onSettings});
-  final VoidCallback? onSettings;
+  const _Header();
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 0),
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.menu, color: Colors.white70),
+            icon: const Icon(Icons.menu, color: _muted),
             onPressed: () => Navigator.of(context).maybePop(),
           ),
           Expanded(
-            child: Center(
-              child: RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: 'THIX ',
-                      style: GoogleFonts.inter(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                    TextSpan(
-                      text: 'SOS',
-                      style: GoogleFonts.inter(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFFEF4444),
-                      ),
-                    ),
-                  ],
-                ),
+            child: Text(
+              'THIX SOS',
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                color: _white,
+                letterSpacing: 0.5,
               ),
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.settings_outlined, color: Colors.white70),
-            onPressed: onSettings,
+            icon: const Icon(Icons.settings_outlined, color: _muted),
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Paramètres SOS — bientôt'),
+                  backgroundColor: _card,
+                ),
+              );
+            },
           ),
         ],
       ),
     );
   }
 }
+
+// ───────────────────────── Section ─────────────────────────
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: GoogleFonts.inter(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: _muted,
+        letterSpacing: 1.0,
+      ),
+    );
+  }
+}
+
+// ───────────────────────── Action tile ─────────────────────────
 
 class _ActionTile extends StatelessWidget {
   const _ActionTile({
@@ -424,29 +383,33 @@ class _ActionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFF16161F),
+      color: _card,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.all(14),
+          constraints: const BoxConstraints(minHeight: 88),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white10),
+            border: Border.all(color: _cardBorder),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon, color: color, size: 22),
               const SizedBox(height: 10),
               Text(
                 label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.inter(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                  height: 1.3,
+                  color: _white,
+                  height: 1.25,
                 ),
               ),
             ],
@@ -456,6 +419,8 @@ class _ActionTile extends StatelessWidget {
     );
   }
 }
+
+// ───────────────────────── Nav card ─────────────────────────
 
 class _NavCard extends StatelessWidget {
   const _NavCard({
@@ -475,7 +440,7 @@ class _NavCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFF16161F),
+      color: _card,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onTap,
@@ -484,15 +449,15 @@ class _NavCard extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white10),
+            border: Border.all(color: _cardBorder),
           ),
           child: Row(
             children: [
               Container(
-                width: 44,
-                height: 44,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.15),
+                  color: iconColor.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(icon, color: iconColor, size: 22),
@@ -504,24 +469,29 @@ class _NavCard extends StatelessWidget {
                   children: [
                     Text(
                       title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                        color: _white,
                       ),
                     ),
+                    const SizedBox(height: 2),
                     Text(
                       subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(
                         fontSize: 11,
-                        color: Colors.white38,
+                        color: _muted,
                         height: 1.3,
                       ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: Colors.white24),
+              const Icon(Icons.chevron_right, color: Color(0xFF4B5563), size: 20),
             ],
           ),
         ),
@@ -530,28 +500,44 @@ class _NavCard extends StatelessWidget {
   }
 }
 
+// ───────────────────────── Bottom nav ─────────────────────────
+
 class _BottomNav extends StatelessWidget {
-  const _BottomNav({required this.currentIndex, required this.onTap});
+  const _BottomNav({required this.currentIndex});
   final int currentIndex;
-  final ValueChanged<int> onTap;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF0A0A0F),
-        border: Border(top: BorderSide(color: Colors.white10)),
+        color: _bg,
+        border: Border(top: BorderSide(color: _cardBorder)),
       ),
       child: BottomNavigationBar(
         currentIndex: currentIndex,
-        onTap: onTap,
-        backgroundColor: const Color(0xFF0A0A0F),
+        onTap: (i) {
+          if (i == 0) {
+            Navigator.of(context).popUntil((r) => r.isFirst);
+          } else if (i == currentIndex) {
+            return;
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Bientôt disponible'),
+                backgroundColor: _card,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        },
+        backgroundColor: _bg,
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: const Color(0xFFEF4444),
-        unselectedItemColor: Colors.white38,
+        selectedItemColor: _red,
+        unselectedItemColor: _muted,
         selectedLabelStyle:
-            GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600),
-        unselectedLabelStyle: GoogleFonts.inter(fontSize: 11),
+            GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600),
+        unselectedLabelStyle: GoogleFonts.inter(fontSize: 10),
+        elevation: 0,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.home_outlined),
@@ -562,7 +548,7 @@ class _BottomNav extends StatelessWidget {
             label: 'Chat',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.sos, size: 32, color: Color(0xFFEF4444)),
+            icon: Icon(Icons.sos, size: 28),
             label: 'SOS',
           ),
           BottomNavigationBarItem(
