@@ -2,11 +2,13 @@ name: Deploy Flutter Web to GitHub Pages
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: pages
@@ -17,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Flutter
@@ -29,7 +31,7 @@ jobs:
       - name: Enable Web
         run: flutter config --enable-web
 
-      - name: Pub get
+      - name: Get dependencies
         run: flutter pub get
 
       - name: Generate code (build_runner)
@@ -40,11 +42,14 @@ jobs:
             echo "No build_runner — skip"
           fi
 
-      - name: Build Web (CanvasKit)
-        run: flutter build web --release --base-href /final/ --no-wasm-dry-run
+      # ⚠️ base-href = nom exact du repo GitHub
+      # Repo = PROD  →  /PROD/
+      # Si tu renommes le repo, change aussi cette valeur
+      - name: Build Web
+        run: flutter build web --release --base-href /PROD/ --no-wasm-dry-run
 
-      - name: Deploy to GitHub Pages (Branch gh-pages)
-        uses: peaceiris/actions-gh-pages@v3
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build/web
