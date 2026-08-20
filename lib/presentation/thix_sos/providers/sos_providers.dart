@@ -1,12 +1,14 @@
 /// THIX SOS — Riverpod providers (production)
 import 'dart:async';
-import 'package:flutter/foundation.dart'; // Pour debugPrint
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../models/sos_models.dart';
 import '../services/sos_service.dart';
-import '../services/sos_call_bridge.dart'; // Protocole Chat + Appels
-import '../services/sos_escalation_controller.dart'; // Assurez-vous d'avoir cet import
+import '../services/sos_call_bridge.dart';
+import '../services/sos_escalation_controller.dart';
 
 // ── Service ───────────────────────────────────────────────────
 final sosServiceProvider = Provider<SosService>((ref) {
@@ -74,6 +76,34 @@ final sosLocationsProvider =
   },
 );
 
+// ── Position GPS (alertes à proximité + SOS) ──────────────────
+final sosUserPositionProvider =
+    FutureProvider.autoDispose<({double lat, double lng})?>((ref) async {
+  try {
+    final serviceOn = await Geolocator.isLocationServiceEnabled();
+    if (!serviceOn) return null;
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      return null;
+    }
+
+    final pos = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.medium,
+      ),
+    );
+    return (lat: pos.latitude, lng: pos.longitude);
+  } catch (e) {
+    debugPrint('sosUserPositionProvider: $e');
+    return null;
+  }
+});
+
 // ── Déclenchement SOS ─────────────────────────────────────────
 final triggerSosProvider =
     StateNotifierProvider<TriggerSosNotifier, AsyncValue<SosIncident?>>(
@@ -90,17 +120,15 @@ class TriggerSosNotifier extends StateNotifier<AsyncValue<SosIncident?>> {
     state = await AsyncValue.guard(() async {
       final incident = await _ref.read(sosServiceProvider).triggerSos();
 
-      // Protocole Chat + Appels + Escalade
       try {
         final result = await SosCallBridge(
           sos: _ref.read(sosServiceProvider),
         ).activateProtocol(incident);
-        
+
         debugPrint(
-          'SOS protocol: chat=${result.conversationId} calls=${result.answeredOrRinging}/${result.calls.length}',
+          'SOS protocol: chat=\( {result.conversationId} calls= \){result.answeredOrRinging}/${result.calls.length}',
         );
 
-        // Escalade auto 15s → cercle 2 → 3
         _ref.read(sosEscalationProvider).start(incident.id, startCircle: 1);
       } catch (e) {
         debugPrint('SOS protocol partial failure: $e');
@@ -129,13 +157,13 @@ class SosHeartbeatController extends StateNotifier<bool> {
   Timer? _timer;
   String? _incidentId;
 
-  /// Démarre un heartbeat toutes les [interval] secondes
-  void start(String incidentId, {Duration interval = const Duration(seconds: 15)}) {
+  void start(String incidentId,
+      {Duration interval = const Duration(seconds: 15)}) {
     stop();
     _incidentId = incidentId;
     state = true;
     _timer = Timer.periodic(interval, (_) => _tick());
-    _tick(); // immédiat
+    _tick();
   }
 
   Future<void> _tick() async {
@@ -144,9 +172,7 @@ class SosHeartbeatController extends StateNotifier<bool> {
     try {
       await _ref.read(sosServiceProvider).heartbeat(id);
       _ref.invalidate(activeSosProvider);
-    } catch (_) {
-      // silencieux : on réessaiera au prochain tick
-    }
+    } catch (_) {}
   }
 
   void stop() {
@@ -168,7 +194,7 @@ final sosEscalationProvider =
     Provider.autoDispose<SosEscalationController>((ref) {
   final controller = SosEscalationController(
     sos: ref.watch(sosServiceProvider),
-    delayPerCircle: const Duration(seconds: 15), // configurable
+    delayPerCircle: const Duration(seconds: 15),
   );
   ref.onDispose(controller.dispose);
   return controller;
@@ -251,7 +277,7 @@ class SosResolveNotifier extends StateNotifier<AsyncValue<void>> {
     state = await AsyncValue.guard(() async {
       await _ref.read(sosServiceProvider).resolveIncident(incidentId);
       _ref.read(sosHeartbeatControllerProvider.notifier).stop();
-      _ref.read(sosEscalationProvider).stop(); // Arrêt de l'escalade
+      _ref.read(sosEscalationProvider).stop();
       _ref.invalidate(activeSosProvider);
       _ref.invalidate(sosHistoryProvider);
     });
@@ -263,7 +289,7 @@ class SosResolveNotifier extends StateNotifier<AsyncValue<void>> {
     state = await AsyncValue.guard(() async {
       await _ref.read(sosServiceProvider).cancelIncident(incidentId);
       _ref.read(sosHeartbeatControllerProvider.notifier).stop();
-      _ref.read(sosEscalationProvider).stop(); // Arrêt de l'escalade
+      _ref.read(sosEscalationProvider).stop();
       _ref.invalidate(activeSosProvider);
       _ref.invalidate(sosHistoryProvider);
     });
