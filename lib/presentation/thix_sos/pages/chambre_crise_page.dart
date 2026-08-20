@@ -13,6 +13,7 @@ import '../models/sos_models.dart';
 import '../providers/sos_providers.dart';
 import 'sos_pin_page.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class ChambreCrisePage extends ConsumerStatefulWidget {
   const ChambreCrisePage({
@@ -623,29 +624,64 @@ class _LiveMapCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasPos = incident.hasLocation &&
+        incident.lastLat != null &&
+        incident.lastLng != null;
+
+    final lat = incident.lastLat ?? -6.80381;
+    final lng = incident.lastLng ?? 39.26000;
+    final target = LatLng(lat, lng);
+
     return Container(
-      height: 160,
+      height: 220,
       width: double.infinity,
       decoration: BoxDecoration(
         color: const Color(0xFF1A1A24),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white10),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
-          const Center(
-            child: Icon(Icons.my_location, color: Color(0xFF2563EB), size: 36),
+          // ——— VRAIE CARTE ———
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: target,
+              zoom: 16,
+            ),
+            markers: hasPos
+                ? {
+                    Marker(
+                      markerId: const MarkerId('sos'),
+                      position: target,
+                      icon: BitmapDescriptor.defaultMarkerWithHue(
+                        BitmapDescriptor.hueRed,
+                      ),
+                      infoWindow: const InfoWindow(title: 'Position SOS'),
+                    ),
+                  }
+                : {},
+            myLocationEnabled: true,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
+            mapToolbarEnabled: false,
+            compassEnabled: false,
+            liteModeEnabled: false, // true = plus léger sur Android
+            onMapCreated: (controller) {
+              // Optionnel : recentrer si la position change plus tard
+            },
           ),
-          if (incident.hasLocation)
+
+          // Overlay coordonnées (comme avant)
+          if (hasPos)
             Positioned(
               left: 12,
               top: 12,
               right: 12,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.black54,
+                  color: Colors.black.withOpacity(0.65),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(
@@ -660,7 +696,7 @@ class _LiveMapCard extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '${incident.lastLat!.toStringAsFixed(5)}, ${incident.lastLng!.toStringAsFixed(5)}',
+                      '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}',
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         color: Colors.white,
@@ -678,10 +714,34 @@ class _LiveMapCard extends StatelessWidget {
                 ),
               ),
             ),
+
+          // Badge si pas encore de position
+          if (!hasPos)
+            const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.location_searching, color: Colors.white38, size: 32),
+                  SizedBox(height: 8),
+                  Text(
+                    'En attente de position…',
+                    style: TextStyle(color: Colors.white38, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
   }
+
+  String _fmt(DateTime d) {
+    final l = d.toLocal();
+    return '${l.hour.toString().padLeft(2, '0')}:'
+        '${l.minute.toString().padLeft(2, '0')}:'
+        '${l.second.toString().padLeft(2, '0')}';
+  }
+}
 
   String _fmt(DateTime d) {
     final l = d.toLocal();
