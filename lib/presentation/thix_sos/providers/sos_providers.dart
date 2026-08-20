@@ -143,7 +143,6 @@ class SosHeartbeatController extends StateNotifier<bool> {
     super.dispose();
   }
 }
-
 // ── Actions contacts ──────────────────────────────────────────
 final sosContactActionsProvider = Provider<SosContactActions>((ref) {
   return SosContactActions(ref);
@@ -167,6 +166,28 @@ class SosContactActions {
       circle: circle,
       phone: phone,
       thixId: thixId,
+      relation: relation,
+    );
+    _ref.invalidate(sosContactsProvider);
+    return c;
+  }
+
+  Future<SosContact> addFromThix({
+    required String thixId,
+    required String contactUserId,
+    required String name,
+    required int circle,
+    String? photoUrl,
+    String? phone,
+    String? relation,
+  }) async {
+    final c = await _service.addContactFromThixProfile(
+      thixId: thixId,
+      contactUserId: contactUserId,
+      name: name,
+      circle: circle,
+      photoUrl: photoUrl,
+      phone: phone,
       relation: relation,
     );
     _ref.invalidate(sosContactsProvider);
