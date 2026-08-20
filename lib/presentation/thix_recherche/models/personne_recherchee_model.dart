@@ -208,10 +208,9 @@ class PersonneRecherchee {
     if (date == null) return 'Dernière vue : $derniereZone';
 
     final l = date.toLocal();
-    final d =
-        '\( {l.day.toString().padLeft(2, '0')}/ \){l.month.toString().padLeft(2, '0')}/${l.year}';
-    final h =
-        '\( {l.hour.toString().padLeft(2, '0')}: \){l.minute.toString().padLeft(2, '0')}';
+    final d = '${l.day.toString().padLeft(2, '0')}/${l.month.toString().padLeft(2, '0')}/${l.year}';
+    final h = '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
+    
     return 'Dernière vue : $derniereZone\nle $d à $h';
   }
 
