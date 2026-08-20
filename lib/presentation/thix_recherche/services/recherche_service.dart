@@ -89,31 +89,41 @@ class RechercheService {
       return [];
     }
   }
+Future<String?> uploadPhoto({
+  required Uint8List bytes,
+  required String fileName,
+}) async {
+  try {
+    final userId = SupabaseConfig.currentUser?.id ?? 'anonymous';
+    final ext = fileName.contains('.')
+        ? fileName.split('.').last.toLowerCase()
+        : 'jpg';
 
-  Future<String?> uploadPhoto({
-    required Uint8List bytes,
-    required String fileName,
-  }) async {
-    try {
-      final userId = SupabaseConfig.currentUser?.id ?? 'anonymous';
-      final ext = fileName.split('.').last.toLowerCase();
-      final path = '\( userId/ \){DateTime.now().millisecondsSinceEpoch}.$ext';
+    // ✅ Path propre : uniquement lettres, chiffres, /, ., -, _
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final safeExt = (ext == 'png' || ext == 'webp' || ext == 'jpg' || ext == 'jpeg')
+        ? ext
+        : 'jpg';
+    final path = '$userId/$timestamp.$safeExt';
 
-      await _client.storage.from(_bucket).uploadBinary(
-            path,
-            bytes,
-            fileOptions: FileOptions(
-              cacheControl: '3600',
-              upsert: false,
-              contentType: ext == 'png' ? 'image/png' : 'image/jpeg',
-            ),
-          );
-      return _client.storage.from(_bucket).getPublicUrl(path);
-    } catch (e) {
-      print('RechercheService.uploadPhoto: $e');
-      rethrow;
-    }
+    await _client.storage.from(_bucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            cacheControl: '3600',
+            upsert: false,
+            contentType: safeExt == 'png'
+                ? 'image/png'
+                : (safeExt == 'webp' ? 'image/webp' : 'image/jpeg'),
+          ),
+        );
+
+    return _client.storage.from(_bucket).getPublicUrl(path);
+  } catch (e) {
+    print('RechercheService.uploadPhoto: $e');
+    rethrow;
   }
+}
 
   Future<PersonneRecherchee?> creerAlerte({
     required String nom,
