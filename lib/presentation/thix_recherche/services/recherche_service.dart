@@ -60,7 +60,46 @@ class RechercheService {
       return list;
     });
   }
+/// Mettre à jour une alerte (propriétaire)
+  Future<PersonneRecherchee?> updateAlerte({
+    required String id,
+    required Map<String, dynamic> data,
+  }) async {
+    final payload = {
+      ...data,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+    final res = await _client
+        .from(_table)
+        .update(payload)
+        .eq('id', id)
+        .select()
+        .single();
+    return PersonneRecherchee.fromJson(Map<String, dynamic>.from(res));
+  }
 
+  /// Marquer comme retrouvée
+  Future<void> marquerRetrouvee(String id) async {
+    await _client.from(_table).update({
+      'statut': StatutAlerte.retrouvee.name,
+      'is_active': false,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', id);
+  }
+
+  /// Soft delete (archive)
+  Future<void> archiverAlerte(String id) async {
+    await _client.from(_table).update({
+      'statut': StatutAlerte.archivee.name,
+      'is_active': false,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', id);
+  }
+
+  /// Suppression définitive (optionnel)
+  Future<void> supprimerAlerte(String id) async {
+    await _client.from(_table).delete().eq('id', id);
+  }
   Future<PersonneRecherchee?> getById(String id) async {
     try {
       final res =
