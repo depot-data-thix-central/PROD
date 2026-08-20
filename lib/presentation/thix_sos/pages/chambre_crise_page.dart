@@ -5,7 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
-
+import 'package:flutter/foundation.dart';
+import 'package:go_router/go_router.dart';
+import 'package:thix_id/nav.dart';
+import 'package:thix_id/models/chat/chat_conversation.dart';
+import 'package:thix_id/services/chat/chat_service.dart';
 import '../models/sos_models.dart';
 import '../providers/sos_providers.dart';
 import 'sos_pin_page.dart';
@@ -79,28 +83,30 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
     return '$h:$m:$s';
   }
 
-  Future<void> _openChat() async {
-    final id = _resolvedConversationId;
-    if (id == null || id.isEmpty) {
+  Future<void> _openChat(SosIncident incident) async {
+    final convId = incident.chatConversationId ?? _resolvedConversationId;
+    if (convId == null || convId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Conversation SOS pas encore disponible'),
+          content: Text('Conversation SOS pas encore créée'),
           backgroundColor: Color(0xFF16161F),
         ),
       );
       return;
     }
-    // Adapte la route à ton chat existant
-    try {
-      context.push('/chat/$id');
-    } catch (_) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Ouvrir chat: $id'),
-          backgroundColor: const Color(0xFF16161F),
-        ),
-      );
-    }
+
+    final conversation = ChatConversation(
+      id: convId,
+      isGroup: true,
+      groupName: 'THIX CHAT ${incident.publicId}',
+      participantIds: const [],
+      updatedAt: DateTime.now(),
+    );
+
+    context.push(
+      AppRoutes.chatDetail(convId),
+      extra: conversation,
+    );
   }
 
   Future<void> _callContact(SosContact contact) async {
@@ -126,17 +132,29 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
     // context.push('/call', extra: {'userId': userId, 'name': contact.name});
   }
 
-  Future<void> _sendQuickMessage(String text) async {
+  Future<void> _sendQuickMessage(SosIncident incident, String text) async {
     if (_sentQuick.contains(text)) return;
     setState(() => _sentQuick.add(text));
 
-    await ref.read(sosServiceProvider).logEventPublic(
-      widget.incidentId,
-      'QUICK_MESSAGE',
-      {'text': text},
-    );
+    final convId = incident.chatConversationId ?? _resolvedConversationId;
 
-    // TODO: aussi insert dans messages du chat SOS si conversationId connu
+    await ref.read(sosServiceProvider).logEventPublic(
+          incident.id,
+          'QUICK_MESSAGE',
+          {'text': text},
+        );
+
+    if (convId != null && convId.isNotEmpty) {
+      try {
+        await ChatService().sendMessage(
+          conversationId: convId,
+          content: text,
+        );
+      } catch (e) {
+        debugPrint('Quick msg chat: $e');
+      }
+    }
+
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -262,7 +280,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                                 icon: Icons.chat_bubble_outline,
                                 label: 'Chat SOS',
                                 color: const Color(0xFFA78BFA),
-                                onTap: _openChat,
+                                onTap: () => _openChat(incident),
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -311,7 +329,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                               _QuickMsg(
                                 label: msg,
                                 sent: _sentQuick.contains(msg),
-                                onTap: () => _sendQuickMessage(msg),
+                                onTap: () => _sendQuickMessage(incident, msg),
                               ),
                           ],
                         ),
