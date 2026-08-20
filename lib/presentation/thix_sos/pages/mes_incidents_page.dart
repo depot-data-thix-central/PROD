@@ -190,8 +190,8 @@ class _IncidentCard extends StatelessWidget {
         '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
     if (day == today) return 'Aujourd\'hui, $time';
     if (day == today.subtract(const Duration(days: 1))) return 'Hier, $time';
-    return '\( {d.day.toString().padLeft(2, '0')}/ \){d.month.toString().padLeft(2, '0')}/${d.year}, $time';
-  }
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}, $time';
+}
 
   String _durationLabel(SosIncident i) {
     final end = i.resolvedAt ?? DateTime.now();
