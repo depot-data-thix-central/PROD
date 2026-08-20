@@ -214,6 +214,7 @@ class SosIncident {
   final String publicId;
   final String victimId;
   final SosStatus status;
+  final String? chatConversationId;
   final int activeCircle;
   final String? responsibleContactId;
   final double? lastLat;
@@ -232,6 +233,7 @@ class SosIncident {
     required this.publicId,
     required this.victimId,
     required this.status,
+    this.chatConversationId, // Ajouté ici
     this.activeCircle = 1,
     this.responsibleContactId,
     this.lastLat,
@@ -266,6 +268,7 @@ class SosIncident {
       publicId: json['public_id'] as String? ?? '',
       victimId: json['victim_id'] as String? ?? '',
       status: SosStatusX.fromDb(json['status'] as String?),
+      chatConversationId: json['chat_conversation_id'] as String?, // Ajouté ici
       activeCircle: (json['active_circle'] as num?)?.toInt() ?? 1,
       responsibleContactId: json['responsible_contact_id'] as String?,
       lastLat: (json['last_lat'] as num?)?.toDouble(),
@@ -283,6 +286,7 @@ class SosIncident {
 
   SosIncident copyWith({
     SosStatus? status,
+    String? chatConversationId, // Ajouté ici
     int? activeCircle,
     String? responsibleContactId,
     double? lastLat,
@@ -298,6 +302,7 @@ class SosIncident {
       publicId: publicId,
       victimId: victimId,
       status: status ?? this.status,
+      chatConversationId: chatConversationId ?? this.chatConversationId, // Ajouté ici
       activeCircle: activeCircle ?? this.activeCircle,
       responsibleContactId: responsibleContactId ?? this.responsibleContactId,
       lastLat: lastLat ?? this.lastLat,
