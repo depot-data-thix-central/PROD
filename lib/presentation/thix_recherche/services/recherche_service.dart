@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
@@ -37,6 +38,41 @@ class RechercheService {
           .toList();
     } catch (e) {
       print('RechercheService.getAlertesActives: $e');
+      return [];
+    }
+  }
+
+  /// Alertes à proximité (basé sur le GPS et la formule de Haversine)
+  Future<List<PersonneRecherchee>> getAlertesProximite({
+    required double lat,
+    required double lng,
+    double radiusKm = 25,
+    int limit = 50,
+  }) async {
+    try {
+      // MVP : charge les actives avec GPS, filtre en local
+      final res = await _client
+          .from(_table)
+          .select()
+          .eq('is_active', true)
+          .eq('statut', 'active')
+          .not('latitude', 'is', null)
+          .not('longitude', 'is', null)
+          .order('created_at', ascending: false)
+          .limit(200);
+
+      final list = (res as List)
+          .map((e) => PersonneRecherchee.fromJson(Map<String, dynamic>.from(e)))
+          .where((p) {
+            if (p.latitude == null || p.longitude == null) return false;
+            return _haversineKm(lat, lng, p.latitude!, p.longitude!) <= radiusKm;
+          })
+          .take(limit)
+          .toList();
+
+      return list;
+    } catch (e) {
+      print('RechercheService.getAlertesProximite: $e');
       return [];
     }
   }
@@ -252,3 +288,19 @@ class RechercheService {
     }
   }
 }
+
+// --- Helpers Mathématiques pour la Géolocalisation ---
+
+double _haversineKm(
+  double lat1, double lon1, double lat2, double lon2,
+) {
+  const r = 6371.0; // Rayon de la Terre en kilomètres
+  final dLat = _rad(lat2 - lat1);
+  final dLon = _rad(lon2 - lon1);
+  final a = sin(dLat / 2) * sin(dLat / 2) +
+      cos(_rad(lat1)) * cos(_rad(lat2)) *
+          sin(dLon / 2) * sin(dLon / 2);
+  return 2 * r * asin(min(1.0, sqrt(a)));
+}
+
+double _rad(double d) => d * pi / 180;
