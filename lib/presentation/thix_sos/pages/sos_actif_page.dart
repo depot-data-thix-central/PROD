@@ -22,6 +22,10 @@ class _SosActifPageState extends ConsumerState<SosActifPage> {
   Timer? _uiTimer;
   Duration _elapsed = Duration.zero;
 
+  // Variables pour l'escalade
+  int _escalationCircle = 1;
+  int _escalationLeft = 0;
+
   @override
   void initState() {
     super.initState();
@@ -32,9 +36,32 @@ class _SosActifPageState extends ConsumerState<SosActifPage> {
       }
     });
 
-    // Heartbeat
+    // Heartbeat & Callbacks d'escalade
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(sosHeartbeatControllerProvider.notifier).start(widget.incidentId);
+
+      // Branchement de l'interface sur le contrôleur d'escalade
+      final escalation = ref.read(sosEscalationProvider);
+      escalation.onTick = (circle, left) {
+        if (mounted) {
+          setState(() {
+            _escalationCircle = circle;
+            _escalationLeft = left;
+          });
+        }
+      };
+      
+      escalation.onEvent = (msg) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(msg, style: const TextStyle(color: Colors.white)),
+              backgroundColor: const Color(0xFF16161F),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      };
     });
   }
 
@@ -221,6 +248,13 @@ class _SosActifPageState extends ConsumerState<SosActifPage> {
                             color: const Color(0xFF34D399),
                           ),
                         ),
+                        const SizedBox(height: 4),
+                        // Nouvel affichage dynamique de l'escalade
+                        if (_escalationLeft > 0)
+                          Text(
+                            'Cercle $_escalationCircle — prochain dans ${_escalationLeft}s',
+                            style: GoogleFonts.inter(color: Colors.white54, fontSize: 12),
+                          ),
                         const SizedBox(height: 12),
 
                         if (circleContacts.isEmpty)
@@ -632,7 +666,7 @@ class _PinDialogState extends State<_PinDialog> {
         style: const TextStyle(color: Colors.white, letterSpacing: 8, fontSize: 20),
         decoration: InputDecoration(
           hintText: '••••',
-          hintStyle: TextStyle(color: Colors.white24, letterSpacing: 8),
+          hintStyle: const TextStyle(color: Colors.white24, letterSpacing: 8),
           counterText: '',
           filled: true,
           fillColor: Colors.black26,
