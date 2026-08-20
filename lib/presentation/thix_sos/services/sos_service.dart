@@ -221,7 +221,90 @@ class SosService {
       throw SosServiceException('Impossible d\'ajouter le secours', e);
     }
   }
-  
+  /// Résout le user_id d'un contact (colonne ou lookup thix_id)
+  Future<String?> resolveContactUserId(SosContact c) async {
+    // Si tu stockes contact_user_id dans le JSON / modèle, utilise-le.
+    if (c.thixId == null || c.thixId!.isEmpty) return null;
+    final profile = await lookupProfileByThixId(c.thixId!);
+    return profile?['id'] as String?;
+  }
+
+  /// Crée le THIX Chat SOS (groupe) pour l'incident
+  Future<String?> createSosChat({
+    required String incidentId,
+    required String publicId,
+    required List<String> participantUserIds,
+  }) async {
+    _ensureAuth();
+    final uid = _uid!;
+    final conversationId = _generateUuid(); // ou package uuid
+    final now = DateTime.now().toUtc().toIso8601String();
+
+    try {
+      await _client.from('conversations').insert({
+        'id': conversationId,
+        'is_group': true,
+        'group_name': 'THIX CHAT $publicId',
+        'created_at': now,
+        'updated_at': now,
+      });
+
+      // Victime = admin
+      await _client.from('conversation_participants').insert({
+        'conversation_id': conversationId,
+        'user_id': uid,
+        'role': 'admin',
+        'last_read_at': now,
+      });
+
+      for (final pid in participantUserIds.toSet()) {
+        if (pid == uid) continue;
+        await _client.from('conversation_participants').insert({
+          'conversation_id': conversationId,
+          'user_id': pid,
+          'role': 'member',
+          'last_read_at': now,
+        });
+      }
+
+      // Message système
+      try {
+        await _client.from('messages').insert({
+          'conversation_id': conversationId,
+          'sender_id': uid,
+          'content': '🔴 SOS déclenché — $publicId\nRejoignez la chambre de crise.',
+          'type': 'system',
+          'created_at': now,
+        });
+      } catch (_) {
+        // si schéma messages différent, ignorer
+      }
+
+      await _client.from(_tableIncidents).update({
+        'chat_conversation_id': conversationId,
+        'updated_at': now,
+      }).eq('id', incidentId);
+
+      await _logEvent(incidentId, 'CHAT_CREATED', {
+        'conversation_id': conversationId,
+        'participants': participantUserIds,
+      });
+
+      return conversationId;
+    } catch (e, st) {
+      debugPrint('SosService.createSosChat: $e\n$st');
+      return null;
+    }
+  }
+
+  String _generateUuid() {
+    // Si tu as le package uuid :
+    // return const Uuid().v4();
+    // Fallback simple :
+    final r = Random();
+    String h() => r.nextInt(0x10000).toRadixString(16).padLeft(4, '0');
+    return '\( {h()} \){h()}-\( {h()}- \){h()}-\( {h()}- \){h()}\( {h()} \){h()}';
+  }
   // ═══════════════════════════════════════════════════════════
   // INCIDENTS
   // ═══════════════════════════════════════════════════════════
