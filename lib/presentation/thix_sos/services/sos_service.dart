@@ -38,6 +38,21 @@ class SosService {
     final n = 10000 + Random().nextInt(90000);
     return 'SOS #THX-$n';
   }
+  Future<void> logEventPublic(String incidentId, String eventType, Map<String, dynamic> metadata) async {
+    try {
+      await supabase // ou votre instance de client Supabase
+          .from('sos_events') // remplacez par le nom exact de votre table
+          .insert({
+        'incident_id': incidentId,
+        'event_type': eventType,
+        'metadata': metadata,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      debugPrint('Erreur logEventPublic : $e');
+      // On ne lance pas d'exception pour ne pas bloquer le processus d'urgence
+    }
+  }
 
   // ═══════════════════════════════════════════════════════════
   // CONTACTS / CERCLES
