@@ -249,7 +249,18 @@ static const String thixSosPin = '/thix-sos/pin';
 static const String thixSosSecours = '/thix-sos/secours';
 static const String thixSosAjouterSecours = '/thix-sos/secours/ajouter';
 static const String thixSosIncidents = '/thix-sos/incidents';
+// RECHERCHE
+  static const String thixRecherche = '/thix-recherche';
+  static const String thixRechercheDetail = '/thix-recherche/detail';
+  static const String thixRechercheSignaler = '/thix-recherche/signaler';
+  static const String thixRechercheCreer = '/thix-recherche/creer';
+  static const String thixRechercheMesAlertes = '/thix-recherche/mes-alertes';
 
+  static String thixRechercheDetailPath(String id) =>
+      '/thix-recherche/detail/$id';
+  static String thixRechercheSignalerPath(String id) =>
+      '/thix-recherche/signaler/$id';
+  
   static const String call = '/call';
   static const String callIncoming = '/call/incoming';
   static const String callOutgoing = '/call/outgoing';
