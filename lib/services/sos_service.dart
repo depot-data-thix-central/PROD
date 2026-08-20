@@ -51,17 +51,29 @@ class SosService {
   }
 
   Future<void> setCallingCircle(String incidentId, int circle) async {
-    final status = circle == 1
-        ? 'calling_circle_1'
-        : circle == 2
-            ? 'calling_circle_2'
-            : 'calling_circle_3';
+    _ensureAuth();
+    if (circle < 1 || circle > 3) return;
 
-    await _client.from('sos_incidents').update({
-      'status': status,
-      'active_circle': circle,
-      'updated_at': DateTime.now().toIso8601String(),
-    }).eq('id', incidentId);
+    final status = circle == 1
+        ? SosStatus.callingCircle1
+        : circle == 2
+            ? SosStatus.callingCircle2
+            : SosStatus.callingCircle3;
+
+    try {
+      await _client.from(_tableIncidents).update({
+        'status': status.dbValue,
+        'active_circle': circle,
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', incidentId).eq('victim_id', _uid!);
+
+      await _logEvent(incidentId, 'CALLING_CIRCLE_$circle', {
+        'circle': circle,
+      });
+    } catch (e, st) {
+      debugPrint('SosService.setCallingCircle: $e\n$st');
+      // non bloquant pour les appels
+    }
   }
   // ── Incident actif ──────────────────────────────────────────
   Future<SosIncident?> getActiveIncident() async {
