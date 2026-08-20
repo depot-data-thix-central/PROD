@@ -187,7 +187,7 @@ class _IncidentCard extends StatelessWidget {
     final today = DateTime(now.year, now.month, now.day);
     final day = DateTime(d.year, d.month, d.day);
     final time =
-        '\( {d.hour.toString().padLeft(2, '0')}: \){d.minute.toString().padLeft(2, '0')}';
+        '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
     if (day == today) return 'Aujourd\'hui, $time';
     if (day == today.subtract(const Duration(days: 1))) return 'Hier, $time';
     return '\( {d.day.toString().padLeft(2, '0')}/ \){d.month.toString().padLeft(2, '0')}/${d.year}, $time';
