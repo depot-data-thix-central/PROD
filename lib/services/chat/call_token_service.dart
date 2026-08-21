@@ -25,7 +25,7 @@ class CallTokenService {
   }) async {
     final res = await _client.functions.invoke(
       'agora-token',
-      body: {'channel': channel, 'uid': uid},
+      body: {'channelName': channel, 'uid': uid},
     );
 
     if (res.status != 200) {
@@ -33,10 +33,12 @@ class CallTokenService {
     }
 
     final data = Map<String, dynamic>.from(res.data as Map);
+    final returnedChannel = (data['channelName'] as String?) ?? channel;
+
     return CallTokenResult(
       token: '${data['token']}',
       appId: '${data['appId']}',
-      channel: '${data['channel']}',
+      channel: returnedChannel,
       uid: (data['uid'] as num?)?.toInt() ?? uid,
     );
   }
