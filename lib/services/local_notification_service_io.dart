@@ -7,46 +7,68 @@ class LocalNotificationService {
   LocalNotificationService._();
   static final LocalNotificationService instance = LocalNotificationService._();
 
-  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _plugin =
+      FlutterLocalNotificationsPlugin();
   bool _initialized = false;
 
-  static const String _channelId = 'thix_id_default';
-  static const String _channelName = 'THIX ID';
-  static const String _channelDescription = 'Notifications THIX ID';
+  static const String channelDefault = 'thix_id_default';
+  static const String channelChat = 'thix_chat';
+  static const String channelCalls = 'thix_calls';
 
   void Function(String? payload)? onNotificationTap;
 
   Future<void> initialize() async {
     if (_initialized) return;
 
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
       requestSoundPermission: false,
     );
 
-    const initSettings = InitializationSettings(
-      android: androidSettings,
-      iOS: iosSettings,
-    );
-
     await _plugin.initialize(
-      initSettings,
+      const InitializationSettings(
+        android: androidSettings,
+        iOS: iosSettings,
+      ),
       onDidReceiveNotificationResponse: (response) {
         onNotificationTap?.call(response.payload);
       },
     );
 
-    const androidChannel = AndroidNotificationChannel(
-      _channelId,
-      _channelName,
-      description: _channelDescription,
-      importance: Importance.high,
+    final android = _plugin.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+
+    await android?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        channelDefault,
+        'THIX ID',
+        description: 'Notifications générales THIX',
+        importance: Importance.high,
+      ),
     );
-    await _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(androidChannel);
+
+    await android?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        channelChat,
+        'Messages THIX Chat',
+        description: 'Nouveaux messages',
+        importance: Importance.high,
+      ),
+    );
+
+    await android?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        channelCalls,
+        'Appels THIX',
+        description: 'Appels audio et vidéo entrants',
+        importance: Importance.max,
+        playSound: true,
+        enableVibration: true,
+      ),
+    );
 
     _initialized = true;
     debugPrint('LocalNotificationService: initialisé');
@@ -61,7 +83,8 @@ class LocalNotificationService {
     }
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       final granted = await _plugin
-          .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
+          .resolvePlatformSpecificImplementation<
+              IOSFlutterLocalNotificationsPlugin>()
           ?.requestPermissions(alert: true, badge: true, sound: true);
       return granted ?? false;
     }
@@ -73,30 +96,84 @@ class LocalNotificationService {
     required String title,
     required String body,
     String? payload,
+    String? channelId,
   }) async {
     if (!_initialized) await initialize();
 
-    const androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: _channelDescription,
-      importance: Importance.high,
-      priority: Priority.high,
+    final channel = channelId ?? channelDefault;
+    final isCall = channel == channelCalls;
+
+    final androidDetails = AndroidNotificationDetails(
+      channel,
+      isCall
+          ? 'Appels THIX'
+          : channel == channelChat
+              ? 'Messages THIX Chat'
+              : 'THIX ID',
+      channelDescription: isCall
+          ? 'Appels entrants'
+          : 'Notifications THIX',
+      importance: isCall ? Importance.max : Importance.high,
+      priority: isCall ? Priority.max : Priority.high,
       icon: '@mipmap/ic_launcher',
+      category: isCall
+          ? AndroidNotificationCategory.call
+          : AndroidNotificationCategory.message,
+      fullScreenIntent: isCall,
+      visibility: NotificationVisibility.public,
+      playSound: true,
+      enableVibration: true,
     );
+
     const iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
+      interruptionLevel: InterruptionLevel.timeSensitive,
     );
 
-    const details = NotificationDetails(android: androidDetails, iOS: iosDetails);
+    final details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
 
     try {
       await _plugin.show(id, title, body, details, payload: payload);
     } catch (e) {
       debugPrint('LocalNotificationService: show failed err=$e');
     }
+  }
+
+  /// Raccourci appel entrant
+  Future<void> showIncomingCall({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+  }) {
+    return show(
+      id: id,
+      title: title,
+      body: body,
+      payload: payload,
+      channelId: channelCalls,
+    );
+  }
+
+  /// Raccourci message chat
+  Future<void> showChatMessage({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+  }) {
+    return show(
+      id: id,
+      title: title,
+      body: body,
+      payload: payload,
+      channelId: channelChat,
+    );
   }
 
   Future<void> cancel(int id) => _plugin.cancel(id);
