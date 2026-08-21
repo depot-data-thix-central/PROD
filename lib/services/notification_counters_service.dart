@@ -103,6 +103,8 @@ class NotificationCountersService {
     'news': ThixSection.info,
     'event': ThixSection.events,
     'evenement': ThixSection.events,
+    'doc': ThixSection.info, // NOUVEAU
+    'ia': ThixSection.info,  // NOUVEAU
 
     // Économie & Transactions
     'money': ThixSection.money,
@@ -129,13 +131,17 @@ class NotificationCountersService {
     'comment': ThixSection.network,
     'post': ThixSection.network,
     'mention': ThixSection.network,
+    'live_request': ThixSection.network, // NOUVEAU
+    'live': ThixSection.media,           // NOUVEAU
 
-    // Vie pratique & gouvernement
+    // Vie pratique, Santé & Gouvernement
     'health': ThixSection.health,
     'thix_sante': ThixSection.health,
     'country': ThixSection.monPays,
     'mon_pays': ThixSection.monPays,
     'civic': ThixSection.monPays,
+    'sos': ThixSection.health,           // NOUVEAU
+    'thix_urgent': ThixSection.health,   // NOUVEAU
 
     // THIX CHAT
     'chat': ThixSection.messages,
