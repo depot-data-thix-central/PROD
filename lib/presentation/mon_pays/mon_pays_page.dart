@@ -44,9 +44,9 @@ class MonPaysPage extends ConsumerStatefulWidget {
 
 class _MonPaysPageState extends ConsumerState<MonPaysPage> {
   // ─── Couleurs Charte RDC ────────────────────────────────────────
-  static const Color rdcRed = Color(0xFFCE1126); // Rouge RDC
-  static const Color rdcYellow = Color(0xFFF7D116); // Jaune RDC
-  static const Color rdcBlue = ThixPolicy.primaryDeep; // Bleu RDC
+  static const Color rdcRed = Color(0xFFCE1126); 
+  static const Color rdcYellow = Color(0xFFF7D116); 
+  static const Color rdcBlue = ThixPolicy.primaryDeep; 
 
   // ─── Carrousel patriotique ──────────────────────────────────────
   final PageController _patrioticCtrl = PageController(viewportFraction: 0.92);
@@ -63,6 +63,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
     {'title': 'Culture et Identité', 'subtitle': 'Notre Richesse', 'img': 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3'},
     {'title': 'Jeunesse d\'Avenir', 'subtitle': 'Espoir de la République', 'img': 'https://images.unsplash.com/photo-1529390079861-591de354faf5'},
   ];
+
   @override
   void initState() {
     super.initState();
@@ -74,15 +75,6 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
           duration: const Duration(milliseconds: 600),
           curve: Curves.easeInOut,
         );
-      }
-    });
-    // Le WidgetsBinding.instance... a été supprimé !
-  }
-
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (ref.read(newsProvider).articles.isEmpty) {
-        ref.read(newsProvider.notifier).fetchArticles();
       }
     });
   }
@@ -108,7 +100,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
   BoxDecoration _cardDecoration() {
     return BoxDecoration(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(16), // Raccourci pour plus de compacité
+      borderRadius: BorderRadius.circular(16), 
       boxShadow: [
         BoxShadow(
           color: rdcBlue.withOpacity(0.04),
@@ -136,7 +128,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
           style: const TextStyle(
             fontWeight: FontWeight.w900,
             color: rdcBlue,
-            fontSize: 15, // Plus petit
+            fontSize: 15, 
           ),
         ),
         const Spacer(),
@@ -152,7 +144,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                     actionText,
                     style: const TextStyle(
                       color: ThixPolicy.gold,
-                      fontSize: 11, // Plus petit
+                      fontSize: 11, 
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -255,7 +247,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
       floating: true,
       elevation: 0,
       backgroundColor: Colors.white,
-      toolbarHeight: 56, // Plus compact
+      toolbarHeight: 56, 
       automaticallyImplyLeading: false,
       title: Row(
         children: [
@@ -418,7 +410,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
         ),
         const SizedBox(height: 8),
         SizedBox(
-          height: 140, // Plus compact
+          height: 140, 
           child: PageView.builder(
             controller: _patrioticCtrl,
             itemCount: patrioticPosters.length,
@@ -520,7 +512,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
     final authAsync = ref.watch(topAuthoritiesProvider);
 
     return Container(
-      padding: const EdgeInsets.all(12), // Moins d'espace perdu
+      padding: const EdgeInsets.all(12), 
       decoration: _cardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -585,7 +577,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                               ),
                             ),
                             child: CircleAvatar(
-                              radius: 32, // Plus petit
+                              radius: 32, 
                               backgroundImage: NetworkImage(
                                 president.imageUrl ?? 'https://i.pravatar.cc/200?u=president',
                               ),
@@ -646,7 +638,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                       physics: const NeverScrollableScrollPhysics(),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 3,
-                        childAspectRatio: 0.85, // Mieux équilibré
+                        childAspectRatio: 0.85, 
                         crossAxisSpacing: 8,
                         mainAxisSpacing: 8,
                       ),
@@ -667,7 +659,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                                   border: Border.all(color: rdcYellow, width: 1.5),
                                 ),
                                 child: CircleAvatar(
-                                  radius: 26, // Plus petit
+                                  radius: 26, 
                                   backgroundImage: NetworkImage(
                                     a.imageUrl ?? 'https://i.pravatar.cc/100?u=$i',
                                   ),
@@ -828,7 +820,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 3,
-              childAspectRatio: 1.3, // Plus aplati (moins de hauteur)
+              childAspectRatio: 1.3, 
               crossAxisSpacing: 8,
               mainAxisSpacing: 8,
             ),
@@ -887,7 +879,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
               _sectionHeader('Provinces', actionText: 'Voir toutes', onTap: () => context.push('/mon-pays/provinces')),
               const SizedBox(height: 12),
               SizedBox(
-                height: 75, // Plus compact
+                height: 75, 
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: list.take(8).length,
@@ -970,7 +962,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
           const SizedBox(height: 12),
           
           SizedBox(
-            height: 95, // Erreur / Loading plus compacts
+            height: 95, 
             child: citizensAsync.when(
               loading: () => const Center(child: CircularProgressIndicator(color: rdcBlue, strokeWidth: 2)),
               error: (e, _) => const Center(child: Text('Erreur de chargement', style: TextStyle(color: Colors.red, fontSize: 11))),
@@ -1040,7 +1032,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
       {'icon': Icons.campaign_rounded, 'label': 'Participer', 'color': rdcBlue},
     ];
     return SizedBox(
-      height: 75, // Plus bas
+      height: 75, 
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         scrollDirection: Axis.horizontal,
