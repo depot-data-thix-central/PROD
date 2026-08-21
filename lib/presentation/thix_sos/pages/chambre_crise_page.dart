@@ -626,7 +626,8 @@ class _LiveMapCard extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.map_off_outlined, color: ThixPolicy.textMuted, size: 48),
+                Icon(Icons.location_off, color: ThixPolicy.textMuted, size: 48),
+
                 const SizedBox(height: ThixPolicy.s8),
                 Text(
                   'Carte temporairement désactivée\n(En attente de l\'API Google)',
