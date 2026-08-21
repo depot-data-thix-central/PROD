@@ -77,6 +77,12 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
         );
       }
     });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (ref.read(newsProvider).articles.isEmpty) {
+        ref.read(newsProvider.notifier).fetchArticles();
+      }
+    });
   }
 
   @override
@@ -96,16 +102,16 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
     }
   }
 
-  // ─── Styles utilitaires pour le design épuré ─────────────────────
+  // ─── Styles utilitaires ultra-compacts ─────────────────────
   BoxDecoration _cardDecoration() {
     return BoxDecoration(
       color: Colors.white,
-      borderRadius: BorderRadius.circular(ThixPolicy.rXl),
+      borderRadius: BorderRadius.circular(16), // Raccourci pour plus de compacité
       boxShadow: [
         BoxShadow(
           color: rdcBlue.withOpacity(0.04),
-          blurRadius: 20,
-          offset: const Offset(0, 8),
+          blurRadius: 12,
+          offset: const Offset(0, 4),
         )
       ],
     );
@@ -116,19 +122,19 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
       children: [
         Container(
           width: 4,
-          height: 18,
+          height: 16,
           decoration: BoxDecoration(
             color: rdcRed,
             borderRadius: BorderRadius.circular(2),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 6),
         Text(
           title,
           style: const TextStyle(
             fontWeight: FontWeight.w900,
             color: rdcBlue,
-            fontSize: 17,
+            fontSize: 15, // Plus petit
           ),
         ),
         const Spacer(),
@@ -144,13 +150,13 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                     actionText,
                     style: const TextStyle(
                       color: ThixPolicy.gold,
-                      fontSize: 13,
+                      fontSize: 11, // Plus petit
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   const Icon(
                     Icons.chevron_right,
-                    size: 18,
+                    size: 16,
                     color: ThixPolicy.gold,
                   ),
                 ],
@@ -174,64 +180,64 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
           SliverToBoxAdapter(
             child: Column(
               children: [
-                const SizedBox(height: ThixPolicy.s12),
+                const SizedBox(height: 8),
                 
                 // 1. CARROUSEL HERO
                 _buildPatrioticCarousel(isAdmin),
-                const SizedBox(height: ThixPolicy.s24),
+                const SizedBox(height: 12),
                 
                 // 2. AUTORITÉS
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: _buildAutoritesFullWidth(),
                 ),
-                const SizedBox(height: ThixPolicy.s24),
+                const SizedBox(height: 12),
 
-                // 3. À LA UNE (Actualités connectées à Supabase)
+                // 3. À LA UNE (Actualités)
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: _buildALaUneFull(),
                 ),
-                const SizedBox(height: ThixPolicy.s24),
+                const SizedBox(height: 12),
 
                 // 4. AGENCES
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: _buildAgencesFull(),
                 ),
-                const SizedBox(height: ThixPolicy.s24),
+                const SizedBox(height: 12),
                 
                 // 5. PROVINCES
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: _buildProvincesSection(),
                 ),
-                const SizedBox(height: ThixPolicy.s24),
+                const SizedBox(height: 12),
 
-                // 6. CITOYENS EXEMPLAIRES (Connecté)
+                // 6. CITOYENS EXEMPLAIRES
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: _buildCitoyensExemplairesFull(),
                 ),
-                const SizedBox(height: ThixPolicy.s24),
+                const SizedBox(height: 12),
 
                 // 7. ACCÈS RAPIDES
                 _buildQuickAccess(),
-                const SizedBox(height: ThixPolicy.s24),
+                const SizedBox(height: 12),
                 
                 // 8. ALERTES
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: _buildAlertRow(),
                 ),
-                const SizedBox(height: ThixPolicy.s24),
+                const SizedBox(height: 12),
                 
                 // 9. FIGURES HISTORIQUES 
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: _buildFiguresHistoriquesBig(),
                 ),
-                const SizedBox(height: 40), // Espacement final propre
+                const SizedBox(height: 24), 
               ],
             ),
           ),
@@ -247,15 +253,15 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
       floating: true,
       elevation: 0,
       backgroundColor: Colors.white,
-      toolbarHeight: 64,
+      toolbarHeight: 56, // Plus compact
       automaticallyImplyLeading: false,
       title: Row(
         children: [
-          const Icon(Icons.menu, color: rdcBlue, size: 28),
-          const SizedBox(width: 12),
+          const Icon(Icons.menu, color: rdcBlue, size: 24),
+          const SizedBox(width: 8),
           Container(
-            width: 32,
-            height: 22,
+            width: 28,
+            height: 20,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(4),
               color: rdcBlue,
@@ -265,18 +271,18 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                 'CD',
                 style: TextStyle(
                   color: rdcYellow,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           const Expanded(
             child: Text(
               'RÉPUBLIQUE DÉMOCRATIQUE\nDU CONGO',
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 10,
                 fontWeight: FontWeight.w800,
                 color: rdcBlue,
                 height: 1.1,
@@ -290,10 +296,10 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
             children: [
               _circleIcon(Icons.notifications_none_rounded, () {}),
               Positioned(
-                top: -4,
-                right: -4,
+                top: -2,
+                right: -2,
                 child: Container(
-                  padding: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.all(3),
                   decoration: const BoxDecoration(
                     color: rdcRed,
                     shape: BoxShape.circle,
@@ -301,7 +307,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                   child: const Text(
                     '3',
                     style: TextStyle(
-                      fontSize: 9,
+                      fontSize: 8,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
@@ -313,7 +319,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
 
           if (isAdmin)
             Padding(
-              padding: const EdgeInsets.only(left: 8),
+              padding: const EdgeInsets.only(left: 6),
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
@@ -323,12 +329,12 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                     padding: const EdgeInsets.all(2),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      border: Border.all(color: rdcRed, width: 2),
+                      border: Border.all(color: rdcRed, width: 1.5),
                     ),
                     child: const CircleAvatar(
-                      radius: 16,
+                      radius: 14,
                       backgroundColor: rdcBlue,
-                      child: Icon(Icons.admin_panel_settings, color: rdcYellow, size: 18),
+                      child: Icon(Icons.admin_panel_settings, color: rdcYellow, size: 16),
                     ),
                   ),
                 ),
@@ -344,12 +350,12 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: ThixPolicy.surfaceSoft,
         ),
-        child: Icon(icon, size: 20, color: rdcBlue),
+        child: Icon(icon, size: 18, color: rdcBlue),
       ),
     );
   }
@@ -360,11 +366,11 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          margin: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             color: rdcBlue,
-            borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+            borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
             children: [
@@ -373,7 +379,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                 style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w900,
-                  fontSize: 16,
+                  fontSize: 14,
                 ),
               ),
               const SizedBox(width: 8),
@@ -382,7 +388,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                   'Informer • Comprendre • Participer',
                   style: TextStyle(
                     color: rdcYellow,
-                    fontSize: 10,
+                    fontSize: 9,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -391,16 +397,16 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                 InkWell(
                   onTap: () => _showComingSoon(),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                     decoration: BoxDecoration(
                       color: Colors.white24,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                     child: const Row(
                       children: [
-                        Icon(Icons.add_a_photo, color: Colors.white, size: 14),
-                        SizedBox(width: 4),
-                        Text('Ajouter', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                        Icon(Icons.add_a_photo, color: Colors.white, size: 12),
+                        SizedBox(width: 2),
+                        Text('Ajouter', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
@@ -408,9 +414,9 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         SizedBox(
-          height: 170,
+          height: 140, // Plus compact
           child: PageView.builder(
             controller: _patrioticCtrl,
             itemCount: patrioticPosters.length,
@@ -418,13 +424,13 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
             itemBuilder: (context, index) {
               final p = patrioticPosters[index];
               return Container(
-                margin: const EdgeInsets.only(right: 12, left: 4),
+                margin: const EdgeInsets.only(right: 8, left: 4),
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
                     Container(
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+                        borderRadius: BorderRadius.circular(12),
                         image: DecorationImage(
                           image: NetworkImage(p['img']!),
                           fit: BoxFit.cover,
@@ -434,7 +440,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                     ),
                     Container(
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+                        borderRadius: BorderRadius.circular(12),
                         gradient: LinearGradient(
                           begin: Alignment.centerLeft,
                           end: Alignment.centerRight,
@@ -444,15 +450,15 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                           ],
                         ),
                       ),
-                      padding: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
+                              horizontal: 8,
+                              vertical: 3,
                             ),
                             decoration: BoxDecoration(
                               color: rdcYellow,
@@ -461,69 +467,41 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                             child: Text(
                               p['title']!,
                               style: const TextStyle(
-                                fontSize: 10,
+                                fontSize: 9,
                                 fontWeight: FontWeight.bold,
                                 color: rdcBlue,
                               ),
                             ),
                           ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 6),
                           Text(
                             p['subtitle']!,
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w900,
-                              fontSize: 19,
+                              fontSize: 16,
                               height: 1.2,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    if (isAdmin)
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Row(
-                          children: [
-                            Container(
-                              decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                              child: IconButton(
-                                icon: const Icon(Icons.edit, color: Colors.white, size: 18),
-                                onPressed: () => _showComingSoon(),
-                                constraints: const BoxConstraints(),
-                                padding: const EdgeInsets.all(8),
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Container(
-                              decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                              child: IconButton(
-                                icon: const Icon(Icons.delete, color: rdcRed, size: 18),
-                                onPressed: () => _showComingSoon(),
-                                constraints: const BoxConstraints(),
-                                padding: const EdgeInsets.all(8),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                   ],
                 ),
               );
             },
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(
             patrioticPosters.length,
             (index) => AnimatedContainer(
               duration: const Duration(milliseconds: 300),
-              width: index == _currentPatriotic ? 20 : 6,
+              width: index == _currentPatriotic ? 16 : 6,
               height: 6,
-              margin: const EdgeInsets.symmetric(horizontal: 4),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
               decoration: BoxDecoration(
                 color: index == _currentPatriotic ? rdcYellow : rdcBlue.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(10),
@@ -540,24 +518,24 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
     final authAsync = ref.watch(topAuthoritiesProvider);
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(12), // Moins d'espace perdu
       decoration: _cardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionHeader('Les Autorités', actionText: 'Voir tout', onTap: () => context.push('/mon-pays/authorities')),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
           authAsync.when(
             loading: () => const Center(
               child: Padding(
-                padding: EdgeInsets.all(20),
+                padding: EdgeInsets.all(12),
                 child: CircularProgressIndicator(strokeWidth: 2, color: rdcBlue),
               ),
             ),
-            error: (_, __) => const Text('Erreur chargement autorités', style: TextStyle(color: ThixPolicy.textSecondary)),
+            error: (_, __) => const Text('Erreur chargement autorités', style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 11)),
             data: (authorities) {
               if (authorities.isEmpty) {
-                return const Text('Aucune autorité enregistrée', style: TextStyle(color: ThixPolicy.textSecondary));
+                return const Text('Aucune autorité enregistrée', style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 11));
               }
 
               int getPriority(String? title) {
@@ -585,17 +563,17 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                 children: [
                   InkWell(
                     onTap: () => context.push('/mon-pays/authorities/${president.id}'),
-                    borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+                    borderRadius: BorderRadius.circular(12),
                     child: Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: ThixPolicy.surfaceSoft,
-                        borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(3),
+                            padding: const EdgeInsets.all(2),
                             decoration: const BoxDecoration(
                               shape: BoxShape.circle,
                               gradient: LinearGradient(
@@ -605,21 +583,21 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                               ),
                             ),
                             child: CircleAvatar(
-                              radius: 42,
+                              radius: 32, // Plus petit
                               backgroundImage: NetworkImage(
                                 president.imageUrl ?? 'https://i.pravatar.cc/200?u=president',
                               ),
                               onBackgroundImageError: (_, __) {},
                             ),
                           ),
-                          const SizedBox(width: 16),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                                   decoration: BoxDecoration(
                                     color: rdcBlue,
                                     borderRadius: BorderRadius.circular(20),
@@ -628,25 +606,26 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                                     'PRÉSIDENT DE LA RÉPUBLIQUE',
                                     style: TextStyle(
                                       color: rdcYellow,
-                                      fontSize: 8,
+                                      fontSize: 7,
                                       fontWeight: FontWeight.bold,
                                       letterSpacing: 0.5,
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 4),
                                 Text(
                                   president.name,
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w900,
-                                    fontSize: 17,
+                                    fontSize: 14,
                                     color: ThixPolicy.textMain,
+                                    height: 1.1,
                                   ),
                                 ),
                                 Text(
                                   president.title ?? 'Président de la République',
                                   style: const TextStyle(
-                                    fontSize: 12,
+                                    fontSize: 10,
                                     color: ThixPolicy.textSecondary,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -658,49 +637,49 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   if (others.isNotEmpty)
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 3,
-                        childAspectRatio: 0.80,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
+                        childAspectRatio: 0.85, // Mieux équilibré
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
                       ),
                       itemCount: others.length,
                       itemBuilder: (context, i) {
                         final a = others[i];
                         return InkWell(
                           onTap: () => context.push('/mon-pays/authorities/${a.id}'),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(8),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Container(
-                                padding: const EdgeInsets.all(2.5),
+                                padding: const EdgeInsets.all(2),
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   border: Border.all(color: rdcYellow, width: 1.5),
                                 ),
                                 child: CircleAvatar(
-                                  radius: 36,
+                                  radius: 26, // Plus petit
                                   backgroundImage: NetworkImage(
                                     a.imageUrl ?? 'https://i.pravatar.cc/100?u=$i',
                                   ),
                                   onBackgroundImageError: (_, __) {},
                                 ),
                               ),
-                              const SizedBox(height: 8),
+                              const SizedBox(height: 6),
                               Text(
                                 a.name,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w800,
-                                  fontSize: 11,
+                                  fontSize: 10,
                                   color: ThixPolicy.textMain,
                                 ),
                               ),
@@ -710,7 +689,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                                 overflow: TextOverflow.ellipsis,
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
-                                  fontSize: 9,
+                                  fontSize: 8,
                                   color: ThixPolicy.textSecondary,
                                 ),
                               ),
@@ -728,43 +707,38 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
     );
   }
 
-  // ─── À la Une (Actualités branchées sur Supabase via newsProvider) ──────
+  // ─── À la Une ──────────────────────────────────────────────────
   Widget _buildALaUneFull() {
-    final newsAsync = ref.watch(newsProvider);
+    final newsState = ref.watch(newsProvider);
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(12),
       decoration: _cardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionHeader('À la Une', actionText: 'Voir toutes', onTap: () => context.push('/mon-pays/news')),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           SizedBox(
-            height: 180,
-            child: newsAsync.when(
-              loading: () => const Center(
-                child: CircularProgressIndicator(color: rdcBlue),
-              ),
-              error: (err, _) => Center(
-                child: Text('Erreur de chargement', style: TextStyle(color: Colors.red.shade300)),
-              ),
-              data: (newsList) {
-                if (newsList.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'Aucune actualité pour le moment.',
-                      style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 13),
-                    ),
-                  );
+            height: 140, // Plus compact
+            child: Builder(
+              builder: (context) {
+                if (newsState.isLoading && newsState.articles.isEmpty) {
+                  return const Center(child: CircularProgressIndicator(color: rdcBlue, strokeWidth: 2));
+                }
+                if (newsState.error != null && newsState.articles.isEmpty) {
+                  return Center(child: Text('Erreur : ${newsState.error}', style: TextStyle(color: Colors.red.shade300, fontSize: 11)));
+                }
+                if (newsState.articles.isEmpty) {
+                  return const Center(child: Text('Aucune actualité pour le moment.', style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 11)));
                 }
 
-                final topNews = newsList.take(5).toList();
+                final topNews = newsState.articles.take(5).toList();
 
                 return ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: topNews.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 14),
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
                   itemBuilder: (context, i) {
                     final article = topNews[i];
                     String dateStr = '';
@@ -774,18 +748,14 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
 
                     return InkWell(
                       onTap: () => _showComingSoon(), 
-                      borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                      borderRadius: BorderRadius.circular(8),
                       child: Container(
-                        width: 150,
+                        width: 130, // Plus fin
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                          borderRadius: BorderRadius.circular(8),
                           color: Colors.white,
                           boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.04),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
-                            )
+                            BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 2))
                           ],
                         ),
                         child: Column(
@@ -793,49 +763,33 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             ClipRRect(
-                              borderRadius: BorderRadius.vertical(
-                                top: Radius.circular(ThixPolicy.rMd),
-                              ),
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
                               child: article.coverImageUrl != null && article.coverImageUrl!.isNotEmpty
                                   ? CachedNetworkImage(
                                       imageUrl: article.coverImageUrl!,
-                                      height: 95,
-                                      width: 150,
+                                      height: 75,
+                                      width: 130,
                                       fit: BoxFit.cover,
-                                      placeholder: (_, __) => Container(color: ThixPolicy.surfaceSoft, height: 95, width: 150),
-                                      errorWidget: (_, __, ___) => Container(color: ThixPolicy.surfaceSoft, height: 95, width: 150, child: const Icon(Icons.broken_image, color: Colors.grey)),
+                                      placeholder: (_, __) => Container(color: ThixPolicy.surfaceSoft, height: 75, width: 130),
+                                      errorWidget: (_, __, ___) => Container(color: ThixPolicy.surfaceSoft, height: 75, width: 130, child: const Icon(Icons.broken_image, color: Colors.grey, size: 20)),
                                     )
-                                  : Container(
-                                      height: 95,
-                                      width: 150,
-                                      color: ThixPolicy.surfaceSoft,
-                                      child: const Icon(Icons.newspaper, color: Colors.grey),
-                                    ),
+                                  : Container(height: 75, width: 130, color: ThixPolicy.surfaceSoft, child: const Icon(Icons.newspaper, color: Colors.grey, size: 20)),
                             ),
                             Padding(
-                              padding: const EdgeInsets.all(10),
+                              padding: const EdgeInsets.all(8),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     dateStr.isNotEmpty ? dateStr : 'Récemment',
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: rdcRed,
-                                    ),
+                                    style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w600, color: rdcRed),
                                   ),
-                                  const SizedBox(height: 4),
+                                  const SizedBox(height: 2),
                                   Text(
                                     article.title,
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w800,
-                                      color: ThixPolicy.textMain,
-                                      height: 1.2,
-                                    ),
+                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: ThixPolicy.textMain, height: 1.2),
                                   ),
                                 ],
                               ),
@@ -865,20 +819,20 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
       {'icon': Icons.business, 'label': 'Entreprises Pub.'},
     ];
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(12),
       decoration: _cardDecoration(),
       child: Column(
         children: [
           _sectionHeader('Institutions', actionText: 'Explorer', onTap: () => _showComingSoon()),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 3,
-              childAspectRatio: 1.0,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
+              childAspectRatio: 1.3, // Plus aplati (moins de hauteur)
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
             ),
             itemCount: items.length,
             itemBuilder: (context, i) {
@@ -892,29 +846,21 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                     _showComingSoon();
                   }
                 },
-                borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                borderRadius: BorderRadius.circular(8),
                 child: Container(
                   decoration: BoxDecoration(
                     color: ThixPolicy.surfaceSoft,
-                    borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(
-                        item['icon'] as IconData,
-                        color: rdcBlue,
-                        size: 26,
-                      ),
-                      const SizedBox(height: 8),
+                      Icon(item['icon'] as IconData, color: rdcBlue, size: 20),
+                      const SizedBox(height: 4),
                       Text(
                         item['label'] as String,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: ThixPolicy.textMain,
-                        ),
+                        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: ThixPolicy.textMain),
                       ),
                     ],
                   ),
@@ -936,52 +882,49 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
       data: (list) {
         if (list.isEmpty) return const SizedBox.shrink();
         return Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(12),
           decoration: _cardDecoration(),
           child: Column(
             children: [
               _sectionHeader('Provinces', actionText: 'Voir toutes', onTap: () => context.push('/mon-pays/provinces')),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               SizedBox(
-                height: 100,
+                height: 75, // Plus compact
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: list.take(8).length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
                   itemBuilder: (c, i) {
                     final p = list[i];
                     return InkWell(
                       onTap: () => context.push('/mon-pays/provinces/${p.id}'),
-                      borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                      borderRadius: BorderRadius.circular(8),
                       child: Container(
-                        width: 120,
-                        padding: const EdgeInsets.all(12),
+                        width: 110,
+                        padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
                           color: ThixPolicy.surfaceSoft,
-                          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                          borderRadius: BorderRadius.circular(8),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
-                              width: 36,
-                              height: 36,
+                              width: 28,
+                              height: 28,
                               decoration: BoxDecoration(
                                 color: rdcBlue,
                                 shape: BoxShape.circle,
                                 image: p.coatOfArmsUrl != null && p.coatOfArmsUrl!.trim().isNotEmpty
-                                    ? DecorationImage(
-                                        image: NetworkImage(p.coatOfArmsUrl!),
-                                        fit: BoxFit.contain,
-                                      )
+                                    ? DecorationImage(image: NetworkImage(p.coatOfArmsUrl!), fit: BoxFit.contain)
                                     : null,
                               ),
                               child: (p.coatOfArmsUrl == null || p.coatOfArmsUrl!.trim().isEmpty)
                                   ? Center(
                                       child: Text(
                                         p.code.length >= 2 ? p.code.substring(0, 2).toUpperCase() : p.code.toUpperCase(),
-                                        style: const TextStyle(color: rdcYellow, fontSize: 13, fontWeight: FontWeight.bold),
+                                        style: const TextStyle(color: rdcYellow, fontSize: 10, fontWeight: FontWeight.bold),
                                       ),
                                     )
                                   : null,
@@ -990,19 +933,11 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                             Text(
                               p.name,
                               maxLines: 1,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                                color: ThixPolicy.textMain,
-                                fontSize: 12,
-                              ),
+                              style: const TextStyle(fontWeight: FontWeight.w800, color: ThixPolicy.textMain, fontSize: 10),
                             ),
                             Text(
                               p.capital,
-                              style: const TextStyle(
-                                fontSize: 10,
-                                color: ThixPolicy.textSecondary,
-                                fontWeight: FontWeight.w500,
-                              ),
+                              style: const TextStyle(fontSize: 8, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w500),
                             ),
                           ],
                         ),
@@ -1023,85 +958,65 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
     final citizensAsync = ref.watch(citizensProvider);
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(12),
       decoration: _cardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionHeader('Citoyens Exemplaires', actionText: 'Voir tous', onTap: () => _showComingSoon()),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           const Text(
             'Ils bâtissent la RDC au quotidien par leur excellence.',
-            style: TextStyle(
-              color: ThixPolicy.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
+            style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 10, fontWeight: FontWeight.w500),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           
           SizedBox(
-            height: 120,
+            height: 95, // Erreur / Loading plus compacts
             child: citizensAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator(color: rdcBlue)),
-              error: (e, _) => const Center(child: Text('Erreur de chargement', style: TextStyle(color: Colors.red))),
+              loading: () => const Center(child: CircularProgressIndicator(color: rdcBlue, strokeWidth: 2)),
+              error: (e, _) => const Center(child: Text('Erreur de chargement', style: TextStyle(color: Colors.red, fontSize: 11))),
               data: (citizens) {
                 if (citizens.isEmpty) {
                   return const Center(
-                    child: Text(
-                      'Aucun citoyen mis en avant pour le moment.',
-                      style: TextStyle(color: ThixPolicy.textSecondary, fontStyle: FontStyle.italic),
-                    ),
+                    child: Text('Aucun citoyen mis en avant pour le moment.', style: TextStyle(color: ThixPolicy.textSecondary, fontStyle: FontStyle.italic, fontSize: 11)),
                   );
                 }
 
                 return ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: citizens.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 16),
+                  separatorBuilder: (_, __) => const SizedBox(width: 12),
                   itemBuilder: (context, i) {
                     final citizen = citizens[i];
 
                     return SizedBox(
-                      width: 85,
+                      width: 70,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(3),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: rdcYellow, width: 2),
-                            ),
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: rdcYellow, width: 1.5)),
                             child: CircleAvatar(
-                              radius: 34,
+                              radius: 24,
                               backgroundColor: ThixPolicy.surfaceSoft,
                               backgroundImage: citizen.photoUrl != null && citizen.photoUrl!.isNotEmpty 
-                                  ? CachedNetworkImageProvider(citizen.photoUrl!) 
-                                  : null,
+                                  ? CachedNetworkImageProvider(citizen.photoUrl!) : null,
                               child: (citizen.photoUrl == null || citizen.photoUrl!.isEmpty) 
-                                  ? const Icon(Icons.person, color: rdcBlue) 
-                                  : null,
+                                  ? const Icon(Icons.person, color: rdcBlue, size: 20) : null,
                             ),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           Text(
                             citizen.fullName,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: ThixPolicy.textMain,
-                              fontSize: 12,
-                            ),
+                            style: const TextStyle(fontWeight: FontWeight.w800, color: ThixPolicy.textMain, fontSize: 10),
                           ),
                           Text(
                             citizen.domain,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: rdcRed,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: const TextStyle(fontSize: 8, color: rdcRed, fontWeight: FontWeight.w600),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -1127,12 +1042,12 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
       {'icon': Icons.campaign_rounded, 'label': 'Participer', 'color': rdcBlue},
     ];
     return SizedBox(
-      height: 90,
+      height: 75, // Plus bas
       child: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         scrollDirection: Axis.horizontal,
         itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
         itemBuilder: (c, i) {
           final item = items[i];
           final route = item['route'] as String?;
@@ -1145,18 +1060,14 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                 _showComingSoon();
               }
             },
-            borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+            borderRadius: BorderRadius.circular(12),
             child: Container(
-              width: 85,
+              width: 75,
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                borderRadius: BorderRadius.circular(12),
                 boxShadow: [
-                  BoxShadow(
-                    color: rdcBlue.withOpacity(0.04),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  )
+                  BoxShadow(color: rdcBlue.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 3))
                 ],
               ),
               child: Column(
@@ -1164,22 +1075,15 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(item['icon'] as IconData, color: color == rdcYellow ? const Color(0xFFD4A017) : color, size: 20),
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+                    child: Icon(item['icon'] as IconData, color: color == rdcYellow ? const Color(0xFFD4A017) : color, size: 18),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     item['label'] as String,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: ThixPolicy.textMain,
-                    ),
+                    style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: ThixPolicy.textMain),
                   ),
                 ],
               ),
@@ -1193,28 +1097,25 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
   // ─── Alertes ────────────────────────────────────────────────────
   Widget _buildAlertRow() => Row(
         children: [
-          Expanded(child: _alertCard(rdcRed, 'Personne Recherchée', Icons.warning_amber_rounded)),
-          const SizedBox(width: 16),
-          Expanded(child: _alertCard(rdcBlue, 'Recherche Citoyenne', Icons.search_rounded)),
+          Expanded(child: _alertCard(rdcRed, 'Personne\nRecherchée', Icons.warning_amber_rounded)),
+          const SizedBox(width: 12),
+          Expanded(child: _alertCard(rdcBlue, 'Recherche\nCitoyenne', Icons.search_rounded)),
         ],
       );
 
   Widget _alertCard(Color color, String title, IconData icon) => Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         decoration: _cardDecoration(),
         child: Row(
           children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(width: 12),
+            Icon(icon, color: color, size: 22),
+            const SizedBox(width: 8),
             Expanded(
               child: Text(
                 title,
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
-                  color: color,
-                  height: 1.2,
-                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 10, color: color, height: 1.2),
               ),
             ),
           ],
@@ -1224,33 +1125,29 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
   // ─── Figures Historiques ───────────────────
   Widget _buildFiguresHistoriquesBig() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(12),
       decoration: _cardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionHeader('Figures Historiques', actionText: 'Explorer', onTap: () => _showComingSoon()),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           const Text(
             'Découvrez ceux qui ont marqué notre histoire.',
-            style: TextStyle(
-              color: ThixPolicy.textSecondary,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
+            style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 10, fontWeight: FontWeight.w500),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           
           Center(
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
+              padding: const EdgeInsets.symmetric(vertical: 16),
               child: Column(
                 children: [
-                  Icon(Icons.history_edu, size: 48, color: ThixPolicy.surfaceStrong),
-                  const SizedBox(height: 12),
+                  Icon(Icons.history_edu, size: 32, color: ThixPolicy.surfaceStrong),
+                  const SizedBox(height: 8),
                   const Text(
                     'Module en cours de développement',
-                    style: TextStyle(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w700, fontSize: 13),
+                    style: TextStyle(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w700, fontSize: 11),
                   )
                 ],
               ),
@@ -1265,7 +1162,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
   void _showComingSoon() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Module en cours de développement', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Text('Module en cours de développement', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
         backgroundColor: rdcBlue,
         duration: Duration(seconds: 1),
       ),
