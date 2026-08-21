@@ -1,3 +1,4 @@
+// lib/presentation/common/notifications_sheet.dart
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -22,6 +23,116 @@ class NotificationsSheet {
     );
   }
 }
+
+// =============================================================================
+// FALLBACK DE CONTENU — pour les notifications sans title/body (anciennes
+// données, ou notifs créées directement en SQL / par un module qui n'a pas
+// encore rempli ces champs).
+// =============================================================================
+
+class _NotificationDisplay {
+  final String title;
+  final String body;
+  final IconData icon;
+  final Color accent;
+
+  const _NotificationDisplay({
+    required this.title,
+    required this.body,
+    required this.icon,
+    required this.accent,
+  });
+}
+
+_NotificationDisplay _displayFor({
+  required String type,
+  required String? rawTitle,
+  required String? rawBody,
+  required Map<String, dynamic> extra,
+}) {
+  final hasTitle = rawTitle != null && rawTitle.trim().isNotEmpty;
+  final hasBody = rawBody != null && rawBody.trim().isNotEmpty;
+
+  switch (type) {
+    case 'like':
+      return _NotificationDisplay(
+        title: hasTitle ? rawTitle : 'Nouveau j’aime',
+        body: hasBody ? rawBody : 'Quelqu’un a aimé votre publication.',
+        icon: Icons.favorite_rounded,
+        accent: const Color(0xFFEF4444),
+      );
+    case 'follow':
+      return _NotificationDisplay(
+        title: hasTitle ? rawTitle : 'Nouvel abonné',
+        body: hasBody ? rawBody : 'Quelqu’un a commencé à vous suivre.',
+        icon: Icons.person_add_rounded,
+        accent: const Color(0xFF6366F1),
+      );
+    case 'connection':
+      return _NotificationDisplay(
+        title: hasTitle ? rawTitle : 'Demande de connexion',
+        body: hasBody ? rawBody : 'Quelqu’un souhaite se connecter avec vous.',
+        icon: Icons.people_alt_rounded,
+        accent: const Color(0xFF8B5CF6),
+      );
+    case 'comment':
+      return _NotificationDisplay(
+        title: hasTitle ? rawTitle : 'Nouveau commentaire',
+        body: hasBody ? rawBody : 'Quelqu’un a commenté votre publication.',
+        icon: Icons.mode_comment_rounded,
+        accent: const Color(0xFF0EA5E9),
+      );
+    case 'chat':
+    case 'message':
+      return _NotificationDisplay(
+        title: hasTitle ? rawTitle : 'Nouveau message',
+        body: hasBody ? rawBody : 'Vous avez reçu un message.',
+        icon: Icons.chat_bubble_rounded,
+        accent: LightModeColors.accent,
+      );
+    case 'access_request':
+      final name = (extra['requester_name'] ?? '').toString().trim();
+      final thixId = (extra['requester_thix_id'] ?? '').toString().trim();
+      final bits = <String>[if (name.isNotEmpty) name, if (thixId.isNotEmpty) thixId];
+      return _NotificationDisplay(
+        title: hasTitle
+            ? (bits.isEmpty ? rawTitle : '$rawTitle — ${bits.join(' · ')}')
+            : 'Demande d’accès',
+        body: hasBody ? rawBody : 'Une demande d’accès est en attente.',
+        icon: Icons.lock_open_rounded,
+        accent: const Color(0xFFF59E0B),
+      );
+    default:
+      return _NotificationDisplay(
+        title: hasTitle ? rawTitle : 'Notification',
+        body: hasBody ? rawBody : '',
+        icon: Icons.notifications_rounded,
+        accent: LightModeColors.accent,
+      );
+  }
+}
+
+String _timeAgo(dynamic rawCreatedAt) {
+  if (rawCreatedAt == null) return '';
+  DateTime? dt;
+  if (rawCreatedAt is DateTime) {
+    dt = rawCreatedAt;
+  } else {
+    dt = DateTime.tryParse(rawCreatedAt.toString());
+  }
+  if (dt == null) return '';
+
+  final diff = DateTime.now().toUtc().difference(dt.toUtc());
+  if (diff.inMinutes < 1) return 'à l’instant';
+  if (diff.inMinutes < 60) return 'il y a ${diff.inMinutes} min';
+  if (diff.inHours < 24) return 'il y a ${diff.inHours} h';
+  if (diff.inDays < 7) return 'il y a ${diff.inDays} j';
+  return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}';
+}
+
+// =============================================================================
+// SHEET
+// =============================================================================
 
 class _NotificationsSheetBody extends StatefulWidget {
   const _NotificationsSheetBody();
@@ -61,15 +172,22 @@ class _NotificationsSheetBodyState extends State<_NotificationsSheetBody> {
         padding: EdgeInsets.only(bottom: bottomPadding),
         child: _SheetShell(
           title: 'Notifications',
+          subtitle: null,
           actions: [
             IconButton(
               onPressed: () => context.pop(),
               icon: const Icon(Icons.close_rounded),
             ),
           ],
-          child: Text(
-            'Connectez-vous pour voir vos notifications.',
-            style: context.textStyles.bodyMedium,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 32),
+            child: Center(
+              child: Text(
+                'Connectez-vous pour voir vos notifications.',
+                style: context.textStyles.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
+            ),
           ),
         ),
       );
@@ -79,42 +197,53 @@ class _NotificationsSheetBodyState extends State<_NotificationsSheetBody> {
 
     return Padding(
       padding: EdgeInsets.only(bottom: bottomPadding),
-      child: _SheetShell(
-        title: 'Notifications',
-        actions: [
-          TextButton(
-            onPressed: _markingAll
-                ? null
-                : () async {
-                    setState(() => _markingAll = true);
-                    try {
-                      await _notifications.markAllRead(me.id);
-                    } catch (e) {
-                      debugPrint('NotificationsSheet: markAllRead failed → $e');
-                    } finally {
-                      if (mounted) setState(() => _markingAll = false);
-                    }
-                  },
-            child: Text(
-              'Tout lire',
-              style: context.textStyles.labelLarge?.copyWith(
-                color: LightModeColors.accent,
+      child: StreamBuilder<SectionBadgeCounts>(
+        stream: countsStream,
+        builder: (context, snap) {
+          final counts = snap.data ?? SectionBadgeCounts.zero;
+          final total = counts.total;
+
+          return _SheetShell(
+            title: 'Notifications',
+            subtitle: total > 0 ? '$total non lue${total > 1 ? 's' : ''}' : 'Tout est à jour',
+            actions: [
+              if (total > 0)
+                TextButton(
+                  onPressed: _markingAll
+                      ? null
+                      : () async {
+                          setState(() => _markingAll = true);
+                          try {
+                            await _notifications.markAllRead(me.id);
+                          } catch (e) {
+                            debugPrint('NotificationsSheet: markAllRead failed → $e');
+                          } finally {
+                            if (mounted) setState(() => _markingAll = false);
+                          }
+                        },
+                  child: Text(
+                    'Tout lire',
+                    style: context.textStyles.labelLarge?.copyWith(
+                      color: LightModeColors.accent,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              IconButton(
+                onPressed: () => context.pop(),
+                icon: const Icon(Icons.close_rounded),
               ),
+            ],
+            child: _ReceptionPanel(
+              meId: me.id,
+              notifications: _notifications,
+              access: _access,
+              profiles: _profiles,
+              counters: _counters,
+              countsStream: countsStream,
             ),
-          ),
-          IconButton(
-            onPressed: () => context.pop(),
-            icon: const Icon(Icons.close_rounded),
-          ),
-        ],
-        child: _ReceptionPanel(
-          meId: me.id,
-          notifications: _notifications,
-          access: _access,
-          profiles: _profiles,
-          counters: _counters,
-          countsStream: countsStream,
-        ),
+          );
+        },
       ),
     );
   }
@@ -168,7 +297,20 @@ class _ReceptionPanel extends StatelessWidget {
                           if (context.mounted) context.push(AppRoutes.chat);
                         },
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
+                      _SectionChip(
+                        icon: Icons.groups_rounded,
+                        label: 'Réseau',
+                        count: counts.network,
+                        onTap: () async {
+                          await counters.markSectionSeen(uid: meId, section: ThixSection.network);
+                          if (context.mounted) {
+                            context.pop();
+                            context.push('/network');
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 8),
                       _SectionChip(
                         icon: Icons.newspaper_rounded,
                         label: 'Infos',
@@ -193,7 +335,7 @@ class _ReceptionPanel extends StatelessWidget {
                           }
                         },
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       _SectionChip(
                         icon: Icons.event_available_rounded,
                         label: 'Événements',
@@ -203,7 +345,7 @@ class _ReceptionPanel extends StatelessWidget {
                           if (context.mounted) context.push(AppRoutes.thixEvent);
                         },
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       _SectionChip(
                         icon: Icons.school_rounded,
                         label: 'Formations',
@@ -213,7 +355,7 @@ class _ReceptionPanel extends StatelessWidget {
                           if (context.mounted) context.push(AppRoutes.education);
                         },
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       _SectionChip(
                         icon: Icons.lightbulb_rounded,
                         label: 'Opportunités',
@@ -223,7 +365,7 @@ class _ReceptionPanel extends StatelessWidget {
                           if (context.mounted) context.push(AppRoutes.opportunities);
                         },
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       _SectionChip(
                         icon: Icons.work_rounded,
                         label: 'Emploi',
@@ -233,7 +375,7 @@ class _ReceptionPanel extends StatelessWidget {
                           if (context.mounted) context.push(AppRoutes.jobs);
                         },
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       _SectionChip(
                         icon: Icons.storefront_rounded,
                         label: 'Market',
@@ -258,6 +400,7 @@ class _ReceptionPanel extends StatelessWidget {
               if (rows.isEmpty) return const SizedBox.shrink();
 
               return Container(
+                margin: const EdgeInsets.only(bottom: AppSpacing.md),
                 decoration: BoxDecoration(
                   color: LightModeColors.accent.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(AppRadius.lg),
@@ -373,8 +516,6 @@ class _ReceptionPanel extends StatelessWidget {
             },
           ),
 
-          const SizedBox(height: AppSpacing.md),
-
           // ---------- LISTE DES NOTIFICATIONS ----------
           StreamBuilder<SectionBadgeCounts>(
             stream: countsStream,
@@ -391,7 +532,7 @@ class _ReceptionPanel extends StatelessWidget {
                   if (snap.connectionState == ConnectionState.waiting && merged.isEmpty) {
                     return const Center(
                       child: Padding(
-                        padding: EdgeInsets.all(24),
+                        padding: EdgeInsets.all(32),
                         child: CircularProgressIndicator(),
                       ),
                     );
@@ -399,10 +540,22 @@ class _ReceptionPanel extends StatelessWidget {
 
                   if (merged.isEmpty) {
                     return Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        'Aucune notification.',
-                        style: context.textStyles.bodyMedium,
+                      padding: const EdgeInsets.symmetric(vertical: 40),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.notifications_off_outlined,
+                            size: 40,
+                            color: context.theme.colorScheme.onSurface.withValues(alpha: 0.25),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Aucune notification.',
+                            style: context.textStyles.bodyMedium?.copyWith(
+                              color: LightModeColors.secondaryText,
+                            ),
+                          ),
+                        ],
                       ),
                     );
                   }
@@ -418,7 +571,7 @@ class _ReceptionPanel extends StatelessWidget {
                     itemBuilder: (context, i) {
                       final data = merged[i];
 
-                      // Notification synthétique
+                      // Notification synthétique (résumé de section)
                       if ((data['__synthetic'] as bool?) == true) {
                         return _SyntheticNotificationRow(
                           title: (data['title'] ?? 'Notification').toString(),
@@ -435,18 +588,26 @@ class _ReceptionPanel extends StatelessWidget {
                       }
 
                       // Notification classique
-                      final title = (data['title'] as String?) ?? 'Notification';
-                      final body = (data['body'] as String?) ?? '';
                       final type = (data['type'] as String?) ?? 'generic';
                       final read = (data['read'] as bool?) ?? false;
                       final extra = (data['data'] as Map?)?.cast<String, dynamic>() ?? const <String, dynamic>{};
                       final id = (data['id'] ?? '').toString();
+                      final createdAt = data['created_at'];
+
+                      final display = _displayFor(
+                        type: type,
+                        rawTitle: data['title'] as String?,
+                        rawBody: data['body'] as String?,
+                        extra: extra,
+                      );
 
                       return _NotificationRow(
-                        title: _decorateTitle(type: type, title: title, extra: extra),
-                        body: _decorateBody(type: type, body: body, extra: extra),
-                        type: type,
+                        title: display.title,
+                        body: display.body,
+                        icon: display.icon,
+                        accent: display.accent,
                         read: read,
+                        timeLabel: _timeAgo(createdAt),
                         onTap: () {
                           if (id.isEmpty) return;
                           notifications.markRead(uid: meId, notificationId: id);
@@ -542,6 +703,15 @@ class _ReceptionPanel extends StatelessWidget {
         title: 'Nouveaux messages',
         body: 'Vous avez ${counts.messages} message(s) non lu(s).',
         count: counts.messages,
+      ));
+    }
+    if (counts.network > 0) {
+      out.add(mk(
+        section: ThixSection.network.name,
+        type: 'network',
+        title: 'Activité réseau',
+        body: '${counts.network} nouveauté(s) sur Thix Pro.',
+        count: counts.network,
       ));
     }
     if (counts.opportunities > 0) {
@@ -682,35 +852,6 @@ class _ReceptionPanel extends StatelessWidget {
       debugPrint('NotificationsSheet: synthetic tap failed → $e');
     }
   }
-
-  String _decorateTitle({
-    required String type,
-    required String title,
-    required Map<String, dynamic> extra,
-  }) {
-    if (type != 'access_request') return title;
-    final name = (extra['requester_name'] ?? '').toString().trim();
-    final thixId = (extra['requester_thix_id'] ?? '').toString().trim();
-    final bits = <String>[];
-    if (name.isNotEmpty) bits.add(name);
-    if (thixId.isNotEmpty) bits.add(thixId);
-    if (bits.isEmpty) return title;
-    return '$title — ${bits.join(' · ')}';
-  }
-
-  String _decorateBody({
-    required String type,
-    required String body,
-    required Map<String, dynamic> extra,
-  }) {
-    if (type != 'access_request') return body;
-    final requesterId = (extra['requester_id'] ?? '').toString().trim();
-    final minutes = (extra['access_minutes'] ?? '').toString().trim();
-    final lines = <String>[body];
-    if (requesterId.isNotEmpty) lines.add('ID: $requesterId');
-    if (minutes.isNotEmpty) lines.add('Durée: $minutes min');
-    return lines.where((l) => l.trim().isNotEmpty).join('\n');
-  }
 }
 
 // =============================================================================
@@ -732,10 +873,10 @@ class _SectionChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final disabled = onTap == null;
+    final hasCount = count > 0;
     final cs = context.theme.colorScheme;
-    final bg = disabled ? cs.surfaceContainerHighest.withValues(alpha: 0.35) : cs.surfaceContainerHighest;
-    final fg = disabled ? cs.onSurface.withValues(alpha: 0.45) : cs.onSurface;
+    final bg = hasCount ? LightModeColors.accent.withValues(alpha: 0.12) : cs.surfaceContainerHighest;
+    final fg = hasCount ? LightModeColors.accent : cs.onSurface.withValues(alpha: 0.7);
 
     return InkWell(
       splashFactory: NoSplash.splashFactory,
@@ -748,33 +889,36 @@ class _SectionChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.35)),
+          border: Border.all(
+            color: hasCount ? LightModeColors.accent.withValues(alpha: 0.35) : cs.outlineVariant.withValues(alpha: 0.35),
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 18, color: fg),
-            const SizedBox(width: 8),
+            Icon(icon, size: 16, color: fg),
+            const SizedBox(width: 6),
             Text(
               label,
-              style: context.textStyles.labelLarge?.copyWith(
+              style: context.textStyles.labelMedium?.copyWith(
                 color: fg,
                 fontWeight: FontWeight.w700,
               ),
             ),
-            if (count > 0) ...[
-              const SizedBox(width: 8),
+            if (hasCount) ...[
+              const SizedBox(width: 6),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: cs.primary,
+                  color: LightModeColors.accent,
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
-                  '$count',
+                  count > 99 ? '99+' : '$count',
                   style: context.textStyles.labelSmall?.copyWith(
-                    color: cs.onPrimary,
-                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF0A2F5C),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 10,
                   ),
                 ),
               ),
@@ -803,10 +947,12 @@ class _IncomingAccessRequestCard extends StatelessWidget {
     required this.onReject,
   });
 
+  // Correction : interpolation Dart standard ($) au lieu de la syntaxe
+  // \( ... \) invalide qui produisait littéralement ce texte à l'écran.
   String _short(String v) {
     final t = v.trim();
     if (t.length <= 10) return t;
-    return '\( {t.substring(0, 6)}… \){t.substring(t.length - 4)}';
+    return '${t.substring(0, 6)}…${t.substring(t.length - 4)}';
   }
 
   @override
@@ -908,11 +1054,13 @@ class _IncomingAccessRequestCard extends StatelessWidget {
 
 class _SheetShell extends StatelessWidget {
   final String title;
+  final String? subtitle;
   final List<Widget> actions;
   final Widget child;
 
   const _SheetShell({
     required this.title,
+    required this.subtitle,
     required this.actions,
     required this.child,
   });
@@ -920,6 +1068,7 @@ class _SheetShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         borderRadius: const BorderRadius.only(
@@ -928,28 +1077,59 @@ class _SheetShell extends StatelessWidget {
         ),
         border: Border.all(color: Theme.of(context).dividerColor),
       ),
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.lg,
-        AppSpacing.lg,
-        AppSpacing.lg,
-        AppSpacing.lg,
-      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                title,
-                style: context.textStyles.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              Row(mainAxisSize: MainAxisSize.min, children: actions),
-            ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md, AppSpacing.sm, 0),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).dividerColor,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: AppSpacing.md),
-          child,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.sm, AppSpacing.md),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: context.textStyles.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: context.textStyles.bodySmall?.copyWith(
+                          color: LightModeColors.secondaryText,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                Row(mainAxisSize: MainAxisSize.min, children: actions),
+              ],
+            ),
+          ),
+          Flexible(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.lg),
+              child: child,
+            ),
+          ),
         ],
       ),
     );
@@ -959,30 +1139,23 @@ class _SheetShell extends StatelessWidget {
 class _NotificationRow extends StatelessWidget {
   final String title;
   final String body;
-  final String type;
+  final IconData icon;
+  final Color accent;
   final bool read;
+  final String timeLabel;
   final VoidCallback onTap;
   final Widget? trailing;
 
   const _NotificationRow({
     required this.title,
     required this.body,
-    required this.type,
+    required this.icon,
+    required this.accent,
     required this.read,
+    required this.timeLabel,
     required this.onTap,
     this.trailing,
   });
-
-  IconData _iconForType() {
-    switch (type) {
-      case 'message':
-        return Icons.chat_bubble_rounded;
-      case 'access_request':
-        return Icons.lock_open_rounded;
-      default:
-        return Icons.notifications_rounded;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -997,16 +1170,14 @@ class _NotificationRow extends StatelessWidget {
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: read
-                    ? context.theme.scaffoldBackgroundColor
-                    : LightModeColors.accent.withValues(alpha: 0.15),
+                color: read ? context.theme.scaffoldBackgroundColor : accent.withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(AppRadius.md),
                 border: Border.all(color: context.theme.dividerColor),
               ),
               alignment: Alignment.center,
               child: Icon(
-                _iconForType(),
-                color: read ? context.theme.colorScheme.primary : LightModeColors.accent,
+                icon,
+                color: read ? context.theme.colorScheme.onSurface.withValues(alpha: 0.4) : accent,
                 size: 20,
               ),
             ),
@@ -1015,20 +1186,46 @@ class _NotificationRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: context.textStyles.bodyLarge?.copyWith(
-                      fontWeight: read ? FontWeight.w500 : FontWeight.w800,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: context.textStyles.bodyLarge?.copyWith(
+                            fontWeight: read ? FontWeight.w500 : FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      if (timeLabel.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          timeLabel,
+                          style: context.textStyles.bodySmall?.copyWith(
+                            color: LightModeColors.secondaryText,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                      if (!read) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+                        ),
+                      ],
+                    ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    body,
-                    style: context.textStyles.bodySmall?.copyWith(
-                      color: LightModeColors.secondaryText,
-                      height: 1.4,
+                  if (body.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      body,
+                      style: context.textStyles.bodySmall?.copyWith(
+                        color: LightModeColors.secondaryText,
+                        height: 1.4,
+                      ),
                     ),
-                  ),
+                  ],
                   if (trailing != null) ...[
                     const SizedBox(height: AppSpacing.sm),
                     trailing!,
