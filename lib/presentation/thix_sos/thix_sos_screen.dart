@@ -1,7 +1,8 @@
-/// THIX SOS — Homepage production (Design Entreprise Épuré)
+/// THIX SOS — Homepage production (Design System Intégré)
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
+
+import 'package:thix_id/core/theme/thix_design_policy.dart'; // ✅ Import de ton Design System
 
 import 'models/sos_models.dart';
 import 'pages/sos_actif_page.dart';
@@ -12,15 +13,6 @@ import 'pages/ajouter_secours_page.dart';
 import 'providers/sos_providers.dart';
 import 'widgets/sos_button.dart';
 import 'widgets/nearby_alerts_card.dart';
-
-// --- Palette Entreprise / Dark Mode Strict ---
-const _bg = Color(0xFF000000); // Noir pur
-const _card = Color(0xFF0A0A0A); // Noir très légèrement surélevé pour les cartes sombres
-const _cardBorder = Color(0xFF1A1A1A); // Bordure très subtile
-const _red = Color(0xFFE50914); // Rouge urgence pur
-const _redDark = Color(0xFF8A050C);
-const _white = Colors.white;
-const _black = Colors.black; // Utilisé pour le texte sur fond blanc
 
 class ThixSosScreen extends ConsumerWidget {
   const ThixSosScreen({super.key});
@@ -44,16 +36,20 @@ class ThixSosScreen extends ConsumerWidget {
       });
     });
 
+    // Utilisation des couleurs du thème courant (Clair ou Sombre)
+    final bgColor = Theme.of(context).scaffoldBackgroundColor;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: bgColor,
       body: SafeArea(
         child: Column(
           children: [
             const _HeaderOfficiel(),
             Expanded(
               child: RefreshIndicator(
-                color: _red,
-                backgroundColor: _card,
+                color: ThixPolicy.danger,
+                backgroundColor: ThixPolicy.card,
                 onRefresh: () async {
                   ref.invalidate(sosContactsProvider);
                   ref.invalidate(activeSosProvider);
@@ -61,7 +57,12 @@ class ThixSosScreen extends ConsumerWidget {
                 },
                 child: SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 28),
+                  padding: const EdgeInsets.fromLTRB(
+                    ThixPolicy.s16,
+                    ThixPolicy.s24,
+                    ThixPolicy.s16,
+                    ThixPolicy.s28,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -89,67 +90,65 @@ class ThixSosScreen extends ConsumerWidget {
                               SnackBar(
                                 content: Text(
                                   err?.toString() ?? 'Échec du déclenchement SOS',
-                                  style: GoogleFonts.inter(color: _white),
+                                  style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand),
                                 ),
-                                backgroundColor: _redDark,
+                                backgroundColor: ThixPolicy.danger,
                               ),
                             );
                           }
                         },
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: ThixPolicy.s12),
                       Text(
                         'Appuyer et maintenir 2 secondes',
                         textAlign: TextAlign.center,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: _white.withOpacity(0.5),
-                          fontWeight: FontWeight.w500,
+                        style: ThixPolicy.labelStyle.copyWith(
+                          color: ThixPolicy.textSecondary,
+                          fontWeight: ThixPolicy.medium,
                         ),
                       ),
-                      const SizedBox(height: 40),
+                      const SizedBox(height: ThixPolicy.s40),
 
-                      // --- MES SECOURS (Design Blanc Pur - Carte Unique) ---
+                      // --- MES SECOURS ---
                       _SectionLabel('MES SECOURS', actionText: 'Gérer', onAction: () {
                         Navigator.push(context, MaterialPageRoute(builder: (_) => const MesSecoursPage()));
                       }),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: ThixPolicy.s12),
                       contactsAsync.when(
                         data: (contacts) {
-                          // Remplacement par la carte d'ensemble unifiée
                           return _UnifiedSecoursCard(
                             contacts: contacts,
                             onCircleTap: (circle) => _handleCircleTap(context, ref, circle),
                           );
                         },
-                        loading: () => const Center(child: CircularProgressIndicator(color: _red)),
-                        error: (e, _) => Text('Erreur secours', style: GoogleFonts.inter(color: _red)),
+                        loading: () => const Center(child: CircularProgressIndicator(color: ThixPolicy.danger)),
+                        error: (e, _) => Text('Erreur secours', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.danger)),
                       ),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: ThixPolicy.s32),
 
                       // --- ALERTES À PROXIMITÉ ---
                       const NearbyAlertsCard(), 
-                      const SizedBox(height: 32),
+                      const SizedBox(height: ThixPolicy.s32),
 
                       // --- ACTIONS RAPIDES ---
                       _SectionLabel('ACTIONS RAPIDES'),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: ThixPolicy.s12),
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         physics: const BouncingScrollPhysics(),
                         child: Row(
                           children: [
                             _QuickActionChip(icon: Icons.location_on, label: 'Partager', onTap: () => _soon(context, 'Partager')),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: ThixPolicy.s8),
                             _QuickActionChip(icon: Icons.timer, label: 'Safe Check', onTap: () => _soon(context, 'Safe Check')),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: ThixPolicy.s8),
                             _QuickActionChip(icon: Icons.route, label: 'Mes trajets', onTap: () => _soon(context, 'Trajets')),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: ThixPolicy.s8),
                             _QuickActionChip(icon: Icons.campaign, label: 'Signaler', onTap: () => _soon(context, 'Signaler')),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: ThixPolicy.s32),
 
                       // --- MODULES ---
                       _NavCardProminent(
@@ -165,7 +164,7 @@ class ThixSosScreen extends ConsumerWidget {
                           }
                         },
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: ThixPolicy.s12),
                       Row(
                         children: [
                           Expanded(
@@ -176,7 +175,7 @@ class ThixSosScreen extends ConsumerWidget {
                               onTap: () => _soon(context, 'Thix Recherche'),
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: ThixPolicy.s12),
                           Expanded(
                             child: _NavCardCompact(
                               icon: Icons.folder_special,
@@ -211,8 +210,8 @@ class ThixSosScreen extends ConsumerWidget {
   static void _soon(BuildContext context, String label) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('$label — bientôt disponible', style: GoogleFonts.inter(color: _white)),
-        backgroundColor: _cardBorder,
+        content: Text('$label — bientôt disponible', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand)),
+        backgroundColor: ThixPolicy.primaryDeep,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -226,43 +225,51 @@ class _HeaderOfficiel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Icon(Icons.menu, color: _white, size: 28),
+          Icon(Icons.menu, color: Theme.of(context).colorScheme.onSurface, size: 28),
           Column(
             children: [
               Text(
                 'X THIX',
-                style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900, color: _white, letterSpacing: 1.2),
+                style: ThixPolicy.h1Style.copyWith(
+                  fontWeight: ThixPolicy.bold, // ou w900
+                  letterSpacing: 1.2,
+                ),
               ),
               Text(
                 'CONNECTER • PROTÉGER • AGIR',
-                style: GoogleFonts.inter(fontSize: 8, fontWeight: FontWeight.w700, color: _white.withOpacity(0.6), letterSpacing: 1.5),
+                style: ThixPolicy.microStyle.copyWith(
+                  fontWeight: ThixPolicy.bold,
+                  letterSpacing: 1.5,
+                  color: ThixPolicy.textSecondary,
+                ),
               ),
             ],
           ),
           Row(
             children: [
               Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  const Icon(Icons.notifications_none_rounded, color: _white, size: 28),
+                  Icon(Icons.notifications_none_rounded, color: Theme.of(context).colorScheme.onSurface, size: 28),
                   Positioned(
-                    right: 0,
-                    top: 0,
+                    right: -2,
+                    top: -2,
                     child: Container(
                       padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(color: _red, shape: BoxShape.circle),
-                      child: Text('3', style: GoogleFonts.inter(fontSize: 10, color: _white, fontWeight: FontWeight.bold)),
+                      decoration: const BoxDecoration(color: ThixPolicy.danger, shape: BoxShape.circle),
+                      child: Text('3', style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.onBrand, fontWeight: ThixPolicy.bold)),
                     ),
                   )
                 ],
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: ThixPolicy.s16),
               const CircleAvatar(
                 radius: 16,
-                backgroundColor: _cardBorder,
+                backgroundColor: ThixPolicy.border,
                 backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=11'),
               ),
             ],
@@ -287,14 +294,18 @@ class _SectionLabel extends StatelessWidget {
       children: [
         Text(
           text,
-          style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: _white, letterSpacing: 1.2),
+          style: ThixPolicy.labelStyle.copyWith(
+            fontWeight: ThixPolicy.bold,
+            letterSpacing: 1.2,
+            color: ThixPolicy.textSecondary,
+          ),
         ),
         if (actionText != null)
           GestureDetector(
             onTap: onAction,
             child: Text(
               actionText!,
-              style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: _white.withOpacity(0.7)),
+              style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primary),
             ),
           ),
       ],
@@ -304,7 +315,7 @@ class _SectionLabel extends StatelessWidget {
 
 // ───────────────────────── Carte "Mes Secours" Unifiée ─────────────────────────
 class _UnifiedSecoursCard extends StatelessWidget {
-  final List<dynamic> contacts; // Gère ta liste de modèles SosContact
+  final List<dynamic> contacts; 
   final Function(int) onCircleTap;
 
   const _UnifiedSecoursCard({
@@ -316,34 +327,37 @@ class _UnifiedSecoursCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: _white, // Maintien du design "Blanc Pur"
-        borderRadius: BorderRadius.circular(12),
+        color: Theme.of(context).cardColor, 
+        borderRadius: BorderRadius.circular(ThixPolicy.cardRadius),
+        border: Border.all(color: ThixPolicy.border, width: ThixPolicy.cardBorderWidth),
+        boxShadow: ThixPolicy.shadowSoft(), // Légère ombre Design System
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(ThixPolicy.cardRadius),
         child: Column(
           children: [
-            _buildRow(1, 'Cercle 1 – Prioritaire'),
-            Divider(height: 1, color: _black.withOpacity(0.08), indent: 64),
-            _buildRow(2, 'Cercle 2 – Secondaire'),
-            Divider(height: 1, color: _black.withOpacity(0.08), indent: 64),
-            _buildRow(3, 'Cercle 3 – Urgence'),
+            _buildRow(context, 1, 'Cercle 1 – Prioritaire'),
+            const Divider(height: 1, indent: 64),
+            _buildRow(context, 2, 'Cercle 2 – Secondaire'),
+            const Divider(height: 1, indent: 64),
+            _buildRow(context, 3, 'Cercle 3 – Urgence'),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildRow(int level, String title) {
+  Widget _buildRow(BuildContext context, int level, String title) {
     final circleContacts = contacts.where((c) => c.circle == level).toList();
     final count = circleContacts.length;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: () => onCircleTap(level),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s16),
           child: Row(
             children: [
               // Badge de niveau
@@ -351,17 +365,20 @@ class _UnifiedSecoursCard extends StatelessWidget {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: level == 1 ? _red : _black,
+                  color: level == 1 ? ThixPolicy.danger : (isDark ? ThixPolicy.inkDeep : ThixPolicy.surfaceStrong),
                   shape: BoxShape.circle,
                 ),
                 child: Center(
                   child: Text(
                     level.toString(),
-                    style: GoogleFonts.inter(color: _white, fontWeight: FontWeight.bold, fontSize: 14),
+                    style: ThixPolicy.titleStyle.copyWith(
+                      color: level == 1 ? ThixPolicy.onBrand : Theme.of(context).colorScheme.onSurface, 
+                      fontWeight: ThixPolicy.bold,
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: ThixPolicy.s16),
               // Textes
               Expanded(
                 child: Column(
@@ -369,24 +386,22 @@ class _UnifiedSecoursCard extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: _black),
+                      style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.bold),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       count == 0 ? 'Aucun secours' : '$count secours',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: count == 0 ? _red : _black.withOpacity(0.6),
+                      style: ThixPolicy.captionStyle.copyWith(
+                        color: count == 0 ? ThixPolicy.danger : ThixPolicy.textSecondary,
                       ),
                     ),
                   ],
                 ),
               ),
               // Miniatures photos (Avatars)
-              if (count > 0) _buildAvatars(circleContacts),
-              if (count > 0) const SizedBox(width: 12),
-              Icon(Icons.chevron_right, color: _black.withOpacity(0.3)),
+              if (count > 0) _buildAvatars(context, circleContacts),
+              if (count > 0) const SizedBox(width: ThixPolicy.s12),
+              Icon(Icons.chevron_right, color: ThixPolicy.textMuted),
             ],
           ),
         ),
@@ -394,39 +409,33 @@ class _UnifiedSecoursCard extends StatelessWidget {
     );
   }
 
-  Widget _buildAvatars(List<dynamic> circleContacts) {
-    // Afficher max 3 photos empilées
+  Widget _buildAvatars(BuildContext context, List<dynamic> circleContacts) {
     final displayContacts = circleContacts.take(3).toList();
     const double avatarSize = 28.0;
-    const double overlap = 14.0; // Distance d'espacement pour la superposition
+    const double overlap = 14.0; 
     
     return SizedBox(
       width: avatarSize + (displayContacts.length - 1) * overlap,
       height: avatarSize,
       child: Stack(
-        // Inverser la liste permet d'avoir la première image au-dessus visuellement
         children: List.generate(displayContacts.length, (index) {
           final contact = displayContacts[index];
           
-          // Essaye de lire dynamiquement la variable contenant l'URL de l'image
-          // (À adapter selon si ta variable s'appelle avatarUrl, photoUrl, etc. dans sos_models.dart)
           String? imageUrl;
-          try { 
-            imageUrl = contact.avatarUrl ?? contact.photoUrl; 
-          } catch (_) {}
+          try { imageUrl = contact.avatarUrl ?? contact.photoUrl; } catch (_) {}
           
           return Positioned(
             right: index * overlap,
             child: Container(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: _white, width: 2.5), // Liseré blanc pour découper la superposition
+                border: Border.all(color: Theme.of(context).cardColor, width: 2.5), 
               ),
               child: CircleAvatar(
                 radius: (avatarSize / 2) - 2.5,
-                backgroundColor: _cardBorder,
+                backgroundColor: ThixPolicy.border,
                 backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
-                child: imageUrl == null ? const Icon(Icons.person, size: 14, color: _white) : null,
+                child: imageUrl == null ? const Icon(Icons.person, size: 14, color: ThixPolicy.onBrand) : null,
               ),
             ),
           );
@@ -448,20 +457,20 @@ class _QuickActionChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(ThixPolicy.rMd),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s12),
         decoration: BoxDecoration(
-          color: _card,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _cardBorder),
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+          border: Border.all(color: ThixPolicy.border),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: _white, size: 20),
-            const SizedBox(width: 8),
-            Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: _white)),
+            Icon(icon, color: Theme.of(context).colorScheme.onSurface, size: 20),
+            const SizedBox(width: ThixPolicy.s8),
+            Text(label, style: ThixPolicy.labelStyle),
           ],
         ),
       ),
@@ -487,28 +496,29 @@ class _NavCardProminent extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(ThixPolicy.cardRadius),
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: ThixPolicy.cardPaddingLarge,
         decoration: BoxDecoration(
-          color: _red,
-          borderRadius: BorderRadius.circular(14),
+          color: ThixPolicy.danger,
+          borderRadius: BorderRadius.circular(ThixPolicy.cardRadius),
+          boxShadow: ThixPolicy.shadowSoft(),
         ),
         child: Row(
           children: [
-            Icon(icon, color: _white, size: 36),
-            const SizedBox(width: 16),
+            Icon(icon, color: ThixPolicy.onBrand, size: 36),
+            const SizedBox(width: ThixPolicy.s16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: _white)),
+                  Text(title, style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.onBrand, fontWeight: ThixPolicy.bold)),
                   const SizedBox(height: 4),
-                  Text(subtitle, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: _white.withOpacity(0.9))),
+                  Text(subtitle, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.onBrand.withValues(alpha: 0.9))),
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios, color: _white, size: 16),
+            const Icon(Icons.arrow_forward_ios, color: ThixPolicy.onBrand, size: 16),
           ],
         ),
       ),
@@ -534,22 +544,22 @@ class _NavCardCompact extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(ThixPolicy.cardRadius),
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: ThixPolicy.cardPadding,
         decoration: BoxDecoration(
-          color: _card,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _cardBorder),
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(ThixPolicy.cardRadius),
+          border: Border.all(color: ThixPolicy.border),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: _white, size: 28),
-            const SizedBox(height: 12),
-            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _white)),
+            Icon(icon, color: Theme.of(context).colorScheme.onSurface, size: 28),
+            const SizedBox(height: ThixPolicy.s12),
+            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: ThixPolicy.labelStyle),
             const SizedBox(height: 4),
-            Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 10, color: _white.withOpacity(0.5), height: 1.3)),
+            Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: ThixPolicy.captionStyle),
           ],
         ),
       ),
@@ -566,25 +576,24 @@ class _BottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: _bg,
-        border: Border(top: BorderSide(color: _cardBorder)),
+        border: Border(top: BorderSide(color: ThixPolicy.border)),
       ),
       child: BottomNavigationBar(
         currentIndex: currentIndex,
         onTap: (i) {
           if (i == 0) Navigator.of(context).popUntil((r) => r.isFirst);
         },
-        backgroundColor: _bg,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: _white, 
-        unselectedItemColor: _white.withOpacity(0.4),
-        selectedLabelStyle: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700),
-        unselectedLabelStyle: GoogleFonts.inter(fontSize: 10),
+        selectedItemColor: ThixPolicy.danger, 
+        unselectedItemColor: ThixPolicy.textMuted,
+        selectedLabelStyle: ThixPolicy.microStyle.copyWith(fontWeight: ThixPolicy.bold),
+        unselectedLabelStyle: ThixPolicy.microStyle,
         elevation: 0,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Accueil'),
           BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), label: 'Chat'),
-          BottomNavigationBarItem(icon: Icon(Icons.sos, size: 28, color: _red), label: 'SOS'),
+          BottomNavigationBarItem(icon: Icon(Icons.sos, size: 28), label: 'SOS'),
           BottomNavigationBarItem(icon: Icon(Icons.map_outlined), label: 'Carte'),
           BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profil'),
         ],
