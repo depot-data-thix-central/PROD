@@ -3,17 +3,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'package:thix_id/nav.dart';
 import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
+import 'package:thix_id/core/theme/thix_design_policy.dart'; // ✅ Import du Design System
+
 import '../models/sos_models.dart';
 import '../providers/sos_providers.dart';
 import 'sos_pin_page.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class ChambreCrisePage extends ConsumerStatefulWidget {
   const ChambreCrisePage({
@@ -66,7 +66,6 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
     try {
       final incident =
           await ref.read(sosServiceProvider).getIncidentById(widget.incidentId);
-      // si colonne chat_conversation_id exposée plus tard sur le modèle
       _resolvedConversationId = incident?.chatConversationId;
     } catch (_) {}
   }
@@ -88,9 +87,9 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
     final convId = incident.chatConversationId ?? _resolvedConversationId;
     if (convId == null || convId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Conversation SOS pas encore créée'),
-          backgroundColor: Color(0xFF16161F),
+        SnackBar(
+          content: Text('Conversation SOS pas encore créée', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand)),
+          backgroundColor: ThixPolicy.inkDeep,
         ),
       );
       return;
@@ -116,21 +115,18 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
     if (userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('${contact.name} : pas de compte THIX'),
-          backgroundColor: Colors.red,
+          content: Text('${contact.name} : pas de compte THIX', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand)),
+          backgroundColor: ThixPolicy.danger,
         ),
       );
       return;
     }
-    // Branche sur ton CallProvider si exposé globalement
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Appel THIX vers ${contact.name}…'),
-        backgroundColor: const Color(0xFF16161F),
+        content: Text('Appel THIX vers ${contact.name}…', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand)),
+        backgroundColor: ThixPolicy.inkDeep,
       ),
     );
-    // Exemple si tu as une route :
-    // context.push('/call', extra: {'userId': userId, 'name': contact.name});
   }
 
    Future<void> _sendQuickMessage(SosIncident incident, String text) async {
@@ -159,8 +155,8 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(text),
-        backgroundColor: const Color(0xFF16161F),
+        content: Text(text, style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand)),
+        backgroundColor: ThixPolicy.inkDeep,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -197,21 +193,21 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
     final contactsAsync = ref.watch(sosContactsProvider);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0F),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: incidentAsync.when(
           loading: () => const Center(
-            child: CircularProgressIndicator(color: Color(0xFFEF4444)),
+            child: CircularProgressIndicator(color: ThixPolicy.danger),
           ),
           error: (e, _) => Center(
-            child: Text('Erreur: $e', style: const TextStyle(color: Colors.red)),
+            child: Text('Erreur: $e', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.danger)),
           ),
           data: (incident) {
             if (incident == null) {
-              return const Center(
+              return Center(
                 child: Text(
                   'Incident introuvable',
-                  style: TextStyle(color: Colors.white),
+                  style: ThixPolicy.bodyStyle,
                 ),
               );
             }
@@ -233,31 +229,29 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                 ),
                 Expanded(
                   child: RefreshIndicator(
-                    color: const Color(0xFFEF4444),
-                    backgroundColor: const Color(0xFF16161F),
+                    color: ThixPolicy.danger,
+                    backgroundColor: Theme.of(context).cardColor,
                     onRefresh: () async {
                       ref.invalidate(sosIncidentProvider(widget.incidentId));
                       ref.invalidate(sosEventsProvider(widget.incidentId));
                       ref.invalidate(sosContactsProvider);
                     },
                     child: ListView(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                      padding: const EdgeInsets.fromLTRB(ThixPolicy.s16, ThixPolicy.s12, ThixPolicy.s16, ThixPolicy.s32),
                       children: [
                         // Zone statut
                         _StatusStrip(incident: incident),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: ThixPolicy.s16),
 
                         // Carte live
                         _section('LOCALISATION EN DIRECT'),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: ThixPolicy.s8),
                         _LiveMapCard(incident: incident),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: ThixPolicy.s20),
 
                         // Secours cercle actif
-                        _section(
-                          'SECOURS — CERCLE ${incident.activeCircle}',
-                        ),
-                        const SizedBox(height: 8),
+                        _section('SECOURS — CERCLE ${incident.activeCircle}'),
+                        const SizedBox(height: ThixPolicy.s8),
                         if (circleContacts.isEmpty)
                           const _EmptyBox(
                             'Aucun secours dans ce cercle.\nAjoutez des contacts THIX.',
@@ -269,11 +263,11 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                               onCall: () => _callContact(c),
                             ),
                           ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: ThixPolicy.s20),
 
                         // Communication
                         _section('COMMUNICATION'),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: ThixPolicy.s8),
                         Row(
                           children: [
                             Expanded(
@@ -284,12 +278,12 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                                 onTap: () => _openChat(incident),
                               ),
                             ),
-                            const SizedBox(width: 10),
+                            const SizedBox(width: ThixPolicy.s10),
                             Expanded(
                               child: _ComButton(
                                 icon: Icons.phone_in_talk,
                                 label: 'Rappeler',
-                                color: const Color(0xFF34D399),
+                                color: ThixPolicy.success,
                                 onTap: () {
                                   if (circleContacts.isNotEmpty) {
                                     _callContact(circleContacts.first);
@@ -297,7 +291,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                                 },
                               ),
                             ),
-                            const SizedBox(width: 10),
+                            const SizedBox(width: ThixPolicy.s10),
                             Expanded(
                               child: _ComButton(
                                 icon: Icons.videocam_outlined,
@@ -305,11 +299,9 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                                 color: const Color(0xFF60A5FA),
                                 onTap: () {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Appel vidéo — bientôt',
-                                      ),
-                                      backgroundColor: Color(0xFF16161F),
+                                    SnackBar(
+                                      content: Text('Appel vidéo — bientôt', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand)),
+                                      backgroundColor: ThixPolicy.inkDeep,
                                     ),
                                   );
                                 },
@@ -317,14 +309,14 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: ThixPolicy.s20),
 
                         // Messages rapides victime
                         _section('MESSAGES RAPIDES'),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: ThixPolicy.s8),
                         Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
+                          spacing: ThixPolicy.s8,
+                          runSpacing: ThixPolicy.s8,
                           children: [
                             for (final msg in _quickMessages)
                               _QuickMsg(
@@ -334,23 +326,23 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                               ),
                           ],
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: ThixPolicy.s20),
 
                         // Heartbeat / batterie
                         _section('ÉTAT SYSTÈME'),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: ThixPolicy.s8),
                         _SystemRow(incident: incident),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: ThixPolicy.s20),
 
                         // Timeline
                         _section('ÉVÉNEMENTS'),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: ThixPolicy.s8),
                         eventsAsync.when(
                           loading: () => const Padding(
-                            padding: EdgeInsets.all(16),
+                            padding: EdgeInsets.all(ThixPolicy.s16),
                             child: Center(
                               child: CircularProgressIndicator(
-                                color: Color(0xFFEF4444),
+                                color: ThixPolicy.danger,
                                 strokeWidth: 2,
                               ),
                             ),
@@ -369,32 +361,31 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                             );
                           },
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: ThixPolicy.s24),
 
                         // Annuler
                         Material(
-                          color: const Color(0xFF16161F),
-                          borderRadius: BorderRadius.circular(14),
+                          color: Theme.of(context).cardColor,
+                          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
                           child: InkWell(
                             onTap: _cancelSos,
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(ThixPolicy.rMd),
                             child: Container(
                               width: double.infinity,
-                              padding: const EdgeInsets.all(16),
+                              padding: ThixPolicy.cardPadding,
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(14),
+                                borderRadius: BorderRadius.circular(ThixPolicy.rMd),
                                 border: Border.all(
-                                  color: const Color(0xFFEF4444)
-                                      .withOpacity(0.35),
+                                  color: ThixPolicy.danger.withValues(alpha: 0.35),
                                 ),
                               ),
                               child: Row(
                                 children: [
                                   const Icon(
                                     Icons.lock_outline,
-                                    color: Color(0xFFEF4444),
+                                    color: ThixPolicy.danger,
                                   ),
-                                  const SizedBox(width: 12),
+                                  const SizedBox(width: ThixPolicy.s12),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
@@ -402,18 +393,14 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                                       children: [
                                         Text(
                                           'ANNULER LE SOS',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w800,
-                                            color: const Color(0xFFEF4444),
+                                          style: ThixPolicy.bodyStyle.copyWith(
+                                            fontWeight: ThixPolicy.bold,
+                                            color: ThixPolicy.danger,
                                           ),
                                         ),
                                         Text(
                                           'Code de sécurité requis',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 12,
-                                            color: Colors.white38,
-                                          ),
+                                          style: ThixPolicy.captionStyle,
                                         ),
                                       ],
                                     ),
@@ -449,10 +436,9 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
   Widget _section(String title) {
     return Text(
       title,
-      style: GoogleFonts.inter(
-        fontSize: 12,
-        fontWeight: FontWeight.w700,
-        color: Colors.white54,
+      style: ThixPolicy.labelStyle.copyWith(
+        fontWeight: ThixPolicy.bold,
+        color: ThixPolicy.textSecondary,
         letterSpacing: 0.5,
       ),
     );
@@ -485,7 +471,7 @@ class _Header extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 4, 8, 14),
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF7F1D1D), Color(0xFF450A0A)],
+          colors: [Color(0xFF7F1D1D), Color(0xFF450A0A)], // Conserve le dégradé d'urgence
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -502,10 +488,9 @@ class _Header extends StatelessWidget {
                 child: Text(
                   'CHAMBRE DE CRISE',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                  style: ThixPolicy.titleStyle.copyWith(
+                    fontWeight: ThixPolicy.bold,
+                    color: ThixPolicy.onBrand,
                   ),
                 ),
               ),
@@ -513,9 +498,7 @@ class _Header extends StatelessWidget {
                 onPressed: onEnd,
                 child: Text(
                   'Terminer',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
+                  style: ThixPolicy.bodyMediumStyle.copyWith(
                     color: const Color(0xFFFECACA),
                   ),
                 ),
@@ -528,21 +511,19 @@ class _Header extends StatelessWidget {
             children: [
               Text(
                 publicId,
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                style: ThixPolicy.bodyStyle.copyWith(
+                  fontWeight: ThixPolicy.semiBold,
                   color: Colors.white70,
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: ThixPolicy.s16),
               const Icon(Icons.timer_outlined, size: 16, color: Colors.white54),
               const SizedBox(width: 4),
               Text(
                 elapsed,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                style: ThixPolicy.bodyStyle.copyWith(
+                  fontWeight: ThixPolicy.bold,
+                  color: ThixPolicy.onBrand,
                 ),
               ),
             ],
@@ -550,9 +531,8 @@ class _Header extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             status.labelFr.toUpperCase(),
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
+            style: ThixPolicy.captionStyle.copyWith(
+              fontWeight: ThixPolicy.bold,
               color: const Color(0xFFFECACA),
               letterSpacing: 0.5,
             ),
@@ -572,40 +552,39 @@ class _StatusStrip extends StatelessWidget {
     return Row(
       children: [
         _chip(
+          context,
           Icons.location_on,
           'Localisation',
           incident.hasLocation ? 'ACTIVE' : 'EN ATTENTE',
           incident.hasLocation,
         ),
-        const SizedBox(width: 8),
-        _chip(Icons.favorite, 'Heartbeat', 'ACTIVE', true),
-        const SizedBox(width: 8),
-        _chip(Icons.cloud_done, 'Cloud', 'ACTIVE', true),
+        const SizedBox(width: ThixPolicy.s8),
+        _chip(context, Icons.favorite, 'Heartbeat', 'ACTIVE', true),
+        const SizedBox(width: ThixPolicy.s8),
+        _chip(context, Icons.cloud_done, 'Cloud', 'ACTIVE', true),
       ],
     );
   }
 
-  Widget _chip(IconData icon, String label, String value, bool on) {
-    final color = on ? const Color(0xFF34D399) : Colors.white38;
+  Widget _chip(BuildContext context, IconData icon, String label, String value, bool on) {
+    final color = on ? ThixPolicy.success : ThixPolicy.textMuted;
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
         decoration: BoxDecoration(
-          color: const Color(0xFF16161F),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.white10),
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(ThixPolicy.rXs),
+          border: Border.all(color: ThixPolicy.border),
         ),
         child: Column(
           children: [
             Icon(icon, size: 16, color: color),
             const SizedBox(height: 4),
-            Text(label,
-                style: GoogleFonts.inter(fontSize: 10, color: Colors.white38)),
+            Text(label, style: ThixPolicy.microStyle),
             Text(
               value,
-              style: GoogleFonts.inter(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
+              style: ThixPolicy.microStyle.copyWith(
+                fontWeight: ThixPolicy.bold,
                 color: color,
               ),
             ),
@@ -628,49 +607,37 @@ class _LiveMapCard extends StatelessWidget {
 
     final lat = incident.lastLat ?? -6.80381;
     final lng = incident.lastLng ?? 39.26000;
-    final target = LatLng(lat, lng);
 
     return Container(
       height: 220,
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A24),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white10),
+        color: Theme.of(context).brightness == Brightness.dark 
+            ? ThixPolicy.border.withValues(alpha: 0.3) 
+            : ThixPolicy.surfaceStrong,
+        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+        border: Border.all(color: ThixPolicy.border),
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
-          // ——— VRAIE CARTE ———
-          GoogleMap(
-            initialCameraPosition: CameraPosition(
-              target: target,
-              zoom: 16,
+          // ——— PLACEHOLDER CARTE DÉSACTIVÉE ———
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.map_off_outlined, color: ThixPolicy.textMuted, size: 48),
+                const SizedBox(height: ThixPolicy.s8),
+                Text(
+                  'Carte temporairement désactivée\n(En attente de l\'API Google)',
+                  textAlign: TextAlign.center,
+                  style: ThixPolicy.captionStyle,
+                ),
+              ],
             ),
-            markers: hasPos
-                ? {
-                    Marker(
-                      markerId: const MarkerId('sos'),
-                      position: target,
-                      icon: BitmapDescriptor.defaultMarkerWithHue(
-                        BitmapDescriptor.hueRed,
-                      ),
-                      infoWindow: const InfoWindow(title: 'Position SOS'),
-                    ),
-                  }
-                : {},
-            myLocationEnabled: true,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: false,
-            mapToolbarEnabled: false,
-            compassEnabled: false,
-            liteModeEnabled: false, // true = plus léger sur Android
-            onMapCreated: (controller) {
-              // Optionnel : recentrer si la position change plus tard
-            },
           ),
 
-          // Overlay coordonnées (comme avant)
+          // Overlay coordonnées (Toujours actif pour voir les vraies data)
           if (hasPos)
             Positioned(
               left: 12,
@@ -679,53 +646,34 @@ class _LiveMapCard extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.65),
-                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.black.withValues(alpha: 0.65), // Reste sombre pour la lisibilité
+                  borderRadius: BorderRadius.circular(ThixPolicy.rXs),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Position actuelle',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
+                      style: ThixPolicy.captionStyle.copyWith(
+                        fontWeight: ThixPolicy.semiBold,
                         color: Colors.white70,
                       ),
                     ),
                     Text(
                       '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: Colors.white,
+                      style: ThixPolicy.labelStyle.copyWith(
+                        color: ThixPolicy.onBrand,
                       ),
                     ),
                     if (incident.lastLocationAt != null)
                       Text(
                         'MAJ ${_fmt(incident.lastLocationAt!)}',
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          color: Colors.white38,
+                        style: ThixPolicy.microStyle.copyWith(
+                          color: Colors.white54,
                         ),
                       ),
                   ],
                 ),
-              ),
-            ),
-
-          // Badge si pas encore de position
-          if (!hasPos)
-            const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.location_searching, color: Colors.white38, size: 32),
-                  SizedBox(height: 8),
-                  Text(
-                    'En attente de position…',
-                    style: TextStyle(color: Colors.white38, fontSize: 13),
-                  ),
-                ],
               ),
             ),
         ],
@@ -750,15 +698,15 @@ class _ResponderTile extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF16161F),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+        border: Border.all(color: ThixPolicy.border),
       ),
       child: Row(
         children: [
           CircleAvatar(
             radius: 18,
-            backgroundColor: const Color(0xFF374151),
+            backgroundColor: ThixPolicy.border,
             backgroundImage:
                 contact.photoUrl != null ? NetworkImage(contact.photoUrl!) : null,
             child: contact.photoUrl == null
@@ -766,37 +714,30 @@ class _ResponderTile extends StatelessWidget {
                     contact.name.isNotEmpty
                         ? contact.name[0].toUpperCase()
                         : '?',
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    style: ThixPolicy.bodyStyle.copyWith(color: Theme.of(context).colorScheme.onSurface),
                   )
                 : null,
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: ThixPolicy.s12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   contact.name,
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
+                  style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.semiBold),
                 ),
                 Text(
                   contact.thixId ??
                       (contact.available ? 'Disponible' : 'Indisponible'),
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: const Color(0xFF34D399),
-                  ),
+                  style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.success),
                 ),
               ],
             ),
           ),
           IconButton(
             onPressed: onCall,
-            icon: const Icon(Icons.phone, color: Color(0xFF34D399)),
+            icon: const Icon(Icons.phone, color: ThixPolicy.success),
           ),
         ],
       ),
@@ -820,16 +761,16 @@ class _ComButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFF16161F),
-      borderRadius: BorderRadius.circular(12),
+      color: Theme.of(context).cardColor,
+      borderRadius: BorderRadius.circular(ThixPolicy.rSm),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(ThixPolicy.rSm),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white10),
+            borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+            border: Border.all(color: ThixPolicy.border),
           ),
           child: Column(
             children: [
@@ -837,11 +778,7 @@ class _ComButton extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 label,
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white70,
-                ),
+                style: ThixPolicy.captionStyle.copyWith(fontWeight: ThixPolicy.semiBold),
               ),
             ],
           ),
@@ -866,28 +803,27 @@ class _QuickMsg extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: sent
-          ? const Color(0xFF14532D).withOpacity(0.5)
-          : const Color(0xFF16161F),
-      borderRadius: BorderRadius.circular(20),
+          ? ThixPolicy.success.withValues(alpha: 0.15)
+          : Theme.of(context).cardColor,
+      borderRadius: BorderRadius.circular(ThixPolicy.rLg),
       child: InkWell(
         onTap: sent ? null : onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(ThixPolicy.rLg),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(ThixPolicy.rLg),
             border: Border.all(
               color: sent
-                  ? const Color(0xFF34D399).withOpacity(0.4)
-                  : Colors.white12,
+                  ? ThixPolicy.success.withValues(alpha: 0.4)
+                  : ThixPolicy.border,
             ),
           ),
           child: Text(
             label,
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: sent ? const Color(0xFF34D399) : Colors.white70,
+            style: ThixPolicy.captionStyle.copyWith(
+              fontWeight: ThixPolicy.semiBold,
+              color: sent ? ThixPolicy.success : Theme.of(context).colorScheme.onSurface,
             ),
           ),
         ),
@@ -905,21 +841,17 @@ class _SystemRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF16161F),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+        border: Border.all(color: ThixPolicy.border),
       ),
       child: Row(
         children: [
-          const Icon(Icons.favorite, color: Color(0xFFEF4444), size: 18),
-          const SizedBox(width: 8),
+          const Icon(Icons.favorite, color: ThixPolicy.danger, size: 18),
+          const SizedBox(width: ThixPolicy.s8),
           Text(
             'HEARTBEAT',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: Colors.white70,
-            ),
+            style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold),
           ),
           const Spacer(),
           if (incident.batteryPct != null) ...[
@@ -927,18 +859,18 @@ class _SystemRow extends StatelessWidget {
               Icons.battery_std,
               size: 16,
               color: incident.batteryPct! < 20
-                  ? const Color(0xFFEF4444)
-                  : const Color(0xFF34D399),
+                  ? ThixPolicy.danger
+                  : ThixPolicy.success,
             ),
             const SizedBox(width: 4),
             Text(
               '${incident.batteryPct}%',
-              style: GoogleFonts.inter(fontSize: 12, color: Colors.white70),
+              style: ThixPolicy.bodyStyle,
             ),
           ] else
             Text(
               'Cercle ${incident.activeCircle}',
-              style: GoogleFonts.inter(fontSize: 12, color: Colors.white54),
+              style: ThixPolicy.bodySmallStyle,
             ),
         ],
       ),
@@ -965,7 +897,7 @@ class _EventTile extends StatelessWidget {
             width: 52,
             child: Text(
               time,
-              style: GoogleFonts.inter(fontSize: 11, color: Colors.white38),
+              style: ThixPolicy.captionStyle,
             ),
           ),
           Container(
@@ -973,18 +905,14 @@ class _EventTile extends StatelessWidget {
             height: 8,
             margin: const EdgeInsets.only(top: 4, right: 10),
             decoration: const BoxDecoration(
-              color: const Color(0xFFEF4444),
+              color: ThixPolicy.danger,
               shape: BoxShape.circle,
             ),
           ),
           Expanded(
             child: Text(
               event.type,
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Colors.white70,
-              ),
+              style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.semiBold),
             ),
           ),
         ],
@@ -1001,19 +929,15 @@ class _EmptyBox extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: ThixPolicy.cardPadding,
       decoration: BoxDecoration(
-        color: const Color(0xFF16161F),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white10),
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+        border: Border.all(color: ThixPolicy.border),
       ),
       child: Text(
         text,
-        style: GoogleFonts.inter(
-          fontSize: 13,
-          color: Colors.white38,
-          height: 1.35,
-        ),
+        style: ThixPolicy.bodySmallStyle,
       ),
     );
   }
