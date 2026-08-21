@@ -109,36 +109,17 @@ class ThixSosScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 40),
 
-                      // --- MES SECOURS (Design Blanc Pur) ---
+                      // --- MES SECOURS (Design Blanc Pur - Carte Unique) ---
                       _SectionLabel('MES SECOURS', actionText: 'Gérer', onAction: () {
                         Navigator.push(context, MaterialPageRoute(builder: (_) => const MesSecoursPage()));
                       }),
                       const SizedBox(height: 12),
                       contactsAsync.when(
                         data: (contacts) {
-                          return Column(
-                            children: [
-                              _WhiteCircleCard(
-                                title: 'Cercle 1 – Prioritaire',
-                                level: 1,
-                                count: contacts.where((c) => c.circle == 1).length,
-                                onTap: () => _handleCircleTap(context, ref, 1),
-                              ),
-                              const SizedBox(height: 8),
-                              _WhiteCircleCard(
-                                title: 'Cercle 2 – Secondaire',
-                                level: 2,
-                                count: contacts.where((c) => c.circle == 2).length,
-                                onTap: () => _handleCircleTap(context, ref, 2),
-                              ),
-                              const SizedBox(height: 8),
-                              _WhiteCircleCard(
-                                title: 'Cercle 3 – Urgence',
-                                level: 3,
-                                count: contacts.where((c) => c.circle == 3).length,
-                                onTap: () => _handleCircleTap(context, ref, 3),
-                              ),
-                            ],
+                          // Remplacement par la carte d'ensemble unifiée
+                          return _UnifiedSecoursCard(
+                            contacts: contacts,
+                            onCircleTap: (circle) => _handleCircleTap(context, ref, circle),
                           );
                         },
                         loading: () => const Center(child: CircularProgressIndicator(color: _red)),
@@ -147,7 +128,6 @@ class ThixSosScreen extends ConsumerWidget {
                       const SizedBox(height: 32),
 
                       // --- ALERTES À PROXIMITÉ ---
-                      // Titre géré dans le widget NearbyAlertsCard pour éviter le doublon
                       const NearbyAlertsCard(), 
                       const SizedBox(height: 32),
 
@@ -171,8 +151,7 @@ class ThixSosScreen extends ConsumerWidget {
                       ),
                       const SizedBox(height: 32),
 
-                      // --- MODULES (Chambre de crise agrandie) ---
-                      // Carte pleine largeur rouge
+                      // --- MODULES ---
                       _NavCardProminent(
                         icon: Icons.shield,
                         title: 'CHAMBRE DE CRISE',
@@ -187,7 +166,6 @@ class ThixSosScreen extends ConsumerWidget {
                         },
                       ),
                       const SizedBox(height: 12),
-                      // Grille secondaire 
                       Row(
                         children: [
                           Expanded(
@@ -324,77 +302,141 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-// ───────────────────────── Carte "Mes Secours" Blanche ─────────────────────────
-class _WhiteCircleCard extends StatelessWidget {
-  final String title;
-  final int level;
-  final int count;
-  final VoidCallback onTap;
+// ───────────────────────── Carte "Mes Secours" Unifiée ─────────────────────────
+class _UnifiedSecoursCard extends StatelessWidget {
+  final List<dynamic> contacts; // Gère ta liste de modèles SosContact
+  final Function(int) onCircleTap;
 
-  const _WhiteCircleCard({
-    required this.title,
-    required this.level,
-    required this.count,
-    required this.onTap,
+  const _UnifiedSecoursCard({
+    required this.contacts,
+    required this.onCircleTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        decoration: BoxDecoration(
-          color: _white, // Blanc pur
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
+    return Container(
+      decoration: BoxDecoration(
+        color: _white, // Maintien du design "Blanc Pur"
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: level == 1 ? _red : _black, // Accent Rouge ou Noir
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Text(
-                  level.toString(),
-                  style: GoogleFonts.inter(color: _white, fontWeight: FontWeight.bold, fontSize: 14),
-                ),
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: _black),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    count == 0 ? 'Aucun secours' : '$count secours',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: count == 0 ? _red : _black.withOpacity(0.6),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right, color: _black.withOpacity(0.3)),
+            _buildRow(1, 'Cercle 1 – Prioritaire'),
+            Divider(height: 1, color: _black.withOpacity(0.08), indent: 64),
+            _buildRow(2, 'Cercle 2 – Secondaire'),
+            Divider(height: 1, color: _black.withOpacity(0.08), indent: 64),
+            _buildRow(3, 'Cercle 3 – Urgence'),
           ],
         ),
       ),
     );
   }
+
+  Widget _buildRow(int level, String title) {
+    final circleContacts = contacts.where((c) => c.circle == level).toList();
+    final count = circleContacts.length;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => onCircleTap(level),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: Row(
+            children: [
+              // Badge de niveau
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: level == 1 ? _red : _black,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    level.toString(),
+                    style: GoogleFonts.inter(color: _white, fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              // Textes
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: _black),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      count == 0 ? 'Aucun secours' : '$count secours',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: count == 0 ? _red : _black.withOpacity(0.6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Miniatures photos (Avatars)
+              if (count > 0) _buildAvatars(circleContacts),
+              if (count > 0) const SizedBox(width: 12),
+              Icon(Icons.chevron_right, color: _black.withOpacity(0.3)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatars(List<dynamic> circleContacts) {
+    // Afficher max 3 photos empilées
+    final displayContacts = circleContacts.take(3).toList();
+    const double avatarSize = 28.0;
+    const double overlap = 14.0; // Distance d'espacement pour la superposition
+    
+    return SizedBox(
+      width: avatarSize + (displayContacts.length - 1) * overlap,
+      height: avatarSize,
+      child: Stack(
+        // Inverser la liste permet d'avoir la première image au-dessus visuellement
+        children: List.generate(displayContacts.length, (index) {
+          final contact = displayContacts[index];
+          
+          // Essaye de lire dynamiquement la variable contenant l'URL de l'image
+          // (À adapter selon si ta variable s'appelle avatarUrl, photoUrl, etc. dans sos_models.dart)
+          String? imageUrl;
+          try { 
+            imageUrl = contact.avatarUrl ?? contact.photoUrl; 
+          } catch (_) {}
+          
+          return Positioned(
+            right: index * overlap,
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: _white, width: 2.5), // Liseré blanc pour découper la superposition
+              ),
+              child: CircleAvatar(
+                radius: (avatarSize / 2) - 2.5,
+                backgroundColor: _cardBorder,
+                backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
+                child: imageUrl == null ? const Icon(Icons.person, size: 14, color: _white) : null,
+              ),
+            ),
+          );
+        }).reversed.toList(),
+      ),
+    );
+  }
 }
 
-// ───────────────────────── Action Rapide (Icones blanches) ─────────────────────────
+// ───────────────────────── Action Rapide ─────────────────────────
 class _QuickActionChip extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -417,7 +459,7 @@ class _QuickActionChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: _white, size: 20), // Icône strictement blanche
+            Icon(icon, color: _white, size: 20),
             const SizedBox(width: 8),
             Text(label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: _white)),
           ],
@@ -427,7 +469,7 @@ class _QuickActionChip extends StatelessWidget {
   }
 }
 
-// ───────────────────────── Module Pleine Largeur (Chambre de Crise) ─────────────────────────
+// ───────────────────────── Module Pleine Largeur ─────────────────────────
 class _NavCardProminent extends StatelessWidget {
   const _NavCardProminent({
     required this.icon,
@@ -449,7 +491,7 @@ class _NavCardProminent extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: _red, // Rouge urgence
+          color: _red,
           borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
@@ -474,7 +516,7 @@ class _NavCardProminent extends StatelessWidget {
   }
 }
 
-// ───────────────────────── Nav Card Compact (Icones blanches) ─────────────────────────
+// ───────────────────────── Nav Card Compact ─────────────────────────
 class _NavCardCompact extends StatelessWidget {
   const _NavCardCompact({
     required this.icon,
@@ -503,7 +545,7 @@ class _NavCardCompact extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: _white, size: 28), // Icône strictement blanche
+            Icon(icon, color: _white, size: 28),
             const SizedBox(height: 12),
             Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _white)),
             const SizedBox(height: 4),
