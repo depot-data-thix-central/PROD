@@ -6,7 +6,6 @@ import 'package:thix_id/presentation/thix_sos/providers/sos_providers.dart';
 
 import 'package:thix_id/presentation/thix_recherche/models/personne_recherchee_model.dart';
 import 'package:thix_id/presentation/thix_recherche/providers/recherche_providers.dart';
-// adapte les imports providers nearby si tu les mets ailleurs
 
 class NearbyAlertsCard extends ConsumerWidget {
   const NearbyAlertsCard({super.key});
@@ -66,10 +65,10 @@ class NearbyAlertsCard extends ConsumerWidget {
                 child: CircularProgressIndicator(color: Color(0xFFEF4444)),
               ),
             ),
-            error: (e, _) => _InfoBox('Position indisponible'),
+            error: (e, _) => const _InfoBox('Position indisponible'),
             data: (pos) {
               if (pos == null) {
-                return _InfoBox('Active la localisation pour voir les alertes proches');
+                return const _InfoBox('Active la localisation pour voir les alertes proches');
               }
               final nearbyAsync = ref.watch(
                 nearbyAlertesProvider(
@@ -116,6 +115,8 @@ class _MapBlock extends StatelessWidget {
     final officiels =
         alertes.where((a) => a.typeAlerte == TypeAlerte.recherchee).length;
 
+    // Je laisse la logique des marqueurs au cas où, 
+    // mais elle n'est pas utilisée pour le moment.
     final markers = <Marker>{
       Marker(
         markerId: const MarkerId('me'),
@@ -145,20 +146,30 @@ class _MapBlock extends StatelessWidget {
             height: 160,
             child: Stack(
               children: [
-                GoogleMap(
-                  initialCameraPosition: CameraPosition(
-                    target: LatLng(lat, lng),
-                    zoom: 12,
+                // ---------------------------------------------------------
+                // MAP DÉSACTIVÉE TEMPORAIREMENT POUR ÉVITER LE CRASH
+                // ---------------------------------------------------------
+                Container(
+                  width: double.infinity,
+                  height: double.infinity,
+                  color: const Color(0xFF1E1E26), // Couleur de fond neutre
+                  alignment: Alignment.center,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.map_outlined, color: Colors.white24, size: 40),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Carte désactivée\n(En attente de clé API)',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(color: Colors.white38, fontSize: 12),
+                      ),
+                    ],
                   ),
-                  markers: markers,
-                  myLocationEnabled: true,
-                  myLocationButtonEnabled: false,
-                  zoomControlsEnabled: false,
-                  mapToolbarEnabled: false,
-                  compassEnabled: false,
-                  liteModeEnabled: true, // perf mobile
-                  onTap: (_) {},
                 ),
+                // ---------------------------------------------------------
+                
+                // Overlay contenant les statistiques
                 Positioned(
                   left: 10,
                   top: 10,
@@ -200,11 +211,11 @@ class _MapBlock extends StatelessWidget {
         const SizedBox(height: 10),
         Row(
           children: [
-            _Legend(color: const Color(0xFFEF4444), label: 'Disparue'),
+            const _Legend(color: Color(0xFFEF4444), label: 'Disparue'),
             const SizedBox(width: 12),
-            _Legend(color: const Color(0xFF3B82F6), label: 'Avis officiel'),
+            const _Legend(color: Color(0xFF3B82F6), label: 'Avis officiel'),
             const SizedBox(width: 12),
-            _Legend(color: const Color(0xFFF59E0B), label: 'Signalement'),
+            const _Legend(color: Color(0xFFF59E0B), label: 'Signalement'),
           ],
         ),
       ],
