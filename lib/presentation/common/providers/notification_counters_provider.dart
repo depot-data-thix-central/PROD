@@ -15,5 +15,6 @@ Stream<SectionBadgeCounts> sectionBadgeCounts(SectionBadgeCountsRef ref) {
   if (uid == null) return Stream.value(SectionBadgeCounts.zero);
 
   final service = ref.watch(notificationCountersServiceProvider);
-  return service.streamSectionBadgeCounts(uid);
+  // CORRECTION ICI : Appel de la bonne méthode
+  return service.streamCounts(uid);
 }
