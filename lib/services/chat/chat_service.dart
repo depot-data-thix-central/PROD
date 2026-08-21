@@ -9,6 +9,7 @@ import '../../models/chat/chat_message.dart';
 import '../../models/chat/chat_conversation.dart';
 import '../../models/chat/user_status.dart';
 import '../../models/chat/group_info.dart';
+import '../module_notifications.dart';
 
 class ChatService {
   final SupabaseClient _supabase;
@@ -49,6 +50,55 @@ class ChatService {
         .maybeSingle();
     if (row == null) {
       throw Exception('Accès refusé à cette conversation');
+    }
+  }
+
+  /// Récupère les user_id des autres participants d'une conversation
+  /// (tous sauf l'expéditeur actuel), pour notifier chaque destinataire
+  /// après l'envoi d'un message.
+  Future<List<String>> _otherParticipantIds(String conversationId) async {
+    try {
+      final rows = await _supabase
+          .from('conversation_participants')
+          .select('user_id')
+          .eq('conversation_id', conversationId);
+      return rows
+          .map((r) => (r['user_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty && id != currentUserId)
+          .toList();
+    } catch (e) {
+      debugPrint('❌ _otherParticipantIds: $e');
+      return [];
+    }
+  }
+
+  /// Notifie chaque destinataire d'un nouveau message. Best-effort :
+  /// une erreur ici ne doit jamais faire échouer l'envoi du message lui-même.
+  Future<void> _notifyRecipients({
+    required String conversationId,
+    required String senderName,
+    required String preview,
+  }) async {
+    try {
+      final recipients = await _otherParticipantIds(conversationId);
+      if (recipients.isEmpty) return;
+
+      final trimmedPreview = preview.trim().isEmpty ? 'Nouveau message' : preview.trim();
+      final shortPreview =
+          trimmedPreview.length > 120 ? '${trimmedPreview.substring(0, 120)}…' : trimmedPreview;
+
+      for (final toUid in recipients) {
+        unawaited(
+          ModuleNotifications.instance.chatMessage(
+            toUid: toUid,
+            senderName: senderName,
+            preview: shortPreview,
+            conversationId: conversationId,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ _notifyRecipients: $e');
     }
   }
 
@@ -542,8 +592,17 @@ class ChatService {
         .single();
 
     final profile = response['profiles'] as Map<String, dynamic>?;
-    response['sender_name'] = _resolveDisplayName(profile);
+    final senderName = _resolveDisplayName(profile);
+    response['sender_name'] = senderName;
     response['sender_avatar'] = profile?['avatar_url'];
+
+    // Notifie les autres participants de la conversation (best-effort,
+    // ne bloque jamais l'envoi du message si ça échoue).
+    unawaited(_notifyRecipients(
+      conversationId: conversationId,
+      senderName: senderName,
+      preview: content,
+    ));
 
     return ChatMessage.fromJson(response);
   }
