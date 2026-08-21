@@ -63,7 +63,6 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
     {'title': 'Culture et Identité', 'subtitle': 'Notre Richesse', 'img': 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3'},
     {'title': 'Jeunesse d\'Avenir', 'subtitle': 'Espoir de la République', 'img': 'https://images.unsplash.com/photo-1529390079861-591de354faf5'},
   ];
-
   @override
   void initState() {
     super.initState();
@@ -77,6 +76,9 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
         );
       }
     });
+    // Le WidgetsBinding.instance... a été supprimé !
+  }
+
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (ref.read(newsProvider).articles.isEmpty) {
@@ -720,20 +722,16 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
           _sectionHeader('À la Une', actionText: 'Voir toutes', onTap: () => context.push('/mon-pays/news')),
           const SizedBox(height: 12),
           SizedBox(
-            height: 140, // Plus compact
-            child: Builder(
-              builder: (context) {
-                if (newsState.isLoading && newsState.articles.isEmpty) {
-                  return const Center(child: CircularProgressIndicator(color: rdcBlue, strokeWidth: 2));
-                }
-                if (newsState.error != null && newsState.articles.isEmpty) {
-                  return Center(child: Text('Erreur : ${newsState.error}', style: TextStyle(color: Colors.red.shade300, fontSize: 11)));
-                }
-                if (newsState.articles.isEmpty) {
+            height: 140,
+            child: newsState.when(
+              loading: () => const Center(child: CircularProgressIndicator(color: rdcBlue, strokeWidth: 2)),
+              error: (error, _) => Center(child: Text('Erreur : $error', style: TextStyle(color: Colors.red.shade300, fontSize: 11))),
+              data: (articles) {
+                if (articles.isEmpty) {
                   return const Center(child: Text('Aucune actualité pour le moment.', style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 11)));
                 }
 
-                final topNews = newsState.articles.take(5).toList();
+                final topNews = articles.take(5).toList();
 
                 return ListView.separated(
                   scrollDirection: Axis.horizontal,
@@ -750,7 +748,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                       onTap: () => _showComingSoon(), 
                       borderRadius: BorderRadius.circular(8),
                       child: Container(
-                        width: 130, // Plus fin
+                        width: 130,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(8),
                           color: Colors.white,
