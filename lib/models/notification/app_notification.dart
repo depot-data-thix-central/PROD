@@ -34,7 +34,8 @@ class AppNotification {
       type: (map['type'] ?? 'generic').toString(),
       title: (map['title'] ?? 'THIX ID').toString(),
       body: (map['body'] ?? '').toString(),
-      read: (map['read'] as bool?) ?? false,
+      // CORRECTION ICI : Priorité à 'is_read' pour coller à la base de données
+      read: (map['is_read'] as bool?) ?? (map['read'] as bool?) ?? false,
       data: (map['data'] is Map) ? (map['data'] as Map).cast<String, dynamic>() : const {},
       createdAt: parseDate(map['created_at']),
     );
