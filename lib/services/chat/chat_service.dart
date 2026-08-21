@@ -83,11 +83,12 @@ class ChatService {
       final recipients = await _otherParticipantIds(conversationId);
       if (recipients.isEmpty) return;
 
-      final trimmedPreview = preview.trim().isEmpty ? 'Nouveau message' : preview.trim();
+      final trimmedPreview = preview.trim().isEmpty ? 'Fichier média reçu' : preview.trim();
       final shortPreview =
           trimmedPreview.length > 120 ? '${trimmedPreview.substring(0, 120)}…' : trimmedPreview;
 
       for (final toUid in recipients) {
+        // 1. Ton module de notifications existant (Push / FCM local)
         unawaited(
           ModuleNotifications.instance.chatMessage(
             toUid: toUid,
@@ -95,6 +96,20 @@ class ChatService {
             preview: shortPreview,
             conversationId: conversationId,
           ),
+        );
+
+        // 2. ✅ CORRECTION : Écriture directe en base pour allumer le badge !
+        // Cela fonctionne aussi bien pour les DM que pour les Groupes.
+        unawaited(
+          _supabase.from('notifications').insert({
+            'user_id': toUid,
+            'type': 'chat',
+            'title': senderName,
+            'body': shortPreview,
+            'is_read': false,
+            'data': {'conversation_id': conversationId},
+            'created_at': DateTime.now().toUtc().toIso8601String(),
+          }),
         );
       }
     } catch (e) {
@@ -290,7 +305,6 @@ class ChatService {
                   unreadCount: conv.unreadCount,
                   updatedAt: conv.updatedAt,
                   isPinned: conv.isPinned,
-                  // ✅ conserver escalade
                   isEscalation: conv.isEscalation,
                   clientName: conv.clientName,
                   clientAvatar: conv.clientAvatar,
@@ -596,8 +610,7 @@ class ChatService {
     response['sender_name'] = senderName;
     response['sender_avatar'] = profile?['avatar_url'];
 
-    // Notifie les autres participants de la conversation (best-effort,
-    // ne bloque jamais l'envoi du message si ça échoue).
+    // Notifie les autres participants de la conversation (best-effort)
     unawaited(_notifyRecipients(
       conversationId: conversationId,
       senderName: senderName,
