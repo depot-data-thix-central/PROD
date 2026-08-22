@@ -109,11 +109,16 @@ class _CreatePostPageState extends State<CreatePostPage> {
 
   /// Applique un fichier vidéo déjà traité (trim + filtre + audio)
   Future<void> _setProcessedVideo(String path) async {
+    // ✅ CORRECTION : On lit les données brutes (bytes) pour l'upload
+    final file = File(path);
+    final bytes = await file.readAsBytes();
+
     setState(() {
       _selectedVideo = PlatformFile(
         name: path.split('/').last,
-        size: File(path).lengthSync(),
+        size: file.lengthSync(),
         path: path,
+        bytes: bytes, // ✅ AJOUT DES BYTES
       );
     });
     await _initializeVideoPlayer();
@@ -136,7 +141,13 @@ class _CreatePostPageState extends State<CreatePostPage> {
 
   // ── Ajouter un ou plusieurs fichiers d'épisode avec initialisation du player ──
   Future<void> _pickEpisodes() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.video, withData: false, allowMultiple: true);
+    // ✅ CORRECTION : withData passe à true
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.video, 
+      withData: true, 
+      allowMultiple: true
+    );
+    
     if (result != null && result.files.isNotEmpty) {
       setState(() {
         for (var file in result.files) {
