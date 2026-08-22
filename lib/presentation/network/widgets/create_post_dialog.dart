@@ -20,29 +20,10 @@ import 'package:thix_id/models/network_post.dart';
 import 'package:thix_id/features/network/data/network_service_provider.dart';
 import 'package:thix_id/features/network/presentation/providers/feed_provider.dart';
 import 'package:thix_id/services/ai/ai_service.dart';
-// NOUVEAU : Import de la page des certifications
 import 'package:thix_id/presentation/certification/certification_tiers_page.dart'; 
 
-class _C {
-  static const bg = Color(0xFFF7F9FC);
-  static const white = Color(0xFFFFFFFF);
-  static const primary = Color(0xFF2D6CDF);
-  static const primaryDeep = Color(0xFF123B7A);
-  static const softBlue = Color(0xFFF0F4FC);
-  static const gold = Color(0xFFD9A63C);
-  static const textDark = Color(0xFF10192E);
-  static const textSecondary = Color(0xFF8492AC);
-  static const border = Color(0xFFEDF1F9);
-  static const shadow = Color(0x0A2D6CDF);
-  static const red = Color(0xFFE5484D);
-  static const green = Color(0xFF059669);
-
-  static const gradientPrimary = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFF0A1F44), primaryDeep, primary],
-  );
-}
+// ✅ IMPORT DE LA THIX POLICY
+import 'package:thix_id/core/theme/thix_design_policy.dart';
 
 Future<Uint8List> compressImageBytes(Uint8List bytes) async {
   if (kIsWeb) return bytes;
@@ -82,7 +63,15 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
   int _postTypeMode = 0; // 0 standard · 1 sondage · 2 challenge
 
   Color _selectedBgColor = Colors.transparent;
-  final List<Color> _bgColors = const [Colors.transparent, Color(0xFF00A4FF), Color(0xFFE5484D), Color(0xFF059669), Color(0xFFD9A63C), Color(0xFF8B5CF6), Color(0xFF10192E)];
+  final List<Color> _bgColors = const [
+    Colors.transparent, 
+    Color(0xFF00A4FF), 
+    ThixPolicy.danger, 
+    ThixPolicy.success, 
+    ThixPolicy.gold, 
+    Color(0xFF8B5CF6), 
+    ThixPolicy.textMain
+  ];
 
   final List<_MediaItem> _images = [];
   final List<_MediaItem> _videos = [];
@@ -103,7 +92,13 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
-  final List<Color> _textColors = const [_C.textDark, _C.primary, _C.gold, _C.red, _C.green];
+  final List<Color> _textColors = const [
+    ThixPolicy.textMain, 
+    ThixPolicy.primary, 
+    ThixPolicy.gold, 
+    ThixPolicy.danger, 
+    ThixPolicy.success
+  ];
 
   static const int _maxCharsForBgColor = 150;
   int _previousTextLength = 0;
@@ -253,28 +248,28 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        backgroundColor: ThixPolicy.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
         title: Row(
           children: [
-            const Icon(Icons.workspace_premium_rounded, color: _C.gold, size: 28),
+            const Icon(Icons.workspace_premium_rounded, color: ThixPolicy.gold, size: 28),
             const SizedBox(width: 8),
-            const Text('Fonctionnalité bloquée', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Text('Fonctionnalité bloquée', style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
           ],
         ),
         content: Text(
           "$featureName est réservée aux comptes $requiredTier et supérieurs.\n\nMettez à niveau votre compte pour débloquer de nouveaux outils pour votre communauté.",
-          style: const TextStyle(fontSize: 14, color: _C.textDark, height: 1.4),
+          style: ThixPolicy.bodyStyle.copyWith(height: 1.4),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Plus tard', style: TextStyle(color: _C.textSecondary))),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Plus tard', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary))),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: _C.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm))),
             onPressed: () {
               Navigator.pop(ctx);
-              // Redirection vers la page des offres
               Navigator.push(context, MaterialPageRoute(builder: (_) => const CertificationTiersPage()));
             },
-            child: const Text('Voir les offres', style: TextStyle(color: _C.textDark, fontWeight: FontWeight.bold)),
+            child: Text('Voir les offres', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold)),
           ),
         ],
       ),
@@ -286,29 +281,28 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Quota journalier atteint', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _C.red)),
+        backgroundColor: ThixPolicy.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
+        title: Text('Quota journalier atteint', style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold)),
         content: Text(
           "Vous avez atteint votre quota de $_freeAudioDailyLimit publications vocales par jour.\n\nVotre quota sera réinitialisé dans 24h, ou vous pouvez mettre à niveau votre abonnement pour publier sans limite.",
-          style: const TextStyle(fontSize: 14, color: _C.textDark, height: 1.4),
+          style: ThixPolicy.bodyStyle.copyWith(height: 1.4),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Compris', style: TextStyle(color: _C.textSecondary))),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Compris', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary))),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: _C.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+            style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm))),
             onPressed: () { 
               Navigator.pop(ctx); 
-              // Redirection vers la page des offres
               Navigator.push(context, MaterialPageRoute(builder: (_) => const CertificationTiersPage()));
             },
-            child: const Text('Mettre à niveau', style: TextStyle(color: _C.textDark, fontWeight: FontWeight.bold)),
+            child: Text('Mettre à niveau', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold)),
           ),
         ],
       ),
     );
   }
 
-  // ─── GESTION DES PERMISSIONS PLAY STORE (PROMINENT DISCLOSURE) ───
   Future<bool> _checkPermissionWithDisclosure(Permission permission, String explanation) async {
     if (kIsWeb) return true;
     var status = await permission.status;
@@ -316,40 +310,39 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
 
     if (!mounted) return false;
 
-    // Affiche le design Blanc/Noir validé
     bool? userAgreed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
+        backgroundColor: ThixPolicy.card,
+        surfaceTintColor: ThixPolicy.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
+        title: Row(
           children: [
-            Icon(Icons.privacy_tip_outlined, color: Colors.black, size: 28),
-            SizedBox(width: 10),
-            Text("Autorisation requise", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+            const Icon(Icons.privacy_tip_outlined, color: ThixPolicy.textMain, size: 28),
+            const SizedBox(width: 10),
+            Text("Autorisation requise", style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
           ],
         ),
         content: Text(
           explanation,
-          style: const TextStyle(color: Colors.black87, fontSize: 16, height: 1.4),
+          style: ThixPolicy.bodyStyle.copyWith(height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text("Annuler", style: TextStyle(color: Colors.black54)),
+            child: Text("Annuler", style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
+              backgroundColor: ThixPolicy.card,
+              foregroundColor: ThixPolicy.textMain,
               elevation: 0,
-              side: const BorderSide(color: Colors.black, width: 1),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              side: const BorderSide(color: ThixPolicy.textMain, width: 1),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
             ),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text("Compris", style: TextStyle(fontWeight: FontWeight.bold)),
+            child: Text("Compris", style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
           ),
         ],
       ),
@@ -357,7 +350,6 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
 
     if (userAgreed != true) return false;
 
-    // Vraie demande système
     var newStatus = await permission.request();
     return newStatus.isGranted;
   }
@@ -395,7 +387,6 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
       return;
     }
 
-    // 🚨 VÉRIFICATION SÉCURITÉ PLAY STORE
     final hasPerm = await _checkPermissionWithDisclosure(
       Permission.microphone,
       "Pour vous permettre d'enregistrer et de partager un message vocal dans votre publication, THIX ID a besoin d'accéder à votre microphone."
@@ -477,7 +468,6 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
       return;
     }
 
-    // 🚨 VÉRIFICATION SÉCURITÉ PLAY STORE AVANT OUVERTURE CAMÉRA
     final hasPerm = await _checkPermissionWithDisclosure(
       Permission.camera,
       "Pour vous permettre de prendre une photo directement depuis l'application et l'ajouter à votre publication, THIX ID a besoin d'accéder à votre caméra."
@@ -637,7 +627,7 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
       widget.onPostCreated?.call();
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isMisinfo ? 'Publié avec avertissement Fact-Check' : 'Publication réussie'), backgroundColor: isMisinfo ? Colors.orange : _C.primary));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isMisinfo ? 'Publié avec avertissement Fact-Check' : 'Publication réussie'), backgroundColor: isMisinfo ? ThixPolicy.warning : ThixPolicy.success));
       Navigator.pop(context, newPost);
     } catch (e) {
       if (mounted) setState(() { _errorMessage = 'Erreur: $e'; _isUploading = false; _factCheckStatusLabel = null; });
@@ -655,21 +645,21 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
           if (mode == 2 && !_canCreateChallenge) { _showUpgradeDialog('Les challenges', 'Premium'); return; }
           setState(() => _postTypeMode = mode);
         },
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(ThixPolicy.rSm),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 11),
           decoration: BoxDecoration(
-            color: sel ? _C.primary.withOpacity(0.08) : Colors.transparent,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: sel ? _C.primary.withOpacity(0.25) : _C.border),
+            color: sel ? ThixPolicy.primary.withOpacity(0.08) : Colors.transparent,
+            borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+            border: Border.all(color: sel ? ThixPolicy.primary.withOpacity(0.25) : ThixPolicy.border),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 15, color: sel ? _C.primary : _C.textSecondary),
+              Icon(icon, size: 15, color: sel ? ThixPolicy.primary : ThixPolicy.textSecondary),
               const SizedBox(width: 6),
-              Text(label, style: TextStyle(fontSize: 12.5, fontWeight: sel ? FontWeight.w700 : FontWeight.w500, color: sel ? _C.primary : _C.textSecondary)),
+              Text(label, style: ThixPolicy.labelStyle.copyWith(fontWeight: sel ? ThixPolicy.bold : ThixPolicy.medium, color: sel ? ThixPolicy.primary : ThixPolicy.textSecondary)),
             ],
           ),
         ),
@@ -682,10 +672,10 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
       message: tooltip,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(ThixPolicy.rXs),
         child: Container(
           width: 30, height: 30, alignment: Alignment.center,
-          decoration: BoxDecoration(color: _C.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: _C.border)),
+          decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(ThixPolicy.rXs), border: Border.all(color: ThixPolicy.border)),
           child: child,
         ),
       ),
@@ -697,10 +687,10 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
       padding: const EdgeInsets.only(right: 10),
       child: InkWell(
         onTap: (_isUploading || _isRecording) ? null : onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(ThixPolicy.rXl),
         child: Container(
           width: 42, height: 42,
-          decoration: BoxDecoration(color: _C.white, shape: BoxShape.circle, border: Border.all(color: color.withOpacity(0.28), width: 1.3)),
+          decoration: BoxDecoration(color: ThixPolicy.card, shape: BoxShape.circle, border: Border.all(color: color.withOpacity(0.28), width: 1.3)),
           child: Icon(icon, size: 18, color: color),
         ),
       ),
@@ -710,52 +700,52 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
   @override
   Widget build(BuildContext context) {
     if (_isLoadingLimits) {
-      return const Center(child: CircularProgressIndicator(color: _C.primary));
+      return const Center(child: CircularProgressIndicator(color: ThixPolicy.primary));
     }
 
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-      backgroundColor: _C.white,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rXl)),
+      backgroundColor: ThixPolicy.card,
+      insetPadding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s24),
       child: FadeTransition(
         opacity: _fadeAnimation,
         child: Container(
           width: MediaQuery.of(context).size.width * 0.94,
           constraints: const BoxConstraints(maxHeight: 760),
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+          padding: const EdgeInsets.fromLTRB(ThixPolicy.s20, ThixPolicy.s20, ThixPolicy.s20, ThixPolicy.s16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Header
               Row(
                 children: [
-                  const Text('Créer une publication', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: _C.textDark, letterSpacing: -0.2)),
+                  Text('Créer un post', style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, letterSpacing: -0.2)),
                   const Spacer(),
                   InkWell(
                     onTap: _isUploading ? null : () => Navigator.pop(context),
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(padding: const EdgeInsets.all(7), decoration: const BoxDecoration(color: _C.softBlue, shape: BoxShape.circle), child: const Icon(Icons.close_rounded, size: 17, color: _C.textSecondary)),
+                    borderRadius: BorderRadius.circular(ThixPolicy.rXl),
+                    child: Container(padding: const EdgeInsets.all(7), decoration: const BoxDecoration(color: ThixPolicy.surface, shape: BoxShape.circle), child: const Icon(Icons.close_rounded, size: 17, color: ThixPolicy.textSecondary)),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: ThixPolicy.s16),
               
               Row(
                 children: [
                   _typeTab('Publication', 0, Icons.article_rounded),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: ThixPolicy.s8),
                   _typeTab('Sondage', 1, Icons.poll_rounded),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: ThixPolicy.s8),
                   _typeTab('Challenge', 2, Icons.emoji_events_rounded),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: ThixPolicy.s14),
 
               if (_errorMessage != null)
                 Container(
-                  margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(color: const Color(0xFFFFF3F3), borderRadius: BorderRadius.circular(14), border: Border.all(color: _C.red.withOpacity(0.15))),
-                  child: Text(_errorMessage!, style: const TextStyle(fontSize: 12, color: _C.red)),
+                  margin: const EdgeInsets.only(bottom: ThixPolicy.s12), padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s12, vertical: ThixPolicy.s10),
+                  decoration: BoxDecoration(color: ThixPolicy.danger.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(ThixPolicy.rSm), border: Border.all(color: ThixPolicy.danger.withOpacity(0.15))),
+                  child: Text(_errorMessage!, style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.danger)),
                 ),
 
               Expanded(
@@ -765,34 +755,34 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                     children: [
                       if (_postTypeMode != 2 && !_hasBgColor) ...[
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          decoration: BoxDecoration(color: _C.softBlue, borderRadius: BorderRadius.circular(16)),
+                          padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s10, vertical: ThixPolicy.s8),
+                          decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
                           child: Row(
                             children: [
-                              _formatBtn(child: const Text('B', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13)), onTap: _applyBold, tooltip: 'Gras'),
-                              const SizedBox(width: 8),
-                              _formatBtn(child: const Text('I', style: TextStyle(fontStyle: FontStyle.italic, fontWeight: FontWeight.w700, fontSize: 13)), onTap: _applyItalic, tooltip: 'Italique'),
-                              Container(width: 1, height: 18, color: _C.border, margin: const EdgeInsets.symmetric(horizontal: 10)),
+                              _formatBtn(child: Text('B', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)), onTap: _applyBold, tooltip: 'Gras'),
+                              const SizedBox(width: ThixPolicy.s8),
+                              _formatBtn(child: Text('I', style: ThixPolicy.labelStyle.copyWith(fontStyle: FontStyle.italic, fontWeight: ThixPolicy.bold)), onTap: _applyItalic, tooltip: 'Italique'),
+                              Container(width: 1, height: 18, color: ThixPolicy.border, margin: const EdgeInsets.symmetric(horizontal: ThixPolicy.s10)),
                               for (final color in _textColors)
                                 Padding(
                                   padding: const EdgeInsets.only(right: 7),
                                   child: GestureDetector(
                                     onTap: () => _applyColor(color),
-                                    child: Container(width: 18, height: 18, decoration: BoxDecoration(color: color, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2))),
+                                    child: Container(width: 18, height: 18, decoration: BoxDecoration(color: color, shape: BoxShape.circle, border: Border.all(color: ThixPolicy.card, width: 2))),
                                   ),
                                 ),
                             ],
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: ThixPolicy.s12),
                       ],
 
                       // Zone texte
                       Container(
                         decoration: BoxDecoration(
-                          color: _canHaveBgColor && _hasBgColor ? _selectedBgColor : _C.bg,
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: _canHaveBgColor && _hasBgColor ? Colors.transparent : _C.border),
+                          color: _canHaveBgColor && _hasBgColor ? _selectedBgColor : ThixPolicy.surfaceSoft,
+                          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                          border: Border.all(color: _canHaveBgColor && _hasBgColor ? Colors.transparent : ThixPolicy.border),
                         ),
                         padding: _canHaveBgColor && _hasBgColor ? const EdgeInsets.symmetric(horizontal: 20, vertical: 40) : const EdgeInsets.all(15),
                         alignment: _canHaveBgColor && _hasBgColor ? Alignment.center : Alignment.topLeft,
@@ -806,16 +796,22 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                               minLines: _postTypeMode == 2 ? 2 : (_canHaveBgColor && _hasBgColor ? null : 5),
                               maxLines: _canHaveBgColor && _hasBgColor ? null : 10,
                               textAlign: _canHaveBgColor && _hasBgColor ? TextAlign.center : TextAlign.start,
-                              style: TextStyle(
-                                color: _canHaveBgColor && _hasBgColor ? Colors.white : _C.textDark,
+                              style: ThixPolicy.bodyStyle.copyWith(
+                                color: _canHaveBgColor && _hasBgColor ? Colors.white : ThixPolicy.textMain,
                                 fontSize: _canHaveBgColor && _hasBgColor ? 22 : 14.5,
-                                fontWeight: _canHaveBgColor && _hasBgColor ? FontWeight.w700 : FontWeight.w400,
+                                fontWeight: _canHaveBgColor && _hasBgColor ? ThixPolicy.bold : ThixPolicy.regular,
                                 height: 1.4,
                               ),
                               decoration: InputDecoration(
-                                hintText: _postTypeMode == 1 ? 'Posez votre question...' : _postTypeMode == 2 ? 'Titre du challenge...' : 'Exprimez-vous...',
-                                hintStyle: TextStyle(color: _canHaveBgColor && _hasBgColor ? Colors.white70 : _C.textSecondary),
-                                border: InputBorder.none, isCollapsed: true, counterText: "",
+                                hintText: _postTypeMode == 1 ? 'Posez votre question...' : _postTypeMode == 2 ? 'Titre du challenge...' : 'Commencer un post...',
+                                hintStyle: ThixPolicy.bodyStyle.copyWith(color: _canHaveBgColor && _hasBgColor ? Colors.white70 : ThixPolicy.textSecondary),
+                                border: InputBorder.none, 
+                                isCollapsed: true, 
+                                counterText: "",
+                                fillColor: Colors.transparent,
+                                filled: true,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
                               ),
                             ),
                             if (_isFree && _postTypeMode == 0)
@@ -825,10 +821,9 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                                   padding: const EdgeInsets.only(top: 8),
                                   child: Text(
                                     '${_contentController.text.length} / 280',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: _contentController.text.length >= 280 ? _C.red : _C.textSecondary,
+                                    style: ThixPolicy.captionStyle.copyWith(
+                                      fontWeight: ThixPolicy.bold,
+                                      color: _contentController.text.length >= 280 ? ThixPolicy.danger : ThixPolicy.textSecondary,
                                     ),
                                   ),
                                 ),
@@ -839,34 +834,34 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
 
                       if (_isRecording)
                         Container(
-                          margin: const EdgeInsets.only(top: 12),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(color: _C.red.withOpacity(0.06), borderRadius: BorderRadius.circular(16), border: Border.all(color: _C.red.withOpacity(0.2))),
+                          margin: const EdgeInsets.only(top: ThixPolicy.s12),
+                          padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s12),
+                          decoration: BoxDecoration(color: ThixPolicy.danger.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(ThixPolicy.rMd), border: Border.all(color: ThixPolicy.danger.withOpacity(0.2))),
                           child: Row(
                             children: [
-                              const Icon(Icons.mic, color: _C.red, size: 20), const SizedBox(width: 12),
-                              Text('Enregistrement... ${_recordDuration ~/ 60}:${(_recordDuration % 60).toString().padLeft(2, '0')} / 0${_maxAudioDuration~/60}:${(_maxAudioDuration%60).toString().padLeft(2,'0')}', style: const TextStyle(color: _C.red, fontWeight: FontWeight.w700, fontSize: 13)),
+                              const Icon(Icons.mic, color: ThixPolicy.danger, size: 20), const SizedBox(width: ThixPolicy.s12),
+                              Text('Enregistrement... ${_recordDuration ~/ 60}:${(_recordDuration % 60).toString().padLeft(2, '0')} / 0${_maxAudioDuration~/60}:${(_maxAudioDuration%60).toString().padLeft(2,'0')}', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold)),
                               const Spacer(),
-                              GestureDetector(onTap: _stopRecording, child: const Icon(Icons.stop_circle_rounded, color: _C.red, size: 30)),
+                              GestureDetector(onTap: _stopRecording, child: const Icon(Icons.stop_circle_rounded, color: ThixPolicy.danger, size: 30)),
                             ],
                           ),
                         )
                       else if (_localAudioPath != null)
                         Container(
-                          margin: const EdgeInsets.only(top: 12),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(color: _C.primaryDeep, borderRadius: BorderRadius.circular(16)),
+                          margin: const EdgeInsets.only(top: ThixPolicy.s12),
+                          padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s12, vertical: ThixPolicy.s8),
+                          decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(ThixPolicy.rMd), border: Border.all(color: ThixPolicy.border)),
                           child: Row(
                             children: [
                               Expanded(child: _DialogAudioPlayer(audioPath: _localAudioPath!)),
-                              IconButton(icon: const Icon(Icons.delete_outline_rounded, color: Colors.white70, size: 20), onPressed: () => setState(() { _audioBytes = null; _localAudioPath = null; })),
+                              IconButton(icon: const Icon(Icons.delete_outline_rounded, color: ThixPolicy.textSecondary, size: 20), onPressed: () => setState(() { _audioBytes = null; _localAudioPath = null; })),
                             ],
                           ),
                         ),
 
                       if (_canHaveBgColor)
                         SingleChildScrollView(
-                          scrollDirection: Axis.horizontal, padding: const EdgeInsets.only(top: 12),
+                          scrollDirection: Axis.horizontal, padding: const EdgeInsets.only(top: ThixPolicy.s12),
                           child: Row(
                             children: _bgColors.map((c) {
                               final sel = _selectedBgColor == c;
@@ -877,7 +872,7 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                                 },
                                 child: Container(
                                   margin: const EdgeInsets.only(right: 9), width: 30, height: 30,
-                                  decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: sel ? _C.textDark : Colors.grey.shade300, width: sel ? 2.2 : 1.3)),
+                                  decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: sel ? ThixPolicy.textMain : ThixPolicy.borderStrong, width: sel ? 2.2 : 1.3)),
                                   child: c == Colors.transparent ? const Icon(Icons.format_color_reset_rounded, size: 15, color: Colors.black45) : null,
                                 ),
                               );
@@ -887,14 +882,14 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                       else if (_postTypeMode == 0 && _images.isEmpty && _videos.isEmpty && _audioBytes == null && _contentController.text.length > _maxCharsForBgColor)
                         Padding(
                           padding: const EdgeInsets.only(top: 10, left: 2),
-                          child: Text('Texte trop long pour un fond coloré (max $_maxCharsForBgColor caractères).', style: const TextStyle(fontSize: 11.5, color: _C.textSecondary, fontStyle: FontStyle.italic)),
+                          child: Text('Texte trop long pour un fond coloré (max $_maxCharsForBgColor caractères).', style: ThixPolicy.captionStyle.copyWith(fontStyle: FontStyle.italic)),
                         ),
 
                       // Sondage
                       if (_postTypeMode == 1) ...[
-                        const SizedBox(height: 16),
-                        const Text('Options', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: _C.textDark)),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: ThixPolicy.s16),
+                        Text('Options', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
+                        const SizedBox(height: ThixPolicy.s8),
                         ..._pollOptionControllers.asMap().entries.map((e) {
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 8),
@@ -902,12 +897,12 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                               children: [
                                 Expanded(
                                   child: TextField(
-                                    controller: e.value, style: const TextStyle(fontSize: 13.5),
-                                    decoration: InputDecoration(hintText: 'Option ${e.key + 1}', filled: true, fillColor: _C.bg, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12)),
+                                    controller: e.value, style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5),
+                                    decoration: InputDecoration(hintText: 'Option ${e.key + 1}', filled: true, fillColor: ThixPolicy.surface, border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12)),
                                   ),
                                 ),
                                 if (e.key > 1) 
-                                  IconButton(icon: const Icon(Icons.remove_circle_outline, color: _C.red, size: 20), onPressed: () { setState(() { _pollOptionControllers[e.key].dispose(); _pollOptionControllers.removeAt(e.key); }); })
+                                  IconButton(icon: const Icon(Icons.remove_circle_outline, color: ThixPolicy.danger, size: 20), onPressed: () { setState(() { _pollOptionControllers[e.key].dispose(); _pollOptionControllers.removeAt(e.key); }); })
                               ],
                             ),
                           );
@@ -916,14 +911,14 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                           TextButton.icon(
                             onPressed: () => setState(() => _pollOptionControllers.add(TextEditingController())),
                             icon: const Icon(Icons.add_circle_outline, size: 17),
-                            label: const Text('Ajouter une option', style: TextStyle(fontSize: 13)),
+                            label: Text('Ajouter une option', style: ThixPolicy.labelStyle),
                           ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: ThixPolicy.s8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14), decoration: BoxDecoration(color: _C.bg, borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(horizontal: 14), decoration: BoxDecoration(color: ThixPolicy.surface, borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
                           child: DropdownButtonHideUnderline(
                             child: DropdownButton<int>(
-                              value: _pollDurationDays, isExpanded: true, style: const TextStyle(fontSize: 13.5, color: _C.textDark),
+                              value: _pollDurationDays, isExpanded: true, style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5),
                               items: const [DropdownMenuItem(value: 1, child: Text('1 jour')), DropdownMenuItem(value: 3, child: Text('3 jours')), DropdownMenuItem(value: 7, child: Text('1 semaine'))],
                               onChanged: (v) => setState(() => _pollDurationDays = v ?? 1),
                             ),
@@ -933,26 +928,26 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
 
                       // Challenge
                       if (_postTypeMode == 2) ...[
-                        const SizedBox(height: 16),
-                        const Text('Description du Challenge', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: _C.textDark)),
-                        const SizedBox(height: 8),
-                        TextField(controller: _challengeDescController, minLines: 3, maxLines: 5, style: const TextStyle(fontSize: 13.5), decoration: InputDecoration(hintText: 'Expliquez les règles et comment participer...', filled: true, fillColor: _C.bg, border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none), contentPadding: const EdgeInsets.all(14))),
-                        const SizedBox(height: 12),
-                        TextField(controller: _challengeRewardController, style: const TextStyle(fontSize: 13.5), decoration: InputDecoration(hintText: 'Récompense (optionnel)', filled: true, fillColor: _C.bg, prefixIcon: const Icon(Icons.card_giftcard_rounded, size: 18, color: _C.gold), border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(vertical: 14))),
+                        const SizedBox(height: ThixPolicy.s16),
+                        Text('Description du Challenge', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
+                        const SizedBox(height: ThixPolicy.s8),
+                        TextField(controller: _challengeDescController, minLines: 3, maxLines: 5, style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5), decoration: InputDecoration(hintText: 'Expliquez les règles et comment participer...', filled: true, fillColor: ThixPolicy.surface, border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide.none), contentPadding: const EdgeInsets.all(14))),
+                        const SizedBox(height: ThixPolicy.s12),
+                        TextField(controller: _challengeRewardController, style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5), decoration: InputDecoration(hintText: 'Récompense (optionnel)', filled: true, fillColor: ThixPolicy.surface, prefixIcon: const Icon(Icons.card_giftcard_rounded, size: 18, color: ThixPolicy.gold), border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(vertical: 14))),
                         const SizedBox(height: 10),
                         TextButton.icon(
-                          style: TextButton.styleFrom(backgroundColor: _C.bg, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                          style: TextButton.styleFrom(backgroundColor: ThixPolicy.surface, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm))),
                           onPressed: () async {
                             final picked = await showDatePicker(context: context, initialDate: DateTime.now().add(const Duration(days: 7)), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
                             if (picked != null) setState(() => _challengeEndDate = picked);
                           },
-                          icon: const Icon(Icons.calendar_today_rounded, size: 15, color: _C.primary),
-                          label: Text(_challengeEndDate == null ? 'Choisir la date de fin' : 'Date de fin: ${_challengeEndDate!.day}/${_challengeEndDate!.month}/${_challengeEndDate!.year}', style: const TextStyle(color: _C.primary, fontWeight: FontWeight.w600, fontSize: 13)),
+                          icon: const Icon(Icons.calendar_today_rounded, size: 15, color: ThixPolicy.primary),
+                          label: Text(_challengeEndDate == null ? 'Choisir la date de fin' : 'Date de fin: ${_challengeEndDate!.day}/${_challengeEndDate!.month}/${_challengeEndDate!.year}', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.semiBold)),
                         ),
                       ],
 
                       if (_showMentions && _mentionSuggestions.isNotEmpty)
-                        Container(margin: const EdgeInsets.only(top: 10), decoration: BoxDecoration(color: _C.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: _C.border)), child: Column(children: _mentionSuggestions.map((u) => ListTile(dense: true, title: Text(u['display_name'] ?? '', style: const TextStyle(fontSize: 13)), onTap: () => _insertMention(u))).toList())),
+                        Container(margin: const EdgeInsets.only(top: 10), decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(ThixPolicy.rMd), border: Border.all(color: ThixPolicy.border)), child: Column(children: _mentionSuggestions.map((u) => ListTile(dense: true, title: Text(u['display_name'] ?? '', style: ThixPolicy.bodyStyle.copyWith(fontSize: 13)), onTap: () => _insertMention(u))).toList())),
 
                       if (_images.isNotEmpty)
                         Padding(
@@ -961,7 +956,7 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                             spacing: 8, runSpacing: 8,
                             children: [
                               for (int i = 0; i < _images.length; i++)
-                                Stack(children: [ClipRRect(borderRadius: BorderRadius.circular(14), child: Image.memory(_images[i].bytes, width: 82, height: 82, fit: BoxFit.cover)), Positioned(top: 4, right: 4, child: GestureDetector(onTap: () => _removeMedia(i, false), child: Container(padding: const EdgeInsets.all(3), decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle), child: const Icon(Icons.close, size: 13, color: Colors.white))))]),
+                                Stack(children: [ClipRRect(borderRadius: BorderRadius.circular(ThixPolicy.rSm), child: Image.memory(_images[i].bytes, width: 82, height: 82, fit: BoxFit.cover)), Positioned(top: 4, right: 4, child: GestureDetector(onTap: () => _removeMedia(i, false), child: Container(padding: const EdgeInsets.all(3), decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle), child: const Icon(Icons.close, size: 13, color: Colors.white))))]),
                             ],
                           ),
                         ),
@@ -973,7 +968,7 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                             spacing: 8,
                             children: [
                               for (int i = 0; i < _videos.length; i++)
-                                Stack(children: [Container(width: 82, height: 82, decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(14)), child: const Center(child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 28))), Positioned(top: 4, right: 4, child: GestureDetector(onTap: () => _removeMedia(i, true), child: Container(padding: const EdgeInsets.all(3), decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle), child: const Icon(Icons.close, size: 13, color: Colors.white))))]),
+                                Stack(children: [Container(width: 82, height: 82, decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(ThixPolicy.rSm)), child: const Center(child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 28))), Positioned(top: 4, right: 4, child: GestureDetector(onTap: () => _removeMedia(i, true), child: Container(padding: const EdgeInsets.all(3), decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle), child: const Icon(Icons.close, size: 13, color: Colors.white))))]),
                             ],
                           ),
                         ),
@@ -985,27 +980,32 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
               if (_factCheckStatusLabel != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10, top: 6),
-                  child: Row(children: [const SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: _C.primary)), const SizedBox(width: 8), Text(_factCheckStatusLabel!, style: const TextStyle(fontSize: 12, color: _C.textSecondary))]),
+                  child: Row(children: [const SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary)), const SizedBox(width: ThixPolicy.s8), Text(_factCheckStatusLabel!, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary))]),
                 ),
 
               Row(
                 children: [
-                  _mediaBtn(Icons.photo_rounded, _pickImages, _C.green),
-                  _mediaBtn(Icons.videocam_rounded, _pickVideos, _C.red),
-                  _mediaBtn(Icons.photo_camera_rounded, _pickCamera, _C.primary),
-                  _mediaBtn(_isRecording ? Icons.stop_circle_rounded : Icons.mic_rounded, _isRecording ? _stopRecording : _startRecording, _C.gold),
+                  _mediaBtn(Icons.photo_rounded, _pickImages, ThixPolicy.success),
+                  _mediaBtn(Icons.videocam_rounded, _pickVideos, ThixPolicy.danger),
+                  _mediaBtn(Icons.photo_camera_rounded, _pickCamera, ThixPolicy.primary),
+                  _mediaBtn(_isRecording ? Icons.stop_circle_rounded : Icons.mic_rounded, _isRecording ? _stopRecording : _startRecording, ThixPolicy.gold),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: ThixPolicy.s14),
               SizedBox(
                 width: double.infinity, height: 48,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(gradient: (_isUploading || _isRecording) ? null : _C.gradientPrimary, color: (_isUploading || _isRecording) ? _C.softBlue : null, borderRadius: BorderRadius.circular(24), boxShadow: (_isUploading || _isRecording) ? null : [BoxShadow(color: _C.primary.withOpacity(0.22), blurRadius: 16, offset: const Offset(0, 6))]),
-                  child: ElevatedButton(
-                    onPressed: (_isUploading || _isRecording) ? null : _publishPost, 
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.transparent, shadowColor: Colors.transparent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))),
-                    child: _isUploading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('PUBLIER', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: Colors.white, letterSpacing: 0.6)),
+                child: ElevatedButton(
+                  onPressed: (_isUploading || _isRecording) ? null : _publishPost, 
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: ThixPolicy.primary, 
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: ThixPolicy.surfaceStrong,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rXl)),
+                    elevation: 0,
                   ),
+                  child: _isUploading 
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) 
+                    : Text('Publier', style: ThixPolicy.buttonText),
                 ),
               ),
             ],
@@ -1049,12 +1049,12 @@ class _DialogAudioPlayerState extends State<_DialogAudioPlayer> {
       children: [
         GestureDetector(
           onTap: () { if (_isPlaying) _player.pause(); else _player.resume(); },
-          child: Container(width: 32, height: 32, decoration: const BoxDecoration(color: _C.gold, shape: BoxShape.circle), child: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: _C.primaryDeep, size: 20)),
+          child: Container(width: 32, height: 32, decoration: const BoxDecoration(color: ThixPolicy.primary, shape: BoxShape.circle), child: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white, size: 20)),
         ),
         const SizedBox(width: 10),
-        Expanded(child: SliderTheme(data: SliderThemeData(trackHeight: 2, thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6), activeTrackColor: _C.gold, inactiveTrackColor: Colors.white30, thumbColor: _C.gold), child: Slider(min: 0, max: _duration.inMilliseconds.toDouble() > 0 ? _duration.inMilliseconds.toDouble() : 1.0, value: _position.inMilliseconds.toDouble().clamp(0.0, _duration.inMilliseconds.toDouble() > 0 ? _duration.inMilliseconds.toDouble() : 1.0), onChanged: (val) { _player.seek(Duration(milliseconds: val.toInt())); }))),
+        Expanded(child: SliderTheme(data: const SliderThemeData(trackHeight: 2, thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6), activeTrackColor: ThixPolicy.primary, inactiveTrackColor: ThixPolicy.border, thumbColor: ThixPolicy.primary), child: Slider(min: 0, max: _duration.inMilliseconds.toDouble() > 0 ? _duration.inMilliseconds.toDouble() : 1.0, value: _position.inMilliseconds.toDouble().clamp(0.0, _duration.inMilliseconds.toDouble() > 0 ? _duration.inMilliseconds.toDouble() : 1.0), onChanged: (val) { _player.seek(Duration(milliseconds: val.toInt())); }))),
         const SizedBox(width: 8),
-        Text(_formatDuration(_duration.inSeconds > 0 && !_isPlaying && _position.inSeconds == 0 ? _duration : _position), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+        Text(_formatDuration(_duration.inSeconds > 0 && !_isPlaying && _position.inSeconds == 0 ? _duration : _position), style: ThixPolicy.captionStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
       ],
     );
   }
