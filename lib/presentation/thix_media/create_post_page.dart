@@ -9,6 +9,8 @@ import 'package:video_player/video_player.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/media_service.dart';
 import '../../models/media_content.dart';
+import 'camera_capture_page.dart';
+import 'video_preview_editor_page.dart';
 
 // ============================================================================
 // PALETTE — Charte Premium THIX / TDIA
@@ -99,11 +101,33 @@ class _CreatePostPageState extends State<CreatePostPage> {
     }
   }
 
+  /// Applique un fichier vidéo déjà traité (trim + filtre + audio) comme
+  /// sélection courante, provenant soit de la caméra soit de l'éditeur
+  /// de preview après import galerie.
+  Future<void> _setProcessedVideo(String path) async {
+    setState(() {
+      _selectedVideo = PlatformFile(
+        name: path.split('/').last,
+        size: File(path).lengthSync(),
+        path: path,
+      );
+    });
+    await _initializeVideoPlayer();
+  }
+
+  /// Import depuis la galerie → passe systématiquement par l'éditeur de
+  /// preview (trim / filtre / audio) avant d'être retenu, comme sur TikTok.
   Future<void> _pickVideo() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.video, withData: true);
-    if (result != null && result.files.isNotEmpty) {
-      setState(() => _selectedVideo = result.files.first);
-      await _initializeVideoPlayer();
+    final result = await FilePicker.platform.pickFiles(type: FileType.video, withData: false);
+    if (result != null && result.files.isNotEmpty && result.files.first.path != null) {
+      final rawPath = result.files.first.path!;
+      final edited = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(builder: (_) => VideoPreviewEditorPage(videoPath: rawPath)),
+      );
+      if (edited != null) {
+        await _setProcessedVideo(edited);
+      }
     }
   }
 
@@ -119,14 +143,17 @@ class _CreatePostPageState extends State<CreatePostPage> {
     setState(() => _episodeFiles.removeAt(index));
   }
 
-  // Simulation ouverture caméra avec filtres beauté
-  void _openCameraWithBeautyFilters() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Module Caméra natif (À intégrer)"),
-        backgroundColor: _CreateColors.primary,
-      ),
+  /// Ouvre la caméra native avec filtre beauté live. Le flux complet
+  /// (permission → capture → trim/filtre/audio) est géré dans
+  /// CameraCapturePage + VideoPreviewEditorPage.
+  Future<void> _openCameraWithBeautyFilters() async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const CameraCapturePage()),
     );
+    if (result != null) {
+      await _setProcessedVideo(result);
+    }
   }
 
   // --- PUBLICATION ---
@@ -334,9 +361,9 @@ class _CreatePostPageState extends State<CreatePostPage> {
 
             const SizedBox(height: 24),
 
-            // 2. FILTRES ESTHÉTIQUES
+            // 2. FILTRES ESTHÉTIQUES (aperçu déjà traité en amont — informatif ici)
             if (_selectedVideo != null) ...[
-              const Text('Filtre esthétique (Bêta)', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800)),
+              const Text('Filtre appliqué', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800)),
               const SizedBox(height: 10),
               SizedBox(
                 height: 38,
