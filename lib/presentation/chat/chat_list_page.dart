@@ -40,8 +40,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
   final _scroll = ScrollController();
 
   int _selectedNav = 1;
-  bool _isNavExpanded = false;
-  Timer? _navInactivityTimer;
+  // Note : Plus de _isNavExpanded ni de Timer, la barre reste ouverte !
 
   @override
   void initState() {
@@ -57,23 +56,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
   void dispose() {
     _searchCtrl.dispose();
     _scroll.dispose();
-    _navInactivityTimer?.cancel();
     super.dispose();
-  }
-
-  void _toggleNav() {
-    HapticFeedback.lightImpact();
-    setState(() => _isNavExpanded = !_isNavExpanded);
-    _resetNavTimer();
-  }
-
-  void _resetNavTimer() {
-    _navInactivityTimer?.cancel();
-    if (_isNavExpanded) {
-      _navInactivityTimer = Timer(const Duration(seconds: 5), () {
-        if (mounted) setState(() => _isNavExpanded = false);
-      });
-    }
   }
 
   Future<void> _openConversation(ChatConversation conv) async {
@@ -108,13 +91,13 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
           children: [
             const SizedBox(height: ThixPolicy.s12),
             Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2))),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(ThixPolicy.s24, ThixPolicy.s20, ThixPolicy.s24, ThixPolicy.s16),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(ThixPolicy.s24, ThixPolicy.s20, ThixPolicy.s24, ThixPolicy.s16),
               child: Row(
                 children: [
-                  Icon(Icons.notifications_rounded, color: ThixPolicy.textMain, size: 22),
-                  SizedBox(width: ThixPolicy.s12),
-                  Text('Notifications', style: TextStyle(color: ThixPolicy.textMain, fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -0.3)),
+                  const Icon(Icons.notifications_rounded, color: ThixPolicy.textMain, size: 22),
+                  const SizedBox(width: ThixPolicy.s12),
+                  Text('Notifications', style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, letterSpacing: -0.3)),
                 ],
               ),
             ),
@@ -132,10 +115,10 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                         ),
                         child: const Icon(Icons.swap_vert_rounded, color: ThixPolicy.danger, size: 24),
                       ),
-                      title: const Text('Escalade(s) en attente', style: TextStyle(color: ThixPolicy.textMain, fontWeight: FontWeight.w700, fontSize: 15)),
-                      subtitle: const Padding(
-                        padding: EdgeInsets.only(top: 3),
-                        child: Text('Nécessite une action de votre part', style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 13)),
+                      title: Text('Escalade(s) en attente', style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 15)),
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text('Nécessite une action de votre part', style: ThixPolicy.bodySmallStyle),
                       ),
                       trailing: const Icon(Icons.chevron_right_rounded, color: ThixPolicy.textSecondary),
                       onTap: () {
@@ -143,9 +126,9 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                         context.pushNamed('chatEscalationReceived');
                       },
                     )
-                  : const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 48),
-                      child: Center(child: Text('Aucune notification récente', style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 14))),
+                  : Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 48),
+                      child: Center(child: Text('Aucune notification récente', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary))),
                     ),
             ),
             const SizedBox(height: ThixPolicy.s24),
@@ -222,9 +205,9 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: const TextStyle(color: ThixPolicy.textMain, fontSize: 15, fontWeight: FontWeight.w800, letterSpacing: -0.2)),
+                    Text(title, style: ThixPolicy.titleStyle.copyWith(fontSize: 15, fontWeight: ThixPolicy.bold, letterSpacing: -0.2)),
                     const SizedBox(height: 2),
-                    Text(subtitle, style: const TextStyle(color: ThixPolicy.textSecondary, fontSize: 12, fontWeight: FontWeight.w500)),
+                    Text(subtitle, style: ThixPolicy.bodySmallStyle.copyWith(fontSize: 12, fontWeight: ThixPolicy.medium)),
                   ],
                 ),
               ),
@@ -265,8 +248,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     return raw;
   }
 
-  /// 3 lights identiques au chat screen
-  /// Vert = envoyé · Orange = livré · Rouge = lu
   Widget _buildReadReceipt(ChatMessage? msg, String currentUserId) {
     if (msg == null || msg.senderId != currentUserId) {
       return const SizedBox.shrink();
@@ -390,7 +371,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('THIX Chat', style: TextStyle(color: ThixPolicy.textMain, fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+              Text('THIX Chat', style: ThixPolicy.h1Style.copyWith(fontSize: 24, fontWeight: ThixPolicy.bold, letterSpacing: -0.5)),
               Row(
                 children: [
                   _iconButton(icon: Icons.swap_vert_rounded, badge: pending > 0, onTap: () => context.pushNamed('chatEscalationReceived')),
@@ -474,7 +455,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
               ],
             ),
             const SizedBox(height: 4),
-            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: ThixPolicy.textMain)),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: ThixPolicy.captionStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
           ],
         ),
       ),
@@ -490,10 +471,10 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
         child: TextField(
           controller: _searchCtrl,
           onChanged: (v) => ref.read(chatListProvider.notifier).search(v),
-          style: const TextStyle(fontSize: 14, color: ThixPolicy.textMain, fontWeight: FontWeight.w500),
+          style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.medium),
           decoration: InputDecoration(
             hintText: 'Rechercher un message, un contact...',
-            hintStyle: const TextStyle(fontSize: 13, color: ThixPolicy.textSecondary),
+            hintStyle: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary),
             prefixIcon: const Icon(Icons.search_rounded, size: 20, color: ThixPolicy.textSecondary),
             suffixIcon: _searchCtrl.text.isNotEmpty
                 ? IconButton(icon: const Icon(Icons.close_rounded, size: 18, color: ThixPolicy.textSecondary), onPressed: () { _searchCtrl.clear(); ref.read(chatListProvider.notifier).search(''); })
@@ -517,7 +498,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
           children: [
             const Icon(Icons.warning_amber_rounded, color: ThixPolicy.danger, size: 18),
             const SizedBox(width: ThixPolicy.s12),
-            Expanded(child: Text('$pending escalade(s) en attente', style: const TextStyle(color: ThixPolicy.danger, fontWeight: FontWeight.w700, fontSize: 13))),
+            Expanded(child: Text('$pending escalade(s) en attente', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold))),
             const Icon(Icons.arrow_forward_ios_rounded, color: ThixPolicy.danger, size: 12),
           ],
         ),
@@ -554,7 +535,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                 ),
                 child: Text(
                   tabs[i],
-                  style: TextStyle(fontSize: 13, fontWeight: sel ? FontWeight.w700 : FontWeight.w600, color: sel ? Colors.white : ThixPolicy.textSecondary),
+                  style: ThixPolicy.bodySmallStyle.copyWith(fontWeight: sel ? ThixPolicy.bold : ThixPolicy.semiBold, color: sel ? Colors.white : ThixPolicy.textSecondary),
                 ),
               ),
             ),
@@ -573,7 +554,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
           children: [
             Container(padding: const EdgeInsets.all(20), decoration: const BoxDecoration(color: ThixPolicy.tint, shape: BoxShape.circle), child: const Icon(Icons.chat_bubble_outline_rounded, size: 40, color: ThixPolicy.primaryDeep)),
             const SizedBox(height: ThixPolicy.s16),
-            const Text('Aucune conversation', style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 15, fontWeight: FontWeight.w600)),
+            Text('Aucune conversation', style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textSecondary)),
           ],
         ),
       );
@@ -604,7 +585,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
           }
         }
 
-        // Swipe pour Supprimer la conversation
         return Dismissible(
           key: ValueKey(conv.id),
           direction: DismissDirection.endToStart,
@@ -619,17 +599,17 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
               context: context,
               builder: (ctx) => AlertDialog(
                 backgroundColor: ThixPolicy.card,
-                title: const Text('Supprimer la discussion', style: TextStyle(fontWeight: FontWeight.w800)),
-                content: const Text('Êtes-vous sûr de vouloir supprimer cette conversation ? Cette action est irréversible pour vous.'),
+                title: Text('Supprimer la discussion', style: ThixPolicy.titleStyle),
+                content: Text('Êtes-vous sûr de vouloir supprimer cette conversation ? Cette action est irréversible pour vous.', style: ThixPolicy.bodyStyle),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(ctx, false), 
-                    child: const Text('Annuler', style: TextStyle(color: ThixPolicy.textSecondary))
+                    child: Text('Annuler', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary))
                   ),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.danger),
                     onPressed: () => Navigator.pop(ctx, true), 
-                    child: const Text('Supprimer', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))
+                    child: Text('Supprimer', style: ThixPolicy.labelStyle.copyWith(color: Colors.white))
                   ),
                 ],
               ),
@@ -637,14 +617,12 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
           },
           onDismissed: (direction) async {
             try {
-              // Suppression du côté base de données
               await Supabase.instance.client
                   .from('conversation_participants')
                   .delete()
                   .eq('conversation_id', conv.id)
                   .eq('user_id', currentUserId);
                   
-              // Mise à jour de l'UI
               ref.read(chatListProvider.notifier).refresh(silent: true);
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Conversation supprimée')));
             } catch (e) {
@@ -659,7 +637,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                 padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20, vertical: 12),
                 child: Row(
                   children: [
-                    // ── Avatar(s) ──
                     if (conv.isEscalation)
                       _EscalationAvatars(
                         clientName: conv.clientName ?? chatName,
@@ -679,11 +656,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                             child: (chatAvatar == null || chatAvatar.isEmpty)
                                 ? Text(
                                     chatName.isNotEmpty ? chatName[0].toUpperCase() : '?',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      color: ThixPolicy.textSecondary,
-                                      fontSize: 18,
-                                    ),
+                                    style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.textSecondary),
                                   )
                                 : null,
                           ),
@@ -710,7 +683,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                         children: [
                           Row(
                             children: [
-                              // ✅ DÉBUT DU BLOC MODIFIÉ POUR LA CERTIFICATION
                               Expanded(
                                 child: Consumer(
                                   builder: (context, ref, _) {
@@ -736,9 +708,9 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                                             chatName,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
+                                            style: ThixPolicy.titleStyle.copyWith(
                                               fontSize: 15,
-                                              fontWeight: unread ? FontWeight.w800 : FontWeight.w600,
+                                              fontWeight: unread ? ThixPolicy.bold : ThixPolicy.semiBold,
                                               color: ThixPolicy.textMain,
                                             ),
                                           ),
@@ -754,7 +726,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                                         else if (isLegacyVerified)
                                           const Padding(
                                             padding: EdgeInsets.only(left: 4),
-                                            child: Icon(Icons.verified_rounded, color: Color(0xFFE3B23C), size: 15),
+                                            child: Icon(Icons.verified_rounded, color: ThixPolicy.gold, size: 15),
                                           ),
                                         if (conv.isEscalation) ...[
                                           const SizedBox(width: 6),
@@ -767,16 +739,15 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                                                 color: ThixPolicy.danger.withValues(alpha: 0.4),
                                               ),
                                             ),
-                                            child: const Row(
+                                            child: Row(
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
-                                                Icon(Icons.swap_vert_rounded, size: 11, color: ThixPolicy.danger),
-                                                SizedBox(width: 3),
+                                                const Icon(Icons.swap_vert_rounded, size: 11, color: ThixPolicy.danger),
+                                                const SizedBox(width: 3),
                                                 Text(
                                                   'Escaladé',
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.w800,
+                                                  style: ThixPolicy.microStyle.copyWith(
+                                                    fontWeight: ThixPolicy.bold,
                                                     color: ThixPolicy.danger,
                                                   ),
                                                 ),
@@ -792,14 +763,11 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                                   }
                                 ),
                               ),
-                              // ✅ FIN DU BLOC MODIFIÉ POUR LA CERTIFICATION
-                              
                               const SizedBox(width: 8),
                               Text(
                                 _fmt(t),
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
+                                style: ThixPolicy.captionStyle.copyWith(
+                                  fontWeight: unread ? ThixPolicy.bold : ThixPolicy.medium,
                                   color: unread ? ThixPolicy.primary : ThixPolicy.textSecondary,
                                 ),
                               ),
@@ -812,11 +780,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                               'Agent : ${conv.agentName}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: ThixPolicy.textSecondary,
-                              ),
+                              style: ThixPolicy.captionStyle,
                             ),
                           ],
                           const SizedBox(height: 4),
@@ -828,9 +792,8 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                                   _formatPreview(last?.content),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: unread ? FontWeight.w600 : FontWeight.w400,
+                                  style: ThixPolicy.bodySmallStyle.copyWith(
+                                    fontWeight: unread ? ThixPolicy.semiBold : ThixPolicy.regular,
                                     color: unread ? ThixPolicy.textMain : ThixPolicy.textSecondary,
                                   ),
                                 ),
@@ -846,11 +809,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                                   alignment: Alignment.center,
                                   child: Text(
                                     '${conv.unreadCount}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w800,
-                                    ),
+                                    style: ThixPolicy.microStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold),
                                   ),
                                 ),
                             ],
@@ -868,53 +827,40 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     );
   }
 
-  // ─────────────────────── GLASS BOTTOM NAV ───────────────────────
+  // ─────────────────────── GLASS BOTTOM NAV CONSTAMMENT OUVERTE ───────────────────────
   Widget _buildGlassBottomNav(int unread) {
     return Positioned(
       bottom: 24, left: 0, right: 0,
       child: Center(
-        child: GestureDetector(
-          onTap: _resetNavTimer,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutBack,
-            height: 64,
-            width: _isNavExpanded ? MediaQuery.of(context).size.width * 0.90 : 64,
-            decoration: BoxDecoration(
-              color: ThixPolicy.card.withValues(alpha: 0.9), // Effet Glass
-              borderRadius: BorderRadius.circular(32),
-              border: Border.all(color: ThixPolicy.border),
-              boxShadow: [BoxShadow(color: ThixPolicy.inkDeep.withOpacity(0.15), blurRadius: 24, offset: const Offset(0, 8))],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(32),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                child: _isNavExpanded
-                    ? Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _navItem(Icons.people_alt_outlined, Icons.people_alt, 'Réseau', 0, unread),
-                          _navItem(Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, 'Discussions', 1, unread),
-                          GestureDetector(
-                            onTap: () { _resetNavTimer(); _showCreateMenu(); },
-                            child: Container(
-                              width: 44, height: 44,
-                              decoration: BoxDecoration(gradient: ThixPolicy.brandGradient, shape: BoxShape.circle, boxShadow: ThixPolicy.shadowSoft()),
-                              child: const Icon(Icons.add_rounded, color: Colors.white, size: 24),
-                            ),
-                          ),
-                          _navItem(Icons.call_outlined, Icons.call, 'Appels', 2, unread),
-                          _navItem(Icons.settings_outlined, Icons.settings, 'Réglages', 3, unread),
-                        ],
-                      )
-                    : Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: _toggleNav,
-                          child: const Center(child: Icon(Icons.apps_rounded, color: ThixPolicy.primaryDeep, size: 26)),
-                        ),
-                      ),
+        child: Container(
+          height: 64,
+          width: MediaQuery.of(context).size.width * 0.90, // Toujours étendue !
+          decoration: BoxDecoration(
+            color: ThixPolicy.card.withValues(alpha: 0.9), // Effet Glassmorphism
+            borderRadius: BorderRadius.circular(32),
+            border: Border.all(color: ThixPolicy.border),
+            boxShadow: [BoxShadow(color: ThixPolicy.inkDeep.withOpacity(0.15), blurRadius: 24, offset: const Offset(0, 8))],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(32),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _navItem(Icons.people_alt_outlined, Icons.people_alt, 'Réseau', 0, unread),
+                  _navItem(Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, 'Discussions', 1, unread),
+                  GestureDetector(
+                    onTap: () { _showCreateMenu(); },
+                    child: Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(gradient: ThixPolicy.brandGradient, shape: BoxShape.circle, boxShadow: ThixPolicy.shadowSoft()),
+                      child: const Icon(Icons.add_rounded, color: Colors.white, size: 24),
+                    ),
+                  ),
+                  _navItem(Icons.call_outlined, Icons.call, 'Appels', 2, unread),
+                  _navItem(Icons.settings_outlined, Icons.settings, 'Réglages', 3, unread),
+                ],
               ),
             ),
           ),
@@ -928,9 +874,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     return InkWell(
       onTap: () {
         HapticFeedback.lightImpact();
-        _resetNavTimer();
         if (idx == 0) context.pushNamed('connections');
-        // ✅ CORRECTION BUG DE BUILD WEB : Route statique à la place de l'enum non trouvé
         else if (idx == 2) {
           Navigator.push(context, MaterialPageRoute(builder: (_) => CallHistoryPage()));
         }
@@ -981,13 +925,9 @@ class ListMessageStatusLights extends StatelessWidget {
     this.isRead = false,
   });
 
-  static const _red = Color(0xFFEF4444);
-  static const _yellow = Color(0xFFF59E0B);
-  static const _green = Color(0xFF22C55E);
-
   @override
   Widget build(BuildContext context) {
-    final activeColor = isRead ? _red : (isDelivered ? _yellow : _green);
+    final activeColor = isRead ? ThixPolicy.danger : (isDelivered ? ThixPolicy.warning : ThixPolicy.success);
 
     return Container(
       width: 9,
@@ -995,15 +935,15 @@ class ListMessageStatusLights extends StatelessWidget {
       margin: const EdgeInsets.only(right: 6),
       padding: const EdgeInsets.symmetric(vertical: 2),
       decoration: BoxDecoration(
-        color: const Color(0xFF1F2937),
+        color: ThixPolicy.inkDeep,
         borderRadius: BorderRadius.circular(5),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _dot(_red, activeColor == _red),
-          _dot(_yellow, activeColor == _yellow),
-          _dot(_green, activeColor == _green),
+          _dot(ThixPolicy.danger, activeColor == ThixPolicy.danger),
+          _dot(ThixPolicy.warning, activeColor == ThixPolicy.warning),
+          _dot(ThixPolicy.success, activeColor == ThixPolicy.success),
         ],
       ),
     );
@@ -1076,13 +1016,7 @@ class _EscalationAvatars extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white, width: 2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        boxShadow: ThixPolicy.shadowSoft(),
       ),
       child: CircleAvatar(
         radius: 15,
@@ -1093,11 +1027,7 @@ class _EscalationAvatars extends StatelessWidget {
         child: (url == null || url.isEmpty)
             ? Text(
                 name.isNotEmpty ? name[0].toUpperCase() : '?',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: fallback,
-                ),
+                style: ThixPolicy.labelStyle.copyWith(color: fallback),
               )
             : null,
       ),
