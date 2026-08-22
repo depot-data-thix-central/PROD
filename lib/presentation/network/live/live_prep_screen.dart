@@ -149,7 +149,13 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
         hostName: "Moi", 
       );
 
-      if (_isEngineReady && _engine != null) await _engine!.stopPreview();
+      // ✅ CORRECTION CRITIQUE : ON LIBÈRE TOTALEMENT LA CAMÉRA
+      if (_isEngineReady && _engine != null) {
+        await _engine!.stopPreview();
+        await _engine!.release(); // <-- C'est ceci qui empêche l'erreur !
+        _engine = null;
+      }
+      
       if (!mounted) return;
 
       // 3. ENVOI DE L'OBJET SESSION À L'ÉCRAN SUIVANT
