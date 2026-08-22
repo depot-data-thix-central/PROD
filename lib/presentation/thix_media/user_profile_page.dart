@@ -1,20 +1,36 @@
+// lib/presentation/thix_media/user_profile_page.dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+
 import '../../services/media_service.dart';
 import '../../models/media_content.dart';
 import 'video_player_page.dart';
+import 'package:thix_id/core/theme/thix_design_policy.dart'; // Pour récupérer des constantes de style si besoin
 
-// --- PALETTE DE COULEURS THIX CENTRAL ---
-const Color kBg = Color(0xFF050507);
-const Color kSurface = Color(0xFF121214);
-const Color kSurfaceLight = Color(0xFF1E1E28);
-const Color kRed = Color(0xFFFF1A1A);
-const Color kTextWhite = Color(0xFFFFFFFF);
-const Color kTextGrey = Color(0xFF9CA3AF);
-const Color kBorderLight = Color(0x14FFFFFF);
-const Color kTdiaBlue = Color(0xFF2D6CDF); // AJOUT DE LA COULEUR MANQUANTE ICI
+// ============================================================================
+// PALETTE — Charte Premium THIX / TDIA
+// ============================================================================
+class _ProfileColors {
+  static const navyDeep = Color(0xFF0A1F44);
+  static const navy = Color(0xFF123B7A);
+  static const primary = Color(0xFF2D6CDF);
+  static const whiteAccent = Colors.white;
+  static const whiteMuted = Color(0xFFE2E8F0);
+  static const cardLight = Color(0xFF16294D);
+  static const border = Color(0x1AFFFFFF);
+  static const textMuted = Color(0xFFAEB9D4);
+  static const danger = ThixPolicy.danger;
+
+  static const gradientWhite = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Colors.white, whiteMuted],
+  );
+}
 
 class UserProfilePage extends StatefulWidget {
   final String userId;
@@ -60,7 +76,6 @@ class _UserProfilePageState extends State<UserProfilePage> {
     try {
       final service = MediaService();
       
-      // Chargement en parallèle pour la performance
       final results = await Future.wait([
         service.fetchProfile(widget.userId),
         service.fetchUserStats(widget.userId),
@@ -120,7 +135,7 @@ class _UserProfilePageState extends State<UserProfilePage> {
   }
 
   Future<void> _handleFollowToggle() async {
-    // UI Optimiste
+    HapticFeedback.mediumImpact();
     final wasFollowing = _isFollowing;
     setState(() {
       _isFollowing = !_isFollowing;
@@ -130,14 +145,13 @@ class _UserProfilePageState extends State<UserProfilePage> {
     try {
       await MediaService().toggleFollow(widget.userId);
     } catch (_) {
-      // Revert en cas d'erreur réseau
       if (mounted) {
         setState(() {
           _isFollowing = wasFollowing;
           _stats['followers'] = (_stats['followers'] ?? 0) + (_isFollowing ? 1 : -1);
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Erreur réseau'), backgroundColor: kSurface),
+          const SnackBar(content: Text('Erreur réseau. Impossible de modifier l\'abonnement.'), backgroundColor: _ProfileColors.danger),
         );
       }
     }
@@ -155,8 +169,8 @@ class _UserProfilePageState extends State<UserProfilePage> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(
-        backgroundColor: kBg, 
-        body: Center(child: CircularProgressIndicator(color: kRed))
+        backgroundColor: _ProfileColors.navyDeep, 
+        body: Center(child: CircularProgressIndicator(color: Colors.white))
       );
     }
 
@@ -164,163 +178,196 @@ class _UserProfilePageState extends State<UserProfilePage> {
     final isMe = currentUserId == widget.userId;
 
     return Scaffold(
-      backgroundColor: kBg,
-      body: SafeArea(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ==========================================
-            // COLONNE GAUCHE : INFOS & ACTIONS (35%)
-            // ==========================================
-            Container(
-              width: MediaQuery.of(context).size.width * 0.35,
-              decoration: const BoxDecoration(
-                color: kSurface,
-                border: Border(right: BorderSide(color: kBorderLight)),
-              ),
+      backgroundColor: _ProfileColors.navyDeep,
+      appBar: AppBar(
+        backgroundColor: _ProfileColors.navyDeep,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(
+          isMe ? 'Mon Profil' : _getDisplayName(),
+          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
+        ),
+        centerTitle: true,
+      ),
+      body: CustomScrollView(
+        controller: _scrollController,
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          // ==========================================
+          // EN-TÊTE DU PROFIL (Informations & Stats)
+          // ==========================================
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
               child: Column(
                 children: [
-                  // Header avec bouton retour
+                  Row(
+                    children: [
+                      // Avatar
+                      Container(
+                        width: 86, height: 86,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 2),
+                          boxShadow: [
+                            BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 15, offset: const Offset(0, 8)),
+                          ],
+                          image: _profile?['avatar_url'] != null && _profile!['avatar_url'].toString().isNotEmpty
+                              ? DecorationImage(
+                                  image: CachedNetworkImageProvider(_profile!['avatar_url']),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
+                        ),
+                        child: _profile?['avatar_url'] == null || _profile!['avatar_url'].toString().isEmpty
+                            ? const Icon(Icons.person_rounded, size: 40, color: Colors.white54)
+                            : null,
+                      ),
+                      
+                      const SizedBox(width: 24),
+                      
+                      // Statistiques (Abonnements, Abonnés, Posts)
+                      Expanded(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            _buildTopStat('Publications', _stats['posts'] ?? 0),
+                            Container(width: 1, height: 30, color: Colors.white.withValues(alpha: 0.1)),
+                            _buildTopStat('Abonnés', _stats['followers'] ?? 0),
+                            Container(width: 1, height: 30, color: Colors.white.withValues(alpha: 0.1)),
+                            _buildTopStat('Suivis', _stats['following'] ?? 0),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 20),
+                  
+                  // Nom Complet et Bio
                   Align(
-                    alignment: Alignment.topLeft,
-                    child: IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
-                      onPressed: () => Navigator.pop(context),
+                    alignment: Alignment.centerLeft,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _profile?['full_name'] ?? _getDisplayName(),
+                          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.3),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '@${_profile?['username'] ?? 'utilisateur'}',
+                          style: const TextStyle(color: _ProfileColors.textMuted, fontSize: 13, fontWeight: FontWeight.w500),
+                        ),
+                        // Si une bio existe dans la table profiles, on l'affiche ici. (Exemple générique pour l'instant)
+                        if (_profile?['bio'] != null && _profile!['bio'].toString().trim().isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            _profile!['bio'],
+                            style: const TextStyle(color: Colors.white70, fontSize: 13.5, height: 1.4),
+                          ),
+                        ]
+                      ],
                     ),
                   ),
                   
-                  Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          const SizedBox(height: 10),
-                          
-                          // Avatar avec effet Glowing
-                          Container(
-                            padding: const EdgeInsets.all(3),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: LinearGradient(
-                                colors: [kRed.withOpacity(0.8), kTdiaBlue.withOpacity(0.8)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                            ),
-                            child: CircleAvatar(
-                              radius: 40,
-                              backgroundColor: kBg,
-                              backgroundImage: _profile?['avatar_url'] != null && _profile!['avatar_url'].toString().isNotEmpty
-                                  ? NetworkImage(_profile!['avatar_url'])
-                                  : null,
-                              child: _profile?['avatar_url'] == null || _profile!['avatar_url'].toString().isEmpty
-                                  ? const Icon(Icons.person, size: 40, color: kTextGrey)
-                                  : null,
-                            ),
-                          ),
-                          
-                          const SizedBox(height: 16),
-                          
-                          // Noms
-                          Text(
-                            _getDisplayName(),
-                            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                            textAlign: TextAlign.center,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          
-                          if (_profile?['full_name'] != null && _profile!['full_name'].toString().trim().isNotEmpty && _profile?['username'] != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(
-                                '@${_profile!['username']}',
-                                style: const TextStyle(color: kTextGrey, fontSize: 12),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-
-                          const SizedBox(height: 24),
-
-                          // Bouton d'Abonnement (Si ce n'est pas moi)
-                          if (!isMe)
-                            SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton(
-                                onPressed: _handleFollowToggle,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _isFollowing ? Colors.transparent : kRed,
-                                  elevation: 0,
-                                  side: BorderSide(color: _isFollowing ? kBorderLight : kRed),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                ),
-                                child: Text(
-                                  _isFollowing ? 'Abonné' : 'Suivre',
-                                  style: TextStyle(
-                                    color: _isFollowing ? Colors.white : Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13
-                                  ),
-                                ),
-                              ),
-                            ),
-                          
-                          const SizedBox(height: 30),
-
-                          // Statistiques verticales
-                          _buildVerticalStat('Publications', _stats['posts'] ?? 0),
-                          const Divider(color: kBorderLight, height: 30),
-                          _buildVerticalStat('Abonnés', _stats['followers'] ?? 0),
-                          const Divider(color: kBorderLight, height: 30),
-                          _buildVerticalStat('Abonnements', _stats['following'] ?? 0),
-                          
-                          const SizedBox(height: 30),
-                        ],
+                  const SizedBox(height: 24),
+                  
+                  // Bouton d'Action Primaire (Suivre ou Modifier)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: ElevatedButton(
+                      onPressed: isMe ? () { /* Naviguer vers l'édition du profil */ } : _handleFollowToggle,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isMe 
+                            ? Colors.white.withValues(alpha: 0.1) 
+                            : (_isFollowing ? Colors.white.withValues(alpha: 0.1) : Colors.white),
+                        foregroundColor: isMe 
+                            ? Colors.white 
+                            : (_isFollowing ? Colors.white : _ProfileColors.navyDeep),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        side: isMe || _isFollowing 
+                            ? BorderSide(color: Colors.white.withValues(alpha: 0.15)) 
+                            : BorderSide.none,
+                      ),
+                      child: Text(
+                        isMe ? 'Modifier le profil' : (_isFollowing ? 'Abonné' : 'Suivre'),
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-
-            // ==========================================
-            // COLONNE DROITE : LE FLUX VIDÉO (65%)
-            // ==========================================
-            Expanded(
-              child: _userPosts.isEmpty
-                  ? _buildEmptyState()
-                  : RefreshIndicator(
-                      color: kRed,
-                      backgroundColor: kSurface,
-                      onRefresh: _loadProfileData,
-                      child: ListView.separated(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.all(16),
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        itemCount: _userPosts.length + (_hasMore ? 1 : 0),
-                        separatorBuilder: (_, __) => const SizedBox(height: 16),
-                        itemBuilder: (context, index) {
-                          if (index == _userPosts.length) {
-                            return const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 20),
-                              child: Center(child: CircularProgressIndicator(color: kRed)),
-                            );
-                          }
-                          return _ProfileVideoCard(post: _userPosts[index]);
-                        },
-                      ),
+          ),
+          
+          // ==========================================
+          // SÉPARATEUR & TITRE GRILLE
+          // ==========================================
+          SliverToBoxAdapter(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1.5)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.only(bottom: 12, right: 16),
+                    decoration: const BoxDecoration(
+                      border: Border(bottom: BorderSide(color: Colors.white, width: 2.5)),
                     ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.grid_view_rounded, color: Colors.white, size: 18),
+                        SizedBox(width: 8),
+                        Text('Publications', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
+          ),
+          
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
+
+          // ==========================================
+          // GRILLE DE VIDÉOS
+          // ==========================================
+          if (_userPosts.isEmpty)
+            SliverToBoxAdapter(child: _buildEmptyState())
+          else
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              sliver: SliverGrid(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3, 
+                  crossAxisSpacing: 8, 
+                  mainAxisSpacing: 8, 
+                  childAspectRatio: 0.65,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    if (index == _userPosts.length) {
+                      return const Center(child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2));
+                    }
+                    return _ProfileVideoCard(post: _userPosts[index]);
+                  },
+                  childCount: _userPosts.length + (_hasMore ? 1 : 0),
+                ),
+              ),
+            ),
+            
+          const SliverToBoxAdapter(child: SizedBox(height: 40)),
+        ],
       ),
     );
   }
 
-  Widget _buildVerticalStat(String label, int count) {
+  Widget _buildTopStat(String label, int count) {
     String format(int num) {
       if (num >= 1000000) return '${(num / 1000000).toStringAsFixed(1)}M';
       if (num >= 1000) return '${(num / 1000).toStringAsFixed(1)}K';
@@ -331,43 +378,51 @@ class _UserProfilePageState extends State<UserProfilePage> {
       children: [
         Text(
           format(count),
-          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900),
+          style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Text(
           label,
-          style: const TextStyle(color: kTextGrey, fontSize: 11, fontWeight: FontWeight.w500),
-          textAlign: TextAlign.center,
+          style: const TextStyle(color: _ProfileColors.textMuted, fontSize: 11, fontWeight: FontWeight.w500),
         ),
       ],
     );
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: const [
-          Icon(Icons.video_library_rounded, size: 64, color: kBorderLight),
-          SizedBox(height: 16),
-          Text(
-            "Aucune publication",
-            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          SizedBox(height: 8),
-          Text(
-            "Cet utilisateur n'a pas encore\nposté de vidéo.",
-            style: TextStyle(color: kTextGrey, fontSize: 13),
-            textAlign: TextAlign.center,
-          ),
-        ],
+    return Padding(
+      padding: const EdgeInsets.only(top: 60),
+      child: Center(
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.05),
+              ),
+              child: const Icon(Icons.video_library_rounded, size: 48, color: Colors.white24),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              "Aucune publication",
+              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "Ce créateur n'a pas encore\npartagé de vidéo.",
+              style: TextStyle(color: _ProfileColors.textMuted, fontSize: 13, height: 1.4),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 // ==========================================================
-// COMPOSANT : CARTE VIDÉO AUTONOME (Avec Stats Temps Réel)
+// COMPOSANT : CARTE VIDÉO (Adaptée au mode Grille 3 colonnes)
 // ==========================================================
 class _ProfileVideoCard extends StatefulWidget {
   final MediaContent post;
@@ -378,34 +433,28 @@ class _ProfileVideoCard extends StatefulWidget {
 }
 
 class _ProfileVideoCardState extends State<_ProfileVideoCard> {
-  int _likes = 0;
   int _views = 0;
-  int _comments = 0;
   StreamSubscription? _statsSub;
 
   @override
   void initState() {
     super.initState();
-    _likes = widget.post.likeCount;
     _views = widget.post.viewCount;
-    _comments = widget.post.commentCount;
     _listenToStats();
   }
 
   void _listenToStats() {
-    _statsSub = Stream.periodic(const Duration(seconds: 15)).asyncMap((_) async {
+    _statsSub = Stream.periodic(const Duration(seconds: 20)).asyncMap((_) async {
       final r = await Supabase.instance.client
           .from('media_stats')
-          .select('like_count, view_count, comment_count')
+          .select('view_count')
           .eq('media_id', widget.post.id)
           .maybeSingle();
       return r;
     }).listen((data) {
       if (data != null && mounted) {
         setState(() {
-          _likes = (data['like_count'] as num?)?.toInt() ?? _likes;
           _views = (data['view_count'] as num?)?.toInt() ?? _views;
-          _comments = (data['comment_count'] as num?)?.toInt() ?? _comments;
         });
       }
     });
@@ -427,6 +476,8 @@ class _ProfileVideoCardState extends State<_ProfileVideoCard> {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
+        // Idéalement, cela devrait ouvrir la vidéo dans un PageView de type Fil TikTok 
+        // ou la page de détail TDIA. Pour l'instant, on garde votre navigation existante.
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -437,126 +488,69 @@ class _ProfileVideoCardState extends State<_ProfileVideoCard> {
           )
         );
       },
-      child: Container(
-        height: 200,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          color: kSurface,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.3),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            )
-          ]
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // 1. Couverture Image
-              Image.network(
-                widget.post.coverUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image, color: kTextGrey)),
-              ),
-              
-              // 2. Dégradé de lisibilité
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withOpacity(0.4),
-                      Colors.black.withOpacity(0.9),
-                    ],
-                    stops: const [0.0, 0.5, 1.0],
-                  ),
-                ),
-              ),
-
-              // 3. Bouton Play Central
-              Center(
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.4),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white24)
-                  ),
-                  child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 32),
-                ),
-              ),
-
-              // 4. Infos & Statistiques en bas
-              Positioned(
-                bottom: 12,
-                left: 12,
-                right: 12,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Titre
-                    Text(
-                      widget.post.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        shadows: [Shadow(color: Colors.black, blurRadius: 4)]
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    
-                    // Ligne de statistiques
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _buildStatIcon(Icons.remove_red_eye_rounded, _format(_views)),
-                        _buildStatIcon(Icons.favorite_rounded, _format(_likes), color: kRed),
-                        _buildStatIcon(Icons.chat_bubble_rounded, _format(_comments)),
-                        
-                        // Badge de la catégorie
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: kTdiaBlue.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: kTdiaBlue.withOpacity(0.5))
-                          ),
-                          child: Text(
-                            widget.post.type,
-                            style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                          ),
-                        )
-                      ],
-                    ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Couverture Image
+            Container(
+              color: _ProfileColors.cardLight,
+              child: widget.post.coverUrl.trim().isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: widget.post.coverUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (c, url) => const SizedBox(),
+                      errorWidget: (c, e, s) => const Icon(Icons.play_circle_outline, color: Colors.white24),
+                    )
+                  : const Icon(Icons.play_circle_outline, color: Colors.white24),
+            ),
+            
+            // Dégradé de lisibilité en bas
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.1),
+                    Colors.black.withValues(alpha: 0.8),
                   ],
+                  stops: const [0.5, 0.7, 1.0],
                 ),
               ),
-            ],
-          ),
+            ),
+            
+            // Verrouillage (Si Premium)
+            if (widget.post.isPaid)
+              Positioned(
+                top: 6, right: 6,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                  child: const Icon(Icons.lock_rounded, size: 10, color: _ProfileColors.navyDeep),
+                ),
+              ),
+
+            // Compteur de vues en bas à gauche
+            Positioned(
+              bottom: 6,
+              left: 6,
+              child: Row(
+                children: [
+                  const Icon(Icons.play_arrow_outlined, color: Colors.white, size: 16),
+                  const SizedBox(width: 2),
+                  Text(
+                    _format(_views),
+                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
-    );
-  }
-
-  Widget _buildStatIcon(IconData icon, String value, {Color? color}) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: color ?? Colors.white70, size: 14),
-        const SizedBox(width: 4),
-        Text(
-          value,
-          style: TextStyle(color: color ?? Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
-        ),
-      ],
     );
   }
 }
