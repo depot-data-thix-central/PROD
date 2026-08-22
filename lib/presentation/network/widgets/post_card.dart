@@ -9,7 +9,6 @@ import 'package:timeago/timeago.dart' as timeago;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
-import 'package:visibility_detector/visibility_detector.dart'; // 📦 AJOUT: Pour détecter quand le post est visible
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/features/network/presentation/providers/feed_provider.dart';
@@ -667,21 +666,19 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           final isFollowingDB = ref.watch(followStatusProvider(post.userId)).valueOrNull;
           final isFollowing = isFollowingDB ?? _isFollowingLocal;
 
-          // Utilisation de VisibilityDetector pour compter l'impression quand la carte apparaît
-          return VisibilityDetector(
-            key: Key('post_impression_${post.id}'),
-            onVisibilityChanged: (info) {
-              if (info.visibleFraction > 0.5) {
-                _registerImpression(post.id);
-              }
-            },
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: _PostColors.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: _PostColors.border.withOpacity(0.5)),
-              ),
+        // Enregistrer l'impression dès que la carte est construite par la ListView
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _registerImpression(post.id);
+          });
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: _PostColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _PostColors.border.withOpacity(0.5)),
+            ),
+
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
