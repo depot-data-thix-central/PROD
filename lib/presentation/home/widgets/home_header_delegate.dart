@@ -61,7 +61,6 @@ class HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
       child: _PremiumHeader(
         safeTop: safeTop,
         displayName: displayName,
-        photoUrl: photoUrl,
         isAuthenticated: isAuthenticated,
         badgeCountsStream: badgeCountsStream,
         onProfileTap: onProfileTap,
@@ -82,7 +81,6 @@ class HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
 class _PremiumHeader extends StatelessWidget {
   final double safeTop;
   final String displayName;
-  final String? photoUrl;
   final bool isAuthenticated;
   final Stream<SectionBadgeCounts> badgeCountsStream;
   final VoidCallback onProfileTap;
@@ -91,7 +89,6 @@ class _PremiumHeader extends StatelessWidget {
   const _PremiumHeader({
     required this.safeTop,
     required this.displayName,
-    required this.photoUrl,
     required this.isAuthenticated,
     required this.badgeCountsStream,
     required this.onProfileTap,
@@ -100,7 +97,6 @@ class _PremiumHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final trimmedPhoto = (photoUrl ?? '').trim();
     final localeCode =
         context.select<LocaleController, String>((c) => c.locale.languageCode);
 
@@ -277,39 +273,6 @@ class _PremiumHeader extends StatelessWidget {
                     ),
                   );
                 },
-              ),
-              const SizedBox(width: 10),
-
-              // AVATAR
-              GestureDetector(
-                onTap: onProfileTap,
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: ThixPolicy.card,
-                    border: Border.all(color: ThixPolicy.primary, width: 2),
-                    boxShadow: ThixPolicy.shadowSoft(),
-                  ),
-                  child: ClipOval(
-                    child: trimmedPhoto.isNotEmpty
-                        ? Image.network(
-                            trimmedPhoto,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
-                              color: ThixPolicy.surface,
-                              child: const Icon(Icons.person_rounded),
-                            ),
-                          )
-                        : Container(
-                            color: ThixPolicy.tint,
-                            child: const Icon(Icons.person_rounded,
-                                color: ThixPolicy.primary),
-                          ),
-                  ),
-                ),
               ),
             ],
           ),
