@@ -666,7 +666,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           final isFollowingDB = ref.watch(followStatusProvider(post.userId)).valueOrNull;
           final isFollowing = isFollowingDB ?? _isFollowingLocal;
 
-        // Enregistrer l'impression dès que la carte est construite par la ListView
+          // Enregistrer l'impression dès que la carte est construite par la ListView
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _registerImpression(post.id);
           });
@@ -678,145 +678,142 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: _PostColors.border.withOpacity(0.5)),
             ),
-
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: widget.onTap ?? () => _openPostDetails(post.id),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // ─── 1. HEADER (Avatar Cercle, Nom, Temps, SANS LES 3 POINTS) ───
-                        Row(
-                          children: [
-                            GestureDetector(
-                              onTap: () => context.push('/network/profile/${post.userId}'),
-                              child: Stack(
-                                clipBehavior: Clip.none,
-                                children: [
-                                  CircleAvatar(
-                                    radius: 20,
-                                    backgroundColor: _PostColors.softBg,
-                                    backgroundImage: post.authorAvatar != null && post.authorAvatar!.isNotEmpty
-                                        ? CachedNetworkImageProvider(post.authorAvatar!)
-                                        : null,
-                                    child: post.authorAvatar == null || post.authorAvatar!.isEmpty
-                                        ? const Icon(Icons.person_rounded, size: 18, color: _PostColors.textMuted)
-                                        : null,
-                                  ),
-                                  // Bouton "+" 
-                                  if (!isOwner && !isFollowing)
-                                    Positioned(
-                                      bottom: -2, right: -2,
-                                      child: GestureDetector(
-                                        onTap: () async {
-                                          if (_followBusy) return;
-                                          setState(() => _followBusy = true);
-                                          HapticFeedback.selectionClick();
-                                          setState(() => _isFollowingLocal = true);
-                                          try {
-                                            await ref.read(networkServiceProvider).followUser(post.userId);
-                                            ref.invalidate(followStatusProvider(post.userId));
-                                            ref.invalidate(userProfileProvider(post.userId));
-                                            widget.onFollow?.call();
-                                          } catch (_) { if (mounted) setState(() => _isFollowingLocal = false); } 
-                                          finally { if (mounted) setState(() => _followBusy = false); }
-                                        },
-                                        child: Container(
-                                          width: 18, height: 18,
-                                          decoration: BoxDecoration(shape: BoxShape.circle, color: _PostColors.primary, border: Border.all(color: Colors.white, width: 2)),
-                                          child: const Icon(Icons.add_rounded, size: 12, color: Colors.white),
-                                        ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: widget.onTap ?? () => _openPostDetails(post.id),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // ─── 1. HEADER ───
+                      Row(
+                        children: [
+                          GestureDetector(
+                            onTap: () => context.push('/network/profile/${post.userId}'),
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: _PostColors.softBg,
+                                  backgroundImage: post.authorAvatar != null && post.authorAvatar!.isNotEmpty
+                                      ? CachedNetworkImageProvider(post.authorAvatar!)
+                                      : null,
+                                  child: post.authorAvatar == null || post.authorAvatar!.isEmpty
+                                      ? const Icon(Icons.person_rounded, size: 18, color: _PostColors.textMuted)
+                                      : null,
+                                ),
+                                if (!isOwner && !isFollowing)
+                                  Positioned(
+                                    bottom: -2, right: -2,
+                                    child: GestureDetector(
+                                      onTap: () async {
+                                        if (_followBusy) return;
+                                        setState(() => _followBusy = true);
+                                        HapticFeedback.selectionClick();
+                                        setState(() => _isFollowingLocal = true);
+                                        try {
+                                          await ref.read(networkServiceProvider).followUser(post.userId);
+                                          ref.invalidate(followStatusProvider(post.userId));
+                                          ref.invalidate(userProfileProvider(post.userId));
+                                          widget.onFollow?.call();
+                                        } catch (_) { if (mounted) setState(() => _isFollowingLocal = false); } 
+                                        finally { if (mounted) setState(() => _followBusy = false); }
+                                      },
+                                      child: Container(
+                                        width: 18, height: 18,
+                                        decoration: BoxDecoration(shape: BoxShape.circle, color: _PostColors.primary, border: Border.all(color: Colors.white, width: 2)),
+                                        child: const Icon(Icons.add_rounded, size: 12, color: Colors.white),
                                       ),
                                     ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => context.push('/network/profile/${post.userId}'),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          post.authorName,
+                                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5, color: _PostColors.navyText, letterSpacing: -0.2),
+                                          maxLines: 1, overflow: TextOverflow.ellipsis
+                                        ),
+                                      ),
+                                      if (isCertified)
+                                        CertificationNameBadge(tier: tier, status: status, showLabel: false, iconSize: 15, padding: const EdgeInsets.only(left: 6))
+                                      else if (isLegacyVerified)
+                                        const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.verified_rounded, color: Color(0xFFE3B23C), size: 15)),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(_getTimeAgo(post.createdAt), style: const TextStyle(fontSize: 11, color: _PostColors.textMuted, fontWeight: FontWeight.w600)),
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: () => context.push('/network/profile/${post.userId}'),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Flexible(
-                                          child: Text(
-                                            post.authorName,
-                                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5, color: _PostColors.navyText, letterSpacing: -0.2),
-                                            maxLines: 1, overflow: TextOverflow.ellipsis
-                                          ),
-                                        ),
-                                        if (isCertified)
-                                          CertificationNameBadge(tier: tier, status: status, showLabel: false, iconSize: 15, padding: const EdgeInsets.only(left: 6))
-                                        else if (isLegacyVerified)
-                                          const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.verified_rounded, color: Color(0xFFE3B23C), size: 15)),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(_getTimeAgo(post.createdAt), style: const TextStyle(fontSize: 11, color: _PostColors.textMuted, fontWeight: FontWeight.w600)),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        if (post.isRepostCard)
-                          const Padding(
-                            padding: EdgeInsets.only(top: 8, bottom: 4),
-                            child: Row(children: [Icon(Icons.repeat_rounded, size: 14, color: _PostColors.textMuted), SizedBox(width: 6), Text('a reposté', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: _PostColors.textMuted))]),
                           ),
-
-                        const SizedBox(height: 12),
-
-                        // ─── 2. TEXTE DU POST ───
-                        if (post.content.isNotEmpty)
-                          _buildPostContent(post),
-
-                        if (post.isRepostCard && post.repostOfId != null && post.repostOfId!.isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          _OriginalPostEmbed(postId: post.repostOfId!),
                         ],
+                      ),
 
-                        // ─── 3. AUTRES TYPES DE CONTENU ───
-                        if (!post.isRepostCard && (post.hasImages || post.hasVideos)) ...[
-                          const SizedBox(height: 12),
-                          _buildMediaGrid([...post.imageUrls, ...post.videoUrls]),
-                        ],
-                        if (post.hasAudio && post.audioUrls.isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          _ThixWaveformAudioPlayer(audioUrl: post.audioUrls.first),
-                        ],
-                        if (post.postType == 'poll') ...[
-                          const SizedBox(height: 12),
-                          _buildPollWidget(post),
-                        ] else if (post.postType == 'challenge') ...[
-                          const SizedBox(height: 12),
-                          _buildChallengeWidget(post),
-                        ],
-
-                        _buildFactCheckBanner(post.isMisinformation, post.factCheckMessage),
-
-                        const SizedBox(height: 16),
-                        
-                        // ─── 4. AFFICHAGE DES IMPULSIONS (LES LIKERS) ───
-                        if (likesCount > 0)
-                          _LikersStack(count: likesCount, postId: post.id, isLikedByMe: isLiked),
-
+                      if (post.isRepostCard)
                         const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: Divider(height: 1, color: _PostColors.border, thickness: 0.5),
+                          padding: EdgeInsets.only(top: 8, bottom: 4),
+                          child: Row(children: [Icon(Icons.repeat_rounded, size: 14, color: _PostColors.textMuted), SizedBox(width: 6), Text('a reposté', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: _PostColors.textMuted))]),
                         ),
 
-                        // ─── 5. BARRE D'ACTIONS COMPLÈTE EN BAS ───
-                        _buildActionRow(post, isLiked, isOwner, isCurrentUserFree, ref),
+                      const SizedBox(height: 12),
+
+                      // ─── 2. TEXTE DU POST ───
+                      if (post.content.isNotEmpty)
+                        _buildPostContent(post),
+
+                      if (post.isRepostCard && post.repostOfId != null && post.repostOfId!.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        _OriginalPostEmbed(postId: post.repostOfId!),
                       ],
-                    ),
+
+                      // ─── 3. AUTRES TYPES DE CONTENU ───
+                      if (!post.isRepostCard && (post.hasImages || post.hasVideos)) ...[
+                        const SizedBox(height: 12),
+                        _buildMediaGrid([...post.imageUrls, ...post.videoUrls]),
+                      ],
+                      if (post.hasAudio && post.audioUrls.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        _ThixWaveformAudioPlayer(audioUrl: post.audioUrls.first),
+                      ],
+                      if (post.postType == 'poll') ...[
+                        const SizedBox(height: 12),
+                        _buildPollWidget(post),
+                      ] else if (post.postType == 'challenge') ...[
+                        const SizedBox(height: 12),
+                        _buildChallengeWidget(post),
+                      ],
+
+                      _buildFactCheckBanner(post.isMisinformation, post.factCheckMessage),
+
+                      const SizedBox(height: 16),
+                      
+                      // ─── 4. AFFICHAGE DES IMPULSIONS (LES LIKERS) ───
+                      if (likesCount > 0)
+                        _LikersStack(count: likesCount, postId: post.id, isLikedByMe: isLiked),
+
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Divider(height: 1, color: _PostColors.border, thickness: 0.5),
+                      ),
+
+                      // ─── 5. BARRE D'ACTIONS COMPLÈTE EN BAS ───
+                      _buildActionRow(post, isLiked, isOwner, isCurrentUserFree, ref),
+                    ],
                   ),
                 ),
               ),
@@ -829,8 +826,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
 
   // ── BARRE D'ACTIONS COMPLÈTE EN BAS (Stats incluses) ──
   Widget _buildActionRow(NetworkPost post, bool isLiked, bool isOwner, bool isFree, WidgetRef ref) {
-    // Note : post.impressionsCount doit être ajouté dans votre modèle NetworkPost 
-    // s'il n'y est pas encore. S'il n'y est pas, cette ligne affichera 0 par défaut.
     final impressions = (post.toJson()['impressions_count'] as num?)?.toInt() ?? 0;
 
     return SingleChildScrollView(
@@ -840,7 +835,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         children: [
           _ActionBtn(
             icon: isLiked ? Icons.bolt_rounded : Icons.bolt_outlined,
-            label: '', // Le compteur est déjà au dessus avec les avatars
+            label: '', 
             color: isLiked ? _PulseColors.gold : _PostColors.textMuted,
             onTap: () async {
               HapticFeedback.selectionClick();
@@ -862,9 +857,8 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
             onTap: () => _repost(post, ref),
           ),
           const SizedBox(width: 20),
-          // Indicateur des impressions / personnes atteintes
           _ActionBtn(
-            icon: Icons.bar_chart_rounded, // Icône de statistiques style X
+            icon: Icons.bar_chart_rounded, 
             label: _formatCountHelper(impressions),
             color: _PostColors.textMuted,
             onTap: () {
@@ -891,7 +885,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
               widget.onSave?.call();
             },
           ),
-          // Actions de Propriétaire (Masquer / Edit / Delete)
           if (isOwner && !isFree) ...[
             const SizedBox(width: 20),
             _ActionBtn(
@@ -1041,7 +1034,7 @@ class _LikersStackState extends State<_LikersStack> {
     
     try {
       final response = await Supabase.instance.client
-          .from('post_likes') // <-- Modifiez selon le nom exact de votre table !
+          .from('post_likes')
           .select('user_id, profiles(avatar_url)')
           .eq('post_id', widget.postId)
           .order('created_at', ascending: false)
