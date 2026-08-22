@@ -396,21 +396,26 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => _FullScreenVideoPlayer(videoUrl: url)));
   }
 
-  // ── MÉDIAS MIXTES ──
+    // ── MÉDIAS MIXTES ──
   Widget _buildMediaGrid(List<String> urls) {
     if (urls.isEmpty) return const SizedBox.shrink();
     const spacing = 4.0;
     final radius = BorderRadius.circular(16.0); 
     final imageOnlyUrls = urls.where((u) => !_isVideoUrl(u)).toList();
 
-    Widget mediaTile(String url, {double? width, double? height}) {
+    // 🌟 1. Ajout de l'option d'alignement dans le Tile
+    Widget mediaTile(String url, {double? width, double? height, Alignment alignment = Alignment.center}) {
       if (_isVideoUrl(url)) {
         return _VideoThumbTile(videoUrl: url, width: width, height: height, onTap: () => _openVideoFullScreen(url));
       }
       return GestureDetector(
         onTap: () => _openGallery(imageOnlyUrls.indexOf(url), imageOnlyUrls),
         child: CachedNetworkImage(
-          imageUrl: url, width: width, height: height, fit: BoxFit.cover,
+          imageUrl: url, 
+          width: width, 
+          height: height, 
+          fit: BoxFit.cover,
+          alignment: alignment, // Applique l'alignement ici
           placeholder: (context, url) => Container(color: _PostColors.softBg, child: const Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: _PostColors.primary)))),
           errorWidget: (context, url, error) => Container(color: _PostColors.softBg, child: const Icon(Icons.broken_image_outlined, color: _PostColors.textMuted)),
         ),
@@ -418,12 +423,22 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     }
 
     if (urls.length == 1) {
-      return LayoutBuilder(
-        builder: (context, c) {
-          final w = c.maxWidth;
-          final h = (w * 0.75).clamp(220.0, 480.0);
-          return ClipRRect(borderRadius: radius, child: SizedBox(width: w, height: h, child: mediaTile(urls[0], width: w, height: h)));
-        },
+      // 🌟 2. CARTE UNIQUE DYNAMIQUE (Fini les têtes coupées !)
+      return ClipRRect(
+        borderRadius: radius,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxHeight: 500, // Empêche une image ultra-longue de prendre tout l'écran
+            minHeight: 200, // Hauteur minimale pendant le chargement
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            child: mediaTile(
+              urls[0],
+              alignment: Alignment.topCenter, // 🌟 Priorité vers le HAUT pour préserver les visages
+            ),
+          ),
+        ),
       );
     }
 
@@ -465,6 +480,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       ),
     );
   }
+
 
   // ── SONDAGE ──
   Widget _buildPollWidget(NetworkPost post) {
