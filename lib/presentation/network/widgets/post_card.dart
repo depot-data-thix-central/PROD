@@ -9,6 +9,8 @@ import 'package:timeago/timeago.dart' as timeago;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
+import 'package:visibility_detector/visibility_detector.dart'; // 📦 AJOUT: Pour détecter quand le post est visible
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/features/network/presentation/providers/feed_provider.dart';
 import 'package:thix_id/models/network_post.dart';
@@ -46,7 +48,7 @@ bool _isVideoUrl(String url) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// COULEURS SPÉCIFIQUES "BLANC ÉPURÉ" ET IMPULSION
+// COULEURS SPÉCIFIQUES "BLANC ÉPURÉ"
 // ─────────────────────────────────────────────────────────────
 class _PostColors {
   static const Color surface = Colors.white;
@@ -129,7 +131,7 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
 }
 
 // ─────────────────────────────────────────────────────────────
-// COMPOSANT PRINCIPAL — POST CARD (Nouveau Design)
+// COMPOSANT PRINCIPAL — POST CARD (Nouveau Design + Stats)
 // ─────────────────────────────────────────────────────────────
 class PostCard extends ConsumerStatefulWidget {
   final NetworkPost post;
@@ -177,6 +179,8 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
 
   bool _isFollowingLocal = false;
   bool _followBusy = false;
+  
+  bool _impressionRegistered = false; // Empêche de compter 2 fois lors d'un même scroll
 
   static const _maxContentChars = 250;
   static const _maxParseDepth = 6;
@@ -548,7 +552,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
   }
 
   // ─────────────────────────────────────────────────────────────
-  // ACTIONS MODIFICATION ET SUPPRESSION (Anciens 3 points)
+  // ACTIONS MODIFICATION ET SUPPRESSION
   // ─────────────────────────────────────────────────────────────
   Future<void> _editPost(NetworkPost post, WidgetRef ref) async {
     final controller = TextEditingController(text: post.content);
@@ -610,6 +614,21 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
   }
 
   // ─────────────────────────────────────────────────────────────
+  // ENREGISTREMENT DE L'IMPRESSION (Portée/Vues)
+  // ─────────────────────────────────────────────────────────────
+  void _registerImpression(String postId) {
+    if (_impressionRegistered) return;
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid != null) {
+      _impressionRegistered = true;
+      Supabase.instance.client.rpc('increment_post_impression', params: {
+        'p_post_id': postId,
+        'p_user_id': uid
+      }).catchError((_) { _impressionRegistered = false; }); // Réessayer si échec silencieux
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // BUILD GLOBAL DE LA CARTE
   // ─────────────────────────────────────────────────────────────
   @override
@@ -648,149 +667,159 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           final isFollowingDB = ref.watch(followStatusProvider(post.userId)).valueOrNull;
           final isFollowing = isFollowingDB ?? _isFollowingLocal;
 
-          return Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(
-              color: _PostColors.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _PostColors.border.withOpacity(0.5)),
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
+          // Utilisation de VisibilityDetector pour compter l'impression quand la carte apparaît
+          return VisibilityDetector(
+            key: Key('post_impression_${post.id}'),
+            onVisibilityChanged: (info) {
+              if (info.visibleFraction > 0.5) {
+                _registerImpression(post.id);
+              }
+            },
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: _PostColors.surface,
                 borderRadius: BorderRadius.circular(16),
-                onTap: widget.onTap ?? () => _openPostDetails(post.id),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // ─── 1. HEADER (Avatar, Nom, Temps, SANS LES 3 POINTS) ───
-                      Row(
-                        children: [
-                          GestureDetector(
-                            onTap: () => context.push('/network/profile/${post.userId}'),
-                            child: Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                CircleAvatar(
-                                  radius: 20,
-                                  backgroundColor: _PostColors.softBg,
-                                  backgroundImage: post.authorAvatar != null && post.authorAvatar!.isNotEmpty
-                                      ? CachedNetworkImageProvider(post.authorAvatar!)
-                                      : null,
-                                  child: post.authorAvatar == null || post.authorAvatar!.isEmpty
-                                      ? const Icon(Icons.person_rounded, size: 18, color: _PostColors.textMuted)
-                                      : null,
-                                ),
-                                if (!isOwner && !isFollowing)
-                                  Positioned(
-                                    bottom: -2, right: -2,
-                                    child: GestureDetector(
-                                      onTap: () async {
-                                        if (_followBusy) return;
-                                        setState(() => _followBusy = true);
-                                        HapticFeedback.selectionClick();
-                                        setState(() => _isFollowingLocal = true);
-                                        try {
-                                          await ref.read(networkServiceProvider).followUser(post.userId);
-                                          ref.invalidate(followStatusProvider(post.userId));
-                                          ref.invalidate(userProfileProvider(post.userId));
-                                          widget.onFollow?.call();
-                                        } catch (_) { if (mounted) setState(() => _isFollowingLocal = false); } 
-                                        finally { if (mounted) setState(() => _followBusy = false); }
-                                      },
-                                      child: Container(
-                                        width: 18, height: 18,
-                                        decoration: BoxDecoration(shape: BoxShape.circle, color: _PostColors.primary, border: Border.all(color: Colors.white, width: 2)),
-                                        child: const Icon(Icons.add_rounded, size: 12, color: Colors.white),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: GestureDetector(
+                border: Border.all(color: _PostColors.border.withOpacity(0.5)),
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: widget.onTap ?? () => _openPostDetails(post.id),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // ─── 1. HEADER (Avatar Cercle, Nom, Temps, SANS LES 3 POINTS) ───
+                        Row(
+                          children: [
+                            GestureDetector(
                               onTap: () => context.push('/network/profile/${post.userId}'),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              child: Stack(
+                                clipBehavior: Clip.none,
                                 children: [
-                                  Row(
-                                    children: [
-                                      Flexible(
-                                        child: Text(
-                                          post.authorName,
-                                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5, color: _PostColors.navyText, letterSpacing: -0.2),
-                                          maxLines: 1, overflow: TextOverflow.ellipsis
+                                  CircleAvatar(
+                                    radius: 20,
+                                    backgroundColor: _PostColors.softBg,
+                                    backgroundImage: post.authorAvatar != null && post.authorAvatar!.isNotEmpty
+                                        ? CachedNetworkImageProvider(post.authorAvatar!)
+                                        : null,
+                                    child: post.authorAvatar == null || post.authorAvatar!.isEmpty
+                                        ? const Icon(Icons.person_rounded, size: 18, color: _PostColors.textMuted)
+                                        : null,
+                                  ),
+                                  // Bouton "+" 
+                                  if (!isOwner && !isFollowing)
+                                    Positioned(
+                                      bottom: -2, right: -2,
+                                      child: GestureDetector(
+                                        onTap: () async {
+                                          if (_followBusy) return;
+                                          setState(() => _followBusy = true);
+                                          HapticFeedback.selectionClick();
+                                          setState(() => _isFollowingLocal = true);
+                                          try {
+                                            await ref.read(networkServiceProvider).followUser(post.userId);
+                                            ref.invalidate(followStatusProvider(post.userId));
+                                            ref.invalidate(userProfileProvider(post.userId));
+                                            widget.onFollow?.call();
+                                          } catch (_) { if (mounted) setState(() => _isFollowingLocal = false); } 
+                                          finally { if (mounted) setState(() => _followBusy = false); }
+                                        },
+                                        child: Container(
+                                          width: 18, height: 18,
+                                          decoration: BoxDecoration(shape: BoxShape.circle, color: _PostColors.primary, border: Border.all(color: Colors.white, width: 2)),
+                                          child: const Icon(Icons.add_rounded, size: 12, color: Colors.white),
                                         ),
                                       ),
-                                      if (isCertified)
-                                        CertificationNameBadge(tier: tier, status: status, showLabel: false, iconSize: 15, padding: const EdgeInsets.only(left: 6))
-                                      else if (isLegacyVerified)
-                                        const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.verified_rounded, color: Color(0xFFE3B23C), size: 15)),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(_getTimeAgo(post.createdAt), style: const TextStyle(fontSize: 11, color: _PostColors.textMuted, fontWeight: FontWeight.w600)),
+                                    ),
                                 ],
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-
-                      if (post.isRepostCard)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 8, bottom: 4),
-                          child: Row(children: [Icon(Icons.repeat_rounded, size: 14, color: _PostColors.textMuted), SizedBox(width: 6), Text('a reposté', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: _PostColors.textMuted))]),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () => context.push('/network/profile/${post.userId}'),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            post.authorName,
+                                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5, color: _PostColors.navyText, letterSpacing: -0.2),
+                                            maxLines: 1, overflow: TextOverflow.ellipsis
+                                          ),
+                                        ),
+                                        if (isCertified)
+                                          CertificationNameBadge(tier: tier, status: status, showLabel: false, iconSize: 15, padding: const EdgeInsets.only(left: 6))
+                                        else if (isLegacyVerified)
+                                          const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.verified_rounded, color: Color(0xFFE3B23C), size: 15)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(_getTimeAgo(post.createdAt), style: const TextStyle(fontSize: 11, color: _PostColors.textMuted, fontWeight: FontWeight.w600)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
 
-                      const SizedBox(height: 12),
+                        if (post.isRepostCard)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 8, bottom: 4),
+                            child: Row(children: [Icon(Icons.repeat_rounded, size: 14, color: _PostColors.textMuted), SizedBox(width: 6), Text('a reposté', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: _PostColors.textMuted))]),
+                          ),
 
-                      // ─── 2. TEXTE DU POST ───
-                      if (post.content.isNotEmpty)
-                        _buildPostContent(post),
-
-                      if (post.isRepostCard && post.repostOfId != null && post.repostOfId!.isNotEmpty) ...[
                         const SizedBox(height: 12),
-                        _OriginalPostEmbed(postId: post.repostOfId!),
+
+                        // ─── 2. TEXTE DU POST ───
+                        if (post.content.isNotEmpty)
+                          _buildPostContent(post),
+
+                        if (post.isRepostCard && post.repostOfId != null && post.repostOfId!.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          _OriginalPostEmbed(postId: post.repostOfId!),
+                        ],
+
+                        // ─── 3. AUTRES TYPES DE CONTENU ───
+                        if (!post.isRepostCard && (post.hasImages || post.hasVideos)) ...[
+                          const SizedBox(height: 12),
+                          _buildMediaGrid([...post.imageUrls, ...post.videoUrls]),
+                        ],
+                        if (post.hasAudio && post.audioUrls.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          _ThixWaveformAudioPlayer(audioUrl: post.audioUrls.first),
+                        ],
+                        if (post.postType == 'poll') ...[
+                          const SizedBox(height: 12),
+                          _buildPollWidget(post),
+                        ] else if (post.postType == 'challenge') ...[
+                          const SizedBox(height: 12),
+                          _buildChallengeWidget(post),
+                        ],
+
+                        _buildFactCheckBanner(post.isMisinformation, post.factCheckMessage),
+
+                        const SizedBox(height: 16),
+                        
+                        // ─── 4. AFFICHAGE DES IMPULSIONS (LES LIKERS) ───
+                        if (likesCount > 0)
+                          _LikersStack(count: likesCount, postId: post.id, isLikedByMe: isLiked),
+
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Divider(height: 1, color: _PostColors.border, thickness: 0.5),
+                        ),
+
+                        // ─── 5. BARRE D'ACTIONS COMPLÈTE EN BAS ───
+                        _buildActionRow(post, isLiked, isOwner, isCurrentUserFree, ref),
                       ],
-
-                      // ─── 3. AUTRES TYPES DE CONTENU ───
-                      if (!post.isRepostCard && (post.hasImages || post.hasVideos)) ...[
-                        const SizedBox(height: 12),
-                        _buildMediaGrid([...post.imageUrls, ...post.videoUrls]),
-                      ],
-                      if (post.hasAudio && post.audioUrls.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        _ThixWaveformAudioPlayer(audioUrl: post.audioUrls.first),
-                      ],
-                      if (post.postType == 'poll') ...[
-                        const SizedBox(height: 12),
-                        _buildPollWidget(post),
-                      ] else if (post.postType == 'challenge') ...[
-                        const SizedBox(height: 12),
-                        _buildChallengeWidget(post),
-                      ],
-
-                      _buildFactCheckBanner(post.isMisinformation, post.factCheckMessage),
-
-                      const SizedBox(height: 16),
-                      
-                      // ─── 4. AFFICHAGE DES IMPULSIONS (LES LIKERS) ───
-                      if (likesCount > 0)
-                        _LikersStack(count: likesCount, postId: post.id, isLikedByMe: isLiked),
-                      
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Divider(height: 1, color: _PostColors.border, thickness: 0.5),
-                      ),
-
-                      // ─── 5. BARRE D'ACTIONS COMPLÈTE EN BAS (Scrollable) ───
-                      _buildActionRow(post, isLiked, likesCount, isOwner, isCurrentUserFree, ref),
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -801,192 +830,61 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     );
   }
 
-  // ── AFFICHAGE DES LIKERS (Impulsions) ──
-  // ─────────────────────────────────────────────────────────────
-// COMPOSANT : PILE DES AVATARS DES UTILISATEURS (Likers réels)
-// ─────────────────────────────────────────────────────────────
-class _LikersStack extends StatefulWidget {
-  final int count;
-  final String postId;
-  final bool isLikedByMe;
+  // ── BARRE D'ACTIONS COMPLÈTE EN BAS (Stats incluses) ──
+  Widget _buildActionRow(NetworkPost post, bool isLiked, bool isOwner, bool isFree, WidgetRef ref) {
+    // Note : post.impressionsCount doit être ajouté dans votre modèle NetworkPost 
+    // s'il n'y est pas encore. S'il n'y est pas, cette ligne affichera 0 par défaut.
+    final impressions = (post.toJson()['impressions_count'] as num?)?.toInt() ?? 0;
 
-  const _LikersStack({
-    required this.count, 
-    required this.postId,
-    required this.isLikedByMe,
-  });
-
-  @override
-  State<_LikersStack> createState() => _LikersStackState();
-}
-
-class _LikersStackState extends State<_LikersStack> {
-  List<String> _likerAvatars = [];
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchLikersAvatars();
-  }
-
-  @override
-  void didUpdateWidget(covariant _LikersStack oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.count != oldWidget.count) {
-      _fetchLikersAvatars();
-    }
-  }
-
-  Future<void> _fetchLikersAvatars() async {
-    if (widget.count == 0) {
-      if (mounted) setState(() { _isLoading = false; _likerAvatars = []; });
-      return;
-    }
-    
-    try {
-      // ⚠️ ATTENTION : Vérifiez que 'network_post_likes' ou 'post_likes' 
-      // correspond au nom exact de votre table Supabase !
-      final response = await Supabase.instance.client
-          .from('network_post_likes') // <-- MODIFIEZ CE NOM SI BESOIN
-          .select('user_id, profiles(avatar_url)')
-          .eq('post_id', widget.postId)
-          .order('created_at', ascending: false)
-          .limit(5);
-
-      final List<String> avatars = [];
-      if (response is List) {
-        for (var row in response) {
-          final profile = row['profiles'];
-          if (profile != null && profile['avatar_url'] != null) {
-            final url = profile['avatar_url'].toString().trim();
-            if (url.isNotEmpty) avatars.add(url);
-          } else {
-            avatars.add(''); 
-          }
-        }
-      }
-
-      if (mounted) {
-        setState(() {
-          _likerAvatars = avatars;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() { _isLoading = false; });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final displayCount = min(5, widget.count);
-    final extra = widget.count - displayCount;
-
-    final colors = [
-      const Color(0xFF2D6CDF), const Color(0xFFFF6B6B), const Color(0xFFE3B23C),
-      const Color(0xFF0FA3A3), const Color(0xFF7C3AED)
-    ];
-
-    // ✅ Réintégration du texte dynamique
-    String text;
-    if (widget.isLikedByMe) {
-      if (widget.count == 1) text = "Vous avez envoyé une impulsion";
-      else text = "Vous et ${widget.count - 1} autre${widget.count - 1 > 1 ? 's' : ''}";
-    } else {
-      text = "${widget.count} personne${widget.count > 1 ? 's' : ''}";
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          Row(
-            children: List.generate(displayCount, (i) {
-              final String avatarUrl = _likerAvatars.length > i ? _likerAvatars[i] : '';
-              final bool hasRealAvatar = avatarUrl.isNotEmpty && !_isLoading;
-
-              return Align(
-                widthFactor: 0.7,
-                child: Container(
-                  width: 22, height: 22,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: colors[(widget.postId.hashCode + i) % colors.length],
-                    border: Border.all(color: Colors.white, width: 1.5),
-                    image: hasRealAvatar
-                        ? DecorationImage(
-                            image: CachedNetworkImageProvider(avatarUrl),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
-                  ),
-                  child: !hasRealAvatar
-                      ? const Icon(Icons.person, size: 12, color: Colors.white)
-                      : null,
-                ),
-              );
-            }),
-          ),
-          if (extra > 0)
-            Padding(
-              padding: const EdgeInsets.only(left: 6),
-              child: Text('+$extra', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _PostColors.textMuted))
-            ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text, 
-              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: _PostColors.textMuted), 
-              overflow: TextOverflow.ellipsis
-            )
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-
-  // ── BARRE D'ACTIONS COMPLÈTE EN BAS ──
-  Widget _buildActionRow(NetworkPost post, bool isLiked, int likesCount, bool isOwner, bool isFree, WidgetRef ref) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       physics: const BouncingScrollPhysics(),
       child: Row(
-
         children: [
           _ActionBtn(
             icon: isLiked ? Icons.bolt_rounded : Icons.bolt_outlined,
-            label: _formatCountHelper(likesCount),
+            label: '', // Le compteur est déjà au dessus avec les avatars
             color: isLiked ? _PulseColors.gold : _PostColors.textMuted,
             onTap: () async {
               HapticFeedback.selectionClick();
               await ref.read(postItemProvider.notifier).toggleLike();
             },
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 20),
           _ActionBtn(
             icon: Icons.chat_bubble_outline_rounded,
             label: _formatCountHelper(post.commentsCount),
             color: _PostColors.textMuted,
             onTap: widget.onComment ?? () => _openPostDetails(post.id),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 20),
           _ActionBtn(
             icon: Icons.repeat_rounded,
             label: _formatCountHelper(post.repostsCount),
             color: post.isReposted ? ThixPolicy.success : _PostColors.textMuted,
             onTap: () => _repost(post, ref),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 20),
+          // Indicateur des impressions / personnes atteintes
+          _ActionBtn(
+            icon: Icons.bar_chart_rounded, // Icône de statistiques style X
+            label: _formatCountHelper(impressions),
+            color: _PostColors.textMuted,
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('$impressions personne${impressions > 1 ? 's' : ''} touchée${impressions > 1 ? 's' : ''}'), 
+                behavior: SnackBarBehavior.floating
+              ));
+            },
+          ),
+          const SizedBox(width: 20),
           _ActionBtn(
             icon: Icons.send_outlined,
             label: '',
             color: _PostColors.textMuted,
             onTap: widget.onShare,
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 20),
           _ActionBtn(
             icon: post.isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
             label: '',
@@ -996,9 +894,9 @@ class _LikersStackState extends State<_LikersStack> {
               widget.onSave?.call();
             },
           ),
-          // Actions de Propriétaire (Remplacent les 3 points)
+          // Actions de Propriétaire (Masquer / Edit / Delete)
           if (isOwner && !isFree) ...[
-            const SizedBox(width: 12),
+            const SizedBox(width: 20),
             _ActionBtn(
               icon: Icons.edit_outlined,
               label: '',
@@ -1007,7 +905,7 @@ class _LikersStackState extends State<_LikersStack> {
             ),
           ],
           if (isOwner) ...[
-            const SizedBox(width: 12),
+            const SizedBox(width: 20),
             _ActionBtn(
               icon: Icons.delete_outline_rounded,
               label: '',
@@ -1016,7 +914,7 @@ class _LikersStackState extends State<_LikersStack> {
             ),
           ],
           if (!isOwner) ...[
-            const SizedBox(width: 12),
+            const SizedBox(width: 20),
             _ActionBtn(
               icon: Icons.visibility_off_outlined,
               label: '',
@@ -1097,6 +995,148 @@ class _ActionBtn extends StatelessWidget {
             ]
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// COMPOSANT : PILE DES AVATARS DES UTILISATEURS (Likers réels)
+// ─────────────────────────────────────────────────────────────
+class _LikersStack extends StatefulWidget {
+  final int count;
+  final String postId;
+  final bool isLikedByMe;
+
+  const _LikersStack({
+    required this.count, 
+    required this.postId,
+    required this.isLikedByMe,
+  });
+
+  @override
+  State<_LikersStack> createState() => _LikersStackState();
+}
+
+class _LikersStackState extends State<_LikersStack> {
+  List<String> _likerAvatars = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchLikersAvatars();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LikersStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.count != oldWidget.count) {
+      _fetchLikersAvatars();
+    }
+  }
+
+  Future<void> _fetchLikersAvatars() async {
+    if (widget.count == 0) {
+      if (mounted) setState(() { _isLoading = false; _likerAvatars = []; });
+      return;
+    }
+    
+    try {
+      final response = await Supabase.instance.client
+          .from('post_likes') // <-- Modifiez selon le nom exact de votre table !
+          .select('user_id, profiles(avatar_url)')
+          .eq('post_id', widget.postId)
+          .order('created_at', ascending: false)
+          .limit(5);
+
+      final List<String> avatars = [];
+      if (response is List) {
+        for (var row in response) {
+          final profile = row['profiles'];
+          if (profile != null && profile['avatar_url'] != null) {
+            final url = profile['avatar_url'].toString().trim();
+            if (url.isNotEmpty) avatars.add(url);
+          } else {
+            avatars.add(''); 
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _likerAvatars = avatars;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _isLoading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final displayCount = min(5, widget.count);
+    final extra = widget.count - displayCount;
+
+    final colors = [
+      const Color(0xFF2D6CDF), const Color(0xFFFF6B6B), const Color(0xFFE3B23C),
+      const Color(0xFF0FA3A3), const Color(0xFF7C3AED)
+    ];
+
+    String text;
+    if (widget.isLikedByMe) {
+      if (widget.count == 1) text = "Vous avez envoyé une impulsion";
+      else text = "Vous et ${widget.count - 1} autre${widget.count - 1 > 1 ? 's' : ''}";
+    } else {
+      text = "${widget.count} personne${widget.count > 1 ? 's' : ''}";
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          Row(
+            children: List.generate(displayCount, (i) {
+              final String avatarUrl = _likerAvatars.length > i ? _likerAvatars[i] : '';
+              final bool hasRealAvatar = avatarUrl.isNotEmpty && !_isLoading;
+
+              return Align(
+                widthFactor: 0.7,
+                child: Container(
+                  width: 22, height: 22,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: colors[(widget.postId.hashCode + i) % colors.length],
+                    border: Border.all(color: Colors.white, width: 1.5),
+                    image: hasRealAvatar
+                        ? DecorationImage(
+                            image: CachedNetworkImageProvider(avatarUrl),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
+                  ),
+                  child: !hasRealAvatar
+                      ? const Icon(Icons.person, size: 12, color: Colors.white)
+                      : null,
+                ),
+              );
+            }),
+          ),
+          if (extra > 0)
+            Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: Text('+$extra', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _PostColors.textMuted))
+            ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text, 
+              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: _PostColors.textMuted), 
+              overflow: TextOverflow.ellipsis
+            )
+          ),
+        ],
       ),
     );
   }
