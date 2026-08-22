@@ -66,7 +66,7 @@
 
     <application
         android:name="${applicationName}"
-        android:label="THIX ID"
+        android:label="Thix Hub"
         android:icon="@mipmap/ic_launcher"
         android:extractNativeLibs="true"
         android:allowBackup="true"
