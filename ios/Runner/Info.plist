@@ -1,39 +1,59 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+
 <plist version="1.0">
 <dict>
+
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+
 	<key>CFBundleDisplayName</key>
-	<string>THIX ID</string> <!-- 💡 J'ai corrigé "Dreamflow" par "THIX ID" ici -->
+	<string>THIX ID</string>
+
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+
 	<key>CFBundleName</key>
-	<string>thix_id</string> <!-- 💡 Corrigé ici aussi -->
+	<string>thix_id</string>
+
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
+
 	<key>CFBundleShortVersionString</key>
 	<string>$(FLUTTER_BUILD_NAME)</string>
+
 	<key>CFBundleSignature</key>
 	<string>????</string>
+
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+
+	<!-- Launch -->
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
+
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+
+	<!-- Orientation iPhone -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+
+	<!-- Orientation iPad -->
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -41,26 +61,32 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
-	
-	<!-- 🌟 AUTORISATIONS COMBINÉES ET MISES À JOUR -->
-	<key>NSCameraUsageDescription</key>
-	<string>THIX ID utilise la caméra pour scanner les QR codes d'identité et enregistrer des vidéos pour THIX MEDIA.</string>
-	
-	<key>NSMicrophoneUsageDescription</key>
-	<string>THIX ID utilise le microphone pour enregistrer une preuve audio en cas d'urgence et capturer le son de vos vidéos.</string>
-	
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>THIX ID a besoin d'accéder à votre galerie pour importer vos photos, vidéos et musiques.</string>
-	
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>THIX ID partage votre position pour activer l’assistance d’urgence.</string>
-	
-	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>THIX ID peut suivre votre position en temps réel pendant une urgence.</string>
 
+	<!-- CAMERA -->
+	<key>NSCameraUsageDescription</key>
+	<string>THIX ID utilise la caméra pour scanner les QR codes d'identité et utiliser les fonctions vidéo.</string>
+
+	<!-- MICROPHONE -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>THIX ID utilise le microphone pour les appels, les vidéos et les fonctions audio d'urgence.</string>
+
+	<!-- PHOTOS -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>THIX ID utilise votre photothèque pour importer des photos et des vidéos.</string>
+
+	<!-- LOCATION -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>THIX ID utilise votre position pour fournir les services de localisation et d'assistance d'urgence.</string>
+
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>THIX ID peut utiliser votre position en arrière-plan pendant une situation d'urgence lorsque cette fonction est activée.</string>
+
+	<!-- Flutter / input -->
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
 </dict>
 </plist>
