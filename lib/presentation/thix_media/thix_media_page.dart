@@ -173,6 +173,7 @@ final mediaCountsStreamProvider = StreamProvider.autoDispose.family<MediaCounts,
 });
 
 // ============================================================================
+// ============================================================================
 // PAGE PRINCIPALE — TDIA CATALOGUE
 // ============================================================================
 class ThixMediaPage extends ConsumerStatefulWidget {
@@ -181,11 +182,14 @@ class ThixMediaPage extends ConsumerStatefulWidget {
   ConsumerState<ThixMediaPage> createState() => _ThixMediaPageState();
 }
 
-// L'ajout de AutomaticKeepAliveClientMixin empêche la page de se vider quand on la quitte
 class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKeepAliveClientMixin<ThixMediaPage> {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  
+  // ✅ CLÉ GLOBALE pour stabiliser le champ de recherche et empêcher le clavier de sauter
+  final GlobalKey _searchKey = GlobalKey(); 
+  
   Timer? _searchDebounce;
 
   List<MediaContent> _catalog = [];
@@ -195,20 +199,19 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
 
   List<MediaContent> _searchResults = [];
   bool _searching = false;
-  bool _isSearchFocused = false;
 
   static final Set<String> _globalSeenIds = {};
 
   @override
-  bool get wantKeepAlive => true; // ✅ Maintient l'état des vidéos
+  bool get wantKeepAlive => true; 
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    _searchFocusNode.addListener(() {
-      if (mounted) setState(() => _isSearchFocused = _searchFocusNode.hasFocus);
-    });
+    
+    // ❌ ÉCOUTEUR SUPPRIMÉ POUR ÉVITER LES RECONSTRUCTIONS INUTILES DU CLAVIER
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(selectedCategoryProvider.notifier).state = 'Tous';
       _initCatalog();
@@ -326,7 +329,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   }
 
   Widget _buildImage(String url, {BoxFit fit = BoxFit.cover}) {
-    // ✅ Plus d'exigence stricte sur la photo de couverture
     if (url.trim().isEmpty) {
       return Container(
         decoration: const BoxDecoration(
@@ -355,7 +357,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
 
   List<String> _categories() {
     final types = _catalog.map((e) => e.type).where((t) => t.isNotEmpty).toSet().toList();
-    // On intègre le mode "Fil" (TikTok) juste après "Tous"
     return ['Tous', 'Fil', ...types];
   }
 
@@ -369,11 +370,13 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); // Pour AutomaticKeepAliveClientMixin
+    super.build(context);
     final asyncMedia = ref.watch(thixMediaListProvider);
     final isAdmin = ref.watch(isMediaAdminProvider).valueOrNull ?? false;
     final hasQuery = _searchController.text.trim().isNotEmpty;
-    final showSearchOverlay = _isSearchFocused && hasQuery;
+    
+    // ✅ UTILISATION DIRECTE DE HASFOCUS 
+    final showSearchOverlay = _searchFocusNode.hasFocus && hasQuery;
 
     return Scaffold(
       backgroundColor: _MediaColors.navyDeep,
@@ -449,7 +452,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                             ],
                           ),
               ),
-              // En cas de Fil actif, on superpose quand même le header et les chips par-dessus
               if (_selectedCategory == 'Fil')
                 Positioned(
                   top: 0, left: 0, right: 0,
@@ -471,7 +473,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
-  // ── HEADER PRINCIPAL (TDIA avec icônes de création et profil) ──
+  // ── HEADER PRINCIPAL ──
   Widget _buildSliverHeader(bool isAdmin, bool hasQuery) {
     return SliverAppBar(
       pinned: true,
@@ -493,7 +495,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ThixMediaAdminPage())),
             icon: const Icon(Icons.admin_panel_settings_rounded, color: Colors.white, size: 20),
           ),
-        // ✅ Ajout des boutons Créer et Profil
         IconButton(
           onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CreatePostPage())),
           icon: const Icon(Icons.add_box_outlined, color: Colors.white, size: 22),
@@ -531,12 +532,14 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
-                    key: const ValueKey('tdia_search_bar'), // ✅ Corrige le saut du clavier
+                    key: _searchKey, // ✅ CLÉ GLOBALE AJOUTÉE ICI
                     controller: _searchController,
                     focusNode: _searchFocusNode,
                     onChanged: _onSearchChanged,
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     cursorColor: Colors.white,
+                    autocorrect: false, // Désactive la correction auto pour éviter les sauts
+                    enableSuggestions: false, 
                     decoration: const InputDecoration(
                       hintText: 'Découvrir des vidéos, séries, créateurs…',
                       hintStyle: TextStyle(color: Colors.white54, fontSize: 13.5),
@@ -552,7 +555,11 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                 ),
                 if (hasQuery)
                   GestureDetector(
-                    onTap: () { _searchController.clear(); setState(() => _searchResults = []); _searchFocusNode.unfocus(); },
+                    onTap: () { 
+                      _searchFocusNode.unfocus(); 
+                      _searchController.clear(); 
+                      setState(() => _searchResults = []); 
+                    },
                     child: const Icon(Icons.close_rounded, color: Colors.white70, size: 16),
                   ),
               ],
@@ -695,7 +702,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
               decoration: BoxDecoration(
                 gradient: sel ? _MediaColors.gradientWhite : null,
-                color: sel ? null : Colors.black.withValues(alpha: 0.3), // Assombri pour rester visible sur le mode Fil
+                color: sel ? null : Colors.black.withValues(alpha: 0.3), 
                 borderRadius: BorderRadius.circular(30),
                 border: Border.all(color: sel ? Colors.transparent : Colors.white.withValues(alpha: 0.2)),
               ),
@@ -723,11 +730,13 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(children: const [
-              Icon(Icons.video_library_rounded, size: 16, color: Colors.white),
-              SizedBox(width: 8),
-              Text('Séries', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800)),
-            ]),
+            child: Row(
+              children: const [
+                Icon(Icons.video_library_rounded, size: 16, color: Colors.white),
+                SizedBox(width: 8),
+                Text('Séries', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800)),
+              ],
+            ),
           ),
           const SizedBox(height: 10),
           SizedBox(
@@ -757,7 +766,10 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   Widget _searchOverlay() {
     return Positioned.fill(
       child: GestureDetector(
-        onTap: () { _searchFocusNode.unfocus(); setState(() => _isSearchFocused = false); },
+        onTap: () { 
+          _searchFocusNode.unfocus(); 
+          setState(() {}); 
+        },
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
@@ -776,7 +788,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                             onTap: () {
                               _searchFocusNode.unfocus();
                               _searchController.clear();
-                              setState(() { _searchResults = []; _isSearchFocused = false; });
+                              setState(() { _searchResults = []; });
                               _openDetail(item);
                             },
                             child: ClipRRect(
@@ -799,6 +811,8 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 }
+
+                            
 
 // ============================================================================
 // VUE DU FIL D'ACTUALITÉ (Vertical Autoplay, Design Premium)
@@ -865,43 +879,233 @@ class _FilFeedViewState extends State<_FilFeedView> {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(24),
                   child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+// ============================================================================
+// VUE DU FIL D'ACTUALITÉ (Vertical Autoplay, Actions Directes)
+// ============================================================================
+class _FilFeedView extends ConsumerStatefulWidget {
+  final List<MediaContent> catalog;
+  final Function(MediaContent) onOpenDetail;
+  final Widget Function(String, {BoxFit fit}) buildImage;
+  final String Function(int) formatNumber;
+
+  const _FilFeedView({
+    required this.catalog,
+    required this.onOpenDetail,
+    required this.buildImage,
+    required this.formatNumber,
+  });
+
+  @override
+  ConsumerState<_FilFeedView> createState() => _FilFeedViewState();
+}
+
+class _FilFeedViewState extends ConsumerState<_FilFeedView> {
+  int _currentIndex = 0;
+  
+  // États locaux pour gérer les likes de manière optimiste dans le Fil
+  final Map<String, bool> _localLikes = {};
+  final Map<String, int> _localLikeCounts = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _initLikes();
+  }
+  
+  // Initialise les compteurs locaux à partir du catalogue
+  void _initLikes() {
+    for (var item in widget.catalog) {
+      _localLikeCounts[item.id] = item.likeCount;
+    }
+    _syncLikedStatus();
+  }
+
+  // Vérifie en arrière-plan quels médias le user a déjà liké
+  Future<void> _syncLikedStatus() async {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null || widget.catalog.isEmpty) return;
+    
+    try {
+      final ids = widget.catalog.map((e) => e.id).toList();
+      final res = await Supabase.instance.client.rpc('get_liked_media_ids', params: {'p_media_ids': ids});
+      if (mounted && res is List) {
+        setState(() {
+          for (var id in res) {
+            _localLikes[id.toString()] = true;
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  // Fonction de Like direct
+  Future<void> _toggleLike(MediaContent item) async {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Connectez-vous pour aimer.')));
+      return;
+    }
+    
+    HapticFeedback.selectionClick();
+    final isCurrentlyLiked = _localLikes[item.id] ?? false;
+    final currentCount = _localLikeCounts[item.id] ?? item.likeCount;
+    
+    setState(() {
+      _localLikes[item.id] = !isCurrentlyLiked;
+      _localLikeCounts[item.id] = isCurrentlyLiked ? (currentCount - 1).clamp(0, 999999) : currentCount + 1;
+    });
+    
+    try {
+      await Supabase.instance.client.rpc('toggle_media_like', params: {'p_media_id': item.id});
+    } catch (_) {
+      // Revert en cas d'erreur
+      if (mounted) {
+        setState(() {
+          _localLikes[item.id] = isCurrentlyLiked;
+          _localLikeCounts[item.id] = currentCount;
+        });
+      }
+    }
+  }
+
+  // Ouvre le BottomSheet des commentaires directement sur le Fil
+  void _openCommentsDirectly(MediaContent item) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _CommentsSheet(mediaId: item.id, mediaTitle: item.title),
+    ).then((_) { 
+      ref.invalidate(commentCountProvider(item.id)); 
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.catalog.isEmpty) {
+      return const Center(child: Text('Le fil est vide pour le moment.', style: TextStyle(color: Colors.white54)));
+    }
+
+    return PageView.builder(
+      scrollDirection: Axis.vertical,
+      onPageChanged: (index) => setState(() => _currentIndex = index),
+      itemCount: widget.catalog.length,
+      itemBuilder: (context, index) {
+        final item = widget.catalog[index];
+        final isCurrent = index == _currentIndex;
+        
+        final isLiked = _localLikes[item.id] ?? false;
+        final likeCount = _localLikeCounts[item.id] ?? item.likeCount;
+        
+        // On écoute les commentaires en temps réel si disponible
+        final live = ref.watch(mediaCountsStreamProvider(item.id)).valueOrNull;
+        final commentCount = live?.commentCount ?? item.commentCount;
+        final viewCount = live?.viewCount ?? item.viewCount;
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            // Fond flouté
+            widget.buildImage(item.coverUrl, fit: BoxFit.cover),
+            BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+              child: Container(color: Colors.black.withValues(alpha: 0.6)),
+            ),
+            
+            // Le lecteur vidéo au centre
+            Center(
+              child: FeedVideoPlayer(
+                videoUrl: item.videoUrl,
+                coverUrl: item.coverUrl,
+                isPlaying: isCurrent,
+                onPlayStateChanged: (_) {},
+              ),
+            ),
+            
+            // ── L'overlay d'informations (Glassmorphism en bas) ──
+            Positioned(
+              left: 16, right: 16, bottom: 24,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Zone cliquable pour voir les détails/description complète
+                        GestureDetector(
+                          onTap: () => widget.onOpenDetail(item),
+                          behavior: HitTestBehavior.opaque,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(color: _MediaColors.primary, borderRadius: BorderRadius.circular(8)),
-                                child: Text(item.type.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(color: _MediaColors.primary, borderRadius: BorderRadius.circular(8)),
+                                    child: Text(item.type.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))),
+                                ],
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(child: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))),
+                              if (item.subtitle != null && item.subtitle!.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(item.subtitle!, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                              ],
                             ],
                           ),
-                          if (item.subtitle != null && item.subtitle!.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(item.subtitle!, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                        ),
+                        
+                        const SizedBox(height: 12),
+                        Container(height: 1, color: Colors.white.withValues(alpha: 0.1)),
+                        const SizedBox(height: 8),
+                        
+                        // ── ZONE DES ACTIONS DIRECTES ──
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            // Bouton J'aime
+                            _actionBtn(
+                              icon: isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded, 
+                              text: widget.formatNumber(likeCount), 
+                              color: isLiked ? _MediaColors.danger : Colors.white,
+                              onTap: () => _toggleLike(item),
+                            ),
+                            
+                            // Bouton Commenter
+                            _actionBtn(
+                              icon: Icons.chat_bubble_outline_rounded, 
+                              text: widget.formatNumber(commentCount), 
+                              color: Colors.white,
+                              onTap: () => _openCommentsDirectly(item),
+                            ),
+                            
+                            // Compteur de vues (Non cliquable)
+                            _actionBtn(
+                              icon: Icons.visibility_outlined, 
+                              text: widget.formatNumber(viewCount), 
+                              color: Colors.white70,
+                              onTap: null,
+                            ),
+                            
+                            // Bouton Plein écran / Détails
+                            _actionBtn(
+                              icon: Icons.fullscreen_rounded, 
+                              text: '', 
+                              color: Colors.white,
+                              onTap: () => widget.onOpenDetail(item),
+                            ),
                           ],
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            children: [
-                              _iconStat(Icons.favorite_rounded, widget.formatNumber(item.likeCount), _MediaColors.danger),
-                              _iconStat(Icons.chat_bubble_rounded, widget.formatNumber(item.commentCount), Colors.white),
-                              _iconStat(Icons.visibility_rounded, widget.formatNumber(item.viewCount), Colors.white),
-                              const Icon(Icons.fullscreen_rounded, color: Colors.white, size: 24),
-                            ],
-                          )
-                        ],
-                      ),
+                        )
+                      ],
                     ),
                   ),
                 ),
@@ -913,17 +1117,26 @@ class _FilFeedViewState extends State<_FilFeedView> {
     );
   }
 
-  Widget _iconStat(IconData icon, String text, Color color) {
-    return Row(
-      children: [
-        Icon(icon, color: color, size: 18),
-        const SizedBox(width: 6),
-        Text(text, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-      ],
+  // Widget utilitaire pour les boutons d'action
+  Widget _actionBtn({required IconData icon, required String text, required Color color, VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 20),
+            if (text.isNotEmpty) ...[
+              const SizedBox(width: 6),
+              Text(text, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+            ]
+          ],
+        ),
+      ),
     );
   }
 }
-
 
 // ============================================================================
 // CARTE AFFICHE — style catalogue (poster + méta)
