@@ -854,9 +854,9 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
   Widget _buildActionRow(NetworkPost post, bool isLiked, int likesCount, bool isOwner, bool isFree, WidgetRef ref) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      showsHorizontalScrollIndicator: false,
       physics: const BouncingScrollPhysics(),
       child: Row(
+
         children: [
           _ActionBtn(
             icon: isLiked ? Icons.bolt_rounded : Icons.bolt_outlined,
