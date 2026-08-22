@@ -24,6 +24,35 @@ import 'create_post_page.dart';
 import 'user_profile_page.dart';
 
 // ============================================================================
+// PALETTE — Charte THIX ID (remplace le noir pur "TikTok")
+// ============================================================================
+class _MediaColors {
+  static const navyDeep = Color(0xFF0A1F44);
+  static const navy = Color(0xFF123B7A);
+  static const primary = Color(0xFF2D6CDF);
+  static const gold = Color(0xFFE3B23C);
+  static const goldLight = Color(0xFFF3D999);
+  static const ivory = Color(0xFFF6F7FB);
+  static const card = Color(0xFF11213F);
+  static const cardLight = Color(0xFF16294D);
+  static const border = Color(0x1AFFFFFF);
+  static const textMuted = Color(0xFFAEB9D4);
+  static const danger = ThixPolicy.danger;
+  static const success = ThixPolicy.success;
+
+  static const gradientHeader = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [navyDeep, navy],
+  );
+  static const gradientGold = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [gold, goldLight],
+  );
+}
+
+// ============================================================================
 // MODELS & SERVICES
 // ============================================================================
 class MediaCounts {
@@ -143,7 +172,8 @@ final mediaCountsStreamProvider = StreamProvider.autoDispose.family<MediaCounts,
 });
 
 // ============================================================================
-// PAGE PRINCIPALE MEDIA — DESIGN ULTRA PRO
+// PAGE PRINCIPALE — CATALOGUE PROFESSIONNEL (hero + rails + grille)
+// Remplace totalement le format "swipe plein écran" façon TikTok.
 // ============================================================================
 class ThixMediaPage extends ConsumerStatefulWidget {
   const ThixMediaPage({super.key});
@@ -151,95 +181,48 @@ class ThixMediaPage extends ConsumerStatefulWidget {
   ConsumerState<ThixMediaPage> createState() => _ThixMediaPageState();
 }
 
-class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with WidgetsBindingObserver {
-  late PageController _feedController;
-  Timer? _searchDebounce;
+class _ThixMediaPageState extends ConsumerState<ThixMediaPage> {
+  final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+  Timer? _searchDebounce;
 
-  Set<String> _likedMediaIds = {};
-  Set<String> _savedMediaIds = {}; // NOUVEAU: Favoris
-  final Set<String> _viewedMediaIds = {};
-  final Set<String> _newlyFollowedIds = {};
-  final Map<String, int> _localLikeCounts = {};
-  final Map<String, int> _localViewCounts = {};
-  final Set<String> _unlockedPaidVideos = {};
-
-  final Map<String, bool> _previewExpired = {};
-  static const int _paidPreviewSeconds = 30;
-  final Map<String, int> _episodeIndex = {};
-
-  bool _immersive = false;
-  int _currentFeedIndex = 0;
-  List<MediaContent> _filItems = [];
-
-  static final Set<String> _globalSeenIds = {};
-  bool _appWasBackgrounded = false;
-  bool _showRefreshToast = false; // NOUVEAU: Toast au retour
-
-  bool _filLoading = false;
-  bool _filInitialized = false;
-  double _pullDistance = 0;
-  bool _pullTriggering = false;
-  static const double _pullThreshold = 90;
+  List<MediaContent> _catalog = [];
+  bool _loading = false;
+  bool _initialized = false;
+  String _selectedCategory = 'Tous';
 
   List<MediaContent> _searchResults = [];
   bool _searching = false;
 
+  static final Set<String> _globalSeenIds = {};
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _feedController = PageController();
+    _scrollController.addListener(_onScroll);
     _searchFocusNode.addListener(() { if (mounted) setState(() {}); });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(selectedCategoryProvider.notifier).state = "Fil";
-      _initFilFeed();
+      ref.read(selectedCategoryProvider.notifier).state = 'Tous';
+      _initCatalog();
     });
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    _scrollController.dispose();
     _searchDebounce?.cancel();
-    _feedController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
   }
 
-  // ── AUTO-MIX: Détecte le retour au premier plan pour renouveler le mix ──
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      _appWasBackgrounded = true;
-    } else if (state == AppLifecycleState.resumed && _appWasBackgrounded) {
-      _appWasBackgrounded = false;
-      _smartReshuffleOnReturn();
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 600 && !_loading) {
+      _loadMore();
     }
-  }
-
-  Future<void> _smartReshuffleOnReturn() async {
-    if (_filItems.isEmpty) return;
-    try {
-      final res = await Supabase.instance.client.rpc('get_shuffled_feed', params: {'p_seen_ids': _globalSeenIds.toList(), 'p_limit': 12});
-      final fresh = (res as List).map((e) => MediaContent.fromJson(e as Map<String, dynamic>)).toList();
-      if (!mounted || fresh.isEmpty) return;
-      
-      setState(() {
-        final keep = _filItems.take(_currentFeedIndex + 1).toList();
-        final keepIds = keep.map((e) => e.id).toSet();
-        _filItems = [...keep, ...fresh.where((f) => !keepIds.contains(f.id))];
-        _globalSeenIds.addAll(fresh.map((e) => e.id));
-        
-        // Afficher l'indicateur visuel de rafraichissement
-        _showRefreshToast = true;
-      });
-
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) setState(() => _showRefreshToast = false);
-      });
-    } catch (_) {}
   }
 
   MediaContent _mapMedia(Map<String, dynamic> e) {
@@ -255,75 +238,48 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with WidgetsBindi
     return MediaContent.fromJson(e);
   }
 
-  Future<void> _initFilFeed({bool reshuffle = false}) async {
-    if (_filLoading) return;
-    setState(() => _filLoading = true);
-
+  Future<void> _initCatalog({bool refresh = false}) async {
+    if (_loading) return;
+    setState(() => _loading = true);
     try {
-      if (reshuffle) _globalSeenIds.clear();
-
-      dynamic res = await Supabase.instance.client.rpc('get_shuffled_feed', params: {'p_seen_ids': _globalSeenIds.toList(), 'p_limit': 12});
+      if (refresh) _globalSeenIds.clear();
+      dynamic res = await Supabase.instance.client.rpc('get_shuffled_feed', params: {'p_seen_ids': _globalSeenIds.toList(), 'p_limit': 24});
       List<MediaContent> items = (res as List).map((e) => MediaContent.fromJson(e as Map<String, dynamic>)).toList();
-
-      if (items.isEmpty && _globalSeenIds.isNotEmpty) {
-        _globalSeenIds.clear();
-        res = await Supabase.instance.client.rpc('get_shuffled_feed', params: {'p_seen_ids': [], 'p_limit': 12});
-        items = (res as List).map((e) => MediaContent.fromJson(e as Map<String, dynamic>)).toList();
-      }
-
       if (!mounted) return;
-
       setState(() {
-        _filItems = reshuffle ? items : [..._filItems, ...items.where((x) => !_globalSeenIds.contains(x.id))];
-        _globalSeenIds.addAll(_filItems.map((e) => e.id));
-        _filInitialized = true;
-        if (reshuffle) _currentFeedIndex = 0;
+        _catalog = refresh ? items : [..._catalog, ...items.where((x) => !_globalSeenIds.contains(x.id))];
+        _globalSeenIds.addAll(_catalog.map((e) => e.id));
+        _initialized = true;
       });
-
-      await _syncLiked(_filItems.isNotEmpty ? [_filItems.first] : []);
-      if (_filItems.isNotEmpty) _registerView(_filItems.first);
-      if (reshuffle && _feedController.hasClients) _feedController.jumpToPage(0);
     } catch (_) {
       try {
-        final res = await Supabase.instance.client.from('media_content').select('*, media_stats(like_count,view_count,comment_count)').order('created_at', ascending: false).limit(12);
+        final res = await Supabase.instance.client.from('media_content').select('*, media_stats(like_count,view_count,comment_count)').order('created_at', ascending: false).limit(24);
         final items = (res as List).map((e) => _mapMedia(Map<String, dynamic>.from(e as Map))).toList();
-        if (mounted) setState(() { _filItems = items; _filInitialized = true; });
-      } catch (e2) {
-        if (mounted) setState(() { _filInitialized = true; });
+        if (mounted) setState(() { _catalog = items; _initialized = true; });
+      } catch (_) {
+        if (mounted) setState(() => _initialized = true);
       }
     } finally {
-      if (mounted) setState(() => _filLoading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _loadMoreFil() async {
-    if (_filLoading) return;
-    setState(() => _filLoading = true);
+  Future<void> _loadMore() async {
+    if (_loading) return;
+    setState(() => _loading = true);
     try {
-      dynamic res = await Supabase.instance.client.rpc('get_shuffled_feed', params: {'p_seen_ids': _globalSeenIds.toList(), 'p_limit': 12});
-      List<MediaContent> items = (res as List).map((e) => MediaContent.fromJson(e as Map<String, dynamic>)).toList();
+      final res = await Supabase.instance.client.rpc('get_shuffled_feed', params: {'p_seen_ids': _globalSeenIds.toList(), 'p_limit': 18});
+      final items = (res as List).map((e) => MediaContent.fromJson(e as Map<String, dynamic>)).toList();
       if (!mounted) return;
       setState(() {
-        _filItems.addAll(items.where((e) => !_globalSeenIds.contains(e.id)));
+        _catalog.addAll(items.where((e) => !_globalSeenIds.contains(e.id)));
         _globalSeenIds.addAll(items.map((e) => e.id));
       });
-      await _syncLiked(items);
     } catch (_) {} finally {
-      if (mounted) setState(() => _filLoading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _syncLiked(List<MediaContent> items) async {
-    if (items.isEmpty) return;
-    final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null) return;
-    try {
-      final res = await Supabase.instance.client.rpc('get_liked_media_ids', params: {'p_media_ids': items.map((e) => e.id).toList()});
-      if (mounted) setState(() => _likedMediaIds.addAll((res as List).map((e) => e as String)));
-    } catch (_) {}
-  }
-
-  // ── Recherche Fonctionnelle ──
   void _onSearchChanged(String v) {
     _searchDebounce?.cancel();
     ref.read(searchQueryProvider.notifier).state = v;
@@ -341,11 +297,19 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with WidgetsBindi
     } catch (_) { if (mounted) setState(() => _searching = false); }
   }
 
-  void _selectSearchResult(MediaContent item) {
-    _searchFocusNode.unfocus(); _searchController.clear();
-    setState(() { _searchResults = []; final withoutDup = _filItems.where((e) => e.id != item.id).toList(); _filItems = [item, ...withoutDup]; _currentFeedIndex = 0; });
-    if (_feedController.hasClients) _feedController.jumpToPage(0);
+  void _openDetail(MediaContent item) {
     _registerView(item);
+    Navigator.push(context, MaterialPageRoute(builder: (_) => _MediaDetailPage(item: item)));
+  }
+
+  void _registerView(MediaContent item) {
+    _AnalyticsBatcher.register(item.id);
+    () async {
+      try {
+        final uid = Supabase.instance.client.auth.currentUser?.id;
+        if (uid != null) await Supabase.instance.client.from('media_views').insert({'media_id': item.id, 'user_id': uid});
+      } catch (_) {}
+    }();
   }
 
   String _formatNumber(int num) {
@@ -354,237 +318,102 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with WidgetsBindi
     return num.toString();
   }
 
-  String _formatPrice(MediaContent item) => '\$${item.price}';
-
-  Widget _buildImage(String url, {double? width, double? height, BoxFit fit = BoxFit.cover}) {
-    if (url.isEmpty) return Container(color: const Color(0xFF0F141E), child: const Icon(Icons.broken_image_rounded, color: Colors.white24));
+  Widget _buildImage(String url, {BoxFit fit = BoxFit.cover}) {
+    if (url.isEmpty) return Container(color: _MediaColors.card, child: const Icon(Icons.broken_image_rounded, color: Colors.white24));
     return CachedNetworkImage(
-      imageUrl: url, width: width, height: height, fit: fit,
-      placeholder: (c, url) => Container(color: const Color(0xFF0F141E)),
-      errorWidget: (c, e, s) => Container(color: const Color(0xFF0F141E), child: const Icon(Icons.broken_image_rounded, color: Colors.white24)),
+      imageUrl: url, fit: fit,
+      placeholder: (c, url) => Container(color: _MediaColors.card),
+      errorWidget: (c, e, s) => Container(color: _MediaColors.card, child: const Icon(Icons.broken_image_rounded, color: Colors.white24)),
     );
   }
 
-  void _registerView(MediaContent item) async {
-    if (_viewedMediaIds.contains(item.id)) return;
-    _viewedMediaIds.add(item.id);
-    setState(() { _localViewCounts[item.id] = (_localViewCounts[item.id] ?? item.viewCount) + 1; });
-    _AnalyticsBatcher.register(item.id);
-    try {
-      final uid = Supabase.instance.client.auth.currentUser?.id;
-      if (uid != null) await Supabase.instance.client.from('media_views').insert({'media_id': item.id, 'user_id': uid});
-    } catch (_) {}
+  List<String> _categories() {
+    final types = _catalog.map((e) => e.type).where((t) => t.isNotEmpty).toSet().toList();
+    return ['Tous', ...types];
   }
 
-  Future<void> _toggleLike(MediaContent item) async {
-    final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Connectez-vous pour aimer.'))); return; }
-    final wasLiked = _likedMediaIds.contains(item.id);
-    HapticFeedback.selectionClick();
-
-    setState(() {
-      if (wasLiked) { _likedMediaIds.remove(item.id); _localLikeCounts[item.id] = (_localLikeCounts[item.id] ?? item.likeCount) - 1; } 
-      else { _likedMediaIds.add(item.id); _localLikeCounts[item.id] = (_localLikeCounts[item.id] ?? item.likeCount) + 1; }
-    });
-
-    try { await Supabase.instance.client.rpc('toggle_media_like', params: {'p_media_id': item.id}); } catch (_) {}
+  List<MediaContent> get _filteredCatalog {
+    if (_selectedCategory == 'Tous') return _catalog;
+    return _catalog.where((e) => e.type == _selectedCategory).toList();
   }
 
-  void _toggleSave(MediaContent item) {
-    HapticFeedback.lightImpact();
-    setState(() {
-      if (_savedMediaIds.contains(item.id)) _savedMediaIds.remove(item.id);
-      else _savedMediaIds.add(item.id);
-    });
-  }
-
-  void _openComments(MediaContent item) {
-    showModalBottomSheet(
-      context: context, 
-      backgroundColor: Colors.transparent, // Transparent pour laisser place au Container décoré
-      isScrollControlled: true,
-      builder: (_) => _CommentsSheet(mediaId: item.id, mediaTitle: item.title),
-    ).then((_) { ref.invalidate(commentCountProvider(item.id)); });
-  }
-
-  void _handlePageChanged(int index) {
-    if (index < 0 || index >= _filItems.length) return;
-    if (index >= _filItems.length - 4) _loadMoreFil();
-    _registerView(_filItems[index]);
-  }
-
-  Widget _buildMediaContentLayer(MediaContent item, bool isFocused) {
-    final currentEp = _episodeIndex[item.id] ?? 0;
-    final allEpisodes = [item.videoUrl, ...item.episodesUrls].where((url) => url.isNotEmpty).toList();
-    final isSeries = allEpisodes.length > 1;
-    final activeUrl = allEpisodes.isEmpty ? item.videoUrl : allEpisodes[currentEp.clamp(0, allEpisodes.length - 1)];
-
-    final previewExpired = _previewExpired[item.id] ?? false;
-    final requiresPayment = item.isPaid && !_unlockedPaidVideos.contains(item.id) && previewExpired;
-    final enforcePreview = item.isPaid && !_unlockedPaidVideos.contains(item.id);
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (!requiresPayment)
-          FeedVideoPlayer(
-            key: ValueKey('${item.id}_$currentEp'),
-            videoUrl: activeUrl,
-            coverUrl: item.coverUrl,
-            isPlaying: isFocused,
-            enforcePreviewLimit: enforcePreview,
-            previewSeconds: _paidPreviewSeconds,
-            onPreviewLimitReached: () { if (mounted) setState(() => _previewExpired[item.id] = true); },
-            onPlayStateChanged: (paused) { if (paused) setState(() => _immersive = false); },
-          )
-        else
-          Container(
-            decoration: BoxDecoration(image: DecorationImage(image: CachedNetworkImageProvider(item.coverUrl), fit: BoxFit.cover)),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-              child: Container(
-                color: Colors.black.withOpacity(0.85),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(20),
-                      decoration: BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [ThixPolicy.gold, ThixPolicy.gold.withOpacity(0.5)]), boxShadow: [BoxShadow(color: ThixPolicy.gold.withOpacity(0.2), blurRadius: 30, spreadRadius: 5)]),
-                      child: const Icon(Icons.lock_rounded, size: 44, color: Colors.black),
-                    ),
-                    const SizedBox(height: 24),
-                    const Text('Contenu Premium', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
-                    const SizedBox(height: 12),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 40),
-                      child: Text(
-                        "Fin de l'aperçu gratuit. Débloquez la suite de cette vidéo pour seulement ${_formatPrice(item)}.",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14, height: 1.5),
-                      ),
-                    ),
-                    const SizedBox(height: 32),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: ThixPolicy.gold,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                        elevation: 10,
-                        shadowColor: ThixPolicy.gold.withOpacity(0.5),
-                      ),
-                      onPressed: () {
-                        setState(() { _unlockedPaidVideos.add(item.id); _previewExpired.remove(item.id); });
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vidéo débloquée avec succès !'), backgroundColor: ThixPolicy.success));
-                      },
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.workspace_premium_rounded, size: 20),
-                          const SizedBox(width: 8),
-                          Text('Débloquer (${_formatPrice(item)})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-        // ── Marqueurs Séries (Épisodes) ──
-        if (isSeries && !requiresPayment)
-          Positioned(
-            left: 16, bottom: 20,
-            child: Wrap(
-              spacing: 6,
-              children: List.generate(allEpisodes.length, (i) {
-                final active = i == currentEp;
-                return GestureDetector(
-                  onTap: () { HapticFeedback.selectionClick(); setState(() => _episodeIndex[item.id] = i); },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: active ? 28 : 8, height: 8,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(4),
-                      color: active ? ThixPolicy.primary : Colors.white.withOpacity(0.4),
-                      boxShadow: active ? [BoxShadow(color: ThixPolicy.primary.withOpacity(0.5), blurRadius: 8)] : null,
-                    ),
-                  ),
-                );
-              }),
-            ),
-          ),
-      ],
-    );
-  }
+  List<MediaContent> get _seriesRail =>
+      _catalog.where((e) => e.episodesUrls.isNotEmpty || (e.videoUrl.isNotEmpty && e.episodesUrls.length + 1 > 1)).toList();
 
   @override
   Widget build(BuildContext context) {
     final asyncMedia = ref.watch(thixMediaListProvider);
+    final isAdmin = ref.watch(isMediaAdminProvider).valueOrNull ?? false;
+    final hasQuery = _searchController.text.trim().isNotEmpty;
+    final showSearchOverlay = _searchFocusNode.hasFocus && hasQuery;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: _MediaColors.navyDeep,
       body: asyncMedia.when(
-        loading: () => const Center(child: CircularProgressIndicator(color: ThixPolicy.primary)),
-        error: (e, st) => Center(child: Text('ERREUR : $e', style: const TextStyle(color: ThixPolicy.danger, fontWeight: FontWeight.bold))),
+        loading: () => const Center(child: CircularProgressIndicator(color: _MediaColors.gold)),
+        error: (e, st) => Center(child: Text('ERREUR : $e', style: const TextStyle(color: _MediaColors.danger, fontWeight: FontWeight.bold))),
         data: (_) {
-          final currentItem = _filItems.isNotEmpty ? _filItems[_currentFeedIndex.clamp(0, _filItems.length - 1)] : null;
-          final showTopBar = !_immersive;
-          final showSearchOverlay = _searchFocusNode.hasFocus && _searchController.text.trim().isNotEmpty;
-
           return Stack(
             children: [
-              _buildTikTokFeed(),
-
-              // RIGHT SIDEBAR (Actions)
-              if (currentItem != null)
-                Positioned(
-                  right: 12, bottom: 40,
-                  child: _buildRightSidebar(currentItem),
-                ),
-                
-              // BOTTOM INFO (Texte)
-              if (currentItem != null)
-                Positioned(
-                  left: 16, right: 80, bottom: 40,
-                  child: _buildBottomInfo(currentItem),
-                ),
-
-              // HEADER TOP
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 250),
-                curve: Curves.easeInOutCubic,
-                top: showTopBar ? 0 : -100,
-                left: 0, right: 0,
-                child: IgnorePointer(
-                  ignoring: !showTopBar,
-                  child: AnimatedOpacity(duration: const Duration(milliseconds: 250), opacity: showTopBar ? 1 : 0, child: _header()),
-                ),
+              RefreshIndicator(
+                color: _MediaColors.gold,
+                backgroundColor: _MediaColors.card,
+                onRefresh: () => _initCatalog(refresh: true),
+                child: !_initialized
+                    ? const Center(child: CircularProgressIndicator(color: _MediaColors.gold))
+                    : CustomScrollView(
+                        controller: _scrollController,
+                        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                        slivers: [
+                          _buildSliverHeader(isAdmin, hasQuery),
+                          if (_catalog.isEmpty)
+                            const SliverToBoxAdapter(
+                              child: Padding(
+                                padding: EdgeInsets.all(60),
+                                child: Center(child: Text('Aucun contenu', style: TextStyle(color: Colors.white54))),
+                              ),
+                            )
+                          else ...[
+                            SliverToBoxAdapter(child: _buildHero()),
+                            SliverToBoxAdapter(child: _buildCategoryChips()),
+                            if (_seriesRail.isNotEmpty) SliverToBoxAdapter(child: _buildSeriesRail()),
+                            SliverToBoxAdapter(
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+                                child: Text(
+                                  _selectedCategory == 'Tous' ? 'Catalogue' : _selectedCategory,
+                                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800),
+                                ),
+                              ),
+                            ),
+                            SliverPadding(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                              sliver: SliverGrid(
+                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 14, childAspectRatio: 0.62,
+                                ),
+                                delegate: SliverChildBuilderDelegate(
+                                  (c, i) => _MediaPosterCard(
+                                    item: _filteredCatalog[i],
+                                    formatNumber: _formatNumber,
+                                    buildImage: _buildImage,
+                                    onTap: () => _openDetail(_filteredCatalog[i]),
+                                  ),
+                                  childCount: _filteredCatalog.length,
+                                ),
+                              ),
+                            ),
+                            if (_loading)
+                              const SliverToBoxAdapter(
+                                child: Padding(
+                                  padding: EdgeInsets.all(20),
+                                  child: Center(child: CircularProgressIndicator(color: _MediaColors.gold, strokeWidth: 2)),
+                                ),
+                              ),
+                          ],
+                        ],
+                      ),
               ),
-
-              // TOAST NOUVEAUTÉ (Smart Mix)
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.elasticOut,
-                top: _showRefreshToast ? 110 : -60,
-                left: 0, right: 0,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                    decoration: BoxDecoration(color: ThixPolicy.primary, borderRadius: BorderRadius.circular(30), boxShadow: [BoxShadow(color: ThixPolicy.primary.withOpacity(0.4), blurRadius: 10, offset: const Offset(0, 4))]),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 16),
-                        SizedBox(width: 8),
-                        Text('Nouveau contenu ajouté au fil', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
               if (showSearchOverlay) _searchOverlay(),
             ],
           );
@@ -593,293 +422,241 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with WidgetsBindi
     );
   }
 
-  Widget _buildTikTokFeed() {
-    if (!_filInitialized) return const Center(child: CircularProgressIndicator(color: ThixPolicy.primary));
-    if (_filItems.isEmpty) return const Center(child: Text("Aucun contenu", style: TextStyle(color: Colors.white)));
-
-    return GestureDetector(
-      onVerticalDragUpdate: (d) {
-        if (_currentFeedIndex == 0 && d.delta.dy > 0 && !_filLoading) {
-          setState(() => _pullDistance = (_pullDistance + d.delta.dy).clamp(0, _pullThreshold * 1.6));
-        }
-      },
-      onVerticalDragEnd: (d) async {
-        if (_pullDistance >= _pullThreshold && !_pullTriggering) {
-          _pullTriggering = true;
-          await _initFilFeed(reshuffle: true);
-          _pullTriggering = false;
-        }
-        setState(() => _pullDistance = 0);
-      },
-      child: Stack(
+  // ── HEADER — bandeau navy/or, plus de glass noir ──
+  Widget _buildSliverHeader(bool isAdmin, bool hasQuery) {
+    return SliverAppBar(
+      pinned: true,
+      floating: true,
+      backgroundColor: _MediaColors.navyDeep,
+      elevation: 0,
+      toolbarHeight: 64,
+      flexibleSpace: Container(decoration: const BoxDecoration(gradient: _MediaColors.gradientHeader)),
+      title: Row(
         children: [
-          NotificationListener<ScrollNotification>(
-            onNotification: (n) {
-              if (n.metrics.axis == Axis.vertical && (n is ScrollUpdateNotification || n is ScrollStartNotification)) {
-                if (!_immersive) setState(() => _immersive = true);
-              }
-              return false;
-            },
-            child: PageView.builder(
-              controller: _feedController,
-              scrollDirection: Axis.vertical,
-              itemCount: _filItems.length,
-              onPageChanged: (i) {
-                setState(() { _currentFeedIndex = i; _immersive = false; });
-                _handlePageChanged(i);
-              },
-              itemBuilder: (c, idx) {
-                final item = _filItems[idx];
-                final isFocused = _currentFeedIndex == idx;
-                return _buildMediaContentLayer(item, isFocused);
-              },
-            ),
+          ShaderMask(
+            shaderCallback: (b) => _MediaColors.gradientGold.createShader(b),
+            child: const Text('THIX MEDIA', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 17, letterSpacing: -0.4)),
           ),
-
-          Positioned(
-            top: 0, left: 0, right: 0, height: 150,
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: () { if (_immersive) setState(() => _immersive = false); },
-              child: Container(color: Colors.transparent),
-            ),
-          ),
-
-          if (_pullDistance > 0 || _filLoading)
-            Positioned(
-              top: 100, left: 0, right: 0,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), shape: BoxShape.circle),
-                  child: _filLoading
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                      : Icon(Icons.arrow_downward_rounded, color: Colors.white, size: (18 + (_pullDistance / _pullThreshold) * 6).clamp(18, 26)),
-                ),
-              ),
-            ),
         ],
       ),
-    );
-  }
-
-    // ── INFOS BAS GAUCHE (Titre, Auteur, Tags) ──
-  Widget _buildBottomInfo(MediaContent item) {
-    final String creatorId = item.userId ?? ''; // <-- CORRECTION ICI
-    final creatorProfile = creatorId.isNotEmpty ? ref.watch(userProfileProvider(creatorId)).valueOrNull : null;
-    final creatorIsOfficial = creatorId.isEmpty;
-    String displayName = creatorIsOfficial ? 'THIX' : (creatorProfile?['full_name'] ?? creatorProfile?['username'] ?? 'Créateur');
-
-    return Column(
-
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(color: ThixPolicy.primary.withOpacity(0.8), borderRadius: BorderRadius.circular(4)),
-              child: Text(item.type, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-            ),
-            if (item.filterApplied != 'Normal') ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
-                child: Text('✨ ${item.filterApplied}', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-              ),
-            ],
-            if (item.isPaid) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: ThixPolicy.gold, borderRadius: BorderRadius.circular(4)),
-                child: Text(_formatPrice(item), style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w900)),
-              ),
-            ],
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text('@$displayName', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800, shadows: [Shadow(color: Colors.black54, blurRadius: 4)])),
-        const SizedBox(height: 4),
-        Text(item.title, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w400, shadows: [Shadow(color: Colors.black54, blurRadius: 4)])),
-        if (item.subtitle != null && item.subtitle!.isNotEmpty) ...[
-          const SizedBox(height: 2),
-          Text(item.subtitle!, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 13, shadows: [Shadow(color: Colors.black54, blurRadius: 4)])),
-        ],
-      ],
-    );
-  }
-
-    // ── RIGHT SIDEBAR (Actions: Like, Comment, Share) ──
-  Widget _buildRightSidebar(MediaContent cur) {
-    final isLiked = _likedMediaIds.contains(cur.id);
-    final isSaved = _savedMediaIds.contains(cur.id);
-
-    MediaCounts? live = ref.watch(mediaCountsStreamProvider(cur.id)).valueOrNull;
-    int displayLikes = _localLikeCounts[cur.id] ?? live?.likeCount ?? cur.likeCount;
-
-    final String creatorId = cur.userId ?? ''; // <-- CORRECTION ICI
-    final creatorProfile = creatorId.isNotEmpty ? ref.watch(userProfileProvider(creatorId)).valueOrNull : null;
-    final currentUid = Supabase.instance.client.auth.currentUser?.id;
-    final isFollowing = creatorId.isNotEmpty ? (ref.watch(isFollowingProvider(creatorId)).valueOrNull ?? true) : true;
-    final creatorIsOfficial = creatorId.isEmpty;
-    final showPlusBtn = !creatorIsOfficial && creatorId.isNotEmpty && creatorId != currentUid && !isFollowing && !_newlyFollowedIds.contains(creatorId);
-
-    return Column(
-
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Avatar avec bouton follow
-        GestureDetector(
-          onTap: () { 
-  if (creatorId != null && creatorId.isNotEmpty && !creatorIsOfficial) {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => UserProfilePage(userId: creatorId))); 
-  }
-},
-
-          child: SizedBox(
-            width: 48, height: 60,
-            child: Stack(
-              alignment: Alignment.topCenter,
-              children: [
-                Container(
-                  width: 44, height: 44,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2),
-                    image: creatorProfile != null && creatorProfile['avatar_url'] != null ? DecorationImage(image: CachedNetworkImageProvider(creatorProfile['avatar_url']), fit: BoxFit.cover) : null,
-                  ),
-                  child: creatorProfile == null || creatorProfile['avatar_url'] == null ? const Icon(Icons.person, size: 24, color: Colors.white) : null,
-                ),
-                if (showPlusBtn)
-                  Positioned(
-                    bottom: 8,
-                    child: GestureDetector(
-                      onTap: () { setState(() => _newlyFollowedIds.add(creatorId)); MediaService().toggleFollow(creatorId); },
-                      child: Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: const BoxDecoration(color: ThixPolicy.primary, shape: BoxShape.circle),
-                        child: const Icon(Icons.add, color: Colors.white, size: 14),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+      actions: [
+        if (isAdmin)
+          IconButton(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ThixMediaAdminPage())),
+            icon: const Icon(Icons.admin_panel_settings_rounded, color: _MediaColors.gold, size: 20),
           ),
+        IconButton(
+          onPressed: () {},
+          icon: const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 22),
         ),
-        const SizedBox(height: 16),
-        _buildActionIcon(isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded, _formatNumber(displayLikes), isLiked ? ThixPolicy.danger : Colors.white, () => _toggleLike(cur)),
-        _buildActionIcon(Icons.chat_bubble_rounded, _formatNumber(live?.commentCount ?? cur.commentCount), Colors.white, () => _openComments(cur)),
-        _buildActionIcon(isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, 'Sauver', isSaved ? ThixPolicy.gold : Colors.white, () => _toggleSave(cur)),
-        _buildActionIcon(Icons.share_rounded, 'Partager', Colors.white, () { HapticFeedback.selectionClick(); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lien copié dans le presse-papier !'))); }),
-        
-        const SizedBox(height: 24),
-        // Rotation Record Disc / Créer Post
-        GestureDetector(
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CreatePostPage())),
+        const SizedBox(width: 6),
+      ],
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(56),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Container(
-            width: 40, height: 40,
+            height: 42,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withOpacity(0.2), width: 8),
-              gradient: ThixPolicy.brandGradient,
+              color: Colors.white.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
             ),
-            child: const Icon(Icons.add, color: Colors.white, size: 20),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildActionIcon(IconData icon, String label, Color color, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 34, shadows: [Shadow(color: Colors.black.withOpacity(0.5), blurRadius: 10)]),
-            const SizedBox(height: 4),
-            Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700, shadows: [Shadow(color: Colors.black, blurRadius: 4)])),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── HEADER ULTRA PRO (Glassmorphism) ──
-  Widget _header() {
-    final isAdmin = ref.watch(isMediaAdminProvider).valueOrNull ?? false;
-    final hasQuery = _searchController.text.trim().isNotEmpty;
-
-    return ClipRRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
-        child: Container(
-          padding: const EdgeInsets.only(top: 12, left: 16, right: 16, bottom: 12),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.4),
-            border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.1))),
-          ),
-          child: SafeArea(
-            bottom: false,
             child: Row(
               children: [
-                const Text('THIX MEDIA', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: -0.5)),
-                const SizedBox(width: 16),
+                const Icon(Icons.search_rounded, color: Colors.white70, size: 18),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Container(
-                    height: 38,
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white.withOpacity(0.05)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.search_rounded, color: Colors.white70, size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: _searchController,
-                            focusNode: _searchFocusNode,
-                            onChanged: _onSearchChanged,
-                            style: const TextStyle(color: Colors.white, fontSize: 14),
-                            decoration: const InputDecoration(hintText: "Découvrir...", hintStyle: TextStyle(color: Colors.white54, fontSize: 14), border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero),
-                          ),
-                        ),
-                        if (hasQuery)
-                          GestureDetector(
-                            onTap: () { _searchController.clear(); setState(() => _searchResults = []); },
-                            child: const Icon(Icons.close_rounded, color: Colors.white70, size: 16),
-                          ),
-                      ],
+                  child: TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    onChanged: _onSearchChanged,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    cursorColor: _MediaColors.gold,
+                    decoration: const InputDecoration(
+                      hintText: 'Découvrir des vidéos, séries, créateurs…',
+                      hintStyle: TextStyle(color: Colors.white54, fontSize: 13.5),
+                      filled: false,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.zero,
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                if (isAdmin) ...[
+                if (hasQuery)
                   GestureDetector(
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ThixMediaAdminPage())),
-                    child: Container(
-                      width: 38, height: 38,
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: ThixPolicy.danger.withOpacity(0.2)),
-                      child: const Icon(Icons.admin_panel_settings_rounded, color: ThixPolicy.danger, size: 20),
-                    ),
+                    onTap: () { _searchController.clear(); setState(() => _searchResults = []); },
+                    child: const Icon(Icons.close_rounded, color: Colors.white70, size: 16),
                   ),
-                  const SizedBox(width: 10),
-                ],
-                Container(
-                  width: 38, height: 38,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.1)),
-                  child: const Icon(Icons.notifications_rounded, color: Colors.white, size: 20),
-                ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // ── HERO — carousel éditorial (remplace le plein écran vidéo auto-play) ──
+  Widget _buildHero() {
+    final featured = _catalog.take(6).toList();
+    if (featured.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      height: 210,
+      child: PageView.builder(
+        controller: PageController(viewportFraction: 0.88),
+        itemCount: featured.length,
+        itemBuilder: (c, i) {
+          final item = featured[i];
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: GestureDetector(
+              onTap: () => _openDetail(item),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _buildImage(item.coverUrl),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                          colors: [Colors.transparent, _MediaColors.navyDeep.withValues(alpha: 0.92)],
+                          stops: const [0.35, 1],
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 16, right: 16, top: 14,
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(gradient: _MediaColors.gradientGold, borderRadius: BorderRadius.circular(20)),
+                            child: const Text('À LA UNE', style: TextStyle(color: _MediaColors.navyDeep, fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                          ),
+                          if (item.isPaid) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.45), borderRadius: BorderRadius.circular(20)),
+                              child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                                Icon(Icons.lock_rounded, size: 11, color: _MediaColors.gold),
+                                SizedBox(width: 3),
+                                Text('Premium', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+                              ]),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    Positioned(
+                      left: 16, right: 16, bottom: 14,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 4),
+                          Row(children: [
+                            const Icon(Icons.play_circle_fill_rounded, color: Colors.white70, size: 14),
+                            const SizedBox(width: 4),
+                            Text(_formatNumber(item.viewCount), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildCategoryChips() {
+    final cats = _categories();
+    return SizedBox(
+      height: 44,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        itemCount: cats.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (c, i) {
+          final cat = cats[i];
+          final sel = _selectedCategory == cat;
+          return GestureDetector(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() => _selectedCategory = cat);
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+              decoration: BoxDecoration(
+                gradient: sel ? _MediaColors.gradientGold : null,
+                color: sel ? null : Colors.white.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(color: sel ? Colors.transparent : Colors.white.withValues(alpha: 0.12)),
+              ),
+              child: Text(
+                cat,
+                style: TextStyle(
+                  color: sel ? _MediaColors.navyDeep : Colors.white70,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSeriesRail() {
+    final series = _seriesRail;
+    return Padding(
+      padding: const EdgeInsets.only(top: 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(children: const [
+              Icon(Icons.video_library_rounded, size: 16, color: _MediaColors.gold),
+              SizedBox(width: 8),
+              Text('Séries', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800)),
+            ]),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 190,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: series.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (c, i) => SizedBox(
+                width: 128,
+                child: _MediaPosterCard(
+                  item: series[i],
+                  formatNumber: _formatNumber,
+                  buildImage: _buildImage,
+                  onTap: () => _openDetail(series[i]),
+                  compact: true,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -891,26 +668,31 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with WidgetsBindi
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
-            color: Colors.black.withOpacity(0.8),
-            padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top + 80, left: 16, right: 16),
+            color: _MediaColors.navyDeep.withValues(alpha: 0.94),
+            padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top + 130, left: 16, right: 16),
             child: _searching
-                ? const Center(child: CircularProgressIndicator(color: ThixPolicy.primary))
+                ? const Center(child: CircularProgressIndicator(color: _MediaColors.gold))
                 : _searchResults.isEmpty
-                    ? const Center(child: Text('Recherchez des vidéos, créateurs...', style: TextStyle(color: Colors.white54, fontSize: 14, fontWeight: FontWeight.w600)))
+                    ? const Center(child: Text('Recherchez des vidéos, créateurs…', style: TextStyle(color: Colors.white54, fontSize: 14, fontWeight: FontWeight.w600)))
                     : GridView.builder(
                         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 0.7),
                         itemCount: _searchResults.length,
                         itemBuilder: (context, i) {
                           final item = _searchResults[i];
                           return GestureDetector(
-                            onTap: () => _selectSearchResult(item),
+                            onTap: () {
+                              _searchFocusNode.unfocus();
+                              _searchController.clear();
+                              setState(() => _searchResults = []);
+                              _openDetail(item);
+                            },
                             child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(10),
                               child: Stack(
                                 fit: StackFit.expand,
                                 children: [
                                   _buildImage(item.coverUrl),
-                                  Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black.withOpacity(0.9), Colors.transparent]))),
+                                  Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black.withValues(alpha: 0.9), Colors.transparent]))),
                                   Positioned(left: 6, right: 6, bottom: 6, child: Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700))),
                                 ],
                               ),
@@ -926,7 +708,412 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with WidgetsBindi
 }
 
 // ============================================================================
-// LECTEUR VIDEO FEED (Progress bar fine & fluide)
+// CARTE AFFICHE — style catalogue (poster + méta), plus de plein écran
+// ============================================================================
+class _MediaPosterCard extends StatelessWidget {
+  final MediaContent item;
+  final String Function(int) formatNumber;
+  final Widget Function(String, {BoxFit fit}) buildImage;
+  final VoidCallback onTap;
+  final bool compact;
+
+  const _MediaPosterCard({
+    required this.item,
+    required this.formatNumber,
+    required this.buildImage,
+    required this.onTap,
+    this.compact = false,
+  });
+
+  bool get _isSeries => item.episodesUrls.isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  buildImage(item.coverUrl),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Colors.black.withValues(alpha: 0.75)],
+                        stops: const [0.5, 1],
+                      ),
+                    ),
+                  ),
+                  if (item.isPaid)
+                    Positioned(
+                      top: 8, right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: const BoxDecoration(gradient: _MediaColors.gradientGold, shape: BoxShape.circle),
+                        child: const Icon(Icons.lock_rounded, size: 12, color: _MediaColors.navyDeep),
+                      ),
+                    ),
+                  if (_isSeries)
+                    Positioned(
+                      top: 8, left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.55), borderRadius: BorderRadius.circular(6)),
+                        child: Text('${item.episodesUrls.length + 1} parties', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700)),
+                      ),
+                    ),
+                  Positioned(
+                    left: 8, right: 8, bottom: 8,
+                    child: Row(children: [
+                      const Icon(Icons.play_circle_fill_rounded, color: Colors.white70, size: 12),
+                      const SizedBox(width: 4),
+                      Text(formatNumber(item.viewCount), style: const TextStyle(color: Colors.white70, fontSize: 10.5, fontWeight: FontWeight.w600)),
+                    ]),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(item.title, maxLines: compact ? 1 : 2, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w700, height: 1.2)),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// PAGE DÉTAIL — lecteur + sélecteur d'épisodes "Partie 1 / Partie 2…" +
+// verrouillage payant, dans une mise en page professionnelle (barre
+// d'actions horizontale sous la vidéo, pas d'icônes flottantes latérales).
+// ============================================================================
+class _MediaDetailPage extends ConsumerStatefulWidget {
+  final MediaContent item;
+  const _MediaDetailPage({required this.item});
+
+  @override
+  ConsumerState<_MediaDetailPage> createState() => _MediaDetailPageState();
+}
+
+class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
+  late List<String> _episodes;
+  int _currentEpisode = 0;
+  bool _liked = false;
+  bool _saved = false;
+  bool _previewExpired = false;
+  bool _unlocked = false;
+  static const int _previewSeconds = 30;
+  final Set<String> _newlyFollowed = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _episodes = [widget.item.videoUrl, ...widget.item.episodesUrls].where((u) => u.isNotEmpty).toList();
+    _syncLiked();
+  }
+
+  Future<void> _syncLiked() async {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      final res = await Supabase.instance.client.rpc('get_liked_media_ids', params: {'p_media_ids': [widget.item.id]});
+      if (mounted && (res as List).contains(widget.item.id)) setState(() => _liked = true);
+    } catch (_) {}
+  }
+
+  Future<void> _toggleLike() async {
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Connectez-vous pour aimer.'))); return; }
+    HapticFeedback.selectionClick();
+    setState(() => _liked = !_liked);
+    try { await Supabase.instance.client.rpc('toggle_media_like', params: {'p_media_id': widget.item.id}); } catch (_) {}
+  }
+
+  void _toggleSave() {
+    HapticFeedback.lightImpact();
+    setState(() => _saved = !_saved);
+  }
+
+  void _openComments() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _CommentsSheet(mediaId: widget.item.id, mediaTitle: widget.item.title),
+    ).then((_) { ref.invalidate(commentCountProvider(widget.item.id)); });
+  }
+
+  String _formatPrice() => '\$${widget.item.price}';
+  String _formatNumber(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return n.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    final isSeries = _episodes.length > 1;
+    final requiresPayment = item.isPaid && !_unlocked && _previewExpired;
+    final enforcePreview = item.isPaid && !_unlocked;
+
+    final live = ref.watch(mediaCountsStreamProvider(item.id)).valueOrNull;
+    final creatorId = item.userId ?? '';
+    final creatorProfile = creatorId.isNotEmpty ? ref.watch(userProfileProvider(creatorId)).valueOrNull : null;
+    final currentUid = Supabase.instance.client.auth.currentUser?.id;
+    final isFollowing = creatorId.isNotEmpty ? (ref.watch(isFollowingProvider(creatorId)).valueOrNull ?? true) : true;
+    final creatorIsOfficial = creatorId.isEmpty;
+    final showFollowBtn = !creatorIsOfficial && creatorId.isNotEmpty && creatorId != currentUid && !isFollowing && !_newlyFollowed.contains(creatorId);
+    final displayName = creatorIsOfficial ? 'THIX' : (creatorProfile?['full_name'] ?? creatorProfile?['username'] ?? 'Créateur');
+
+    return Scaffold(
+      backgroundColor: _MediaColors.navyDeep,
+      appBar: AppBar(
+        backgroundColor: _MediaColors.navyDeep,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+      ),
+      body: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── LECTEUR VIDÉO ──
+            AspectRatio(
+              aspectRatio: 16 / 10,
+              child: requiresPayment
+                  ? _buildPaywall(item)
+                  : FeedVideoPlayer(
+                      key: ValueKey('${item.id}_$_currentEpisode'),
+                      videoUrl: _episodes.isEmpty ? item.videoUrl : _episodes[_currentEpisode.clamp(0, _episodes.length - 1)],
+                      coverUrl: item.coverUrl,
+                      isPlaying: true,
+                      enforcePreviewLimit: enforcePreview,
+                      previewSeconds: _previewSeconds,
+                      onPreviewLimitReached: () { if (mounted) setState(() => _previewExpired = true); },
+                      onPlayStateChanged: (_) {},
+                    ),
+            ),
+
+            // ── SÉLECTEUR D'ÉPISODES : "Partie 1 / Partie 2…" cliquables ──
+            if (isSeries && !requiresPayment)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Épisodes', style: TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8, runSpacing: 8,
+                      children: List.generate(_episodes.length, (i) {
+                        final active = i == _currentEpisode;
+                        return GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() { _currentEpisode = i; });
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 160),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            decoration: BoxDecoration(
+                              gradient: active ? _MediaColors.gradientGold : null,
+                              color: active ? null : Colors.white.withValues(alpha: 0.07),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: active ? Colors.transparent : Colors.white.withValues(alpha: 0.14)),
+                            ),
+                            child: Text(
+                              'Partie ${i + 1}',
+                              style: TextStyle(
+                                color: active ? _MediaColors.navyDeep : Colors.white,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ),
+                  ],
+                ),
+              ),
+
+            // ── AUTEUR + SUIVRE ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () { if (!creatorIsOfficial && creatorId.isNotEmpty) Navigator.push(context, MaterialPageRoute(builder: (_) => UserProfilePage(userId: creatorId))); },
+                    child: Container(
+                      width: 42, height: 42,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: _MediaColors.gold, width: 1.6),
+                        image: creatorProfile != null && creatorProfile['avatar_url'] != null
+                            ? DecorationImage(image: CachedNetworkImageProvider(creatorProfile['avatar_url']), fit: BoxFit.cover)
+                            : null,
+                      ),
+                      child: creatorProfile == null || creatorProfile['avatar_url'] == null
+                          ? const Icon(Icons.person, size: 20, color: Colors.white70)
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('@$displayName', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
+                        Text(item.type, style: const TextStyle(color: _MediaColors.textMuted, fontSize: 11.5)),
+                      ],
+                    ),
+                  ),
+                  if (showFollowBtn)
+                    GestureDetector(
+                      onTap: () { setState(() => _newlyFollowed.add(creatorId)); MediaService().toggleFollow(creatorId); },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                        decoration: BoxDecoration(gradient: _MediaColors.gradientGold, borderRadius: BorderRadius.circular(20)),
+                        child: const Text('Suivre', style: TextStyle(color: _MediaColors.navyDeep, fontSize: 12.5, fontWeight: FontWeight.w800)),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            // ── BARRE D'ACTIONS HORIZONTALE (remplace la colonne flottante) ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                child: Row(
+                  children: [
+                    _detailActionBtn(
+                      icon: _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                      label: _formatNumber(live?.likeCount ?? item.likeCount),
+                      color: _liked ? _MediaColors.danger : Colors.white,
+                      onTap: _toggleLike,
+                    ),
+                    _detailActionBtn(
+                      icon: Icons.chat_bubble_outline_rounded,
+                      label: _formatNumber(live?.commentCount ?? item.commentCount),
+                      color: Colors.white,
+                      onTap: _openComments,
+                    ),
+                    _detailActionBtn(
+                      icon: _saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                      label: 'Sauver',
+                      color: _saved ? _MediaColors.gold : Colors.white,
+                      onTap: _toggleSave,
+                    ),
+                    _detailActionBtn(
+                      icon: Icons.share_rounded,
+                      label: 'Partager',
+                      color: Colors.white,
+                      onTap: () { HapticFeedback.selectionClick(); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lien copié dans le presse-papier !'))); },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── DESCRIPTION ──
+            if (item.subtitle != null && item.subtitle!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                child: Text(item.subtitle!, style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.5)),
+              )
+            else
+              const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _detailActionBtn({required IconData icon, required String label, required Color color, required VoidCallback onTap}) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Column(
+            children: [
+              Icon(icon, color: color, size: 21),
+              const SizedBox(height: 4),
+              Text(label, style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w700)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaywall(MediaContent item) {
+    return Container(
+      decoration: BoxDecoration(image: DecorationImage(image: CachedNetworkImageProvider(item.coverUrl), fit: BoxFit.cover)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+        child: Container(
+          color: _MediaColors.navyDeep.withValues(alpha: 0.88),
+          alignment: Alignment.center,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: const BoxDecoration(shape: BoxShape.circle, gradient: _MediaColors.gradientGold),
+                child: const Icon(Icons.lock_rounded, size: 36, color: _MediaColors.navyDeep),
+              ),
+              const SizedBox(height: 18),
+              const Text('Contenu Premium', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 10),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 36),
+                child: Text(
+                  "Fin de l'aperçu gratuit. Débloquez la suite pour ${_formatPrice()}.",
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _MediaColors.gold,
+                  foregroundColor: _MediaColors.navyDeep,
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                ),
+                onPressed: () {
+                  setState(() { _unlocked = true; _previewExpired = false; });
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vidéo débloquée avec succès !'), backgroundColor: _MediaColors.success));
+                },
+                child: Text('Débloquer (${_formatPrice()})', style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// LECTEUR VIDEO (Progress bar fine & fluide) — inchangé dans sa logique
 // ============================================================================
 class FeedVideoPlayer extends StatefulWidget {
   final String videoUrl, coverUrl;
@@ -1008,7 +1195,7 @@ class _FeedVideoPlayerState extends State<FeedVideoPlayer> {
         children: [
           Container(color: Colors.black, child: Center(child: AspectRatio(aspectRatio: _c.value.aspectRatio, child: VideoPlayer(_c)))),
           if (_paused) const Center(child: Icon(Icons.play_arrow_rounded, color: Colors.white70, size: 80)),
-          
+
           // Progress Bar Ultra Fine
           Positioned(
             left: 0, right: 0, bottom: 0,
@@ -1026,8 +1213,8 @@ class _FeedVideoPlayerState extends State<FeedVideoPlayer> {
                     return Stack(
                       alignment: Alignment.bottomLeft,
                       children: [
-                        Container(height: _isDragging ? 4 : 1.5, width: double.infinity, color: Colors.white.withOpacity(0.3)),
-                        Container(height: _isDragging ? 4 : 1.5, width: MediaQuery.of(context).size.width * pct, color: Colors.white),
+                        Container(height: _isDragging ? 4 : 1.5, width: double.infinity, color: Colors.white.withValues(alpha: 0.3)),
+                        Container(height: _isDragging ? 4 : 1.5, width: MediaQuery.of(context).size.width * pct, color: _MediaColors.gold),
                       ],
                     );
                   },
@@ -1042,7 +1229,7 @@ class _FeedVideoPlayerState extends State<FeedVideoPlayer> {
 }
 
 // ============================================================================
-// COMMENTAIRES BOTTOM SHEET — FOND SOMBRE FORCÉ (Plus jamais blanc)
+// COMMENTAIRES BOTTOM SHEET — champ de saisie corrigé (plus de fond blanc)
 // ============================================================================
 class _CommentsSheet extends ConsumerStatefulWidget {
   final String mediaId, mediaTitle;
@@ -1069,7 +1256,7 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
   @override
   void initState() { super.initState(); _fetchRoots(); }
 
-  void _showError(String message) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message, style: const TextStyle(color: Colors.white)), backgroundColor: ThixPolicy.danger)); }
+  void _showError(String message) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message, style: const TextStyle(color: Colors.white)), backgroundColor: _MediaColors.danger)); }
 
   Future<void> _fetchUserLikes() async {
     final uid = Supabase.instance.client.auth.currentUser?.id;
@@ -1127,13 +1314,13 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     final isAuthor = uid == c.userId;
     showModalBottomSheet(
-      context: context, backgroundColor: const Color(0xFF161B22), // Fond sombre strict
+      context: context, backgroundColor: _MediaColors.card,
       builder: (_) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (isAuthor) ListTile(leading: const Icon(Icons.edit, color: Colors.white), title: const Text('Modifier', style: TextStyle(color: Colors.white)), onTap: () { Navigator.pop(context); setState(() { _editingComment = c; _replyingTo = null; }); _controller.text = c.content; _focusNode.requestFocus(); }),
-            if (isAuthor) ListTile(leading: const Icon(Icons.delete, color: ThixPolicy.danger), title: const Text('Supprimer', style: TextStyle(color: ThixPolicy.danger)), onTap: () { Navigator.pop(context); _delete(c.id); }),
+            if (isAuthor) ListTile(leading: const Icon(Icons.delete, color: _MediaColors.danger), title: const Text('Supprimer', style: TextStyle(color: _MediaColors.danger)), onTap: () { Navigator.pop(context); _delete(c.id); }),
             ListTile(leading: const Icon(Icons.flag, color: ThixPolicy.warning), title: const Text('Signaler', style: TextStyle(color: ThixPolicy.warning)), onTap: () { Navigator.pop(context); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signalé aux modérateurs'))); }),
           ],
         ),
@@ -1197,7 +1384,7 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                           setState(() { if (isLiked) { _likedIds.remove(c.id); _localCommentLikes[c.id] = (currentLikes - 1).clamp(0, 999999); } else { _likedIds.add(c.id); _localCommentLikes[c.id] = currentLikes + 1; } });
                           try { await Supabase.instance.client.rpc('toggle_comment_like', params: {'p_comment_id': c.id}); } catch (_) { if (mounted) { setState(() { if (isLiked) { _likedIds.add(c.id); _localCommentLikes[c.id] = currentLikes; } else { _likedIds.remove(c.id); _localCommentLikes[c.id] = currentLikes; } }); } }
                         },
-                        child: Row(children: [Icon(isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: isLiked ? ThixPolicy.danger : Colors.white54, size: 14), const SizedBox(width: 4), Text(currentLikes > 0 ? '$currentLikes' : "", style: TextStyle(color: isLiked ? ThixPolicy.danger : Colors.white54, fontSize: 12, fontWeight: FontWeight.bold))]),
+                        child: Row(children: [Icon(isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: isLiked ? _MediaColors.danger : Colors.white54, size: 14), const SizedBox(width: 4), Text(currentLikes > 0 ? '$currentLikes' : "", style: TextStyle(color: isLiked ? _MediaColors.danger : Colors.white54, fontSize: 12, fontWeight: FontWeight.bold))]),
                       )
                     ],
                   ),
@@ -1237,10 +1424,10 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
           filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
           child: Container(
             height: MediaQuery.of(context).size.height * 0.70,
-            // 🌟 CORRECTION: Forcé en gris très sombre opaque pour ne jamais être blanc
+            // Fond forcé sombre — jamais blanc, quel que soit le thème global.
             decoration: BoxDecoration(
-              color: const Color(0xFF0F141E).withOpacity(0.95), 
-              border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1), width: 1))
+              color: _MediaColors.card.withValues(alpha: 0.97),
+              border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1)),
             ),
             child: Column(
               children: [
@@ -1249,7 +1436,7 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                 const SizedBox(height: 16),
                 Text('${_roots.length} commentaires', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 12),
-                
+
                 Expanded(
                   child: _loading
                       ? const Center(child: CircularProgressIndicator(color: Colors.white))
@@ -1264,8 +1451,8 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
 
                 Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF161B22),
-                    border: Border(top: BorderSide(color: Colors.white.withOpacity(0.05)))
+                    color: _MediaColors.cardLight,
+                    border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.05))),
                   ),
                   child: Column(
                     children: [
@@ -1288,13 +1475,36 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                             Expanded(
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                                decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(24)),
+                                decoration: BoxDecoration(
+                                  // ── Fond explicitement défini sur le conteneur ──
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(24),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                                ),
                                 child: TextField(
-                                  controller: _controller, focusNode: _focusNode, minLines: 1, maxLines: 4, onSubmitted: (_) => _submit(),
+                                  controller: _controller,
+                                  focusNode: _focusNode,
+                                  minLines: 1,
+                                  maxLines: 4,
+                                  onSubmitted: (_) => _submit(),
                                   style: const TextStyle(color: Colors.white, fontSize: 14),
+                                  cursorColor: _MediaColors.gold,
+                                  // ── Correction du bug de fond blanc : on force
+                                  // explicitement `filled: false` et tous les
+                                  // borders à `InputBorder.none`, pour ignorer
+                                  // tout `InputDecorationTheme` global qui
+                                  // imposerait un remplissage clair par défaut.
                                   decoration: InputDecoration(
                                     hintText: _editingComment != null ? 'Modifier...' : (_replyingTo != null ? 'Votre réponse...' : 'Ajouter un commentaire...'),
-                                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 14), border: InputBorder.none, isDense: true,
+                                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+                                    filled: false,
+                                    fillColor: Colors.transparent,
+                                    border: InputBorder.none,
+                                    enabledBorder: InputBorder.none,
+                                    focusedBorder: InputBorder.none,
+                                    disabledBorder: InputBorder.none,
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
                                   ),
                                 ),
                               ),
@@ -1304,8 +1514,14 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                               onTap: _submit,
                               child: Container(
                                 width: 44, height: 44,
-                                decoration: BoxDecoration(color: _sending ? Colors.white10 : ThixPolicy.primary, shape: BoxShape.circle),
-                                child: _sending ? const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.send_rounded, color: Colors.white, size: 18),
+                                decoration: BoxDecoration(
+                                  gradient: _sending ? null : _MediaColors.gradientGold,
+                                  color: _sending ? Colors.white10 : null,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: _sending
+                                    ? const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                    : const Icon(Icons.send_rounded, color: _MediaColors.navyDeep, size: 18),
                               ),
                             )
                           ],
