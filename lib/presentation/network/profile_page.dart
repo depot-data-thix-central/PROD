@@ -18,6 +18,59 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
 
+// ─────────────────────────────────────────────────────────────
+// AVATAR HEXAGONAL — signature THIX ID, même langage visuel que
+// la home page et les post cards (remplace le cercle générique).
+// ─────────────────────────────────────────────────────────────
+class _ProfileHexClipper extends CustomClipper<Path> {
+  const _ProfileHexClipper();
+  @override
+  Path getClip(Size size) {
+    final w = size.width, h = size.height;
+    return Path()
+      ..moveTo(w * 0.5, 0)
+      ..lineTo(w, h * 0.25)
+      ..lineTo(w, h * 0.75)
+      ..lineTo(w * 0.5, h)
+      ..lineTo(0, h * 0.75)
+      ..lineTo(0, h * 0.25)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+class _ProfileHexAvatar extends StatelessWidget {
+  final double size;
+  final ImageProvider? image;
+  final IconData fallbackIcon;
+
+  const _ProfileHexAvatar({required this.size, this.image, this.fallbackIcon = Icons.person});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipPath(
+      clipper: const _ProfileHexClipper(),
+      child: Container(
+        width: size,
+        height: size,
+        color: ThixPolicy.surface,
+        padding: const EdgeInsets.all(3),
+        child: ClipPath(
+          clipper: const _ProfileHexClipper(),
+          child: Container(
+            color: Colors.grey.shade100,
+            child: image != null
+                ? Image(image: image!, fit: BoxFit.cover)
+                : Icon(fallbackIcon, size: size * 0.42, color: ThixPolicy.primary.withValues(alpha: 0.5)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class ProfilePage extends ConsumerStatefulWidget {
   final String? userId;
   const ProfilePage({super.key, this.userId});
@@ -376,7 +429,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
               controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
-                // ── HEADER (COVER + AVATAR + ACTIONS) ──
+                // ── HEADER (COVER + AVATAR HEXAGONAL + ACTIONS) ──
                 SliverToBoxAdapter(
                   child: userProfile != null
                       ? _buildTopSection(userProfile, isOwn, uid)
@@ -523,9 +576,17 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // TOP SECTION (Cover + Avatar sur le même plan)
+  // TOP SECTION (Cover + Avatar hexagonal sur le même plan)
   // ─────────────────────────────────────────────────────────────
   Widget _buildTopSection(Map<String, dynamic> u, bool isOwn, String uid) {
+    final ImageProvider? avatarImage = _localAvatarBytes != null
+        ? MemoryImage(_localAvatarBytes!)
+        : (_localAvatarUrl != null
+            ? NetworkImage(_localAvatarUrl!)
+            : (u['avatar_url'] != null && u['avatar_url'].toString().isNotEmpty
+                ? NetworkImage(u['avatar_url'])
+                : null)) as ImageProvider?;
+
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -581,48 +642,28 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
           ),
         ),
 
-        // 2. Avatar
+        // 2. Avatar hexagonal — signature THIX ID, remplace le cercle
         Positioned(
           bottom: -46, 
           left: 16,
           child: Stack(
-            alignment: Alignment.bottomRight,
+            clipBehavior: Clip.none,
             children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: ThixPolicy.surface, 
-                ),
-                child: CircleAvatar(
-                  radius: 46,
-                  backgroundColor: Colors.grey.shade100,
-                  backgroundImage: _localAvatarBytes != null
-                      ? MemoryImage(_localAvatarBytes!)
-                      : (_localAvatarUrl != null
-                          ? NetworkImage(_localAvatarUrl!)
-                          : (u['avatar_url'] != null
-                              ? NetworkImage(u['avatar_url'])
-                              : null)) as ImageProvider?,
-                  child: (_localAvatarBytes == null &&
-                          _localAvatarUrl == null &&
-                          (u['avatar_url'] == null || u['avatar_url'].toString().isEmpty))
-                      ? Icon(Icons.person, size: 48, color: ThixPolicy.primary.withValues(alpha: 0.5))
-                      : null,
-                ),
-              ),
+              _ProfileHexAvatar(size: 96, image: avatarImage),
               if (isOwn)
-                GestureDetector(
-                  onTap: () => _pickAndUploadImage(isAvatar: true),
-                  child: Container(
-                    margin: const EdgeInsets.only(bottom: 4, right: 4),
-                    padding: const EdgeInsets.all(7),
-                    decoration: BoxDecoration(
-                      color: ThixPolicy.primary,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: ThixPolicy.surface, width: 2.5),
+                Positioned(
+                  bottom: 2, right: -2,
+                  child: GestureDetector(
+                    onTap: () => _pickAndUploadImage(isAvatar: true),
+                    child: Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: ThixPolicy.surface, width: 2.5),
+                      ),
+                      child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 15),
                     ),
-                    child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 15),
                   ),
                 ),
             ],
