@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Dreamflow</string>
+	<string>THIX ID</string> <!-- 💡 J'ai corrigé "Dreamflow" par "THIX ID" ici -->
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>dreamflow</string>
+	<string>thix_id</string> <!-- 💡 Corrigé ici aussi -->
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -43,14 +43,23 @@
 	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	
+	<!-- 🌟 AUTORISATIONS COMBINÉES ET MISES À JOUR -->
 	<key>NSCameraUsageDescription</key>
-	<string>THIX ID utilise la caméra pour scanner les QR codes d'identité.</string>
+	<string>THIX ID utilise la caméra pour scanner les QR codes d'identité et enregistrer des vidéos pour THIX MEDIA.</string>
+	
 	<key>NSMicrophoneUsageDescription</key>
-	<string>THIX ID utilise le microphone pour enregistrer une preuve audio en mode urgence.</string>
+	<string>THIX ID utilise le microphone pour enregistrer une preuve audio en cas d'urgence et capturer le son de vos vidéos.</string>
+	
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>THIX ID a besoin d'accéder à votre galerie pour importer vos photos, vidéos et musiques.</string>
+	
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>THIX ID partage votre position pour activer l’assistance d’urgence.</string>
+	
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>THIX ID peut suivre votre position en temps réel pendant une urgence.</string>
+
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 </dict>
