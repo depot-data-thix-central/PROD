@@ -11,6 +11,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+// ✅ NOUVEAUX IMPORTS POUR LES LIENS
+import 'package:url_launcher/url_launcher.dart';
+import 'package:any_link_preview/any_link_preview.dart';
+
 import 'package:thix_id/features/network/presentation/providers/feed_provider.dart';
 import 'package:thix_id/models/network_post.dart';
 import 'package:thix_id/features/network/data/network_service_provider.dart';
@@ -130,7 +134,7 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
 }
 
 // ─────────────────────────────────────────────────────────────
-// COMPOSANT PRINCIPAL — POST CARD (Nouveau Design + Stats)
+// COMPOSANT PRINCIPAL — POST CARD
 // ─────────────────────────────────────────────────────────────
 class PostCard extends ConsumerStatefulWidget {
   final NetworkPost post;
@@ -179,17 +183,19 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
   bool _isFollowingLocal = false;
   bool _followBusy = false;
   
-  bool _impressionRegistered = false; // Empêche de compter 2 fois lors d'un même scroll
+  bool _impressionRegistered = false;
 
   static const _maxContentChars = 250;
   static const _maxParseDepth = 6;
 
+  // ✅ MISE À JOUR : Regex détecte maintenant les URL (Groupe 7)
   static final _richContentRegex = RegExp(
     r'\{c:(#[0-9A-Fa-f]{6,8})\}([\s\S]*?)\{c\}|'
     r'\*\*([\s\S]+?)\*\*|'
     r'\*([\s\S]+?)\*|'
     r'@(\w+)|'
-    r'#(\w+)',
+    r'#(\w+)|'
+    r'(https?:\/\/[^\s]+)', 
   );
 
   List<InlineSpan>? _cachedFullSpans;
@@ -281,6 +287,15 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         final r = TapGestureRecognizer()..onTap = () { if (mounted) context.push('/hashtag/$value'); };
         _recognizers.add(r);
         spans.add(TextSpan(text: '#$value', style: baseStyle.copyWith(color: _PostColors.primary, fontWeight: FontWeight.bold), recognizer: r));
+      } else if (match.group(7) != null) { 
+        // ✅ NOUVEAU : Traitement des liens web (URL)
+        final url = match.group(7)!;
+        final r = TapGestureRecognizer()..onTap = () async {
+          final uri = Uri.parse(url);
+          if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+        };
+        _recognizers.add(r);
+        spans.add(TextSpan(text: url, style: baseStyle.copyWith(color: _PostColors.primary, decoration: TextDecoration.underline), recognizer: r));
       }
       lastIndex = match.end;
     }
@@ -300,8 +315,15 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     return null;
   }
 
+  // ✅ NOUVEAU : Extraire le premier lien pour afficher la Preview
+  String? _extractFirstUrl(String content) {
+    final match = RegExp(r'(https?:\/\/[^\s]+)').firstMatch(content);
+    return match?.group(0);
+  }
+
   Widget _buildPostContent(NetworkPost post) {
     if (post.content.isEmpty) return const SizedBox.shrink();
+    
     final bgColor = _parseColor(post.bgColor);
     if (bgColor != null) {
       return Container(
@@ -317,6 +339,9 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         ),
       );
     }
+
+    final firstUrl = _extractFirstUrl(post.content);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -330,6 +355,26 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                 _isExpanded ? 'Voir moins' : 'Voir plus',
                 style: const TextStyle(color: _PostColors.primary, fontSize: 13, fontWeight: FontWeight.w700),
               ),
+            ),
+          ),
+        
+        // ✅ NOUVEAU : Affichage de la carte Link Preview
+        if (firstUrl != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: AnyLinkPreview(
+              link: firstUrl,
+              displayDirection: UIDirection.uiDirectionHorizontal,
+              showMultimedia: true,
+              bodyMaxLines: 2,
+              bodyTextOverflow: TextOverflow.ellipsis,
+              titleStyle: const TextStyle(color: _PostColors.navyText, fontWeight: FontWeight.bold, fontSize: 14),
+              bodyStyle: const TextStyle(color: _PostColors.textMuted, fontSize: 12),
+              errorWidget: const SizedBox.shrink(), // Cache s'il ne trouve pas d'image sur le site
+              backgroundColor: _PostColors.softBg,
+              borderRadius: 12,
+              removeElevation: true,
+              boxShadow: const [],
             ),
           ),
       ],
@@ -623,7 +668,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       Supabase.instance.client.rpc('increment_post_impression', params: {
         'p_post_id': postId,
         'p_user_id': uid
-      }).catchError((_) { _impressionRegistered = false; }); // Réessayer si échec silencieux
+      }).catchError((_) { _impressionRegistered = false; }); 
     }
   }
 
@@ -666,7 +711,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           final isFollowingDB = ref.watch(followStatusProvider(post.userId)).valueOrNull;
           final isFollowing = isFollowingDB ?? _isFollowingLocal;
 
-          // Enregistrer l'impression dès que la carte est construite par la ListView
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _registerImpression(post.id);
           });
@@ -772,7 +816,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
 
                       const SizedBox(height: 12),
 
-                      // ─── 2. TEXTE DU POST ───
+                      // ─── 2. TEXTE DU POST & APERÇU DE LIEN ───
                       if (post.content.isNotEmpty)
                         _buildPostContent(post),
 
