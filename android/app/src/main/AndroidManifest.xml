@@ -1,80 +1,72 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- ========================================================= -->
-    <!-- 1. RÉSEAU / API / SUPABASE / AGORA                        -->
-    <!-- ========================================================= -->
+    <!-- Réseau -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- ========================================================= -->
-    <!-- 2. CAMÉRA                                                 -->
-    <!-- THIX ID Scanner / QR / photo / vidéo / appels vidéo       -->
-    <!-- ========================================================= -->
+    <!-- Caméra -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera.autofocus"
+        android:required="false" />
 
-    <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
-
-    <!-- ========================================================= -->
-    <!-- 3. MICROPHONE / AUDIO / AGORA                             -->
-    <!-- ========================================================= -->
+    <!-- Microphone -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
-    <!-- ========================================================= -->
-    <!-- 4. BLUETOOTH (Requis par Agora pour les casques sans fil) -->
-    <!-- ========================================================= -->
-    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <!-- Bluetooth -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
-    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature
+        android:name="android.hardware.bluetooth"
+        android:required="false" />
 
-    <!-- ========================================================= -->
-    <!-- 5. LOCALISATION                                           -->
-    <!-- Google Maps / Geolocator / THIX SOS                       -->
-    <!-- ========================================================= -->
+    <!-- Localisation -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!-- À garder uniquement si ton application utilise réellement
+         la localisation en arrière-plan -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
-    <!-- ========================================================= -->
-    <!-- 6. NFC                                                    -->
-    <!-- Identité numérique / cartes / passeports NFC              -->
-    <!-- ========================================================= -->
+    <!-- NFC -->
     <uses-permission android:name="android.permission.NFC" />
+    <uses-feature
+        android:name="android.hardware.nfc"
+        android:required="false" />
 
-    <uses-feature android:name="android.hardware.nfc" android:required="false" />
-
-    <!-- ========================================================= -->
-    <!-- 7. BIOMÉTRIE                                              -->
-    <!-- Empreinte / Face / authentification système               -->
-    <!-- ========================================================= -->
+    <!-- Biométrie -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
-    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
 
-    <!-- ========================================================= -->
-    <!-- 8. STOCKAGE & MÉDIAS                                      -->
-    <!-- Importation de documents d'identité et photos de profil   -->
-    <!-- ========================================================= -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- Médias -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
-    <!-- ========================================================= -->
-    <!-- 9. NOTIFICATIONS & SYSTÈME                                -->
-    <!-- ========================================================= -->
+    <!-- Notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Système -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <!-- ========================================================= -->
-    <!-- APPLICATION                                               -->
-    <!-- ========================================================= -->
     <application
         android:name="${applicationName}"
-        android:label="Thix Hub"
+        android:label="THIX ID"
         android:icon="@mipmap/ic_launcher"
         android:extractNativeLibs="true"
         android:allowBackup="true"
@@ -100,30 +92,33 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
         </activity>
 
+        <!-- Flutter -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- Impeller désactivé -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="false" />
 
     </application>
 
-    <!-- ========================================================= -->
-    <!-- QUERIES (Intégration avec les applications externes)      -->
-    <!-- ========================================================= -->
+    <!-- Intégrations externes -->
     <queries>
+
         <intent>
-            <action android:name="android.intent.action.PROCESS_TEXT"/>
-            <data android:mimeType="text/plain"/>
+            <action android:name="android.intent.action.PROCESS_TEXT" />
+            <data android:mimeType="text/plain" />
         </intent>
-        
+
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+
     </queries>
 
 </manifest>
