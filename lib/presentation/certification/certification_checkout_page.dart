@@ -65,7 +65,7 @@ class _CertificationCheckoutPageState
       id: 'thix_money',
       name: 'THIX Money',
       brand: 'Portefeuille THIX',
-      color: Color(0xFFD4A017),
+      color: Color(0xFFD4A017), // Or THIX
       needsPhone: false,
     ),
   ];
@@ -77,6 +77,16 @@ class _CertificationCheckoutPageState
   void dispose() {
     _phoneCtrl.dispose();
     super.dispose();
+  }
+
+  // ── LOGIQUE DE SECOURS POUR ANNULER LA DEMANDE ──
+  Future<void> _cancelRequestFallback() async {
+    try {
+      await ref.read(certificationServiceProvider).cancelUpgradeRequest();
+      ref.invalidate(myCertificationProvider);
+    } catch (e) {
+      debugPrint("Erreur lors du nettoyage de la requête : $e");
+    }
   }
 
   Future<void> _pay(ExchangeRateQuote? quote) async {
@@ -94,7 +104,7 @@ class _CertificationCheckoutPageState
     HapticFeedback.mediumImpact();
 
     try {
-      // Créer / lier la demande si besoin
+      // 1. Créer / lier la demande si besoin (Passe le statut à "pending")
       String? requestId = widget.requestId;
       if (requestId == null) {
         try {
@@ -107,6 +117,7 @@ class _CertificationCheckoutPageState
         }
       }
 
+      // 2. Initier le paiement
       final result =
           await ref.read(certificationPaymentServiceProvider).initiate(
                 tier: widget.tier,
@@ -118,11 +129,14 @@ class _CertificationCheckoutPageState
 
       if (!mounted) return;
 
+      // 🚨 CAS D'ÉCHEC IMMÉDIAT
       if (!result.success) {
         _toast(result.error ?? 'Paiement échoué', error: true);
+        await _cancelRequestFallback(); // On annule la requête
         return;
       }
 
+      // ✅ CAS SUCCÈS IMMÉDIAT (ex: Wallet THIX)
       if (result.status == 'paid') {
         ref.invalidate(myCertificationProvider);
         _toast('Paiement réussi — certification en cours');
@@ -130,6 +144,7 @@ class _CertificationCheckoutPageState
         return;
       }
 
+      // ⏳ CAS EN ATTENTE (ex: Mobile Money Push)
       if (result.needsWaiting && result.paymentId != null) {
         final ok = await Navigator.of(context).push<bool>(
           MaterialPageRoute(
@@ -139,9 +154,16 @@ class _CertificationCheckoutPageState
             ),
           ),
         );
-        if (ok == true && mounted) {
-          ref.invalidate(myCertificationProvider);
-          Navigator.of(context).pop(true);
+        
+        if (mounted) {
+          if (ok != true) {
+            // L'utilisateur a quitté la page d'attente sans payer ou échec
+            await _cancelRequestFallback();
+          } else {
+            // Succès
+            ref.invalidate(myCertificationProvider);
+          }
+          Navigator.of(context).pop(ok);
         }
         return;
       }
@@ -149,6 +171,8 @@ class _CertificationCheckoutPageState
       _toast('Paiement initié');
     } catch (e) {
       _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
+      // 🚨 CAS CRASH / ERREUR RÉSEAU
+      await _cancelRequestFallback();
     } finally {
       if (mounted) setState(() => _paying = false);
     }
@@ -158,7 +182,9 @@ class _CertificationCheckoutPageState
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: error ? ThixPolicy.danger : ThixPolicy.success,
+        backgroundColor: error ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
@@ -170,14 +196,15 @@ class _CertificationCheckoutPageState
     final rateAsync = ref.watch(usdCdfRateProvider);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6F8),
+      backgroundColor: const Color(0xFFF4F6FA), // Uniformisé avec la page Tiers
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0B1B3A),
+        backgroundColor: const Color(0xFF0A1628), // Bleu Marine THIX
         foregroundColor: Colors.white,
         elevation: 0,
+        centerTitle: true,
         title: const Text(
-          'Paiement certification',
-          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+          'Paiement',
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
         ),
       ),
       body: rateAsync.when(
@@ -194,49 +221,77 @@ class _CertificationCheckoutPageState
             children: [
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+                  physics: const BouncingScrollPhysics(),
                   children: [
-                    // ── Récap tier ──
+                    // ── Récap tier (Design Premium) ──
                     Container(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0F172A),
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: color.withOpacity(0.5), width: 1.5),
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color(0xFF06101D),
+                            Color(0xFF0A1628),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(22),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF0A1628).withOpacity(0.15),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                        border: Border.all(
+                            color: color.withOpacity(0.4), width: 1.5),
                       ),
                       child: Row(
                         children: [
                           Container(
-                            width: 48,
-                            height: 48,
+                            width: 52,
+                            height: 52,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: color.withOpacity(0.2),
+                              color: color.withOpacity(0.15),
                               border: Border.all(color: color, width: 2),
                             ),
-                            child: Icon(tier.icon, color: color, size: 24),
+                            child: Icon(tier.icon, color: color, size: 26),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 16),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                const Text(
+                                  'Souscription',
+                                  style: TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
                                 Text(
                                   tier.labelFr,
                                   style: TextStyle(
                                     color: color,
                                     fontWeight: FontWeight.w900,
-                                    fontSize: 15,
+                                    fontSize: 16,
+                                    letterSpacing: 0.3,
                                   ),
                                 ),
-                                const SizedBox(height: 2),
+                                const SizedBox(height: 4),
                                 Text(
                                   tier.descriptionFr,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    color: Colors.white.withOpacity(0.65),
+                                    color: Colors.white.withOpacity(0.7),
                                     fontSize: 12,
+                                    height: 1.4,
                                   ),
                                 ),
                               ],
@@ -245,97 +300,122 @@ class _CertificationCheckoutPageState
                         ],
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
 
-                    // ── Montant ──
+                    // ── Montant (Carte claire et épurée) ──
                     Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.all(18),
+                      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: ThixPolicy.border),
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF0A1628).withOpacity(0.04),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
                       child: Column(
                         children: [
                           const Text(
                             'Montant à payer',
                             style: TextStyle(
-                              color: ThixPolicy.textSecondary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            '${usd.toStringAsFixed(0)} USD',
-                            style: TextStyle(
-                              color: color,
-                              fontSize: 28,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '≈ $cdfStr CDF',
-                            style: const TextStyle(
-                              color: ThixPolicy.textMain,
-                              fontSize: 16,
+                              color: Color(0xFF64748B),
+                              fontSize: 13,
                               fontWeight: FontWeight.w700,
+                              letterSpacing: 0.3,
                             ),
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            '1 USD = ${NumberFormat('#,##0.##', 'fr_FR').format(quote.usdToCdf)} CDF'
-                            ' · ${quote.isOfficialBcc ? 'BCC' : quote.source}',
+                            '${usd.toStringAsFixed(0)} USD',
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 32,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '≈ $cdfStr CDF',
+                              style: const TextStyle(
+                                color: Color(0xFF334155),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            'Taux : 1 USD = ${NumberFormat('#,##0.##', 'fr_FR').format(quote.usdToCdf)} CDF'
+                            ' (${quote.isOfficialBcc ? 'BCC' : quote.source})',
                             style: const TextStyle(
-                              color: ThixPolicy.textSecondary,
+                              color: Color(0xFF94A3B8),
                               fontSize: 11,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 28),
 
                     const Text(
                       'Moyen de paiement',
                       style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: ThixPolicy.textMain,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF0A1628),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
 
                     ..._methods.map((m) {
                       final sel = _method == m.id;
                       return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.only(bottom: 12),
                         child: Material(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(16),
                           child: InkWell(
                             onTap: () => setState(() => _method = m.id),
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(16),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 12),
+                                  horizontal: 16, vertical: 14),
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(14),
+                                borderRadius: BorderRadius.circular(16),
                                 border: Border.all(
-                                  color: sel ? m.color : ThixPolicy.border,
-                                  width: sel ? 1.8 : 1,
+                                  color: sel ? m.color : const Color(0xFFE2E8F0),
+                                  width: sel ? 2.0 : 1.0,
                                 ),
+                                boxShadow: sel
+                                    ? [
+                                        BoxShadow(
+                                          color: m.color.withOpacity(0.1),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 4),
+                                        )
+                                      ]
+                                    : null,
                               ),
                               child: Row(
                                 children: [
                                   Container(
-                                    width: 40,
-                                    height: 40,
+                                    width: 44,
+                                    height: 44,
                                     decoration: BoxDecoration(
                                       color: m.color.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(10),
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Icon(
                                       m.id == 'card'
@@ -344,10 +424,10 @@ class _CertificationCheckoutPageState
                                               ? Icons.account_balance_wallet_rounded
                                               : Icons.phone_android_rounded,
                                       color: m.color,
-                                      size: 20,
+                                      size: 22,
                                     ),
                                   ),
-                                  const SizedBox(width: 12),
+                                  const SizedBox(width: 14),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
@@ -355,17 +435,21 @@ class _CertificationCheckoutPageState
                                       children: [
                                         Text(
                                           m.name,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w900,
                                             fontSize: 14,
-                                            color: ThixPolicy.textMain,
+                                            color: sel 
+                                                ? m.color 
+                                                : const Color(0xFF1E293B),
                                           ),
                                         ),
+                                        const SizedBox(height: 2),
                                         Text(
                                           m.brand,
                                           style: const TextStyle(
                                             fontSize: 12,
-                                            color: ThixPolicy.textSecondary,
+                                            color: Color(0xFF64748B),
+                                            fontWeight: FontWeight.w500,
                                           ),
                                         ),
                                       ],
@@ -375,7 +459,7 @@ class _CertificationCheckoutPageState
                                     sel
                                         ? Icons.radio_button_checked_rounded
                                         : Icons.radio_button_off_rounded,
-                                    color: sel ? m.color : ThixPolicy.border,
+                                    color: sel ? m.color : const Color(0xFFCBD5E1),
                                   ),
                                 ],
                               ),
@@ -386,16 +470,16 @@ class _CertificationCheckoutPageState
                     }),
 
                     if (_selected.needsPhone) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 12),
                       const Text(
                         'Numéro Mobile Money',
                         style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: ThixPolicy.textMain,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0A1628),
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 10),
                       TextField(
                         controller: _phoneCtrl,
                         keyboardType: TextInputType.phone,
@@ -404,16 +488,22 @@ class _CertificationCheckoutPageState
                         ],
                         decoration: InputDecoration(
                           hintText: 'ex: 0991234567',
-                          prefixIcon: const Icon(Icons.phone_rounded),
+                          hintStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                          prefixIcon: Icon(Icons.phone_rounded, color: _selected.color),
                           filled: true,
                           fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 16),
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: const BorderSide(color: ThixPolicy.border),
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
                           ),
                           enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: const BorderSide(color: ThixPolicy.border),
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(color: _selected.color, width: 2),
                           ),
                         ),
                       ),
@@ -422,27 +512,30 @@ class _CertificationCheckoutPageState
                 ),
               ),
 
-              // ── CTA ──
+              // ── CTA (Bouton d'action) ──
               Container(
                 padding: EdgeInsets.fromLTRB(
                   20,
-                  12,
+                  16,
                   20,
-                  16 + MediaQuery.paddingOf(context).bottom,
+                  20 + MediaQuery.paddingOf(context).bottom,
                 ),
                 decoration: BoxDecoration(
                   color: Colors.white,
+                  border: const Border(
+                    top: BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
-                      blurRadius: 12,
-                      offset: const Offset(0, -4),
+                      color: const Color(0xFF0A1628).withOpacity(0.05),
+                      blurRadius: 15,
+                      offset: const Offset(0, -5),
                     ),
                   ],
                 ),
                 child: SizedBox(
                   width: double.infinity,
-                  height: 52,
+                  height: 56,
                   child: ElevatedButton(
                     onPressed: _paying ? null : () => _pay(quote),
                     style: ElevatedButton.styleFrom(
@@ -450,15 +543,15 @@ class _CertificationCheckoutPageState
                       foregroundColor: Colors.white,
                       elevation: 0,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                     ),
                     child: _paying
                         ? const SizedBox(
-                            width: 22,
-                            height: 22,
+                            width: 24,
+                            height: 24,
                             child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
+                              strokeWidth: 3,
                               color: Colors.white,
                             ),
                           )
@@ -467,6 +560,7 @@ class _CertificationCheckoutPageState
                             style: const TextStyle(
                               fontWeight: FontWeight.w900,
                               fontSize: 16,
+                              letterSpacing: 0.5,
                             ),
                           ),
                   ),
@@ -497,7 +591,7 @@ class _PayMethod {
 }
 
 // ─────────────────────────────────────────────────────────────
-// PAGE D'ATTENTE PAIEMENT
+// PAGE D'ATTENTE PAIEMENT (Mise au propre avec le Bleu Marine)
 // ─────────────────────────────────────────────────────────────
 
 class CertificationPaymentWaitingPage extends ConsumerStatefulWidget {
@@ -563,68 +657,114 @@ class _CertificationPaymentWaitingPageState
     final waiting = _status == 'awaiting_payment' || _status == 'pending';
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0B1B3A),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: const Text('Validation du paiement'),
-      ),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(28),
+      body: Container(
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF06101D),
+              Color(0xFF0A1628), // THIX Navy Blue
+            ],
+          ),
+        ),
+        child: SafeArea(
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (waiting)
-                SizedBox(
-                  width: 64,
-                  height: 64,
-                  child: CircularProgressIndicator(
-                    color: color,
-                    strokeWidth: 3,
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  onPressed: () => Navigator.pop(context, false), // Renvoie false par défaut
+                  icon: const Icon(Icons.close_rounded, color: Colors.white54),
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (waiting)
+                          Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: color.withOpacity(0.1),
+                            ),
+                            child: SizedBox(
+                              width: 60,
+                              height: 60,
+                              child: CircularProgressIndicator(
+                                color: color,
+                                strokeWidth: 4,
+                              ),
+                            ),
+                          )
+                        else if (_status == 'paid')
+                          Icon(Icons.check_circle_rounded, size: 84, color: color)
+                        else
+                          const Icon(Icons.error_outline_rounded,
+                              size: 84, color: Color(0xFFEF4444)),
+                        const SizedBox(height: 32),
+                        Text(
+                          waiting
+                              ? 'Validation en cours...'
+                              : _status == 'paid'
+                                  ? 'Paiement confirmé !'
+                                  : 'Paiement non finalisé',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          waiting
+                              ? 'Veuillez valider la demande sur votre téléphone (Mobile Money).\nNe fermez pas cette page.'
+                              : _status == 'paid'
+                                  ? 'Votre demande de certification a été enregistrée avec succès.'
+                                  : 'Le paiement a expiré ou a été annulé. Veuillez réessayer.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.7),
+                            fontSize: 14,
+                            height: 1.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (!waiting && _status != 'paid') ...[
+                          const SizedBox(height: 40),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 52,
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white.withOpacity(0.1),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text(
+                                'Retourner aux options',
+                                style: TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 60), // Espace pour centrer un peu plus haut
+                      ],
+                    ),
                   ),
-                )
-              else if (_status == 'paid')
-                Icon(Icons.check_circle_rounded, size: 72, color: color)
-              else
-                const Icon(Icons.error_outline_rounded,
-                    size: 72, color: Color(0xFFEF4444)),
-              const SizedBox(height: 24),
-              Text(
-                waiting
-                    ? 'Confirmez sur votre téléphone'
-                    : _status == 'paid'
-                        ? 'Paiement confirmé'
-                        : 'Paiement non finalisé',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(height: 10),
-              Text(
-                waiting
-                    ? 'Validez la demande Mobile Money ou carte.\nCette page se met à jour automatiquement.'
-                    : _status == 'paid'
-                        ? 'Votre demande de certification est enregistrée.'
-                        : 'Réessayez ou choisissez un autre moyen.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.65),
-                  fontSize: 13,
-                  height: 1.4,
-                ),
-              ),
-              if (!waiting && _status != 'paid') ...[
-                const SizedBox(height: 28),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Retour', style: TextStyle(color: Colors.white)),
-                ),
-              ],
             ],
           ),
         ),
