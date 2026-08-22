@@ -44,6 +44,19 @@ bool _isVideoUrl(String url) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// ACCENT "PULSE" — couleur signature réservée au nouveau système
+// de réaction, n'apparaît nulle part ailleurs dans l'interface.
+// ─────────────────────────────────────────────────────────────
+class _PulseColors {
+  static const gold = Color(0xFFE3B23C);
+  static const coral = Color(0xFFFF7A59);
+  static const gradient = SweepGradient(
+    colors: [gold, coral, gold],
+    stops: [0.0, 0.5, 1.0],
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // STATE NOTIFIER DU POST
 // ─────────────────────────────────────────────────────────────
 final postItemProvider = StateNotifierProvider.autoDispose<PostItemNotifier, NetworkPost>(
@@ -154,7 +167,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
   bool get wantKeepAlive => true;
 
   bool _isReposting = false;
-  bool _isLikedAnimating = false;
   bool _isExpanded = false;
   final _quoteController = TextEditingController();
 
@@ -579,7 +591,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
             child: OutlinedButton.icon(
               onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Participation enregistrée'), backgroundColor: ThixPolicy.success)),
               style: OutlinedButton.styleFrom(
-                foregroundColor: ThixPolicy.textMain, 
+                foregroundColor: ThixPolicy.textMain,
                 side: const BorderSide(color: ThixPolicy.inkDeep),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
               ),
@@ -665,7 +677,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
 
           // 1. Récupération des données du profil de l'auteur
           final authorProfile = ref.watch(userProfileProvider(post.userId)).valueOrNull;
-          
+
           CertificationTier? tier;
           CertificationStatus? status;
           bool isCertified = false;
@@ -681,7 +693,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           // 2. Récupération des données du profil de l'utilisateur COURANT (pour bloquer "Modifier")
           final currentUserProfile = ref.watch(userProfileProvider(widget.currentProfileId)).valueOrNull;
           bool isCurrentUserFree = true; // Gratuit par défaut
-          
+
           if (currentUserProfile != null) {
             final currentTierStr = (currentUserProfile['certification_tier']?.toString().toLowerCase()) ?? 'gratuit';
             isCurrentUserFree = currentTierStr == 'gratuit' || currentTierStr == 'none';
@@ -740,7 +752,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                                         setState(() => _followBusy = true);
                                         HapticFeedback.selectionClick();
                                         setState(() => _isFollowingLocal = true);
-                                        
+
                                         try {
                                           await ref.read(networkServiceProvider).followUser(post.userId);
                                           ref.invalidate(followStatusProvider(post.userId));
@@ -886,9 +898,9 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                             },
                             itemBuilder: (_) => [
                               // ✅ MASQUER L'OPTION 'MODIFIER' POUR LES COMPTES GRATUITS
-                              if (isOwner && !isCurrentUserFree) 
+                              if (isOwner && !isCurrentUserFree)
                                 const PopupMenuItem(value: 'edit', child: Row(children: [Icon(Icons.edit_outlined, size: 18, color: ThixPolicy.textMain), SizedBox(width: 10), Text('Modifier')])),
-                              
+
                               if (isOwner) const PopupMenuItem(value: 'delete', child: Row(children: [Icon(Icons.delete_outline_rounded, size: 18, color: ThixPolicy.danger), SizedBox(width: 10), Text('Supprimer', style: TextStyle(color: ThixPolicy.danger))])),
                               const PopupMenuItem(value: 'save', child: Row(children: [Icon(Icons.bookmark_border_rounded, size: 18, color: ThixPolicy.textMain), SizedBox(width: 10), Text('Sauvegarder')])),
                               const PopupMenuItem(value: 'repost', child: Row(children: [Icon(Icons.repeat_rounded, size: 18, color: ThixPolicy.textMain), SizedBox(width: 10), Text('Reposter')])),
@@ -947,23 +959,18 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                       const SizedBox(height: ThixPolicy.s12),
                       const Divider(height: 1, color: ThixPolicy.border),
 
-                      // ─── Actions ───
+                      // ─── Actions — "Pulse" remplace le cœur classique ───
                       Row(
                         children: [
-                          _actionPill(
-                            icon: isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                            label: _formatCountHelper(likesCount),
-                            color: isLiked ? ThixPolicy.danger : ThixPolicy.textSecondary,
-                            animatedIcon: AnimatedScale(
-                              scale: _isLikedAnimating ? 1.25 : 1.0,
-                              duration: const Duration(milliseconds: 180),
-                              child: Icon(isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: isLiked ? ThixPolicy.danger : ThixPolicy.textSecondary, size: 19),
+                          Expanded(
+                            child: _PulseButton(
+                              isActive: isLiked,
+                              count: likesCount,
+                              onTap: () async {
+                                HapticFeedback.selectionClick();
+                                await ref.read(postItemProvider.notifier).toggleLike();
+                              },
                             ),
-                            onTap: () async {
-                              setState(() => _isLikedAnimating = true);
-                              await ref.read(postItemProvider.notifier).toggleLike();
-                              Future.delayed(const Duration(milliseconds: 280), () { if (mounted) setState(() => _isLikedAnimating = false); });
-                            },
                           ),
                           _actionPill(icon: Icons.chat_bubble_outline_rounded, label: _formatCountHelper(post.commentsCount), onTap: widget.onComment ?? () => _openPostDetails(post.id)),
                           _actionPill(icon: Icons.repeat_rounded, label: _formatCountHelper(post.repostsCount), color: post.isReposted ? ThixPolicy.success : ThixPolicy.textSecondary, onTap: () => _repost(post, ref)),
@@ -1019,6 +1026,142 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
 }
 
 // ─────────────────────────────────────────────────────────────
+// PULSE — remplace le like classique par un anneau de charge
+// dégradé or/corail. Réutilise isLiked/likesCount sans toucher
+// au backend : sémantique "j'ai envoyé de l'énergie à ce post"
+// au lieu de "j'aime".
+// ─────────────────────────────────────────────────────────────
+class _PulseButton extends StatefulWidget {
+  final bool isActive;
+  final int count;
+  final VoidCallback onTap;
+
+  const _PulseButton({required this.isActive, required this.count, required this.onTap});
+
+  @override
+  State<_PulseButton> createState() => _PulseButtonState();
+}
+
+class _PulseButtonState extends State<_PulseButton> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _ring;
+  late final Animation<double> _burst;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 420));
+    _ring = CurvedAnimation(parent: _controller, curve: const Interval(0.0, 0.75, curve: Curves.easeOutCubic));
+    _burst = CurvedAnimation(parent: _controller, curve: const Interval(0.15, 1.0, curve: Curves.easeOut));
+    if (widget.isActive) _controller.value = 1.0;
+  }
+
+  @override
+  void didUpdateWidget(covariant _PulseButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive != oldWidget.isActive) {
+      if (widget.isActive) {
+        _controller.forward(from: 0);
+      } else {
+        _controller.reverse();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: widget.onTap,
+      borderRadius: BorderRadius.circular(30),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) {
+                return SizedBox(
+                  width: 26, height: 26,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Halo de charge — n'apparaît qu'en phase active
+                      if (_burst.value > 0)
+                        Transform.scale(
+                          scale: 1.0 + (_burst.value * 0.35),
+                          child: Container(
+                            width: 26, height: 26,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: RadialGradient(
+                                colors: [
+                                  _PulseColors.gold.withValues(alpha: 0.22 * (1 - _burst.value)),
+                                  Colors.transparent,
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      // Anneau de fond
+                      SizedBox(
+                        width: 22, height: 22,
+                        child: CircularProgressIndicator(
+                          value: 1,
+                          strokeWidth: 2.4,
+                          color: ThixPolicy.border,
+                        ),
+                      ),
+                      // Anneau de charge dégradé — se remplit avec _ring.value
+                      SizedBox(
+                        width: 22, height: 22,
+                        child: ShaderMask(
+                          shaderCallback: (rect) => _PulseColors.gradient.createShader(rect),
+                          child: CircularProgressIndicator(
+                            value: _ring.value,
+                            strokeWidth: 2.4,
+                            valueColor: const AlwaysStoppedAnimation(Colors.white),
+                            backgroundColor: Colors.transparent,
+                          ),
+                        ),
+                      ),
+                      // Icône éclair — devient dorée une fois chargée
+                      Icon(
+                        Icons.bolt_rounded,
+                        size: 14,
+                        color: Color.lerp(ThixPolicy.textSecondary, _PulseColors.coral, _burst.value),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                _formatCountHelper(widget.count),
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: widget.isActive ? _PulseColors.coral : ThixPolicy.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // EMBED ORIGINAL POST
 // ─────────────────────────────────────────────────────────────
 class _OriginalPostEmbed extends ConsumerWidget {
@@ -1047,7 +1190,7 @@ class _OriginalPostEmbed extends ConsumerWidget {
         }
 
         final originalAuthorProfile = ref.watch(userProfileProvider(original.userId)).valueOrNull;
-        
+
         CertificationTier? originalTier;
         CertificationStatus? originalStatus;
         bool originalIsCertified = false;
@@ -1087,23 +1230,23 @@ class _OriginalPostEmbed extends ConsumerWidget {
                             children: [
                               Flexible(
                                 child: Text(
-                                  original.authorName, 
-                                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: ThixPolicy.textMain), 
-                                  maxLines: 1, 
+                                  original.authorName,
+                                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: ThixPolicy.textMain),
+                                  maxLines: 1,
                                   overflow: TextOverflow.ellipsis
                                 ),
                               ),
                               if (originalIsCertified)
                                 CertificationNameBadge(
-                                  tier: originalTier, 
-                                  status: originalStatus, 
+                                  tier: originalTier,
+                                  status: originalStatus,
                                   showLabel: false,
-                                  iconSize: 14, 
+                                  iconSize: 14,
                                   padding: const EdgeInsets.only(left: 4)
                                 )
                               else if (originalIsLegacyVerified)
                                 const Padding(
-                                  padding: EdgeInsets.only(left: 4), 
+                                  padding: EdgeInsets.only(left: 4),
                                   child: Icon(Icons.verified_rounded, color: ThixPolicy.gold, size: 14)
                                 ),
                             ],
@@ -1133,7 +1276,7 @@ class _OriginalPostEmbed extends ConsumerWidget {
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        _miniStatRow(Icons.favorite_border_rounded, _formatCountHelper(original.likesCount)),
+                        _miniStatRow(Icons.bolt_rounded, _formatCountHelper(original.likesCount)),
                         const SizedBox(width: 16),
                         _miniStatRow(Icons.chat_bubble_outline_rounded, _formatCountHelper(original.commentsCount)),
                         const SizedBox(width: 16),
@@ -1345,7 +1488,7 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
 }
 
 // ─────────────────────────────────────────────────────────────
-// LECTEUR AUDIO 
+// LECTEUR AUDIO
 // ─────────────────────────────────────────────────────────────
 class _ThixWaveformAudioPlayer extends StatefulWidget {
   final String audioUrl;
