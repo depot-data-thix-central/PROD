@@ -7,8 +7,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image/cached_network_image.dart'; 
 
+import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/models/network_story.dart';
 import 'package:thix_id/features/network/data/network_service_provider.dart';
 import 'package:thix_id/features/network/presentation/providers/feed_provider.dart';
@@ -18,29 +19,21 @@ import 'widgets/create_story_dialog.dart';
 import 'widgets/post_card.dart';
 import 'widgets/story_viewer.dart';
 import 'package:thix_id/presentation/network/live/live_prep_screen.dart';
-import 'package:thix_id/presentation/network/live/live_viewer_screen.dart';
+import 'package:thix_id/presentation/network/live/live_viewer_screen.dart'; 
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PALETTE PREMIUM — Inspirée des maquettes (Blanc, Aéré, Navy Blue)
+// PALETTE PREMIUM ÉPURÉE (Blanc, Navy, Bleu d'action)
 // ═══════════════════════════════════════════════════════════════════════════
 class _Pro {
   _Pro._();
-  static const Color bg = Color(0xFFF4F7FB); // Gris/Bleu très très clair
-  static const Color surface = Colors.white;
-  static const Color navyText = Color(0xFF0A1F44); // Bleu marine fort pour les titres
-  static const Color textSecondary = Color(0xFF8A94A6);
-  static const Color primaryBlue = Color(0xFF2D6CDF); // Bleu d'action (comme le bouton +)
-  static const Color accentCoral = Color(0xFFFF6B6B); // Corail pour les likes/notifications
-  static const Color border = Color(0xFFE2E8F0);
-  
-  // Ombres ultra douces pour l'effet "flottant" des maquettes
-  static List<BoxShadow> get softShadow => [
-        BoxShadow(
-          color: const Color(0xFF0A1F44).withOpacity(0.04),
-          blurRadius: 20,
-          offset: const Offset(0, 4),
-        )
-      ];
+  static const Color bg = Colors.white; // Fond principal 100% blanc
+  static const Color surface = Colors.white; // Surfaces des blocs
+  static const Color surfaceSoft = Color(0xFFF4F7FB); // Bleu/Gris très clair pour les boutons/tuiles
+  static const Color navyText = Color(0xFF0A1F44); // Texte principal fort
+  static const Color textSecondary = Color(0xFF8A94A6); // Texte secondaire
+  static const Color primaryBlue = Color(0xFF2D6CDF); // Bleu d'action principal
+  static const Color live = Color(0xFFD7263D); // Rouge vif pour le live
+  static const Color border = Color(0xFFE2E8F0); // Bordure de séparation ultra-douce
 }
 
 // ============================================================================
@@ -59,68 +52,46 @@ final activeLiveSessionsProvider = StreamProvider.autoDispose<List<Map<String, d
 });
 
 // ============================================================================
-// AVATAR ROND — Simple et épuré
+// COMPOSANT — AVATAR ROND ÉPURÉ
 // ============================================================================
 class RoundAvatar extends StatelessWidget {
   final double size;
   final String? imageUrl;
-  final bool hasBorder;
-  final Color borderColor;
   final bool isLive;
 
   const RoundAvatar({
     super.key,
     required this.size,
     this.imageUrl,
-    this.hasBorder = false,
-    this.borderColor = _Pro.primaryBlue,
     this.isLive = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: hasBorder ? Border.all(color: isLive ? _Pro.accentCoral : borderColor, width: 2) : null,
-            color: _Pro.border.withOpacity(0.5),
-            image: (imageUrl != null && imageUrl!.isNotEmpty)
-                ? DecorationImage(image: CachedNetworkImageProvider(imageUrl!), fit: BoxFit.cover)
-                : null,
-          ),
-          child: (imageUrl == null || imageUrl!.isEmpty)
-              ? Icon(Icons.person, size: size * 0.5, color: _Pro.textSecondary)
-              : null,
-        ),
-        if (isLive)
-          Positioned(
-            bottom: -4,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                decoration: BoxDecoration(
-                  color: _Pro.accentCoral,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.white, width: 1.5),
-                ),
-                child: const Text('LIVE', style: TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w900)),
-              ),
-            ),
-          ),
-      ],
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: isLive ? _Pro.live : _Pro.border, width: 1.5),
+        color: _Pro.surfaceSoft,
+      ),
+      child: ClipOval(
+        child: (imageUrl != null && imageUrl!.isNotEmpty)
+            ? CachedNetworkImage(
+                imageUrl: imageUrl!, 
+                fit: BoxFit.cover, 
+                placeholder: (_, __) => Container(color: _Pro.surfaceSoft),
+                errorWidget: (_, __, ___) => Icon(Icons.person, size: size * 0.5, color: _Pro.textSecondary)
+              )
+            : Icon(Icons.person, size: size * 0.5, color: _Pro.textSecondary),
+      ),
     );
   }
 }
 
 // ============================================================================
-// PAGE PRINCIPALE — THIX PRO (Aéré & Blanc)
+// PAGE PRINCIPALE — THIX PRO (Zéro Espace, Lignes de séparation)
 // ============================================================================
 class NetworkProHome extends ConsumerStatefulWidget {
   const NetworkProHome({super.key});
@@ -136,8 +107,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
   static DateTime? _lastRefreshTime;
   static const _refreshCooldown = Duration(seconds: 60);
 
-  String _feedType = 'foryou';
-
+  String _feedType = 'foryou'; 
+  
   List<NetworkStory> _stories = [];
   bool _loadingStories = true;
   List<dynamic> _suggestions = [];
@@ -222,8 +193,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     try { context.push(path); } catch (e) { debugPrint('nav: $e'); }
   }
 
-  void _openCreatePost() {
-    showDialog(context: context, builder: (_) => const CreatePostDialog());
+  Future<void> _openComments(String postId) async {
+    _safePush('/network/comments/$postId');
   }
 
   @override
@@ -240,129 +211,145 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     final feedAsync = ref.watch(feedProvider);
     final currentUser = authAsync.value;
     final liveSessionsAsync = ref.watch(activeLiveSessionsProvider);
-    final liveSessions = liveSessionsAsync.value ?? [];
-    final liveHostIds = liveSessions.map((s) => s['host_id']?.toString() ?? '').toSet();
+    final liveHostIds = (liveSessionsAsync.value ?? const <Map<String, dynamic>>[])
+        .map((s) => s['host_id']?.toString() ?? '')
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    
+    // Le réseau compte comme live actif globalement s'il y a au moins un live
+    final hasActiveLiveGlobal = (liveSessionsAsync.value?.isNotEmpty ?? false);
 
     if (currentUser == null) {
       return const Scaffold(
-        backgroundColor: _Pro.bg,
+        backgroundColor: _Pro.surface,
         body: Center(child: CircularProgressIndicator(color: _Pro.primaryBlue)),
       );
     }
 
-    return Scaffold(
-      backgroundColor: _Pro.bg, // Fond aéré et clair
-      body: Stack(
-        children: [
-          RefreshIndicator(
-            color: _Pro.primaryBlue,
-            backgroundColor: _Pro.surface,
-            onRefresh: _onRefresh,
-            child: CustomScrollView(
-              controller: _scrollController,
-              physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-              slivers: [
-                // 1. APP BAR ÉPURÉE
-                _buildSliverAppBar(currentUser.photoUrl),
-
-                // 2. STATUTS / STORIES (Style épuré, cercles simples)
-                SliverToBoxAdapter(child: _buildStoriesRail(currentUser.id, liveHostIds, currentUser.photoUrl)),
-
-                // 3. BARRE "WHAT'S ON YOUR MIND" (Copie exacte de votre capture)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    child: _buildQuickPostField(currentUser.photoUrl),
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (didPop) return;
+        context.go('/'); 
+      },
+      child: Scaffold(
+        backgroundColor: _Pro.bg,
+        body: Stack(
+          children: [
+            RefreshIndicator(
+              color: _Pro.primaryBlue,
+              backgroundColor: _Pro.surface,
+              onRefresh: _onRefresh,
+              child: CustomScrollView(
+                controller: _scrollController,
+                physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                slivers: [
+                  _buildSliverAppBar(
+                    avatarUrl: currentUser.photoUrl,
+                    isUserLive: liveHostIds.contains(currentUser.id),
+                    hasGlobalLive: hasActiveLiveGlobal,
                   ),
-                ),
 
-                // 4. LIVES EN COURS (Pilules discrètes au lieu d'une grosse carte)
-                if (liveSessions.isNotEmpty)
-                  SliverToBoxAdapter(child: _buildDiscreteLives(liveSessions)),
-
-                // 5. TABS ÉPURÉS
-                SliverToBoxAdapter(child: _buildCleanTabs()),
-
-                // 6. SUGGESTIONS
-                if (_suggestions.isNotEmpty) SliverToBoxAdapter(child: _buildSuggestions(liveHostIds)),
-
-                // 7. LE FIL (POSTS)
-                feedAsync.when(
-                  loading: () => SliverToBoxAdapter(child: _buildShimmerFeed()),
-                  error: (e, _) => SliverToBoxAdapter(
-                    child: Padding(padding: const EdgeInsets.all(40), child: Center(child: Text('Erreur: $e', style: const TextStyle(color: _Pro.textSecondary)))),
+                  SliverToBoxAdapter(
+                    child: _QuickPostEntryCard(
+                      avatarUrl: currentUser.photoUrl,
+                      onTap: () => showDialog(context: context, builder: (_) => const CreatePostDialog()),
+                    ),
                   ),
-                  data: (posts) {
-                    if (posts.isEmpty) return SliverToBoxAdapter(child: _buildEmpty());
-                    return SliverList.builder(
-                      itemCount: posts.length,
-                      itemBuilder: (c, i) {
-                        final post = posts[i];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 16, left: 16, right: 16),
-                          // PostCard sera mis à jour dans la prochaine étape.
-                          // Pour l'instant, nous l'enveloppons pour qu'il prenne le style "Carte aérée".
-                          child: PostCard(
+
+                  SliverToBoxAdapter(child: _buildStories(currentUser.id, liveHostIds)),
+
+                  SliverToBoxAdapter(child: _buildFilters()),
+
+                  SliverToBoxAdapter(
+                    child: _AutoLiveHub(liveSessionsAsync: liveSessionsAsync),
+                  ),
+
+                  if (_suggestions.isNotEmpty) SliverToBoxAdapter(child: _buildSuggestions(liveHostIds)),
+
+                  feedAsync.when(
+                    loading: () => SliverToBoxAdapter(child: _buildShimmerFeed()),
+                    error: (e, _) => SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(40),
+                        child: Center(child: Text('Erreur: $e', style: const TextStyle(color: _Pro.textSecondary))),
+                      ),
+                    ),
+                    data: (posts) {
+                      if (posts.isEmpty) return SliverToBoxAdapter(child: _buildEmpty());
+                      return SliverList.builder(
+                        itemCount: posts.length,
+                        itemBuilder: (c, i) {
+                          final post = posts[i];
+                          // PostCard avec 0 marges verticales, le séparateur interne fera le travail
+                          return PostCard(
                             key: ValueKey(post.id),
                             post: post,
                             currentProfileId: currentUser.id,
                             onLike: null,
-                            onComment: () => _safePush('/network/comments/${post.id}'),
+                            onComment: () => _openComments(post.id),
                             onShare: () => _showShareSheet(post),
                             onDelete: () => ref.read(feedProvider.notifier).deletePost(post.id),
                             onRefresh: null,
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-                const SliverToBoxAdapter(child: SizedBox(height: 120)),
-              ],
+                          );
+                        },
+                      );
+                    },
+                  ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 120)),
+                ],
+              ),
             ),
-          ),
 
-          // 8. NAVIGATION BASSE (Flottante, inspirée de la maquette)
-          ValueListenableBuilder<bool>(
-            valueListenable: _navVisible,
-            builder: (context, visible, _) => Positioned(
-              left: 20, right: 20, bottom: 20,
-              child: _buildBottomNav(visible),
+            ValueListenableBuilder<bool>(
+              valueListenable: _navVisible,
+              builder: (context, visible, _) => Positioned(
+                left: 0, right: 0, bottom: 0,
+                child: _buildBottomNav(visible),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  // ─────────────────────────── 1. APP BAR ÉPURÉE ───────────────────────────
-  Widget _buildSliverAppBar(String? avatarUrl) {
+  // ─────────────────────────── APP BAR ÉPURÉE ───────────────────────────
+  Widget _buildSliverAppBar({required String? avatarUrl, required bool isUserLive, required bool hasGlobalLive}) {
     return SliverAppBar(
-      backgroundColor: _Pro.bg, // Se fond avec le background
+      backgroundColor: _Pro.surface,
       elevation: 0,
       scrolledUnderElevation: 0,
       floating: true,
-      toolbarHeight: 64,
+      snap: true,
+      toolbarHeight: 60,
       titleSpacing: 16,
-      // Avatar à gauche selon la maquette
-      leading: Padding(
-        padding: const EdgeInsets.only(left: 16, top: 10, bottom: 10),
-        child: GestureDetector(
-          onTap: () => _safePush('/network/profile'),
-          child: RoundAvatar(size: 40, imageUrl: avatarUrl),
-        ),
-      ),
-      leadingWidth: 56,
-      title: const Text(
-        'Communauté', // Titre plus convivial
-        style: TextStyle(color: _Pro.navyText, fontWeight: FontWeight.w900, fontSize: 22, letterSpacing: -0.5),
+      title: Row(
+        children: [
+          const Text('THIX PRO', style: TextStyle(color: _Pro.navyText, fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: -0.3)),
+          if (hasGlobalLive) ...[
+            const SizedBox(width: 8),
+            const Icon(Icons.sensors_rounded, color: _Pro.live, size: 20),
+          ]
+        ],
       ),
       actions: [
         _appBarIcon(icon: Icons.search_rounded, onTap: () => _safePush('/network/search')),
         const SizedBox(width: 8),
         _appBarIcon(icon: Icons.notifications_none_rounded, onTap: () => _safePush('/network/notifications')),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
+        Padding(
+          padding: const EdgeInsets.only(right: 16),
+          child: GestureDetector(
+            onTap: () => _safePush('/network/profile'), 
+            child: RoundAvatar(size: 34, imageUrl: avatarUrl, isLive: isUserLive),
+          ),
+        ),
       ],
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1),
+        child: Container(height: 1, color: _Pro.border),
+      ),
     );
   }
 
@@ -370,21 +357,22 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 40, height: 40,
-        decoration: BoxDecoration(
-          color: _Pro.surface,
-          shape: BoxShape.circle,
-          boxShadow: _Pro.softShadow,
-        ),
-        child: Icon(icon, size: 22, color: _Pro.navyText),
+        width: 38, height: 38,
+        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: _Pro.border)),
+        child: Icon(icon, size: 19, color: _Pro.navyText),
       ),
     );
   }
 
-  // ─────────────────────────── 2. STATUTS / STORIES ───────────────────────────
-  Widget _buildStoriesRail(String currentUserId, Set<String> liveHostIds, String? myAvatar) {
+  // ─────────────────────────── STORIES ───────────────────────────
+  Widget _buildStories(String currentUserId, Set<String> liveHostIds) {
     if (_loadingStories) {
-      return const SizedBox(height: 90, child: Center(child: CircularProgressIndicator(color: _Pro.primaryBlue)));
+      return Container(
+        decoration: const BoxDecoration(color: _Pro.surface, border: Border(bottom: BorderSide(color: _Pro.border))),
+        height: 150,
+        alignment: Alignment.center,
+        child: const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _Pro.primaryBlue)),
+      );
     }
 
     final myStories = _stories.where((s) => s.userId == currentUserId).toList();
@@ -396,126 +384,44 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     }
     final otherUsersList = groupedOtherStories.keys.toList();
 
-    return SizedBox(
-      height: 96,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: otherUsersList.length + 1,
-        separatorBuilder: (_, __) => const SizedBox(width: 16),
-        itemBuilder: (c, i) {
-          if (i == 0) {
-            return _StoryCircle(
-              isMe: true,
-              hasStory: myStories.isNotEmpty,
-              name: 'Mon Statut',
-              avatarUrl: myAvatar,
-              onTap: myStories.isNotEmpty 
-                  ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StoryViewer(stories: myStories, initialIndex: 0))) 
-                  : _openCreateStory,
-            );
-          }
-          final userId = otherUsersList[i - 1];
-          final userStories = groupedOtherStories[userId]!;
-          final firstStory = userStories.first;
-
-          return _StoryCircle(
-            isMe: false,
-            hasStory: true,
-            isLive: liveHostIds.contains(userId),
-            name: firstStory.userName.split(' ').first,
-            avatarUrl: firstStory.userAvatar,
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StoryViewer(stories: userStories, initialIndex: 0))),
-          );
-        },
-      ),
-    );
-  }
-
-  // ─────────────────────────── 3. QUICK POST (What's on your mind) ───────────────────────────
-  Widget _buildQuickPostField(String? avatarUrl) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: _Pro.surface,
-        borderRadius: BorderRadius.circular(30),
-        boxShadow: _Pro.softShadow,
+        border: Border(bottom: BorderSide(color: _Pro.border)),
       ),
-      child: Row(
-        children: [
-          RoundAvatar(size: 36, imageUrl: avatarUrl),
-          const SizedBox(width: 12),
-          Expanded(
-            child: GestureDetector(
-              onTap: () => _openCreatePost(),
-              child: const Text(
-                "Quoi de neuf aujourd'hui ?",
-                style: TextStyle(color: _Pro.textSecondary, fontSize: 14, fontWeight: FontWeight.w500),
-              ),
-            ),
-          ),
-          GestureDetector(
-            onTap: () => _openCreatePost(),
-            child: Container(
-              width: 36, height: 36,
-              decoration: const BoxDecoration(
-                color: _Pro.primaryBlue,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.add_rounded, color: Colors.white, size: 20),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ─────────────────────────── 4. LIVES EN COURS (Pilules discrètes) ───────────────────────────
-  Widget _buildDiscreteLives(List<Map<String, dynamic>> sessions) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(vertical: 16),
       child: SizedBox(
-        height: 36,
+        height: 134,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          itemCount: sessions.length,
+          itemCount: otherUsersList.length + 1,
           separatorBuilder: (_, __) => const SizedBox(width: 10),
-          itemBuilder: (context, i) {
-            final s = sessions[i];
-            return GestureDetector(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => LiveViewerScreen(
-                      liveId: s['id']?.toString() ?? '',
-                      channelName: s['channel_name']?.toString() ?? '',
-                      hostName: s['host_name']?.toString() ?? 'Hôte THIX',
-                      hostAvatarUrl: s['host_avatar']?.toString(),
-                    ),
-                  ),
-                );
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: _Pro.accentCoral.withOpacity(0.3)),
-                  boxShadow: _Pro.softShadow,
-                ),
-                child: Row(
-                  children: [
-                    Container(width: 6, height: 6, decoration: const BoxDecoration(color: _Pro.accentCoral, shape: BoxShape.circle)),
-                    const SizedBox(width: 6),
-                    Text(
-                      (s['host_name'] as String?)?.split(' ').first ?? 'Live',
-                      style: const TextStyle(color: _Pro.navyText, fontSize: 12, fontWeight: FontWeight.w700),
-                    ),
-                  ],
-                ),
-              ),
+          itemBuilder: (c, i) {
+            if (i == 0) {
+              return _StoryCard(
+                isMe: true,
+                hasStory: myStories.isNotEmpty,
+                isLive: liveHostIds.contains(currentUserId),
+                name: myStories.isNotEmpty ? 'Votre story' : 'Créer',
+                coverUrl: myStories.isNotEmpty ? (myStories.first.imageUrl.isNotEmpty ? myStories.first.imageUrl : myStories.first.userAvatar) : null,
+                avatarUrl: myStories.isNotEmpty ? myStories.first.userAvatar : null,
+                onTap: myStories.isNotEmpty ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StoryViewer(stories: myStories, initialIndex: 0))) : _openCreateStory,
+                onAdd: _openCreateStory,
+              );
+            }
+            final userId = otherUsersList[i - 1];
+            final userStories = groupedOtherStories[userId]!;
+            final firstStory = userStories.first;
+
+            return _StoryCard(
+              isMe: false,
+              hasStory: true,
+              isLive: liveHostIds.contains(userId),
+              name: firstStory.userName.split(' ').first,
+              coverUrl: firstStory.imageUrl.isNotEmpty ? firstStory.imageUrl : null,
+              avatarUrl: firstStory.userAvatar,
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StoryViewer(stories: userStories, initialIndex: 0))),
             );
           },
         ),
@@ -523,62 +429,75 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // ─────────────────────────── 5. ONGLETS ÉPURÉS ───────────────────────────
-  Widget _buildCleanTabs() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          _cleanTab('Pour vous', 'foryou'),
-          const SizedBox(width: 20),
-          _cleanTab('Abonnements', 'network'),
-          const SizedBox(width: 20),
-          _cleanTab('Récents', 'recent'),
-        ],
+  // ─────────────────────────── FILTRES (Tabs Blancs) ───────────────────────────
+  Widget _buildFilters() {
+    final filters = {
+      'foryou': 'Pour vous',
+      'network': 'Abonnements',
+      'recent': 'Récents',
+      'popular': 'Tendances',
+    };
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: _Pro.surface,
+        border: Border(bottom: BorderSide(color: _Pro.border)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: filters.entries.map((e) {
+            final active = _feedType == e.key;
+            return GestureDetector(
+              onTap: () {
+                if (active) return;
+                setState(() => _feedType = e.key);
+                ref.read(feedProvider.notifier).loadFeed(feedType: e.key, force: true);
+                _lastRefreshTime = DateTime.now();
+                HapticFeedback.lightImpact();
+              },
+              child: Padding(
+                padding: const EdgeInsets.only(right: 20, top: 8),
+                child: Column(
+                  children: [
+                    Text(
+                      e.value,
+                      style: TextStyle(
+                        color: active ? _Pro.navyText : _Pro.textSecondary,
+                        fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    if (active)
+                      Container(width: 20, height: 3, decoration: BoxDecoration(color: _Pro.primaryBlue, borderRadius: BorderRadius.circular(3)))
+                    else
+                      const SizedBox(height: 3),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ),
       ),
     );
   }
 
-  Widget _cleanTab(String title, String key) {
-    final active = _feedType == key;
-    return GestureDetector(
-      onTap: () {
-        if (active) return;
-        setState(() => _feedType = key);
-        ref.read(feedProvider.notifier).loadFeed(feedType: key, force: true);
-        _lastRefreshTime = DateTime.now();
-        HapticFeedback.lightImpact();
-      },
-      child: Column(
-        children: [
-          Text(
-            title,
-            style: TextStyle(
-              color: active ? _Pro.navyText : _Pro.textSecondary,
-              fontWeight: active ? FontWeight.w800 : FontWeight.w600,
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(height: 6),
-          if (active)
-            Container(width: 20, height: 3, decoration: BoxDecoration(color: _Pro.primaryBlue, borderRadius: BorderRadius.circular(3)))
-          else
-            const SizedBox(height: 3),
-        ],
-      ),
-    );
-  }
-
-  // ─────────────────────────── 6. SUGGESTIONS (Design aéré) ───────────────────────────
+  // ─────────────────────────── SUGGESTIONS ───────────────────────────
   Widget _buildSuggestions(Set<String> liveHostIds) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      decoration: const BoxDecoration(
+        color: _Pro.surface,
+        border: Border(bottom: BorderSide(color: _Pro.border)),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Text('Suggestions', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: _Pro.navyText)),
+            child: Text('Personnes à découvrir', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5, color: _Pro.navyText)),
           ),
           const SizedBox(height: 12),
           SizedBox(
@@ -587,39 +506,41 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: _suggestions.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
               itemBuilder: (c, i) {
                 final u = _suggestions[i];
                 return Container(
                   width: 130,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: _Pro.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: _Pro.softShadow,
+                    color: _Pro.surfaceSoft,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _Pro.border),
                   ),
                   child: Column(
                     children: [
-                      RoundAvatar(size: 56, imageUrl: u.avatar, isLive: liveHostIds.contains(u.id)),
+                      RoundAvatar(size: 52, imageUrl: u.avatar, isLive: liveHostIds.contains(u.id)),
                       const SizedBox(height: 8),
-                      Text(u.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _Pro.navyText)),
+                      Text(u.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: _Pro.navyText)),
                       const SizedBox(height: 2),
-                      Text(u.title ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: _Pro.textSecondary)),
+                      Text(u.title ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, color: _Pro.textSecondary)),
                       const Spacer(),
                       SizedBox(
                         width: double.infinity,
-                        height: 32,
-                        child: TextButton(
-                          style: TextButton.styleFrom(
-                            backgroundColor: _Pro.bg,
+                        height: 30,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding: EdgeInsets.zero,
                             foregroundColor: _Pro.primaryBlue,
+                            side: const BorderSide(color: _Pro.border),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            backgroundColor: Colors.white,
                           ),
                           onPressed: () async {
                             await ref.read(networkServiceProvider).sendConnectionRequest(u.id);
                             setState(() => _suggestions.remove(u));
                           },
-                          child: const Text('Suivre', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                          child: const Text('Se connecter', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
                         ),
                       ),
                     ],
@@ -633,31 +554,38 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // ─────────────────────────── 7. FEED UTILS ───────────────────────────
+  // ─────────────────────────── FEED UTILS ───────────────────────────
   Widget _buildShimmerFeed() {
     return Column(
       children: List.generate(3, (i) => Container(
-        margin: const EdgeInsets.only(bottom: 16, left: 16, right: 16),
-        height: 240,
-        decoration: BoxDecoration(color: _Pro.surface, borderRadius: BorderRadius.circular(24)),
+        decoration: const BoxDecoration(
+          color: _Pro.surface,
+          border: Border(bottom: BorderSide(color: _Pro.border)),
+        ),
+        height: 200,
       )),
     );
   }
 
   Widget _buildEmpty() {
-    return Padding(
+    return Container(
+      color: _Pro.surface,
       padding: const EdgeInsets.all(60),
       child: Column(
         children: [
           Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(shape: BoxShape.circle, color: _Pro.surface, boxShadow: _Pro.softShadow),
-            child: const Icon(Icons.auto_awesome_rounded, size: 40, color: _Pro.textSecondary),
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: _Pro.border)),
+            child: const Icon(Icons.feed_outlined, size: 32, color: _Pro.textSecondary),
           ),
           const SizedBox(height: 16),
-          const Text('Votre fil est à jour', style: TextStyle(color: _Pro.navyText, fontWeight: FontWeight.w800, fontSize: 16)),
-          const SizedBox(height: 8),
-          const Text('Suivez plus de créateurs pour voir plus de contenu.', textAlign: TextAlign.center, style: TextStyle(color: _Pro.textSecondary, fontSize: 13)),
+          const Text('Aucune publication pour ce filtre', style: TextStyle(color: _Pro.textSecondary, fontWeight: FontWeight.w600, fontSize: 13)),
+          const SizedBox(height: 18),
+          OutlinedButton(
+            onPressed: _onRefresh,
+            style: OutlinedButton.styleFrom(foregroundColor: _Pro.navyText, side: const BorderSide(color: _Pro.border)),
+            child: const Text('Actualiser'),
+          ),
         ],
       ),
     );
@@ -669,17 +597,15 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     showModalBottomSheet(
       context: context,
       backgroundColor: _Pro.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (_) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Container(width: 40, height: 4, decoration: BoxDecoration(color: _Pro.border, borderRadius: BorderRadius.circular(4))),
-            const SizedBox(height: 12),
             ListTile(
-              leading: Container(padding: const EdgeInsets.all(8), decoration: const BoxDecoration(color: _Pro.bg, shape: BoxShape.circle), child: const Icon(Icons.copy_rounded, color: _Pro.navyText)),
-              title: const Text('Copier le lien', style: TextStyle(color: _Pro.navyText, fontWeight: FontWeight.w700)),
+              leading: const Icon(Icons.link, color: _Pro.navyText),
+              title: const Text('Copier le lien', style: TextStyle(color: _Pro.navyText, fontWeight: FontWeight.w600)),
               onTap: () async {
                 await Clipboard.setData(ClipboardData(text: link));
                 try { await ref.read(networkServiceProvider).sharePost(id); } catch (_) {}
@@ -687,118 +613,402 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                 if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lien copié')));
               },
             ),
-            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.close, color: _Pro.textSecondary),
+              title: const Text('Fermer', style: TextStyle(color: _Pro.navyText)),
+              onTap: () => Navigator.pop(context),
+            ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
     );
   }
 
-  // ─────────────────────────── 8. BOTTOM NAV (Flottante style maquette) ───────────────────────────
+  // ─────────────────────────── BOTTOM NAV EXACT ───────────────────────────
   Widget _buildBottomNav(bool visible) {
     return AnimatedSlide(
       duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-      offset: visible ? Offset.zero : const Offset(0, 1.5),
+      curve: Curves.easeInOutCubic,
+      offset: visible ? Offset.zero : const Offset(0, 1.6),
       child: AnimatedOpacity(
         duration: const Duration(milliseconds: 200),
         opacity: visible ? 1 : 0,
-        child: Container(
-          height: 64,
-          decoration: BoxDecoration(
-            color: _Pro.surface.withOpacity(0.95),
-            borderRadius: BorderRadius.circular(32),
-            boxShadow: [BoxShadow(color: const Color(0xFF0A1F44).withOpacity(0.1), blurRadius: 30, offset: const Offset(0, 10))],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _navBtn(Icons.home_rounded, true, () => _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut)),
-              _navBtn(Icons.search_rounded, false, () => _safePush('/network/search')),
-              _navBtn(Icons.chat_bubble_outline_rounded, false, () => _safePush('/network/messages')),
-              _navBtn(Icons.person_outline_rounded, false, () => _safePush('/network/profile')),
-            ],
+        child: IgnorePointer(
+          ignoring: !visible,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                  child: Container(
+                    height: 62,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.92),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: _Pro.border),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 16, offset: const Offset(0, 6))],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _navBtn(Icons.home_rounded, 'Accueil', true, () => _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut)),
+                        _navBtn(Icons.explore_outlined, 'Découvrir', false, () => _safePush('/network/discover')),
+                        _navBtn(Icons.add_circle_outline_rounded, 'Publier', false, () => showDialog(context: context, builder: (_) => const CreatePostDialog())),
+                        _navBtn(Icons.mail_outline_rounded, 'Messages', false, () => _safePush('/network/messages')), 
+                        _navBtn(Icons.diversity_3_outlined, 'Communauté', false, () => _safePush('/network/communities')),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _navBtn(IconData ic, bool active, VoidCallback tap) {
-    return GestureDetector(
+  Widget _navBtn(IconData ic, String label, bool active, VoidCallback tap) {
+    return InkWell(
       onTap: tap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        decoration: BoxDecoration(
-          color: active ? _Pro.bg : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(14),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(ic, size: 21, color: active ? _Pro.primaryBlue : _Pro.textSecondary),
+            const SizedBox(height: 2),
+            Text(label, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: active ? _Pro.primaryBlue : _Pro.textSecondary)),
+          ],
         ),
-        child: Icon(ic, size: 24, color: active ? _Pro.primaryBlue : _Pro.textSecondary),
       ),
     );
   }
 }
 
 // ============================================================================
-// WIDGETS AUXILIAIRES
+// QUICK POST ENTRY
 // ============================================================================
-class _StoryCircle extends StatelessWidget {
-  final bool isMe;
-  final bool hasStory;
-  final bool isLive;
-  final String name;
+class _QuickPostEntryCard extends StatelessWidget {
   final String? avatarUrl;
   final VoidCallback onTap;
 
-  const _StoryCircle({
-    required this.isMe,
-    required this.hasStory,
-    this.isLive = false,
-    required this.name,
-    this.avatarUrl,
-    required this.onTap,
-  });
+  const _QuickPostEntryCard({required this.avatarUrl, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: _Pro.surface,
+        border: Border(bottom: BorderSide(color: _Pro.border)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          RoundAvatar(size: 38, imageUrl: avatarUrl),
+          const SizedBox(width: 12),
+          Expanded(
+            child: GestureDetector(
+              onTap: onTap,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: _Pro.surfaceSoft,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: _Pro.border),
+                ),
+                child: const Text('Commencer un post...', style: TextStyle(color: _Pro.textSecondary, fontSize: 13.5, fontWeight: FontWeight.w500)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            onPressed: onTap,
+            icon: const Icon(Icons.image_outlined, color: _Pro.primaryBlue, size: 24),
+            tooltip: 'Ajouter un média',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// HUB LIVE (Design Blanc Épuré)
+// ============================================================================
+class _AutoLiveHub extends StatefulWidget {
+  final AsyncValue<List<Map<String, dynamic>>> liveSessionsAsync;
+  const _AutoLiveHub({required this.liveSessionsAsync});
+
+  @override
+  State<_AutoLiveHub> createState() => _AutoLiveHubState();
+}
+
+class _AutoLiveHubState extends State<_AutoLiveHub> {
+  bool _hasLiveNow = false;
+
+  @override
+  void didUpdateWidget(covariant _AutoLiveHub oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncExpansion();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _syncExpansion();
+  }
+
+  void _syncExpansion() {
+    final count = widget.liveSessionsAsync.value?.length ?? 0;
+    final hasLive = count > 0;
+    if (hasLive != _hasLiveNow) {
+      setState(() => _hasLiveNow = hasLive);
+    }
+  }
+
+  void _joinLive([Map<String, dynamic>? session]) {
+    if (session == null) {
+      Navigator.push(context, MaterialPageRoute(builder: (context) => const LivePrepScreen()));
+    } else {
+      Navigator.push(
+        context, 
+        MaterialPageRoute(
+          builder: (context) => LiveViewerScreen(
+            liveId: session['id']?.toString() ?? '',
+            channelName: session['channel_name']?.toString() ?? '',
+            hostName: session['host_name']?.toString() ?? 'Hôte THIX',
+            hostAvatarUrl: session['host_avatar']?.toString(), 
+          ),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sessions = widget.liveSessionsAsync.value ?? const <Map<String, dynamic>>[];
+    final count = sessions.length;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: _Pro.surface,
+        border: Border(bottom: BorderSide(color: _Pro.border)),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: _hasLiveNow ? _Pro.live : _Pro.border)),
+                  alignment: Alignment.center,
+                  child: Icon(Icons.sensors_rounded, color: _hasLiveNow ? _Pro.live : _Pro.textSecondary, size: 18),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Text('Directs & Espaces', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: _Pro.navyText)),
+                          if (count > 0) ...[
+                            const SizedBox(width: 8),
+                            Container(width: 6, height: 6, decoration: const BoxDecoration(color: _Pro.live, shape: BoxShape.circle)),
+                          ],
+                        ],
+                      ),
+                      Text(
+                        count > 0 ? '$count en cours' : 'Aucun direct actif',
+                        style: const TextStyle(fontSize: 11.5, color: _Pro.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _joinLive(),
+                  icon: const Icon(Icons.add_rounded, size: 15),
+                  label: const Text('Lancer'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _Pro.primaryBlue,
+                    side: const BorderSide(color: _Pro.border),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                    minimumSize: const Size(76, 32),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeInOut,
+            child: !_hasLiveNow
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: SizedBox(
+                      height: 122,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: sessions.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 10),
+                        itemBuilder: (context, i) {
+                          final s = sessions[i];
+                          final type = (s['session_type'] as String?) ?? 'video';
+                          return _LiveCard(
+                            title: (s['title'] as String?) ?? 'Direct sans titre',
+                            host: (s['host_name'] as String?) ?? 'THIX',
+                            isVideo: type == 'video',
+                            viewers: (s['viewer_count'] as int?) ?? 0,
+                            onTap: () => _joinLive(s),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LiveCard extends StatelessWidget {
+  final String title;
+  final String host;
+  final bool isVideo;
+  final int viewers;
+  final VoidCallback onTap;
+
+  const _LiveCard({required this.title, required this.host, required this.isVideo, required this.viewers, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Column(
-        children: [
-          Stack(
-            children: [
-              RoundAvatar(
-                size: 64,
-                imageUrl: avatarUrl,
-                hasBorder: hasStory,
-                borderColor: isLive ? _Pro.accentCoral : _Pro.primaryBlue,
-                isLive: isLive,
+      child: Container(
+        width: 148,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: _Pro.surfaceSoft, // Fond bleu/gris très clair au lieu de noir
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _Pro.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(color: _Pro.live.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                  child: const Text('EN DIRECT', style: TextStyle(color: _Pro.live, fontSize: 8, fontWeight: FontWeight.bold)),
+                ),
+                Row(
+                  children: [
+                    const Icon(Icons.visibility_outlined, color: _Pro.textSecondary, size: 12),
+                    const SizedBox(width: 3),
+                    Text(viewers.toString(), style: const TextStyle(color: _Pro.textSecondary, fontSize: 10, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ],
+            ),
+            const Spacer(),
+            Icon(isVideo ? Icons.videocam_outlined : Icons.mic_none_rounded, color: _Pro.primaryBlue, size: 18),
+            const SizedBox(height: 6),
+            Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _Pro.navyText, fontSize: 12.5, fontWeight: FontWeight.w800, height: 1.2)),
+            const SizedBox(height: 3),
+            Text(host, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _Pro.textSecondary, fontSize: 10.5, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// STORIES
+// ============================================================================
+class _StoryCard extends StatelessWidget {
+  final bool isMe;
+  final bool hasStory;
+  final bool isLive;
+  final String name;
+  final String? coverUrl;
+  final String? avatarUrl;
+  final VoidCallback onTap;
+  final VoidCallback? onAdd;
+
+  const _StoryCard({required this.isMe, required this.hasStory, this.isLive = false, required this.name, this.coverUrl, this.avatarUrl, required this.onTap, this.onAdd});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 92,
+        decoration: BoxDecoration(
+          color: _Pro.surfaceSoft,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: isLive ? _Pro.live : _Pro.border, width: isLive ? 1.4 : 1),
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: (coverUrl != null && coverUrl!.isNotEmpty)
+                    ? CachedNetworkImage(
+                        imageUrl: coverUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(color: _Pro.surfaceSoft),
+                        errorWidget: (_, __, ___) => Container(color: _Pro.surfaceSoft),
+                      )
+                    : Container(color: _Pro.surfaceSoft),
               ),
-              if (isMe && !hasStory)
-                Positioned(
-                  bottom: 0,
-                  right: 0,
+            ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black.withOpacity(0.55)]),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 8, left: 8,
+              child: RoundAvatar(size: 28, imageUrl: avatarUrl, isLive: isLive),
+            ),
+            if (isMe)
+              Positioned(
+                top: 22, left: 22,
+                child: GestureDetector(
+                  onTap: onAdd,
                   child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: _Pro.primaryBlue,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    child: const Icon(Icons.add, color: Colors.white, size: 14),
+                    width: 18, height: 18,
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: _Pro.primaryBlue, border: Border.all(color: Colors.white, width: 1.8)),
+                    child: const Icon(Icons.add_rounded, size: 12, color: Colors.white),
                   ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            name,
-            style: const TextStyle(color: _Pro.navyText, fontSize: 11, fontWeight: FontWeight.w600),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
+              ),
+            Positioned(
+              bottom: 8, left: 8, right: 8,
+              child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
       ),
     );
   }
