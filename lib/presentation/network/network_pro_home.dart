@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:cached_network_image/cached_network_image.dart'; 
+import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
@@ -20,10 +20,10 @@ import 'widgets/create_story_dialog.dart';
 import 'widgets/post_card.dart';
 import 'widgets/story_viewer.dart';
 import 'package:thix_id/presentation/network/live/live_prep_screen.dart';
-import 'package:thix_id/presentation/network/live/live_viewer_screen.dart'; 
+import 'package:thix_id/presentation/network/live/live_viewer_screen.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PALETTE THIX PRO — Monochrome Entreprise
+// PALETTE THIX PRO — Monochrome entreprise + accent signature "Pulse"
 // ═══════════════════════════════════════════════════════════════════════════
 class _Pro {
   _Pro._();
@@ -36,6 +36,17 @@ class _Pro {
   static const Color textSecondary = Color(0xFF6B7280);
   static const Color textMuted = Color(0xFF9CA3AF);
   static const Color live = Color(0xFFD7263D);
+
+  // Accent unique — n'apparaît QUE sur le système de réaction "Pulse"
+  // et les éléments qui signent explicitement la marque (jamais utilisé
+  // comme couleur d'interface générique) — c'est ce qui le rend reconnaissable.
+  static const Color pulseGold = Color(0xFFE3B23C);
+  static const Color pulseCoral = Color(0xFFFF7A59);
+  static const gradientPulse = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [pulseGold, pulseCoral],
+  );
 }
 
 // ============================================================================
@@ -54,8 +65,27 @@ final activeLiveSessionsProvider = StreamProvider.autoDispose<List<Map<String, d
 });
 
 // ============================================================================
-// COMPOSANT — AVATAR ROND
+// AVATAR HEXAGONAL — signature THIX ID (remplace le cercle FB/IG)
 // ============================================================================
+class _HexClipper extends CustomClipper<Path> {
+  const _HexClipper();
+  @override
+  Path getClip(Size size) {
+    final w = size.width, h = size.height;
+    return Path()
+      ..moveTo(w * 0.5, 0)
+      ..lineTo(w, h * 0.25)
+      ..lineTo(w, h * 0.75)
+      ..lineTo(w * 0.5, h)
+      ..lineTo(0, h * 0.75)
+      ..lineTo(0, h * 0.25)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
 class RoundAvatar extends StatelessWidget {
   final double size;
   final String? imageUrl;
@@ -80,22 +110,26 @@ class RoundAvatar extends StatelessWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Container(
-          width: size,
-          height: size,
-          padding: EdgeInsets.all(ringWidth),
-          decoration: BoxDecoration(shape: BoxShape.circle, color: effectiveRingColor),
-          child: ClipOval(
-            child: Container(
-              color: _Pro.surface,
-              child: (imageUrl != null && imageUrl!.isNotEmpty)
-                  ? CachedNetworkImage(
-                      imageUrl: imageUrl!, 
-                      fit: BoxFit.cover, 
-                      placeholder: (_, __) => Container(color: _Pro.surface),
-                      errorWidget: (_, __, ___) => Icon(fallbackIcon, size: size * 0.45, color: _Pro.textSecondary)
-                    )
-                  : Icon(fallbackIcon, size: size * 0.45, color: _Pro.textSecondary),
+        ClipPath(
+          clipper: const _HexClipper(),
+          child: Container(
+            width: size,
+            height: size,
+            padding: EdgeInsets.all(ringWidth),
+            color: effectiveRingColor,
+            child: ClipPath(
+              clipper: const _HexClipper(),
+              child: Container(
+                color: _Pro.surface,
+                child: (imageUrl != null && imageUrl!.isNotEmpty)
+                    ? CachedNetworkImage(
+                        imageUrl: imageUrl!,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(color: _Pro.surface),
+                        errorWidget: (_, __, ___) => Icon(fallbackIcon, size: size * 0.45, color: _Pro.textSecondary),
+                      )
+                    : Icon(fallbackIcon, size: size * 0.45, color: _Pro.textSecondary),
+              ),
             ),
           ),
         ),
@@ -132,9 +166,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
   static DateTime? _lastRefreshTime;
   static const _refreshCooldown = Duration(seconds: 60);
 
-  // 🌟 Par défaut, on charge le nouvel algorithme "Pour vous"
-  String _feedType = 'foryou'; 
-  
+  String _feedType = 'foryou';
+
   List<NetworkStory> _stories = [];
   bool _loadingStories = true;
   List<dynamic> _suggestions = [];
@@ -223,6 +256,10 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     _safePush('/network/comments/$postId');
   }
 
+  void _openCreatePost({String initialType = 'text'}) {
+    showDialog(context: context, builder: (_) => const CreatePostDialog());
+  }
+
   @override
   void dispose() {
     _scrollController.dispose();
@@ -249,13 +286,11 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       );
     }
 
-    // 🌟 POPSCOPE : Intercepte le bouton retour du téléphone pour rentrer au Hub Central
     return PopScope(
       canPop: false,
       onPopInvoked: (didPop) {
         if (didPop) return;
-        // Retourne à l'accueil THIX ID CENTRAL (ajuste la route si besoin, ex: '/home')
-        context.go('/'); 
+        context.go('/');
       },
       child: Scaffold(
         backgroundColor: _Pro.surface,
@@ -274,13 +309,16 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                   SliverToBoxAdapter(
                     child: _QuickPostEntryCard(
                       avatarUrl: currentUser.photoUrl,
-                      onTap: () => showDialog(context: context, builder: (_) => const CreatePostDialog()),
+                      onTapText: () => _openCreatePost(initialType: 'text'),
+                      onTapPhoto: () => _openCreatePost(initialType: 'photo'),
+                      onTapVideo: () => _openCreatePost(initialType: 'video'),
+                      onTapPoll: () => _openCreatePost(initialType: 'poll'),
                     ),
                   ),
 
-                  SliverToBoxAdapter(child: _buildStories(currentUser.id, liveHostIds)),
+                  SliverToBoxAdapter(child: _buildVitrines(currentUser.id, liveHostIds)),
 
-                  SliverToBoxAdapter(child: _buildFilters()),
+                  SliverToBoxAdapter(child: _buildSegmentedTabs()),
 
                   SliverToBoxAdapter(
                     child: Padding(
@@ -358,15 +396,12 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
         _appBarIcon(icon: Icons.search_rounded, onTap: () => _safePush('/network/search')),
         const SizedBox(width: ThixPolicy.s8),
         _appBarIcon(icon: Icons.notifications_none_rounded, onTap: () => _safePush('/network/notifications')),
-        // 🌟 L'icône de message a été retirée ici
         const SizedBox(width: ThixPolicy.s12),
-        
         Padding(
           padding: const EdgeInsets.only(right: ThixPolicy.s16),
           child: GestureDetector(
-            // 🌟 Correction de la route Profile
-            onTap: () => _safePush('/network/profile'), 
-            child: RoundAvatar(size: 34, ringWidth: 1.6, isLive: isLive),
+            onTap: () => _safePush('/network/profile'),
+            child: RoundAvatar(size: 34, ringWidth: 1.8, isLive: isLive),
           ),
         ),
       ],
@@ -388,12 +423,14 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // ─────────────────────────── STORIES ───────────────────────────
-  Widget _buildStories(String currentUserId, Set<String> liveHostIds) {
+  // ─────────────────────────── VITRINES (ex-stories) ───────────────────────────
+  // Disposition différenciante : cartes portrait plus hautes que les cercles
+  // Facebook/Instagram, avatar hexagonal ancré en coin, nom lisible en bas.
+  Widget _buildVitrines(String currentUserId, Set<String> liveHostIds) {
     if (_loadingStories) {
       return Container(
         color: _Pro.card,
-        height: 150,
+        height: 168,
         alignment: Alignment.center,
         child: const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _Pro.primary)),
       );
@@ -412,7 +449,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       color: _Pro.card,
       padding: const EdgeInsets.only(top: ThixPolicy.s12, bottom: ThixPolicy.s16),
       child: SizedBox(
-        height: 134,
+        height: 152,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
@@ -420,11 +457,11 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
           separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s10),
           itemBuilder: (c, i) {
             if (i == 0) {
-              return _StoryCard(
+              return _VitrineCard(
                 isMe: true,
                 hasStory: myStories.isNotEmpty,
                 isLive: liveHostIds.contains(currentUserId),
-                name: myStories.isNotEmpty ? 'Votre story' : 'Créer',
+                name: myStories.isNotEmpty ? 'Votre vitrine' : 'Créer',
                 coverUrl: myStories.isNotEmpty ? (myStories.first.imageUrl.isNotEmpty ? myStories.first.imageUrl : myStories.first.userAvatar) : null,
                 avatarUrl: myStories.isNotEmpty ? myStories.first.userAvatar : null,
                 onTap: myStories.isNotEmpty ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StoryViewer(stories: myStories, initialIndex: 0))) : _openCreateStory,
@@ -435,7 +472,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
             final userStories = groupedOtherStories[userId]!;
             final firstStory = userStories.first;
 
-            return _StoryCard(
+            return _VitrineCard(
               isMe: false,
               hasStory: true,
               isLive: liveHostIds.contains(userId),
@@ -450,56 +487,82 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // ─────────────────────────── FILTRES ───────────────────────────
-  Widget _buildFilters() {
-    // 🌟 Mise à jour des filtres pour l'algorithme "Pour Vous"
+  // ─────────────────────────── TABS EN CAPSULE SEGMENTÉE ───────────────────────────
+  // Différenciant : un seul bloc pilule avec un curseur qui glisse, au lieu de
+  // chips séparées comme sur Facebook/les maquettes génériques.
+  Widget _buildSegmentedTabs() {
     final filters = {
       'foryou': ('Pour vous', Icons.auto_awesome_outlined),
       'network': ('Abonnements', Icons.people_alt_outlined),
       'recent': ('Récents', Icons.schedule_outlined),
       'popular': ('Tendances', Icons.trending_up_rounded),
     };
+    final keys = filters.keys.toList();
+    final selectedIndex = keys.indexOf(_feedType).clamp(0, keys.length - 1);
 
     return Container(
       color: _Pro.card,
       padding: const EdgeInsets.fromLTRB(ThixPolicy.s16, 0, ThixPolicy.s16, ThixPolicy.s16),
       margin: const EdgeInsets.only(bottom: ThixPolicy.s8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: filters.entries.map((e) {
-            final sel = _feedType == e.key;
-            return Padding(
-              padding: const EdgeInsets.only(right: ThixPolicy.s8),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () {
-                  if (sel) return;
-                  setState(() => _feedType = e.key);
-                  ref.read(feedProvider.notifier).loadFeed(feedType: e.key, force: true);
-                  _lastRefreshTime = DateTime.now();
-                  HapticFeedback.selectionClick();
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                  decoration: BoxDecoration(
-                    color: sel ? _Pro.ink : Colors.transparent,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: sel ? _Pro.ink : _Pro.border),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(e.value.$2, size: 15, color: sel ? Colors.white : _Pro.textSecondary),
-                      const SizedBox(width: 6),
-                      Text(e.value.$1, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: sel ? Colors.white : _Pro.textMain)),
-                    ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final segWidth = constraints.maxWidth / keys.length;
+          return Container(
+            height: 42,
+            decoration: BoxDecoration(
+              color: _Pro.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _Pro.border),
+            ),
+            child: Stack(
+              children: [
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  left: segWidth * selectedIndex,
+                  top: 3, bottom: 3,
+                  width: segWidth,
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    decoration: BoxDecoration(color: _Pro.ink, borderRadius: BorderRadius.circular(9)),
                   ),
                 ),
-              ),
-            );
-          }).toList(),
-        ),
+                Row(
+                  children: keys.map((key) {
+                    final sel = _feedType == key;
+                    final data = filters[key]!;
+                    return Expanded(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(9),
+                        onTap: () {
+                          if (sel) return;
+                          setState(() => _feedType = key);
+                          ref.read(feedProvider.notifier).loadFeed(feedType: key, force: true);
+                          _lastRefreshTime = DateTime.now();
+                          HapticFeedback.selectionClick();
+                        },
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(data.$2, size: 14, color: sel ? Colors.white : _Pro.textSecondary),
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Text(
+                                data.$1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: sel ? Colors.white : _Pro.textMain),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -537,7 +600,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                   ),
                   child: Column(
                     children: [
-                      RoundAvatar(size: 52, imageUrl: u.avatar, ringWidth: 1.6, isLive: liveHostIds.contains(u.id)),
+                      RoundAvatar(size: 52, imageUrl: u.avatar, ringWidth: 1.8, isLive: liveHostIds.contains(u.id)),
                       const SizedBox(height: ThixPolicy.s8),
                       Text(u.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: _Pro.textMain)),
                       const SizedBox(height: 2),
@@ -672,9 +735,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                       children: [
                         _navBtn(Icons.home_rounded, 'Accueil', true, () => _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut)),
                         _navBtn(Icons.explore_outlined, 'Découvrir', false, () => _safePush('/network/discover')),
-                        _navBtn(Icons.add_circle_outline_rounded, 'Publier', false, () => showDialog(context: context, builder: (_) => const CreatePostDialog())),
-                        // 🌟 "Réseau" a été remplacé par "Messages" pointant vers la bonne route
-                        _navBtn(Icons.mail_outline_rounded, 'Messages', false, () => _safePush('/network/messages')), 
+                        _navBtn(Icons.add_circle_outline_rounded, 'Publier', false, () => _openCreatePost()),
+                        _navBtn(Icons.mail_outline_rounded, 'Messages', false, () => _safePush('/network/messages')),
                         _navBtn(Icons.diversity_3_outlined, 'Communauté', false, () => _safePush('/network/communities')),
                       ],
                     ),
@@ -708,44 +770,88 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
 }
 
 // ============================================================================
-// QUICK POST ENTRY
+// QUICK POST ENTRY — types de contenu visibles directement (différenciant :
+// FB/IG cachent ça derrière un simple champ texte)
 // ============================================================================
 class _QuickPostEntryCard extends StatelessWidget {
   final String? avatarUrl;
-  final VoidCallback onTap;
+  final VoidCallback onTapText;
+  final VoidCallback onTapPhoto;
+  final VoidCallback onTapVideo;
+  final VoidCallback onTapPoll;
 
-  const _QuickPostEntryCard({required this.avatarUrl, required this.onTap});
+  const _QuickPostEntryCard({
+    required this.avatarUrl,
+    required this.onTapText,
+    required this.onTapPhoto,
+    required this.onTapVideo,
+    required this.onTapPoll,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       color: _Pro.card,
-      padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s12),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(ThixPolicy.s16, ThixPolicy.s12, ThixPolicy.s16, ThixPolicy.s4),
+      child: Column(
         children: [
-          RoundAvatar(size: 38, imageUrl: avatarUrl, ringWidth: 0),
-          const SizedBox(width: ThixPolicy.s12),
-          Expanded(
-            child: GestureDetector(
-              onTap: onTap,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s12),
-                decoration: BoxDecoration(
-                  color: _Pro.surface,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _Pro.border),
+          Row(
+            children: [
+              RoundAvatar(size: 38, imageUrl: avatarUrl, ringWidth: 0),
+              const SizedBox(width: ThixPolicy.s12),
+              Expanded(
+                child: GestureDetector(
+                  onTap: onTapText,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s12),
+                    decoration: BoxDecoration(
+                      color: _Pro.surface,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _Pro.border),
+                    ),
+                    child: const Text('Commencer un post…', style: TextStyle(color: _Pro.textSecondary, fontSize: 13.5, fontWeight: FontWeight.w500)),
+                  ),
                 ),
-                child: const Text('Commencer un post...', style: TextStyle(color: _Pro.textSecondary, fontSize: 13.5, fontWeight: FontWeight.w500)),
               ),
-            ),
+            ],
           ),
-          const SizedBox(width: ThixPolicy.s10),
-          IconButton(
-            onPressed: onTap,
-            icon: const Icon(Icons.image_outlined, color: _Pro.textSecondary, size: 22),
-            tooltip: 'Ajouter un média',
+          const SizedBox(height: ThixPolicy.s10),
+          Row(
+            children: [
+              _typeChip(Icons.image_outlined, 'Photo', _Pro.primary, onTapPhoto),
+              const SizedBox(width: 8),
+              _typeChip(Icons.videocam_outlined, 'Vidéo', const Color(0xFFE0703C), onTapVideo),
+              const SizedBox(width: 8),
+              _typeChip(Icons.poll_outlined, 'Sondage', const Color(0xFF1F9D6F), onTapPoll),
+            ],
           ),
+          const SizedBox(height: ThixPolicy.s10),
         ],
+      ),
+    );
+  }
+
+  Widget _typeChip(IconData icon, String label, Color color, VoidCallback onTap) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.06),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: color.withOpacity(0.18)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 15, color: color),
+              const SizedBox(width: 6),
+              Text(label, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: color)),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -790,13 +896,13 @@ class _AutoLiveHubState extends State<_AutoLiveHub> {
       Navigator.push(context, MaterialPageRoute(builder: (context) => const LivePrepScreen()));
     } else {
       Navigator.push(
-        context, 
+        context,
         MaterialPageRoute(
           builder: (context) => LiveViewerScreen(
             liveId: session['id']?.toString() ?? '',
             channelName: session['channel_name']?.toString() ?? '',
             hostName: session['host_name']?.toString() ?? 'Hôte THIX',
-            hostAvatarUrl: session['host_avatar']?.toString(), 
+            hostAvatarUrl: session['host_avatar']?.toString(),
           ),
         ),
       );
@@ -836,17 +942,11 @@ class _AutoLiveHubState extends State<_AutoLiveHub> {
                           const Text('Directs & Espaces', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: _Pro.textMain)),
                           if (count > 0) ...[
                             const SizedBox(width: 8),
-                            Container(
-                              width: 6, height: 6,
-                              decoration: const BoxDecoration(color: _Pro.live, shape: BoxShape.circle),
-                            ),
+                            Container(width: 6, height: 6, decoration: const BoxDecoration(color: _Pro.live, shape: BoxShape.circle)),
                           ],
                         ],
                       ),
-                      Text(
-                        count > 0 ? '$count en cours' : 'Aucun direct actif',
-                        style: const TextStyle(fontSize: 11.5, color: _Pro.textSecondary),
-                      ),
+                      Text(count > 0 ? '$count en cours' : 'Aucun direct actif', style: const TextStyle(fontSize: 11.5, color: _Pro.textSecondary)),
                     ],
                   ),
                 ),
@@ -917,10 +1017,7 @@ class _LiveCard extends StatelessWidget {
       child: Container(
         width: 148,
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: _Pro.ink,
-          borderRadius: BorderRadius.circular(12),
-        ),
+        decoration: BoxDecoration(color: _Pro.ink, borderRadius: BorderRadius.circular(12)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -955,9 +1052,9 @@ class _LiveCard extends StatelessWidget {
 }
 
 // ============================================================================
-// STORIES
+// VITRINE CARD — remplace le "story" circulaire par une carte portrait
 // ============================================================================
-class _StoryCard extends StatelessWidget {
+class _VitrineCard extends StatelessWidget {
   final bool isMe;
   final bool hasStory;
   final bool isLive;
@@ -967,24 +1064,24 @@ class _StoryCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback? onAdd;
 
-  const _StoryCard({required this.isMe, required this.hasStory, this.isLive = false, required this.name, this.coverUrl, this.avatarUrl, required this.onTap, this.onAdd});
+  const _VitrineCard({required this.isMe, required this.hasStory, this.isLive = false, required this.name, this.coverUrl, this.avatarUrl, required this.onTap, this.onAdd});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 92,
+        width: 96,
         decoration: BoxDecoration(
           color: _Pro.surface,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: isLive ? _Pro.live : _Pro.border, width: isLive ? 1.4 : 1),
         ),
         child: Stack(
           children: [
             Positioned.fill(
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
                 child: (coverUrl != null && coverUrl!.isNotEmpty)
                     ? CachedNetworkImage(
                         imageUrl: coverUrl!,
@@ -998,18 +1095,18 @@ class _StoryCard extends StatelessWidget {
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black.withOpacity(0.55)]),
+                  borderRadius: BorderRadius.circular(16),
+                  gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black.withOpacity(0.6)], stops: const [0.4, 1]),
                 ),
               ),
             ),
             Positioned(
               top: 8, left: 8,
-              child: RoundAvatar(size: 28, imageUrl: avatarUrl, ringColor: hasStory || isMe ? _Pro.primary : Colors.transparent, ringWidth: 1.8, isLive: isLive),
+              child: RoundAvatar(size: 30, imageUrl: avatarUrl, ringColor: hasStory || isMe ? _Pro.primary : Colors.transparent, ringWidth: 1.8, isLive: isLive),
             ),
             if (isMe)
               Positioned(
-                top: 22, left: 22,
+                top: 24, left: 24,
                 child: GestureDetector(
                   onTap: onAdd,
                   child: Container(
@@ -1020,8 +1117,8 @@ class _StoryCard extends StatelessWidget {
                 ),
               ),
             Positioned(
-              bottom: 8, left: 8, right: 8,
-              child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700)),
+              bottom: 9, left: 9, right: 9,
+              child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
             ),
           ],
         ),
