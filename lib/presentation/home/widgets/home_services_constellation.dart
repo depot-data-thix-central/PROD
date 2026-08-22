@@ -12,14 +12,12 @@ class _ServiceNodeData {
   final String key;
   final IconData icon;
   final String title;
-  final Color color;
   final int? badge;
-  
+
   const _ServiceNodeData({
     required this.key,
     required this.icon,
     required this.title,
-    required this.color,
     this.badge,
   });
 }
@@ -29,7 +27,7 @@ class _HubMenuItemData {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  
+
   const _HubMenuItemData({
     required this.icon,
     required this.label,
@@ -45,6 +43,7 @@ class HomeServicesConstellation extends StatefulWidget {
   final VoidCallback onDocumentsTap;
   final VoidCallback onProfileTap;
   final VoidCallback onScanTap;
+  final String? avatarUrl;
 
   const HomeServicesConstellation({
     super.key,
@@ -55,6 +54,7 @@ class HomeServicesConstellation extends StatefulWidget {
     required this.onDocumentsTap,
     required this.onProfileTap,
     required this.onScanTap,
+    this.avatarUrl,
   });
 
   @override
@@ -64,7 +64,7 @@ class HomeServicesConstellation extends StatefulWidget {
 class _HomeServicesConstellationState extends State<HomeServicesConstellation> with TickerProviderStateMixin {
   late final AnimationController _shineController;
   late final AnimationController _pulseController;
-  
+
   bool _menuExpanded = false;
   Timer? _collapseTimer;
 
@@ -72,11 +72,14 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> w
   static const double _hubRadius = ThixPolicy.constellationHubRadius;
   static const double _hubMenuRadius = ThixPolicy.constellationHubMenuRadius;
   static const double _hubMenuNodeSize = ThixPolicy.constellationHubMenuNodeSize;
-  
+
   // Constantes de géométrie affinées pour un look plus "propre"
-  static const double _nodeContainerWidth = 56.0; // Réduit de 70 à 56 pour limiter les chevauchements
-  static const double _nodeTextSize = 9.0; // Réduit pour plus de clarté
-  
+  static const double _nodeContainerWidth = 56.0;
+  static const double _nodeTextSize = 9.0;
+
+  // Couleur unique pour toutes les icônes de service — cohérence "Design entreprise"
+  static const Color _iconColor = ThixPolicy.primaryDeep;
+
   @override
   void initState() {
     super.initState();
@@ -121,25 +124,24 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> w
     final c = widget.counts;
     return [
       // --- CATÉGORIE 1 : Contenu & Médias ---
-      _ServiceNodeData(key: 'thixMedia', icon: Icons.play_circle_filled, title: 'TDIA', color: ThixPolicy.domainMedia, badge: c.media),
-      _ServiceNodeData(key: 'thixInfo', icon: Icons.newspaper_rounded, title: 'THIX MEDIA', color: ThixPolicy.domainInfo, badge: c.info),
-      _ServiceNodeData(key: 'evenements', icon: Icons.event_rounded, title: l10n.t('serviceEvenements'), color: ThixPolicy.domainEvents, badge: c.events),
-      
+      _ServiceNodeData(key: 'thixMedia', icon: Icons.play_circle_filled, title: 'TDIA', badge: c.media),
+      _ServiceNodeData(key: 'thixInfo', icon: Icons.newspaper_rounded, title: 'THIX MEDIA', badge: c.info),
+      _ServiceNodeData(key: 'evenements', icon: Icons.event_rounded, title: l10n.t('serviceEvenements'), badge: c.events),
+
       // --- CATÉGORIE 2 : Économie & Transactions ---
-      _ServiceNodeData(key: 'thixMoney', icon: Icons.account_balance_wallet_rounded, title: l10n.t('serviceMoney'), color: ThixPolicy.domainMoney, badge: c.money),
-      _ServiceNodeData(key: 'thixMarket', icon: Icons.storefront_rounded, title: l10n.t('serviceMarket'), color: ThixPolicy.domainMarket, badge: c.market),
-      _ServiceNodeData(key: 'reservation', icon: Icons.confirmation_number_rounded, title: l10n.t('serviceReservation'), color: ThixPolicy.domainReservation, badge: c.reservation),
-      
+      _ServiceNodeData(key: 'thixMoney', icon: Icons.account_balance_wallet_rounded, title: l10n.t('serviceMoney'), badge: c.money),
+      _ServiceNodeData(key: 'thixMarket', icon: Icons.storefront_rounded, title: l10n.t('serviceMarket'), badge: c.market),
+      _ServiceNodeData(key: 'reservation', icon: Icons.confirmation_number_rounded, title: l10n.t('serviceReservation'), badge: c.reservation),
+
       // --- CATÉGORIE 3 : Carrière, Éducation & Réseau ---
-      _ServiceNodeData(key: 'emplois', icon: Icons.work_rounded, title: l10n.t('serviceEmplois'), color: ThixPolicy.domainJobs, badge: c.jobs),
-      _ServiceNodeData(key: 'formations', icon: Icons.school_rounded, title: l10n.t('serviceFormations'), color: ThixPolicy.domainLearning, badge: c.formations),
-      _ServiceNodeData(key: 'opportunites', icon: Icons.lightbulb_rounded, title: l10n.t('serviceOpportunites'), color: ThixPolicy.domainOpportunity, badge: c.opportunities),
-      // Remplacement ici : "Thix Pro" au lieu de la localisation par défaut
-      _ServiceNodeData(key: 'reseauPro', icon: Icons.groups_rounded, title: 'Thix Pro', color: ThixPolicy.domainNetwork, badge: c.network),
-      
+      _ServiceNodeData(key: 'emplois', icon: Icons.work_rounded, title: l10n.t('serviceEmplois'), badge: c.jobs),
+      _ServiceNodeData(key: 'formations', icon: Icons.school_rounded, title: l10n.t('serviceFormations'), badge: c.formations),
+      _ServiceNodeData(key: 'opportunites', icon: Icons.lightbulb_rounded, title: l10n.t('serviceOpportunites'), badge: c.opportunities),
+      _ServiceNodeData(key: 'reseauPro', icon: Icons.groups_rounded, title: 'Thix Pro', badge: c.network),
+
       // --- CATÉGORIE 4 : Vie Pratique & Gouvernement ---
-      _ServiceNodeData(key: 'thixSante', icon: Icons.local_hospital_rounded, title: l10n.t('serviceSante'), color: ThixPolicy.domainHealth, badge: c.health),
-      _ServiceNodeData(key: 'monPays', icon: Icons.flag, title: l10n.t('serviceMonPays'), color: ThixPolicy.domainGov, badge: c.monPays),
+      _ServiceNodeData(key: 'thixSante', icon: Icons.local_hospital_rounded, title: l10n.t('serviceSante'), badge: c.health),
+      _ServiceNodeData(key: 'monPays', icon: Icons.flag, title: l10n.t('serviceMonPays'), badge: c.monPays),
     ];
   }
 
@@ -152,7 +154,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> w
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final nodes = _getGroupedNodes(l10n);
-    
+
     final hubItems = <_HubMenuItemData>[
       _HubMenuItemData(icon: Icons.home_filled, label: l10n.t('hub_home'), onTap: () => _runHubItem(widget.onHomeTap)),
       _HubMenuItemData(icon: Icons.apps_rounded, label: l10n.t('hub_mini_apps'), onTap: () => _runHubItem(widget.onMiniAppsTap)),
@@ -163,148 +165,146 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> w
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.hub_rounded, size: 15, color: ThixPolicy.textSecondary),
-              const SizedBox(width: 6),
-              Text(
-                l10n.t('servicesTitle'),
-                style: const TextStyle(color: ThixPolicy.textMain, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: -0.2),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          SizedBox(
-            height: _stageHeight,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final w = constraints.maxWidth;
-                final center = Offset(w / 2, _stageHeight / 2 - 6);
-                final maxR = math.min(
-                  w / 2 - ThixPolicy.constellationOuterPadding,
-                  ThixPolicy.constellationMaxRadius,
-                );
-                
-                final nodeCount = nodes.length;
-                final positions = <Offset>[];
-                
-                // Calcul de la géométrie de la constellation
-                for (var i = 0; i < nodeCount; i++) {
-                  final angle = -90.0 + (i * (360.0 / nodeCount));
-                  // Le rayon alterné permet de faire respirer les icônes adjacentes
-                  final radius = i.isEven ? maxR : maxR * ThixPolicy.constellationInnerFactor;
-                  positions.add(_polar(center, angle, radius));
-                }
-                
-                final hubPositions = <Offset>[];
-                for (var i = 0; i < hubItems.length; i++) {
-                  final angle = -90.0 + (i * (360.0 / hubItems.length));
-                  hubPositions.add(_polar(center, angle, _hubMenuRadius));
-                }
-                
-                return AnimatedBuilder(
-                  animation: Listenable.merge([_shineController, _pulseController]),
-                  builder: (context, _) {
-                    return Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        // Arrière plan lumineux central
-                        Positioned(
-                          left: center.dx - 130,
-                          top: center.dy - 130,
-                          child: IgnorePointer(
+      child: SizedBox(
+        height: _stageHeight,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            final center = Offset(w / 2, _stageHeight / 2);
+            final maxR = math.min(
+              w / 2 - ThixPolicy.constellationOuterPadding,
+              ThixPolicy.constellationMaxRadius,
+            );
+
+            final nodeCount = nodes.length;
+            final positions = <Offset>[];
+
+            // Calcul de la géométrie de la constellation
+            for (var i = 0; i < nodeCount; i++) {
+              final angle = -90.0 + (i * (360.0 / nodeCount));
+              final radius = i.isEven ? maxR : maxR * ThixPolicy.constellationInnerFactor;
+              positions.add(_polar(center, angle, radius));
+            }
+
+            final hubPositions = <Offset>[];
+            for (var i = 0; i < hubItems.length; i++) {
+              final angle = -90.0 + (i * (360.0 / hubItems.length));
+              hubPositions.add(_polar(center, angle, _hubMenuRadius));
+            }
+
+            return AnimatedBuilder(
+              animation: Listenable.merge([_shineController, _pulseController]),
+              builder: (context, _) {
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // Arrière plan lumineux central — teinte or/ivoire, plus de violet
+                    Positioned(
+                      left: center.dx - 130,
+                      top: center.dy - 130,
+                      child: IgnorePointer(
+                        child: Container(
+                          width: 260,
+                          height: 260,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: RadialGradient(
+                              colors: [ThixPolicy.gold.withValues(alpha: 0.10), Colors.transparent],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Lignes de connexion
+                    Positioned.fill(
+                      child: CustomPaint(
+                        painter: _RadialBranchesPainter(
+                          center: center,
+                          nodeOffsets: positions,
+                          shineProgress: _shineController.value,
+                        ),
+                      ),
+                    ),
+                    // Nœuds de services (Orbite)
+                    for (var i = 0; i < nodes.length; i++)
+                      Positioned(
+                        left: positions[i].dx - (_nodeContainerWidth / 2),
+                        top: positions[i].dy - ThixPolicy.constellationNodeHalf,
+                        child: _ConstellationNode(
+                          data: nodes[i],
+                          width: _nodeContainerWidth,
+                          textSize: _nodeTextSize,
+                          iconColor: _iconColor,
+                          onTap: () => widget.onServiceTap(nodes[i].key),
+                        ),
+                      ),
+                    // Satellites du Hub (Menu interne)
+                    for (var i = 0; i < hubItems.length; i++)
+                      Positioned(
+                        left: hubPositions[i].dx - (_hubMenuNodeSize / 2),
+                        top: hubPositions[i].dy - (_hubMenuNodeSize / 2),
+                        child: _HubSatelliteButton(
+                          visible: _menuExpanded,
+                          order: i,
+                          size: _hubMenuNodeSize,
+                          icon: hubItems[i].icon,
+                          label: hubItems[i].label,
+                          onTap: hubItems[i].onTap,
+                        ),
+                      ),
+                    // Hub Central — Avatar utilisateur
+                    Positioned(
+                      left: center.dx - _hubRadius,
+                      top: center.dy - _hubRadius,
+                      child: GestureDetector(
+                        onTap: _toggleHubMenu,
+                        child: Transform.scale(
+                          scale: 1.0 + (_pulseController.value * 0.05),
+                          child: AnimatedRotation(
+                            turns: _menuExpanded ? 0.125 : 0,
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeInOut,
                             child: Container(
-                              width: 260, height: 260,
+                              width: _hubRadius * 2,
+                              height: _hubRadius * 2,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                gradient: RadialGradient(
-                                  colors: [ThixPolicy.gold.withValues(alpha: 0.10), Colors.transparent],
+                                gradient: const LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [ThixPolicy.gold, ThixPolicy.primaryDeep],
                                 ),
+                                boxShadow: [
+                                  BoxShadow(color: ThixPolicy.gold.withValues(alpha: 0.45), blurRadius: 22, spreadRadius: 1),
+                                  BoxShadow(color: ThixPolicy.primaryDeep.withValues(alpha: 0.35), blurRadius: 18, offset: const Offset(0, 8)),
+                                ],
+                                border: Border.all(color: Colors.white, width: 2.4),
                               ),
-                            ),
-                          ),
-                        ),
-                        // Lignes de connexion (optimisées avec RepaintBoundary dans l'idéal)
-                        Positioned.fill(
-                          child: CustomPaint(
-                            painter: _RadialBranchesPainter(
-                              center: center,
-                              nodeOffsets: positions,
-                              shineProgress: _shineController.value,
-                            ),
-                          ),
-                        ),
-                        // Nœuds de services (Orbite)
-                        for (var i = 0; i < nodes.length; i++)
-                          Positioned(
-                            left: positions[i].dx - (_nodeContainerWidth / 2),
-                            top: positions[i].dy - ThixPolicy.constellationNodeHalf,
-                            child: _ConstellationNode(
-                              data: nodes[i],
-                              width: _nodeContainerWidth,
-                              textSize: _nodeTextSize,
-                              onTap: () => widget.onServiceTap(nodes[i].key),
-                            ),
-                          ),
-                        // Satellites du Hub (Menu interne)
-                        for (var i = 0; i < hubItems.length; i++)
-                          Positioned(
-                            left: hubPositions[i].dx - (_hubMenuNodeSize / 2),
-                            top: hubPositions[i].dy - (_hubMenuNodeSize / 2),
-                            child: _HubSatelliteButton(
-                              visible: _menuExpanded,
-                              order: i,
-                              size: _hubMenuNodeSize,
-                              icon: hubItems[i].icon,
-                              label: hubItems[i].label,
-                              onTap: hubItems[i].onTap,
-                            ),
-                          ),
-                        // Hub Central (Bouton d'interaction)
-                        Positioned(
-                          left: center.dx - _hubRadius,
-                          top: center.dy - _hubRadius,
-                          child: GestureDetector(
-                            onTap: _toggleHubMenu,
-                            child: Transform.scale(
-                              scale: 1.0 + (_pulseController.value * 0.05),
-                              child: AnimatedRotation(
-                                turns: _menuExpanded ? 0.125 : 0,
-                                duration: const Duration(milliseconds: 220),
-                                curve: Curves.easeInOut,
-                                child: Container(
-                                  width: _hubRadius * 2, height: _hubRadius * 2,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: const LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: [ThixPolicy.gold, ThixPolicy.premiumAccent],
+                              alignment: Alignment.center,
+                              child: _menuExpanded
+                                  ? const Icon(Icons.close_rounded, color: Colors.white, size: 26)
+                                  : ClipOval(
+                                      child: (widget.avatarUrl != null && widget.avatarUrl!.trim().isNotEmpty)
+                                          ? Image.network(
+                                              widget.avatarUrl!.trim(),
+                                              fit: BoxFit.cover,
+                                              width: _hubRadius * 2 - 6,
+                                              height: _hubRadius * 2 - 6,
+                                              errorBuilder: (_, __, ___) => const Icon(Icons.person_rounded, color: Colors.white, size: 26),
+                                            )
+                                          : const Icon(Icons.person_rounded, color: Colors.white, size: 26),
                                     ),
-                                    boxShadow: [
-                                      BoxShadow(color: ThixPolicy.gold.withValues(alpha: 0.45), blurRadius: 22, spreadRadius: 1),
-                                      BoxShadow(color: ThixPolicy.premiumAccent.withValues(alpha: 0.35), blurRadius: 18, offset: const Offset(0, 8)),
-                                    ],
-                                    border: Border.all(color: Colors.white, width: 2.4),
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: Icon(_menuExpanded ? Icons.close_rounded : Icons.grid_view_rounded, color: Colors.white, size: 26),
-                                ),
-                              ),
                             ),
                           ),
                         ),
-                      ],
-                    );
-                  },
+                      ),
+                    ),
+                  ],
                 );
               },
-            ),
-          ),
-        ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -317,7 +317,7 @@ class _HubSatelliteButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  
+
   const _HubSatelliteButton({
     required this.visible,
     required this.order,
@@ -326,7 +326,7 @@ class _HubSatelliteButton extends StatelessWidget {
     required this.label,
     required this.onTap,
   });
-  
+
   @override
   Widget build(BuildContext context) {
     return AnimatedScale(
@@ -343,15 +343,16 @@ class _HubSatelliteButton extends StatelessWidget {
             child: GestureDetector(
               onTap: onTap,
               child: Container(
-                width: size, height: size,
+                width: size,
+                height: size,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
-                  border: Border.all(color: ThixPolicy.premiumAccent.withValues(alpha: 0.35), width: 1.2),
+                  border: Border.all(color: ThixPolicy.primaryDeep.withValues(alpha: 0.35), width: 1.2),
                   boxShadow: ThixPolicy.shadowSoft(),
                 ),
                 alignment: Alignment.center,
-                child: Icon(icon, size: 15, color: ThixPolicy.premiumAccent),
+                child: Icon(icon, size: 15, color: ThixPolicy.primaryDeep),
               ),
             ),
           ),
@@ -365,63 +366,61 @@ class _RadialBranchesPainter extends CustomPainter {
   final Offset center;
   final List<Offset> nodeOffsets;
   final double shineProgress;
-  
-  // Paint mis en cache pour optimiser les FPS (Standard Entreprise)
+
   final Paint _trailPaint = Paint();
   final Paint _coreShinePaint = Paint()..color = Colors.white;
 
   _RadialBranchesPainter({
-    required this.center, 
-    required this.nodeOffsets, 
+    required this.center,
+    required this.nodeOffsets,
     required this.shineProgress,
   });
-  
+
   @override
   void paint(Canvas canvas, Size size) {
     for (var i = 0; i < nodeOffsets.length; i++) {
       final end = nodeOffsets[i];
-      
-      // Ligne de base
+
+      // Ligne de base — gradient or / bleu marine (charte THIX ID)
       final basePaint = Paint()
         ..shader = LinearGradient(
-          colors: [ThixPolicy.gold.withValues(alpha: 0.38), ThixPolicy.premiumAccent.withValues(alpha: 0.30)]
+          colors: [ThixPolicy.gold.withValues(alpha: 0.38), ThixPolicy.primaryDeep.withValues(alpha: 0.30)],
         ).createShader(Rect.fromPoints(center, end))
         ..strokeWidth = 1.4
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke;
-        
+
       canvas.drawLine(center, end, basePaint);
-      
+
       // Animation lumineuse (Shine)
       final phase = i / nodeOffsets.length;
       final t = (shineProgress + phase) % 1.0;
       final shinePos = Offset.lerp(center, end, t)!;
-      
+
       for (var trail = 1; trail <= 4; trail++) {
         final trailT = t - (trail * 0.03);
         if (trailT < 0) continue;
         final trailPos = Offset.lerp(center, end, trailT)!;
         final alpha = (0.28 - trail * 0.06).clamp(0.0, 0.28);
-        
+
         _trailPaint.color = Colors.white.withValues(alpha: alpha);
         canvas.drawCircle(trailPos, 2.4 - (trail * 0.3), _trailPaint);
       }
-      
+
       // Halo lumineux
       final haloPaint = Paint()
         ..shader = RadialGradient(
-          colors: [Colors.white.withValues(alpha: 0.85), ThixPolicy.gold.withValues(alpha: 0.0)]
+          colors: [Colors.white.withValues(alpha: 0.85), ThixPolicy.gold.withValues(alpha: 0.0)],
         ).createShader(Rect.fromCircle(center: shinePos, radius: 7));
-        
+
       canvas.drawCircle(shinePos, 7, haloPaint);
       canvas.drawCircle(shinePos, 2.0, _coreShinePaint);
     }
   }
-  
+
   @override
   bool shouldRepaint(covariant _RadialBranchesPainter oldDelegate) {
-    return oldDelegate.shineProgress != shineProgress || 
-           oldDelegate.nodeOffsets != nodeOffsets;
+    return oldDelegate.shineProgress != shineProgress || oldDelegate.nodeOffsets != nodeOffsets;
   }
 }
 
@@ -429,30 +428,32 @@ class _ConstellationNode extends StatefulWidget {
   final _ServiceNodeData data;
   final double width;
   final double textSize;
+  final Color iconColor;
   final VoidCallback onTap;
-  
+
   const _ConstellationNode({
-    required this.data, 
+    required this.data,
     required this.width,
     required this.textSize,
+    required this.iconColor,
     required this.onTap,
   });
-  
-  @override 
+
+  @override
   State<_ConstellationNode> createState() => _ConstellationNodeState();
 }
 
 class _ConstellationNodeState extends State<_ConstellationNode> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _scale;
-  
+
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 140));
     _scale = Tween<double>(begin: 1.0, end: 0.92).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
   }
-  
+
   @override
   void dispose() {
     _controller.dispose();
@@ -475,7 +476,7 @@ class _ConstellationNodeState extends State<_ConstellationNode> with SingleTicke
       child: ScaleTransition(
         scale: _scale,
         child: SizedBox(
-          width: widget.width, // Largeur stricte pour éviter les conflits
+          width: widget.width,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -483,19 +484,21 @@ class _ConstellationNodeState extends State<_ConstellationNode> with SingleTicke
                 clipBehavior: Clip.none,
                 children: [
                   Container(
-                    width: size, height: size,
+                    width: size,
+                    height: size,
                     decoration: BoxDecoration(
                       color: Colors.white,
                       shape: BoxShape.circle,
-                      border: Border.all(color: d.color.withValues(alpha: 0.35), width: 1.2),
-                      boxShadow: [BoxShadow(color: d.color.withValues(alpha: 0.22), blurRadius: 10, offset: const Offset(0, 4))],
+                      border: Border.all(color: widget.iconColor.withValues(alpha: 0.28), width: 1.2),
+                      boxShadow: [BoxShadow(color: widget.iconColor.withValues(alpha: 0.16), blurRadius: 10, offset: const Offset(0, 4))],
                     ),
                     alignment: Alignment.center,
-                    child: Icon(d.icon, color: d.color, size: iconSize),
+                    child: Icon(d.icon, color: widget.iconColor, size: iconSize),
                   ),
                   if (d.badge != null && d.badge! > 0)
                     Positioned(
-                      top: -4, right: -6,
+                      top: -4,
+                      right: -6,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                         decoration: BoxDecoration(
@@ -504,26 +507,25 @@ class _ConstellationNodeState extends State<_ConstellationNode> with SingleTicke
                           border: Border.all(color: Colors.white, width: 1.2),
                         ),
                         child: Text(
-                          '${d.badge}', 
-                          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)
+                          '${d.badge}',
+                          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
                 ],
               ),
               const SizedBox(height: 4),
-              // Texte optimisé : taille réduite, condensé et avec ellipsis
               Text(
                 d.title,
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: widget.textSize, 
-                  fontWeight: FontWeight.w700, 
-                  color: ThixPolicy.textMain, 
+                  fontSize: widget.textSize,
+                  fontWeight: FontWeight.w700,
+                  color: ThixPolicy.textMain,
                   height: 1.1,
-                  letterSpacing: -0.2, // Rend le texte plus compact
+                  letterSpacing: -0.2,
                 ),
               ),
             ],
