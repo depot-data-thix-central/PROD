@@ -43,10 +43,8 @@ class _ThixHomeSwipeScreenState extends State<ThixHomeSwipeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Fond sombre pour SOS, clair pour RECHERCHE & RETROUVE
-    final bgColor = _page == 0
-        ? const Color(0xFF0A0A0F)
-        : const Color(0xFFF8F9FC);
+    // 🌟 Fond unifié TRES FONCÉ pour toute la page (Bleu Nuit / Noir)
+    const bgColor = Color(0xFF050811); 
 
     return Scaffold(
       backgroundColor: bgColor,
@@ -124,13 +122,13 @@ class _SectionIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = current == 0; // SOS = thème sombre
-
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white10 : Colors.black.withOpacity(0.06),
+        // Fond de la barre légèrement plus clair que le fond de la page pour créer un contraste
+        color: const Color(0xFF121826), 
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
       ),
       child: Row(
         children: [
@@ -142,7 +140,6 @@ class _SectionIndicator extends StatelessWidget {
               selected: current == 0,
               selectedColor: const Color(0xFFEF4444),
               onTap: onSos,
-              dark: isDark,
             ),
           ),
           // ——— RECHERCHE (milieu) ———
@@ -151,9 +148,8 @@ class _SectionIndicator extends StatelessWidget {
               label: 'RECHERCHE',
               icon: Icons.person_search,
               selected: current == 1,
-              selectedColor: const Color(0xFF2563EB),
+              selectedColor: const Color(0xFF2D6CDF), // Bleu THIX Primaire
               onTap: onRecherche,
-              dark: isDark,
             ),
           ),
           // ——— RETROUVE ———
@@ -162,9 +158,8 @@ class _SectionIndicator extends StatelessWidget {
               label: 'RETROUVE',
               icon: Icons.search,
               selected: current == 2,
-              selectedColor: const Color(0xFFF59E0B),
+              selectedColor: const Color(0xFFE3B23C), // Or THIX
               onTap: onRetrouve,
-              dark: isDark,
             ),
           ),
         ],
@@ -180,7 +175,6 @@ class _Tab extends StatelessWidget {
     required this.selected,
     required this.selectedColor,
     required this.onTap,
-    required this.dark,
   });
 
   final String label;
@@ -188,43 +182,42 @@ class _Tab extends StatelessWidget {
   final bool selected;
   final Color selectedColor;
   final VoidCallback onTap;
-  final bool dark;
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: selected
-          ? selectedColor.withOpacity(dark ? 0.25 : 0.15)
+          ? selectedColor.withOpacity(0.20) // Opacité douce pour le fond de l'onglet actif
           : Colors.transparent,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(vertical: 12), // Un peu plus aéré
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 icon,
-                size: 15,
+                size: 16,
                 color: selected
                     ? selectedColor
-                    : (dark ? Colors.white38 : Colors.black38),
+                    : Colors.white54, // Gris clair pour les non sélectionnés
               ),
-              const SizedBox(width: 5),
+              const SizedBox(width: 6),
               Flexible(
                 child: Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
-                    fontSize: 11,
+                    fontSize: 11.5,
                     fontWeight:
                         selected ? FontWeight.w800 : FontWeight.w600,
                     color: selected
                         ? selectedColor
-                        : (dark ? Colors.white38 : Colors.black38),
+                        : Colors.white54, // Gris clair pour les non sélectionnés
                     letterSpacing: 0.3,
                   ),
                 ),
