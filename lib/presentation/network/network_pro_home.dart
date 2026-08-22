@@ -11,7 +11,6 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart'; 
 
-// ✅ POLICY THIX APPLIQUÉE À 100%
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/models/network_story.dart';
 import 'package:thix_id/features/network/data/network_service_provider.dart';
@@ -22,7 +21,6 @@ import 'widgets/create_story_dialog.dart';
 import 'widgets/post_card.dart';
 import 'widgets/story_viewer.dart';
 
-// ✅ RESTAURATION DES IMPORTS POUR LE LIVE
 import 'package:thix_id/presentation/network/live/live_prep_screen.dart';
 import 'package:thix_id/presentation/network/live/live_viewer_screen.dart'; 
 
@@ -103,7 +101,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
   bool _loadingStories = true;
   bool _isLoadingMore = false;
 
-  // ─── GESTION DES SUGGESTIONS (Aléatoire local) ───
+  // ─── GESTION DES SUGGESTIONS (Aléatoire local optimisé) ───
   List<dynamic> _allSuggestions = [];
   List<dynamic> _displayedSuggestions = [];
   Timer? _suggestionTimer;
@@ -162,12 +160,12 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
   // ─── CHARGEMENT & MÉLANGE DES SUGGESTIONS ───
   Future<void> _loadSuggestions() async {
     try {
-      // On charge 30 suggestions une seule fois pour éviter de spammer la base de données
+      // On charge 30 suggestions une seule fois pour éviter de spammer la DB
       final data = await ref.read(networkServiceProvider).getSuggestedConnections(limit: 30);
       _allSuggestions = data;
       _shuffleSuggestions();
 
-      // On met en place le timer pour remélanger toutes les minutes en local
+      // Timer pour remélanger toutes les minutes
       _suggestionTimer?.cancel();
       _suggestionTimer = Timer.periodic(const Duration(minutes: 1), (_) {
         _shuffleSuggestions();
@@ -180,8 +178,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     setState(() {
       final list = List<dynamic>.from(_allSuggestions);
       list.shuffle(Random());
-      // On affiche uniquement 8 personnes à la fois
-      _displayedSuggestions = list.take(8).toList();
+      // On affiche uniquement 8 à 10 personnes à la fois
+      _displayedSuggestions = list.take(10).toList();
     });
   }
 
@@ -224,13 +222,10 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     final authAsync = ref.watch(authControllerProvider);
     final feedAsync = ref.watch(feedProvider);
     final currentUser = authAsync.value;
-    final liveSessionsAsync = ref.watch(activeLiveSessionsProvider);
-    final liveHostIds = (liveSessionsAsync.value ?? const <Map<String, dynamic>>[])
-        .map((s) => s['host_id']?.toString() ?? '')
-        .where((id) => id.isNotEmpty)
-        .toSet();
     
-    final hasActiveLiveGlobal = (liveSessionsAsync.value?.isNotEmpty ?? false);
+    final liveSessionsAsync = ref.watch(activeLiveSessionsProvider);
+    final liveSessions = liveSessionsAsync.value ?? const <Map<String, dynamic>>[];
+    final liveHostIds = liveSessions.map((s) => s['host_id']?.toString() ?? '').where((id) => id.isNotEmpty).toSet();
 
     if (currentUser == null) {
       return const Scaffold(
@@ -246,7 +241,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
         context.go('/'); 
       },
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.white, 
         body: Stack(
           children: [
             RefreshIndicator(
@@ -259,8 +254,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                 slivers: [
                   _buildSliverAppBar(
                     avatarUrl: currentUser.photoUrl,
-                    isUserLive: liveHostIds.contains(currentUser.id),
-                    hasGlobalLive: hasActiveLiveGlobal,
                   ),
 
                   // ─── CRÉATION DE POST ───
@@ -277,14 +270,9 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                   // ─── FILTRES DE FLUX ───
                   SliverToBoxAdapter(child: _buildFilters()),
 
-                  // ─── DIRECTS & ESPACES (LIVE HUB RESTAURÉ) ───
-                  SliverToBoxAdapter(
-                    child: _AutoLiveHub(liveSessionsAsync: liveSessionsAsync),
-                  ),
-
-                  // ─── SUGGESTIONS ALÉATOIRES ───
-                  if (_displayedSuggestions.isNotEmpty)
-                    SliverToBoxAdapter(child: _buildSuggestionsBand()),
+                  // ─── BANDE UNIQUE : SUGGESTIONS (Gauche) + LIVES (Droite) ───
+                  if (_displayedSuggestions.isNotEmpty || liveSessions.isNotEmpty)
+                    SliverToBoxAdapter(child: _buildUnifiedDiscoveryBand(liveSessions)),
 
                   // ─── FIL D'ACTUALITÉ ───
                   feedAsync.when(
@@ -333,8 +321,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // ─────────────────────────── APP BAR ÉPURÉE (Symbole Live Intégré) ───────────────────────────
-  Widget _buildSliverAppBar({required String? avatarUrl, required bool isUserLive, required bool hasGlobalLive}) {
+  // ─────────────────────────── APP BAR ÉPURÉE (Bouton Live Intégré) ───────────────────────────
+  Widget _buildSliverAppBar({required String? avatarUrl}) {
     return SliverAppBar(
       backgroundColor: Colors.white,
       elevation: 0,
@@ -343,26 +331,21 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       snap: true,
       toolbarHeight: 60,
       titleSpacing: 16,
-      title: Row(
-        children: [
-          Text('THIX PRO', style: ThixPolicy.h2Style.copyWith(fontWeight: ThixPolicy.bold, letterSpacing: -0.3, color: ThixPolicy.textMain)),
-          if (hasGlobalLive) ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-              decoration: BoxDecoration(color: ThixPolicy.danger.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-              child: Row(
-                children: [
-                  Container(width: 6, height: 6, decoration: const BoxDecoration(color: ThixPolicy.danger, shape: BoxShape.circle)),
-                  const SizedBox(width: 4),
-                  Text('LIVE', style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold)),
-                ],
-              ),
-            ),
-          ]
-        ],
-      ),
+      title: Text('THIX PRO', style: ThixPolicy.h2Style.copyWith(fontWeight: ThixPolicy.bold, letterSpacing: -0.3, color: ThixPolicy.textMain)),
       actions: [
+        // 🔴 SYMBOLE LIVE EN ROUGE POUR LANCER UN DIRECT
+        GestureDetector(
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LivePrepScreen())),
+          child: Container(
+            width: 38, height: 38,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle, 
+              color: ThixPolicy.danger.withOpacity(0.08),
+            ),
+            child: const Icon(Icons.sensors_rounded, size: 20, color: ThixPolicy.danger),
+          ),
+        ),
+        const SizedBox(width: 8),
         _appBarIcon(icon: Icons.search_rounded, onTap: () => _safePush('/network/search')),
         const SizedBox(width: 8),
         _appBarIcon(icon: Icons.notifications_none_rounded, onTap: () => _safePush('/network/notifications')),
@@ -371,7 +354,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
           padding: const EdgeInsets.only(right: 16),
           child: GestureDetector(
             onTap: () => _safePush('/network/profile'), 
-            child: RoundAvatar(size: 34, imageUrl: avatarUrl, isLive: isUserLive),
+            child: RoundAvatar(size: 34, imageUrl: avatarUrl),
           ),
         ),
       ],
@@ -458,7 +441,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // ─────────────────────────── FILTRES (Tabs Blancs) ───────────────────────────
+  // ─────────────────────────── FILTRES ───────────────────────────
   Widget _buildFilters() {
     final filters = {
       'foryou': 'Pour vous',
@@ -513,14 +496,10 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // ─────────────────────────── HUB LIVE RESTAURÉ (Directs & Espaces) ───────────────────────────
-  Widget _buildAutoLiveHub() {
-    final liveSessionsAsync = ref.watch(activeLiveSessionsProvider);
-    return _AutoLiveHub(liveSessionsAsync: liveSessionsAsync);
-  }
+  // ─────────────────────────── BANDE UNIQUE (SUGGESTIONS + LIVES) ───────────────────────────
+  Widget _buildUnifiedDiscoveryBand(List<Map<String, dynamic>> liveSessions) {
+    final int totalCount = _displayedSuggestions.length + liveSessions.length;
 
-  // ─────────────────────────── BANDE DE SUGGESTIONS (Épurée & Aléatoire) ───────────────────────────
-  Widget _buildSuggestionsBand() {
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -534,62 +513,102 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                const Icon(Icons.person_add_alt_1_rounded, size: 18, color: ThixPolicy.textMain),
+                const Icon(Icons.explore_rounded, size: 16, color: ThixPolicy.textMain),
                 const SizedBox(width: 8),
-                Text('Personnes à découvrir', style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14.5, color: ThixPolicy.textMain)),
+                Text('À découvrir', style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14.5, color: ThixPolicy.textMain)),
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           SizedBox(
             height: 90, 
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _displayedSuggestions.length,
+              itemCount: totalCount,
               separatorBuilder: (_, __) => const SizedBox(width: 16),
               itemBuilder: (c, i) {
-                final u = _displayedSuggestions[i];
-                return GestureDetector(
-                  onTap: () => context.push('/network/profile/${u.id}'),
-                  child: SizedBox(
-                    width: 64,
-                    child: Column(
-                      children: [
-                        Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            RoundAvatar(size: 56, imageUrl: u.avatar),
-                            Positioned(
-                              bottom: -2, right: -2,
-                              child: GestureDetector(
-                                onTap: () async {
-                                  HapticFeedback.selectionClick();
-                                  setState(() => _displayedSuggestions.removeAt(i));
-                                  try {
-                                    await ref.read(networkServiceProvider).sendConnectionRequest(u.id);
-                                  } catch (_) {}
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.all(3),
-                                  decoration: BoxDecoration(color: ThixPolicy.primary, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2.5)),
-                                  child: const Icon(Icons.add, size: 12, color: Colors.white),
+                // SUGGESTIONS À GAUCHE
+                if (i < _displayedSuggestions.length) {
+                  final u = _displayedSuggestions[i];
+                  return GestureDetector(
+                    onTap: () => context.push('/network/profile/${u.id}'),
+                    child: SizedBox(
+                      width: 62,
+                      child: Column(
+                        children: [
+                          Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              RoundAvatar(size: 56, imageUrl: u.avatar),
+                              Positioned(
+                                bottom: -2, right: -2,
+                                child: GestureDetector(
+                                  onTap: () async {
+                                    HapticFeedback.selectionClick();
+                                    setState(() => _displayedSuggestions.removeAt(i));
+                                    try { await ref.read(networkServiceProvider).sendConnectionRequest(u.id); } catch (_) {}
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.all(3),
+                                    decoration: BoxDecoration(color: ThixPolicy.primary, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2.5)),
+                                    child: const Icon(Icons.add, size: 12, color: Colors.white),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          u.name.split(' ').first, 
-                          maxLines: 1, 
-                          overflow: TextOverflow.ellipsis, 
-                          style: ThixPolicy.microStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)
-                        ),
-                      ],
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(u.name.split(' ').first, maxLines: 1, overflow: TextOverflow.ellipsis, style: ThixPolicy.microStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
+                        ],
+                      ),
                     ),
-                  ),
-                );
+                  );
+                } 
+                // LIVES EN COURS À DROITE
+                else {
+                  final liveIndex = i - _displayedSuggestions.length;
+                  final s = liveSessions[liveIndex];
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context, 
+                        MaterialPageRoute(
+                          builder: (context) => LiveViewerScreen(
+                            liveId: s['id']?.toString() ?? '',
+                            channelName: s['channel_name']?.toString() ?? '',
+                            hostName: s['host_name']?.toString() ?? 'Hôte THIX',
+                            hostAvatarUrl: s['host_avatar']?.toString(), 
+                          ),
+                        ),
+                      );
+                    },
+                    child: SizedBox(
+                      width: 62,
+                      child: Column(
+                        children: [
+                          Stack(
+                            clipBehavior: Clip.none,
+                            alignment: Alignment.bottomCenter,
+                            children: [
+                              RoundAvatar(size: 56, imageUrl: s['host_avatar']?.toString(), isLive: true),
+                              Positioned(
+                                bottom: -6,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                  decoration: BoxDecoration(color: ThixPolicy.danger, borderRadius: BorderRadius.circular(4), border: Border.all(color: Colors.white, width: 1.5)),
+                                  child: Text('LIVE', style: ThixPolicy.microStyle.copyWith(color: Colors.white, fontSize: 8, fontWeight: ThixPolicy.bold)),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text((s['host_name']?.toString() ?? 'Hôte').split(' ').first, maxLines: 1, overflow: TextOverflow.ellipsis, style: ThixPolicy.microStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
+                        ],
+                      ),
+                    ),
+                  );
+                }
               },
             ),
           ),
@@ -777,206 +796,6 @@ class _QuickPostEntryCard extends StatelessWidget {
             tooltip: 'Ajouter un média',
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// HUB LIVE (Directs & Espaces) RESTAURÉ
-// ============================================================================
-class _AutoLiveHub extends StatefulWidget {
-  final AsyncValue<List<Map<String, dynamic>>> liveSessionsAsync;
-  const _AutoLiveHub({required this.liveSessionsAsync});
-
-  @override
-  State<_AutoLiveHub> createState() => _AutoLiveHubState();
-}
-
-class _AutoLiveHubState extends State<_AutoLiveHub> {
-  bool _hasLiveNow = false;
-
-  @override
-  void didUpdateWidget(covariant _AutoLiveHub oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _syncExpansion();
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _syncExpansion();
-  }
-
-  void _syncExpansion() {
-    final count = widget.liveSessionsAsync.value?.length ?? 0;
-    final hasLive = count > 0;
-    if (hasLive != _hasLiveNow) {
-      setState(() => _hasLiveNow = hasLive);
-    }
-  }
-
-  void _joinLive([Map<String, dynamic>? session]) {
-    if (session == null) {
-      Navigator.push(context, MaterialPageRoute(builder: (context) => const LivePrepScreen()));
-    } else {
-      Navigator.push(
-        context, 
-        MaterialPageRoute(
-          builder: (context) => LiveViewerScreen(
-            liveId: session['id']?.toString() ?? '',
-            channelName: session['channel_name']?.toString() ?? '',
-            hostName: session['host_name']?.toString() ?? 'Hôte THIX',
-            hostAvatarUrl: session['host_avatar']?.toString(), 
-          ),
-        ),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final sessions = widget.liveSessionsAsync.value ?? const <Map<String, dynamic>>[];
-    final count = sessions.length;
-
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: ThixPolicy.border)),
-      ),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 36, height: 36,
-                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: _hasLiveNow ? ThixPolicy.danger : ThixPolicy.border)),
-                  alignment: Alignment.center,
-                  child: Icon(Icons.sensors_rounded, color: _hasLiveNow ? ThixPolicy.danger : ThixPolicy.textSecondary, size: 18),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text('Directs & Espaces', style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14.5, color: ThixPolicy.textMain)),
-                          if (count > 0) ...[
-                            const SizedBox(width: 8),
-                            Container(width: 6, height: 6, decoration: const BoxDecoration(color: ThixPolicy.danger, shape: BoxShape.circle)),
-                          ],
-                        ],
-                      ),
-                      Text(
-                        count > 0 ? '$count en cours' : 'Aucun direct actif',
-                        style: ThixPolicy.captionStyle.copyWith(fontSize: 11.5, color: ThixPolicy.textSecondary),
-                      ),
-                    ],
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => _joinLive(),
-                  icon: const Icon(Icons.add_rounded, size: 15),
-                  label: const Text('Lancer'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: ThixPolicy.primary,
-                    side: const BorderSide(color: ThixPolicy.border),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                    minimumSize: const Size(76, 32),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
-                    textStyle: ThixPolicy.labelStyle.copyWith(fontSize: 12.5, fontWeight: ThixPolicy.bold),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 320),
-            curve: Curves.easeInOut,
-            child: !_hasLiveNow
-                ? const SizedBox.shrink()
-                : Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: SizedBox(
-                      height: 122,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: sessions.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 10),
-                        itemBuilder: (context, i) {
-                          final s = sessions[i];
-                          final type = (s['session_type'] as String?) ?? 'video';
-                          return _LiveCard(
-                            title: (s['title'] as String?) ?? 'Direct sans titre',
-                            host: (s['host_name'] as String?) ?? 'THIX',
-                            isVideo: type == 'video',
-                            viewers: (s['viewer_count'] as int?) ?? 0,
-                            onTap: () => _joinLive(s),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _LiveCard extends StatelessWidget {
-  final String title;
-  final String host;
-  final bool isVideo;
-  final int viewers;
-  final VoidCallback onTap;
-
-  const _LiveCard({required this.title, required this.host, required this.isVideo, required this.viewers, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 148,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: ThixPolicy.surfaceSoft,
-          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          border: Border.all(color: ThixPolicy.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(color: ThixPolicy.danger.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-                  child: Text('EN DIRECT', style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.danger, fontSize: 8, fontWeight: ThixPolicy.bold)),
-                ),
-                Row(
-                  children: [
-                    const Icon(Icons.visibility_outlined, color: ThixPolicy.textSecondary, size: 12),
-                    const SizedBox(width: 3),
-                    Text(viewers.toString(), style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 10, fontWeight: ThixPolicy.semiBold)),
-                  ],
-                ),
-              ],
-            ),
-            const Spacer(),
-            Icon(isVideo ? Icons.videocam_outlined : Icons.mic_none_rounded, color: ThixPolicy.primary, size: 18),
-            const SizedBox(height: 6),
-            Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textMain, fontSize: 12.5, fontWeight: ThixPolicy.bold, height: 1.2)),
-            const SizedBox(height: 3),
-            Text(host, maxLines: 1, overflow: TextOverflow.ellipsis, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 10.5, fontWeight: ThixPolicy.semiBold)),
-          ],
-        ),
       ),
     );
   }
