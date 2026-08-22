@@ -47,14 +47,16 @@ dependencies:
   json_annotation: ^4.9.0
   equatable: ^2.0.8
 
-  # Utils
+    # Utils
   intl: ^0.20.2
   timeago: ^3.6.0
   timezone: ^0.10.1  
   uuid: ^4.5.3
   crypto: ^3.0.3
   url_launcher: ^6.3.0
+  any_link_preview: ^3.0.0   
   path: ^1.9.0
+
 
   # Media & Communication
   video_player: ^2.9.2
