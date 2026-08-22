@@ -16,7 +16,8 @@ class LiveService {
 
   Future<AgoraCredentials> fetchAgoraCredentials(String channelName) async {
     final response = await _client.functions
-        .invoke('agora-token', body: {'channel': channelName, 'uid': 0})
+        // ✅ CORRECTION ICI : 'channelName' au lieu de 'channel'
+        .invoke('agora-token', body: {'channelName': channelName, 'uid': 0})
         .timeout(const Duration(seconds: 12));
 
     if (response.data == null || response.data is! Map) {
