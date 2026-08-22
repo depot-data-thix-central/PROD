@@ -10,9 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_player/video_player.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-// ✅ Design System THIX v1
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-
 import 'video_player_page.dart';
 import '../../models/media_content.dart';
 import 'providers/thix_media_provider.dart';
@@ -23,14 +21,11 @@ import '../../services/media_service.dart';
 import 'create_post_page.dart';
 import 'user_profile_page.dart';
 
-// ============================================================================
-// PALETTE — Charte THIX ID (Or remplacé par Blanc Premium selon la demande)
-// ============================================================================
 class _MediaColors {
   static const navyDeep = Color(0xFF0A1F44);
   static const navy = Color(0xFF123B7A);
   static const primary = Color(0xFF2D6CDF);
-  static const whiteAccent = Colors.white; // Remplace l'or
+  static const whiteAccent = Colors.white;
   static const whiteMuted = Color(0xFFE2E8F0);
   static const ivory = Color(0xFFF6F7FB);
   static const card = Color(0xFF11213F);
@@ -53,9 +48,6 @@ class _MediaColors {
   );
 }
 
-// ============================================================================
-// MODELS & SERVICES
-// ============================================================================
 class MediaCounts {
   final int likeCount, viewCount, commentCount;
   const MediaCounts({
@@ -90,9 +82,6 @@ class _AnalyticsBatcher {
   }
 }
 
-// ============================================================================
-// PROVIDERS
-// ============================================================================
 final isMediaAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
   final u = Supabase.instance.client.auth.currentUser;
   if (u == null) return false;
@@ -172,10 +161,6 @@ final mediaCountsStreamProvider = StreamProvider.autoDispose.family<MediaCounts,
   }
 });
 
-// ============================================================================
-// ============================================================================
-// PAGE PRINCIPALE — TDIA CATALOGUE
-// ============================================================================
 class ThixMediaPage extends ConsumerStatefulWidget {
   const ThixMediaPage({super.key});
   @override
@@ -186,10 +171,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  
-  // ✅ CLÉ GLOBALE pour stabiliser le champ de recherche et empêcher le clavier de sauter
   final GlobalKey _searchKey = GlobalKey(); 
-  
   Timer? _searchDebounce;
 
   List<MediaContent> _catalog = [];
@@ -209,9 +191,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    
-    // ❌ ÉCOUTEUR SUPPRIMÉ POUR ÉVITER LES RECONSTRUCTIONS INUTILES DU CLAVIER
-    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(selectedCategoryProvider.notifier).state = 'Tous';
       _initCatalog();
@@ -374,8 +353,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     final asyncMedia = ref.watch(thixMediaListProvider);
     final isAdmin = ref.watch(isMediaAdminProvider).valueOrNull ?? false;
     final hasQuery = _searchController.text.trim().isNotEmpty;
-    
-    // ✅ UTILISATION DIRECTE DE HASFOCUS 
     final showSearchOverlay = _searchFocusNode.hasFocus && hasQuery;
 
     return Scaffold(
@@ -473,7 +450,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
-  // ── HEADER PRINCIPAL ──
   Widget _buildSliverHeader(bool isAdmin, bool hasQuery) {
     return SliverAppBar(
       pinned: true,
@@ -532,13 +508,13 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
-                    key: _searchKey, // ✅ CLÉ GLOBALE AJOUTÉE ICI
+                    key: _searchKey,
                     controller: _searchController,
                     focusNode: _searchFocusNode,
                     onChanged: _onSearchChanged,
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     cursorColor: Colors.white,
-                    autocorrect: false, // Désactive la correction auto pour éviter les sauts
+                    autocorrect: false,
                     enableSuggestions: false, 
                     decoration: const InputDecoration(
                       hintText: 'Découvrir des vidéos, séries, créateurs…',
@@ -570,7 +546,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
-  // ── HEADER TRANSPARENT (Spécifique au mode Fil) ──
   Widget _buildTransparentHeader(bool isAdmin) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -812,76 +787,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   }
 }
 
-                            
-
-// ============================================================================
-// VUE DU FIL D'ACTUALITÉ (Vertical Autoplay, Design Premium)
-// ============================================================================
-class _FilFeedView extends StatefulWidget {
-  final List<MediaContent> catalog;
-  final Function(MediaContent) onOpenDetail;
-  final Widget Function(String, {BoxFit fit}) buildImage;
-  final String Function(int) formatNumber;
-
-  const _FilFeedView({
-    required this.catalog,
-    required this.onOpenDetail,
-    required this.buildImage,
-    required this.formatNumber,
-  });
-
-  @override
-  State<_FilFeedView> createState() => _FilFeedViewState();
-}
-
-class _FilFeedViewState extends State<_FilFeedView> {
-  int _currentIndex = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.catalog.isEmpty) {
-      return const Center(child: Text('Le fil est vide pour le moment.', style: TextStyle(color: Colors.white54)));
-    }
-
-    return PageView.builder(
-      scrollDirection: Axis.vertical,
-      onPageChanged: (index) => setState(() => _currentIndex = index),
-      itemCount: widget.catalog.length,
-      itemBuilder: (context, index) {
-        final item = widget.catalog[index];
-        final isCurrent = index == _currentIndex;
-
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            // Fond flouté pour un rendu très premium
-            widget.buildImage(item.coverUrl, fit: BoxFit.cover),
-            BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-              child: Container(color: Colors.black.withValues(alpha: 0.6)),
-            ),
-            
-            // Le lecteur vidéo au centre (S'adapte dynamiquement)
-            Center(
-              child: FeedVideoPlayer(
-                videoUrl: item.videoUrl,
-                coverUrl: item.coverUrl,
-                isPlaying: isCurrent,
-                onPlayStateChanged: (_) {},
-              ),
-            ),
-            
-            // L'overlay d'informations (Glassmorphism en bas)
-            Positioned(
-              left: 16, right: 16, bottom: 24,
-              child: GestureDetector(
-                onTap: () => widget.onOpenDetail(item),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: BackdropFilter(
-// ============================================================================
-// VUE DU FIL D'ACTUALITÉ (Vertical Autoplay, Actions Directes)
-// ============================================================================
 class _FilFeedView extends ConsumerStatefulWidget {
   final List<MediaContent> catalog;
   final Function(MediaContent) onOpenDetail;
@@ -901,8 +806,6 @@ class _FilFeedView extends ConsumerStatefulWidget {
 
 class _FilFeedViewState extends ConsumerState<_FilFeedView> {
   int _currentIndex = 0;
-  
-  // États locaux pour gérer les likes de manière optimiste dans le Fil
   final Map<String, bool> _localLikes = {};
   final Map<String, int> _localLikeCounts = {};
 
@@ -912,7 +815,6 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
     _initLikes();
   }
   
-  // Initialise les compteurs locaux à partir du catalogue
   void _initLikes() {
     for (var item in widget.catalog) {
       _localLikeCounts[item.id] = item.likeCount;
@@ -920,7 +822,6 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
     _syncLikedStatus();
   }
 
-  // Vérifie en arrière-plan quels médias le user a déjà liké
   Future<void> _syncLikedStatus() async {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null || widget.catalog.isEmpty) return;
@@ -938,7 +839,6 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
     } catch (_) {}
   }
 
-  // Fonction de Like direct
   Future<void> _toggleLike(MediaContent item) async {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) {
@@ -958,7 +858,6 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
     try {
       await Supabase.instance.client.rpc('toggle_media_like', params: {'p_media_id': item.id});
     } catch (_) {
-      // Revert en cas d'erreur
       if (mounted) {
         setState(() {
           _localLikes[item.id] = isCurrentlyLiked;
@@ -968,7 +867,6 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
     }
   }
 
-  // Ouvre le BottomSheet des commentaires directement sur le Fil
   void _openCommentsDirectly(MediaContent item) {
     showModalBottomSheet(
       context: context,
@@ -996,8 +894,6 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
         
         final isLiked = _localLikes[item.id] ?? false;
         final likeCount = _localLikeCounts[item.id] ?? item.likeCount;
-        
-        // On écoute les commentaires en temps réel si disponible
         final live = ref.watch(mediaCountsStreamProvider(item.id)).valueOrNull;
         final commentCount = live?.commentCount ?? item.commentCount;
         final viewCount = live?.viewCount ?? item.viewCount;
@@ -1005,14 +901,11 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
         return Stack(
           fit: StackFit.expand,
           children: [
-            // Fond flouté
             widget.buildImage(item.coverUrl, fit: BoxFit.cover),
             BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
               child: Container(color: Colors.black.withValues(alpha: 0.6)),
             ),
-            
-            // Le lecteur vidéo au centre
             Center(
               child: FeedVideoPlayer(
                 videoUrl: item.videoUrl,
@@ -1021,8 +914,6 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
                 onPlayStateChanged: (_) {},
               ),
             ),
-            
-            // ── L'overlay d'informations (Glassmorphism en bas) ──
             Positioned(
               left: 16, right: 16, bottom: 24,
               child: ClipRRect(
@@ -1038,7 +929,6 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Zone cliquable pour voir les détails/description complète
                         GestureDetector(
                           onTap: () => widget.onOpenDetail(item),
                           behavior: HitTestBehavior.opaque,
@@ -1063,40 +953,30 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
                             ],
                           ),
                         ),
-                        
                         const SizedBox(height: 12),
                         Container(height: 1, color: Colors.white.withValues(alpha: 0.1)),
                         const SizedBox(height: 8),
-                        
-                        // ── ZONE DES ACTIONS DIRECTES ──
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
-                            // Bouton J'aime
                             _actionBtn(
                               icon: isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded, 
                               text: widget.formatNumber(likeCount), 
                               color: isLiked ? _MediaColors.danger : Colors.white,
                               onTap: () => _toggleLike(item),
                             ),
-                            
-                            // Bouton Commenter
                             _actionBtn(
                               icon: Icons.chat_bubble_outline_rounded, 
                               text: widget.formatNumber(commentCount), 
                               color: Colors.white,
                               onTap: () => _openCommentsDirectly(item),
                             ),
-                            
-                            // Compteur de vues (Non cliquable)
                             _actionBtn(
                               icon: Icons.visibility_outlined, 
                               text: widget.formatNumber(viewCount), 
                               color: Colors.white70,
                               onTap: null,
                             ),
-                            
-                            // Bouton Plein écran / Détails
                             _actionBtn(
                               icon: Icons.fullscreen_rounded, 
                               text: '', 
@@ -1117,7 +997,6 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
     );
   }
 
-  // Widget utilitaire pour les boutons d'action
   Widget _actionBtn({required IconData icon, required String text, required Color color, VoidCallback? onTap}) {
     return GestureDetector(
       onTap: onTap,
@@ -1138,9 +1017,6 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
   }
 }
 
-// ============================================================================
-// CARTE AFFICHE — style catalogue (poster + méta)
-// ============================================================================
 class _MediaPosterCard extends StatelessWidget {
   final MediaContent item;
   final String Function(int) formatNumber;
@@ -1220,12 +1096,9 @@ class _MediaPosterCard extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// PAGE DÉTAIL — (Avec suggestions et taille adaptative)
-// ============================================================================
 class _MediaDetailPage extends ConsumerStatefulWidget {
   final MediaContent item;
-  final List<MediaContent> catalog; // Requis pour afficher les suggestions
+  final List<MediaContent> catalog;
   const _MediaDetailPage({required this.item, required this.catalog});
 
   @override
@@ -1253,10 +1126,9 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
   }
   
   void _loadSuggestions() {
-    // Prend au hasard quelques vidéos du catalogue pour les suggestions (sauf la vidéo actuelle)
     final otherVideos = widget.catalog.where((e) => e.id != widget.item.id).toList();
     otherVideos.shuffle();
-    _suggestions = otherVideos.take(4).toList(); // Limite à 4 suggestions
+    _suggestions = otherVideos.take(4).toList();
   }
 
   Future<void> _syncLiked() async {
@@ -1325,7 +1197,6 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── LECTEUR VIDÉO (Taille adaptative) ──
             Container(
               constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.70),
               color: Colors.black,
@@ -1344,8 +1215,6 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
                       ),
               ),
             ),
-
-            // ── SÉLECTEUR D'ÉPISODES ──
             if (isSeries && !requiresPayment)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
@@ -1387,8 +1256,6 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
                   ],
                 ),
               ),
-
-            // ── AUTEUR + SUIVRE ──
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
               child: Row(
@@ -1431,8 +1298,6 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
                 ],
               ),
             ),
-
-            // ── BARRE D'ACTIONS HORIZONTALE (Avec vues) ──
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
               child: Container(
@@ -1472,8 +1337,6 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
                 ),
               ),
             ),
-
-            // ── DESCRIPTION ──
             if (item.subtitle != null && item.subtitle!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -1481,8 +1344,6 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
               )
             else
               const SizedBox(height: 24),
-              
-            // ── VIDÉOS SUGGÉRÉES ──
             if (_suggestions.isNotEmpty) ...[
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16),
@@ -1497,10 +1358,10 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
                   crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 14, childAspectRatio: 0.62,
                 ),
                 itemCount: _suggestions.length,
-                                itemBuilder: (c, i) => _MediaPosterCard(
+                itemBuilder: (c, i) => _MediaPosterCard(
                   item: _suggestions[i],
                   formatNumber: _formatNumber,
-                  buildImage: (url, {BoxFit? fit}) { // CORRECTION ICI
+                  buildImage: (url, {BoxFit? fit}) {
                     if (url.trim().isEmpty) return Container(color: _MediaColors.card, child: const Icon(Icons.play_circle_outline, color: Colors.white24));
                     return CachedNetworkImage(imageUrl: url, fit: fit ?? BoxFit.cover);
                   },
@@ -1585,9 +1446,6 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
   }
 }
 
-// ============================================================================
-// LECTEUR VIDEO (Progress bar fine & fluide — taille adaptative intégrée)
-// ============================================================================
 class FeedVideoPlayer extends StatefulWidget {
   final String videoUrl, coverUrl;
   final bool isPlaying;
@@ -1669,7 +1527,6 @@ class _FeedVideoPlayerState extends State<FeedVideoPlayer> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Le lecteur encapsulé dans AspectRatio pour s'adapter à la vidéo réelle
           Container(
             color: Colors.black, 
             child: Center(
@@ -1677,8 +1534,6 @@ class _FeedVideoPlayerState extends State<FeedVideoPlayer> {
             )
           ),
           if (_paused) const Center(child: Icon(Icons.play_arrow_rounded, color: Colors.white70, size: 80)),
-
-          // Progress Bar Ultra Fine
           Positioned(
             left: 0, right: 0, bottom: 0,
             child: GestureDetector(
@@ -1710,9 +1565,6 @@ class _FeedVideoPlayerState extends State<FeedVideoPlayer> {
   }
 }
 
-// ============================================================================
-// COMMENTAIRES BOTTOM SHEET
-// ============================================================================
 class _CommentsSheet extends ConsumerStatefulWidget {
   final String mediaId, mediaTitle;
   const _CommentsSheet({required this.mediaId, required this.mediaTitle});
