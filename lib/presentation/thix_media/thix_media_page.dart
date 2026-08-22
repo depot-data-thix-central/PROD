@@ -1284,10 +1284,10 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
                   crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 14, childAspectRatio: 0.62,
                 ),
                 itemCount: _suggestions.length,
-                itemBuilder: (c, i) => _MediaPosterCard(
+                                itemBuilder: (c, i) => _MediaPosterCard(
                   item: _suggestions[i],
                   formatNumber: _formatNumber,
-                  buildImage: (url, {fit}) {
+                  buildImage: (url, {BoxFit? fit}) { // CORRECTION ICI
                     if (url.trim().isEmpty) return Container(color: _MediaColors.card, child: const Icon(Icons.play_circle_outline, color: Colors.white24));
                     return CachedNetworkImage(imageUrl: url, fit: fit ?? BoxFit.cover);
                   },
