@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart'; // ✅ L'IMPORT MANQUANT EST ICI
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -246,7 +247,7 @@ class _LiveViewerScreenState extends State<LiveViewerScreen> with TickerProvider
         await _leaveBroadcast();
       },
       child: Scaffold(
-        backgroundColor: Colors.black, // Le fond est noir en permanence
+        backgroundColor: Colors.black,
         resizeToAvoidBottomInset: true,
         body: Stack(
           children: [
@@ -263,7 +264,7 @@ class _LiveViewerScreenState extends State<LiveViewerScreen> with TickerProvider
                               ? AgoraVideoView(
                                   controller: VideoViewController.remote(
                                     rtcEngine: _engine,
-                                    canvas: VideoCanvas(uid: _remoteUid),
+                                    canvas: VideoCanvas(uid: _remoteUid!),
                                     connection: RtcConnection(channelId: widget.channelName),
                                     useFlutterTexture: kIsWeb,
                                   ),
