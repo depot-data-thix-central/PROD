@@ -79,8 +79,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> w
   static const double _nodeContainerWidth = 56.0;
   static const double _nodeTextSize = 9.0;
 
-  // Palette par catégorie — chaque service retrouve sa propre couleur.
-  // Le CERCLE reste mono (blanc) ; seule l'icône est teintée.
+  // Palette par catégorie — chaque service garde sa propre couleur.
   static const Color _colorMedia = Color(0xFF7C3AED); // violet — TDIA
   static const Color _colorInfo = Color(0xFF2D6CDF); // bleu — THIX MEDIA
   static const Color _colorEvents = Color(0xFFE0703C); // orange — Événements
@@ -132,31 +131,25 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> w
     action();
   }
 
-  /// Génère la liste des nœuds **triés par catégories logiques**
-  /// pour que les icônes similaires se suivent sur le cercle.
-  /// Chaque nœud porte désormais sa propre couleur d'icône.
+  /// Génère la liste des nœuds **séparés en 2 orbites (4 internes, 8 externes)**
   List<_ServiceNodeData> _getGroupedNodes(AppLocalizations l10n) {
     final c = widget.counts;
     return [
-      // --- CATÉGORIE 1 : Contenu & Médias ---
-      _ServiceNodeData(key: 'thixMedia', icon: Icons.play_circle_filled, title: 'TDIA', badge: c.media, color: _colorMedia),
-      _ServiceNodeData(key: 'thixInfo', icon: Icons.newspaper_rounded, title: 'THIX MEDIA', badge: c.info, color: _colorInfo),
-      _ServiceNodeData(key: 'evenements', icon: Icons.event_rounded, title: l10n.t('serviceEvenements'), badge: c.events, color: _colorEvents),
-
-      // --- CATÉGORIE 2 : Économie & Transactions ---
+      // --- ORBITE INTERNE (4 nœuds) ---
       _ServiceNodeData(key: 'thixMoney', icon: Icons.account_balance_wallet_rounded, title: l10n.t('serviceMoney'), badge: c.money, color: _colorMoney),
+      _ServiceNodeData(key: 'thixMedia', icon: Icons.play_circle_filled, title: 'TDIA', badge: c.media, color: _colorMedia),
+      _ServiceNodeData(key: 'monPays', icon: Icons.flag, title: l10n.t('serviceMonPays'), badge: c.monPays, color: _colorCountry),
+      _ServiceNodeData(key: 'thixInfo', icon: Icons.newspaper_rounded, title: 'THIX MEDIA', badge: c.info, color: _colorInfo),
+
+      // --- ORBITE EXTERNE (8 nœuds formant l'octogone) ---
+      _ServiceNodeData(key: 'evenements', icon: Icons.event_rounded, title: l10n.t('serviceEvenements'), badge: c.events, color: _colorEvents),
       _ServiceNodeData(key: 'thixMarket', icon: Icons.storefront_rounded, title: l10n.t('serviceMarket'), badge: c.market, color: _colorMarket),
       _ServiceNodeData(key: 'reservation', icon: Icons.confirmation_number_rounded, title: l10n.t('serviceReservation'), badge: c.reservation, color: _colorReservation),
-
-      // --- CATÉGORIE 3 : Carrière, Éducation & Réseau ---
       _ServiceNodeData(key: 'emplois', icon: Icons.work_rounded, title: l10n.t('serviceEmplois'), badge: c.jobs, color: _colorJobs),
       _ServiceNodeData(key: 'formations', icon: Icons.school_rounded, title: l10n.t('serviceFormations'), badge: c.formations, color: _colorFormations),
       _ServiceNodeData(key: 'opportunites', icon: Icons.lightbulb_rounded, title: l10n.t('serviceOpportunites'), badge: c.opportunities, color: _colorOpportunities),
       _ServiceNodeData(key: 'reseauPro', icon: Icons.groups_rounded, title: 'Thix Pro', badge: c.network, color: _colorNetwork),
-
-      // --- CATÉGORIE 4 : Vie Pratique & Gouvernement ---
       _ServiceNodeData(key: 'thixSante', icon: Icons.local_hospital_rounded, title: l10n.t('serviceSante'), badge: c.health, color: _colorHealth),
-      _ServiceNodeData(key: 'monPays', icon: Icons.flag, title: l10n.t('serviceMonPays'), badge: c.monPays, color: _colorCountry),
     ];
   }
 
@@ -190,17 +183,23 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> w
               w / 2 - ThixPolicy.constellationOuterPadding,
               ThixPolicy.constellationMaxRadius,
             );
+            final innerR = maxR * 0.58; // Rayon interne ajusté
 
-            final nodeCount = nodes.length;
             final positions = <Offset>[];
 
-            // Calcul de la géométrie de la constellation
-            for (var i = 0; i < nodeCount; i++) {
-              final angle = -90.0 + (i * (360.0 / nodeCount));
-              final radius = i.isEven ? maxR : maxR * ThixPolicy.constellationInnerFactor;
-              positions.add(_polar(center, angle, radius));
+            // 1. Calcul des 4 Nœuds Internes (Placés en diagonale)
+            for (var i = 0; i < 4; i++) {
+              final angle = -135.0 + (i * 90.0); // -135, -45, 45, 135
+              positions.add(_polar(center, angle, innerR));
             }
 
+            // 2. Calcul des 8 Nœuds Externes (Placés sur un octogone régulier)
+            for (var i = 0; i < 8; i++) {
+              final angle = -90.0 + (i * 45.0); // -90, -45, 0, 45, 90, 135, 180, 225
+              positions.add(_polar(center, angle, maxR));
+            }
+
+            // Hub central items
             final hubPositions = <Offset>[];
             for (var i = 0; i < hubItems.length; i++) {
               final angle = -90.0 + (i * (360.0 / hubItems.length));
@@ -213,7 +212,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> w
                 return Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    // Arrière plan lumineux central — teinte or/ivoire, plus de violet
+                    // Arrière plan lumineux central
                     Positioned(
                       left: center.dx - 130,
                       top: center.dy - 130,
@@ -230,7 +229,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> w
                         ),
                       ),
                     ),
-                    // Lignes de connexion — effet "petite tranchée" mono-couleur
+                    // Lignes de connexion (Octogone + branches radiales)
                     Positioned.fill(
                       child: CustomPaint(
                         painter: _RadialBranchesPainter(
@@ -240,7 +239,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> w
                         ),
                       ),
                     ),
-                    // Nœuds de services (Orbite) — icône colorée, cercle mono
+                    // Nœuds de services (Orbite)
                     for (var i = 0; i < nodes.length; i++)
                       Positioned(
                         left: positions[i].dx - (_nodeContainerWidth / 2),
@@ -376,11 +375,7 @@ class _HubSatelliteButton extends StatelessWidget {
   }
 }
 
-/// Peint les branches reliant le hub aux nœuds de service.
-/// Rendu "petite tranchée" : mono-couleur (blanc), un léger ombrage
-/// sous le trait pour donner un effet gravé/creusé plutôt qu'un
-/// dégradé coloré. Les étincelles qui voyagent le long des branches
-/// restent visibles et lumineuses (halo + reflet en croix).
+/// Peint les branches et relie les orbites extérieures (Octogone)
 class _RadialBranchesPainter extends CustomPainter {
   final Offset center;
   final List<Offset> nodeOffsets;
@@ -394,6 +389,29 @@ class _RadialBranchesPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // 1. TRACER L'OCTOGONE EXTÉRIEUR (Nœuds 4 à 11)
+    if (nodeOffsets.length == 12) {
+      final perimeterGroovePaint = Paint()
+        ..color = Colors.black.withValues(alpha: 0.07)
+        ..strokeWidth = 2.6
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke;
+
+      final perimeterPaint = Paint()
+        ..color = Colors.white.withValues(alpha: 0.45) // Un peu plus subtil que les radiales
+        ..strokeWidth = 1.4
+        ..style = PaintingStyle.stroke;
+
+      for (var i = 4; i < 12; i++) {
+        final start = nodeOffsets[i];
+        final end = (i == 11) ? nodeOffsets[4] : nodeOffsets[i + 1]; // Boucler sur le premier
+
+        canvas.drawLine(start + const Offset(0, 1.1), end + const Offset(0, 1.1), perimeterGroovePaint);
+        canvas.drawLine(start, end, perimeterPaint);
+      }
+    }
+
+    // 2. TRACER LES BRANCHES RADIALES (Vers tous les nœuds)
     for (var i = 0; i < nodeOffsets.length; i++) {
       final end = nodeOffsets[i];
 
@@ -413,7 +431,7 @@ class _RadialBranchesPainter extends CustomPainter {
         ..style = PaintingStyle.stroke;
       canvas.drawLine(center, end, trackPaint);
 
-      // ── Fin liseré intérieur clair pour accentuer le relief gravé ──
+      // ── Liseré intérieur clair pour accentuer le relief gravé ──
       final innerHighlight = Paint()
         ..color = Colors.white.withValues(alpha: 0.55)
         ..strokeWidth = 0.7
@@ -421,7 +439,7 @@ class _RadialBranchesPainter extends CustomPainter {
         ..style = PaintingStyle.stroke;
       canvas.drawLine(center - const Offset(0, 0.5), end - const Offset(0, 0.5), innerHighlight);
 
-      // ── Étincelle voyageuse — beaucoup plus visible ──
+      // ── Étincelle voyageuse (Animation) ──
       final phase = i / nodeOffsets.length;
       final t = (shineProgress + phase) % 1.0;
       final shinePos = Offset.lerp(center, end, t)!;
@@ -444,7 +462,7 @@ class _RadialBranchesPainter extends CustomPainter {
         ).createShader(Rect.fromCircle(center: shinePos, radius: 11));
       canvas.drawCircle(shinePos, 11, haloPaint);
 
-      // reflet en croix (glint) — rend l'étincelle bien plus visible
+      // reflet en croix (glint)
       final glintPaint = Paint()
         ..color = Colors.white.withValues(alpha: 0.9)
         ..strokeWidth = 1.1
