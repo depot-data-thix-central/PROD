@@ -9,8 +9,10 @@
 
     <!-- ========================================================= -->
     <!-- 2. CAMÉRA                                                 -->
+    <!-- THIX ID Scanner / QR / photo / vidéo / appels vidéo       -->
     <!-- ========================================================= -->
     <uses-permission android:name="android.permission.CAMERA" />
+
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
@@ -21,15 +23,17 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <!-- ========================================================= -->
-    <!-- 4. BLUETOOTH                                              -->
+    <!-- 4. BLUETOOTH (Requis par Agora pour les casques sans fil) -->
     <!-- ========================================================= -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
     <!-- ========================================================= -->
     <!-- 5. LOCALISATION                                           -->
+    <!-- Google Maps / Geolocator / THIX SOS                       -->
     <!-- ========================================================= -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -37,23 +41,26 @@
 
     <!-- ========================================================= -->
     <!-- 6. NFC                                                    -->
+    <!-- Identité numérique / cartes / passeports NFC              -->
     <!-- ========================================================= -->
     <uses-permission android:name="android.permission.NFC" />
+
     <uses-feature android:name="android.hardware.nfc" android:required="false" />
 
     <!-- ========================================================= -->
     <!-- 7. BIOMÉTRIE                                              -->
+    <!-- Empreinte / Face / authentification système               -->
     <!-- ========================================================= -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
 
     <!-- ========================================================= -->
     <!-- 8. STOCKAGE & MÉDIAS                                      -->
+    <!-- Importation de documents d'identité et photos de profil   -->
     <!-- ========================================================= -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
     <!-- ========================================================= -->
     <!-- 9. NOTIFICATIONS & SYSTÈME                                -->
@@ -106,7 +113,7 @@
     </application>
 
     <!-- ========================================================= -->
-    <!-- QUERIES                                                   -->
+    <!-- QUERIES (Intégration avec les applications externes)      -->
     <!-- ========================================================= -->
     <queries>
         <intent>
