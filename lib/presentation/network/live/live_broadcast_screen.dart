@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -434,7 +435,7 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
     );
   }
 
-    Widget _buildTopBar(BuildContext context, LiveState state, LiveController notifier) {
+  Widget _buildTopBar(BuildContext context, LiveState state, LiveController notifier) {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -506,7 +507,6 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
             // ─── BOUTON FIN DE LIVE ROUGE ───
             GestureDetector(
               onTap: () async {
-                // Optionnel : Tu pourrais ajouter une boîte de dialogue de confirmation ici
                 await notifier.endBroadcast();
                 if (context.mounted) Navigator.of(context).pop();
               },
@@ -517,7 +517,7 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
-                      color: ThixPolicy.danger.withOpacity(0.85), // ROUGE TRANSLUCIDE
+                      color: ThixPolicy.danger.withOpacity(0.85),
                       borderRadius: BorderRadius.circular(ThixPolicy.rFull), 
                       border: Border.all(color: Colors.white.withOpacity(0.2))
                     ),
@@ -539,7 +539,7 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
       ),
     );
   }
-
+} // ✅ ICI MANQUAIT L'ACCOLADE QUI FERME LA CLASSE DE BASE !
 
 // ─── COMPOSANTS ANNEXES ───
 
