@@ -1,16 +1,16 @@
 // lib/presentation/network/live/live_prep_screen.dart
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:thix_id/data/models/live/live_model.dart'; // 🌟 Importation de votre modèle
-import 'live_broadcast_screen.dart';
 
-class _C {
-  static const red = Color(0xFFE5484D);
-  static const bgDark = Color(0xFF10192E);
-}
+// ✅ POLICY THIX APPLIQUÉE
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/data/models/live/live_model.dart';
+import 'live_broadcast_screen.dart';
 
 class LivePrepScreen extends StatefulWidget {
   const LivePrepScreen({super.key});
@@ -50,36 +50,32 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
         context: context,
         barrierDismissible: false, 
         builder: (context) => AlertDialog(
-          backgroundColor: Colors.white,
-          surfaceTintColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Row(
+          backgroundColor: ThixPolicy.card,
+          surfaceTintColor: ThixPolicy.card,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
+          title: Row(
             children: [
-              Icon(Icons.privacy_tip_outlined, color: Colors.black, size: 28),
-              SizedBox(width: 10),
-              Text(
-                "Autorisations",
-                style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
-              ),
+              const Icon(Icons.privacy_tip_outlined, color: ThixPolicy.textMain, size: 28),
+              const SizedBox(width: 10),
+              Text("Autorisations", style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
             ],
           ),
-          content: const Text(
+          content: Text(
             "Pour démarrer votre direct, THIX ID a besoin d'accéder à votre caméra et votre microphone. "
             "Ces accès ne sont utilisés que pendant la diffusion.",
-            style: TextStyle(color: Colors.black87, fontSize: 16),
+            style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary, height: 1.4),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text("Annuler", style: TextStyle(color: Colors.black54)),
+              child: Text("Annuler", style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Colors.black,
+                backgroundColor: ThixPolicy.textMain,
+                foregroundColor: Colors.white,
                 elevation: 0,
-                side: const BorderSide(color: Colors.black, width: 1),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
               ),
               onPressed: () => Navigator.pop(context, true),
               child: const Text("Compris", style: TextStyle(fontWeight: FontWeight.bold)),
@@ -126,6 +122,8 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
 
   Future<void> _startLive() async {
     if (_isStartingLive) return;
+    HapticFeedback.heavyImpact();
+    
     final title = _titleController.text.trim().isEmpty ? "Mon Direct" : _titleController.text.trim();
     setState(() => _isStartingLive = true);
 
@@ -142,14 +140,13 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
           .select()
           .single();
 
-      // 2. 🌟 CRÉATION DE L'OBJET LIVESESSION MANUELLEMENT 
-      // (Sécurisé pour éviter les erreurs "fromMap" si des colonnes manquent dans la réponse insert)
+      // 2. CRÉATION DE L'OBJET LIVESESSION MANUELLEMENT 
       final liveSession = LiveSession(
         id: response['id'].toString(),
         channelName: channelName,
         title: title,
         hostId: user.id,
-        hostName: "Moi", // Le nom sera affiché comme "Moi" par défaut
+        hostName: "Moi", 
       );
 
       if (_isEngineReady && _engine != null) await _engine!.stopPreview();
@@ -170,7 +167,7 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
       debugPrint('Erreur: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Erreur : $e'), backgroundColor: ThixPolicy.danger),
         );
       }
     } finally {
@@ -188,107 +185,158 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _C.bgDark,
+      backgroundColor: Colors.black, // Toujours noir pour l'arrière-plan vidéo
       extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
       body: Stack(
         children: [
+          // ─── 1. VUE CAMÉRA ───
           Positioned.fill(
             child: _isEngineReady && _isVideoEnabled && _engine != null
                 ? AgoraVideoView(controller: VideoViewController(rtcEngine: _engine!, canvas: const VideoCanvas(uid: 0)))
                 : Container(
-                    color: const Color(0xFF1E293B),
+                    color: ThixPolicy.inkDeep,
                     child: const Center(child: Icon(Icons.videocam_off_rounded, color: Colors.white24, size: 80)),
                   ),
           ),
+          
+          // ─── 2. GRADIENTS DE LISIBILITÉ ───
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.black.withOpacity(0.4), Colors.transparent, Colors.black.withOpacity(0.85)],
+                  colors: [
+                    Colors.black.withOpacity(0.5), 
+                    Colors.transparent, 
+                    Colors.transparent,
+                    Colors.black.withOpacity(0.9)
+                  ],
+                  stops: const [0.0, 0.2, 0.5, 1.0],
                 ),
               ),
             ),
           ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextField(
-                    controller: _titleController,
-                    style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-                    decoration: InputDecoration(
-                      hintText: "De quoi allez-vous parler ?",
-                      hintStyle: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 24),
-                      border: InputBorder.none,
+          
+          // ─── 3. BOUTON FERMER (Haut Droite) ───
+          Positioned(
+            top: MediaQuery.paddingOf(context).top + 16,
+            right: 16,
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(ThixPolicy.rFull),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2), 
+                      shape: BoxShape.circle
                     ),
+                    child: const Icon(Icons.close_rounded, color: Colors.white, size: 24),
                   ),
-                  const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildRoundBtn(
-                        icon: _isMicEnabled ? Icons.mic_rounded : Icons.mic_off_rounded,
-                        isActive: _isMicEnabled,
-                        onTap: () {
-                          setState(() => _isMicEnabled = !_isMicEnabled);
-                          if (_isEngineReady && _engine != null) _engine!.muteLocalAudioStream(!_isMicEnabled);
-                        },
+                ),
+              ),
+            ),
+          ),
+
+          // ─── 4. CONTRÔLES (Bas de l'écran) ───
+          Positioned(
+            left: 0, right: 0, bottom: 0,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Titre du live
+                    TextField(
+                      controller: _titleController,
+                      style: ThixPolicy.h1Style.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold, fontSize: 32, letterSpacing: -0.5),
+                      maxLines: null,
+                      textInputAction: TextInputAction.done,
+                      decoration: InputDecoration(
+                        hintText: "Ajoutez un titre...",
+                        hintStyle: ThixPolicy.h1Style.copyWith(color: Colors.white.withOpacity(0.4), fontSize: 32, letterSpacing: -0.5),
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
                       ),
-                      const SizedBox(width: 24),
-                      _buildRoundBtn(
-                        icon: _isVideoEnabled ? Icons.videocam_rounded : Icons.videocam_off_rounded,
-                        isActive: _isVideoEnabled,
-                        onTap: () {
-                          setState(() => _isVideoEnabled = !_isVideoEnabled);
-                          if (_isEngineReady && _engine != null) {
-                            if (_isVideoEnabled) {
-                              _engine!.enableVideo();
-                              _engine!.startPreview();
-                            } else {
-                              _engine!.disableVideo();
+                    ),
+                    const SizedBox(height: 32),
+                    
+                    // Boutons Micro / Caméra / Rotation
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildGlassBtn(
+                          icon: _isMicEnabled ? Icons.mic_rounded : Icons.mic_off_rounded,
+                          isActive: _isMicEnabled,
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _isMicEnabled = !_isMicEnabled);
+                            if (_isEngineReady && _engine != null) _engine!.muteLocalAudioStream(!_isMicEnabled);
+                          },
+                        ),
+                        const SizedBox(width: 24),
+                        _buildGlassBtn(
+                          icon: _isVideoEnabled ? Icons.videocam_rounded : Icons.videocam_off_rounded,
+                          isActive: _isVideoEnabled,
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _isVideoEnabled = !_isVideoEnabled);
+                            if (_isEngineReady && _engine != null) {
+                              if (_isVideoEnabled) {
+                                _engine!.enableVideo();
+                                _engine!.startPreview();
+                              } else {
+                                _engine!.disableVideo();
+                              }
                             }
-                          }
-                        },
-                      ),
-                      const SizedBox(width: 24),
-                      _buildRoundBtn(
-                        icon: Icons.flip_camera_ios_rounded,
-                        isActive: true,
-                        onTap: () {
-                          if (_isEngineReady && _engine != null) _engine!.switchCamera();
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 40),
-                  SizedBox(
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: _isStartingLive ? null : _startLive,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _isStartingLive ? Colors.grey : _C.red,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                      ),
-                      child: _isStartingLive
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text('COMMENCER LE DIRECT', style: TextStyle(fontWeight: FontWeight.w900, color: Colors.white)),
+                          },
+                        ),
+                        const SizedBox(width: 24),
+                        _buildGlassBtn(
+                          icon: Icons.flip_camera_ios_rounded,
+                          isActive: true,
+                          onTap: () {
+                            HapticFeedback.lightImpact();
+                            if (_isEngineReady && _engine != null) _engine!.switchCamera();
+                          },
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                ],
+                    const SizedBox(height: 40),
+                    
+                    // Bouton GO LIVE
+                    SizedBox(
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: _isStartingLive ? null : _startLive,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _isStartingLive ? ThixPolicy.surfaceStrong : ThixPolicy.danger,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rFull)),
+                        ),
+                        child: _isStartingLive
+                            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                            : Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.sensors_rounded, size: 20),
+                                  const SizedBox(width: 8),
+                                  Text('LANCER LE DIRECT', style: ThixPolicy.buttonText.copyWith(letterSpacing: 0.5)),
+                                ],
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ),
               ),
             ),
           ),
@@ -297,18 +345,24 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
     );
   }
 
-  Widget _buildRoundBtn({required IconData icon, required bool isActive, required VoidCallback onTap}) {
+  Widget _buildGlassBtn({required IconData icon, required bool isActive, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        width: 56,
-        height: 56,
-        decoration: BoxDecoration(
-          color: isActive ? Colors.white.withOpacity(0.2) : Colors.red.withOpacity(0.8),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white54, width: 1),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(ThixPolicy.rFull),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: isActive ? Colors.white.withOpacity(0.15) : ThixPolicy.danger.withOpacity(0.85),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
+            ),
+            child: Icon(icon, color: Colors.white, size: 26),
+          ),
         ),
-        child: Icon(icon, color: Colors.white, size: 28),
       ),
     );
   }
