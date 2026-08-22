@@ -58,7 +58,9 @@ dependencies:
   path: ^1.9.0
 
 
-  # Media & Communication
+    # Media & Communication
+  camera: ^0.11.0+2                
+  ffmpeg_kit_flutter_new: ^1.6.0   
   video_player: ^2.9.2
   agora_rtc_engine: ^6.5.2
   record: ^7.1.1
@@ -67,6 +69,7 @@ dependencies:
   flutter_rating_bar: ^4.0.1
   flutter_audio_waveforms: ^1.2.1+8
   cached_network_image: ^3.4.1
+
 
   # Identification & Scanning
   geolocator: ^14.0.2
