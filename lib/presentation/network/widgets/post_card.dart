@@ -781,8 +781,8 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                       
                       // ─── 4. AFFICHAGE DES IMPULSIONS (LES LIKERS) ───
                       if (likesCount > 0)
-                        _buildLikersStack(likesCount, isLiked, post.id),
-
+                        _LikersStack(count: likesCount, postId: post.id, isLikedByMe: isLiked),
+                      
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 8),
                         child: Divider(height: 1, color: _PostColors.border, thickness: 0.5),
@@ -802,20 +802,99 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
   }
 
   // ── AFFICHAGE DES LIKERS (Impulsions) ──
-  Widget _buildLikersStack(int likesCount, bool isLiked, String postId) {
-    final displayCount = min(5, likesCount);
-    final extra = likesCount - displayCount;
+  // ─────────────────────────────────────────────────────────────
+// COMPOSANT : PILE DES AVATARS DES UTILISATEURS (Likers réels)
+// ─────────────────────────────────────────────────────────────
+class _LikersStack extends StatefulWidget {
+  final int count;
+  final String postId;
+  final bool isLikedByMe;
+
+  const _LikersStack({
+    required this.count, 
+    required this.postId,
+    required this.isLikedByMe,
+  });
+
+  @override
+  State<_LikersStack> createState() => _LikersStackState();
+}
+
+class _LikersStackState extends State<_LikersStack> {
+  List<String> _likerAvatars = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchLikersAvatars();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LikersStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.count != oldWidget.count) {
+      _fetchLikersAvatars();
+    }
+  }
+
+  Future<void> _fetchLikersAvatars() async {
+    if (widget.count == 0) {
+      if (mounted) setState(() { _isLoading = false; _likerAvatars = []; });
+      return;
+    }
+    
+    try {
+      // ⚠️ ATTENTION : Vérifiez que 'network_post_likes' ou 'post_likes' 
+      // correspond au nom exact de votre table Supabase !
+      final response = await Supabase.instance.client
+          .from('network_post_likes') // <-- MODIFIEZ CE NOM SI BESOIN
+          .select('user_id, profiles(avatar_url)')
+          .eq('post_id', widget.postId)
+          .order('created_at', ascending: false)
+          .limit(5);
+
+      final List<String> avatars = [];
+      if (response is List) {
+        for (var row in response) {
+          final profile = row['profiles'];
+          if (profile != null && profile['avatar_url'] != null) {
+            final url = profile['avatar_url'].toString().trim();
+            if (url.isNotEmpty) avatars.add(url);
+          } else {
+            avatars.add(''); 
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _likerAvatars = avatars;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _isLoading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final displayCount = min(5, widget.count);
+    final extra = widget.count - displayCount;
+
     final colors = [
-      const Color(0xFF2D6CDF), const Color(0xFFFF6B6B), const Color(0xFFE3B23C), 
+      const Color(0xFF2D6CDF), const Color(0xFFFF6B6B), const Color(0xFFE3B23C),
       const Color(0xFF0FA3A3), const Color(0xFF7C3AED)
     ];
 
+    // ✅ Réintégration du texte dynamique
     String text;
-    if (isLiked) {
-      if (likesCount == 1) text = "Vous avez envoyé une impulsion";
-      else text = "Vous et ${likesCount - 1} autre${likesCount - 1 > 1 ? 's' : ''}";
+    if (widget.isLikedByMe) {
+      if (widget.count == 1) text = "Vous avez envoyé une impulsion";
+      else text = "Vous et ${widget.count - 1} autre${widget.count - 1 > 1 ? 's' : ''}";
     } else {
-      text = "$likesCount personne${likesCount > 1 ? 's' : ''}";
+      text = "${widget.count} personne${widget.count > 1 ? 's' : ''}";
     }
 
     return Padding(
@@ -823,32 +902,51 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       child: Row(
         children: [
           Row(
-            children: List.generate(displayCount, (i) => Align(
-              widthFactor: 0.7,
-              child: Container(
-                width: 22, height: 22,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle, 
-                  color: colors[(postId.hashCode + i) % colors.length], 
-                  border: Border.all(color: Colors.white, width: 1.5)
+            children: List.generate(displayCount, (i) {
+              final String avatarUrl = _likerAvatars.length > i ? _likerAvatars[i] : '';
+              final bool hasRealAvatar = avatarUrl.isNotEmpty && !_isLoading;
+
+              return Align(
+                widthFactor: 0.7,
+                child: Container(
+                  width: 22, height: 22,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: colors[(widget.postId.hashCode + i) % colors.length],
+                    border: Border.all(color: Colors.white, width: 1.5),
+                    image: hasRealAvatar
+                        ? DecorationImage(
+                            image: CachedNetworkImageProvider(avatarUrl),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
+                  ),
+                  child: !hasRealAvatar
+                      ? const Icon(Icons.person, size: 12, color: Colors.white)
+                      : null,
                 ),
-                child: const Icon(Icons.person, size: 12, color: Colors.white),
-              ),
-            )),
+              );
+            }),
           ),
           if (extra > 0)
             Padding(
-              padding: const EdgeInsets.only(left: 6), 
+              padding: const EdgeInsets.only(left: 6),
               child: Text('+$extra', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _PostColors.textMuted))
             ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(text, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: _PostColors.textMuted), overflow: TextOverflow.ellipsis)
+            child: Text(
+              text, 
+              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: _PostColors.textMuted), 
+              overflow: TextOverflow.ellipsis
+            )
           ),
         ],
       ),
     );
   }
+}
+
 
   // ── BARRE D'ACTIONS COMPLÈTE EN BAS ──
   Widget _buildActionRow(NetworkPost post, bool isLiked, int likesCount, bool isOwner, bool isFree, WidgetRef ref) {
