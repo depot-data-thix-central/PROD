@@ -82,7 +82,8 @@ class _CertificationCheckoutPageState
   // ── LOGIQUE DE SECOURS POUR ANNULER LA DEMANDE ──
   Future<void> _cancelRequestFallback() async {
     try {
-      await ref.read(certificationServiceProvider).cancelUpgradeRequest();
+      // ✅ APPEL DE LA BONNE MÉTHODE DÉFINIE DANS LE SERVICE
+      await ref.read(certificationServiceProvider).cancelPendingRequest();
       ref.invalidate(myCertificationProvider);
     } catch (e) {
       debugPrint("Erreur lors du nettoyage de la requête : $e");
