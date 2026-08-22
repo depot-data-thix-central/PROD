@@ -43,10 +43,10 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   final PageController _headlinesController = PageController();
   final NotificationCountersService _counters = NotificationCountersService();
   final ProfileService _profileService = ProfileService();
-  
+
   static final RegExp _uidLikeRegex = RegExp(r'^[A-Za-z0-9-]{20,}$');
   bool _searching = false;
-  
+
   // ✅ Variables pour la gestion Admin
   bool _isAdmin = false;
   bool _uploadingBanner = false;
@@ -77,7 +77,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
           .select('role, account_type')
           .eq('id', user.id)
           .maybeSingle();
-          
+
       if (data != null && mounted) {
         final role = (data['role'] ?? data['account_type'] ?? '').toString().toLowerCase();
         if (role == 'admin' || role == 'entreprise' || role == 'support') {
@@ -92,7 +92,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   Future<void> _showAddBannerDialog() async {
     final titleCtrl = TextEditingController();
     final typeCtrl = TextEditingController(text: 'À la une');
-    
+
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -102,19 +102,19 @@ class _HomePagePremiumState extends State<HomePagePremium> {
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              controller: titleCtrl, 
+              controller: titleCtrl,
               decoration: const InputDecoration(labelText: 'Titre de l\'annonce', border: OutlineInputBorder())
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: typeCtrl, 
+              controller: typeCtrl,
               decoration: const InputDecoration(labelText: 'Tag (ex: Opportunité, Info)', border: OutlineInputBorder())
             ),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx), 
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('Annuler', style: TextStyle(color: ThixPolicy.textSecondary))
           ),
           ElevatedButton(
@@ -144,7 +144,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
       final ext = file.extension ?? 'jpg';
       final fileName = 'banner_${DateTime.now().millisecondsSinceEpoch}.$ext';
       final storagePath = 'annonces/$fileName';
-      
+
       // 1. Upload sur le Storage (Assure-toi d'avoir un bucket public nommé 'banners')
       await Supabase.instance.client.storage
           .from('banners')
@@ -186,48 +186,48 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   Future<void> _handleHomeSearchVerify() async {
     final l10n = AppLocalizations.of(context);
     final raw = _searchController.text.trim();
-    
-    if (raw.isEmpty) { 
-      await FullScreenMessage.showError(context, title: l10n.t('home_required_id_title'), message: l10n.t('home_required_id_msg')); 
-      return; 
+
+    if (raw.isEmpty) {
+      await FullScreenMessage.showError(context, title: l10n.t('home_required_id_title'), message: l10n.t('home_required_id_msg'));
+      return;
     }
-    
+
     final normalized = ThixIdService.normalize(raw);
     final isThix = normalized.startsWith('THIX-');
     final isUid = _uidLikeRegex.hasMatch(raw);
-    
-    if (!isThix && !isUid) { 
-      await FullScreenMessage.showError(context, title: l10n.t('home_invalid_id_title'), message: l10n.t('home_invalid_id_msg')); 
-      return; 
+
+    if (!isThix && !isUid) {
+      await FullScreenMessage.showError(context, title: l10n.t('home_invalid_id_title'), message: l10n.t('home_invalid_id_msg'));
+      return;
     }
-    
+
     setState(() => _searching = true);
-    
+
     try {
       ThixProfile? profile;
-      if (isThix) { 
-        profile = await _profileService.fetchPublicProfileByThixId(normalized); 
-      } else { 
-        profile = await _profileService.fetchPublicProfileByUserId(raw); 
+      if (isThix) {
+        profile = await _profileService.fetchPublicProfileByThixId(normalized);
+      } else {
+        profile = await _profileService.fetchPublicProfileByUserId(raw);
       }
-      
+
       if (!mounted) return;
-      if (profile == null) { 
-        await FullScreenMessage.showError(context, title: l10n.t('home_profile_not_found_title'), message: l10n.t('home_profile_not_found_msg')); 
-        return; 
+      if (profile == null) {
+        await FullScreenMessage.showError(context, title: l10n.t('home_profile_not_found_title'), message: l10n.t('home_profile_not_found_msg'));
+        return;
       }
-      
+
       final thix = profile.thixId.trim().toUpperCase();
-      if (thix.isNotEmpty) { 
-        context.push('${AppRoutes.publicProfile}?thixId=$thix'); 
-      } else { 
-        await ThixIdentitySheets.showVerifySheet(context, initialUidOrThixId: profile.userId); 
+      if (thix.isNotEmpty) {
+        context.push('${AppRoutes.publicProfile}?thixId=$thix');
+      } else {
+        await ThixIdentitySheets.showVerifySheet(context, initialUidOrThixId: profile.userId);
       }
-    } catch (e) { 
-      if (!mounted) return; 
-      await FullScreenMessage.showError(context, title: l10n.t('home_verify_error_title'), message: l10n.t('home_verify_error_msg')); 
-    } finally { 
-      if (mounted) setState(() => _searching = false); 
+    } catch (e) {
+      if (!mounted) return;
+      await FullScreenMessage.showError(context, title: l10n.t('home_verify_error_title'), message: l10n.t('home_verify_error_msg'));
+    } finally {
+      if (mounted) setState(() => _searching = false);
     }
   }
 
@@ -238,11 +238,11 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   void _onProfileTap() {
     HapticFeedback.mediumImpact();
     final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) { 
-      context.push(AppRoutes.login); 
-    } else { 
-      context.go(AppRoutes.userDashboard); 
-    } 
+    if (user == null) {
+      context.push(AppRoutes.login);
+    } else {
+      context.go(AppRoutes.userDashboard);
+    }
   }
 
   Future<void> _openThixAi() async {
@@ -293,19 +293,19 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   Future<void> _handleRequestAccount() async {
     final auth = context.read<AuthController>();
     final res = await showModalBottomSheet<AccountRequestChoice>(
-      context: context, 
-      backgroundColor: Colors.transparent, 
-      isScrollControlled: true, 
-      builder: (context) => const AccountRequestSheet() 
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => const AccountRequestSheet()
     );
-    
-    switch (res) { 
-      case AccountRequestChoice.personal: 
-        if (auth.isAuthenticated) { await auth.signOut(); } 
-        if (mounted) { context.push(AppRoutes.personalReg); } 
-        return; 
-      case null: 
-        return; 
+
+    switch (res) {
+      case AccountRequestChoice.personal:
+        if (auth.isAuthenticated) { await auth.signOut(); }
+        if (mounted) { context.push(AppRoutes.personalReg); }
+        return;
+      case null:
+        return;
     }
   }
 
@@ -411,16 +411,16 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthController>();
     final safeTop = MediaQuery.paddingOf(context).top;
-    
-    final displayName = (auth.currentUser?.displayName.trim().isNotEmpty ?? false) 
-        ? auth.currentUser!.displayName.trim() 
-        : (auth.currentUser?.email.trim().isNotEmpty ?? false) 
-            ? auth.currentUser!.email.trim() 
+
+    final displayName = (auth.currentUser?.displayName.trim().isNotEmpty ?? false)
+        ? auth.currentUser!.displayName.trim()
+        : (auth.currentUser?.email.trim().isNotEmpty ?? false)
+            ? auth.currentUser!.email.trim()
             : 'Bonjour';
-            
+
     final photoUrl = auth.currentUser?.photoUrl;
-    final badgeCountsStream = auth.currentUser == null 
-        ? Stream.value(SectionBadgeCounts.zero) 
+    final badgeCountsStream = auth.currentUser == null
+        ? Stream.value(SectionBadgeCounts.zero)
         : _counters.streamCounts(auth.currentUser!.id);
 
     return Scaffold(
@@ -428,7 +428,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
       body: Stack(
         children: [
           const HomeSoftBackground(),
-          
+
           CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
@@ -444,9 +444,9 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                   onAccountRequest: _handleRequestAccount,
                 ),
               ),
-              
+
               const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
-              
+
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
@@ -457,9 +457,9 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                   ),
                 ),
               ),
-              
+
               const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
-              
+
               // ✅ CARROUSEL AVEC BOUTON ADMIN SUPERPOSÉ
               SliverToBoxAdapter(
                 child: Padding(
@@ -473,7 +473,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                         onThixInfoTap: () => context.push(AppRoutes.thixInfo),
                         onOpportunityTap: () => context.push(AppRoutes.opportunities),
                       ),
-                      
+
                       // Affichage du bouton de configuration uniquement pour les admins
                       if (_isAdmin)
                         Positioned(
@@ -496,8 +496,8 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                               ),
                               child: _uploadingBanner
                                   ? const SizedBox(
-                                      width: 20, 
-                                      height: 20, 
+                                      width: 20,
+                                      height: 20,
                                       child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary)
                                     )
                                   : const Icon(Icons.add_a_photo_rounded, size: 20, color: ThixPolicy.primary),
@@ -508,9 +508,9 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                   ),
                 ),
               ),
-              
+
               const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
-              
+
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
@@ -523,9 +523,9 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                   ),
                 ),
               ),
-              
+
               const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s8)),
-              
+
               SliverToBoxAdapter(
                 child: StreamBuilder<SectionBadgeCounts>(
                   stream: badgeCountsStream,
@@ -533,6 +533,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                     final counts = snap.data ?? SectionBadgeCounts.zero;
                     return HomeServicesConstellation(
                       counts: counts,
+                      avatarUrl: photoUrl,
                       onServiceTap: _handleServiceTap,
                       onHomeTap: () => context.go(AppRoutes.home),
                       onMiniAppsTap: _openMiniApps,
@@ -543,29 +544,29 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                   },
                 ),
               ),
-              
+
               const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s8)),
-              
+
               const SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
                   child: HomePremiumCard(),
                 ),
               ),
-              
+
               const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
-              
+
               const SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
                   child: HomePersonalised(),
                 ),
               ),
-              
+
               const SliverToBoxAdapter(child: SizedBox(height: 100)),
             ],
           ),
-          
+
           if (_searching)
             Positioned.fill(
               child: Container(
