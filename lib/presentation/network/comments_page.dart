@@ -15,7 +15,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:path_provider/path_provider.dart'; 
 import 'package:path/path.dart' as p;             
-import 'package:permission_handler/permission_handler.dart'; // NOUVEAU : Autorisations
+import 'package:permission_handler/permission_handler.dart';
 
 import 'package:thix_id/models/network_post.dart';
 import 'package:thix_id/models/comment.dart';
@@ -29,18 +29,20 @@ import 'package:timeago/timeago.dart' as timeago;
 import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
 import 'package:thix_id/features/network/presentation/providers/user_profile_providers.dart';
-import 'package:thix_id/presentation/certification/certification_tiers_page.dart'; // NOUVEAU : Offres
+import 'package:thix_id/presentation/certification/certification_tiers_page.dart';
 
+// ─────────────────────────────────────────────────────────────
+// PALETTE BLANC ÉPURÉ (Mise à jour)
+// ─────────────────────────────────────────────────────────────
 class _C {
-  static const bg = Color(0xFFF5F8FA);
-  static const bubbleBg = Color(0xFFF1F2F6);
+  static const bg = Colors.white;
+  static const bubbleBg = Color(0xFFF8FAFC); 
   static const primary = Color(0xFF2D6CDF);
-  static const navyDeep = Color(0xFF0A1F44);
+  static const navyText = Color(0xFF0A1F44);
+  static const border = Color(0xFFE2E8F0);
+  static const textMuted = Color(0xFF8A94A6);
+  static const red = Color(0xFFFF6B6B);
   static const gold = Color(0xFFE3B23C);
-  static const textDark = Color(0xFF10192E);
-  static const textGrey = Color(0xFF65676B);
-  static const red = Color(0xFFE5484D);
-  static const orange = Color(0xFFF59E0B);
 }
 
 class CommentsPage extends ConsumerStatefulWidget {
@@ -61,7 +63,6 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
   String? _replyingTo;
   String? _replyingToName;
 
-  // 🌟 État pour gérer les réponses déployées
   final Set<String> _expandedComments = {};
 
   // ─── MÉDIAS (Audio & Photo) ───
@@ -75,7 +76,6 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
   int _recordDuration = 0;
   bool _isRecording = false;
 
-  // ─── STICKERS ───
   bool _showStickers = false;
 
   // ─── LOGIQUE DES LIMITES ET SÉCURITÉ ───
@@ -201,27 +201,28 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        backgroundColor: _C.bg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
             const Icon(Icons.workspace_premium_rounded, color: _C.gold, size: 28),
             const SizedBox(width: 8),
-            const Text('Fonctionnalité bloquée', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text('Fonctionnalité bloquée', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _C.navyText)),
           ],
         ),
         content: Text(
           "$featureName est réservée aux comptes $requiredTier et supérieurs.\n\nMettez à niveau votre compte pour débloquer de nouveaux outils et retirer la limite de 280 caractères.",
-          style: const TextStyle(fontSize: 14, color: _C.textDark, height: 1.4),
+          style: const TextStyle(fontSize: 14, color: _C.navyText, height: 1.4),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Plus tard', style: TextStyle(color: _C.textGrey))),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Plus tard', style: TextStyle(color: _C.textMuted))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: _C.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () {
               Navigator.pop(ctx);
               Navigator.push(context, MaterialPageRoute(builder: (_) => const CertificationTiersPage()));
             },
-            child: const Text('Voir les offres', style: TextStyle(color: _C.textDark, fontWeight: FontWeight.bold)),
+            child: const Text('Voir les offres', style: TextStyle(color: _C.navyText, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -240,30 +241,28 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Row(
           children: [
-            Icon(Icons.privacy_tip_outlined, color: Colors.black, size: 28),
+            Icon(Icons.privacy_tip_outlined, color: _C.navyText, size: 28),
             SizedBox(width: 10),
-            Text("Autorisation requise", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+            Text("Autorisation requise", style: TextStyle(color: _C.navyText, fontWeight: FontWeight.bold)),
           ],
         ),
         content: Text(
           explanation,
-          style: const TextStyle(color: Colors.black87, fontSize: 16, height: 1.4),
+          style: const TextStyle(color: _C.navyText, fontSize: 16, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text("Annuler", style: TextStyle(color: Colors.black54)),
+            child: const Text("Annuler", style: TextStyle(color: _C.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
+              backgroundColor: _C.primary,
+              foregroundColor: Colors.white,
               elevation: 0,
-              side: const BorderSide(color: Colors.black, width: 1),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () => Navigator.pop(context, true),
@@ -278,7 +277,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     return newStatus.isGranted;
   }
 
-  // ─── LOGIQUE AUDIO (Limite de 30 secondes stricte) ───
+  // ─── LOGIQUE AUDIO (Bloqué pour Gratuit, Limite 30s) ───
   Future<void> _startRecording() async {
     if (_isFree) {
       _showUpgradeDialog('Les commentaires vocaux', 'Standard');
@@ -396,7 +395,6 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
         imageUrl: imageUrl,
       );
 
-      // Déploie automatiquement les réponses si on vient de répondre
       if (_replyingTo != null) {
         _expandedComments.add(_replyingTo!);
       }
@@ -413,7 +411,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
       _clearReply();
       _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : $e'), backgroundColor: _C.red));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -438,7 +436,6 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     }
   }
 
-  // ─── GESTION DES ACTIONS (Modifier, Supprimer, Signaler) ───
   void _showCommentActions(Comment comment, String currentUserId) {
     FocusScope.of(context).unfocus();
     final isOwnComment = comment.userId == currentUserId;
@@ -447,22 +444,23 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
 
     showModalBottomSheet(
       context: context,
+      backgroundColor: _C.bg,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(margin: const EdgeInsets.only(top: 8, bottom: 8), width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+              Container(margin: const EdgeInsets.only(top: 8, bottom: 8), width: 40, height: 4, decoration: BoxDecoration(color: _C.border, borderRadius: BorderRadius.circular(2))),
               
               ListTile(
-                leading: const Icon(Icons.reply_rounded, color: _C.textDark),
-                title: const Text('Répondre'),
+                leading: const Icon(Icons.reply_rounded, color: _C.navyText),
+                title: const Text('Répondre', style: TextStyle(color: _C.navyText)),
                 onTap: () { Navigator.pop(context); _startReply(comment.userName, comment.parentId ?? comment.id); },
               ),
               ListTile(
-                leading: const Icon(Icons.copy_rounded, color: _C.textDark),
-                title: const Text('Copier le texte'),
+                leading: const Icon(Icons.copy_rounded, color: _C.navyText),
+                title: const Text('Copier le texte', style: TextStyle(color: _C.navyText)),
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: comment.content));
                   Navigator.pop(context);
@@ -472,8 +470,8 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
               
               if (isOwnComment && (comment.audioUrl == null || comment.audioUrl!.isEmpty))
                 ListTile(
-                  leading: const Icon(Icons.edit_rounded, color: _C.textDark),
-                  title: const Text('Modifier'),
+                  leading: const Icon(Icons.edit_rounded, color: _C.navyText),
+                  title: const Text('Modifier', style: TextStyle(color: _C.navyText)),
                   onTap: () { Navigator.pop(context); _editComment(comment); },
                 ),
                 
@@ -486,8 +484,8 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
 
               if (!isOwnComment)
                 ListTile(
-                  leading: const Icon(Icons.flag_outlined, color: _C.orange),
-                  title: const Text('Signaler ce commentaire', style: TextStyle(color: _C.orange)),
+                  leading: const Icon(Icons.flag_outlined, color: Colors.orange),
+                  title: const Text('Signaler ce commentaire', style: TextStyle(color: Colors.orange)),
                   onTap: () {
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Signalement envoyé aux modérateurs.')));
@@ -505,11 +503,20 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     final newContent = await showDialog<String>(
       context: context, 
       builder: (c) => AlertDialog(
-        title: const Text('Modifier le commentaire', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)), 
-        content: TextField(controller: ctrl, maxLines: 4, decoration: const InputDecoration(filled: true, border: OutlineInputBorder(borderSide: BorderSide.none))), 
+        backgroundColor: _C.bg,
+        title: const Text('Modifier le commentaire', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _C.navyText)), 
+        content: TextField(
+          controller: ctrl, maxLines: 4, 
+          style: const TextStyle(color: _C.navyText),
+          decoration: InputDecoration(
+            filled: true, 
+            fillColor: _C.bubbleBg,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none)
+          )
+        ), 
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Annuler', style: TextStyle(color: _C.textGrey))), 
-          ElevatedButton(onPressed: () => Navigator.pop(c, ctrl.text), style: ElevatedButton.styleFrom(backgroundColor: _C.primary), child: const Text('Enregistrer', style: TextStyle(color: Colors.white)))
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Annuler', style: TextStyle(color: _C.textMuted))), 
+          ElevatedButton(onPressed: () => Navigator.pop(c, ctrl.text), style: ElevatedButton.styleFrom(backgroundColor: _C.navyText), child: const Text('Enregistrer', style: TextStyle(color: Colors.white)))
         ]
       )
     );
@@ -528,10 +535,11 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        backgroundColor: _C.bg,
         title: const Text('Supprimer ?', style: TextStyle(color: _C.red)),
-        content: const Text('Ce commentaire sera définitivement supprimé.'),
+        content: const Text('Ce commentaire sera définitivement supprimé.', style: TextStyle(color: _C.navyText)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(color: _C.textGrey))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(color: _C.textMuted))),
           ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: _C.red), child: const Text('Supprimer', style: TextStyle(color: Colors.white))),
         ],
       )
@@ -565,19 +573,22 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     final currentUserId = ref.watch(authControllerProvider).value?.id ?? widget.currentProfileId;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
+      backgroundColor: _C.bg, // 🌟 Mode Blanc Épuré
       appBar: AppBar(
-        title: const Text('Commentaires', style: TextStyle(color: Colors.black)),
+        title: const Text('Commentaires', style: TextStyle(color: _C.navyText, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         elevation: 0,
-        actions: [IconButton(onPressed: () => ref.invalidate(commentsProvider(widget.postId)), icon: const Icon(Icons.refresh_rounded, color: Colors.grey))],
+        iconTheme: const IconThemeData(color: _C.navyText),
+        actions: [IconButton(onPressed: () => ref.invalidate(commentsProvider(widget.postId)), icon: const Icon(Icons.refresh_rounded, color: _C.textMuted))],
       ),
       body: _isLoadingPost && _post == null
-         ? const Center(child: CircularProgressIndicator())
+         ? const Center(child: CircularProgressIndicator(color: _C.primary))
           : Column(
               children: [
                 Expanded(
                   child: RefreshIndicator(
+                    color: _C.primary,
+                    backgroundColor: Colors.white,
                     onRefresh: () async { await _loadPost(); ref.invalidate(commentsProvider(widget.postId)); },
                     child: CustomScrollView(
                       controller: _scrollController,
@@ -592,10 +603,10 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                             )
                           ),
                         commentsAsync.when(
-                          loading: () => const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator()))),
-                          error: (e, _) => SliverToBoxAdapter(child: Center(child: Padding(padding: EdgeInsets.all(20), child: Text('Erreur: $e')))),
+                          loading: () => const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator(color: _C.primary)))),
+                          error: (e, _) => SliverToBoxAdapter(child: Center(child: Padding(padding: const EdgeInsets.all(20), child: Text('Erreur: $e', style: const TextStyle(color: _C.textMuted))))),
                           data: (comments) => comments.isEmpty
-                             ? SliverFillRemaining(child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.comment_outlined, size: 60, color: Colors.grey[300]), const SizedBox(height: 12), Text('Soyez le premier à commenter !', style: TextStyle(color: Colors.grey[600]))])))
+                             ? SliverFillRemaining(child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.comment_outlined, size: 60, color: _C.border), const SizedBox(height: 12), Text('Soyez le premier à commenter !', style: TextStyle(color: _C.textMuted))])))
                               : SliverList(delegate: SliverChildBuilderDelegate((context, index) => _buildCommentThread(comments[index], currentUserId), childCount: comments.length)),
                         ),
                       ],
@@ -629,7 +640,6 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
 
     if (hasReplies) {
       if (!isExpanded && comment.replies.length > 1) {
-        // Afficher "Voir les X réponses" et la toute dernière réponse
         threadChildren.add(_buildViewMoreRepliesBtn(comment, hiddenCount));
         final lastReply = comment.replies.last;
         threadChildren.add(
@@ -644,7 +654,6 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
           )
         );
       } else {
-        // Afficher toutes les réponses si déployé ou s'il n'y a qu'une seule réponse
         for (int i = 0; i < comment.replies.length; i++) {
           final reply = comment.replies[i];
           threadChildren.add(
@@ -671,27 +680,17 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     );
   }
 
-  // 🌟 BOUTON "Voir les X réponses précédentes"
   Widget _buildViewMoreRepliesBtn(Comment comment, int hiddenCount) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         SizedBox(
-          width: 52, // Ajustement de la largeur pour la marge d'imbrication
+          width: 52,
           height: 36,
           child: Stack(
             children: [
-              Positioned(
-                left: 28,
-                top: 0,
-                bottom: 0,
-                child: Container(width: 2, color: Colors.grey.shade300)
-              ),
-              Positioned(
-                left: 28,
-                top: 18,
-                child: Container(width: 14, height: 2, color: Colors.grey.shade300)
-              ),
+              Positioned(left: 28, top: 0, bottom: 0, child: Container(width: 2, color: _C.border)),
+              Positioned(left: 28, top: 18, child: Container(width: 14, height: 2, color: _C.border)),
             ],
           ),
         ),
@@ -704,7 +703,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
                 'Voir les $hiddenCount réponses précédentes', 
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: Color(0xFF10192E))
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: _C.navyText)
               ),
             ),
           ),
@@ -713,16 +712,15 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     );
   }
 
-  // ─── BARRE DE SAISIE SÉCURISÉE (Avec Pré-écoute, Limite 30s & Limite Gratuit 280) ───
+  // ─── BARRE DE SAISIE SÉCURISÉE (Blanc Épuré) ───
   Widget _buildInputBar() {
     final hasTextOrImage = _controller.text.trim().isNotEmpty || _imageBytes != null;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: Colors.white, 
-        border: Border(top: BorderSide(color: Colors.grey.shade200)),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, -4))]
+        border: Border(top: BorderSide(color: _C.border)),
       ),
       child: SafeArea(
         child: Column(
@@ -732,14 +730,14 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
               Container(
                 margin: const EdgeInsets.only(bottom: 8), 
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), 
-                decoration: BoxDecoration(color: const Color(0xFFEAF1FF), borderRadius: BorderRadius.circular(20)), 
+                decoration: BoxDecoration(color: _C.bubbleBg, borderRadius: BorderRadius.circular(20), border: Border.all(color: _C.border)), 
                 child: Row(
                   children: [
-                    const Icon(Icons.reply_rounded, size: 14, color: Color(0xFF123B7A)), 
+                    const Icon(Icons.reply_rounded, size: 14, color: _C.navyText), 
                     const SizedBox(width: 6), 
-                    Text('En réponse à $_replyingToName', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF123B7A))), 
+                    Text('En réponse à $_replyingToName', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _C.navyText)), 
                     const Spacer(), 
-                    InkWell(onTap: _clearReply, child: const Icon(Icons.close, size: 16, color: Color(0xFF123B7A)))
+                    InkWell(onTap: _clearReply, child: const Icon(Icons.close, size: 16, color: _C.navyText))
                   ]
                 )
               ),
@@ -751,34 +749,32 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                   children: [
                     ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.memory(_imageBytes!, width: 50, height: 50, fit: BoxFit.cover)),
                     const SizedBox(width: 8),
-                    IconButton(icon: const Icon(Icons.cancel, color: Colors.red), onPressed: () => setState(() => _imageBytes = null))
+                    IconButton(icon: const Icon(Icons.cancel, color: _C.red), onPressed: () => setState(() => _imageBytes = null))
                   ],
                 ),
               ),
 
-            // 🌟 1. MODE ENREGISTREMENT (Bouton Envoyer masqué, chrono limité à 00:30)
             if (_isRecording)
               Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(color: Colors.red.withOpacity(0.08), borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.red.withOpacity(0.3))),
+                decoration: BoxDecoration(color: _C.red.withOpacity(0.08), borderRadius: BorderRadius.circular(24), border: Border.all(color: _C.red.withOpacity(0.3))),
                 child: Row(
                   children: [
-                    const Icon(Icons.mic, color: Colors.red),
+                    const Icon(Icons.mic, color: _C.red),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Text('Enregistrement... 00:${_recordDuration.toString().padLeft(2, '0')} / 00:30', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w800)),
+                      child: Text('Enregistrement... 00:${_recordDuration.toString().padLeft(2, '0')} / 00:30', style: const TextStyle(color: _C.red, fontWeight: FontWeight.w800)),
                     ),
-                    GestureDetector(onTap: _stopRecording, child: const Icon(Icons.stop_circle_rounded, color: Colors.red, size: 30)),
+                    GestureDetector(onTap: _stopRecording, child: const Icon(Icons.stop_circle_rounded, color: _C.red, size: 30)),
                   ],
                 ),
               )
-            // 🌟 2. MODE PRÉ-ÉCOUTE (L'audio est prêt)
             else if (_localAudioPath != null)
               Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(color: _C.navyDeep, borderRadius: BorderRadius.circular(24)),
+                decoration: BoxDecoration(color: _C.navyText, borderRadius: BorderRadius.circular(24)),
                 child: Row(
                   children: [
                     Expanded(child: _CommentAudioPlayer(audioUrl: _localAudioPath!, isLocal: true)),
@@ -790,7 +786,6 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                   ],
                 ),
               )
-            // 🌟 3. MODE NORMAL (Texte / Bouton Magique)
             else
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -798,22 +793,24 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      IconButton(icon: const Icon(Icons.camera_alt_rounded, color: Colors.grey), onPressed: _pickImage),
+                      IconButton(icon: const Icon(Icons.camera_alt_rounded, color: _C.textMuted), onPressed: _pickImage),
                       IconButton(
-                        icon: Icon(_showStickers ? Icons.keyboard_rounded : Icons.emoji_emotions_rounded, color: _showStickers ? const Color(0xFF2D6CDF) : Colors.grey),
+                        icon: Icon(_showStickers ? Icons.keyboard_rounded : Icons.emoji_emotions_rounded, color: _showStickers ? _C.primary : _C.textMuted),
                         onPressed: () { FocusScope.of(context).unfocus(); setState(() => _showStickers = !_showStickers); },
                       ),
                       Expanded(
                         child: TextField(
                           controller: _controller, focusNode: _focusNode, maxLines: 4, minLines: 1,
-                          maxLength: _isFree ? 280 : null, // Limite appliquée nativement
+                          maxLength: _isFree ? 280 : null, // 🌟 Limite appliquée nativement
                           onTap: () { if (_showStickers) setState(() => _showStickers = false); },
+                          style: const TextStyle(color: _C.navyText, fontSize: 14),
                           decoration: InputDecoration(
-                            counterText: "", // Masque le compteur par défaut pour faire un UI propre
+                            counterText: "", 
                             hintText: _replyingTo != null ? 'Votre réponse...' : 'Votre commentaire...', 
+                            hintStyle: const TextStyle(color: _C.textMuted),
                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none), 
                             filled: true, 
-                            fillColor: Colors.grey[100], 
+                            fillColor: _C.bubbleBg, 
                             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10)
                           )
                         )
@@ -824,10 +821,10 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                         onTap: () {
                           if (_isSubmitting) return;
                           if (hasTextOrImage) _submitComment();
-                          else _startRecording();
+                          else _startRecording(); // 🌟 Vérifie nativement _isFree et bloque le vocal
                         },
                         child: CircleAvatar(
-                          radius: 20, backgroundColor: hasTextOrImage ? const Color(0xFF2D6CDF) : const Color(0xFFE3B23C), 
+                          radius: 20, backgroundColor: hasTextOrImage ? _C.primary : _C.gold, 
                           child: _isSubmitting 
                               ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) 
                               : Icon(hasTextOrImage ? Icons.send_rounded : Icons.mic_rounded, color: Colors.white, size: 20),
@@ -835,7 +832,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                       ),
                     ]
                   ),
-                  // Affichage du compteur personnalisé pour les comptes gratuits
+                  // 🌟 Affichage du compteur personnalisé pour les comptes gratuits
                   if (_isFree && _controller.text.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(right: 55, top: 4),
@@ -844,7 +841,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
-                          color: _controller.text.length >= 280 ? _C.red : Colors.grey.shade500,
+                          color: _controller.text.length >= 280 ? _C.red : _C.textMuted,
                         ),
                       ),
                     ),
@@ -856,7 +853,6 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     );
   }
 
-  // ─── CLAVIER STICKERS ───
   Widget _buildStickerPicker() {
     return SizedBox(
       height: 250,
@@ -864,7 +860,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
         length: 3,
         child: Column(
           children: [
-            const TabBar(labelColor: Color(0xFF2D6CDF), unselectedLabelColor: Colors.grey, indicatorColor: Color(0xFF2D6CDF), tabs: [Tab(text: 'Émojis'), Tab(text: 'Réactions'), Tab(text: 'Drapeaux')]),
+            const TabBar(labelColor: _C.primary, unselectedLabelColor: _C.textMuted, indicatorColor: _C.primary, tabs: [Tab(text: 'Émojis'), Tab(text: 'Réactions'), Tab(text: 'Drapeaux')]),
             Expanded(child: TabBarView(children: [_buildStickerGrid(_emojis), _buildStickerGrid(_reactions), _buildStickerGrid(_flags)]))
           ]
         )
@@ -880,9 +876,6 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// WIDGET CONSOMMATEUR (POUR LA BULLE DE COMMENTAIRE)
-// ─────────────────────────────────────────────────────────────
 class _CommentBubble extends ConsumerWidget {
   final Comment comment;
   final String? currentUserId;
@@ -908,7 +901,6 @@ class _CommentBubble extends ConsumerWidget {
     final hasAudio = comment.audioUrl != null && comment.audioUrl!.isNotEmpty;
     final hasImage = comment.imageUrl != null && comment.imageUrl!.isNotEmpty;
 
-    // ✅ Récupération dynamique de la certification pour le commentaire
     final authorProfile = ref.watch(userProfileProvider(comment.userId)).valueOrNull;
     CertificationTier? tier;
     CertificationStatus? status;
@@ -926,24 +918,13 @@ class _CommentBubble extends ConsumerWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 🌟 LIGNE EN "L" POUR LES RÉPONSES (Imbrication)
           if (isReply)
             SizedBox(
-              width: 52, // Marge pour protéger l'espace d'affichage
+              width: 52,
               child: Stack(
                 children: [
-                  Positioned(
-                    left: 28, 
-                    top: 0, 
-                    bottom: isLastReply ? null : 0, 
-                    height: isLastReply ? 24 : null, 
-                    child: Container(width: 2, color: Colors.grey.shade300)
-                  ),
-                  Positioned(
-                    left: 28, 
-                    top: 24, 
-                    child: Container(width: 14, height: 2, color: Colors.grey.shade300)
-                  ),
+                  Positioned(left: 28, top: 0, bottom: isLastReply ? null : 0, height: isLastReply ? 24 : null, child: Container(width: 2, color: _C.border)),
+                  Positioned(left: 28, top: 24, child: Container(width: 14, height: 2, color: _C.border)),
                 ],
               ),
             ),
@@ -955,10 +936,9 @@ class _CommentBubble extends ConsumerWidget {
                 onLongPress: onLongPress,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.white, 
+                    color: _C.bubbleBg, 
                     borderRadius: BorderRadius.circular(16), 
-                    border: Border.all(color: const Color(0xFFE7EEFC)),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2))]
+                    border: Border.all(color: _C.border),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start, 
@@ -967,35 +947,26 @@ class _CommentBubble extends ConsumerWidget {
                         contentPadding: const EdgeInsets.only(left: 12, right: 12, top: 4),
                         leading: CircleAvatar(
                           radius: isReply ? 14 : 16, 
-                          backgroundColor: const Color(0xFFEAF1FF),
+                          backgroundColor: Colors.white,
                           backgroundImage: comment.userAvatar != null && comment.userAvatar!.isNotEmpty ? NetworkImage(comment.userAvatar!) : null, 
-                          child: comment.userAvatar == null || comment.userAvatar!.isEmpty ? Icon(Icons.person, size: isReply ? 14 : 16, color: Colors.grey[600]) : null
+                          child: comment.userAvatar == null || comment.userAvatar!.isEmpty ? Icon(Icons.person, size: isReply ? 14 : 16, color: _C.textMuted) : null
                         ),
                         title: Row(
                           children: [
                             Flexible(
                               child: Text(
                                 comment.userName, 
-                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Color(0xFF10192E)), 
+                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: _C.navyText), 
                                 maxLines: 1, 
                                 overflow: TextOverflow.ellipsis
                               )
                             ), 
                             if (isCertified)
-                              CertificationNameBadge(
-                                tier: tier,
-                                status: status,
-                                showLabel: false, // Badge seul
-                                iconSize: 13,
-                                padding: const EdgeInsets.only(left: 4),
-                              )
+                              CertificationNameBadge(tier: tier, status: status, showLabel: false, iconSize: 13, padding: const EdgeInsets.only(left: 4))
                             else if (isLegacyVerified)
-                              const Padding(
-                                padding: EdgeInsets.only(left: 4),
-                                child: Icon(Icons.verified_rounded, color: Color(0xFFE3B23C), size: 13),
-                              ),
+                              const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.verified_rounded, color: _C.gold, size: 13)),
                             const SizedBox(width: 6),
-                            Text(timeago.format(comment.createdAt, locale: 'fr'), style: TextStyle(color: Colors.grey[500], fontSize: 10))
+                            Text(timeago.format(comment.createdAt, locale: 'fr'), style: const TextStyle(color: _C.textMuted, fontSize: 10))
                           ]
                         ),
                       ),
@@ -1003,7 +974,7 @@ class _CommentBubble extends ConsumerWidget {
                       if (comment.content.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2), 
-                          child: Text(comment.content, style: const TextStyle(fontSize: 13.5, height: 1.4, color: Color(0xFF10192E)))
+                          child: Text(comment.content, style: const TextStyle(fontSize: 13.5, height: 1.4, color: _C.navyText))
                         ),
 
                       if (hasImage)
@@ -1024,14 +995,14 @@ class _CommentBubble extends ConsumerWidget {
                           children: [
                             _actionButton(
                               icon: comment.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded, 
-                              iconColor: comment.isLiked ? const Color(0xFFE5484D) : Colors.grey[500]!, 
+                              iconColor: comment.isLiked ? _C.red : _C.textMuted, 
                               label: comment.likesCount > 0 ? '${comment.likesCount}' : '', 
                               onTap: onLike
                             ),
                             const SizedBox(width: 8),
                             _actionButton(
                               icon: Icons.reply_rounded, 
-                              iconColor: Colors.grey[600]!, 
+                              iconColor: _C.textMuted, 
                               label: 'Répondre', 
                               onTap: onReply
                             ),
@@ -1059,7 +1030,7 @@ class _CommentBubble extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min, 
           children: [
             Icon(icon, size: 16, color: iconColor), 
-            if (label.isNotEmpty)...[const SizedBox(width: 4), Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey[600]))]
+            if (label.isNotEmpty)...[const SizedBox(width: 4), Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _C.textMuted))]
           ]
         )
       )
@@ -1067,7 +1038,6 @@ class _CommentBubble extends ConsumerWidget {
   }
 }
 
-// ─── LECTEUR AUDIO COMPACT POUR LES COMMENTAIRES ───
 class _CommentAudioPlayer extends StatefulWidget {
   final String audioUrl;
   final bool isLocal;
@@ -1118,12 +1088,12 @@ class _CommentAudioPlayerState extends State<_CommentAudioPlayer> {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(color: const Color(0xFF0A1F44), borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(color: _C.navyText, borderRadius: BorderRadius.circular(16)),
       child: Row(
         children: [
           GestureDetector(
             onTap: () { if (_isPlaying) _audioPlayer.pause(); else _audioPlayer.resume(); },
-            child: Container(width: 32, height: 32, decoration: const BoxDecoration(color: Color(0xFFE3B23C), shape: BoxShape.circle), child: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: const Color(0xFF0A1F44), size: 20)),
+            child: Container(width: 32, height: 32, decoration: const BoxDecoration(color: _C.gold, shape: BoxShape.circle), child: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: _C.navyText, size: 20)),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -1139,7 +1109,7 @@ class _CommentAudioPlayerState extends State<_CommentAudioPlayer> {
                     child: Row(
                       children: List.generate(barCount, (index) {
                         final isPlayed = (index / barCount) <= progress;
-                        return Container(width: barWidth, height: 24 * _wavePattern[index % _wavePattern.length], margin: const EdgeInsets.only(right: spacing), decoration: BoxDecoration(color: isPlayed ? const Color(0xFFE3B23C) : Colors.white30, borderRadius: BorderRadius.circular(2)));
+                        return Container(width: barWidth, height: 24 * _wavePattern[index % _wavePattern.length], margin: const EdgeInsets.only(right: spacing), decoration: BoxDecoration(color: isPlayed ? _C.gold : Colors.white30, borderRadius: BorderRadius.circular(2)));
                       }),
                     ),
                   ),
