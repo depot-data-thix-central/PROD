@@ -115,7 +115,7 @@ class DeliveryAddressSelector extends ConsumerWidget {
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                   '\( {address['address_line']}\n \){address['commune']}, ${address['city']}',
+                   '${address['address_line']}\n${address['commune']}, ${address['city']}',
 
                     style: TextStyle(color: Colors.grey[700], height: 1.4),
                   ),
