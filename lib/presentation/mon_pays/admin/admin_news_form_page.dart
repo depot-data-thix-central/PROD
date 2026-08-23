@@ -6,9 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-
-// ✅ Imports corrigés
-import '../models/news_article.dart';
+import 'package:thix_id/models/news_article.dart';
 import '../providers/news_provider.dart';
 
 class AdminNewsFormPage extends ConsumerStatefulWidget {
