@@ -15,28 +15,28 @@ import 'pages/strategy_page.dart';
 import 'pages/design_page.dart';
 import 'pages/documents_page.dart';
 import 'pages/reports_page.dart';
-import 'pages/chat_page.dart';
+// Note : L'import de chat_page.dart a été supprimé
 
 class ThixIaRouter {
   static List<RouteBase> get routes => [
     GoRoute(
-      path: ThixIaRoutes.home,
+      path: ThixIARoutes.home, // Correction : IA en majuscule
       name: 'thix-ia-home',
       builder: (context, state) => const ThixIaHomePage(),
     ),
     GoRoute(
-      path: ThixIaRoutes.projects,
+      path: ThixIARoutes.projects,
       name: 'thix-ia-projects',
       builder: (context, state) => const ProjectsPage(),
     ),
     GoRoute(
-      path: ThixIaRoutes.createProject,
+      path: ThixIARoutes.createProject,
       name: 'thix-ia-create-project',
       builder: (context, state) => const CreateProjectPage(),
     ),
     // DETAIL + SUB-ROUTES DYNAMIQUES
     GoRoute(
-      path: ThixIaRoutes.projectDetail,
+      path: ThixIARoutes.projectDetail,
       name: 'thix-ia-project-detail',
       builder: (context, state) {
         final code = state.pathParameters['code']!;
@@ -123,15 +123,7 @@ class ThixIaRouter {
             return ReportsPage(projectCode: code);
           },
         ),
-        GoRoute(
-          path: 'chat',
-          name: 'thix-ia-chat',
-          builder: (context, state) {
-            final code = state.pathParameters['code']!;
-            final initial = state.extra as String?;
-            return ChatPage(projectCode: code, initialMessage: initial);
-          },
-        ),
+        // LES ROUTES DU CHAT ONT ÉTÉ ENTIÈREMENT SUPPRIMÉES ICI !
       ],
     ),
   ];
