@@ -1,14 +1,13 @@
 // lib/presentation/network/live/live_controller.dart
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart'; // 🌟 Import standard Riverpod
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/data/models/live/live_model.dart';
 import 'package:thix_id/data/services/live/live_service.dart';
 
-// 🌟 REMPLACEMENT : Plus besoin de génération de code
 final liveControllerProvider = StateNotifierProvider.autoDispose.family<LiveController, LiveState, LiveSession>(
   (ref, session) {
     return LiveController(session, ref);
@@ -24,15 +23,18 @@ class LiveController extends StateNotifier<LiveState> {
   final StreamController<void> _heartController = StreamController<void>.broadcast();
   void Function(String userId, String userName)? onCoHostRequest;
 
-  // Initialisation via le constructeur
+  // Complété par onJoinChannelSuccess, ou par le timeout de secours ci-dessous.
+  Completer<void>? _joinCompleter;
+  Timer? _joinTimeoutTimer;
+
   LiveController(this.session, this.ref) : super(const LiveState()) {
     ref.onDispose(() {
+      _joinTimeoutTimer?.cancel();
       _realtimeChannel?.unsubscribe();
       _engine?.leaveChannel();
       _engine?.release();
       _heartController.close();
     });
-    // Démarrage automatique
     Future.microtask(() => bootstrap());
   }
 
@@ -45,6 +47,8 @@ class LiveController extends StateNotifier<LiveState> {
     bool initialVideoEnabled = true,
     bool initialMicEnabled = true,
   }) async {
+    _joinTimeoutTimer?.cancel();
+
     state = state.copyWith(
       status: LiveScreenStatus.loading,
       errorMessage: null,
@@ -64,16 +68,31 @@ class LiveController extends StateNotifier<LiveState> {
 
     AgoraCredentials credentials;
     try {
-      credentials = await _service.fetchAgoraCredentials(session.channelName);
+      credentials = await _service.fetchAgoraCredentials(session.channelName)
+          .timeout(const Duration(seconds: 12));
     } on TimeoutException {
-      _fail("Délai dépassé lors de la récupération du token Agora.");
+      _fail("Délai dépassé lors de la récupération du token Agora. Vérifiez votre connexion.");
       return;
     } catch (e) {
-      _fail(e.toString());
+      _fail("Impossible de récupérer les identifiants du direct : $e");
+      return;
+    }
+
+    if (credentials.appId.isEmpty) {
+      _fail("Configuration Agora invalide : App ID manquant côté serveur.");
       return;
     }
 
     try {
+      // Si un ancien moteur existe déjà (retry), on le libère proprement d'abord.
+      if (_engine != null) {
+        try {
+          await _engine!.leaveChannel();
+          await _engine!.release();
+        } catch (_) {}
+        _engine = null;
+      }
+
       final engine = createAgoraRtcEngine();
       await engine.initialize(RtcEngineContext(
         appId: credentials.appId,
@@ -87,8 +106,16 @@ class LiveController extends StateNotifier<LiveState> {
 
       await engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
 
+      _joinCompleter = Completer<void>();
+
       engine.registerEventHandler(
         RtcEngineEventHandler(
+          onJoinChannelSuccess: (connection, elapsed) {
+            debugPrint('Agora: canal rejoint avec succès (uid=${connection.localUid})');
+            if (_joinCompleter != null && !_joinCompleter!.isCompleted) {
+              _joinCompleter!.complete();
+            }
+          },
           onUserJoined: (connection, remoteUid, elapsed) {
             if (!state.coHostUids.contains(remoteUid)) {
               state = state.copyWith(coHostUids: [...state.coHostUids, remoteUid]);
@@ -99,7 +126,26 @@ class LiveController extends StateNotifier<LiveState> {
               coHostUids: state.coHostUids.where((id) => id != remoteUid).toList(),
             );
           },
-          onError: (err, msg) => debugPrint('Agora onError: $err - $msg'),
+          onError: (err, msg) {
+            debugPrint('Agora onError: $err - $msg');
+            // Si l'erreur survient AVANT que le join réussisse, on la fait
+            // remonter à l'UI au lieu de la laisser dans la console.
+            if (_joinCompleter != null && !_joinCompleter!.isCompleted) {
+              _joinCompleter!.completeError(_mapAgoraError(err, msg));
+            } else if (state.status == LiveScreenStatus.ready) {
+              // Erreur survenue en cours de direct (ex: token expiré) → on
+              // ne casse pas l'écran, on log + on pourrait afficher un toast.
+              debugPrint('Agora erreur en direct (non bloquante): $msg');
+            }
+          },
+          onConnectionStateChanged: (connection, connState, reason) {
+            debugPrint('Agora état connexion: $connState / raison: $reason');
+            if (connState == ConnectionStateType.connectionStateFailed) {
+              if (_joinCompleter != null && !_joinCompleter!.isCompleted) {
+                _joinCompleter!.completeError(_mapConnectionFailure(reason));
+              }
+            }
+          },
         ),
       );
 
@@ -115,30 +161,87 @@ class LiveController extends StateNotifier<LiveState> {
       );
 
       _engine = engine;
+
+      // ── Le point clé : on attend la CONFIRMATION réelle de connexion ──
+      // (onJoinChannelSuccess) avant de passer l'écran à "ready".
+      // Sans ça, l'UI s'affiche même si Agora a rejeté la connexion.
+      await _joinCompleter!.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          throw Exception(
+              "Connexion au direct impossible (délai dépassé). Vérifiez votre réseau ou réessayez.");
+        },
+      );
+
       state = state.copyWith(status: LiveScreenStatus.ready);
       _initRealtime();
     } catch (e) {
       debugPrint('Erreur Agora: $e');
-      _fail(e.toString());
+      try {
+        await _engine?.leaveChannel();
+        await _engine?.release();
+      } catch (_) {}
+      _engine = null;
+      _fail(e is Exception ? e.toString().replaceFirst('Exception: ', '') : e.toString());
+    }
+  }
+
+  /// Traduit les codes d'erreur Agora les plus courants en messages
+  /// compréhensibles au lieu du générique "Inconnue".
+  Exception _mapAgoraError(ErrorCodeType err, String msg) {
+    switch (err) {
+      case ErrorCodeType.errInvalidAppId:
+        return Exception("App ID Agora invalide. Vérifiez la configuration côté serveur.");
+      case ErrorCodeType.errInvalidToken:
+      case ErrorCodeType.errTokenExpired:
+        return Exception("Token Agora invalide ou expiré. Réessayez dans un instant.");
+      case ErrorCodeType.errInvalidChannelName:
+        return Exception("Nom de canal invalide.");
+      case ErrorCodeType.errNoServerResources:
+        return Exception("Serveurs Agora indisponibles pour le moment. Réessayez plus tard.");
+      default:
+        return Exception("Erreur Agora ($err) : $msg");
+    }
+  }
+
+  Exception _mapConnectionFailure(ConnectionChangedReasonType reason) {
+    switch (reason) {
+      case ConnectionChangedReasonType.connectionChangedInvalidToken:
+        return Exception("Token de connexion invalide.");
+      case ConnectionChangedReasonType.connectionChangedInvalidAppId:
+        return Exception("App ID invalide.");
+      case ConnectionChangedReasonType.connectionChangedInvalidChannelName:
+        return Exception("Nom de canal invalide.");
+      case ConnectionChangedReasonType.connectionChangedRejectedByServer:
+        return Exception("Connexion refusée par le serveur Agora.");
+      default:
+        return Exception("Échec de connexion au direct ($reason).");
     }
   }
 
   void _fail(String message) {
+    _joinTimeoutTimer?.cancel();
     state = state.copyWith(status: LiveScreenStatus.error, errorMessage: message);
   }
 
   void _initRealtime() {
-    _realtimeChannel = _service.openRealtimeChannel(
-      liveId: session.id,
-      onChat: (comment) {
-        state = state.copyWith(comments: [...state.comments, comment]);
-      },
-      onHeart: () => _heartController.add(null),
-      onCoHostRequest: (userId, userName) => onCoHostRequest?.call(userId, userName),
-      onPresenceSync: (count) {
-        state = state.copyWith(viewerCount: count);
-      },
-    );
+    try {
+      _realtimeChannel = _service.openRealtimeChannel(
+        liveId: session.id,
+        onChat: (comment) {
+          state = state.copyWith(comments: [...state.comments, comment]);
+        },
+        onHeart: () => _heartController.add(null),
+        onCoHostRequest: (userId, userName) => onCoHostRequest?.call(userId, userName),
+        onPresenceSync: (count) {
+          state = state.copyWith(viewerCount: count);
+        },
+      );
+    } catch (e) {
+      // Le direct vidéo fonctionne déjà (status = ready) — on ne fait pas
+      // échouer tout l'écran si seul le chat temps réel a un souci.
+      debugPrint('Erreur initRealtime (non bloquante): $e');
+    }
   }
 
   // ─── Actions ───
