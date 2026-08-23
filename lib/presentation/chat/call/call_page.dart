@@ -5,10 +5,17 @@ import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import '../../../models/chat/call_status.dart';
 import '../../../services/chat/call_service.dart';
 import 'providers/call_provider.dart';
-import '../providers/chat_providers.dart'; 
+import '../providers/chat_providers.dart';
 
-class CallPage extends ConsumerWidget {
+class CallPage extends ConsumerStatefulWidget {
   const CallPage({super.key});
+
+  @override
+  ConsumerState<CallPage> createState() => _CallPageState();
+}
+
+class _CallPageState extends ConsumerState<CallPage> {
+  bool _errorHandled = false;
 
   String _fmt(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -19,10 +26,29 @@ class CallPage extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final state = ref.watch(callProvider);
     final notifier = ref.read(callProvider.notifier);
     final media = CallMediaService();
+
+    // ── Surface les échecs silencieux (permission refusée, token
+    // invalide, etc.) au lieu de laisser l'écran figé sans explication.
+    ref.listen(callProvider, (previous, next) {
+      if (next.status == CallStatus.failed && !_errorHandled) {
+        _errorHandled = true;
+        final message = next.error ?? "L'appel a échoué.";
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_humanizeCallError(message)),
+            backgroundColor: const Color(0xFFEF4444),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (context.mounted) Navigator.of(context).pop();
+        });
+      }
+    });
 
     final statusLabel = switch (state.status) {
       CallStatus.ringing => state.isCaller ? 'Appel…' : 'Connexion…',
@@ -33,26 +59,29 @@ class CallPage extends ConsumerWidget {
       _ => state.status.label,
     };
 
+    final channelId = state.channelName;
+
     return Scaffold(
       backgroundColor: const Color(0xFF0A1F44),
       body: SafeArea(
         child: Stack(
           children: [
-            // Vidéo remote
+            // Vidéo remote — garde-fou sur channelId nullable
             if (state.isVideo &&
                 state.remoteUid != null &&
-                media.engine != null)
+                media.engine != null &&
+                channelId != null &&
+                channelId.isNotEmpty)
               Positioned.fill(
                 child: AgoraVideoView(
                   controller: VideoViewController.remote(
                     rtcEngine: media.engine!,
                     canvas: VideoCanvas(uid: state.remoteUid),
-                    connection: RtcConnection(channelId: state.channelName),
+                    connection: RtcConnection(channelId: channelId),
                   ),
                 ),
               )
             else
-              // Audio / waiting UI
               Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -85,14 +114,33 @@ class CallPage extends ConsumerWidget {
                         fontSize: 16,
                       ),
                     ),
+                    // ── Indicateur explicite si la vidéo est prévue mais
+                    // le moteur/caméra pas encore prêt, au lieu de rien
+                    // afficher et laisser croire à un bug.
+                    if (state.isVideo &&
+                        state.status == CallStatus.ongoing &&
+                        media.engine == null) ...[
+                      const SizedBox(height: 16),
+                      const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white54,
+                          strokeWidth: 2,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        "Initialisation de la caméra...",
+                        style: TextStyle(color: Colors.white38, fontSize: 12),
+                      ),
+                    ],
                   ],
                 ),
               ),
 
             // Preview locale (vidéo)
-            if (state.isVideo &&
-                !state.videoOff &&
-                media.engine != null)
+            if (state.isVideo && !state.videoOff && media.engine != null)
               Positioned(
                 right: 16,
                 top: 16,
@@ -109,7 +157,6 @@ class CallPage extends ConsumerWidget {
                 ),
               ),
 
-            // Header name en vidéo
             if (state.isVideo)
               Positioned(
                 top: 12,
@@ -174,7 +221,6 @@ class CallPage extends ConsumerWidget {
                     icon: Icons.call_end,
                     label: 'Raccrocher',
                     onTap: () async {
-                      
                       try {
                         final isMissed = state.duration.inSeconds == 0;
                         final type = state.isVideo ? 'call_video' : 'call_audio';
@@ -183,10 +229,8 @@ class CallPage extends ConsumerWidget {
                         final content = '$textType $textDuration';
 
                         final chatSvc = ref.read(chatServiceProvider);
-                        
-                        
-                        final convId = state.conversationId; 
-                        
+                        final convId = state.conversationId;
+
                         if (convId != null && convId.isNotEmpty) {
                           await chatSvc.sendMessage(
                             conversationId: convId,
@@ -198,7 +242,6 @@ class CallPage extends ConsumerWidget {
                         debugPrint('Erreur lors de la création de la bulle d\'historique : $e');
                       }
 
-                      //  2. Fermeture normale de l'appel
                       await notifier.hangUp();
                       if (context.mounted) Navigator.pop(context);
                     },
@@ -211,6 +254,24 @@ class CallPage extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// Traduit les exceptions techniques en messages compréhensibles.
+  String _humanizeCallError(String raw) {
+    final lower = raw.toLowerCase();
+    if (lower.contains('caméra refusée') || lower.contains('camera')) {
+      return "Accès à la caméra refusé. Activez-le dans les réglages de votre téléphone.";
+    }
+    if (lower.contains('micro refusé') || lower.contains('microphone')) {
+      return "Accès au microphone refusé. Activez-le dans les réglages de votre téléphone.";
+    }
+    if (lower.contains('token')) {
+      return "Erreur de connexion au serveur d'appel. Réessayez.";
+    }
+    if (lower.contains('non authentifié')) {
+      return "Session expirée. Reconnectez-vous.";
+    }
+    return "L'appel n'a pas pu aboutir.";
   }
 }
 
@@ -241,8 +302,7 @@ class _Btn extends StatelessWidget {
             width: 56,
             height: 56,
             decoration: BoxDecoration(
-              color: bg ??
-                  (active ? Colors.white : Colors.white24),
+              color: bg ?? (active ? Colors.white : Colors.white24),
               shape: BoxShape.circle,
             ),
             child: Icon(
