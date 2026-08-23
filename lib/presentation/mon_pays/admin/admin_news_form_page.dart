@@ -87,7 +87,7 @@ class _AdminNewsFormPageState extends ConsumerState<AdminNewsFormPage> {
     }
   }
 
-  void _save() async {
+    void _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isBusy = true);
 
@@ -98,9 +98,11 @@ class _AdminNewsFormPageState extends ConsumerState<AdminNewsFormPage> {
         summary: _summaryController.text.trim().isEmpty ? null : _summaryController.text.trim(),
         content: _contentController.text.trim(),
         category: _category,
-        author: _authorController.text.trim().isEmpty ? null : _authorController.text.trim(),
-        coverImageUrl: _coverImageUrl,
-        publishedAt: _isEditing ? widget.article?.publishedAt : DateTime.now(), // Date du jour si création
+        // ✅ On utilise les bons noms attendus par le constructeur :
+        createdBy: _authorController.text.trim().isEmpty ? null : _authorController.text.trim(),
+        imageUrl: _coverImageUrl,
+        publishedAt: _isEditing ? (widget.article?.publishedAt ?? DateTime.now()) : DateTime.now(),
+        createdAt: _isEditing ? (widget.article?.createdAt ?? DateTime.now()) : DateTime.now(), // ✅ createdAt est obligatoire !
       );
 
       await ref.read(newsServiceProvider).saveNews(article);
@@ -118,6 +120,7 @@ class _AdminNewsFormPageState extends ConsumerState<AdminNewsFormPage> {
       }
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
