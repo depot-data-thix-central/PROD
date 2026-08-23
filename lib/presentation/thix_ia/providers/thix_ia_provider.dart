@@ -12,24 +12,12 @@ import '../services/project_intelligence_service.dart';
 import '../services/analysis_service.dart';
 import '../models/thix_project.dart';
 
-/// ============================================================================
-/// THIX IA PROVIDERS - Riverpod moderne AsyncNotifier
-/// Architecture scalable millions users
-/// ============================================================================
+// ────────────────────────────────────────────────────────────────────────────
+// SUPABASE & DATASOURCES
+// ────────────────────────────────────────────────────────────────────────────
+final supabaseClientProvider = Provider<SupabaseClient>((ref) => Supabase.instance.client);
 
-// ────────────────────────────────────────────────────────────────────────────
-// SUPABASE
-// ────────────────────────────────────────────────────────────────────────────
-final supabaseClientProvider = Provider<SupabaseClient>((ref) {
-  return Supabase.instance.client;
-});
-
-// ────────────────────────────────────────────────────────────────────────────
-// DATASOURCES
-// ────────────────────────────────────────────────────────────────────────────
-final thixLocalDatasourceProvider = Provider<ThixIaLocalDatasource>((ref) {
-  return ThixIaLocalDatasourceImpl();
-});
+final thixLocalDatasourceProvider = Provider<ThixIaLocalDatasource>((ref) => ThixIaLocalDatasourceImpl());
 
 final thixRemoteDatasourceProvider = Provider<ThixIaRemoteDatasource>((ref) {
   final client = ref.watch(supabaseClientProvider);
@@ -37,10 +25,10 @@ final thixRemoteDatasourceProvider = Provider<ThixIaRemoteDatasource>((ref) {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// REPOSITORIES
+// REPOSITORIES (Corrections des "Impl")
 // ────────────────────────────────────────────────────────────────────────────
 final projectRepositoryProvider = Provider<ProjectRepository>((ref) {
-  return ProjectRepositoryImpl(
+  return ProjectRepository(
     remote: ref.watch(thixRemoteDatasourceProvider),
     local: ref.watch(thixLocalDatasourceProvider),
   );
@@ -54,7 +42,7 @@ final memoryRepositoryProvider = Provider<MemoryRepository>((ref) {
 });
 
 final analysisRepositoryProvider = Provider<AnalysisRepository>((ref) {
-  return AnalysisRepositoryImpl(
+  return AnalysisRepository(
     remote: ref.watch(thixRemoteDatasourceProvider),
     local: ref.watch(thixLocalDatasourceProvider),
   );
@@ -89,7 +77,7 @@ final projectIntelligenceServiceProvider = Provider<ProjectIntelligenceService>(
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// ACTIVE PROJECT - Notifier moderne
+// ACTIVE PROJECT
 // ────────────────────────────────────────────────────────────────────────────
 class ActiveProjectNotifier extends AsyncNotifier<ThixProject?> {
   @override
@@ -120,7 +108,19 @@ final activeProjectProvider = AsyncNotifierProvider<ActiveProjectNotifier, ThixP
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// PROJECTS LIST - Pagination scalable
+// FOURNISSEURS ADDITIONNELS (Pour ProjectsPage)
+// ────────────────────────────────────────────────────────────────────────────
+final projectSearchQueryProvider = StateProvider<String>((ref) => '');
+
+final filteredProjectsProvider = Provider<List<ThixProject>>((ref) {
+  final query = ref.watch(projectSearchQueryProvider).toLowerCase();
+  final projects = ref.watch(projectsProvider).value ?? [];
+  if (query.isEmpty) return projects;
+  return projects.where((p) => p.projectCode.toLowerCase().contains(query) || p.name.toLowerCase().contains(query)).toList();
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// PROJECTS LIST
 // ────────────────────────────────────────────────────────────────────────────
 class ProjectsNotifier extends AsyncNotifier<List<ThixProject>> {
   int _page = 1;
@@ -155,8 +155,8 @@ class ProjectsNotifier extends AsyncNotifier<List<ThixProject>> {
       _hasMore = false;
       return;
     }
-    final current = state.value?? [];
-    state = AsyncData([...current,...more]);
+    final current = state.value ?? [];
+    state = AsyncData([...current, ...more]);
   }
 
   Future<void> search(String query) async {
@@ -168,9 +168,8 @@ class ProjectsNotifier extends AsyncNotifier<List<ThixProject>> {
   Future<ThixProject> createFromIdea(String idea) async {
     final service = ref.read(projectServiceProvider);
     final project = await service.createProjectFromIdea(idea);
-    // Optimistic update
-    final current = state.value?? [];
-    state = AsyncData([project,...current]);
+    final current = state.value ?? [];
+    state = AsyncData([project, ...current]);
     ref.read(activeProjectProvider.notifier).setActive(project.projectCode);
     return project;
   }
