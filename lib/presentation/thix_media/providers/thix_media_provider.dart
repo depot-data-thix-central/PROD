@@ -3,8 +3,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/models/media_content.dart';
 import 'package:thix_id/services/media_service.dart';
 
-final selectedCategoryProvider = StateProvider<String>((ref) => "Fil");
-final searchQueryProvider = StateProvider<String>((ref) => "");
+// 🌟 1. AJOUT DE .autoDispose POUR PURGER LA MÉMOIRE EN SORTANT DU MODULE
+final selectedCategoryProvider = StateProvider.autoDispose<String>((ref) => "Accueil");
+final searchQueryProvider = StateProvider.autoDispose<String>((ref) => "");
 
 class ThixMediaNotifier extends StateNotifier<AsyncValue<List<MediaContent>>> {
   ThixMediaNotifier(this.ref): super(const AsyncValue.loading()){ 
@@ -18,7 +19,6 @@ class ThixMediaNotifier extends StateNotifier<AsyncValue<List<MediaContent>>> {
   bool _hasMore = true, _loading = false; 
   final Set<String> _seen = {}; 
   
-  // 🌟 Augmentation de la limite à 40 pour avoir un plus grand "pool" à mélanger
   static const _limit = 40;
   
   Future<void> _load() => refresh();
@@ -30,8 +30,11 @@ class ThixMediaNotifier extends StateNotifier<AsyncValue<List<MediaContent>>> {
     state = const AsyncValue.loading(); 
     try { 
       final l = await _fetch(null); 
+      // 🌟 2. SÉCURITÉ : On vérifie que la page est toujours ouverte avant de mettre à jour
+      if (!mounted) return; 
       state = AsyncValue.data(l); 
     } catch (e, st) { 
+      if (!mounted) return;
       state = AsyncValue.error(e, st); 
     } 
   }
@@ -41,6 +44,7 @@ class ThixMediaNotifier extends StateNotifier<AsyncValue<List<MediaContent>>> {
     _loading = true; 
     try { 
       final m = await _fetch(_cursor); 
+      if (!mounted) return;
       if (m.length < _limit) _hasMore = false; 
       state = AsyncValue.data([...state.value!, ...m]); 
     } finally { 
@@ -53,7 +57,6 @@ class ThixMediaNotifier extends StateNotifier<AsyncValue<List<MediaContent>>> {
     final search = ref.read(searchQueryProvider).trim(); 
     final svc = MediaService();
     
-    // 1. Si on est sur le Fil et sans recherche, on utilise l'algo aléatoire natif
     if (cat == 'Fil' && search.isEmpty) { 
       final p = await svc.fetchShuffledFeed(seenIds: _seen.toList(), limit: _limit); 
       _seen.addAll(p.items.map((e) => e.id)); 
@@ -61,11 +64,9 @@ class ThixMediaNotifier extends StateNotifier<AsyncValue<List<MediaContent>>> {
       return p.items; 
     }
     
-    // 2. Requête Supabase classique
     var q = Supabase.instance.client.from('media_content').select('*');
     if (cur != null) q = q.lt('created_at', cur.toIso8601String());
     
-    // 3. Application des filtres
     if (search.isNotEmpty) {
       q = q.ilike('title', '%$search%'); 
     } else if (cat == 'Accueil') {
@@ -81,12 +82,9 @@ class ThixMediaNotifier extends StateNotifier<AsyncValue<List<MediaContent>>> {
     }).toList();
     
     if (list.isNotEmpty) {
-      // 🌟 IMPORTANT : On sauvegarde le curseur EXACT AVANT de mélanger !
       _cursor = list.last.createdAt; 
     }
     
-    // 🌟 MIX INTELLIGENT : On mélange la liste pour casser la monotonie 
-    // (Sauf si l'utilisateur fait une recherche précise, auquel cas on garde l'ordre logique)
     if (search.isEmpty) {
       list.shuffle();
     }
@@ -96,33 +94,26 @@ class ThixMediaNotifier extends StateNotifier<AsyncValue<List<MediaContent>>> {
   }
 }
 
-final thixMediaListProvider = StateNotifierProvider<ThixMediaNotifier, AsyncValue<List<MediaContent>>>((ref) => ThixMediaNotifier(ref));
+// 🌟 3. AJOUT DE .autoDispose SUR TOUS LES PROVIDERS POUR UN RECHARGEMENT PROPRE
+final thixMediaListProvider = StateNotifierProvider.autoDispose<ThixMediaNotifier, AsyncValue<List<MediaContent>>>((ref) => ThixMediaNotifier(ref));
 
-// ============================================================================
-// 🌟 DÉCOUPAGE INTELLIGENT DES RANGÉES (Évite de répéter les mêmes vidéos)
-// ============================================================================
-
-// Bannières : Prend les 5 premières vidéos du lot mélangé
-final bannerItemsProvider = Provider<List<MediaContent>>((ref) {
+final bannerItemsProvider = Provider.autoDispose<List<MediaContent>>((ref) {
   return ref.watch(thixMediaListProvider).valueOrNull?.take(5).toList() ?? [];
 });
 
-// Nouveautés : Récupère un extrait et force le tri par date (pour avoir les VRAIES nouveautés)
-final newReleasesProvider = Provider<List<MediaContent>>((ref) {
+final newReleasesProvider = Provider.autoDispose<List<MediaContent>>((ref) {
   final list = ref.watch(thixMediaListProvider).valueOrNull?.take(15).toList() ?? [];
   list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
   return list;
 });
 
-// Tendances : Saute les 5 vidéos de la bannière et prend les 10 suivantes
-final trendingProvider = Provider<List<MediaContent>>((ref) {
+final trendingProvider = Provider.autoDispose<List<MediaContent>>((ref) {
   final list = ref.watch(thixMediaListProvider).valueOrNull ?? [];
   if (list.length <= 5) return [];
   return list.skip(5).take(10).toList();
 });
 
-// Recommandations : Prend tout le reste (pour le défilement infini vers le bas)
-final recommendationsProvider = Provider<List<MediaContent>>((ref) {
+final recommendationsProvider = Provider.autoDispose<List<MediaContent>>((ref) {
   final list = ref.watch(thixMediaListProvider).valueOrNull ?? [];
   if (list.length <= 15) return list;
   return list.skip(15).toList();
