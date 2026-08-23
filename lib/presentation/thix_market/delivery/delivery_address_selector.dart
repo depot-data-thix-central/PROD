@@ -1,19 +1,17 @@
 // lib/presentation/thix_market/delivery/delivery_address_selector.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'delivery_provider.dart'; // CORRECTION ICI : Import direct dans le même dossier
+import 'delivery_provider.dart';
 
 class DeliveryAddressSelector extends ConsumerWidget {
   final Function(Map<String, dynamic>)? onAddressSelected;
 
   const DeliveryAddressSelector({super.key, this.onAddressSelected});
 
-  // Couleur principale THIX
   static const Color thixOrange = Color(0xFFE5592F);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Écoute réactive du provider
     final provider = ref.watch(deliveryProvider);
 
     if (provider.isLoadingAddresses) {
@@ -30,7 +28,8 @@ class DeliveryAddressSelector extends ConsumerWidget {
                   itemCount: provider.addresses.length,
                   itemBuilder: (context, index) {
                     final address = provider.addresses[index];
-                    final isSelected = provider.selectedAddress?['id'] == address['id'];
+                    final isSelected =
+                        provider.selectedAddress?['id'] == address['id'];
                     return _buildAddressCard(context, address, isSelected, ref);
                   },
                 ),
@@ -40,8 +39,13 @@ class DeliveryAddressSelector extends ConsumerWidget {
     );
   }
 
-  // ─── CARTE D'ADRESSE (DESIGN AMÉLIORÉ) ───
-  Widget _buildAddressCard(BuildContext context, Map<String, dynamic> address, bool isSelected, WidgetRef ref) {
+  // ─── CARTE D'ADRESSE ───
+  Widget _buildAddressCard(
+    BuildContext context,
+    Map<String, dynamic> address,
+    bool isSelected,
+    WidgetRef ref,
+  ) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -63,7 +67,8 @@ class DeliveryAddressSelector extends ConsumerWidget {
         value: address,
         groupValue: ref.watch(deliveryProvider).selectedAddress,
         onChanged: (value) {
-          ref.read(deliveryProvider).selectAddress(value!);
+          if (value == null) return;
+          ref.read(deliveryProvider).selectAddress(value);
           onAddressSelected?.call(value);
         },
         title: Padding(
@@ -73,19 +78,28 @@ class DeliveryAddressSelector extends ConsumerWidget {
               Expanded(
                 child: Text(
                   address['full_name'] ?? 'Destinataire',
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF10192E)),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    color: Color(0xFF10192E),
+                  ),
                 ),
               ),
               if (address['is_default'] == true)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: Colors.green.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: const Text(
                     'Par défaut',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.green),
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.green,
+                    ),
                   ),
                 ),
             ],
@@ -101,7 +115,7 @@ class DeliveryAddressSelector extends ConsumerWidget {
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    '${address['address_line']}\n${address['commune']}, ${address['city']}',
+                    '\( {address['address_line']}\n \){address['commune']}, ${address['city']}',
                     style: TextStyle(color: Colors.grey[700], height: 1.4),
                   ),
                 ),
@@ -130,7 +144,7 @@ class DeliveryAddressSelector extends ConsumerWidget {
     );
   }
 
-  // ─── ÉTAT VIDE (DESIGN AMÉLIORÉ) ───
+  // ─── ÉTAT VIDE ───
   Widget _buildEmptyState(BuildContext context, WidgetRef ref) {
     return Center(
       child: Column(
@@ -147,7 +161,11 @@ class DeliveryAddressSelector extends ConsumerWidget {
           const SizedBox(height: 24),
           const Text(
             'Aucune adresse',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF10192E)),
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF10192E),
+            ),
           ),
           const SizedBox(height: 8),
           Text(
@@ -160,14 +178,18 @@ class DeliveryAddressSelector extends ConsumerWidget {
     );
   }
 
-  // ─── BOUTON D'AJOUT (DESIGN AMÉLIORÉ) ───
+  // ─── BOUTON D'AJOUT ───
   Widget _buildAddAddressButton(BuildContext context, WidgetRef ref) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -4)),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, -4),
+          ),
         ],
       ),
       child: OutlinedButton.icon(
@@ -187,7 +209,7 @@ class DeliveryAddressSelector extends ConsumerWidget {
     );
   }
 
-  // ─── HELPER POUR LES CHAMPS DE TEXTE ───
+  // ─── HELPER CHAMPS ───
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
@@ -200,13 +222,16 @@ class DeliveryAddressSelector extends ConsumerWidget {
       child: TextFormField(
         controller: controller,
         keyboardType: type,
-        validator: isRequired ? (v) => v!.isEmpty ? 'Ce champ est requis' : null : null,
+        validator: isRequired
+            ? (v) => (v == null || v.trim().isEmpty) ? 'Ce champ est requis' : null
+            : null,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
           filled: true,
           fillColor: Colors.grey[100],
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none,
@@ -229,8 +254,8 @@ class DeliveryAddressSelector extends ConsumerWidget {
     final formKey = GlobalKey<FormState>();
     final fullNameCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
-    final altPhoneCtrl = TextEditingController(); 
-    final cityCtrl = TextEditingController(text: 'Kinshasa'); 
+    final altPhoneCtrl = TextEditingController();
+    final cityCtrl = TextEditingController(text: 'Kinshasa');
     final communeCtrl = TextEditingController();
     final addressCtrl = TextEditingController();
     final landmarkCtrl = TextEditingController();
@@ -248,7 +273,9 @@ class DeliveryAddressSelector extends ConsumerWidget {
           ),
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(context).viewInsets.bottom,
-            left: 20, right: 20, top: 12,
+            left: 20,
+            right: 20,
+            top: 12,
           ),
           child: Form(
             key: formKey,
@@ -256,76 +283,163 @@ class DeliveryAddressSelector extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
-                  const SizedBox(height: 20),
-                  const Text('Nouvelle adresse', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF10192E))),
-                  const SizedBox(height: 24),
-                  
-                  _buildTextField(controller: fullNameCtrl, label: 'Nom et Prénom', isRequired: true),
-                  
-                  Row(
-                    children: [
-                      Expanded(child: _buildTextField(controller: phoneCtrl, label: 'Tél. principal', type: TextInputType.phone, isRequired: true)),
-                      const SizedBox(width: 12),
-                      Expanded(child: _buildTextField(controller: altPhoneCtrl, label: 'Tél. alternatif', type: TextInputType.phone)),
-                    ],
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                  
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Nouvelle adresse',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF10192E),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  _buildTextField(
+                    controller: fullNameCtrl,
+                    label: 'Nom et Prénom',
+                    isRequired: true,
+                  ),
+
                   Row(
                     children: [
-                      Expanded(child: _buildTextField(controller: cityCtrl, label: 'Ville', isRequired: true)),
+                      Expanded(
+                        child: _buildTextField(
+                          controller: phoneCtrl,
+                          label: 'Tél. principal',
+                          type: TextInputType.phone,
+                          isRequired: true,
+                        ),
+                      ),
                       const SizedBox(width: 12),
-                      Expanded(child: _buildTextField(controller: communeCtrl, label: 'Commune / Quartier', isRequired: true)),
+                      Expanded(
+                        child: _buildTextField(
+                          controller: altPhoneCtrl,
+                          label: 'Tél. alternatif',
+                          type: TextInputType.phone,
+                        ),
+                      ),
                     ],
                   ),
 
-                  _buildTextField(controller: addressCtrl, label: 'Avenue et Numéro (ex: De Bon 52)', isRequired: true),
-                  _buildTextField(controller: landmarkCtrl, label: 'Point de repère (Optionnel)', hint: 'Ex: En face de la pharmacie...'),
-                  
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildTextField(
+                          controller: cityCtrl,
+                          label: 'Ville',
+                          isRequired: true,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildTextField(
+                          controller: communeCtrl,
+                          label: 'Commune / Quartier',
+                          isRequired: true,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  _buildTextField(
+                    controller: addressCtrl,
+                    label: 'Avenue et Numéro (ex: De Bon 52)',
+                    isRequired: true,
+                  ),
+                  _buildTextField(
+                    controller: landmarkCtrl,
+                    label: 'Point de repère (Optionnel)',
+                    hint: 'Ex: En face de la pharmacie...',
+                  ),
+
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.grey[50],
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: Colors.grey[200]!),
                     ),
                     child: CheckboxListTile(
-                      value: isDefault, 
-                      onChanged: (val) => setState(() => isDefault = val ?? false),
+                      value: isDefault,
+                      onChanged: (val) =>
+                          setState(() => isDefault = val ?? false),
                       activeColor: thixOrange,
                       contentPadding: EdgeInsets.zero,
                       controlAffinity: ListTileControlAffinity.leading,
-                      title: const Text('Définir comme adresse par défaut', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      title: const Text(
+                        'Définir comme adresse par défaut',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
-                  
+
                   ElevatedButton(
                     onPressed: () async {
-                      if (formKey.currentState!.validate()) {
+                      if (!formKey.currentState!.validate()) return;
+
+                      try {
                         await ref.read(deliveryProvider).addAddress({
-                          'full_name': fullNameCtrl.text,
-                          'phone': phoneCtrl.text,
-                          'alt_phone': altPhoneCtrl.text,
-                          'city': cityCtrl.text,
-                          'commune': communeCtrl.text,
-                          'address_line': addressCtrl.text,
-                          'landmark': landmarkCtrl.text,
+                          'full_name': fullNameCtrl.text.trim(),
+                          'phone': phoneCtrl.text.trim(),
+                          'alt_phone': altPhoneCtrl.text.trim(),
+                          'city': cityCtrl.text.trim(),
+                          'commune': communeCtrl.text.trim(),
+                          'address_line': addressCtrl.text.trim(),
+                          'landmark': landmarkCtrl.text.trim(),
                           'is_default': isDefault,
                         });
+
+                        // Synchronise avec le checkout pour activer "Continuer"
+                        final selected =
+                            ref.read(deliveryProvider).selectedAddress;
+                        if (selected != null) {
+                          onAddressSelected?.call(selected);
+                        }
+
                         if (context.mounted) Navigator.pop(context);
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Erreur enregistrement : $e'),
+                              backgroundColor: Colors.red,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
                       }
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: thixOrange, 
-                      foregroundColor: Colors.white, 
+                      backgroundColor: thixOrange,
+                      foregroundColor: Colors.white,
                       minimumSize: const Size(double.infinity, 56),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                       elevation: 0,
                     ),
-                    child: const Text('Enregistrer l\'adresse', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                    child: const Text(
+                      'Enregistrer l\'adresse',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
                 ],
               ),
             ),
@@ -335,17 +449,28 @@ class DeliveryAddressSelector extends ConsumerWidget {
     );
   }
 
-  // ─── FORMULAIRE DE MODIFICATION ───
-  void _showEditAddressDialog(BuildContext context, WidgetRef ref, Map<String, dynamic> address) {
+  // ─── FORMULAIRE D'ÉDITION ───
+  void _showEditAddressDialog(
+    BuildContext context,
+    WidgetRef ref,
+    Map<String, dynamic> address,
+  ) {
     final formKey = GlobalKey<FormState>();
-    final fullNameCtrl = TextEditingController(text: address['full_name']);
-    final phoneCtrl = TextEditingController(text: address['phone']);
-    final altPhoneCtrl = TextEditingController(text: address['alt_phone'] ?? ''); 
-    final cityCtrl = TextEditingController(text: address['city']);
-    final communeCtrl = TextEditingController(text: address['commune'] ?? '');
-    final addressCtrl = TextEditingController(text: address['address_line']);
-    final landmarkCtrl = TextEditingController(text: address['landmark'] ?? '');
-    bool isDefault = address['is_default'] ?? false;
+    final fullNameCtrl =
+        TextEditingController(text: address['full_name']?.toString() ?? '');
+    final phoneCtrl =
+        TextEditingController(text: address['phone']?.toString() ?? '');
+    final altPhoneCtrl =
+        TextEditingController(text: address['alt_phone']?.toString() ?? '');
+    final cityCtrl =
+        TextEditingController(text: address['city']?.toString() ?? 'Kinshasa');
+    final communeCtrl =
+        TextEditingController(text: address['commune']?.toString() ?? '');
+    final addressCtrl =
+        TextEditingController(text: address['address_line']?.toString() ?? '');
+    final landmarkCtrl =
+        TextEditingController(text: address['landmark']?.toString() ?? '');
+    bool isDefault = address['is_default'] == true;
 
     showModalBottomSheet(
       context: context,
@@ -357,106 +482,223 @@ class DeliveryAddressSelector extends ConsumerWidget {
             color: Colors.white,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
-          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 20, right: 20, top: 12),
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+            left: 20,
+            right: 20,
+            top: 12,
+          ),
           child: Form(
             key: formKey,
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
-                  const SizedBox(height: 20),
-                  const Text('Modifier l\'adresse', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF10192E))),
-                  const SizedBox(height: 24),
-                  
-                  _buildTextField(controller: fullNameCtrl, label: 'Nom complet', isRequired: true),
-                  
-                  Row(
-                    children: [
-                      Expanded(child: _buildTextField(controller: phoneCtrl, label: 'Tél. principal', type: TextInputType.phone, isRequired: true)),
-                      const SizedBox(width: 12),
-                      Expanded(child: _buildTextField(controller: altPhoneCtrl, label: 'Tél. alternatif', type: TextInputType.phone)),
-                    ],
-                  ),
-
-                  Row(
-                    children: [
-                      Expanded(child: _buildTextField(controller: cityCtrl, label: 'Ville', isRequired: true)),
-                      const SizedBox(width: 12),
-                      Expanded(child: _buildTextField(controller: communeCtrl, label: 'Commune / Quartier', isRequired: true)),
-                    ],
-                  ),
-
-                  _buildTextField(controller: addressCtrl, label: 'Avenue et Numéro', isRequired: true),
-                  _buildTextField(controller: landmarkCtrl, label: 'Point de repère (Optionnel)'),
-                  
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Modifier l\'adresse',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF10192E),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  _buildTextField(
+                    controller: fullNameCtrl,
+                    label: 'Nom et Prénom',
+                    isRequired: true,
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildTextField(
+                          controller: phoneCtrl,
+                          label: 'Tél. principal',
+                          type: TextInputType.phone,
+                          isRequired: true,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildTextField(
+                          controller: altPhoneCtrl,
+                          label: 'Tél. alternatif',
+                          type: TextInputType.phone,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildTextField(
+                          controller: cityCtrl,
+                          label: 'Ville',
+                          isRequired: true,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildTextField(
+                          controller: communeCtrl,
+                          label: 'Commune / Quartier',
+                          isRequired: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                  _buildTextField(
+                    controller: addressCtrl,
+                    label: 'Avenue et Numéro',
+                    isRequired: true,
+                  ),
+                  _buildTextField(
+                    controller: landmarkCtrl,
+                    label: 'Point de repère (Optionnel)',
+                  ),
+
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.grey[50],
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: Colors.grey[200]!),
                     ),
                     child: CheckboxListTile(
-                      value: isDefault, 
-                      onChanged: (val) => setState(() => isDefault = val ?? false),
+                      value: isDefault,
+                      onChanged: (val) =>
+                          setState(() => isDefault = val ?? false),
                       activeColor: thixOrange,
                       contentPadding: EdgeInsets.zero,
                       controlAffinity: ListTileControlAffinity.leading,
-                      title: const Text('Définir comme adresse par défaut', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      title: const Text(
+                        'Définir comme adresse par défaut',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
-                  
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () {
-                            ref.read(deliveryProvider).deleteAddress(address['id']);
-                            if (context.mounted) Navigator.pop(context);
+
+                  ElevatedButton(
+                    onPressed: () async {
+                      if (!formKey.currentState!.validate()) return;
+
+                      try {
+                        await ref.read(deliveryProvider).updateAddress(
+                          address['id'].toString(),
+                          {
+                            'full_name': fullNameCtrl.text.trim(),
+                            'phone': phoneCtrl.text.trim(),
+                            'alt_phone': altPhoneCtrl.text.trim(),
+                            'city': cityCtrl.text.trim(),
+                            'commune': communeCtrl.text.trim(),
+                            'address_line': addressCtrl.text.trim(),
+                            'landmark': landmarkCtrl.text.trim(),
+                            'is_default': isDefault,
                           },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red, 
-                            side: const BorderSide(color: Colors.red, width: 2), 
-                            minimumSize: const Size(0, 56),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          ),
-                          child: const Text('Supprimer', style: TextStyle(fontWeight: FontWeight.bold)),
-                        ),
+                        );
+
+                        final selected =
+                            ref.read(deliveryProvider).selectedAddress;
+                        if (selected != null) {
+                          onAddressSelected?.call(selected);
+                        }
+
+                        if (context.mounted) Navigator.pop(context);
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Erreur modification : $e'),
+                              backgroundColor: Colors.red,
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: thixOrange,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 56),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 2,
-                        child: ElevatedButton(
-                          onPressed: () async {
-                            if (formKey.currentState!.validate()) {
-                              await ref.read(deliveryProvider).updateAddress(address['id'], {
-                                'full_name': fullNameCtrl.text,
-                                'phone': phoneCtrl.text,
-                                'alt_phone': altPhoneCtrl.text,
-                                'city': cityCtrl.text,
-                                'commune': communeCtrl.text,
-                                'address_line': addressCtrl.text,
-                                'landmark': landmarkCtrl.text,
-                                'is_default': isDefault,
-                              });
-                              if (context.mounted) Navigator.pop(context);
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: thixOrange, 
-                            foregroundColor: Colors.white, 
-                            minimumSize: const Size(0, 56),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            elevation: 0,
-                          ),
-                          child: const Text('Mettre à jour', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
-                        ),
+                      elevation: 0,
+                    ),
+                    child: const Text(
+                      'Enregistrer les modifications',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
                       ),
-                    ],
+                    ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Supprimer ?'),
+                          content: const Text(
+                            'Voulez-vous vraiment supprimer cette adresse ?',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('Annuler'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text(
+                                'Supprimer',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        try {
+                          await ref
+                              .read(deliveryProvider)
+                              .deleteAddress(address['id'].toString());
+                          if (context.mounted) {
+                            Navigator.pop(context); // ferme le bottom sheet
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Erreur suppression : $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      }
+                    },
+                    child: const Text(
+                      'Supprimer cette adresse',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                 ],
               ),
             ),
