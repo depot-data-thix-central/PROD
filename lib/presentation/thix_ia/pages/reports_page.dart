@@ -50,40 +50,41 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         children: [
           Container(
             color: Colors.white,
-            padding: EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                Expanded(child: _GenBtn(icon: Icons.description_rounded, label: 'Business Plan', onTap: _generating? null : () => _generate('business_plan'))),
-                SizedBox(width: 8),
-                Expanded(child: _GenBtn(icon: Icons.analytics_rounded, label: 'Étude Marché', onTap: _generating? null : () => _generate('market_study'))),
-                SizedBox(width: 8),
-                Expanded(child: _GenBtn(icon: Icons.folder_special_rounded, label: 'Dossier Complet', onTap: _generating? null : () => _generate('fullDossier'))),
+                Expanded(child: _GenBtn(icon: Icons.description_rounded, label: 'Business Plan', onTap: _generating ? null : () => _generate('business_plan'))),
+                const SizedBox(width: 8),
+                Expanded(child: _GenBtn(icon: Icons.analytics_rounded, label: 'Étude Marché', onTap: _generating ? null : () => _generate('market_study'))),
+                const SizedBox(width: 8),
+                Expanded(child: _GenBtn(icon: Icons.folder_special_rounded, label: 'Dossier Complet', onTap: _generating ? null : () => _generate('fullDossier'))),
               ],
             ),
           ),
-          if (_generating) LinearProgressIndicator(color: ThixPolicy.primary),
+          if (_generating) const LinearProgressIndicator(color: ThixPolicy.primary),
           Expanded(
             child: reportsAsync.when(
-              loading: () => Center(child: CircularProgressIndicator()),
+              loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => Center(child: Text('Erreur $e')),
               data: (reports) {
                 if (reports.isEmpty) return EmptyStateWidget(icon: Icons.picture_as_pdf_outlined, title: 'Aucun rapport', subtitle: 'Générez votre business plan, étude de marché ou dossier complet en 1 clic.', actionLabel: 'Générer Business Plan', onAction: () => _generate('business_plan'));
                 return ListView.builder(
-                  padding: EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(16),
                   itemCount: reports.length,
                   itemBuilder: (_, i) {
                     final r = reports[i];
                     return Container(
-                      margin: EdgeInsets.only(bottom: 12),
+                      margin: const EdgeInsets.only(bottom: 12),
                       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(ThixPolicy.rMd), border: Border.all(color: ThixPolicy.border)),
                       child: ListTile(
-                        leading: Container(width: 44, height: 44, decoration: BoxDecoration(color: ThixPolicy.danger.withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: Icon(Icons.picture_as_pdf_rounded, color: ThixPolicy.danger)),
+                        leading: Container(width: 44, height: 44, decoration: BoxDecoration(color: ThixPolicy.danger.withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.picture_as_pdf_rounded, color: ThixPolicy.danger)),
                         title: Text(r.title, style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.semiBold)),
                         subtitle: Text('v${r.version} • ${r.fileType.toUpperCase()} • Confiance ${(r.confidence * 100).toInt()}%', style: ThixPolicy.captionStyle),
-                        trailing: IconButton(icon: Icon(Icons.download_rounded, color: ThixPolicy.primary), onPressed: () async {
-                          if (r.fileUrl!= null) {
-                            final uri = Uri.tryParse(r.fileUrl!);
-                            if (uri!= null) await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        trailing: IconButton(icon: const Icon(Icons.download_rounded, color: ThixPolicy.primary), onPressed: () async {
+                          // CORRECTION ICI: fileUrl -> filePath
+                          if (r.filePath != null) {
+                            final uri = Uri.tryParse(r.filePath!);
+                            if (uri != null) await launchUrl(uri, mode: LaunchMode.externalApplication);
                           }
                         }),
                       ),
@@ -109,9 +110,9 @@ class _GenBtn extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(color: ThixPolicy.primary.withOpacity(0.08), borderRadius: BorderRadius.circular(ThixPolicy.rMd), border: Border.all(color: ThixPolicy.primary.withOpacity(0.2))),
-        child: Column(children: [Icon(icon, size: 20, color: ThixPolicy.primary), SizedBox(height: 4), Text(label, style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.semiBold), textAlign: TextAlign.center)]),
+        child: Column(children: [Icon(icon, size: 20, color: ThixPolicy.primary), const SizedBox(height: 4), Text(label, style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.semiBold), textAlign: TextAlign.center)]),
       ),
     );
   }
