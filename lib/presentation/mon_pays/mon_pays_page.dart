@@ -15,6 +15,9 @@ import 'providers/provinces_provider.dart';
 import 'providers/authorities_provider.dart';
 import 'providers/citizens_provider.dart'; 
 
+// Import News Detail Page (Added from previous step)
+import 'pages/news/news_detail_page.dart';
+
 // ✅ Import de la Policy de Design
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
@@ -180,7 +183,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                 _buildPatrioticCarousel(isAdmin),
                 const SizedBox(height: 12),
                 
-                // 2. AUTORITÉS
+                // 2. AUTORITÉS (Agrandies)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: _buildAutoritesFullWidth(),
@@ -208,10 +211,10 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                 ),
                 const SizedBox(height: 12),
 
-                // 6. CITOYENS EXEMPLAIRES
+                // 6. CITOYENS EXEMPLAIRES -> Ils rendent fière la nation
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: _buildCitoyensExemplairesFull(),
+                  child: _buildFierteNationFull(),
                 ),
                 const SizedBox(height: 12),
 
@@ -507,18 +510,18 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
     );
   }
 
-  // ─── Section Autorités ───────────────────────────────────────────
+  // ─── Section Autorités (Agrandie) ──────────────────────────────────
   Widget _buildAutoritesFullWidth() {
     final authAsync = ref.watch(topAuthoritiesProvider);
 
     return Container(
-      padding: const EdgeInsets.all(12), 
+      padding: const EdgeInsets.all(14), // Increased padding slightly
       decoration: _cardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionHeader('Les Autorités', actionText: 'Voir tout', onTap: () => context.push('/mon-pays/authorities')),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16), // Increased spacing
           authAsync.when(
             loading: () => const Center(
               child: Padding(
@@ -557,17 +560,17 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                 children: [
                   InkWell(
                     onTap: () => context.push('/mon-pays/authorities/${president.id}'),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14), // Slightly rounder
                     child: Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(10), // Increased padding
                       decoration: BoxDecoration(
                         color: ThixPolicy.surfaceSoft,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
                       ),
                       child: Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(2),
+                            padding: const EdgeInsets.all(2.5), // Slightly thicker border area
                             decoration: const BoxDecoration(
                               shape: BoxShape.circle,
                               gradient: LinearGradient(
@@ -577,21 +580,21 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                               ),
                             ),
                             child: CircleAvatar(
-                              radius: 32, 
+                              radius: 40, // ENLARGED (was 32)
                               backgroundImage: NetworkImage(
                                 president.imageUrl ?? 'https://i.pravatar.cc/200?u=president',
                               ),
                               onBackgroundImageError: (_, __) {},
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 14), // Increased spacing
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
                                     color: rdcBlue,
                                     borderRadius: BorderRadius.circular(20),
@@ -600,18 +603,18 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                                     'PRÉSIDENT DE LA RÉPUBLIQUE',
                                     style: TextStyle(
                                       color: rdcYellow,
-                                      fontSize: 7,
+                                      fontSize: 8, // Slightly larger
                                       fontWeight: FontWeight.bold,
                                       letterSpacing: 0.5,
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: 4),
+                                const SizedBox(height: 6),
                                 Text(
                                   president.name,
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w900,
-                                    fontSize: 14,
+                                    fontSize: 16, // ENLARGED (was 14)
                                     color: ThixPolicy.textMain,
                                     height: 1.1,
                                   ),
@@ -619,7 +622,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                                 Text(
                                   president.title ?? 'Président de la République',
                                   style: const TextStyle(
-                                    fontSize: 10,
+                                    fontSize: 11, // ENLARGED (was 10)
                                     color: ThixPolicy.textSecondary,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -631,16 +634,16 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16), // Increased spacing
                   if (others.isNotEmpty)
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 3,
-                        childAspectRatio: 0.85, 
-                        crossAxisSpacing: 8,
-                        mainAxisSpacing: 8,
+                        childAspectRatio: 0.8, // Adjusted ratio for larger avatars
+                        crossAxisSpacing: 10, // Increased spacing
+                        mainAxisSpacing: 10,
                       ),
                       itemCount: others.length,
                       itemBuilder: (context, i) {
@@ -650,30 +653,30 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                           borderRadius: BorderRadius.circular(8),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.start, // Align to start
                             children: [
                               Container(
-                                padding: const EdgeInsets.all(2),
+                                padding: const EdgeInsets.all(2.5),
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  border: Border.all(color: rdcYellow, width: 1.5),
+                                  border: Border.all(color: rdcYellow, width: 2), // Slightly thicker
                                 ),
                                 child: CircleAvatar(
-                                  radius: 26, 
+                                  radius: 34, // ENLARGED (was 26)
                                   backgroundImage: NetworkImage(
                                     a.imageUrl ?? 'https://i.pravatar.cc/100?u=$i',
                                   ),
                                   onBackgroundImageError: (_, __) {},
                                 ),
                               ),
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 8), // Increased spacing
                               Text(
                                 a.name,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w800,
-                                  fontSize: 10,
+                                  fontSize: 11, // ENLARGED (was 10)
                                   color: ThixPolicy.textMain,
                                 ),
                               ),
@@ -683,7 +686,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                                 overflow: TextOverflow.ellipsis,
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
-                                  fontSize: 8,
+                                  fontSize: 9, // ENLARGED (was 8)
                                   color: ThixPolicy.textSecondary,
                                 ),
                               ),
@@ -737,7 +740,13 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
                     }
 
                     return InkWell(
-                      onTap: () => _showComingSoon(), 
+                      // ✅ Open NewsDetailPage, staying within the 'Mon Pays' context
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => NewsDetailPage(article: article)),
+                        );
+                      }, 
                       borderRadius: BorderRadius.circular(8),
                       child: Container(
                         width: 130,
@@ -943,8 +952,8 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
     );
   }
 
-  // ─── Citoyens Exemplaires ──────────────────────────────────
-  Widget _buildCitoyensExemplairesFull() {
+  // ─── Ils rendent fière la nation ──────────────────────────────────
+  Widget _buildFierteNationFull() {
     final citizensAsync = ref.watch(citizensProvider);
 
     return Container(
@@ -953,7 +962,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeader('Citoyens Exemplaires', actionText: 'Voir tous', onTap: () => _showComingSoon()),
+          _sectionHeader('Ils rendent fière la nation', actionText: 'Voir tous', onTap: () => _showComingSoon()),
           const SizedBox(height: 4),
           const Text(
             'Ils bâtissent la RDC au quotidien par leur excellence.',
