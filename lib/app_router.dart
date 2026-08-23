@@ -542,6 +542,12 @@ class AppRouter {
         GoRoute(path: '/agency/trip/create', name: 'agency-create-trip', pageBuilder: (_, __) => const NoTransitionPage(child: AgencyCreateTripPage())),
         GoRoute(path: '/agency/scan', name: 'agency-scan', pageBuilder: (_, __) => const NoTransitionPage(child: AgencyQrScanPage())),
 
+        GoRoute(
+  path: '/thix-ia',
+  name: 'thix-ia-home',
+  builder: (context, state) => const ThixIaHomePage(), // 
+),
+
         // === THIX RESERVATION (DELIVERY) ===
         GoRoute(path: AppRoutes.deliveryHome, name: 'delivery-home', pageBuilder: (_, __) => NoTransitionPage(child: app_provider.ChangeNotifierProvider(create: (_) => DeliveryClientProvider()..init(), child: const DeliveryHomePage()))),
         GoRoute(path: AppRoutes.deliveryCheckout, name: 'delivery-checkout', pageBuilder: (_, __) => NoTransitionPage(child: app_provider.ChangeNotifierProvider(create: (_) => DeliveryClientProvider(), child: const DeliveryCheckoutPage()))),
