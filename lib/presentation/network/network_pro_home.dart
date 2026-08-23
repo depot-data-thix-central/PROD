@@ -13,6 +13,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/models/network_story.dart';
+import 'package:thix_id/data/models/live/live_model.dart'; // ✅ IMPORT AJOUTÉ POUR LIVESESSION
 import 'package:thix_id/features/network/data/network_service_provider.dart';
 import 'package:thix_id/features/network/presentation/providers/feed_provider.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
@@ -571,14 +572,21 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                   final s = liveSessions[liveIndex];
                   return GestureDetector(
                     onTap: () {
+                      // ✅ CORRECTION ICI : Création de l'objet LiveSession complet
+                      final liveSession = LiveSession(
+                        id: s['id']?.toString() ?? '',
+                        channelName: s['channel_name']?.toString() ?? '',
+                        title: s['title']?.toString() ?? 'Live',
+                        hostId: s['host_id']?.toString() ?? '',
+                        hostName: s['host_name']?.toString() ?? 'Hôte THIX',
+                        hostAvatarUrl: s['host_avatar']?.toString(),
+                      );
+
                       Navigator.push(
                         context, 
                         MaterialPageRoute(
                           builder: (context) => LiveViewerScreen(
-                            liveId: s['id']?.toString() ?? '',
-                            channelName: s['channel_name']?.toString() ?? '',
-                            hostName: s['host_name']?.toString() ?? 'Hôte THIX',
-                            hostAvatarUrl: s['host_avatar']?.toString(), 
+                            session: liveSession, // ✅ ON PASSE L'OBJET SESSION ICI
                           ),
                         ),
                       );
