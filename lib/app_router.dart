@@ -677,7 +677,8 @@ GoRoute(
         GoRoute(path: AppRoutes.deliveryAdminScan, name: 'delivery-admin-scan', pageBuilder: (_, __) => NoTransitionPage(child: app_provider.ChangeNotifierProvider(create: (_) => DeliveryAdminProvider(), child: const DeliveryAdminScanPage()))),
 
         // === THIX MARKET ===
-        GoRoute(path: AppRoutes.thixMarket, name: 'thixMarket', pageBuilder: (_, __) => const NoTransitionPage(child: MarketHomePage()), routes: [
+        
+          GoRoute(path: AppRoutes.thixMarket, name: 'thixMarket', pageBuilder: (_, __) => const NoTransitionPage(child: MarketHomePage()), routes: [
           GoRoute(path: 'home', name: 'marketHome', pageBuilder: (_, __) => const NoTransitionPage(child: MarketHomePage())),
           GoRoute(path: 'search', name: 'marketSearch', pageBuilder: (_, __) => const NoTransitionPage(child: marketSearch.SearchPage())),
           GoRoute(path: 'shops', name: 'marketShops', pageBuilder: (_, __) => const NoTransitionPage(child: ShopsPage())),
@@ -690,8 +691,25 @@ GoRoute(
           GoRoute(path: 'orders', name: 'marketOrders', pageBuilder: (_, __) => const NoTransitionPage(child: OrderHistoryPage())),
           GoRoute(path: 'checkout', name: 'marketCheckout', pageBuilder: (_, __) => const NoTransitionPage(child: CheckoutPage())),
           GoRoute(path: 'tracking/:orderId', name: 'marketDeliveryTracking', pageBuilder: (_, state) => NoTransitionPage(child: market_delivery.DeliveryTrackingPage(orderId: state.pathParameters['orderId']!))),
+
+          // ─── ROUTES STATIQUES EN PREMIER (avant les :param) ───
+          GoRoute(path: 'shop/create', name: 'marketCreateShop', pageBuilder: (_, __) => const NoTransitionPage(child: CreateShopPage())),
+          GoRoute(path: 'announcement/publish', name: 'marketPublishAnnouncement', pageBuilder: (_, __) => const NoTransitionPage(child: PublishAnnouncementPage())),
+          GoRoute(path: 'live/create', name: 'marketCreateLive', pageBuilder: (_, __) => const NoTransitionPage(child: CreateLivePage())),
+          GoRoute(path: 'live', name: 'marketLive', pageBuilder: (_, __) => const NoTransitionPage(child: LivePage())),
+          GoRoute(path: 'messages', name: 'marketMessages', pageBuilder: (_, __) => const NoTransitionPage(child: MessagesPage())),
+          GoRoute(path: 'notifications', name: 'marketNotifications', pageBuilder: (_, __) => const NoTransitionPage(child: NotificationPage())),
+          GoRoute(path: 'activity', name: 'marketActivity', pageBuilder: (_, __) => const NoTransitionPage(child: MyActivityPage())),
+          GoRoute(path: 'settings', name: 'marketSettings', pageBuilder: (_, __) => const NoTransitionPage(child: MarketSettingsPage())),
+          GoRoute(path: 'help', name: 'marketHelp', pageBuilder: (_, __) => const NoTransitionPage(child: HelpSupportPage())),
+          GoRoute(path: 'vendor/dashboard', name: 'vendorDashboard', pageBuilder: (_, __) => const NoTransitionPage(child: VendorDashboard())),
+          GoRoute(path: 'vendor/orders', name: 'vendorOrders', pageBuilder: (_, __) => const NoTransitionPage(child: VendorOrdersPage())),
+          GoRoute(path: 'deliveries', name: 'deliveryManagement', pageBuilder: (_, __) => const NoTransitionPage(child: DeliveryManagementPage())),
+
+          // ─── ROUTES DYNAMIQUES ENSUITE ───
           GoRoute(path: 'shop/:shopId/manage', name: 'marketManageShop', pageBuilder: (_, state) => NoTransitionPage(child: ManageShopPage(shopId: state.pathParameters['shopId']!))),
           GoRoute(path: 'shop/:shopId/stats', name: 'marketShopStats', pageBuilder: (_, state) => NoTransitionPage(child: ShopStatisticsPage(shopId: state.pathParameters['shopId']!))),
+          GoRoute(path: 'shop/:shopId', name: 'marketShopDetail', pageBuilder: (_, state) => NoTransitionPage(child: ShopDetailPage(shopId: state.pathParameters['shopId']!))),
           GoRoute(path: 'product/:productId', name: 'marketProductDetail', pageBuilder: (_, state) => NoTransitionPage(child: ProductDetailPage(productId: state.pathParameters['productId']!))),
           GoRoute(path: 'order/:orderId', name: 'marketOrderDetail', pageBuilder: (_, state) => NoTransitionPage(child: OrderDetailPage(orderId: state.pathParameters['orderId']!))),
           GoRoute(path: 'auction/:auctionId', name: 'marketAuction', pageBuilder: (_, state) => NoTransitionPage(child: AuctionPage(auctionId: state.pathParameters['auctionId']!))),
@@ -700,21 +718,7 @@ GoRoute(
           GoRoute(path: 'live/:liveId/replay', name: 'marketLiveReplay', pageBuilder: (_, state) => NoTransitionPage(child: LiveReplayPage(liveId: state.pathParameters['liveId']!))),
           GoRoute(path: 'live/:liveId', name: 'marketLiveStream', pageBuilder: (_, state) => NoTransitionPage(child: LiveStreamPage(liveId: state.pathParameters['liveId']!))),
           GoRoute(path: 'chat/:conversationId', name: 'marketChat', pageBuilder: (_, state) => NoTransitionPage(child: ChatPage(conversationId: state.pathParameters['conversationId']!))),
-          GoRoute(path: 'vendor/orders', name: 'vendorOrders', pageBuilder: (_, __) => const NoTransitionPage(child: VendorOrdersPage())),
-          GoRoute(path: 'shop/:shopId', name: 'marketShopDetail', pageBuilder: (_, state) => NoTransitionPage(child: ShopDetailPage(shopId: state.pathParameters['shopId']!))),
-          GoRoute(path: 'messages', name: 'marketMessages', pageBuilder: (_, __) => const NoTransitionPage(child: MessagesPage())),
-          GoRoute(path: 'notifications', name: 'marketNotifications', pageBuilder: (_, __) => const NoTransitionPage(child: NotificationPage())),
-          GoRoute(path: 'activity', name: 'marketActivity', pageBuilder: (_, __) => const NoTransitionPage(child: MyActivityPage())),
-          GoRoute(path: 'settings', name: 'marketSettings', pageBuilder: (_, __) => const NoTransitionPage(child: MarketSettingsPage())),
-          GoRoute(path: 'help', name: 'marketHelp', pageBuilder: (_, __) => const NoTransitionPage(child: HelpSupportPage())),
-          GoRoute(path: 'vendor/dashboard', name: 'vendorDashboard', pageBuilder: (_, __) => const NoTransitionPage(child: VendorDashboard())),
-          GoRoute(path: 'shop/create', name: 'marketCreateShop', pageBuilder: (_, __) => const NoTransitionPage(child: CreateShopPage())),
-          GoRoute(path: 'announcement/publish', name: 'marketPublishAnnouncement', pageBuilder: (_, __) => const NoTransitionPage(child: PublishAnnouncementPage())),
-          GoRoute(path: 'deliveries', name: 'deliveryManagement', pageBuilder: (_, __) => const NoTransitionPage(child: DeliveryManagementPage())),
-          GoRoute(path: 'live', name: 'marketLive', pageBuilder: (_, __) => const NoTransitionPage(child: LivePage())),
-          GoRoute(path: 'live/create', name: 'marketCreateLive', pageBuilder: (_, __) => const NoTransitionPage(child: CreateLivePage())),
         ]),
-
         // === ADMIN SYSTEM GLOBAL ===
         GoRoute(path: '/admin', builder: (context, state) => const thix_admin.AdminHomePage()),
         GoRoute(path: '/admin/articles', builder: (context, state) => const thix_admin_list.AdminArticlesListPage()),
