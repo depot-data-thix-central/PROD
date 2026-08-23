@@ -7,13 +7,15 @@ import '../providers/active_project_provider.dart';
 import '../providers/analysis_provider.dart';
 import '../providers/project_memory_provider.dart';
 import '../providers/document_provider.dart';
+// Import ajouté :
+import '../providers/project_intelligence_provider.dart';
 import '../widgets/project_header.dart';
 import '../widgets/fact_card.dart';
 import '../widgets/analysis_progress_widget.dart';
 import '../widgets/empty_state_widget.dart';
 import '../widgets/ai_command_bar.dart';
 import '../core/constants/thix_ia_routes.dart';
-import '../providers/active_project_provider.dart';
+
 class ProjectDetailPage extends ConsumerStatefulWidget {
   const ProjectDetailPage({super.key, required this.projectCode});
   final String projectCode;
@@ -50,7 +52,7 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage> with Sing
     final activeProject = ref.watch(activeProjectProvider).value;
 
     if (activeProject == null) {
-      return Scaffold(body: Center(child: CircularProgressIndicator(color: ThixPolicy.primary)));
+      return const Scaffold(body: Center(child: CircularProgressIndicator(color: ThixPolicy.primary)));
     }
 
     return Scaffold(
@@ -62,8 +64,8 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage> with Sing
             backgroundColor: Colors.white,
             title: Text(activeProject.projectCode, style: ThixPolicy.bodyStyle.copyWith(fontFamily: 'monospace', fontWeight: ThixPolicy.semiBold)),
             actions: [
-              IconButton(onPressed: () => context.push('${ThixIARoutes.home}/project/${widget.projectCode}/chat'), icon: Icon(Icons.chat_bubble_rounded, color: ThixPolicy.primary)),
-              IconButton(onPressed: () => context.push('${ThixIARoutes.home}/project/${widget.projectCode}/documents'), icon: Icon(Icons.folder_rounded, color: ThixPolicy.textSecondary)),
+              IconButton(onPressed: () => context.push('${ThixIARoutes.home}/project/${widget.projectCode}/chat'), icon: const Icon(Icons.chat_bubble_rounded, color: ThixPolicy.primary)),
+              IconButton(onPressed: () => context.push('${ThixIARoutes.home}/project/${widget.projectCode}/documents'), icon: const Icon(Icons.folder_rounded, color: ThixPolicy.textSecondary)),
             ],
             bottom: TabBar(
               controller: _tabController,
@@ -75,7 +77,7 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage> with Sing
           ),
           SliverToBoxAdapter(
             child: intelligenceAsync.when(
-              loading: () => Padding(padding: EdgeInsets.all(16), child: LinearProgressIndicator()),
+              loading: () => const Padding(padding: EdgeInsets.all(16), child: LinearProgressIndicator()),
               error: (_, __) => ProjectHeader(project: activeProject, progress: activeProject.progress),
               data: (intel) {
                 if (intel == null) return ProjectHeader(project: activeProject, progress: activeProject.progress);
@@ -117,13 +119,13 @@ class _OverviewTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final intel = ref.watch(projectIntelligenceProvider).value;
-    if (intel == null) return Center(child: CircularProgressIndicator());
+    if (intel == null) return const Center(child: CircularProgressIndicator());
     return ListView(
-      padding: EdgeInsets.only(bottom: 100),
+      padding: const EdgeInsets.only(bottom: 100),
       children: [
-        Padding(padding: EdgeInsets.all(16), child: Text('Faits vérifiés', style: ThixPolicy.h3Style)),
+        Padding(padding: const EdgeInsets.all(16), child: Text('Faits vérifiés', style: ThixPolicy.h3Style)),
        ...intel.memory.facts.take(5).map((f) => FactCard(fact: f)),
-        Padding(padding: EdgeInsets.all(16), child: Text('Analyses récentes', style: ThixPolicy.h3Style)),
+        Padding(padding: const EdgeInsets.all(16), child: Text('Analyses récentes', style: ThixPolicy.h3Style)),
        ...intel.analyses.take(3).map((a) => AnalysisProgressWidget(analysis: a)),
       ],
     );
@@ -135,9 +137,9 @@ class _AnalysesTab extends ConsumerWidget {
   final String projectCode;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final analyses = ref.watch(analysesProvider).value?? [];
+    final analyses = ref.watch(analysesProvider).value ?? [];
     if (analyses.isEmpty) return EmptyAnalyses(onStart: () => context.push('/thix-ia/project/$projectCode/analysis'));
-    return ListView.builder(padding: EdgeInsets.only(bottom: 100), itemCount: analyses.length, itemBuilder: (_, i) => AnalysisProgressWidget(analysis: analyses[i]));
+    return ListView.builder(padding: const EdgeInsets.only(bottom: 100), itemCount: analyses.length, itemBuilder: (_, i) => AnalysisProgressWidget(analysis: analyses[i]));
   }
 }
 
@@ -147,9 +149,9 @@ class _MemoryTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final memory = ref.watch(projectMemoryProvider).value;
-    if (memory == null) return Center(child: CircularProgressIndicator());
+    if (memory == null) return const Center(child: CircularProgressIndicator());
     if (memory.facts.isEmpty) return const EmptyFacts();
-    return ListView.builder(padding: EdgeInsets.only(bottom: 100), itemCount: memory.facts.length, itemBuilder: (_, i) => FactCard(fact: memory.facts[i]));
+    return ListView.builder(padding: const EdgeInsets.only(bottom: 100), itemCount: memory.facts.length, itemBuilder: (_, i) => FactCard(fact: memory.facts[i]));
   }
 }
 
@@ -158,8 +160,8 @@ class _DocsTab extends ConsumerWidget {
   final String projectCode;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final docs = ref.watch(documentsProvider).value?? [];
+    final docs = ref.watch(documentsProvider).value ?? [];
     if (docs.isEmpty) return EmptyStateWidget(icon: Icons.folder_outlined, title: 'Aucun document', subtitle: 'Importez votre pitch, business plan ou études.', actionLabel: 'Importer', onAction: () => context.push('/thix-ia/project/$projectCode/documents'));
-    return ListView.builder(padding: EdgeInsets.only(bottom: 100), itemCount: docs.length, itemBuilder: (_, i) => ListTile(title: Text(docs[i].fileName), subtitle: Text(docs[i].status.name)));
+    return ListView.builder(padding: const EdgeInsets.only(bottom: 100), itemCount: docs.length, itemBuilder: (_, i) => ListTile(title: Text(docs[i].fileName), subtitle: Text(docs[i].status.name)));
   }
 }
