@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/thix_design_policy.dart';
-import '../providers/thix_ia_provider.dart';
-import '../providers/project_provider.dart';
+import '../providers/thix_ia_provider.dart'; // <-- C'est le seul import de provider dont on a besoin !
 import '../widgets/project_card.dart';
 import '../widgets/empty_state_widget.dart';
 
