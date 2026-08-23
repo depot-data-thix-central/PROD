@@ -114,12 +114,9 @@ class _LivePrepScreenState extends ConsumerState<LivePrepScreen> {
     }
   }
 
-  /// ⚠️ CORRECTIF : plus aucun App ID codé en dur. On récupère les
-  /// identifiants Agora via la même fonction Supabase que celle utilisée
-  /// par live_controller.dart (`liveServiceProvider.fetchAgoraCredentials`),
-  /// pour garantir un App ID toujours identique et à jour entre la preview
-  /// et le direct réel. C'est cette fonction côté serveur qui reste
-  /// l'unique source de vérité pour les credentials Agora.
+  /// App ID récupéré via la même fonction Supabase que live_controller.dart
+  /// (pas de valeur codée en dur). Config vidéo explicite pour éviter une
+  /// texture native mal dimensionnée sur certains appareils.
   Future<void> _initPreviewAgora() async {
     setState(() {
       _isPreviewFailed = false;
@@ -141,6 +138,19 @@ class _LivePrepScreenState extends ConsumerState<LivePrepScreen> {
         appId: credentials.appId,
         channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
       ));
+
+      // ── Config encodeur explicite : évite une texture native de taille
+      // incertaine sur certains appareils/drivers avant le premier frame.
+      await _engine!.setVideoEncoderConfiguration(
+        const VideoEncoderConfiguration(
+          dimensions: VideoDimensions(width: 720, height: 1280), // portrait
+          frameRate: 15,
+          bitrate: 0, // auto
+          orientationMode: OrientationMode.orientationModeAdaptive,
+          degradationPreference: DegradationPreference.maintainQuality,
+        ),
+      );
+
       await _engine!.enableVideo();
       await _engine!.startPreview();
 
@@ -242,7 +252,23 @@ class _LivePrepScreenState extends ConsumerState<LivePrepScreen> {
           // ─── 1. VUE CAMÉRA ───
           Positioned.fill(
             child: _isEngineReady && _isVideoEnabled && _engine != null
-                ? AgoraVideoView(controller: VideoViewController(rtcEngine: _engine!, canvas: const VideoCanvas(uid: 0)))
+                ? SizedBox.expand(
+                    // ⚠️ CORRECTIF : AgoraVideoView est une Platform View
+                    // (AndroidView/UiKitView). Sans renderMode explicite ET
+                    // sans conteneur dimensionné en dur (SizedBox.expand),
+                    // la texture native peut garder sa taille d'origine —
+                    // une petite bande visible, le reste de l'écran noir.
+                    child: AgoraVideoView(
+                      controller: VideoViewController(
+                        rtcEngine: _engine!,
+                        canvas: const VideoCanvas(
+                          uid: 0,
+                          renderMode: RenderModeType.renderModeHidden, // ≈ BoxFit.cover
+                        ),
+                        useFlutterTexture: kIsWeb,
+                      ),
+                    ),
+                  )
                 : Container(
                     color: ThixPolicy.inkDeep,
                     child: Center(
