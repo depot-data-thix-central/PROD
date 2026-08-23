@@ -2,6 +2,7 @@
 // PRODUCTION - Local PIP draggable - Mirror - Cam Off state
 import 'package:flutter/material.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import '../../../../services/chat/call_service.dart';
 
 class LocalVideoPreview extends StatefulWidget {
   final String channel;
@@ -25,6 +26,13 @@ class _LocalVideoPreviewState extends State<LocalVideoPreview> {
 
   @override
   Widget build(BuildContext context) {
+    // ⚠️ CORRECTIF : on récupère le moteur Agora RÉEL déjà initialisé et
+    // joint par CallMediaService (singleton). L'ancien code créait un
+    // VideoViewController avec un constructeur `rtcConnection:` qui
+    // n'existe pas dans le SDK et surtout ne référençait AUCUN moteur —
+    // c'est pour ça que la caméra locale ne s'affichait jamais.
+    final engine = CallMediaService().engine;
+
     return Positioned(
       top: 90 + _offset.dy,
       right: 16 - _offset.dx,
@@ -33,7 +41,6 @@ class _LocalVideoPreviewState extends State<LocalVideoPreview> {
         onPanUpdate: (details) {
           setState(() {
             _offset += details.delta;
-            // Limites pour ne pas sortir de l'écran
             _offset = Offset(
               _offset.dx.clamp(-180, 20),
               _offset.dy.clamp(-40, 400),
@@ -67,13 +74,13 @@ class _LocalVideoPreviewState extends State<LocalVideoPreview> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // VIDEO ou CAM OFF
-                  if (!widget.videoOff)
+                  // VIDEO ou CAM OFF ou MOTEUR PAS ENCORE PRÊT
+                  if (!widget.videoOff && engine != null)
                     AgoraVideoView(
                       controller: VideoViewController(
-                        rtcConnection: RtcConnection(channelId: widget.channel),
+                        rtcEngine: engine,
                         canvas: VideoCanvas(
-                          uid: 0,
+                          uid: 0, // 0 = convention SDK pour la vue locale
                           renderMode: RenderModeType.renderModeHidden,
                           mirrorMode: widget.isFrontCamera
                               ? VideoMirrorModeType.videoMirrorModeEnabled
@@ -84,18 +91,25 @@ class _LocalVideoPreviewState extends State<LocalVideoPreview> {
                   else
                     Container(
                       color: const Color(0xFF0D2244),
-                      child: const Center(
+                      child: Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.videocam_off_rounded,
-                                color: Colors.white38, size: 26),
-                            SizedBox(height: 6),
-                            Text('Caméra off',
-                                style: TextStyle(
-                                    color: Colors.white38,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w600)),
+                            Icon(
+                              engine == null
+                                  ? Icons.hourglass_empty_rounded
+                                  : Icons.videocam_off_rounded,
+                              color: Colors.white38,
+                              size: 26,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              engine == null ? 'Connexion...' : 'Caméra off',
+                              style: const TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w600),
+                            ),
                           ],
                         ),
                       ),
@@ -131,7 +145,6 @@ class _LocalVideoPreviewState extends State<LocalVideoPreview> {
                     ),
                   ),
 
-                  // Drag handle quand on drag
                   if (_isDragging)
                     Positioned(
                       top: 6,
