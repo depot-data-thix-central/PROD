@@ -255,7 +255,7 @@ import 'package:thix_id/presentation/thix_retrouve/pages/mes_recherches_page.dar
 import 'package:thix_id/presentation/thix_retrouve/pages/declarer_objet_page.dart';
 import 'package:thix_id/presentation/thix_retrouve/pages/carte_signalements_page.dart';
 import 'package:thix_id/presentation/thix_retrouve/models/objet_model.dart';
-import 'package:thix_id/presentation/thix_ia/pages/thix_ia_home.dart';
+import 'package:thix_id/presentation/thix_ia/pages/thix_ia_home_page.dart';
 import 'package:thix_id/presentation/thix_sos/thix_sos_screen.dart';
 import 'package:thix_id/presentation/thix_sos/pages/sos_actif_page.dart';
 import 'package:thix_id/presentation/thix_sos/pages/mes_secours_page.dart';
