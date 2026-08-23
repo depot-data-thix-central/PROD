@@ -23,13 +23,8 @@ class LiveController extends StateNotifier<LiveState> {
   final StreamController<void> _heartController = StreamController<void>.broadcast();
   void Function(String userId, String userName)? onCoHostRequest;
 
-  // Complété par onJoinChannelSuccess, ou par le timeout de secours ci-dessous.
   Completer<void>? _joinCompleter;
   Timer? _joinTimeoutTimer;
-
-  // Empêche un second bootstrap() de démarrer pendant qu'un premier
-  // est encore en cours (protection supplémentaire, en plus du retrait
-  // de l'auto-bootstrap dans le constructeur ci-dessous).
   bool _isBootstrapping = false;
 
   LiveController(this.session, this.ref) : super(const LiveState()) {
@@ -40,17 +35,8 @@ class LiveController extends StateNotifier<LiveState> {
       _engine?.release();
       _heartController.close();
     });
-    // ⚠️ CORRECTIF : plus d'auto-bootstrap ici. L'ancien code appelait
-    // bootstrap() automatiquement via Future.microtask ET l'écran
-    // (LiveBroadcastScreen._attachListenersOnce) l'appelait une seconde
-    // fois avec les vrais paramètres vidéo/micro. Les deux joinChannel()
-    // concurrents sur le même canal provoquaient AgoraRtcException(-17,
-    // null) — ERR_JOIN_CHANNEL_REJECTED : rejoindre un canal déjà en
-    // cours de connexion. Le déclenchement se fait maintenant
-    // uniquement depuis LiveBroadcastScreen._attachListenersOnce(),
-    // qui connaît les vraies valeurs initiales choisies dans
-    // LivePrepScreen et qui ne s'exécute qu'une seule fois grâce à son
-    // propre flag _listenersAttached.
+    // Aucun auto-bootstrap ici — voir LiveBroadcastScreen._attachListenersOnce(),
+    // seul déclencheur, avec les vraies valeurs vidéo/micro choisies en amont.
   }
 
   RtcEngine? get engine => _engine;
@@ -62,9 +48,6 @@ class LiveController extends StateNotifier<LiveState> {
     bool initialVideoEnabled = true,
     bool initialMicEnabled = true,
   }) async {
-    // Filet de sécurité supplémentaire : si bootstrap() est appelé alors
-    // qu'une tentative est déjà en cours, on ignore l'appel au lieu de
-    // laisser deux joinChannel() se percuter.
     if (_isBootstrapping) {
       debugPrint('bootstrap() déjà en cours — appel ignoré.');
       return;
@@ -109,9 +92,6 @@ class LiveController extends StateNotifier<LiveState> {
       }
 
       try {
-        // Si un ancien moteur existe déjà (retry manuel via le bouton
-        // "Réessayer"), on le libère proprement d'abord — c'est ce qui
-        // évite aussi un -17 en cas de nouvelle tentative après échec.
         if (_engine != null) {
           try {
             await _engine!.leaveChannel();
@@ -128,6 +108,20 @@ class LiveController extends StateNotifier<LiveState> {
 
         if (!state.isVideoOff) {
           await engine.enableVideo();
+
+          // ── Config encodeur explicite : évite une texture native de
+          // taille/format incertain avant le premier frame capturé, cause
+          // possible de la bande vidéo mal dimensionnée observée à l'écran.
+          await engine.setVideoEncoderConfiguration(
+            const VideoEncoderConfiguration(
+              dimensions: VideoDimensions(width: 720, height: 1280), // portrait
+              frameRate: 15,
+              bitrate: 0, // auto
+              orientationMode: OrientationMode.orientationModeAdaptive,
+              degradationPreference: DegradationPreference.maintainQuality,
+            ),
+          );
+
           await engine.startPreview();
         }
 
@@ -185,8 +179,6 @@ class LiveController extends StateNotifier<LiveState> {
 
         _engine = engine;
 
-        // ── On attend la CONFIRMATION réelle de connexion
-        // (onJoinChannelSuccess) avant de passer l'écran à "ready".
         await _joinCompleter!.future.timeout(
           const Duration(seconds: 10),
           onTimeout: () {
@@ -211,8 +203,6 @@ class LiveController extends StateNotifier<LiveState> {
     }
   }
 
-  /// Traduit les codes d'erreur Agora les plus courants en messages
-  /// compréhensibles au lieu du générique "Inconnue".
   Exception _mapAgoraError(ErrorCodeType err, String msg) {
     switch (err) {
       case ErrorCodeType.errInvalidAppId:
@@ -265,13 +255,10 @@ class LiveController extends StateNotifier<LiveState> {
         },
       );
     } catch (e) {
-      // Le direct vidéo fonctionne déjà (status = ready) — on ne fait pas
-      // échouer tout l'écran si seul le chat temps réel a un souci.
       debugPrint('Erreur initRealtime (non bloquante): $e');
     }
   }
 
-  // ─── Actions ───
   void sendComment(String text) {
     final trimmed = text.trim();
     if (trimmed.isEmpty || _realtimeChannel == null) return;
