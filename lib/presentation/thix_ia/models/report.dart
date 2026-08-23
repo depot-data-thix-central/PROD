@@ -9,6 +9,7 @@ import '../core/utils/json_utils.dart';
 
 enum ReportType { marketStudy, businessPlan, legalStudy, taxStudy, financialModel, executiveSummary, fullDossier }
 
+// 1. Extension sur String pour convertir depuis la Base de Données
 extension ReportTypeParser on String {
   ReportType toReportType() {
     switch (toLowerCase()) {
@@ -21,7 +22,10 @@ extension ReportTypeParser on String {
       default: return ReportType.fullDossier;
     }
   }
+}
 
+// 2. Extension sur ReportType pour l'affichage UI
+extension ReportTypeExtension on ReportType {
   String get label {
     switch (this) {
       case ReportType.marketStudy: return 'Étude de marché';
