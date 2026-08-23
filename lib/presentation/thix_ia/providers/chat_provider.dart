@@ -1,15 +1,9 @@
 // lib/presentation/thix_ia/providers/chat_provider.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-// IMPORT DU VRAI MODÈLE ICI POUR ÉVITER LE DOUBLON :
 import '../models/chat_message.dart'; 
 import 'thix_ia_provider.dart';
-import 'active_project_provider.dart';
-
-/// ============================================================================
-/// CHAT PROVIDER - Chat contextualisé avec mémoire projet §7
-/// Table: chat_messages (Supabase) + RAG
-/// ============================================================================
+import 'active_project_provider.dart'; // Garde-le s'il définit activeProjectCodeProvider
 
 class ChatNotifier extends AsyncNotifier<List<ChatMessage>> {
   @override
@@ -37,29 +31,24 @@ class ChatNotifier extends AsyncNotifier<List<ChatMessage>> {
     final userMsg = ChatMessage(
       id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
       projectCode: code,
-      role: 'user',
+      role: ChatRole.user, // <-- CORRECTION 1 : Enum ChatRole
       content: content.trim(),
       createdAt: DateTime.now(),
     );
 
-    // Optimistic
     final current = state.value ?? [];
     state = AsyncData([...current, userMsg]);
 
     try {
       final client = ref.read(supabaseClientProvider);
-      await client.from('chat_messages').insert(userMsg.toSupabase());
+      
+      // <-- CORRECTION 2 : Utilisation de toInsertJson() qui existe dans ton modèle
+      await client.from('chat_messages').insert(userMsg.toInsertJson());
 
-      // Edge Function va générer la réponse assistant avec RAG + mémoire
-      // Pour l'instant on attend realtime
-      // await client.functions.invoke('thix-chat', body: {...})
-
-      // Refresh après 1s pour récupérer réponse assistant (Phase 2 realtime)
       await Future.delayed(const Duration(seconds: 1));
       final fresh = await _fetchMessages(code);
       state = AsyncData(fresh);
     } catch (e) {
-      // Rollback optimistic
       state = AsyncData(current);
       rethrow;
     }
