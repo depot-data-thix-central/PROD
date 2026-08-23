@@ -36,7 +36,6 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
   final Random _random = Random();
   bool _listenersAttached = false;
 
-  // Palette restreinte pour les coeurs (Charte THIX)
   final List<Color> _heartColors = [
     ThixPolicy.danger,
     ThixPolicy.primary,
@@ -138,14 +137,13 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
         if (context.mounted) Navigator.of(context).pop();
       },
       child: Scaffold(
-        backgroundColor: Colors.black, // Toujours noir pour le fond vidéo
+        backgroundColor: Colors.black,
         resizeToAvoidBottomInset: true,
         body: Stack(
           children: [
             Positioned.fill(child: _buildBackground(context, state, notifier)),
 
             if (state.status == LiveScreenStatus.ready) ...[
-              // ─── GRADIENTS POUR LA LISIBILITÉ ───
               Positioned(
                 top: 0, left: 0, right: 0, height: 160,
                 child: Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black.withOpacity(0.7), Colors.transparent])))
@@ -155,7 +153,6 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
                 child: Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black.withOpacity(0.85), Colors.transparent])))
               ),
 
-              // ─── VUES CO-HOST ───
               if (state.coHostUids.isNotEmpty)
                 Positioned(
                   top: 110, right: 16,
@@ -181,10 +178,8 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
                   ),
                 ),
 
-              // ─── BARRE SUPÉRIEURE (Host & Viewers) ───
               _buildTopBar(context, state, notifier),
 
-              // ─── ZONE DE CHAT ───
               Positioned(
                 left: 16, bottom: 90, width: MediaQuery.of(context).size.width * 0.75, height: 280,
                 child: ShaderMask(
@@ -229,7 +224,6 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
                 ),
               ),
 
-              // ─── BOTTOM DOCK (Chat Input & Controls) ───
               Positioned(
                 left: 0, right: 0, bottom: 0,
                 child: SafeArea(
@@ -239,7 +233,6 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        // Input de Chat
                         Expanded(
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(ThixPolicy.rXl),
@@ -270,7 +263,6 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
                         ),
                         const SizedBox(width: 12),
 
-                        // Boutons d'actions groupés
                         Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -312,22 +304,23 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
           return Container(color: ThixPolicy.inkDeep);
         }
         // ⚠️ CORRECTIF : AgoraVideoView est une vue NATIVE (UiKitView sur
-        // iOS, AndroidView sur Android), pas un widget Flutter classique.
-        // L'envelopper dans FittedBox/SizedBox.expand cassait la
-        // compositing native — seule une petite portion (la texture à sa
-        // taille d'origine) s'affichait, le reste de l'écran restant noir
-        // même si la connexion Agora avait réussi. On utilise maintenant
-        // le renderMode natif d'Agora pour obtenir l'effet "cover" au
-        // lieu de FittedBox, ce qui préserve la synchronisation entre le
-        // layer Flutter et le layer natif composité par-dessus.
-        return AgoraVideoView(
-          controller: VideoViewController(
-            rtcEngine: notifier.engine!,
-            canvas: const VideoCanvas(
-              uid: 0,
-              renderMode: RenderModeType.renderModeHidden, // équivalent BoxFit.cover
+        // iOS, AndroidView sur Android). SizedBox.expand force un
+        // conteneur dimensionné en dur (occupe tout l'espace disponible
+        // du Stack parent) AVANT que la Platform View ne soit montée —
+        // sans ça, la texture native peut garder sa taille intrinsèque
+        // d'origine le temps que la vue native se resynchronise, d'où la
+        // petite bande visible en haut. renderModeHidden force en plus
+        // un comportement "cover" côté SDK Agora plutôt que "contain".
+        return SizedBox.expand(
+          child: AgoraVideoView(
+            controller: VideoViewController(
+              rtcEngine: notifier.engine!,
+              canvas: const VideoCanvas(
+                uid: 0,
+                renderMode: RenderModeType.renderModeHidden, // ≈ BoxFit.cover
+              ),
+              useFlutterTexture: kIsWeb,
             ),
-            useFlutterTexture: kIsWeb,
           ),
         );
 
@@ -447,7 +440,6 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ─── HOST INFO (Glassmorphism) ───
             ClipRRect(
               borderRadius: BorderRadius.circular(30),
               child: BackdropFilter(
@@ -489,7 +481,6 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
             ),
             const Spacer(),
 
-            // ─── VIEWER COUNT ───
             ClipRRect(
               borderRadius: BorderRadius.circular(ThixPolicy.rFull),
               child: BackdropFilter(
@@ -509,7 +500,6 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
             ),
             const SizedBox(width: 10),
 
-            // ─── BOUTON FIN DE LIVE ROUGE ───
             GestureDetector(
               onTap: () async {
                 await notifier.endBroadcast();
