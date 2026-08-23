@@ -8,6 +8,9 @@ import '../providers/project_provider.dart';
 import '../widgets/project_card.dart';
 import '../widgets/empty_state_widget.dart';
 
+// Ajout du provider manquant pour la barre de recherche
+final projectSearchQueryProvider = StateProvider<String>((ref) => '');
+
 class ProjectsPage extends ConsumerStatefulWidget {
   const ProjectsPage({super.key});
   @override
@@ -54,7 +57,7 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
               onChanged: (v) => ref.read(projectSearchQueryProvider.notifier).state = v,
               decoration: InputDecoration(
                 hintText: 'Rechercher THX-BIZ-...',
-                prefixIcon: Icon(Icons.search_rounded, color: ThixPolicy.textMuted),
+                prefixIcon: const Icon(Icons.search_rounded, color: ThixPolicy.textMuted),
                 filled: true,
                 fillColor: ThixPolicy.surfaceStrong,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide.none),
@@ -65,7 +68,7 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
         ),
       ),
       body: projectsAsync.when(
-        loading: () => Center(child: CircularProgressIndicator(color: ThixPolicy.primary)),
+        loading: () => const Center(child: CircularProgressIndicator(color: ThixPolicy.primary)),
         error: (e, _) => Center(child: Text('Erreur $e')),
         data: (_) {
           if (filtered.isEmpty) {
@@ -84,7 +87,7 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
               itemCount: filtered.length + 1,
               itemBuilder: (_, i) {
                 if (i == filtered.length) {
-                  return Padding(padding: EdgeInsets.all(16), child: Center(child: Text('${filtered.length} projets', style: ThixPolicy.captionStyle)));
+                  return Padding(padding: const EdgeInsets.all(16), child: Center(child: Text('${filtered.length} projets', style: ThixPolicy.captionStyle)));
                 }
                 final p = filtered[i];
                 return ProjectCard(
