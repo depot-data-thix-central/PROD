@@ -2,18 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 class LiveStreamPlayer extends StatefulWidget {
   final String channelName;
   final String liveId;
   final String? token;
+  final bool isHost; // 🟢 NOUVEAU : Permet de savoir si on est le vendeur (true) ou un client (false)
 
   const LiveStreamPlayer({
     super.key,
     required this.channelName,
     required this.liveId,
     this.token,
+    this.isHost = false, // Par défaut, on considère que c'est un spectateur
   });
 
   @override
@@ -28,9 +29,9 @@ class _LiveStreamPlayerState extends State<LiveStreamPlayer> {
   bool _isMuted = false;
 
   final TextEditingController _messageController = TextEditingController();
-  List<Map<String, dynamic>> _messages = [];
+  // List<Map<String, dynamic>> _messages = []; // À utiliser plus tard pour afficher le chat
 
-  int _viewerCount = 0;
+  // int _viewerCount = 0;
 
   @override
   void initState() {
@@ -41,7 +42,7 @@ class _LiveStreamPlayerState extends State<LiveStreamPlayer> {
   @override
   void dispose() {
     _engine.leaveChannel();
-    _engine.release(); // ✅ Agora 6.5.1 correct
+    _engine.release(); 
     _messageController.dispose();
     super.dispose();
   }
@@ -52,41 +53,41 @@ class _LiveStreamPlayerState extends State<LiveStreamPlayer> {
       Permission.camera,
     ].request();
 
-    // ✅ Agora 6.x correct init
     _engine = createAgoraRtcEngine();
 
     await _engine.initialize(
-      RtcEngineContext(
-        appId: 'YOUR_AGORA_APP_ID',
-        channelProfile:
-            ChannelProfileType.channelProfileLiveBroadcasting,
+      const RtcEngineContext(
+        appId: 'YOUR_AGORA_APP_ID', // ⚠️ N'oublie pas de mettre ton vrai App ID Agora ici !
+        channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
       ),
     );
 
     await _engine.enableVideo();
+    
+    // Si c'est le vendeur, on démarre l'aperçu de la caméra locale
+    if (widget.isHost) {
+      await _engine.startPreview();
+    }
 
     _engine.registerEventHandler(
       RtcEngineEventHandler(
         onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
           setState(() => _isJoined = true);
         },
-        onUserJoined:
-            (RtcConnection connection, int uid, int elapsed) {
+        onUserJoined: (RtcConnection connection, int uid, int elapsed) {
           setState(() => _remoteUid = uid);
         },
-        onUserOffline: (
-          RtcConnection connection,
-          int uid,
-          UserOfflineReasonType reason,
-        ) {
+        onUserOffline: (RtcConnection connection, int uid, UserOfflineReasonType reason) {
           setState(() => _remoteUid = 0);
         },
       ),
     );
 
-    // viewer only
+    // 🟢 DÉFINITION DYNAMIQUE DU RÔLE
     await _engine.setClientRole(
-      role: ClientRoleType.clientRoleAudience,
+      role: widget.isHost 
+          ? ClientRoleType.clientRoleBroadcaster // Le vendeur diffuse
+          : ClientRoleType.clientRoleAudience,   // Le client regarde
     );
 
     await _engine.joinChannel(
@@ -117,41 +118,48 @@ class _LiveStreamPlayerState extends State<LiveStreamPlayer> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // 🎥 VIDEO
-          if (_isJoined && _remoteUid != 0)
-            AgoraVideoView(
-              controller: VideoViewController.remote(
-                rtcEngine: _engine,
-                canvas: VideoCanvas(uid: _remoteUid),
-                connection: RtcConnection(
-                  channelId: widget.channelName,
+          // 🎥 GESTION DE L'AFFICHAGE VIDÉO
+          if (_isJoined)
+            if (widget.isHost)
+              // 🔴 Vue du Vendeur (Caméra locale)
+              AgoraVideoView(
+                controller: VideoViewController(
+                  rtcEngine: _engine,
+                  canvas: const VideoCanvas(uid: 0),
                 ),
-              ),
-            )
+              )
+            else if (_remoteUid != 0)
+              // 🔵 Vue du Client (Caméra distante du vendeur)
+              AgoraVideoView(
+                controller: VideoViewController.remote(
+                  rtcEngine: _engine,
+                  canvas: VideoCanvas(uid: _remoteUid),
+                  connection: RtcConnection(channelId: widget.channelName),
+                ),
+              )
+            else
+              // ⏳ Client en attente de l'image du vendeur
+              const Center(child: CircularProgressIndicator(color: Colors.white))
           else
-            Container(
-              color: Colors.black,
-              child: const Center(
-                child: CircularProgressIndicator(),
-              ),
-            ),
+            // ⏳ Chargement initial
+            const Center(child: CircularProgressIndicator(color: Colors.white)),
 
-          // 🔴 LIVE badge
+          // 🔴 Badge LIVE
           Positioned(
             top: 50,
             left: 16,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: Colors.red,
                 borderRadius: BorderRadius.circular(20),
               ),
               child: const Text(
                 "LIVE",
-                style: TextStyle(color: Colors.white),
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
             ),
           ),
@@ -172,31 +180,50 @@ class _LiveStreamPlayerState extends State<LiveStreamPlayer> {
                       fillColor: Colors.white,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(30),
+                        borderSide: BorderSide.none,
                       ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                     ),
                   ),
                 ),
-                IconButton(
-                  onPressed: _sendMessage,
-                  icon: const Icon(Icons.send),
+                const SizedBox(width: 8),
+                CircleAvatar(
+                  backgroundColor: const Color(0xFFC9962C),
+                  child: IconButton(
+                    onPressed: _sendMessage,
+                    icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                  ),
                 ),
               ],
             ),
           ),
 
-          // 🔊 mute button
+          // 🔊 Bouton Mute
           Positioned(
             bottom: 90,
             right: 16,
             child: FloatingActionButton(
               mini: true,
+              backgroundColor: Colors.black54,
+              elevation: 0,
               onPressed: () {
                 setState(() => _isMuted = !_isMuted);
                 _engine.muteLocalAudioStream(_isMuted);
               },
               child: Icon(
-                _isMuted ? Icons.volume_off : Icons.volume_up,
+                _isMuted ? Icons.mic_off : Icons.mic,
+                color: Colors.white,
               ),
+            ),
+          ),
+          
+          // ❌ Bouton pour quitter le live (Très utile en phase de test !)
+          Positioned(
+            top: 50,
+            right: 16,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 30),
+              onPressed: () => Navigator.pop(context),
             ),
           ),
         ],
