@@ -49,7 +49,8 @@ class ProjectIntelligenceService {
 
   Future<ProjectIntelligence> getIntelligence(String projectCode) async {
     // Parallélisation pour perf (millions users)
-    final results = await Future.wait([
+    // CORRECTION : Ajout du typage <Future<dynamic>> pour éviter l'erreur de compilation web
+    final results = await Future.wait<dynamic>([
       projectRepo.getProjectByCode(projectCode),
       memoryRepo.getMemory(projectCode),
       analysisRepo.getAnalyses(projectCode),
@@ -63,12 +64,12 @@ class ProjectIntelligenceService {
 
     // Calcul progression réelle §19 cahier
     final progress = projectService.calculateProgress(
-      hasProblem: memory.context.problem!= null && memory.context.problem!.isNotEmpty,
+      hasProblem: memory.context.problem != null && memory.context.problem!.isNotEmpty,
       hasCustomer: memory.context.targetCustomers.isNotEmpty,
       hasMarketResearch: analyses.any((a) => a.type == 'market' && a.isCompleted),
       hasCompetition: analyses.any((a) => a.type == 'competitor' && a.isCompleted),
       hasRegulation: analyses.any((a) => a.type == 'legal' && a.isCompleted),
-      hasBusinessModel: memory.context.valueProposition!= null,
+      hasBusinessModel: memory.context.valueProposition != null,
       hasFinancialModel: analyses.any((a) => a.type == 'finance' && a.isCompleted),
       hasStrategy: analyses.any((a) => a.type == 'strategy' && a.isCompleted),
       hasValidation: memory.openQuestions.isEmpty,
@@ -94,7 +95,12 @@ class ProjectIntelligenceService {
     );
   }
 
-  List<String> _suggestNextActions({required ProjectMemory memory, required List<ProjectAnalysis> analyses, required List<ProjectDocument> documents, required double progress}) {
+  List<String> _suggestNextActions({
+    required ProjectMemory memory, 
+    required List<ProjectAnalysis> analyses, 
+    required List<ProjectDocument> documents, 
+    required double progress
+  }) {
     final actions = <String>[];
 
     if (memory.context.problem == null) actions.add('Définir le problème client');
@@ -103,7 +109,7 @@ class ProjectIntelligenceService {
     if (!analyses.any((a) => a.type == 'legal')) actions.add('Vérifier réglementation');
     if (documents.isEmpty) actions.add('Importer votre pitch ou business plan');
     if (progress < 0.5) actions.add('Compléter l\'analyse d\'idée');
-    if (progress >= 0.8 &&!analyses.any((a) => a.type == 'business_plan')) actions.add('Générer le Business Plan final');
+    if (progress >= 0.8 && !analyses.any((a) => a.type == 'business_plan')) actions.add('Générer le Business Plan final');
 
     return actions.take(3).toList();
   }
