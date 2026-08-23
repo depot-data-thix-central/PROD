@@ -1,4 +1,5 @@
 // lib/presentation/thix_ia/datasources/thix_ia_remote_datasource.dart
+import 'dart:typed_data'; // <-- Ajout obligatoire pour Uint8List
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/constants/thix_ia_constants.dart';
 import '../core/errors/thix_ia_exception.dart';
@@ -58,10 +59,10 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
 
       var query = _supabase.from('projects').select().order('updated_at', ascending: false).range(from, to);
 
-      if (status!= null && status.isNotEmpty) {
+      if (status != null && status.isNotEmpty) {
         query = query.eq('status', status);
       }
-      if (search!= null && search.isNotEmpty) {
+      if (search != null && search.isNotEmpty) {
         query = query.or('name.ilike.%$search%,project_code.ilike.%$search%,sector.ilike.%$search%');
       }
 
@@ -128,8 +129,8 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
   @override
   Future<ProjectMemory> getProjectMemory(String projectCode) async {
     try {
-      // Récupère en parallèle pour perf
-      final results = await Future.wait([
+      // Récupère en parallèle pour perf - Typage sécurisé pour la compilation Web
+      final results = await Future.wait<dynamic>([
         _supabase.from('project_context').select().eq('project_code', projectCode).maybeSingle(),
         _supabase.from('project_facts').select().eq('project_code', projectCode).order('created_at'),
         _supabase.from('project_ideas').select().eq('project_code', projectCode),
@@ -144,12 +145,12 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
       return ProjectMemory(
         projectCode: projectCode,
         identity: ProjectIdentity(
-          name: projData['name']?? '',
-          sector: projData['sector']?? '',
-          country: projData['country']?? 'RDC',
+          name: projData['name'] ?? '',
+          sector: projData['sector'] ?? '',
+          country: projData['country'] ?? 'RDC',
           city: projData['city'],
         ),
-        context: contextData!= null? ProjectContext.fromJson(contextData) : const ProjectContext(),
+        context: contextData != null ? ProjectContext.fromJson(contextData) : const ProjectContext(),
         facts: factsData.map((e) => ProjectFact.fromJson(e)).toList(),
         lastUpdated: DateTime.now(),
       );
@@ -174,7 +175,7 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
   Future<List<ProjectAnalysis>> getAnalyses(String projectCode, {String? type}) async {
     try {
       var query = _supabase.from('project_analyses').select().eq('project_code', projectCode).order('created_at', ascending: false);
-      if (type!= null) query = query.eq('type', type);
+      if (type != null) query = query.eq('type', type);
       final res = await query;
       return (res as List).map((e) => ProjectAnalysis.fromJson(e)).toList();
     } catch (e, s) {
@@ -195,7 +196,7 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
   @override
   Future<ProjectAnalysis> updateAnalysisStatus(String id, String status, {int? progress}) async {
     try {
-      final update = {'status': status, if (progress!= null) 'progress': progress, 'updated_at': DateTime.now().toIso8601String()};
+      final update = {'status': status, if (progress != null) 'progress': progress, 'updated_at': DateTime.now().toIso8601String()};
       final res = await _supabase.from('project_analyses').update(update).eq('id', id).select().single();
       return ProjectAnalysis.fromJson(res);
     } catch (e, s) {
@@ -230,7 +231,14 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
   Future<String> uploadFile(String projectCode, String fileName, List<int> bytes, String mimeType) async {
     try {
       final path = '$projectCode/${DateTime.now().millisecondsSinceEpoch}_$fileName';
-      await _supabase.storage.from('thix-documents').uploadBinary(path, bytes, fileOptions: FileOptions(contentType: mimeType, upsert: false));
+      
+      // Correction de l'erreur Uint8List
+      await _supabase.storage.from('thix-documents').uploadBinary(
+        path, 
+        Uint8List.fromList(bytes), 
+        fileOptions: FileOptions(contentType: mimeType, upsert: false)
+      );
+      
       final publicUrl = _supabase.storage.from('thix-documents').getPublicUrl(path);
       return publicUrl;
     } catch (e, s) {
