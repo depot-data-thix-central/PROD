@@ -5,7 +5,8 @@ import '../../../../core/theme/thix_design_policy.dart';
 import '../providers/chat_provider.dart';
 import '../models/chat_message.dart'; 
 import '../widgets/chat_message.dart';
-import '../widgets/chat_input.dart'; // <-- C'est le bon import
+
+// ON A SUPPRIMÉ L'IMPORT QUI N'EXISTAIT PAS ICI
 
 class ChatPage extends ConsumerStatefulWidget {
   const ChatPage({super.key, required this.projectCode, this.initialMessage});
@@ -84,7 +85,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                           Text('Parlez à THIX IA', style: ThixPolicy.h3Style),
                           const SizedBox(height: 8),
                           Text(
-                            'Posez des questions sur votre projet. THIX IA utilise votre mémoire, analyses et documents.', 
+                            'Posez des questions sur votre projet.', 
                             style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary), 
                             textAlign: TextAlign.center
                           ),
@@ -103,7 +104,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               },
             ),
           ),
-          // <-- CORRECTION 3 : ChatInput au lieu de ChatInputWidget
+          // Utilisation du widget défini juste en bas
           ChatInput(
             onSend: (text) {
               ref.read(chatProvider.notifier).sendMessage(text);
@@ -111,6 +112,75 @@ class _ChatPageState extends ConsumerState<ChatPage> {
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// WIDGET CHAT INPUT DE SECOURS INTÉGRÉ DIRECTEMENT ICI
+// ────────────────────────────────────────────────────────────────────────────
+class ChatInput extends StatefulWidget {
+  final Function(String) onSend;
+  const ChatInput({super.key, required this.onSend});
+
+  @override
+  State<ChatInput> createState() => _ChatInputState();
+}
+
+class _ChatInputState extends State<ChatInput> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: SafeArea(
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _controller,
+                decoration: InputDecoration(
+                  hintText: 'Écrivez votre message...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide.none,
+                  ),
+                  filled: true,
+                  fillColor: ThixPolicy.surfaceStrong,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                ),
+                onSubmitted: (val) {
+                  if (val.trim().isNotEmpty) {
+                    widget.onSend(val.trim());
+                    _controller.clear();
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            CircleAvatar(
+              backgroundColor: ThixPolicy.primary,
+              child: IconButton(
+                icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                onPressed: () {
+                  if (_controller.text.trim().isNotEmpty) {
+                    widget.onSend(_controller.text.trim());
+                    _controller.clear();
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
