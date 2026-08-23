@@ -2,9 +2,8 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:thix_id/models/news_article.dart';
 
-// ✅ Nouvel import corrigé
-import '../models/news_article.dart';
 
 class NewsService {
   final SupabaseClient _client = Supabase.instance.client;
