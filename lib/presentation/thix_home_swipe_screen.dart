@@ -66,10 +66,10 @@ class _ThixHomeSwipeScreenState extends State<ThixHomeSwipeScreen> {
               controller: _pageController,
               onPageChanged: (i) => setState(() => _page = i),
               physics: const BouncingScrollPhysics(),
-              children: const [
-                _KeepAlive(child: ThixSosScreen()),
-                _KeepAlive(child: ThixRechercheScreen()),
-                _KeepAlive(child: ThixRetrouveScreen()),
+              children: [
+                const _KeepAlive(child: ThixSosScreen()),
+                const _KeepAlive(child: ThixRechercheScreen()),
+                _KeepAlive(child: ThixRetrouveScreen()), // 🌟 Retrait du 'const' pour éviter le conflit si nécessaire
               ],
             ),
           ),
