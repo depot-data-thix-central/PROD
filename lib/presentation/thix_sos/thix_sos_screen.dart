@@ -1,4 +1,5 @@
 /// THIX SOS — Homepage production (Design System Intégré)
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,6 +14,47 @@ import 'pages/ajouter_secours_page.dart';
 import 'providers/sos_providers.dart';
 import 'widgets/sos_button.dart';
 import 'widgets/nearby_alerts_card.dart';
+
+// ============================================================================
+// COMPOSANT RÉUTILISABLE : BOÎTE EN VERRE (GLASSMORPHISM)
+// ============================================================================
+class GlassBox extends StatelessWidget {
+  final Widget child;
+  final double blur;
+  final double borderRadius;
+  final EdgeInsetsGeometry padding;
+  final Color? color;
+  final Border? border;
+
+  const GlassBox({
+    super.key,
+    required this.child,
+    this.blur = 15.0,
+    this.borderRadius = ThixPolicy.rLg,
+    this.padding = ThixPolicy.cardPadding,
+    this.color,
+    this.border,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: color ?? Colors.white.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(borderRadius),
+            border: border ?? Border.all(color: Colors.white.withOpacity(0.15), width: 1),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
 
 class ThixSosScreen extends ConsumerWidget {
   const ThixSosScreen({super.key});
@@ -36,165 +78,180 @@ class ThixSosScreen extends ConsumerWidget {
       });
     });
 
-    // Utilisation des couleurs du thème courant (Clair ou Sombre)
-    final bgColor = Theme.of(context).scaffoldBackgroundColor;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Scaffold(
-      backgroundColor: bgColor,
-      body: SafeArea(
-        child: Column(
-          children: [
-            const _HeaderOfficiel(),
-            Expanded(
-              child: RefreshIndicator(
-                color: ThixPolicy.danger,
-                backgroundColor: ThixPolicy.card,
-                onRefresh: () async {
-                  ref.invalidate(sosContactsProvider);
-                  ref.invalidate(activeSosProvider);
-                  ref.invalidate(sosHistoryProvider);
-                },
-                child: SingleChildScrollView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(
-                    ThixPolicy.s16,
-                    ThixPolicy.s24,
-                    ThixPolicy.s16,
-                    ThixPolicy.s28,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // --- BOUTON SOS CENTRAL ---
-                      SosButton(
-                        enabled: !isTriggering,
-                        isLoading: isTriggering,
-                        onTriggered: () async {
-                          final incident = await ref
-                              .read(triggerSosProvider.notifier)
-                              .trigger();
-                          if (incident != null && context.mounted) {
-                            ref
-                                .read(sosHeartbeatControllerProvider.notifier)
-                                .start(incident.id);
-                            Navigator.of(context).pushReplacement(
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    SosActifPage(incidentId: incident.id),
-                              ),
-                            );
-                          } else if (context.mounted) {
-                            final err = ref.read(triggerSosProvider).error;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  err?.toString() ?? 'Échec du déclenchement SOS',
-                                  style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand),
-                                ),
-                                backgroundColor: ThixPolicy.danger,
-                              ),
-                            );
-                          }
-                        },
-                      ),
-                      const SizedBox(height: ThixPolicy.s12),
-                      Text(
-                        'Appuyer et maintenir 2 secondes',
-                        textAlign: TextAlign.center,
-                        style: ThixPolicy.labelStyle.copyWith(
-                          color: ThixPolicy.textSecondary,
-                          fontWeight: ThixPolicy.medium,
-                        ),
-                      ),
-                      const SizedBox(height: ThixPolicy.s40),
+      backgroundColor: ThixPolicy.inkDeep, // 🌟 Fond Premium Sombre
+      body: Stack(
+        children: [
+          // ─── BACKGROUND GLOW (Effet d'urgence rouge) ───
+          Positioned(
+            top: -50, right: -100,
+            child: Container(
+              width: 300, height: 300, 
+              decoration: BoxDecoration(
+                shape: BoxShape.circle, 
+                color: ThixPolicy.danger.withOpacity(0.15),
+                boxShadow: [BoxShadow(color: ThixPolicy.danger.withOpacity(0.2), blurRadius: 120, spreadRadius: 100)]
+              )
+            ),
+          ),
 
-                      // --- MES SECOURS ---
-                      _SectionLabel('MES SECOURS', actionText: 'Gérer', onAction: () {
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => const MesSecoursPage()));
-                      }),
-                      const SizedBox(height: ThixPolicy.s12),
-                      contactsAsync.when(
-                        data: (contacts) {
-                          return _UnifiedSecoursCard(
-                            contacts: contacts,
-                            onCircleTap: (circle) => _handleCircleTap(context, ref, circle),
-                          );
-                        },
-                        loading: () => const Center(child: CircularProgressIndicator(color: ThixPolicy.danger)),
-                        error: (e, _) => Text('Erreur secours', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.danger)),
+          SafeArea(
+            child: Column(
+              children: [
+                const _HeaderOfficiel(),
+                Expanded(
+                  child: RefreshIndicator(
+                    color: ThixPolicy.danger,
+                    backgroundColor: ThixPolicy.inkDeep,
+                    onRefresh: () async {
+                      ref.invalidate(sosContactsProvider);
+                      ref.invalidate(activeSosProvider);
+                      ref.invalidate(sosHistoryProvider);
+                    },
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                      padding: const EdgeInsets.fromLTRB(
+                        ThixPolicy.s16,
+                        ThixPolicy.s24,
+                        ThixPolicy.s16,
+                        140, // 🌟 Espace pour la Bottom Nav flottante
                       ),
-                      const SizedBox(height: ThixPolicy.s32),
-
-                      // --- ALERTES À PROXIMITÉ ---
-                      const NearbyAlertsCard(), 
-                      const SizedBox(height: ThixPolicy.s32),
-
-                      // --- ACTIONS RAPIDES ---
-                      _SectionLabel('ACTIONS RAPIDES'),
-                      const SizedBox(height: ThixPolicy.s12),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        physics: const BouncingScrollPhysics(),
-                        child: Row(
-                          children: [
-                            _QuickActionChip(icon: Icons.location_on, label: 'Partager', onTap: () => _soon(context, 'Partager')),
-                            const SizedBox(width: ThixPolicy.s8),
-                            _QuickActionChip(icon: Icons.timer, label: 'Safe Check', onTap: () => _soon(context, 'Safe Check')),
-                            const SizedBox(width: ThixPolicy.s8),
-                            _QuickActionChip(icon: Icons.route, label: 'Mes trajets', onTap: () => _soon(context, 'Trajets')),
-                            const SizedBox(width: ThixPolicy.s8),
-                            _QuickActionChip(icon: Icons.campaign, label: 'Signaler', onTap: () => _soon(context, 'Signaler')),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: ThixPolicy.s32),
-
-                      // --- MODULES ---
-                      _NavCardProminent(
-                        icon: Icons.shield,
-                        title: 'CHAMBRE DE CRISE',
-                        subtitle: 'Gérer vos incidents actifs en temps réel',
-                        onTap: () {
-                          final incident = activeAsync.valueOrNull;
-                          if (incident != null && incident.isActive) {
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => ChambreCrisePage(incidentId: incident.id)));
-                          } else {
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => const MesIncidentsPage()));
-                          }
-                        },
-                      ),
-                      const SizedBox(height: ThixPolicy.s12),
-                      Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Expanded(
-                            child: _NavCardCompact(
-                              icon: Icons.search_rounded,
-                              title: 'THIX RECHERCHE',
-                              subtitle: 'Avis & disparitions',
-                              onTap: () => _soon(context, 'Thix Recherche'),
+                          // --- BOUTON SOS CENTRAL ---
+                          SosButton(
+                            enabled: !isTriggering,
+                            isLoading: isTriggering,
+                            onTriggered: () async {
+                              final incident = await ref
+                                  .read(triggerSosProvider.notifier)
+                                  .trigger();
+                              if (incident != null && context.mounted) {
+                                ref
+                                    .read(sosHeartbeatControllerProvider.notifier)
+                                    .start(incident.id);
+                                Navigator.of(context).pushReplacement(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        SosActifPage(incidentId: incident.id),
+                                  ),
+                                );
+                              } else if (context.mounted) {
+                                final err = ref.read(triggerSosProvider).error;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      err?.toString() ?? 'Échec du déclenchement SOS',
+                                      style: ThixPolicy.bodyStyle.copyWith(color: Colors.white),
+                                    ),
+                                    backgroundColor: ThixPolicy.danger,
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                          const SizedBox(height: ThixPolicy.s12),
+                          Text(
+                            'Appuyer et maintenir 2 secondes',
+                            textAlign: TextAlign.center,
+                            style: ThixPolicy.labelStyle.copyWith(
+                              color: Colors.white54,
+                              fontWeight: ThixPolicy.medium,
                             ),
                           ),
-                          const SizedBox(width: ThixPolicy.s12),
-                          Expanded(
-                            child: _NavCardCompact(
-                              icon: Icons.folder_special,
-                              title: 'MES INCIDENTS',
-                              subtitle: 'Historique & rapports',
-                              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesIncidentsPage())),
+                          const SizedBox(height: ThixPolicy.s40),
+
+                          // --- MES SECOURS ---
+                          _SectionLabel('MES SECOURS', actionText: 'Gérer', onAction: () {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => const MesSecoursPage()));
+                          }),
+                          const SizedBox(height: ThixPolicy.s12),
+                          contactsAsync.when(
+                            data: (contacts) {
+                              return _UnifiedSecoursCard(
+                                contacts: contacts,
+                                onCircleTap: (circle) => _handleCircleTap(context, ref, circle),
+                              );
+                            },
+                            loading: () => const Center(child: CircularProgressIndicator(color: ThixPolicy.danger)),
+                            error: (e, _) => Text('Erreur secours', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.danger)),
+                          ),
+                          const SizedBox(height: ThixPolicy.s32),
+
+                          // --- ALERTES À PROXIMITÉ ---
+                          const NearbyAlertsCard(), 
+                          const SizedBox(height: ThixPolicy.s32),
+
+                          // --- ACTIONS RAPIDES ---
+                          const _SectionLabel('ACTIONS RAPIDES'),
+                          const SizedBox(height: ThixPolicy.s12),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            physics: const BouncingScrollPhysics(),
+                            child: Row(
+                              children: [
+                                _QuickActionChip(icon: Icons.location_on_rounded, label: 'Partager', onTap: () => _soon(context, 'Partager')),
+                                const SizedBox(width: ThixPolicy.s12),
+                                _QuickActionChip(icon: Icons.timer_rounded, label: 'Safe Check', onTap: () => _soon(context, 'Safe Check')),
+                                const SizedBox(width: ThixPolicy.s12),
+                                _QuickActionChip(icon: Icons.route_rounded, label: 'Mes trajets', onTap: () => _soon(context, 'Trajets')),
+                                const SizedBox(width: ThixPolicy.s12),
+                                _QuickActionChip(icon: Icons.campaign_rounded, label: 'Signaler', onTap: () => _soon(context, 'Signaler')),
+                              ],
                             ),
+                          ),
+                          const SizedBox(height: ThixPolicy.s32),
+
+                          // --- MODULES ---
+                          _NavCardProminent(
+                            icon: Icons.shield_rounded,
+                            title: 'CHAMBRE DE CRISE',
+                            subtitle: 'Gérer vos incidents actifs en temps réel',
+                            onTap: () {
+                              final incident = activeAsync.valueOrNull;
+                              if (incident != null && incident.isActive) {
+                                Navigator.push(context, MaterialPageRoute(builder: (_) => ChambreCrisePage(incidentId: incident.id)));
+                              } else {
+                                Navigator.push(context, MaterialPageRoute(builder: (_) => const MesIncidentsPage()));
+                              }
+                            },
+                          ),
+                          const SizedBox(height: ThixPolicy.s12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _NavCardCompact(
+                                  icon: Icons.search_rounded,
+                                  title: 'THIX RECHERCHE',
+                                  subtitle: 'Avis & disparitions',
+                                  onTap: () => _soon(context, 'Thix Recherche'),
+                                ),
+                              ),
+                              const SizedBox(width: ThixPolicy.s12),
+                              Expanded(
+                                child: _NavCardCompact(
+                                  icon: Icons.folder_special_rounded,
+                                  title: 'MES INCIDENTS',
+                                  subtitle: 'Historique & rapports',
+                                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesIncidentsPage())),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+
+          // 🌟 BOTTOM NAV FLOTTANTE
+          const Positioned(bottom: 24, left: 16, right: 16, child: _BottomNavGlass(currentIndex: 2)),
+        ],
       ),
-      bottomNavigationBar: const _BottomNav(currentIndex: 2),
     );
   }
 
@@ -210,9 +267,10 @@ class ThixSosScreen extends ConsumerWidget {
   static void _soon(BuildContext context, String label) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('$label — bientôt disponible', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand)),
-        backgroundColor: ThixPolicy.primaryDeep,
+        content: Text('$label — bientôt disponible', style: ThixPolicy.bodyStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold)),
+        backgroundColor: ThixPolicy.inkDeep,
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
       ),
     );
   }
@@ -229,14 +287,15 @@ class _HeaderOfficiel extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Icon(Icons.menu, color: Theme.of(context).colorScheme.onSurface, size: 28),
+          const Icon(Icons.menu_rounded, color: Colors.white, size: 28),
           Column(
             children: [
               Text(
                 'X THIX',
                 style: ThixPolicy.h1Style.copyWith(
-                  fontWeight: ThixPolicy.bold, // ou w900
+                  fontWeight: ThixPolicy.bold,
                   letterSpacing: 1.2,
+                  color: Colors.white,
                 ),
               ),
               Text(
@@ -244,7 +303,7 @@ class _HeaderOfficiel extends StatelessWidget {
                 style: ThixPolicy.microStyle.copyWith(
                   fontWeight: ThixPolicy.bold,
                   letterSpacing: 1.5,
-                  color: ThixPolicy.textSecondary,
+                  color: ThixPolicy.danger, // Touche d'accent rouge
                 ),
               ),
             ],
@@ -254,23 +313,26 @@ class _HeaderOfficiel extends StatelessWidget {
               Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  Icon(Icons.notifications_none_rounded, color: Theme.of(context).colorScheme.onSurface, size: 28),
+                  const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 28),
                   Positioned(
                     right: -2,
                     top: -2,
                     child: Container(
                       padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(color: ThixPolicy.danger, shape: BoxShape.circle),
-                      child: Text('3', style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.onBrand, fontWeight: ThixPolicy.bold)),
+                      decoration: BoxDecoration(color: ThixPolicy.danger, shape: BoxShape.circle, border: Border.all(color: ThixPolicy.inkDeep, width: 1.5)),
+                      child: Text('3', style: ThixPolicy.microStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold, fontSize: 8)),
                     ),
                   )
                 ],
               ),
               const SizedBox(width: ThixPolicy.s16),
-              const CircleAvatar(
-                radius: 16,
-                backgroundColor: ThixPolicy.border,
-                backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=11'),
+              Container(
+                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white.withOpacity(0.3), width: 2)),
+                child: const CircleAvatar(
+                  radius: 16,
+                  backgroundColor: ThixPolicy.primaryDeep,
+                  backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=11'),
+                ),
               ),
             ],
           ),
@@ -297,7 +359,7 @@ class _SectionLabel extends StatelessWidget {
           style: ThixPolicy.labelStyle.copyWith(
             fontWeight: ThixPolicy.bold,
             letterSpacing: 1.2,
-            color: ThixPolicy.textSecondary,
+            color: Colors.white70,
           ),
         ),
         if (actionText != null)
@@ -305,7 +367,7 @@ class _SectionLabel extends StatelessWidget {
             onTap: onAction,
             child: Text(
               actionText!,
-              style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primary),
+              style: ThixPolicy.labelStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold),
             ),
           ),
       ],
@@ -313,7 +375,7 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-// ───────────────────────── Carte "Mes Secours" Unifiée ─────────────────────────
+// ───────────────────────── Carte "Mes Secours" (Glassmorphism) ─────────────────────────
 class _UnifiedSecoursCard extends StatelessWidget {
   final List<dynamic> contacts; 
   final Function(int) onCircleTap;
@@ -325,24 +387,16 @@ class _UnifiedSecoursCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor, 
-        borderRadius: BorderRadius.circular(ThixPolicy.cardRadius),
-        border: Border.all(color: ThixPolicy.border, width: ThixPolicy.cardBorderWidth),
-        boxShadow: ThixPolicy.shadowSoft(), // Légère ombre Design System
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(ThixPolicy.cardRadius),
-        child: Column(
-          children: [
-            _buildRow(context, 1, 'Cercle 1 – Prioritaire'),
-            const Divider(height: 1, indent: 64),
-            _buildRow(context, 2, 'Cercle 2 – Secondaire'),
-            const Divider(height: 1, indent: 64),
-            _buildRow(context, 3, 'Cercle 3 – Urgence'),
-          ],
-        ),
+    return GlassBox(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          _buildRow(context, 1, 'Cercle 1 – Prioritaire'),
+          const Divider(height: 1, indent: 64, color: Colors.white12),
+          _buildRow(context, 2, 'Cercle 2 – Secondaire'),
+          const Divider(height: 1, indent: 64, color: Colors.white12),
+          _buildRow(context, 3, 'Cercle 3 – Urgence'),
+        ],
       ),
     );
   }
@@ -350,7 +404,6 @@ class _UnifiedSecoursCard extends StatelessWidget {
   Widget _buildRow(BuildContext context, int level, String title) {
     final circleContacts = contacts.where((c) => c.circle == level).toList();
     final count = circleContacts.length;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Material(
       color: Colors.transparent,
@@ -365,14 +418,14 @@ class _UnifiedSecoursCard extends StatelessWidget {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: level == 1 ? ThixPolicy.danger : (isDark ? ThixPolicy.inkDeep : ThixPolicy.surfaceStrong),
+                  color: level == 1 ? ThixPolicy.danger : Colors.white.withOpacity(0.15),
                   shape: BoxShape.circle,
                 ),
                 child: Center(
                   child: Text(
                     level.toString(),
                     style: ThixPolicy.titleStyle.copyWith(
-                      color: level == 1 ? ThixPolicy.onBrand : Theme.of(context).colorScheme.onSurface, 
+                      color: Colors.white, 
                       fontWeight: ThixPolicy.bold,
                     ),
                   ),
@@ -386,13 +439,13 @@ class _UnifiedSecoursCard extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.bold),
+                      style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.bold, color: Colors.white),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       count == 0 ? 'Aucun secours' : '$count secours',
                       style: ThixPolicy.captionStyle.copyWith(
-                        color: count == 0 ? ThixPolicy.danger : ThixPolicy.textSecondary,
+                        color: count == 0 ? ThixPolicy.danger : Colors.white54,
                       ),
                     ),
                   ],
@@ -401,7 +454,7 @@ class _UnifiedSecoursCard extends StatelessWidget {
               // Miniatures photos (Avatars)
               if (count > 0) _buildAvatars(context, circleContacts),
               if (count > 0) const SizedBox(width: ThixPolicy.s12),
-              Icon(Icons.chevron_right, color: ThixPolicy.textMuted),
+              const Icon(Icons.chevron_right_rounded, color: Colors.white30),
             ],
           ),
         ),
@@ -429,13 +482,13 @@ class _UnifiedSecoursCard extends StatelessWidget {
             child: Container(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: Theme.of(context).cardColor, width: 2.5), 
+                border: Border.all(color: ThixPolicy.inkDeep, width: 2.5), 
               ),
               child: CircleAvatar(
                 radius: (avatarSize / 2) - 2.5,
                 backgroundColor: ThixPolicy.border,
                 backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
-                child: imageUrl == null ? const Icon(Icons.person, size: 14, color: ThixPolicy.onBrand) : null,
+                child: imageUrl == null ? const Icon(Icons.person, size: 14, color: Colors.white) : null,
               ),
             ),
           );
@@ -445,7 +498,7 @@ class _UnifiedSecoursCard extends StatelessWidget {
   }
 }
 
-// ───────────────────────── Action Rapide ─────────────────────────
+// ───────────────────────── Action Rapide (Glassmorphism) ─────────────────────────
 class _QuickActionChip extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -455,22 +508,17 @@ class _QuickActionChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s12),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          border: Border.all(color: ThixPolicy.border),
-        ),
+      child: GlassBox(
+        borderRadius: ThixPolicy.rFull,
+        padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20, vertical: ThixPolicy.s12),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: Theme.of(context).colorScheme.onSurface, size: 20),
+            Icon(icon, color: Colors.white, size: 18),
             const SizedBox(width: ThixPolicy.s8),
-            Text(label, style: ThixPolicy.labelStyle),
+            Text(label, style: ThixPolicy.labelStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.semiBold)),
           ],
         ),
       ),
@@ -478,7 +526,7 @@ class _QuickActionChip extends StatelessWidget {
   }
 }
 
-// ───────────────────────── Module Pleine Largeur ─────────────────────────
+// ───────────────────────── Module Pleine Largeur (Glass Rouge) ─────────────────────────
 class _NavCardProminent extends StatelessWidget {
   const _NavCardProminent({
     required this.icon,
@@ -494,31 +542,31 @@ class _NavCardProminent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(ThixPolicy.cardRadius),
-      child: Container(
+      child: GlassBox(
+        color: ThixPolicy.danger.withOpacity(0.15),
+        border: Border.all(color: ThixPolicy.danger.withOpacity(0.3), width: 1),
         padding: ThixPolicy.cardPaddingLarge,
-        decoration: BoxDecoration(
-          color: ThixPolicy.danger,
-          borderRadius: BorderRadius.circular(ThixPolicy.cardRadius),
-          boxShadow: ThixPolicy.shadowSoft(),
-        ),
         child: Row(
           children: [
-            Icon(icon, color: ThixPolicy.onBrand, size: 36),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: ThixPolicy.danger.withOpacity(0.2), shape: BoxShape.circle),
+              child: Icon(icon, color: ThixPolicy.danger, size: 28),
+            ),
             const SizedBox(width: ThixPolicy.s16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.onBrand, fontWeight: ThixPolicy.bold)),
+                  Text(title, style: ThixPolicy.titleStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold)),
                   const SizedBox(height: 4),
-                  Text(subtitle, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.onBrand.withValues(alpha: 0.9))),
+                  Text(subtitle, style: ThixPolicy.bodySmallStyle.copyWith(color: Colors.white70)),
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios, color: ThixPolicy.onBrand, size: 16),
+            const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white54, size: 16),
           ],
         ),
       ),
@@ -526,7 +574,7 @@ class _NavCardProminent extends StatelessWidget {
   }
 }
 
-// ───────────────────────── Nav Card Compact ─────────────────────────
+// ───────────────────────── Nav Card Compact (Glass) ─────────────────────────
 class _NavCardCompact extends StatelessWidget {
   const _NavCardCompact({
     required this.icon,
@@ -542,24 +590,22 @@ class _NavCardCompact extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return GestureDetector(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(ThixPolicy.cardRadius),
-      child: Container(
+      child: GlassBox(
         padding: ThixPolicy.cardPadding,
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(ThixPolicy.cardRadius),
-          border: Border.all(color: ThixPolicy.border),
-        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: Theme.of(context).colorScheme.onSurface, size: 28),
-            const SizedBox(height: ThixPolicy.s12),
-            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: ThixPolicy.labelStyle),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), shape: BoxShape.circle),
+              child: Icon(icon, color: Colors.white, size: 24),
+            ),
+            const SizedBox(height: ThixPolicy.s16),
+            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: ThixPolicy.labelStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold)),
             const SizedBox(height: 4),
-            Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: ThixPolicy.captionStyle),
+            Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: ThixPolicy.captionStyle.copyWith(color: Colors.white54)),
           ],
         ),
       ),
@@ -567,35 +613,56 @@ class _NavCardCompact extends StatelessWidget {
   }
 }
 
-// ───────────────────────── Bottom nav ─────────────────────────
-class _BottomNav extends StatelessWidget {
-  const _BottomNav({required this.currentIndex});
+// ───────────────────────── Bottom Nav Flottante (Glass) ─────────────────────────
+class _BottomNavGlass extends StatelessWidget {
+  const _BottomNavGlass({required this.currentIndex});
   final int currentIndex;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: ThixPolicy.border)),
+    return GlassBox(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      borderRadius: 30,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _navItem(context, Icons.home_rounded, 'Accueil', 0),
+          _navItem(context, Icons.chat_bubble_rounded, 'Chat', 1),
+          // Bouton central "SOS" Accent
+          GestureDetector(
+            onTap: () {},
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              decoration: BoxDecoration(color: ThixPolicy.danger, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: ThixPolicy.danger.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4))]),
+              child: Row(
+                children: [
+                  const Icon(Icons.sos_rounded, color: Colors.white, size: 20),
+                  const SizedBox(width: 6),
+                  Text('SOS', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: Colors.white)),
+                ],
+              ),
+            ),
+          ),
+          _navItem(context, Icons.map_rounded, 'Carte', 3),
+          _navItem(context, Icons.person_rounded, 'Profil', 4),
+        ],
       ),
-      child: BottomNavigationBar(
-        currentIndex: currentIndex,
-        onTap: (i) {
-          if (i == 0) Navigator.of(context).popUntil((r) => r.isFirst);
-        },
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: ThixPolicy.danger, 
-        unselectedItemColor: ThixPolicy.textMuted,
-        selectedLabelStyle: ThixPolicy.microStyle.copyWith(fontWeight: ThixPolicy.bold),
-        unselectedLabelStyle: ThixPolicy.microStyle,
-        elevation: 0,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Accueil'),
-          BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), label: 'Chat'),
-          BottomNavigationBarItem(icon: Icon(Icons.sos, size: 28), label: 'SOS'),
-          BottomNavigationBarItem(icon: Icon(Icons.map_outlined), label: 'Carte'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profil'),
+    );
+  }
+
+  Widget _navItem(BuildContext context, IconData icon, String label, int idx) {
+    final sel = currentIndex == idx;
+    return GestureDetector(
+      onTap: () {
+        if (idx == 0) Navigator.of(context).popUntil((r) => r.isFirst);
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: sel ? Colors.white : Colors.white54, size: 24),
+          const SizedBox(height: 4),
+          Text(label, style: ThixPolicy.microStyle.copyWith(fontWeight: sel ? ThixPolicy.bold : ThixPolicy.semiBold, color: sel ? Colors.white : Colors.white54, fontSize: 9)),
         ],
       ),
     );
