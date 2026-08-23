@@ -17,6 +17,11 @@ class NewsArticle {
   bool isLiked;
   bool isSaved;
 
+  // ─── ALIAS POUR LA COMPATIBILITÉ AVEC L'INTERFACE ───
+  String? get coverImageUrl => imageUrl;
+  String? get author => createdBy;
+  // ────────────────────────────────────────────────────
+
   NewsArticle({
     required this.id,
     required this.title,
@@ -38,20 +43,24 @@ class NewsArticle {
 
   factory NewsArticle.fromJson(Map<String, dynamic> json) {
     return NewsArticle(
-      id: json['id'],
-      title: json['title'],
-      summary: json['summary'],
-      content: json['content'],
-      category: json['category'],
-      imageUrl: json['image_url'],
-      videoUrl: json['video_url'],
+      id: json['id']?.toString() ?? '',
+      title: json['title']?.toString() ?? 'Sans titre',
+      summary: json['summary']?.toString(),
+      content: json['content']?.toString() ?? '',
+      category: json['category']?.toString() ?? 'Général',
+      imageUrl: json['image_url']?.toString(),
+      videoUrl: json['video_url']?.toString(),
       viewsCount: json['views_count'] ?? 0,
       isFeatured: json['is_featured'] ?? false,
       isBreaking: json['is_breaking'] ?? false,
-      status: json['status'] ?? 'published',
-      publishedAt: DateTime.parse(json['published_at']),
-      createdAt: DateTime.parse(json['created_at']),
-      createdBy: json['created_by'],
+      status: json['status']?.toString() ?? 'published',
+      publishedAt: json['published_at'] != null 
+          ? DateTime.parse(json['published_at'].toString()) 
+          : DateTime.now(),
+      createdAt: json['created_at'] != null 
+          ? DateTime.parse(json['created_at'].toString()) 
+          : DateTime.now(),
+      createdBy: json['created_by']?.toString(),
       isLiked: json['is_liked'] ?? false,
       isSaved: json['is_saved'] ?? false,
     );
