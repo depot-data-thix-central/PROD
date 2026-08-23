@@ -40,7 +40,8 @@ class ChatMessageWidget extends StatelessWidget {
               Row(children: [Container(width: 20, height: 20, decoration: BoxDecoration(color: ThixPolicy.primary.withOpacity(0.12), shape: BoxShape.circle), child: Icon(Icons.auto_awesome_rounded, size: 12, color: ThixPolicy.primary)), SizedBox(width: 6), Text('THIX IA', style: ThixPolicy.microStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.primary))]),
               SizedBox(height: 8),
             ],
-            Text(message.content, style: ThixPolicy.bodySmallStyle.copyWith(color: isUser? Colors.white : ThixPolicy.textPrimary, height: 1.4)),
+            Text(message.content, style: ThixPolicy.bodySmallStyle.copyWith(color: isUser ? Colors.white : Colors.black87, height: 1.4)),
+
             if (message.isStreaming)...[
               SizedBox(height: 8),
               SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: isUser? Colors.white : ThixPolicy.primary)),
