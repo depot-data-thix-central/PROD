@@ -102,8 +102,9 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
     }
   }
 
-  Future<void> _createLive() async {
+  Future<void> _processLive({required bool startNow}) async {
     if (!_formKey.currentState!.validate()) return;
+    
     if (_thumbnail == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -151,7 +152,7 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
           body: {'channelName': channelName},
         );
         token = tokenResponse.data['token'];
-        if (token == null) throw Exception('Token Agora non reçu');
+        if (token.isEmpty) throw Exception('Token Agora vide');
       } catch (e) {
         debugPrint('⚠️ Agora token generation failed: $e');
         token = 'test_token_${DateTime.now().millisecondsSinceEpoch}';
@@ -165,7 +166,13 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
         }
       }
 
-      // 4. Créer l'enregistrement du live
+      // 4. Définir le statut et l'heure en fonction du bouton cliqué
+      final liveStatus = startNow ? 'live' : 'scheduled';
+      final startTimeString = startNow 
+          ? DateTime.now().toIso8601String() 
+          : DateTime.now().add(const Duration(minutes: 5)).toIso8601String();
+
+      // 5. Créer l'enregistrement du live
       final liveData = {
         'shop_id': widget.shopId,
         'title': _titleController.text.trim(),
@@ -177,8 +184,9 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
         'has_auction': _hasAuction,
         'starting_price': _hasAuction ? _startingPrice : null,
         'auction_end_time': _hasAuction ? _auctionEndTime?.toIso8601String() : null,
-        'status': 'scheduled',
-        'scheduled_start': DateTime.now().add(const Duration(minutes: 5)).toIso8601String(),
+        'status': liveStatus,
+        'scheduled_start': startTimeString,
+        'started_at': startNow ? startTimeString : null,
         'created_at': DateTime.now().toIso8601String(),
       };
 
@@ -192,8 +200,8 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Live programmé avec succès'),
+          SnackBar(
+            content: Text(startNow ? 'Live lancé avec succès !' : 'Live programmé avec succès'),
             backgroundColor: Colors.green,
           ),
         );
@@ -461,34 +469,51 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
 
             const SizedBox(height: 24),
 
-            // Bouton
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _createLive,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: gold,
-                  foregroundColor: navy,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  elevation: 0,
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: navy,
-                        ),
-                      )
-                    : const Text(
-                        'Programmer le live',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            // --- DOUBLE BOUTON ---
+            Column(
+              children: [
+                // 🔴 BOUTON : Lancer le live maintenant
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : () => _processLive(startNow: true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: danger, // Rouge pour le direct
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
                       ),
-              ),
+                      elevation: 0,
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 20, height: 20, 
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                          )
+                        : const Text('Lancer le live maintenant', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+                
+                const SizedBox(height: 12),
+                
+                // 🟡 BOUTON : Programmer le live
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: OutlinedButton(
+                    onPressed: _isLoading ? null : () => _processLive(startNow: false),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: gold,
+                      side: const BorderSide(color: gold, width: 1.5),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('Programmer pour plus tard', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
