@@ -46,10 +46,9 @@ class _ThixHomeSwipeScreenState extends State<ThixHomeSwipeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: ThixPolicy.inkDeep, // 🌟 Fond unifié charte THIX
+      backgroundColor: ThixPolicy.inkDeep,
       body: Column(
         children: [
-          // Indicateur de section (sous la status bar)
           SafeArea(
             bottom: false,
             child: Padding(
@@ -62,19 +61,14 @@ class _ThixHomeSwipeScreenState extends State<ThixHomeSwipeScreen> {
               ),
             ),
           ),
-
-          // Pages
           Expanded(
             child: PageView(
               controller: _pageController,
               onPageChanged: (i) => setState(() => _page = i),
               physics: const BouncingScrollPhysics(),
               children: const [
-                // Page 0 — THIX SOS
                 _KeepAlive(child: ThixSosScreen()),
-                // Page 1 — THIX RECHERCHE (milieu)
                 _KeepAlive(child: ThixRechercheScreen()),
-                // Page 2 — THIX RETROUVE
                 _KeepAlive(child: ThixRetrouveScreen()),
               ],
             ),
@@ -85,7 +79,6 @@ class _ThixHomeSwipeScreenState extends State<ThixHomeSwipeScreen> {
   }
 }
 
-/// Garde l’état de chaque page (évite rebuild total au swipe)
 class _KeepAlive extends StatefulWidget {
   const _KeepAlive({required this.child});
   final Widget child;
@@ -124,13 +117,12 @@ class _SectionIndicator extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(ThixPolicy.s4),
       decoration: BoxDecoration(
-        color: ThixPolicy.card.withOpacity(0.08), // Verre dépoli subtil
+        color: ThixPolicy.card.withOpacity(0.08),
         borderRadius: BorderRadius.circular(ThixPolicy.rSm),
         border: Border.all(color: Colors.white.withOpacity(0.06)),
       ),
       child: Row(
         children: [
-          // ——— SOS ———
           Expanded(
             child: _Tab(
               label: 'SOS',
@@ -140,23 +132,21 @@ class _SectionIndicator extends StatelessWidget {
               onTap: onSos,
             ),
           ),
-          // ——— RECHERCHE (milieu) ———
           Expanded(
             child: _Tab(
               label: 'RECHERCHE',
               icon: Icons.person_search_rounded,
               selected: current == 1,
-              selectedColor: ThixPolicy.primary, // Bleu THIX Primaire
+              selectedColor: ThixPolicy.primary,
               onTap: onRecherche,
             ),
           ),
-          // ——— RETROUVE ———
           Expanded(
             child: _Tab(
               label: 'RETROUVE',
               icon: Icons.search_rounded,
               selected: current == 2,
-              selectedColor: ThixPolicy.gold, // Or THIX
+              selectedColor: ThixPolicy.gold,
               onTap: onRetrouve,
             ),
           ),
@@ -184,9 +174,7 @@ class _Tab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected
-          ? selectedColor.withOpacity(0.20)
-          : Colors.transparent,
+      color: selected ? selectedColor.withOpacity(0.20) : Colors.transparent,
       borderRadius: BorderRadius.circular(ThixPolicy.rXs),
       child: InkWell(
         onTap: onTap,
@@ -196,11 +184,7 @@ class _Tab extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                icon,
-                size: 16,
-                color: selected ? selectedColor : Colors.white54,
-              ),
+              Icon(icon, size: 16, color: selected ? selectedColor : Colors.white54),
               const SizedBox(width: ThixPolicy.s6),
               Flexible(
                 child: Text(
