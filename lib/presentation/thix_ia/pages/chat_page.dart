@@ -5,7 +5,7 @@ import '../../../../core/theme/thix_design_policy.dart';
 import '../providers/chat_provider.dart';
 import '../widgets/chat_message.dart';
 import '../widgets/chat_input.dart';
-
+import '../widgets/chat_input_widget.dart';
 class ChatPage extends ConsumerStatefulWidget {
   const ChatPage({super.key, required this.projectCode, this.initialMessage});
   final String projectCode;
