@@ -1,7 +1,8 @@
 // lib/presentation/thix_ia/providers/chat_provider.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:equatable/equatable.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+// IMPORT DU VRAI MODÈLE ICI POUR ÉVITER LE DOUBLON :
+import '../models/chat_message.dart'; 
 import 'thix_ia_provider.dart';
 import 'active_project_provider.dart';
 
@@ -9,46 +10,6 @@ import 'active_project_provider.dart';
 /// CHAT PROVIDER - Chat contextualisé avec mémoire projet §7
 /// Table: chat_messages (Supabase) + RAG
 /// ============================================================================
-
-class ChatMessage extends Equatable {
-  const ChatMessage({
-    required this.id,
-    required this.projectCode,
-    required this.role, // user, assistant, system
-    required this.content,
-    this.sources = const [],
-    this.createdAt,
-  });
-
-  final String id;
-  final String projectCode;
-  final String role;
-  final String content;
-  final List<String> sources;
-  final DateTime? createdAt;
-
-  bool get isUser => role == 'user';
-  bool get isAssistant => role == 'assistant';
-
-  factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
-        id: json['id']?? '',
-        projectCode: json['project_code']?? '',
-        role: json['role']?? 'user',
-        content: json['content']?? '',
-        sources: (json['sources'] as List?)?.map((e) => e.toString()).toList()?? [],
-        createdAt: json['created_at']!= null? DateTime.tryParse(json['created_at']) : null,
-      );
-
-  Map<String, dynamic> toSupabase() => {
-        'project_code': projectCode,
-        'role': role,
-        'content': content,
-        'sources': sources,
-      };
-
-  @override
-  List<Object?> get props => [id, role, content];
-}
 
 class ChatNotifier extends AsyncNotifier<List<ChatMessage>> {
   @override
@@ -82,7 +43,7 @@ class ChatNotifier extends AsyncNotifier<List<ChatMessage>> {
     );
 
     // Optimistic
-    final current = state.value?? [];
+    final current = state.value ?? [];
     state = AsyncData([...current, userMsg]);
 
     try {
@@ -118,6 +79,6 @@ final chatProvider = AsyncNotifierProvider<ChatNotifier, List<ChatMessage>>(() {
 });
 
 final chatHasMessagesProvider = Provider<bool>((ref) {
-  final messages = ref.watch(chatProvider).value?? [];
+  final messages = ref.watch(chatProvider).value ?? [];
   return messages.isNotEmpty;
 });
