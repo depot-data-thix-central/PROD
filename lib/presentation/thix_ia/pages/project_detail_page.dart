@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/thix_design_policy.dart';
-import '../providers/active_project_provider.dart';
+// <-- CORRECTION 4 : On importe project_provider.dart
+import '../providers/project_provider.dart'; 
 import '../providers/analysis_provider.dart';
 import '../providers/project_memory_provider.dart';
 import '../providers/document_provider.dart';
-// Import ajouté :
 import '../providers/project_intelligence_provider.dart';
 import '../widgets/project_header.dart';
 import '../widgets/fact_card.dart';
