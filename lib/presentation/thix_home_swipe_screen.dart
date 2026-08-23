@@ -1,6 +1,8 @@
 /// Conteneur principal — swipe SOS ↔ RECHERCHE ↔ RETROUVE
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+
+// ✅ POLICY THIX APPLIQUÉE
+import 'package:thix_id/core/theme/thix_design_policy.dart';
 
 import 'thix_sos/thix_sos_screen.dart';
 import 'thix_recherche/thix_recherche_screen.dart';
@@ -43,18 +45,15 @@ class _ThixHomeSwipeScreenState extends State<ThixHomeSwipeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 🌟 Fond unifié TRES FONCÉ pour toute la page (Bleu Nuit / Noir)
-    const bgColor = Color(0xFF050811); 
-
     return Scaffold(
-      backgroundColor: bgColor,
+      backgroundColor: ThixPolicy.inkDeep, // 🌟 Fond unifié charte THIX
       body: Column(
         children: [
           // Indicateur de section (sous la status bar)
           SafeArea(
             bottom: false,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              padding: const EdgeInsets.fromLTRB(ThixPolicy.s16, ThixPolicy.s8, ThixPolicy.s16, 0),
               child: _SectionIndicator(
                 current: _page,
                 onSos: () => _goTo(0),
@@ -123,12 +122,11 @@ class _SectionIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(ThixPolicy.s4),
       decoration: BoxDecoration(
-        // Fond de la barre légèrement plus clair que le fond de la page pour créer un contraste
-        color: const Color(0xFF121826), 
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        color: ThixPolicy.card.withOpacity(0.08), // Verre dépoli subtil
+        borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
       ),
       child: Row(
         children: [
@@ -136,9 +134,9 @@ class _SectionIndicator extends StatelessWidget {
           Expanded(
             child: _Tab(
               label: 'SOS',
-              icon: Icons.sos,
+              icon: Icons.sos_rounded,
               selected: current == 0,
-              selectedColor: const Color(0xFFEF4444),
+              selectedColor: ThixPolicy.danger,
               onTap: onSos,
             ),
           ),
@@ -146,9 +144,9 @@ class _SectionIndicator extends StatelessWidget {
           Expanded(
             child: _Tab(
               label: 'RECHERCHE',
-              icon: Icons.person_search,
+              icon: Icons.person_search_rounded,
               selected: current == 1,
-              selectedColor: const Color(0xFF2D6CDF), // Bleu THIX Primaire
+              selectedColor: ThixPolicy.primary, // Bleu THIX Primaire
               onTap: onRecherche,
             ),
           ),
@@ -156,9 +154,9 @@ class _SectionIndicator extends StatelessWidget {
           Expanded(
             child: _Tab(
               label: 'RETROUVE',
-              icon: Icons.search,
+              icon: Icons.search_rounded,
               selected: current == 2,
-              selectedColor: const Color(0xFFE3B23C), // Or THIX
+              selectedColor: ThixPolicy.gold, // Or THIX
               onTap: onRetrouve,
             ),
           ),
@@ -187,37 +185,32 @@ class _Tab extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: selected
-          ? selectedColor.withOpacity(0.20) // Opacité douce pour le fond de l'onglet actif
+          ? selectedColor.withOpacity(0.20)
           : Colors.transparent,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(ThixPolicy.rXs),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(ThixPolicy.rXs),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12), // Un peu plus aéré
+          padding: const EdgeInsets.symmetric(vertical: ThixPolicy.s12),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 icon,
                 size: 16,
-                color: selected
-                    ? selectedColor
-                    : Colors.white54, // Gris clair pour les non sélectionnés
+                color: selected ? selectedColor : Colors.white54,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: ThixPolicy.s6),
               Flexible(
                 child: Text(
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
+                  style: ThixPolicy.labelStyle.copyWith(
                     fontSize: 11.5,
-                    fontWeight:
-                        selected ? FontWeight.w800 : FontWeight.w600,
-                    color: selected
-                        ? selectedColor
-                        : Colors.white54, // Gris clair pour les non sélectionnés
+                    fontWeight: selected ? ThixPolicy.bold : ThixPolicy.semiBold,
+                    color: selected ? selectedColor : Colors.white54,
                     letterSpacing: 0.3,
                   ),
                 ),
