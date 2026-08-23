@@ -57,8 +57,10 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
       final from = (page - 1) * limit;
       final to = from + limit - 1;
 
-      var query = _supabase.from('projects').select().order('updated_at', ascending: false).range(from, to);
+      // 1. Initialisation de la requête SANS order ni range
+      var query = _supabase.from('projects').select();
 
+      // 2. Application des filtres en premier
       if (status != null && status.isNotEmpty) {
         query = query.eq('status', status);
       }
@@ -66,7 +68,9 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
         query = query.or('name.ilike.%$search%,project_code.ilike.%$search%,sector.ilike.%$search%');
       }
 
-      final res = await query;
+      // 3. Application du tri et de la pagination à la fin de la chaîne
+      final res = await query.order('updated_at', ascending: false).range(from, to);
+      
       return (res as List).map((e) => ThixProject.fromJson(e)).toList();
     } catch (e, s) {
       throw ThixIAErrorMapper.map(e, s);
@@ -174,9 +178,17 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
   @override
   Future<List<ProjectAnalysis>> getAnalyses(String projectCode, {String? type}) async {
     try {
-      var query = _supabase.from('project_analyses').select().eq('project_code', projectCode).order('created_at', ascending: false);
-      if (type != null) query = query.eq('type', type);
-      final res = await query;
+      // 1. Initialisation + filtre principal
+      var query = _supabase.from('project_analyses').select().eq('project_code', projectCode);
+      
+      // 2. Filtres additionnels
+      if (type != null) {
+        query = query.eq('type', type);
+      }
+      
+      // 3. Tri à la fin
+      final res = await query.order('created_at', ascending: false);
+      
       return (res as List).map((e) => ProjectAnalysis.fromJson(e)).toList();
     } catch (e, s) {
       throw ThixIAErrorMapper.map(e, s);
