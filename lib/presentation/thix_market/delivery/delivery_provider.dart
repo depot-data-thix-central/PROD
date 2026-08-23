@@ -1,10 +1,9 @@
-// lib/presentation/thix_market/delivery/providers/delivery_provider.dart
+// lib/presentation/thix_market/delivery/delivery_provider.dart
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // ─── DÉCLARATION GLOBALE RIVERPOD ───
-// À importer dans tes autres fichiers UI (ex: ref.watch(deliveryProvider))
 final deliveryProvider = ChangeNotifierProvider<DeliveryProvider>((ref) {
   return DeliveryProvider()..init();
 });
@@ -31,16 +30,16 @@ class DeliveryProvider extends ChangeNotifier {
   String? get errorTracking => _errorTracking;
 
   // --- INITIALISATION ---
-  Future<void> init() async { 
-    await loadAddresses(); 
+  Future<void> init() async {
+    await loadAddresses();
   }
 
-  // --- TRACKING (Version sécurisée) ---
+  // --- TRACKING ---
   Future<void> trackDelivery(String orderId) async {
     _isLoadingTracking = true;
     _errorTracking = null;
     notifyListeners();
-    
+
     try {
       final tracking = await _supabase
           .from('delivery_tracking')
@@ -75,58 +74,67 @@ class DeliveryProvider extends ChangeNotifier {
   Future<void> loadAddresses() async {
     final uid = _supabase.auth.currentUser?.id;
     if (uid == null) return;
-    
-    _isLoadingAddresses = true; 
+
+    _isLoadingAddresses = true;
     notifyListeners();
-    
+
     try {
-      // On trie pour avoir l'adresse par défaut en premier
       final res = await _supabase
           .from('addresses')
           .select()
           .eq('user_id', uid)
           .order('is_default', ascending: false);
-          
+
       _addresses = List<Map<String, dynamic>>.from(res);
-      
+
       // Auto-sélection de l'adresse par défaut si aucune n'est sélectionnée
       if (_selectedAddress == null && _addresses.isNotEmpty) {
         _selectedAddress = _addresses.firstWhere(
-          (a) => a['is_default'] == true, 
-          orElse: () => _addresses.first
+          (a) => a['is_default'] == true,
+          orElse: () => _addresses.first,
         );
       }
     } catch (e) {
       debugPrint('Error loading addresses: $e');
     } finally {
-      _isLoadingAddresses = false; 
+      _isLoadingAddresses = false;
       notifyListeners();
     }
   }
 
   Future<void> addAddress(Map<String, dynamic> address) async {
     final uid = _supabase.auth.currentUser?.id;
-    if (uid == null) return;
-    
+    if (uid == null) {
+      throw Exception('Vous devez être connecté pour ajouter une adresse');
+    }
+
     try {
-      // Sécurité : S'assurer qu'il n'y ait qu'une seule adresse par défaut
+      // Sécurité : une seule adresse par défaut
       if (address['is_default'] == true) {
-        await _supabase.from('addresses').update({'is_default': false}).eq('user_id', uid);
+        await _supabase
+            .from('addresses')
+            .update({'is_default': false})
+            .eq('user_id', uid);
       }
 
-      final res = await _supabase.from('addresses').insert({...address, 'user_id': uid}).select().single();
-      
+      final res = await _supabase
+          .from('addresses')
+          .insert({...address, 'user_id': uid})
+          .select()
+          .single();
+
       _addresses.insert(0, res);
-      
+
       // Auto-sélection
       if (address['is_default'] == true || _selectedAddress == null) {
         _selectedAddress = res;
       }
-      
-      // Recharge pour appliquer le bon ordre
+
+      notifyListeners();
       await loadAddresses();
-    } catch (e) { 
-      debugPrint('Error adding address: $e'); 
+    } catch (e) {
+      debugPrint('Error adding address: $e');
+      rethrow; // ← important : remonte l'erreur à l'UI
     }
   }
 
@@ -134,41 +142,44 @@ class DeliveryProvider extends ChangeNotifier {
     try {
       await _supabase.from('addresses').delete().eq('id', addressId);
       _addresses.removeWhere((a) => a['id'] == addressId);
-      
-      // Réinitialiser la sélection si l'adresse supprimée était sélectionnée
+
       if (_selectedAddress?['id'] == addressId) {
         _selectedAddress = _addresses.isNotEmpty ? _addresses.first : null;
       }
       notifyListeners();
-    } catch (e) { 
-      debugPrint('Error deleting address: $e'); 
+    } catch (e) {
+      debugPrint('Error deleting address: $e');
+      rethrow;
     }
   }
 
   Future<void> updateAddress(String id, Map<String, dynamic> data) async {
     final uid = _supabase.auth.currentUser?.id;
-    
+
     try {
-      // Sécurité : S'assurer qu'il n'y ait qu'une seule adresse par défaut
       if (data['is_default'] == true && uid != null) {
-        await _supabase.from('addresses').update({'is_default': false}).eq('user_id', uid);
+        await _supabase
+            .from('addresses')
+            .update({'is_default': false})
+            .eq('user_id', uid);
       }
-      
+
       await _supabase.from('addresses').update(data).eq('id', id);
-      await loadAddresses(); // Recharge pour appliquer les modifications et le tri
-    } catch (e) { 
-      debugPrint('Error updating address: $e'); 
+      await loadAddresses();
+    } catch (e) {
+      debugPrint('Error updating address: $e');
+      rethrow;
     }
   }
 
-  void selectAddress(Map<String, dynamic> a) { 
-    _selectedAddress = a; 
-    notifyListeners(); 
+  void selectAddress(Map<String, dynamic> a) {
+    _selectedAddress = a;
+    notifyListeners();
   }
 
-  void reset() { 
-    _selectedAddress = null; 
-    _currentTracking = null; 
-    notifyListeners(); 
+  void reset() {
+    _selectedAddress = null;
+    _currentTracking = null;
+    notifyListeners();
   }
 }
