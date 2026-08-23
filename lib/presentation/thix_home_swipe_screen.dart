@@ -68,8 +68,8 @@ class _ThixHomeSwipeScreenState extends State<ThixHomeSwipeScreen> {
               physics: const BouncingScrollPhysics(),
               children: [
                 const _KeepAlive(child: ThixSosScreen()),
-                const _KeepAlive(child: ThixRechercheScreen()),
-                _KeepAlive(child: ThixRetrouveScreen()), // 🌟 Retrait du 'const' pour éviter le conflit si nécessaire
+                _KeepAlive(child: ThixRechercheScreen()),
+                _KeepAlive(child: ThixRetrouveScreen()),
               ],
             ),
           ),
