@@ -27,6 +27,11 @@ class LiveController extends StateNotifier<LiveState> {
   Completer<void>? _joinCompleter;
   Timer? _joinTimeoutTimer;
 
+  // Empêche un second bootstrap() de démarrer pendant qu'un premier
+  // est encore en cours (protection supplémentaire, en plus du retrait
+  // de l'auto-bootstrap dans le constructeur ci-dessous).
+  bool _isBootstrapping = false;
+
   LiveController(this.session, this.ref) : super(const LiveState()) {
     ref.onDispose(() {
       _joinTimeoutTimer?.cancel();
@@ -35,7 +40,17 @@ class LiveController extends StateNotifier<LiveState> {
       _engine?.release();
       _heartController.close();
     });
-    Future.microtask(() => bootstrap());
+    // ⚠️ CORRECTIF : plus d'auto-bootstrap ici. L'ancien code appelait
+    // bootstrap() automatiquement via Future.microtask ET l'écran
+    // (LiveBroadcastScreen._attachListenersOnce) l'appelait une seconde
+    // fois avec les vrais paramètres vidéo/micro. Les deux joinChannel()
+    // concurrents sur le même canal provoquaient AgoraRtcException(-17,
+    // null) — ERR_JOIN_CHANNEL_REJECTED : rejoindre un canal déjà en
+    // cours de connexion. Le déclenchement se fait maintenant
+    // uniquement depuis LiveBroadcastScreen._attachListenersOnce(),
+    // qui connaît les vraies valeurs initiales choisies dans
+    // LivePrepScreen et qui ne s'exécute qu'une seule fois grâce à son
+    // propre flag _listenersAttached.
   }
 
   RtcEngine? get engine => _engine;
@@ -47,6 +62,15 @@ class LiveController extends StateNotifier<LiveState> {
     bool initialVideoEnabled = true,
     bool initialMicEnabled = true,
   }) async {
+    // Filet de sécurité supplémentaire : si bootstrap() est appelé alors
+    // qu'une tentative est déjà en cours, on ignore l'appel au lieu de
+    // laisser deux joinChannel() se percuter.
+    if (_isBootstrapping) {
+      debugPrint('bootstrap() déjà en cours — appel ignoré.');
+      return;
+    }
+    _isBootstrapping = true;
+
     _joinTimeoutTimer?.cancel();
 
     state = state.copyWith(
@@ -56,133 +80,134 @@ class LiveController extends StateNotifier<LiveState> {
       isMuted: !initialMicEnabled,
     );
 
-    if (!kIsWeb) {
-      final statuses = await [Permission.camera, Permission.microphone].request();
-      final camOk = statuses[Permission.camera]?.isGranted ?? true;
-      final micOk = statuses[Permission.microphone]?.isGranted ?? true;
-      if (!camOk || !micOk) {
-        state = state.copyWith(status: LiveScreenStatus.permissionDenied);
+    try {
+      if (!kIsWeb) {
+        final statuses = await [Permission.camera, Permission.microphone].request();
+        final camOk = statuses[Permission.camera]?.isGranted ?? true;
+        final micOk = statuses[Permission.microphone]?.isGranted ?? true;
+        if (!camOk || !micOk) {
+          state = state.copyWith(status: LiveScreenStatus.permissionDenied);
+          return;
+        }
+      }
+
+      AgoraCredentials credentials;
+      try {
+        credentials = await _service.fetchAgoraCredentials(session.channelName)
+            .timeout(const Duration(seconds: 12));
+      } on TimeoutException {
+        _fail("Délai dépassé lors de la récupération du token Agora. Vérifiez votre connexion.");
+        return;
+      } catch (e) {
+        _fail("Impossible de récupérer les identifiants du direct : $e");
         return;
       }
-    }
 
-    AgoraCredentials credentials;
-    try {
-      credentials = await _service.fetchAgoraCredentials(session.channelName)
-          .timeout(const Duration(seconds: 12));
-    } on TimeoutException {
-      _fail("Délai dépassé lors de la récupération du token Agora. Vérifiez votre connexion.");
-      return;
-    } catch (e) {
-      _fail("Impossible de récupérer les identifiants du direct : $e");
-      return;
-    }
+      if (credentials.appId.isEmpty) {
+        _fail("Configuration Agora invalide : App ID manquant côté serveur.");
+        return;
+      }
 
-    if (credentials.appId.isEmpty) {
-      _fail("Configuration Agora invalide : App ID manquant côté serveur.");
-      return;
-    }
+      try {
+        // Si un ancien moteur existe déjà (retry manuel via le bouton
+        // "Réessayer"), on le libère proprement d'abord — c'est ce qui
+        // évite aussi un -17 en cas de nouvelle tentative après échec.
+        if (_engine != null) {
+          try {
+            await _engine!.leaveChannel();
+            await _engine!.release();
+          } catch (_) {}
+          _engine = null;
+        }
 
-    try {
-      // Si un ancien moteur existe déjà (retry), on le libère proprement d'abord.
-      if (_engine != null) {
+        final engine = createAgoraRtcEngine();
+        await engine.initialize(RtcEngineContext(
+          appId: credentials.appId,
+          channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
+        ));
+
+        if (!state.isVideoOff) {
+          await engine.enableVideo();
+          await engine.startPreview();
+        }
+
+        await engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
+
+        _joinCompleter = Completer<void>();
+
+        engine.registerEventHandler(
+          RtcEngineEventHandler(
+            onJoinChannelSuccess: (connection, elapsed) {
+              debugPrint('Agora: canal rejoint avec succès (uid=${connection.localUid})');
+              if (_joinCompleter != null && !_joinCompleter!.isCompleted) {
+                _joinCompleter!.complete();
+              }
+            },
+            onUserJoined: (connection, remoteUid, elapsed) {
+              if (!state.coHostUids.contains(remoteUid)) {
+                state = state.copyWith(coHostUids: [...state.coHostUids, remoteUid]);
+              }
+            },
+            onUserOffline: (connection, remoteUid, reason) {
+              state = state.copyWith(
+                coHostUids: state.coHostUids.where((id) => id != remoteUid).toList(),
+              );
+            },
+            onError: (err, msg) {
+              debugPrint('Agora onError: $err - $msg');
+              if (_joinCompleter != null && !_joinCompleter!.isCompleted) {
+                _joinCompleter!.completeError(_mapAgoraError(err, msg));
+              } else if (state.status == LiveScreenStatus.ready) {
+                debugPrint('Agora erreur en direct (non bloquante): $msg');
+              }
+            },
+            onConnectionStateChanged: (connection, connState, reason) {
+              debugPrint('Agora état connexion: $connState / raison: $reason');
+              if (connState == ConnectionStateType.connectionStateFailed) {
+                if (_joinCompleter != null && !_joinCompleter!.isCompleted) {
+                  _joinCompleter!.completeError(_mapConnectionFailure(reason));
+                }
+              }
+            },
+          ),
+        );
+
+        await engine.joinChannel(
+          token: credentials.token,
+          channelId: session.channelName,
+          uid: 0,
+          options: ChannelMediaOptions(
+            publishCameraTrack: !state.isVideoOff,
+            publishMicrophoneTrack: !state.isMuted,
+            clientRoleType: ClientRoleType.clientRoleBroadcaster,
+          ),
+        );
+
+        _engine = engine;
+
+        // ── On attend la CONFIRMATION réelle de connexion
+        // (onJoinChannelSuccess) avant de passer l'écran à "ready".
+        await _joinCompleter!.future.timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            throw Exception(
+                "Connexion au direct impossible (délai dépassé). Vérifiez votre réseau ou réessayez.");
+          },
+        );
+
+        state = state.copyWith(status: LiveScreenStatus.ready);
+        _initRealtime();
+      } catch (e) {
+        debugPrint('Erreur Agora: $e');
         try {
-          await _engine!.leaveChannel();
-          await _engine!.release();
+          await _engine?.leaveChannel();
+          await _engine?.release();
         } catch (_) {}
         _engine = null;
+        _fail(e is Exception ? e.toString().replaceFirst('Exception: ', '') : e.toString());
       }
-
-      final engine = createAgoraRtcEngine();
-      await engine.initialize(RtcEngineContext(
-        appId: credentials.appId,
-        channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
-      ));
-
-      if (!state.isVideoOff) {
-        await engine.enableVideo();
-        await engine.startPreview();
-      }
-
-      await engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
-
-      _joinCompleter = Completer<void>();
-
-      engine.registerEventHandler(
-        RtcEngineEventHandler(
-          onJoinChannelSuccess: (connection, elapsed) {
-            debugPrint('Agora: canal rejoint avec succès (uid=${connection.localUid})');
-            if (_joinCompleter != null && !_joinCompleter!.isCompleted) {
-              _joinCompleter!.complete();
-            }
-          },
-          onUserJoined: (connection, remoteUid, elapsed) {
-            if (!state.coHostUids.contains(remoteUid)) {
-              state = state.copyWith(coHostUids: [...state.coHostUids, remoteUid]);
-            }
-          },
-          onUserOffline: (connection, remoteUid, reason) {
-            state = state.copyWith(
-              coHostUids: state.coHostUids.where((id) => id != remoteUid).toList(),
-            );
-          },
-          onError: (err, msg) {
-            debugPrint('Agora onError: $err - $msg');
-            // Si l'erreur survient AVANT que le join réussisse, on la fait
-            // remonter à l'UI au lieu de la laisser dans la console.
-            if (_joinCompleter != null && !_joinCompleter!.isCompleted) {
-              _joinCompleter!.completeError(_mapAgoraError(err, msg));
-            } else if (state.status == LiveScreenStatus.ready) {
-              // Erreur survenue en cours de direct (ex: token expiré) → on
-              // ne casse pas l'écran, on log + on pourrait afficher un toast.
-              debugPrint('Agora erreur en direct (non bloquante): $msg');
-            }
-          },
-          onConnectionStateChanged: (connection, connState, reason) {
-            debugPrint('Agora état connexion: $connState / raison: $reason');
-            if (connState == ConnectionStateType.connectionStateFailed) {
-              if (_joinCompleter != null && !_joinCompleter!.isCompleted) {
-                _joinCompleter!.completeError(_mapConnectionFailure(reason));
-              }
-            }
-          },
-        ),
-      );
-
-      await engine.joinChannel(
-        token: credentials.token,
-        channelId: session.channelName,
-        uid: 0,
-        options: ChannelMediaOptions(
-          publishCameraTrack: !state.isVideoOff,
-          publishMicrophoneTrack: !state.isMuted,
-          clientRoleType: ClientRoleType.clientRoleBroadcaster,
-        ),
-      );
-
-      _engine = engine;
-
-      // ── Le point clé : on attend la CONFIRMATION réelle de connexion ──
-      // (onJoinChannelSuccess) avant de passer l'écran à "ready".
-      // Sans ça, l'UI s'affiche même si Agora a rejeté la connexion.
-      await _joinCompleter!.future.timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw Exception(
-              "Connexion au direct impossible (délai dépassé). Vérifiez votre réseau ou réessayez.");
-        },
-      );
-
-      state = state.copyWith(status: LiveScreenStatus.ready);
-      _initRealtime();
-    } catch (e) {
-      debugPrint('Erreur Agora: $e');
-      try {
-        await _engine?.leaveChannel();
-        await _engine?.release();
-      } catch (_) {}
-      _engine = null;
-      _fail(e is Exception ? e.toString().replaceFirst('Exception: ', '') : e.toString());
+    } finally {
+      _isBootstrapping = false;
     }
   }
 
@@ -199,6 +224,8 @@ class LiveController extends StateNotifier<LiveState> {
         return Exception("Nom de canal invalide.");
       case ErrorCodeType.errNoServerResources:
         return Exception("Serveurs Agora indisponibles pour le moment. Réessayez plus tard.");
+      case ErrorCodeType.errJoinChannelRejected:
+        return Exception("Connexion déjà en cours sur ce direct. Réessayez dans un instant.");
       default:
         return Exception("Erreur Agora ($err) : $msg");
     }
