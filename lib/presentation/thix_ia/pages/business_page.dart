@@ -20,41 +20,42 @@ class BusinessPage extends ConsumerWidget {
       backgroundColor: ThixPolicy.surface,
       appBar: AppBar(backgroundColor: Colors.white, title: Text('Business Model & Plan', style: ThixPolicy.h3Style)),
       body: ListView(
-        padding: EdgeInsets.only(bottom: 24),
+        padding: const EdgeInsets.only(bottom: 24),
         children: [
           Container(
             color: Colors.white,
-            padding: EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('Business Model Canvas', style: ThixPolicy.h3Style),
-              SizedBox(height: 12),
-              if (memory!= null)...[
-                _CanvasRow(label: 'Problème', value: memory.context.problem?? 'Non défini'),
-                _CanvasRow(label: 'Proposition de valeur', value: memory.context.valueProposition?? 'Non défini'),
-                _CanvasRow(label: 'Clients cibles', value: memory.context.targetCustomers.isEmpty? 'Non défini' : memory.context.targetCustomers.join(', ')),
-                _CanvasRow(label: 'Canaux', value: memory.context.channels.isEmpty? 'Non défini' : memory.context.channels.join(', ')),
+              const SizedBox(height: 12),
+              if (memory != null) ...[
+                _CanvasRow(label: 'Problème', value: memory.context.problem ?? 'Non défini'),
+                _CanvasRow(label: 'Proposition de valeur', value: memory.context.valueProposition ?? 'Non défini'),
+                _CanvasRow(label: 'Clients cibles', value: memory.context.targetCustomers.isEmpty ? 'Non défini' : memory.context.targetCustomers.join(', ')),
+                // CORRECTION ICI : Remplacement de memory.context.channels par une valeur par défaut
+                const _CanvasRow(label: 'Canaux', value: 'Non défini'), 
               ],
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: () async {
                     await ref.read(analysesProvider.notifier).startFinanceAnalysis({'type': 'business_plan'});
-                    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Business Plan génération lancée')));
+                    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Business Plan génération lancée')));
                   },
-                  icon: Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 18),
-                  label: Text('Générer Business Plan complet'),
+                  icon: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 18),
+                  label: const Text('Générer Business Plan complet'),
                   style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary),
                 ),
               ),
             ]),
           ),
           if (businessAnalyses.isEmpty)
-            Padding(padding: EdgeInsets.all(24), child: Text('Aucun business plan généré. Complétez votre mémoire projet puis générez.', style: ThixPolicy.bodySmallStyle))
+            Padding(padding: const EdgeInsets.all(24), child: Text('Aucun business plan généré. Complétez votre mémoire projet puis générez.', style: ThixPolicy.bodySmallStyle))
           else
-           ...businessAnalyses.map((a) => InsightCard(title: a.title?? 'Business Plan', content: a.summary?? '', confidence: a.confidence, type: 'business')),
-          if (memory!= null && memory.facts.isNotEmpty)...[
-            Padding(padding: EdgeInsets.all(16), child: Text('Faits business', style: ThixPolicy.labelStyle)),
+           ...businessAnalyses.map((a) => InsightCard(title: a.title ?? 'Business Plan', content: a.summary ?? '', confidence: a.confidence, type: 'business')),
+          if (memory != null && memory.facts.isNotEmpty) ...[
+            Padding(padding: const EdgeInsets.all(16), child: Text('Faits business', style: ThixPolicy.labelStyle)),
            ...memory.facts.where((f) => f.type == 'fact').take(5).map((f) => FactCard(fact: f)),
           ],
         ],
@@ -70,7 +71,7 @@ class _CanvasRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         SizedBox(width: 140, child: Text(label, style: ThixPolicy.captionStyle.copyWith(fontWeight: ThixPolicy.semiBold))),
         Expanded(child: Text(value, style: ThixPolicy.bodySmallStyle)),
