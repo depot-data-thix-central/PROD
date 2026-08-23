@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -10,16 +11,17 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 // ✅ POLICY THIX APPLIQUÉE
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/data/models/live/live_model.dart';
+import 'package:thix_id/data/services/live/live_service.dart';
 import 'live_broadcast_screen.dart';
 
-class LivePrepScreen extends StatefulWidget {
+class LivePrepScreen extends ConsumerStatefulWidget {
   const LivePrepScreen({super.key});
 
   @override
-  State<LivePrepScreen> createState() => _LivePrepScreenState();
+  ConsumerState<LivePrepScreen> createState() => _LivePrepScreenState();
 }
 
-class _LivePrepScreenState extends State<LivePrepScreen> {
+class _LivePrepScreenState extends ConsumerState<LivePrepScreen> {
   final TextEditingController _titleController = TextEditingController();
   bool _isVideoEnabled = true;
   bool _isMicEnabled = true;
@@ -27,10 +29,18 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
   RtcEngine? _engine;
   bool _isEngineReady = false;
   bool _isStartingLive = false;
+  bool _isPreviewFailed = false;
+  String? _previewErrorMessage;
+
+  // Nom de canal temporaire dédié à la preview locale, propre à l'utilisateur.
+  // Aucune vidéo n'est réellement diffusée à ce stade (pas de joinChannel).
+  late final String _previewChannelName;
 
   @override
   void initState() {
     super.initState();
+    final uid = Supabase.instance.client.auth.currentUser?.id ?? 'anon';
+    _previewChannelName = 'preview_$uid';
     _checkPermissionsAndInit();
   }
 
@@ -48,7 +58,7 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
 
       bool? userAgreed = await showDialog<bool>(
         context: context,
-        barrierDismissible: false, 
+        barrierDismissible: false,
         builder: (context) => AlertDialog(
           backgroundColor: ThixPolicy.card,
           surfaceTintColor: ThixPolicy.card,
@@ -104,26 +114,58 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
     }
   }
 
+  /// ⚠️ CORRECTIF : plus aucun App ID codé en dur. On récupère les
+  /// identifiants Agora via la même fonction Supabase que celle utilisée
+  /// par live_controller.dart (`liveServiceProvider.fetchAgoraCredentials`),
+  /// pour garantir un App ID toujours identique et à jour entre la preview
+  /// et le direct réel. C'est cette fonction côté serveur qui reste
+  /// l'unique source de vérité pour les credentials Agora.
   Future<void> _initPreviewAgora() async {
+    setState(() {
+      _isPreviewFailed = false;
+      _previewErrorMessage = null;
+    });
+
     try {
-      String appId = "96ed392d17c74fe684bbb9d4a031ad12"; 
+      final liveService = ref.read(liveServiceProvider);
+      final credentials = await liveService
+          .fetchAgoraCredentials(_previewChannelName)
+          .timeout(const Duration(seconds: 12));
+
+      if (credentials.appId.isEmpty) {
+        throw Exception("App ID Agora manquant côté serveur.");
+      }
+
       _engine = createAgoraRtcEngine();
       await _engine!.initialize(RtcEngineContext(
-        appId: appId,
+        appId: credentials.appId,
         channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
       ));
       await _engine!.enableVideo();
       await _engine!.startPreview();
+
       if (mounted) setState(() => _isEngineReady = true);
     } catch (e) {
-      debugPrint('Erreur init Agora: $e');
+      debugPrint('Erreur init Agora (preview): $e');
+      if (mounted) {
+        setState(() {
+          _isPreviewFailed = true;
+          _previewErrorMessage = e.toString().replaceFirst('Exception: ', '');
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur caméra : ${_previewErrorMessage ?? e}'),
+            backgroundColor: ThixPolicy.danger,
+          ),
+        );
+      }
     }
   }
 
   Future<void> _startLive() async {
     if (_isStartingLive) return;
     HapticFeedback.heavyImpact();
-    
+
     final title = _titleController.text.trim().isEmpty ? "Mon Direct" : _titleController.text.trim();
     setState(() => _isStartingLive = true);
 
@@ -132,7 +174,7 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
       if (user == null) throw Exception("Vous devez être connecté");
 
       final channelName = 'live_${user.id}_${DateTime.now().millisecondsSinceEpoch}';
-      
+
       // 1. Insertion en base de données
       final response = await Supabase.instance.client
           .from('live_sessions')
@@ -140,22 +182,24 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
           .select()
           .single();
 
-      // 2. CRÉATION DE L'OBJET LIVESESSION MANUELLEMENT 
+      // 2. CRÉATION DE L'OBJET LIVESESSION MANUELLEMENT
       final liveSession = LiveSession(
         id: response['id'].toString(),
         channelName: channelName,
         title: title,
         hostId: user.id,
-        hostName: "Moi", 
+        hostName: "Moi",
       );
 
-      // ✅ CORRECTION CRITIQUE : ON LIBÈRE TOTALEMENT LA CAMÉRA
+      // ✅ On libère totalement le moteur de preview — live_controller.dart
+      // va créer SON PROPRE moteur avec des credentials fraîchement générés
+      // pour le canal réel (channelName), via le même service Supabase.
       if (_isEngineReady && _engine != null) {
         await _engine!.stopPreview();
-        await _engine!.release(); // <-- C'est ceci qui empêche l'erreur !
+        await _engine!.release();
         _engine = null;
       }
-      
+
       if (!mounted) return;
 
       // 3. ENVOI DE L'OBJET SESSION À L'ÉCRAN SUIVANT
@@ -201,10 +245,37 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
                 ? AgoraVideoView(controller: VideoViewController(rtcEngine: _engine!, canvas: const VideoCanvas(uid: 0)))
                 : Container(
                     color: ThixPolicy.inkDeep,
-                    child: const Center(child: Icon(Icons.videocam_off_rounded, color: Colors.white24, size: 80)),
+                    child: Center(
+                      child: _isPreviewFailed
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 32),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.error_outline_rounded, color: ThixPolicy.danger, size: 48),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _previewErrorMessage ?? "Impossible d'initialiser la caméra.",
+                                    textAlign: TextAlign.center,
+                                    style: ThixPolicy.bodyStyle.copyWith(color: Colors.white70),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: ThixPolicy.primary,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
+                                    ),
+                                    onPressed: _initPreviewAgora,
+                                    child: Text('Réessayer', style: ThixPolicy.buttonText),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : const Icon(Icons.videocam_off_rounded, color: Colors.white24, size: 80),
+                    ),
                   ),
           ),
-          
+
           // ─── 2. GRADIENTS DE LISIBILITÉ ───
           Positioned.fill(
             child: Container(
@@ -213,8 +284,8 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withOpacity(0.5), 
-                    Colors.transparent, 
+                    Colors.black.withOpacity(0.5),
+                    Colors.transparent,
                     Colors.transparent,
                     Colors.black.withOpacity(0.9)
                   ],
@@ -223,7 +294,7 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
               ),
             ),
           ),
-          
+
           // ─── 3. BOUTON FERMER (Haut Droite) ───
           Positioned(
             top: MediaQuery.paddingOf(context).top + 16,
@@ -237,7 +308,7 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2), 
+                      color: Colors.white.withOpacity(0.2),
                       shape: BoxShape.circle
                     ),
                     child: const Icon(Icons.close_rounded, color: Colors.white, size: 24),
@@ -273,7 +344,7 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
                       ),
                     ),
                     const SizedBox(height: 32),
-                    
+
                     // Boutons Micro / Caméra / Rotation
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -316,7 +387,7 @@ class _LivePrepScreenState extends State<LivePrepScreen> {
                       ],
                     ),
                     const SizedBox(height: 40),
-                    
+
                     // Bouton GO LIVE
                     SizedBox(
                       height: 56,
