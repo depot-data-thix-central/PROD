@@ -100,10 +100,18 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- Impeller désactivé -->
+        <!-- Impeller activé (test) : Skia a un historique de bugs connus
+             avec la composition hybride des Platform Views (mécanisme
+             utilisé par AgoraVideoView) sur certains GPU Android — texture
+             qui ne se redimensionne pas correctement au premier rendu.
+             Si ce test résout le problème, garder à true. Si ça provoque
+             d'autres soucis (crash au démarrage, nouveau rendu cassé),
+             repasser à false et tester useFlutterTexture: true à la place
+             dans les AgoraVideoView (live_prep_screen.dart,
+             live_broadcast_screen.dart) plutôt que ce flag global. -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
-            android:value="false" />
+            android:value="true" />
 
     </application>
 
