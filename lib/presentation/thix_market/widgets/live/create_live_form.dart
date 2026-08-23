@@ -5,6 +5,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 
+// Importation de la page de streaming
+import '../../pages/live_stream_page.dart';
+
 class CreateLiveForm extends StatefulWidget {
   final String shopId;
   final Function(Map<String, dynamic>)? onSuccess;
@@ -205,7 +208,25 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.pop(context);
+        
+        // 🟢 REDIRECTION VERS LE LECTEUR VIDÉO
+        if (startNow) {
+          // Si c'est un direct, on ouvre la page vidéo en tant que vendeur (isHost: true)
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => LiveStreamPage(
+                liveId: response['id'].toString(),
+                channelName: channelName,
+                token: token,
+                isHost: true, 
+              ),
+            ),
+          );
+        } else {
+          // Si c'est juste programmé, on ferme le formulaire et on rentre à l'accueil
+          Navigator.pop(context);
+        }
       }
     } catch (e) {
       debugPrint('Error creating live: $e');
