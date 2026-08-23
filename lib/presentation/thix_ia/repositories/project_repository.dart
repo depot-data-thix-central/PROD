@@ -1,7 +1,7 @@
 // lib/presentation/thix_ia/repositories/project_repository.dart
-import '../datasources/thix_ia_remote_datasource.dart'; // "import" en minuscule !
+import '../datasources/thix_ia_remote_datasource.dart';
 import '../datasources/thix_ia_local_datasource.dart';
-import '../models/thix_project.dart'; // On utilise ThixProject, pas Project
+import '../models/thix_project.dart';
 
 class ProjectRepository {
   ProjectRepository({required this.remote, required this.local});
@@ -32,14 +32,20 @@ class ProjectRepository {
       'sector': sector,
       'country': country,
       if (city != null) 'city': city,
-      'description': summary, // ou 'summary' selon ta base de données
+      'description': summary,
     };
     return remote.createProject(data);
   }
 
+  // --- NOUVELLE MÉTHODE AJOUTÉE ---
+  // Règle l'erreur dans create_project_page.dart
+  Future<ThixProject> updateProject(String code, {required Map<String, dynamic> data}) async {
+    return remote.updateProject(code, data);
+  }
+
   // Gestion du projet actif
   Future<void> setActiveProject(String code) async {
-    // Si ta méthode s'appelle autrement dans ton localDatasource, ajuste ici (ex: setString('active_project', code))
+    // Si ta méthode s'appelle autrement dans ton localDatasource, ajuste ici
     // await local.setActiveProject(code); 
   }
 
