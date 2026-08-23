@@ -25,7 +25,7 @@ final thixRemoteDatasourceProvider = Provider<ThixIaRemoteDatasource>((ref) {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// REPOSITORIES (Corrections des "Impl")
+// REPOSITORIES
 // ────────────────────────────────────────────────────────────────────────────
 final projectRepositoryProvider = Provider<ProjectRepository>((ref) {
   return ProjectRepository(
@@ -42,9 +42,9 @@ final memoryRepositoryProvider = Provider<MemoryRepository>((ref) {
 });
 
 final analysisRepositoryProvider = Provider<AnalysisRepository>((ref) {
+  // <-- CORRECTION ICI : AnalysisRepository attend un client, pas un remote/local
   return AnalysisRepository(
-    remote: ref.watch(thixRemoteDatasourceProvider),
-    local: ref.watch(thixLocalDatasourceProvider),
+    client: ref.watch(supabaseClientProvider),
   );
 });
 
