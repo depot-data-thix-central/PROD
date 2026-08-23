@@ -61,7 +61,7 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
   void _handleCoHostRequest(String requestUserId, String requestUserName) {
     if (!mounted) return;
     final notifier = ref.read(liveControllerProvider(widget.session).notifier);
-    
+
     HapticFeedback.mediumImpact();
     showDialog(
       context: context,
@@ -147,11 +147,11 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
             if (state.status == LiveScreenStatus.ready) ...[
               // ─── GRADIENTS POUR LA LISIBILITÉ ───
               Positioned(
-                top: 0, left: 0, right: 0, height: 160, 
+                top: 0, left: 0, right: 0, height: 160,
                 child: Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black.withOpacity(0.7), Colors.transparent])))
               ),
               Positioned(
-                bottom: 0, left: 0, right: 0, height: 350, 
+                bottom: 0, left: 0, right: 0, height: 350,
                 child: Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black.withOpacity(0.85), Colors.transparent])))
               ),
 
@@ -164,8 +164,8 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
                       margin: const EdgeInsets.only(bottom: 12),
                       width: 110, height: 160,
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(ThixPolicy.rMd), 
-                        border: Border.all(color: Colors.white.withOpacity(0.2), width: 1), 
+                        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                        border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
                         color: ThixPolicy.inkDeep,
                         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 4))]
                       ),
@@ -248,7 +248,7 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
                               child: Container(
                                 height: 48,
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.15), 
+                                  color: Colors.white.withOpacity(0.15),
                                   borderRadius: BorderRadius.circular(ThixPolicy.rXl),
                                   border: Border.all(color: Colors.white.withOpacity(0.2)),
                                 ),
@@ -258,9 +258,9 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
                                   textInputAction: TextInputAction.send,
                                   onSubmitted: (_) => _sendComment(),
                                   decoration: InputDecoration(
-                                    hintText: 'Commenter...', 
-                                    hintStyle: ThixPolicy.bodyStyle.copyWith(color: Colors.white54), 
-                                    border: InputBorder.none, 
+                                    hintText: 'Commenter...',
+                                    hintStyle: ThixPolicy.bodyStyle.copyWith(color: Colors.white54),
+                                    border: InputBorder.none,
                                     contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14)
                                   ),
                                 ),
@@ -269,7 +269,7 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        
+
                         // Boutons d'actions groupés
                         Column(
                           mainAxisSize: MainAxisSize.min,
@@ -311,18 +311,23 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
         if (state.isVideoOff || notifier.engine == null) {
           return Container(color: ThixPolicy.inkDeep);
         }
-        return SizedBox.expand(
-          child: FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: MediaQuery.of(context).size.width,
-              height: MediaQuery.of(context).size.height,
-              child: AgoraVideoView(
-                controller: VideoViewController(
-                  rtcEngine: notifier.engine!, canvas: const VideoCanvas(uid: 0), useFlutterTexture: kIsWeb,
-                ),
-              ),
+        // ⚠️ CORRECTIF : AgoraVideoView est une vue NATIVE (UiKitView sur
+        // iOS, AndroidView sur Android), pas un widget Flutter classique.
+        // L'envelopper dans FittedBox/SizedBox.expand cassait la
+        // compositing native — seule une petite portion (la texture à sa
+        // taille d'origine) s'affichait, le reste de l'écran restant noir
+        // même si la connexion Agora avait réussi. On utilise maintenant
+        // le renderMode natif d'Agora pour obtenir l'effet "cover" au
+        // lieu de FittedBox, ce qui préserve la synchronisation entre le
+        // layer Flutter et le layer natif composité par-dessus.
+        return AgoraVideoView(
+          controller: VideoViewController(
+            rtcEngine: notifier.engine!,
+            canvas: const VideoCanvas(
+              uid: 0,
+              renderMode: RenderModeType.renderModeHidden, // équivalent BoxFit.cover
             ),
+            useFlutterTexture: kIsWeb,
           ),
         );
 
@@ -483,7 +488,7 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
               ),
             ),
             const Spacer(),
-            
+
             // ─── VIEWER COUNT ───
             ClipRRect(
               borderRadius: BorderRadius.circular(ThixPolicy.rFull),
@@ -494,8 +499,8 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
                   decoration: BoxDecoration(color: Colors.black.withOpacity(0.4), borderRadius: BorderRadius.circular(ThixPolicy.rFull), border: Border.all(color: Colors.white.withOpacity(0.1))),
                   child: Row(
                     children: [
-                      const Icon(Icons.visibility_rounded, color: Colors.white, size: 14), 
-                      const SizedBox(width: 6), 
+                      const Icon(Icons.visibility_rounded, color: Colors.white, size: 14),
+                      const SizedBox(width: 6),
                       Text('${state.viewerCount}', style: ThixPolicy.labelStyle.copyWith(color: Colors.white, fontSize: 13, fontWeight: ThixPolicy.bold))
                     ],
                   ),
@@ -503,7 +508,7 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
               ),
             ),
             const SizedBox(width: 10),
-            
+
             // ─── BOUTON FIN DE LIVE ROUGE ───
             GestureDetector(
               onTap: () async {
@@ -518,11 +523,11 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
                       color: ThixPolicy.danger.withOpacity(0.85),
-                      borderRadius: BorderRadius.circular(ThixPolicy.rFull), 
+                      borderRadius: BorderRadius.circular(ThixPolicy.rFull),
                       border: Border.all(color: Colors.white.withOpacity(0.2))
                     ),
-                    child: state.isEnding 
-                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
+                    child: state.isEnding
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                       : Row(
                           children: [
                             const Icon(Icons.power_settings_new_rounded, color: Colors.white, size: 14),
@@ -539,7 +544,7 @@ class _LiveBroadcastScreenState extends ConsumerState<LiveBroadcastScreen> {
       ),
     );
   }
-} // ✅ ICI MANQUAIT L'ACCOLADE QUI FERME LA CLASSE DE BASE !
+}
 
 // ─── COMPOSANTS ANNEXES ───
 
@@ -622,9 +627,9 @@ class _AnimatedHeartState extends State<_AnimatedHeart> with SingleTickerProvide
         bottom: 80 + _pos.value,
         right: 40 + _x + (sin(_pos.value / 40) * 30),
         child: Opacity(
-          opacity: _op.value, 
+          opacity: _op.value,
           child: Transform.scale(
-            scale: _sc.value, 
+            scale: _sc.value,
             child: Icon(Icons.favorite_rounded, color: widget.color, size: 28, shadows: [Shadow(color: Colors.black.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))])
           )
         ),
