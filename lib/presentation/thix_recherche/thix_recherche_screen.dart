@@ -1,569 +1,368 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 
-// ✅ POLICY THIX APPLIQUÉE
-import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'models/personne_recherchee_model.dart';
+import 'providers/recherche_providers.dart';
+import 'widgets/alerte_card.dart';
+import 'pages/detail_personne_page.dart';
+import 'pages/creer_alerte_page.dart';
+import 'pages/mes_alertes_page.dart';
 
-import 'models/objet_model.dart';
-import 'pages/declarer_objet_page.dart';
-import 'pages/carte_signalements_page.dart';
-import 'pages/object_detail_page.dart';
-import 'pages/mes_recherches_page.dart';
-import 'providers/objet_providers.dart';
+// Palette entreprise
+const _bg = Color(0xFFF3F4F6);
+const _card = Colors.white;
+const _ink = Color(0xFF111827);
+const _muted = Color(0xFF6B7280);
+const _blue = Color(0xFF1D4ED8);
+const _blueSoft = Color(0xFFEFF6FF);
+const _border = Color(0xFFE5E7EB);
 
-// ============================================================================
-// COULEURS SPÉCIFIQUES "THIX RETROUVE" (Thème Clair Lumineux & Professionnel)
-// ============================================================================
-class _RetrouveColors {
-  static const Color background = Color(0xFFF4F6F9); // Blanc cassé / Gris très lumineux
-  static const Color accent = Color(0xFF0D9488); // Teal lumineux / Investigation
-}
+class ThixRechercheScreen extends ConsumerWidget {
+  const ThixRechercheScreen({super.key});
 
-// ============================================================================
-// COMPOSANT RÉUTILISABLE : BOÎTE EN VERRE CLAIR (LIGHT GLASSMORPHISM)
-// ============================================================================
-class LightGlassBox extends StatelessWidget {
-  final Widget child;
-  final double blur;
-  final double borderRadius;
-  final EdgeInsetsGeometry padding;
-  final Color? color;
-  final Border? border;
+  Future<void> _openCreer(BuildContext context, WidgetRef ref) async {
+    final ok = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const CreerAlertePage(
+          initialType: TypeAlerte.disparue,
+        ),
+      ),
+    );
+    if (ok == true) {
+      ref.invalidate(alertesActivesProvider);
+      ref.invalidate(mesAlertesProvider);
+    }
+  }
 
-  const LightGlassBox({
-    super.key,
-    required this.child,
-    this.blur = 15.0,
-    this.borderRadius = ThixPolicy.rLg,
-    this.padding = ThixPolicy.cardPadding,
-    this.color,
-    this.border,
-  });
+  void _openMesAlertes(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const MesAlertesPage()),
+    );
+  }
 
   @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            color: color ?? Colors.white.withOpacity(0.85),
-            borderRadius: BorderRadius.circular(borderRadius),
-            border: border ?? Border.all(color: Colors.white.withOpacity(0.6), width: 1),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final filtre = ref.watch(rechercheFiltreProvider);
+    final alertesAsync = ref.watch(alertesActivesProvider);
+
+    return Scaffold(
+      backgroundColor: _bg,
+
+      // ——— Bouton (+) uniquement — pas de texte long ———
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _openCreer(context, ref),
+        backgroundColor: _ink,
+        elevation: 4,
+        child: const Icon(Icons.add, color: Colors.white, size: 28),
+      ),
+
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ——— Header ———
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+              child: Row(
+                children: [
+                  const SizedBox(width: 44),
+                  Expanded(
+                    child: Text(
+                      'THIX RECHERCHE',
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: _ink,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ),
+                  // Cloche → Mes signalements
+                  IconButton(
+                    tooltip: 'Mes alertes',
+                    icon: const Icon(Icons.notifications_outlined, color: _ink),
+                    onPressed: () => _openMesAlertes(context),
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: child,
+            ),
+
+            // ——— Filtres ———
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+              child: Row(
+                children: [
+                  _FilterChip(
+                    label: 'Disparues',
+                    icon: Icons.person_outline,
+                    selected:
+                        filtre == null || filtre == TypeAlerte.disparue,
+                    filled: true,
+                    onTap: () {
+                      ref.read(rechercheFiltreProvider.notifier).state =
+                          TypeAlerte.disparue;
+                      ref.invalidate(alertesActivesProvider);
+                    },
+                  ),
+                  const SizedBox(width: 10),
+                  _FilterChip(
+                    label: 'Recherchées',
+                    icon: Icons.shield_outlined,
+                    selected: filtre == TypeAlerte.recherchee,
+                    filled: false,
+                    onTap: () {
+                      ref.read(rechercheFiltreProvider.notifier).state =
+                          TypeAlerte.recherchee;
+                      ref.invalidate(alertesActivesProvider);
+                    },
+                  ),
+                ],
+              ),
+            ),
+
+            // ——— Titre + Mes alertes ———
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Alertes actives',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: _ink,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => _openMesAlertes(context),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      'Mes alertes  >',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: _blue,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+
+            // ——— Liste ———
+            Expanded(
+              child: RefreshIndicator(
+                color: _blue,
+                onRefresh: () async {
+                  ref.invalidate(alertesActivesProvider);
+                },
+                child: alertesAsync.when(
+                  loading: () => const Center(
+                    child: CircularProgressIndicator(color: _blue),
+                  ),
+                  error: (e, _) => ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      const SizedBox(height: 80),
+                      Text(
+                        'Erreur de chargement',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(color: Colors.red),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '$e',
+                        textAlign: TextAlign.center,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: _muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                  data: (list) {
+                    if (list.isEmpty) {
+                      return ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          const SizedBox(height: 72),
+                          Icon(
+                            Icons.person_search,
+                            size: 56,
+                            color: Colors.grey.shade300,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Aucune alerte active',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: _muted,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Appuie sur + pour signaler une disparition',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: Colors.black38,
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+
+                    return ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+                      itemCount: list.length + 1,
+                      itemBuilder: (context, i) {
+                        if (i == list.length) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 12, bottom: 8),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: _card,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: _border),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.info_outline,
+                                    size: 18,
+                                    color: _muted,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Si vous avez des informations, signalez-les en toute sécurité.',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        color: _muted,
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+
+                        final p = list[i];
+                        return AlerteCard(
+                          personne: p,
+                          onDetails: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    DetailPersonnePage(personneId: p.id),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class ThixRetrouveScreen extends ConsumerStatefulWidget {
-  const ThixRetrouveScreen({super.key});
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.filled,
+    required this.onTap,
+  });
 
-  @override
-  ConsumerState<ThixRetrouveScreen> createState() => _ThixRetrouveScreenState();
-}
-
-class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
-  int _currentIndex = 0;
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final bool filled;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final objetsAsync = ref.watch(objetsRecentsProvider);
+    final bg = selected
+        ? (filled ? _ink : _card)
+        : _card;
+    final fg = selected
+        ? (filled ? Colors.white : _ink)
+        : _muted;
+    final borderColor = selected && !filled
+        ? _blue.withOpacity(0.35)
+        : _border;
 
-    return Scaffold(
-      backgroundColor: _RetrouveColors.background,
-      body: Stack(
-        children: [
-          // ─── BACKGROUND ACCENTS (Lueurs douces en arrière-plan) ───
-          Positioned(
-            top: -50, right: -50,
-            child: Container(
-              width: 250, height: 250, 
-              decoration: BoxDecoration(
-                shape: BoxShape.circle, 
-                color: _RetrouveColors.accent.withOpacity(0.08),
-                boxShadow: [BoxShadow(color: _RetrouveColors.accent.withOpacity(0.1), blurRadius: 100, spreadRadius: 80)]
-              )
+    return Expanded(
+      child: Material(
+        color: bg,
+        borderRadius: BorderRadius.circular(22),
+        elevation: selected ? 1 : 0,
+        shadowColor: Colors.black12,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(22),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: borderColor),
             ),
-          ),
-          Positioned(
-            bottom: 50, left: -50,
-            child: Container(
-              width: 250, height: 250, 
-              decoration: BoxDecoration(
-                shape: BoxShape.circle, 
-                color: ThixPolicy.primary.withOpacity(0.06),
-                boxShadow: [BoxShadow(color: ThixPolicy.primary.withOpacity(0.08), blurRadius: 100, spreadRadius: 80)]
-              )
-            ),
-          ),
-
-          SafeArea(
-            child: Column(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // ── Header ──────────────────────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s12),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.menu_rounded, color: ThixPolicy.textMain),
-                        onPressed: () {},
-                      ),
-                      Expanded(
-                        child: Text(
-                          'THIX CENTRAL',
-                          textAlign: TextAlign.center,
-                          style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold, letterSpacing: 1.0),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.notifications_none_rounded, color: ThixPolicy.textMain),
-                        onPressed: () {},
-                      ),
-                    ],
-                  ),
-                ),
-
-                Expanded(
-                  child: RefreshIndicator(
-                    color: _RetrouveColors.accent,
-                    backgroundColor: Colors.white,
-                    onRefresh: () async => ref.invalidate(objetsRecentsProvider),
-                    child: SingleChildScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-                      padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // ── Logo & Titre ──────────────────────────────────────
-                          Row(
-                            children: [
-                              Container(
-                                width: 52, height: 52,
-                                decoration: BoxDecoration(
-                                  color: _RetrouveColors.accent.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                                  border: Border.all(color: _RetrouveColors.accent.withOpacity(0.3)),
-                                ),
-                                child: const Icon(Icons.manage_search_rounded, color: _RetrouveColors.accent, size: 32),
-                              ),
-                              const SizedBox(width: ThixPolicy.s16),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  RichText(
-                                    text: TextSpan(
-                                      children: [
-                                        TextSpan(text: 'THIX ', style: ThixPolicy.h1Style.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold)),
-                                        TextSpan(text: 'RETROUVE', style: ThixPolicy.h1Style.copyWith(color: _RetrouveColors.accent, fontWeight: ThixPolicy.bold)),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text('Perdu ? Trouvé ? On vous aide !', style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary)),
-                                ],
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: ThixPolicy.s24),
-
-                          // ── Boutons Perdu / Trouvé ────────────
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildActionCard(
-                                  color: ThixPolicy.domainOpportunity, // Orange/Ambre
-                                  icon: Icons.search_off_rounded,
-                                  title: "J'ai perdu\nun objet",
-                                  subtitle: 'Déclarez votre perte',
-                                  onTap: () async {
-                                    HapticFeedback.lightImpact();
-                                    final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => const DeclarerObjetPage(type: StatutObjet.perdu)));
-                                    if (result == true) ref.invalidate(objetsRecentsProvider);
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: ThixPolicy.s12),
-                              Expanded(
-                                child: _buildActionCard(
-                                  color: ThixPolicy.success, // Vert
-                                  icon: Icons.inventory_2_rounded,
-                                  title: "J'ai trouvé\nun objet",
-                                  subtitle: 'Aidez un propriétaire',
-                                  onTap: () async {
-                                    HapticFeedback.lightImpact();
-                                    final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => const DeclarerObjetPage(type: StatutObjet.trouve)));
-                                    if (result == true) ref.invalidate(objetsRecentsProvider);
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: ThixPolicy.s16),
-
-                          // ── Voir les objets autour de moi ─────────────
-                          GestureDetector(
-                            onTap: () {
-                              HapticFeedback.selectionClick();
-                              Navigator.push(context, MaterialPageRoute(builder: (_) => const CarteSignalementsPage()));
-                            },
-                            child: LightGlassBox(
-                              padding: const EdgeInsets.symmetric(vertical: ThixPolicy.s16, horizontal: ThixPolicy.s16),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(color: _RetrouveColors.accent.withOpacity(0.12), shape: BoxShape.circle),
-                                    child: const Icon(Icons.location_on_rounded, color: _RetrouveColors.accent, size: 20),
-                                  ),
-                                  const SizedBox(width: ThixPolicy.s12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text('Objets autour de moi', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold)),
-                                        Text('Explorer la carte interactive', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary)),
-                                      ],
-                                    ),
-                                  ),
-                                  const Icon(Icons.arrow_forward_ios_rounded, color: ThixPolicy.textMuted, size: 16),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: ThixPolicy.s32),
-
-                          // ── Objets récents ────────────────────────────
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text('Objets récents', style: ThixPolicy.h2Style.copyWith(color: ThixPolicy.textMain)),
-                              GestureDetector(
-                                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MesRecherchesPage())),
-                                child: Text('Voir tout', style: ThixPolicy.labelStyle.copyWith(color: _RetrouveColors.accent, fontWeight: ThixPolicy.bold)),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: ThixPolicy.s16),
-
-                          // ── Liste dynamique (Riverpod) ────────────────
-                          objetsAsync.when(
-                            data: (objets) {
-                              if (objets.isEmpty) {
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 40),
-                                  child: Center(
-                                    child: Column(
-                                      children: [
-                                        Icon(Icons.inventory_2_outlined, size: 48, color: ThixPolicy.textMuted),
-                                        const SizedBox(height: 12),
-                                        Text('Aucun objet pour le moment', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary)),
-                                        const SizedBox(height: 4),
-                                        Text('Soyez le premier à déclarer !', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted)),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              return Column(
-                                children: objets.take(8).map((obj) {
-                                  return GestureDetector(
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => ObjectDetailPage(
-                                            title: obj.titre,
-                                            status: obj.statutLabel,
-                                            location: obj.lieu,
-                                            time: _formatDate(obj.date),
-                                            description: obj.description,
-                                            reward: obj.recompense ?? '',
-                                            imageUrl: obj.imageUrl,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    child: _buildObjectCard(obj),
-                                  );
-                                }).toList(),
-                              );
-                            },
-                            loading: () => const Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator(color: _RetrouveColors.accent))),
-                            error: (err, stack) => Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 24),
-                              child: Center(
-                                child: Column(
-                                  children: [
-                                    const Icon(Icons.error_outline_rounded, color: ThixPolicy.danger, size: 36),
-                                    const SizedBox(height: 8),
-                                    Text('Impossible de charger les objets', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.danger)),
-                                    TextButton(onPressed: () => ref.invalidate(objetsRecentsProvider), child: Text('Réessayer', style: ThixPolicy.buttonText.copyWith(color: _RetrouveColors.accent))),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          const SizedBox(height: 120),
-                        ],
-                      ),
+                Icon(icon, size: 16, color: fg),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: fg,
                     ),
                   ),
                 ),
               ],
             ),
           ),
-
-          // 🌟 BOTTOM NAV FLOTTANTE LUMINEUSE
-          Positioned(bottom: 24, left: 16, right: 16, child: _buildFloatingBottomNav()),
-        ],
-      ),
-    );
-  }
-
-  // ── Helpers ─────────────────────────────────────────────────────
-
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final dateOnly = DateTime(date.year, date.month, date.day);
-    final timeStr = '${date.hour}h${date.minute.toString().padLeft(2, '0')}';
-
-    if (dateOnly == today) return 'Aujourd\'hui, $timeStr';
-    if (dateOnly == today.subtract(const Duration(days: 1))) return 'Hier, $timeStr';
-    return '${date.day}/${date.month}/${date.year}';
-  }
-
-  IconData _iconForCategorie(String? cat) {
-    switch (cat?.toLowerCase()) {
-      case 'téléphone': return Icons.phone_android_rounded;
-      case 'portefeuille / sac': return Icons.account_balance_wallet_rounded;
-      case 'clés': return Icons.vpn_key_rounded;
-      case 'sac à dos': return Icons.backpack_rounded;
-      case 'bijoux / montre': return Icons.watch_rounded;
-      case 'documents': return Icons.description_outlined;
-      case 'écouteurs / accessoires': return Icons.headphones_rounded;
-      default: return Icons.inventory_2_rounded;
-    }
-  }
-
-  // ── Cartes d'actions supérieures ────────────────────────────────
-  Widget _buildActionCard({required Color color, required IconData icon, required String title, required String subtitle, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: LightGlassBox(
-        color: Colors.white,
-        border: Border.all(color: color.withOpacity(0.25), width: 1.5),
-        padding: const EdgeInsets.all(ThixPolicy.s16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
-              child: Icon(icon, color: color, size: 24),
-            ),
-            const SizedBox(height: ThixPolicy.s24),
-            Text(title, style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain, height: 1.2)),
-            const SizedBox(height: 4),
-            Text(subtitle, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, height: 1.2)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Carte Objet de la liste ─────────────────────────────────────
-  Widget _buildObjectCard(ObjetModel obj) {
-    final isLost = obj.statut == StatutObjet.perdu;
-    final statusColor = isLost ? ThixPolicy.domainOpportunity : ThixPolicy.success;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: ThixPolicy.s12),
-      child: LightGlassBox(
-        color: Colors.white,
-        padding: const EdgeInsets.all(ThixPolicy.s12),
-        child: Row(
-          children: [
-            Container(
-              width: 64, height: 64,
-              decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-                child: obj.imageUrl != null && obj.imageUrl!.isNotEmpty
-                    ? Image.network(
-                        obj.imageUrl!, fit: BoxFit.cover, width: 64, height: 64,
-                        loadingBuilder: (_, child, progress) => progress == null ? child : const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.textMuted))),
-                        errorBuilder: (_, __, ___) => Icon(_iconForCategorie(obj.categorie), size: 28, color: ThixPolicy.textSecondary),
-                      )
-                    : Icon(_iconForCategorie(obj.categorie), size: 28, color: ThixPolicy.textSecondary),
-              ),
-            ),
-            const SizedBox(width: ThixPolicy.s16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(obj.titre, style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Container(width: 6, height: 6, decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle)),
-                      const SizedBox(width: 6),
-                      Text('${obj.statutLabel} • ${_formatDate(obj.date)}', style: ThixPolicy.captionStyle.copyWith(color: statusColor, fontWeight: ThixPolicy.bold)),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.location_on_rounded, size: 12, color: ThixPolicy.textSecondary),
-                      const SizedBox(width: 4),
-                      Expanded(child: Text(obj.lieu, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            if (obj.hasRecompense)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                decoration: BoxDecoration(color: ThixPolicy.gold.withOpacity(0.12), borderRadius: BorderRadius.circular(6), border: Border.all(color: ThixPolicy.gold.withOpacity(0.3))),
-                child: const Icon(Icons.workspace_premium_rounded, color: ThixPolicy.gold, size: 18),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Bottom Nav Flottante ────────────────────────────────────────
-  Widget _buildFloatingBottomNav() {
-    return LightGlassBox(
-      color: Colors.white.withOpacity(0.95),
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-      borderRadius: 30,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _navItem(Icons.home_rounded, 'Accueil', 0),
-          _navItem(Icons.manage_search_rounded, 'Recherches', 1),
-          // BOUTON CENTRAL "+"
-          GestureDetector(
-            onTap: _showAddModal,
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: _RetrouveColors.accent, shape: BoxShape.circle, boxShadow: [BoxShadow(color: _RetrouveColors.accent.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))]),
-              child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
-            ),
-          ),
-          _navItem(Icons.chat_bubble_rounded, 'Messages', 3),
-          _navItem(Icons.person_rounded, 'Profil', 4),
-        ],
-      ),
-    );
-  }
-
-  Widget _navItem(IconData icon, String label, int idx) {
-    final sel = _currentIndex == idx;
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        if (idx == 1) Navigator.push(context, MaterialPageRoute(builder: (_) => const MesRecherchesPage()));
-        else setState(() => _currentIndex = idx);
-      },
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: sel ? _RetrouveColors.accent : ThixPolicy.textSecondary, size: 24),
-          const SizedBox(height: 4),
-          Text(label, style: ThixPolicy.microStyle.copyWith(fontWeight: sel ? ThixPolicy.bold : ThixPolicy.semiBold, color: sel ? _RetrouveColors.accent : ThixPolicy.textSecondary, fontSize: 9)),
-        ],
-      ),
-    );
-  }
-
-  // ── Modal d'ajout au design clair ──────────────────────────────
-  void _showAddModal() {
-    HapticFeedback.mediumImpact();
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
-                const SizedBox(height: 24),
-                Text('Que souhaitez-vous faire ?', style: ThixPolicy.h2Style.copyWith(color: ThixPolicy.textMain)),
-                const SizedBox(height: 24),
-                _buildModalAction(
-                  icon: Icons.search_off_rounded, color: ThixPolicy.domainOpportunity, title: "J'ai perdu un objet",
-                  onTap: () async {
-                    Navigator.pop(context);
-                    final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => const DeclarerObjetPage(type: StatutObjet.perdu)));
-                    if (result == true) ref.invalidate(objetsRecentsProvider);
-                  }
-                ),
-                const SizedBox(height: 12),
-                _buildModalAction(
-                  icon: Icons.inventory_2_rounded, color: ThixPolicy.success, title: "J'ai trouvé un objet",
-                  onTap: () async {
-                    Navigator.pop(context);
-                    final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => const DeclarerObjetPage(type: StatutObjet.trouve)));
-                    if (result == true) ref.invalidate(objetsRecentsProvider);
-                  }
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildModalAction({required IconData icon, required Color color, required String title, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        decoration: BoxDecoration(
-          color: ThixPolicy.surfaceSoft,
-          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          border: Border.all(color: ThixPolicy.border),
-        ),
-        child: Row(
-          children: [
-            Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: color.withOpacity(0.12), shape: BoxShape.circle), child: Icon(icon, color: color, size: 24)),
-            const SizedBox(width: 16),
-            Expanded(child: Text(title, style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold))),
-            const Icon(Icons.arrow_forward_ios_rounded, color: ThixPolicy.textMuted, size: 16),
-          ],
         ),
       ),
     );
   }
 }
-
