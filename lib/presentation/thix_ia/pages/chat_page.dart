@@ -3,15 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/thix_design_policy.dart';
 import '../providers/chat_provider.dart';
-
-// 1. On importe explicitement le modèle officiel
 import '../models/chat_message.dart'; 
-// 2. On importe le widget qui affiche le message
-import '../widgets/chat_message.dart'; 
-
-// 3. On importe le widget d'input. 
-// (Si le fichier s'appelle chat_input.dart au lieu de chat_input_widget.dart, modifie juste cette ligne)
-import '../widgets/chat_input_widget.dart'; 
+import '../widgets/chat_message.dart';
+import '../widgets/chat_input.dart'; // <-- C'est le bon import
 
 class ChatPage extends ConsumerStatefulWidget {
   const ChatPage({super.key, required this.projectCode, this.initialMessage});
@@ -109,7 +103,8 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               },
             ),
           ),
-          ChatInputWidget(
+          // <-- CORRECTION 3 : ChatInput au lieu de ChatInputWidget
+          ChatInput(
             onSend: (text) {
               ref.read(chatProvider.notifier).sendMessage(text);
               _scrollToBottom();
