@@ -17,7 +17,9 @@ class ThixMediaNotifier extends StateNotifier<AsyncValue<List<MediaContent>>> {
   DateTime? _cursor; 
   bool _hasMore = true, _loading = false; 
   final Set<String> _seen = {}; 
-  static const _limit = 20;
+  
+  // 🌟 Augmentation de la limite à 40 pour avoir un plus grand "pool" à mélanger
+  static const _limit = 40;
   
   Future<void> _load() => refresh();
   
@@ -51,7 +53,7 @@ class ThixMediaNotifier extends StateNotifier<AsyncValue<List<MediaContent>>> {
     final search = ref.read(searchQueryProvider).trim(); 
     final svc = MediaService();
     
-    // 1. Si on est sur le Fil et sans recherche, on utilise l'algorithme aléatoire ultra-rapide
+    // 1. Si on est sur le Fil et sans recherche, on utilise l'algo aléatoire natif
     if (cat == 'Fil' && search.isEmpty) { 
       final p = await svc.fetchShuffledFeed(seenIds: _seen.toList(), limit: _limit); 
       _seen.addAll(p.items.map((e) => e.id)); 
@@ -59,28 +61,36 @@ class ThixMediaNotifier extends StateNotifier<AsyncValue<List<MediaContent>>> {
       return p.items; 
     }
     
-    // 2. CORRECTION PGRST200 : On retire la jointure fautive media_stats(...)
+    // 2. Requête Supabase classique
     var q = Supabase.instance.client.from('media_content').select('*');
-    
     if (cur != null) q = q.lt('created_at', cur.toIso8601String());
     
-    // 3. CORRECTION FILTRE : Exclure les vidéos "Fil" de la page d'Accueil
+    // 3. Application des filtres
     if (search.isNotEmpty) {
       q = q.ilike('title', '%$search%'); 
     } else if (cat == 'Accueil') {
-      q = q.neq('type', 'Fil'); // Cette ligne empêche le Fil de polluer l'Accueil
+      q = q.neq('type', 'Fil'); 
     } else {
       q = q.eq('type', cat);
     }
     
     final res = await q.order('created_at', ascending: false).limit(_limit);
     
-    // 4. Parsing simplifié (les stats sont gérées par StreamProvider côté UI)
     final list = (res as List).map((it) { 
       return MediaContent.fromJson(Map<String, dynamic>.from(it as Map)); 
     }).toList();
     
-    if (list.isNotEmpty) _cursor = list.last.createdAt; 
+    if (list.isNotEmpty) {
+      // 🌟 IMPORTANT : On sauvegarde le curseur EXACT AVANT de mélanger !
+      _cursor = list.last.createdAt; 
+    }
+    
+    // 🌟 MIX INTELLIGENT : On mélange la liste pour casser la monotonie 
+    // (Sauf si l'utilisateur fait une recherche précise, auquel cas on garde l'ordre logique)
+    if (search.isEmpty) {
+      list.shuffle();
+    }
+    
     _seen.addAll(list.map((e) => e.id)); 
     return list;
   }
@@ -88,8 +98,32 @@ class ThixMediaNotifier extends StateNotifier<AsyncValue<List<MediaContent>>> {
 
 final thixMediaListProvider = StateNotifierProvider<ThixMediaNotifier, AsyncValue<List<MediaContent>>>((ref) => ThixMediaNotifier(ref));
 
-// Les providers dérivés pour les rangées de l'Accueil (Filtrés automatiquement grâce à _fetch)
-final bannerItemsProvider = Provider<List<MediaContent>>((ref) => ref.watch(thixMediaListProvider).valueOrNull?.take(5).toList() ?? []);
-final recommendationsProvider = Provider<List<MediaContent>>((ref) => ref.watch(thixMediaListProvider).valueOrNull ?? []);
-final newReleasesProvider = Provider<List<MediaContent>>((ref) => ref.watch(thixMediaListProvider).valueOrNull ?? []);
-final trendingProvider = Provider<List<MediaContent>>((ref) => ref.watch(thixMediaListProvider).valueOrNull ?? []);
+// ============================================================================
+// 🌟 DÉCOUPAGE INTELLIGENT DES RANGÉES (Évite de répéter les mêmes vidéos)
+// ============================================================================
+
+// Bannières : Prend les 5 premières vidéos du lot mélangé
+final bannerItemsProvider = Provider<List<MediaContent>>((ref) {
+  return ref.watch(thixMediaListProvider).valueOrNull?.take(5).toList() ?? [];
+});
+
+// Nouveautés : Récupère un extrait et force le tri par date (pour avoir les VRAIES nouveautés)
+final newReleasesProvider = Provider<List<MediaContent>>((ref) {
+  final list = ref.watch(thixMediaListProvider).valueOrNull?.take(15).toList() ?? [];
+  list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  return list;
+});
+
+// Tendances : Saute les 5 vidéos de la bannière et prend les 10 suivantes
+final trendingProvider = Provider<List<MediaContent>>((ref) {
+  final list = ref.watch(thixMediaListProvider).valueOrNull ?? [];
+  if (list.length <= 5) return [];
+  return list.skip(5).take(10).toList();
+});
+
+// Recommandations : Prend tout le reste (pour le défilement infini vers le bas)
+final recommendationsProvider = Provider<List<MediaContent>>((ref) {
+  final list = ref.watch(thixMediaListProvider).valueOrNull ?? [];
+  if (list.length <= 15) return list;
+  return list.skip(15).toList();
+});
