@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/thix_design_policy.dart';
 import '../models/project_memory.dart';
-
+import 'package:thix_id/presentation/thix_ia/models/chat_message.dart';
 class ChatMessageWidget extends StatelessWidget {
   const ChatMessageWidget({super.key, required this.message});
 
