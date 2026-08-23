@@ -13,7 +13,7 @@ import '../widgets/analysis_progress_widget.dart';
 import '../widgets/empty_state_widget.dart';
 import '../widgets/ai_command_bar.dart';
 import '../core/constants/thix_ia_routes.dart';
-
+import '../providers/active_project_provider.dart';
 class ProjectDetailPage extends ConsumerStatefulWidget {
   const ProjectDetailPage({super.key, required this.projectCode});
   final String projectCode;
