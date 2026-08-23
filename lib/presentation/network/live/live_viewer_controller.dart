@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // ✅ L'IMPORT MANQUANT EST ICI
 import 'package:thix_id/data/models/live/live_model.dart';
 import 'package:thix_id/data/services/live/live_service.dart';
 
@@ -80,7 +81,7 @@ class LiveViewerController extends StateNotifier<LiveViewerState> {
     AgoraCredentials credentials;
     try {
       credentials = await _service
-          .fetchAgoraCredentials(session.channelName, role: 'audience')
+          .fetchAgoraCredentials(session.channelName) // ✅ PARAMÈTRE 'role' EN TROP SUPPRIMÉ
           .timeout(const Duration(seconds: 12));
     } on TimeoutException {
       _fail("Délai dépassé lors de la connexion au direct.");
@@ -114,10 +115,6 @@ class LiveViewerController extends StateNotifier<LiveViewerState> {
               _joinCompleter!.complete();
             }
           },
-          // Le premier utilisateur distant détecté est généralement
-          // l'hôte (broadcaster). Si tu gères aussi des co-hosts côté
-          // viewer, filtre par uid connu de l'hôte transmis via
-          // Realtime plutôt que de prendre le premier arrivé.
           onUserJoined: (connection, remoteUid, elapsed) {
             if (state.hostUid == null) {
               state = state.copyWith(hostUid: remoteUid);
