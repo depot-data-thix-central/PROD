@@ -196,7 +196,12 @@ class ProjectIdea extends Equatable {
         createdAt: JsonUtils.dateTimeValue(json, 'created_at'),
       );
 
-  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'description': description};
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'description': description,
+        'created_at': createdAt?.toIso8601String(),
+      };
 
   @override
   List<Object?> get props => [id];
@@ -219,7 +224,13 @@ class ProjectDecision extends Equatable {
         decidedBy: JsonUtils.stringValue(json, 'decided_by'),
       );
 
-  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'reason': reason};
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'reason': reason,
+        'decided_at': decidedAt?.toIso8601String(),
+        'decided_by': decidedBy,
+      };
 
   @override
   List<Object?> get props => [id];
