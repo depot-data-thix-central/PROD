@@ -10,9 +10,24 @@ import '../core/errors/thix_ia_exception.dart';
 
 abstract class MemoryRepository {
   Future<ProjectMemory> getMemory(String projectCode, {bool forceRefresh = false});
-  Future<ProjectFact> addFact({required String projectCode, required String type, required String content, String? sourceUrl, String? sourceName, double confidence});
-  Future<void> addIdea({required String projectCode, required String title, String? description});
-  Future<void> addDecision({required String projectCode, required String title, String? reason});
+  Future<ProjectFact> addFact({
+    required String projectCode,
+    required String type,
+    required String content,
+    String? sourceUrl,
+    String? sourceName,
+    double confidence,
+  });
+  Future<void> addIdea({
+    required String projectCode,
+    required String title,
+    String? description,
+  });
+  Future<void> addDecision({
+    required String projectCode,
+    required String title,
+    String? reason,
+  });
 }
 
 class MemoryRepositoryImpl implements MemoryRepository {
@@ -21,24 +36,69 @@ class MemoryRepositoryImpl implements MemoryRepository {
   final ThixIaRemoteDatasource remote;
   final ThixIaLocalDatasource local;
 
-  @override
-  Future<ProjectMemory> getMemory(String projectCode, {bool forceRefresh = false}) async {
-    if (!forceRefresh) {
-      final cached = await local.getCachedMemory(projectCode);
-      if (cached!= null) return cached;
-    }
-    final fresh = await remote.getProjectMemory(projectCode);
-    await local.cacheProjectMemory(fresh);
-    return fresh;
+  ProjectMemory _empty(String projectCode) {
+    return ProjectMemory(
+      projectCode: projectCode,
+      identity: const ProjectIdentity(
+        name: '',
+        sector: '',
+        country: 'RDC',
+      ),
+      context: const ProjectContext(),
+      facts: const [],
+      ideas: const [],
+      decisions: const [],
+    );
   }
 
   @override
-  Future<ProjectFact> addFact({required String projectCode, required String type, required String content, String? sourceUrl, String? sourceName, double confidence = 0.8}) async {
-    if (content.trim().isEmpty) throw const ThixIAValidationException(message: 'Le contenu du fait est requis');
+  Future<ProjectMemory> getMemory(
+    String projectCode, {
+    bool forceRefresh = false,
+  }) async {
+    // 1) Cache local (jamais faire planter l'UI)
+    if (!forceRefresh) {
+      try {
+        final cached = await local.getCachedMemory(projectCode);
+        if (cached != null) return cached;
+      } catch (_) {
+        // Hive / late non init → on ignore le cache
+      }
+    }
+
+    // 2) Supabase
+    try {
+      final fresh = await remote.getProjectMemory(projectCode);
+      try {
+        await local.cacheProjectMemory(fresh);
+      } catch (_) {
+        // cache en échec = non bloquant
+      }
+      return fresh;
+    } catch (_) {
+      // Tables vides / erreur parse → mémoire vide (empty state UI)
+      return _empty(projectCode);
+    }
+  }
+
+  @override
+  Future<ProjectFact> addFact({
+    required String projectCode,
+    required String type,
+    required String content,
+    String? sourceUrl,
+    String? sourceName,
+    double confidence = 0.8,
+  }) async {
+    if (content.trim().isEmpty) {
+      throw const ThixIAValidationException(
+        message: 'Le contenu du fait est requis',
+      );
+    }
 
     final fact = ProjectFact(
-      id: '', // généré par Supabase
-      type: type, // fact, estimation, hypothesis, recommendation
+      id: '',
+      type: type,
       content: content.trim(),
       sourceUrl: sourceUrl,
       sourceName: sourceName,
@@ -58,14 +118,20 @@ class MemoryRepositoryImpl implements MemoryRepository {
       'date_verified': fact.dateVerified?.toIso8601String(),
     });
 
-    // Invalide le cache pour forcer refresh
-    final updated = await remote.getProjectMemory(projectCode);
-    await local.cacheProjectMemory(updated);
+    try {
+      final updated = await remote.getProjectMemory(projectCode);
+      await local.cacheProjectMemory(updated);
+    } catch (_) {}
+
     return fact;
   }
 
   @override
-  Future<void> addIdea({required String projectCode, required String title, String? description}) async {
+  Future<void> addIdea({
+    required String projectCode,
+    required String title,
+    String? description,
+  }) async {
     await remote.upsertProjectFact({
       'project_code': projectCode,
       'type': 'idea',
@@ -75,7 +141,11 @@ class MemoryRepositoryImpl implements MemoryRepository {
   }
 
   @override
-  Future<void> addDecision({required String projectCode, required String title, String? reason}) async {
+  Future<void> addDecision({
+    required String projectCode,
+    required String title,
+    String? reason,
+  }) async {
     await remote.upsertProjectFact({
       'project_code': projectCode,
       'type': 'decision',
