@@ -3,14 +3,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LiveProvider extends ChangeNotifier {
   final SupabaseClient _supabase = Supabase.instance.client;
-  
+
   List<Map<String, dynamic>> _liveSessions = [];
   List<Map<String, dynamic>> _auctions = [];
   List<Map<String, dynamic>> _myLives = [];
   bool _isLoading = false;
   bool _isLoadingAuctions = false;
   bool _isLoadingMyLives = false;
-  
+
   List<Map<String, dynamic>> get liveSessions => _liveSessions;
   List<Map<String, dynamic>> get auctions => _auctions;
   List<Map<String, dynamic>> get myLives => _myLives;
@@ -22,7 +22,7 @@ class LiveProvider extends ChangeNotifier {
     _setLoading(true);
     try {
       final response = await _supabase
-          .from('lives')
+          .from('live_sessions') // ✅ UNIFIÉ
           .select('*, shop:shops(name, logo_url)')
           .eq('status', 'live')
           .order('viewer_count', ascending: false);
@@ -54,11 +54,11 @@ class LiveProvider extends ChangeNotifier {
   Future<void> loadMyLives() async {
     final shopId = await _getUserShopId();
     if (shopId == null) return;
-    
+
     _setLoadingMyLives(true);
     try {
       final response = await _supabase
-          .from('lives')
+          .from('live_sessions') // ✅ UNIFIÉ
           .select()
           .eq('shop_id', shopId)
           .order('created_at', ascending: false);
@@ -89,13 +89,17 @@ class LiveProvider extends ChangeNotifier {
   Future<Map<String, dynamic>> createLive(Map<String, dynamic> liveData) async {
     final shopId = await _getUserShopId();
     if (shopId == null) throw Exception('No active shop found');
-    
+
+    final userId = _supabase.auth.currentUser?.id;
+
     try {
       final response = await _supabase
-          .from('lives')
+          .from('live_sessions') // ✅ UNIFIÉ
           .insert({
             ...liveData,
             'shop_id': shopId,
+            'host_id': userId,
+            'source': 'market',
             'status': 'scheduled',
             'created_at': DateTime.now().toIso8601String(),
           })
@@ -119,7 +123,7 @@ class LiveProvider extends ChangeNotifier {
   Future<void> placeBid(String auctionId, double amount) async {
     final userId = _supabase.auth.currentUser?.id;
     if (userId == null) throw Exception('Login required');
-    
+
     try {
       await _supabase.from('auction_bids').insert({
         'auction_id': auctionId,
