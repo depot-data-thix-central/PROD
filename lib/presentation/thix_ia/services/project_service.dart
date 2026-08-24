@@ -59,7 +59,9 @@ class ProjectService {
     final limit = page == 1? ThixIAConstants.defaultPageSize : ThixIAConstants.defaultPageSize;
     return _projectRepo.getProjects(page: page, limit: limit, search: search, status: status);
   }
-
+Future<void> deleteProject(String projectCode) async {
+  await projectRepo.deleteProject(projectCode);
+}
   Future<ThixProject> createProjectFromIdea(String rawIdea) async {
     // Extraction simple - Phase 2 utilisera LLM pour extraction structurée
     final ideaLower = rawIdea.toLowerCase();
