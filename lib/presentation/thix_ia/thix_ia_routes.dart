@@ -18,111 +18,123 @@ import 'pages/reports_page.dart';
 
 class ThixIaRouter {
   static List<RouteBase> get routes => [
-    GoRoute(
-      path: ThixIARoutes.home, 
-      name: 'thix-ia-home',
-      builder: (context, state) => const ThixIaHomePage(),
-    ),
-    GoRoute(
-      path: ThixIARoutes.projects,
-      name: 'thix-ia-projects',
-      builder: (context, state) => const ProjectsPage(),
-    ),
-    GoRoute(
-      path: ThixIARoutes.createProject,
-      name: 'thix-ia-create-project',
-      builder: (context, state) => const CreateProjectPage(),
-    ),
-    // DETAIL + SUB-ROUTES DYNAMIQUES
-    GoRoute(
-      path: ThixIARoutes.projectDetail,
-      name: 'thix-ia-project-detail',
-      builder: (context, state) {
-        final code = state.pathParameters['code']!;
-        return ProjectDetailPage(projectCode: code);
-      },
-      routes: [
+        // Home
         GoRoute(
-          path: 'analysis',
-          name: 'thix-ia-analysis',
-          builder: (context, state) {
-            final code = state.pathParameters['code']!;
-            return AnalysisPage(projectCode: code);
-          },
+          path: ThixIARoutes.home, // /thix-ia/home
+          name: 'thix-ia-home',
+          builder: (context, state) => const ThixIaHomePage(),
         ),
+        // Alias racine /thix-ia → home
         GoRoute(
-          path: 'research',
-          name: 'thix-ia-research',
-          builder: (context, state) {
-            final code = state.pathParameters['code']!;
-            return ResearchPage(projectCode: code);
-          },
+          path: ThixIARoutes.root, // /thix-ia
+          name: 'thix-ia-root',
+          builder: (context, state) => const ThixIaHomePage(),
         ),
+
+        // Liste projets
         GoRoute(
-          path: 'market',
-          name: 'thix-ia-market',
-          builder: (context, state) {
-            final code = state.pathParameters['code']!;
-            return MarketPage(projectCode: code);
-          },
+          path: ThixIARoutes.projects, // /thix-ia/projects
+          name: 'thix-ia-projects',
+          builder: (context, state) => const ProjectsPage(),
         ),
+
+        // Création (AVANT le :projectCode)
         GoRoute(
-          path: 'legal',
-          name: 'thix-ia-legal',
-          builder: (context, state) {
-            final code = state.pathParameters['code']!;
-            return LegalPage(projectCode: code);
-          },
+          path: ThixIARoutes.createProject, // /thix-ia/projects/create
+          name: 'thix-ia-create-project',
+          builder: (context, state) => const CreateProjectPage(),
         ),
+
+        // Détail + sous-routes
         GoRoute(
-          path: 'finance',
-          name: 'thix-ia-finance',
+          path: ThixIARoutes.projectDetail, // /thix-ia/projects/:projectCode
+          name: 'thix-ia-project-detail',
           builder: (context, state) {
-            final code = state.pathParameters['code']!;
-            return FinancePage(projectCode: code);
+            final code = state.pathParameters['projectCode']!;
+            return ProjectDetailPage(projectCode: code);
           },
+          routes: [
+            GoRoute(
+              path: 'analysis',
+              name: 'thix-ia-analysis',
+              builder: (context, state) {
+                final code = state.pathParameters['projectCode']!;
+                return AnalysisPage(projectCode: code);
+              },
+            ),
+            GoRoute(
+              path: 'research',
+              name: 'thix-ia-research',
+              builder: (context, state) {
+                final code = state.pathParameters['projectCode']!;
+                return ResearchPage(projectCode: code);
+              },
+            ),
+            GoRoute(
+              path: 'market',
+              name: 'thix-ia-market',
+              builder: (context, state) {
+                final code = state.pathParameters['projectCode']!;
+                return MarketPage(projectCode: code);
+              },
+            ),
+            GoRoute(
+              path: 'legal',
+              name: 'thix-ia-legal',
+              builder: (context, state) {
+                final code = state.pathParameters['projectCode']!;
+                return LegalPage(projectCode: code);
+              },
+            ),
+            GoRoute(
+              path: 'finance',
+              name: 'thix-ia-finance',
+              builder: (context, state) {
+                final code = state.pathParameters['projectCode']!;
+                return FinancePage(projectCode: code);
+              },
+            ),
+            GoRoute(
+              path: 'business',
+              name: 'thix-ia-business',
+              builder: (context, state) {
+                final code = state.pathParameters['projectCode']!;
+                return BusinessPage(projectCode: code);
+              },
+            ),
+            GoRoute(
+              path: 'strategy',
+              name: 'thix-ia-strategy',
+              builder: (context, state) {
+                final code = state.pathParameters['projectCode']!;
+                return StrategyPage(projectCode: code);
+              },
+            ),
+            GoRoute(
+              path: 'design',
+              name: 'thix-ia-design',
+              builder: (context, state) {
+                final code = state.pathParameters['projectCode']!;
+                return DesignPage(projectCode: code);
+              },
+            ),
+            GoRoute(
+              path: 'documents',
+              name: 'thix-ia-documents',
+              builder: (context, state) {
+                final code = state.pathParameters['projectCode']!;
+                return DocumentsPage(projectCode: code);
+              },
+            ),
+            GoRoute(
+              path: 'reports',
+              name: 'thix-ia-reports',
+              builder: (context, state) {
+                final code = state.pathParameters['projectCode']!;
+                return ReportsPage(projectCode: code);
+              },
+            ),
+          ],
         ),
-        GoRoute(
-          path: 'business',
-          name: 'thix-ia-business',
-          builder: (context, state) {
-            final code = state.pathParameters['code']!;
-            return BusinessPage(projectCode: code);
-          },
-        ),
-        GoRoute(
-          path: 'strategy',
-          name: 'thix-ia-strategy',
-          builder: (context, state) {
-            final code = state.pathParameters['code']!;
-            return StrategyPage(projectCode: code);
-          },
-        ),
-        GoRoute(
-          path: 'design',
-          name: 'thix-ia-design',
-          builder: (context, state) {
-            final code = state.pathParameters['code']!;
-            return DesignPage(projectCode: code);
-          },
-        ),
-        GoRoute(
-          path: 'documents',
-          name: 'thix-ia-documents',
-          builder: (context, state) {
-            final code = state.pathParameters['code']!;
-            return DocumentsPage(projectCode: code);
-          },
-        ),
-        GoRoute(
-          path: 'reports',
-          name: 'thix-ia-reports',
-          builder: (context, state) {
-            final code = state.pathParameters['code']!;
-            return ReportsPage(projectCode: code);
-          },
-        ),
-      ],
-    ),
-  ];
+      ];
 }
