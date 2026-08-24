@@ -1,9 +1,9 @@
 // lib/presentation/home/widgets/home_personalised.dart
+import 'dart:ui'; // ✅ NÉCESSAIRE POUR LE GLASSMORPHISM
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-
 
 class HomePersonalised extends StatelessWidget {
   const HomePersonalised({super.key});
@@ -17,7 +17,12 @@ class HomePersonalised extends StatelessWidget {
       children: [
         Text(
           l10n.t('home_personalised_title'),
-          style: const TextStyle(color: ThixPolicy.textMain, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: -0.2),
+          style: const TextStyle(
+            color: ThixPolicy.textMain, 
+            fontSize: 16, 
+            fontWeight: FontWeight.w900, 
+            letterSpacing: -0.2
+          ),
         ),
         const SizedBox(height: ThixPolicy.s12),
         Row(
@@ -28,7 +33,7 @@ class HomePersonalised extends StatelessWidget {
                 child: _MiniRoundAction(
                   icon: Icons.favorite_rounded,
                   label: 'Mariage',
-                  accent: const Color(0xFFE25A6A),
+                  accent: const Color(0xFFE25A6A), // Couleur spécifique conservée
                   onTap: () => context.push('/thix-weeding'),
                 ),
               ),
@@ -70,7 +75,7 @@ class HomePersonalised extends StatelessWidget {
   }
 }
 
-class _MiniRoundAction extends StatelessWidget {
+class _MiniRoundAction extends StatefulWidget {
   final IconData icon;
   final String label;
   final Color accent;
@@ -79,45 +84,98 @@ class _MiniRoundAction extends StatelessWidget {
   const _MiniRoundAction({
     required this.icon,
     required this.label,
-    this.accent = ThixPolicy.textMain,
+    this.accent = ThixPolicy.primaryDeep, // Couleur corporate par défaut
     required this.onTap,
   });
 
   @override
+  State<_MiniRoundAction> createState() => _MiniRoundActionState();
+}
+
+class _MiniRoundActionState extends State<_MiniRoundAction> {
+  bool _pressed = false;
+
+  void _setPressed(bool v) {
+    if (_pressed == v) return;
+    setState(() => _pressed = v);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final isWedding = label == 'Mariage';
+    final isWedding = widget.label == 'Mariage';
     
     return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: isWedding ? const Color(0xFFFFF0F2) : ThixPolicy.card,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isWedding ? const Color(0xFFE25A6A).withValues(alpha: 0.4) : ThixPolicy.border,
-                width: 0.8,
+      onTap: widget.onTap,
+      onTapDown: (_) => _setPressed(true),
+      onTapCancel: () => _setPressed(false),
+      onTapUp: (_) => _setPressed(false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.94 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: AnimatedOpacity(
+          opacity: _pressed ? 0.85 : 1.0,
+          duration: const Duration(milliseconds: 120),
+          child: Column(
+            children: [
+              // 🌟 EFFET GLASSMORPHISM
+              Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: isWedding 
+                          ? widget.accent.withOpacity(0.15) 
+                          : Colors.black.withOpacity(0.04), // Ombre très douce
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    )
+                  ],
+                ),
+                child: ClipOval(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                    child: Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: isWedding 
+                            ? widget.accent.withOpacity(0.15) 
+                            : Colors.white.withOpacity(0.65), // Verre dépoli
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isWedding 
+                              ? widget.accent.withOpacity(0.4) 
+                              : Colors.white.withOpacity(0.9), // Bordure lumineuse
+                          width: 1.5,
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        widget.icon, 
+                        size: 22, 
+                        color: isWedding ? widget.accent : ThixPolicy.primaryDeep
+                      ),
+                    ),
+                  ),
+                ),
               ),
-              boxShadow: ThixPolicy.shadowSoft(),
-            ),
-            child: Icon(icon, size: 20, color: isWedding ? const Color(0xFFE25A6A) : ThixPolicy.textMain),
+              const SizedBox(height: 8),
+              Text(
+                widget.label,
+                style: TextStyle(
+                  color: isWedding ? widget.accent : ThixPolicy.textMain,
+                  fontSize: 10.5,
+                  fontWeight: isWedding ? FontWeight.w800 : FontWeight.w700,
+                  letterSpacing: -0.2,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: TextStyle(
-              color: isWedding ? const Color(0xFFE25A6A) : ThixPolicy.textSecondary,
-              fontSize: 11,
-              fontWeight: isWedding ? FontWeight.w800 : FontWeight.w700,
-            ),
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
+        ),
       ),
     );
   }
