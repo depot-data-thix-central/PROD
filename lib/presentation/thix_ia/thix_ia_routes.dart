@@ -15,12 +15,11 @@ import 'pages/strategy_page.dart';
 import 'pages/design_page.dart';
 import 'pages/documents_page.dart';
 import 'pages/reports_page.dart';
-// Note : L'import de chat_page.dart a été supprimé
 
 class ThixIaRouter {
   static List<RouteBase> get routes => [
     GoRoute(
-      path: ThixIARoutes.home, // Correction : IA en majuscule
+      path: ThixIARoutes.home, 
       name: 'thix-ia-home',
       builder: (context, state) => const ThixIaHomePage(),
     ),
@@ -123,7 +122,6 @@ class ThixIaRouter {
             return ReportsPage(projectCode: code);
           },
         ),
-        // LES ROUTES DU CHAT ONT ÉTÉ ENTIÈREMENT SUPPRIMÉES ICI !
       ],
     ),
   ];
