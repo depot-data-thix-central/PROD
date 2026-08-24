@@ -236,7 +236,9 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                 SliverToBoxAdapter(child: _buildTrustBadges(t)),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s20)),
                 
-                // ─── LIVES EN COURS (NOUVEAU) ───
+                // ─── LIVE EN COURS — juste au-dessus des Supermarchés ───
+                // Apparaît dès qu'un live est actif chez n'importe quel shop.
+                // Se ferme automatiquement (SizedBox.shrink) si aucun live en cours.
                 SliverToBoxAdapter(child: _buildLiveSection(liveSessionsAsync, t)),
 
                 // ─── Supermarchés ───
@@ -554,7 +556,12 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  // ─────────────────────────── NOUVELLE SECTION LIVE ───────────────────────────
+  // ─────────────────────────── SECTION "LIVE EN COURS" ───────────────────────────
+  // - Se construit dès que `activeMarketLiveSessionsProvider` détecte au moins
+  //   un live actif (status = 'live'), toutes boutiques confondues.
+  // - Se referme automatiquement (SizedBox.shrink) si la liste est vide,
+  //   grâce au flux Realtime Supabase (aucune action manuelle nécessaire).
+  // - Un tap sur une carte ouvre directement le lecteur live (visualisation).
   Widget _buildLiveSection(AsyncValue<List<Map<String, dynamic>>> liveAsync, MarketStrings t) {
     return liveAsync.when(
       loading: () => const SizedBox.shrink(),
@@ -568,12 +575,21 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
               padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
               child: Row(
                 children: [
-                  Container(
-                    width: 8, height: 8,
-                    decoration: const BoxDecoration(color: ThixPolicy.danger, shape: BoxShape.circle),
+                  const _PulsingDot(),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Live en cours...',
+                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: ThixPolicy.textMain, letterSpacing: -0.5),
                   ),
                   const SizedBox(width: 8),
-                  Text(t.live, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: ThixPolicy.textMain, letterSpacing: -0.5)),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(color: ThixPolicy.danger.withOpacity(0.12), borderRadius: BorderRadius.circular(20)),
+                    child: Text(
+                      '${sessions.length}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: ThixPolicy.danger),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -985,6 +1001,43 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
             Text(label, maxLines: 1, style: TextStyle(fontSize: 9, color: sel ? ThixPolicy.domainMarket : ThixPolicy.textSecondary.withValues(alpha: 0.8), fontWeight: sel ? FontWeight.w800 : FontWeight.w600)),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────── POINT ROUGE PULSANT (indicateur live) ───────────────────────────
+class _PulsingDot extends StatefulWidget {
+  const _PulsingDot();
+
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat(reverse: true);
+    _scale = Tween<double>(begin: 0.7, end: 1.3).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _scale,
+      child: Container(
+        width: 8, height: 8,
+        decoration: const BoxDecoration(color: ThixPolicy.danger, shape: BoxShape.circle),
       ),
     );
   }
