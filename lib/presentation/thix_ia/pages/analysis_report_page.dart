@@ -8,16 +8,79 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../../../core/theme/thix_design_policy.dart';
 import '../models/project_analysis.dart';
+// TODO: Décommente et adapte le chemin vers ton provider de mémoire
+// import '../providers/project_memory_provider.dart'; 
+// import '../providers/analyses_provider.dart';
 
-class AnalysisReportPage extends ConsumerWidget {
+class AnalysisReportPage extends ConsumerStatefulWidget {
   const AnalysisReportPage({super.key, required this.analysis});
 
   final ProjectAnalysis analysis;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final content = _extractContent(analysis);
-    final sources = _extractSources(analysis);
+  ConsumerState<AnalysisReportPage> createState() => _AnalysisReportPageState();
+}
+
+class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
+  bool isValidating = false;
+
+  Future<void> _validateAndSendToMemory(ProjectAnalysis analysis, String contentToSave) async {
+    setState(() => isValidating = true);
+    
+    try {
+      // 1. Appel du provider pour ajouter le fait à la mémoire
+      // TODO: Décommente ces lignes quand ton projectMemoryProvider sera prêt
+      /*
+      await ref.read(projectMemoryProvider.notifier).addFact(
+            type: 'validated_analysis',
+            content: '【${analysis.type.toUpperCase()}】 ${analysis.title ?? analysis.type}\n\n$contentToSave',
+            sourceName: analysis.title,
+            confidence: analysis.confidence > 0 ? analysis.confidence : 0.9,
+          );
+      */
+
+      // 2. (Optionnel) Marquer l'analyse comme validée en base
+      // await ref.read(analysesProvider.notifier).markAsValidated(analysis.id);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: Colors.white),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Analyse validée et envoyée en Mémoire !',
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: ThixPolicy.success,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+        
+        // On retourne à l'écran précédent après validation
+        context.pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isValidating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final content = _extractContent(widget.analysis);
+    final sources = _extractSources(widget.analysis);
 
     return Scaffold(
       backgroundColor: ThixPolicy.surface,
@@ -29,7 +92,7 @@ class AnalysisReportPage extends ConsumerWidget {
           onPressed: () => context.pop(),
         ),
         title: Text(
-          analysis.type,
+          widget.analysis.type,
           style: ThixPolicy.bodyStyle.copyWith(fontWeight: FontWeight.w600),
         ),
         actions: [
@@ -49,7 +112,7 @@ class AnalysisReportPage extends ConsumerWidget {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 80), // J'ai augmenté le padding du bas pour ne pas cacher le texte sous le bouton
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
         children: [
           // ========== HEADER ==========
           Container(
@@ -84,13 +147,13 @@ class AnalysisReportPage extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            analysis.title ?? analysis.type,
+                            widget.analysis.title ?? widget.analysis.type,
                             style: ThixPolicy.bodyStyle
                                 .copyWith(fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            analysis.projectCode,
+                            widget.analysis.projectCode,
                             style: ThixPolicy.captionStyle.copyWith(
                               fontFamily: 'monospace',
                               color: ThixPolicy.textMuted,
@@ -123,18 +186,18 @@ class AnalysisReportPage extends ConsumerWidget {
                   children: [
                     _MetaChip(
                       icon: Icons.smart_toy_outlined,
-                      label: analysis.aiModelUsed ?? 'IA',
+                      label: widget.analysis.aiModelUsed ?? 'IA',
                     ),
                     const SizedBox(width: 8),
-                    if (analysis.completedAt != null)
+                    if (widget.analysis.completedAt != null)
                       _MetaChip(
                         icon: Icons.schedule_rounded,
-                        label: _formatDate(analysis.completedAt!),
+                        label: _formatDate(widget.analysis.completedAt!),
                       ),
                     const Spacer(),
-                    if (analysis.confidence > 0)
+                    if (widget.analysis.confidence > 0)
                       Text(
-                        'Confiance ${(analysis.confidence * 100).toInt()}%',
+                        'Confiance ${(widget.analysis.confidence * 100).toInt()}%',
                         style: ThixPolicy.captionStyle
                             .copyWith(color: ThixPolicy.textSecondary),
                       ),
@@ -236,7 +299,7 @@ class AnalysisReportPage extends ConsumerWidget {
           ],
 
           // ========== AVERTISSEMENT LÉGAL ==========
-          if (analysis.type == 'legal' || analysis.type == 'tax') ...[
+          if (widget.analysis.type == 'legal' || widget.analysis.type == 'tax') ...[
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.all(14),
@@ -268,59 +331,51 @@ class AnalysisReportPage extends ConsumerWidget {
               ),
             ),
           ],
-        ],
-      ),
-      
-      // ==========================================
-      // NOUVEAU: BOUTON FLOTTANT DE VALIDATION
-      // ==========================================
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          // 1. TODO: Connecter ici avec ton provider de Mémoire
-          // ref.read(memoryProvider.notifier).addFact(analysis.projectCode, analysis.type, content);
-          
-          // 2. Afficher la confirmation visuelle
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Row(
-                children: [
-                  Icon(Icons.check_circle_rounded, color: Colors.white),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Analyse validée et ajoutée à la mémoire du projet !',
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+
+          // ==========================================
+          // ACTION : VALIDER EN MÉMOIRE
+          // ==========================================
+          Padding(
+            padding: const EdgeInsets.only(top: 32, bottom: 20),
+            child: Column(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: isValidating ? null : () => _validateAndSendToMemory(widget.analysis, content),
+                    icon: isValidating
+                        ? const SizedBox(
+                            width: 18, 
+                            height: 18, 
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                          )
+                        : const Icon(Icons.verified_rounded, size: 20),
+                    label: Text(
+                      isValidating ? 'Envoi en cours...' : 'Valider & envoyer en Mémoire',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      backgroundColor: ThixPolicy.primary,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
-                ],
-              ),
-              backgroundColor: ThixPolicy.success,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              margin: const EdgeInsets.all(16),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Cette analyse sera ajoutée à la mémoire du projet et servira à générer les documents officiels.',
+                  textAlign: TextAlign.center,
+                  style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, height: 1.4),
+                ),
+              ],
             ),
-          );
-          
-          // 3. Retourner à la liste des analyses
-          context.pop();
-        },
-        backgroundColor: ThixPolicy.primary,
-        elevation: 6,
-        icon: const Icon(Icons.verified_rounded, color: Colors.white),
-        label: Text(
-          'Valider l\'analyse',
-          style: ThixPolicy.bodyStyle.copyWith(
-            color: Colors.white, 
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.5,
           ),
-        ),
+        ],
       ),
     );
   }
 
-  // ---------- Helpers ----------
+  // ---------- Helpers de Nettoyage et Formatage ----------
   String _extractContent(ProjectAnalysis a) {
     String rawText = '';
     final rj = a.resultJson;
