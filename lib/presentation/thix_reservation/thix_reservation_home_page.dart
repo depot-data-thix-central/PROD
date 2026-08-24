@@ -1,7 +1,7 @@
 // lib/presentation/thix_reservation/thix_reservation_home_page.dart
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui'; // ✅ NÉCESSAIRE POUR LE GLASSMORPHISM
+import 'dart:ui'; // ✅ NÉCESSAIRE POUR LE GLASSMORPHISM ET LE FLOU
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -86,6 +86,15 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
     super.dispose(); 
   }
 
+  // 🌟 HELPER POUR LES ORBES DE FOND FIXES (si besoin en complément)
+  Widget _buildBlurOrb(Color color, double size) {
+    return Container(
+      width: size, height: size,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+      child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60), child: Container(color: Colors.transparent)),
+    );
+  }
+
   @override Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FB), // Fond Premium de base
@@ -100,9 +109,9 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
             child: Container(
-              color: Colors.white.withValues(alpha: 0.65),
+              color: Colors.white.withOpacity(0.65),
               decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.8), width: 1.2))
+                border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.8), width: 1.2))
               ),
             ),
           ),
@@ -113,7 +122,7 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
             decoration: BoxDecoration(
               color: ThixPolicy.primaryDeep, 
               borderRadius: BorderRadius.circular(8),
-              boxShadow: [BoxShadow(color: ThixPolicy.primaryDeep.withValues(alpha: 0.3), blurRadius: 6, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(color: ThixPolicy.primaryDeep.withOpacity(0.3), blurRadius: 6, offset: const Offset(0, 2))],
             ),
             child: const Center(child: Text('R', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18))),
           ),
@@ -158,10 +167,10 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.65), 
+                    color: Colors.white.withOpacity(0.65), 
                     borderRadius: BorderRadius.circular(24), 
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.2), 
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 12, offset: const Offset(0, 4))]
+                    border: Border.all(color: Colors.white.withOpacity(0.9), width: 1.2), 
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 12, offset: const Offset(0, 4))]
                   ),
                   child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
                     _CatPro(icon: Icons.directions_bus_filled_rounded, label: 'Bus', onTap: ()=> context.push('/thix-reservation/bus')),
@@ -212,15 +221,15 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
                 Container(
                   padding: const EdgeInsets.all(16), 
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.65), 
+                    color: Colors.white.withOpacity(0.65), 
                     borderRadius: BorderRadius.circular(20), 
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.2),
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4))]
+                    border: Border.all(color: Colors.white.withOpacity(0.9), width: 1.2),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))]
                   ),
                   child: Row(children: [
                     Container(
                       padding: const EdgeInsets.all(10), 
-                      decoration: BoxDecoration(color: ThixPolicy.primaryDeep, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: ThixPolicy.primaryDeep.withValues(alpha: 0.3), blurRadius: 6, offset: const Offset(0, 2))]), 
+                      decoration: BoxDecoration(color: ThixPolicy.primaryDeep, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: ThixPolicy.primaryDeep.withOpacity(0.3), blurRadius: 6, offset: const Offset(0, 2))]), 
                       child: const Icon(Icons.card_giftcard_rounded, color: Colors.white, size: 20)
                     ),
                     const SizedBox(width: 14),
@@ -255,7 +264,7 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(24), 
                 gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: s['gradient'] as List<Color>), 
-                boxShadow: [BoxShadow(color: (s['gradient'] as List<Color>).first.withValues(alpha: 0.4), blurRadius: 16, offset: const Offset(0, 6))]
+                boxShadow: [BoxShadow(color: (s['gradient'] as List<Color>).first.withOpacity(0.4), blurRadius: 16, offset: const Offset(0, 6))]
               ),
               child: Stack(children: [
                 Positioned(right: -10, bottom: -10, child: Opacity(opacity: 0.12, child: Icon(index==0? Icons.directions_bus_filled_rounded : Icons.verified_user_rounded, size: 140, color: Colors.white))),
@@ -263,7 +272,7 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
                   child: Row(children: [
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white.withValues(alpha: 0.4))), child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.bolt_rounded, size: 12, color: ThixPolicy.gold), const SizedBox(width: 4), Text(s['badge'] as String, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 0.5))])),
+                      Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white.withOpacity(0.4))), child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.bolt_rounded, size: 12, color: ThixPolicy.gold), const SizedBox(width: 4), Text(s['badge'] as String, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 0.5))])),
                       const Spacer(),
                       Text(s['title'] as String, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900, height: 1.1, letterSpacing: -0.5)),
                       Text(s['subtitle'] as String, style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
@@ -281,7 +290,7 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
             );
           },
         ),
-        Positioned(bottom: 12, left: 0, right: 0, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: List.generate(_heroSlides.length, (i)=> AnimatedContainer(duration: const Duration(milliseconds: 300), margin: const EdgeInsets.symmetric(horizontal: 3), width: i==_heroIndex? 20:6, height: 5, decoration: BoxDecoration(color: i==_heroIndex? Colors.white : Colors.white.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(10)))))),
+        Positioned(bottom: 12, left: 0, right: 0, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: List.generate(_heroSlides.length, (i)=> AnimatedContainer(duration: const Duration(milliseconds: 300), margin: const EdgeInsets.symmetric(horizontal: 3), width: i==_heroIndex? 20:6, height: 5, decoration: BoxDecoration(color: i==_heroIndex? Colors.white : Colors.white.withOpacity(0.4), borderRadius: BorderRadius.circular(10)))))),
       ]),
     );
   }
@@ -301,10 +310,10 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
               child: Container(
                 height: 64,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.65),
+                  color: Colors.white.withOpacity(0.65),
                   borderRadius: BorderRadius.circular(32),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 30, offset: const Offset(0, 10))],
+                  border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.2),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 30, offset: const Offset(0, 10))],
                 ),
                 child: Stack(
                   clipBehavior: Clip.none,
@@ -333,8 +342,8 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
                           decoration: BoxDecoration(
                             gradient: ThixPolicy.brandGradient,
                             shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 3.5),
-                            boxShadow: [BoxShadow(color: ThixPolicy.primary.withValues(alpha: 0.35), blurRadius: 10, offset: const Offset(0, 4))],
+                            border: Border.all(color: Colors.white.withOpacity(0.9), width: 3.5),
+                            boxShadow: [BoxShadow(color: ThixPolicy.primary.withOpacity(0.35), blurRadius: 10, offset: const Offset(0, 4))],
                           ),
                           child: const Icon(Icons.calendar_month_rounded, color: Colors.white, size: 26),
                         ),
@@ -366,9 +375,9 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: sel ? ThixPolicy.primaryDeep : ThixPolicy.textSecondary.withValues(alpha: 0.8), size: 24),
+            Icon(icon, color: sel ? ThixPolicy.primaryDeep : ThixPolicy.textSecondary.withOpacity(0.8), size: 24),
             const SizedBox(height: 4),
-            Text(label, maxLines: 1, style: TextStyle(fontSize: 9.5, color: sel ? ThixPolicy.primaryDeep : ThixPolicy.textSecondary.withValues(alpha: 0.8), fontWeight: sel ? FontWeight.w800 : FontWeight.w600)),
+            Text(label, maxLines: 1, style: TextStyle(fontSize: 9.5, color: sel ? ThixPolicy.primaryDeep : ThixPolicy.textSecondary.withOpacity(0.8), fontWeight: sel ? FontWeight.w800 : FontWeight.w600)),
           ],
         ),
       ),
@@ -377,7 +386,7 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
 }
 
 // ============================================================================
-// WIDGET : BACKGROUND VOYAGE ANIMÉ & FLOUTÉ
+// WIDGET : BACKGROUND VOYAGE ANIMÉ & FLOUTÉ (CORRIGÉ)
 // ============================================================================
 class _TravelAmbientBackground extends StatefulWidget {
   const _TravelAmbientBackground();
@@ -392,8 +401,8 @@ class _TravelAmbientBackgroundState extends State<_TravelAmbientBackground> with
   @override
   void initState() {
     super.initState();
-    // Animation très lente (30s) pour un effet de déplacement hypnotique et calme
-    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 30))..repeat();
+    // 🌟 Animation plus rapide (12s au lieu de 30s) pour bien voir le mouvement !
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 12))..repeat();
   }
 
   @override
@@ -413,52 +422,48 @@ class _TravelAmbientBackgroundState extends State<_TravelAmbientBackground> with
           builder: (context, child) {
             final t = _controller.value * 2 * math.pi;
 
-            // Avion (Bleu) - Traverse en diagonale avec une rotation
+            // Avion (Bleu)
             final planeX = size.width * 0.5 + math.cos(t) * (size.width * 0.4);
             final planeY = size.height * 0.3 + math.sin(t * 1.5) * (size.height * 0.2);
 
-            // Bus (Doré) - Traverse la zone basse
+            // Bus (Doré)
             final busX = size.width * 0.3 + math.sin(t * 1.2) * (size.width * 0.5);
             final busY = size.height * 0.6 + math.cos(t) * (size.height * 0.15);
 
-            // Globe/Localisation (Indigo) - Flotte au centre
+            // Globe/Localisation (Indigo)
             final globeX = size.width * 0.7 + math.cos(t * 0.8) * 120.0;
             final globeY = size.height * 0.5 + math.sin(t * 1.1) * 150.0;
 
-            return Stack(
-              children: [
-                // 1. Les énormes icônes colorées qui bougent
-                Positioned(
-                  left: planeX - 150, top: planeY - 150,
-                  child: Transform.rotate(
-                    angle: t * 0.5, // Tourne lentement
-                    child: Icon(Icons.flight_rounded, size: 300, color: ThixPolicy.primary.withValues(alpha: 0.35)),
+            // 🌟 CORRECTION: On utilise ImageFiltered au lieu de BackdropFilter.
+            // C'est 100% compatible partout (Web/Mobile) et beaucoup plus net !
+            return ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 55, sigmaY: 55),
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: planeX - 150, top: planeY - 150,
+                    child: Transform.rotate(
+                      angle: t * 0.5,
+                      // Opacité plus forte pour bien voir les couleurs bouger
+                      child: Icon(Icons.flight_rounded, size: 300, color: ThixPolicy.primary.withOpacity(0.55)),
+                    ),
                   ),
-                ),
-                Positioned(
-                  left: busX - 150, top: busY - 150,
-                  child: Transform.rotate(
-                    angle: -t * 0.3,
-                    child: Icon(Icons.directions_bus_filled_rounded, size: 300, color: ThixPolicy.gold.withValues(alpha: 0.25)),
+                  Positioned(
+                    left: busX - 150, top: busY - 150,
+                    child: Transform.rotate(
+                      angle: -t * 0.3,
+                      child: Icon(Icons.directions_bus_filled_rounded, size: 300, color: ThixPolicy.gold.withOpacity(0.45)),
+                    ),
                   ),
-                ),
-                Positioned(
-                  left: globeX - 150, top: globeY - 150,
-                  child: Transform.rotate(
-                    angle: t * 0.4,
-                    child: Icon(Icons.public_rounded, size: 300, color: ThixPolicy.primaryDeep.withValues(alpha: 0.30)),
+                  Positioned(
+                    left: globeX - 150, top: globeY - 150,
+                    child: Transform.rotate(
+                      angle: t * 0.4,
+                      child: Icon(Icons.public_rounded, size: 300, color: ThixPolicy.primaryDeep.withOpacity(0.40)),
+                    ),
                   ),
-                ),
-
-                // 2. LE FLOU EXTRÊME 
-                // Ça transforme les icônes d'avions et de bus en de superbes taches de couleurs mouvantes (Mesh Gradient)
-                Positioned.fill(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 90, sigmaY: 90),
-                    child: Container(color: Colors.transparent),
-                  ),
-                ),
-              ],
+                ],
+              ),
             );
           },
         ),
@@ -479,10 +484,10 @@ class _CatPro extends StatelessWidget {
         width: 48,
         height: 48, 
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.7), 
+          color: Colors.white.withOpacity(0.7), 
           borderRadius: BorderRadius.circular(16), 
           border: Border.all(color: Colors.white), 
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 6, offset: const Offset(0, 2))]
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6, offset: const Offset(0, 2))]
         ), 
         child: Icon(icon, color: isMore ? ThixPolicy.textSecondary : ThixPolicy.primaryDeep, size: 22)
       ),
@@ -504,16 +509,16 @@ class _ResPro extends StatelessWidget {
   @override Widget build(BuildContext context)=> Expanded(child: Container(
     padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6), 
     decoration: BoxDecoration(
-      color: Colors.white.withValues(alpha: 0.65), 
+      color: Colors.white.withOpacity(0.65), 
       borderRadius: BorderRadius.circular(16), 
-      border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.2), 
-      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 4))]
+      border: Border.all(color: Colors.white.withOpacity(0.9), width: 1.2), 
+      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 4))]
     ), 
     child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
-      Container(width: 28, height: 28, decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle), child: Icon(icon, size: 16, color: color)), 
+      Container(width: 28, height: 28, decoration: BoxDecoration(color: color.withOpacity(0.12), shape: BoxShape.circle), child: Icon(icon, size: 16, color: color)), 
       const SizedBox(height: 8), 
       Text(count, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: ThixPolicy.textMain)), 
-      Text(label, style: TextStyle(fontSize: 10, color: ThixPolicy.textSecondary.withValues(alpha: 0.8), fontWeight: FontWeight.w700, letterSpacing: -0.2))
+      Text(label, style: TextStyle(fontSize: 10, color: ThixPolicy.textSecondary.withOpacity(0.8), fontWeight: FontWeight.w700, letterSpacing: -0.2))
     ])
   )); 
 }
@@ -527,7 +532,7 @@ class _OfferPro extends StatelessWidget {
     decoration: BoxDecoration(
       borderRadius: BorderRadius.circular(20), 
       gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight), 
-      boxShadow: [BoxShadow(color: colors.first.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))]
+      boxShadow: [BoxShadow(color: colors.first.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))]
     ), 
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(title, style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 0.5)), 
@@ -548,8 +553,8 @@ class _MoreSheetPro extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.fromLTRB(24, 12, 24, 32), 
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.85), 
-          border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.9), width: 1.5))
+          color: Colors.white.withOpacity(0.85), 
+          border: Border(top: BorderSide(color: Colors.white.withOpacity(0.9), width: 1.5))
         ), 
         child: Column(
           mainAxisSize: MainAxisSize.min,
