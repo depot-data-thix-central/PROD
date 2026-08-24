@@ -1,8 +1,10 @@
 // lib/presentation/thix_ia/pages/analysis_report_page.dart
+import 'dart:convert'; // NOUVEAU: Pour décoder le JSON brut
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_markdown/flutter_markdown.dart'; // NOUVEAU: Pour un affichage parfait
 
 import '../../../../core/theme/thix_design_policy.dart';
 import '../models/project_analysis.dart';
@@ -67,11 +69,11 @@ class AnalysisReportPage extends ConsumerWidget {
                       width: 42,
                       height: 42,
                       decoration: BoxDecoration(
-                        color: ThixPolicy.primary.withOpacity(0.12), // Remplacé: type.color n'existe pas dans le modèle basique
+                        color: ThixPolicy.primary.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Icon(
-                        Icons.analytics_rounded, // Icône par défaut
+                        Icons.analytics_rounded,
                         color: ThixPolicy.primary,
                         size: 22,
                       ),
@@ -158,14 +160,22 @@ class AnalysisReportPage extends ConsumerWidget {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: ThixPolicy.border),
             ),
-            child: SelectableText(
-              content.isNotEmpty
+            // MODIFICATION ICI: MarkdownBody remplace SelectableText pour un rendu parfait
+            child: MarkdownBody(
+              data: content.isNotEmpty
                   ? content
-                  : 'Aucun contenu disponible pour ce rapport.\n\nVérifiez que l\'IA a bien retourné les données et qu\'elles sont sauvegardées dans Supabase.',
-              style: ThixPolicy.bodyStyle.copyWith(
-                height: 1.55,
-                fontSize: 14.5,
-                color: ThixPolicy.textMain,
+                  : 'Aucun contenu disponible pour ce rapport.',
+              selectable: true,
+              styleSheet: MarkdownStyleSheet(
+                p: ThixPolicy.bodyStyle.copyWith(
+                  height: 1.55,
+                  fontSize: 14.5,
+                  color: ThixPolicy.textMain,
+                ),
+                h1: ThixPolicy.titleStyle.copyWith(fontSize: 22, fontWeight: FontWeight.bold),
+                h2: ThixPolicy.titleStyle.copyWith(fontSize: 18, fontWeight: FontWeight.bold),
+                h3: ThixPolicy.titleStyle.copyWith(fontSize: 16, fontWeight: FontWeight.bold),
+                listBullet: TextStyle(color: ThixPolicy.primary),
               ),
             ),
           ),
@@ -264,46 +274,62 @@ class AnalysisReportPage extends ConsumerWidget {
     );
   }
 
-  // ---------- Helpers mis à jour et robustes ----------
+  // ---------- Helpers mis à jour et robustes (AVEC NETTOYAGE) ----------
   String _extractContent(ProjectAnalysis a) {
+    String rawText = '';
     final rj = a.resultJson;
-    if (rj != null) {
-      // 1. Chercher dans les clés standards
-      if (rj['content'] is String && (rj['content'] as String).isNotEmpty) {
-        return rj['content'] as String;
-      }
-      
-      // 2. Si le Edge Function a renvoyé un mode 'parsed' JSON
-      if (rj['parsed'] != null && rj['parsed'] is Map) {
-        final parsedMap = rj['parsed'] as Map;
-        if (parsedMap['content'] is String) return parsedMap['content'];
-        if (parsedMap['report'] is String) return parsedMap['report'];
-        
-        // Formater le JSON en texte lisible si aucune clé texte explicite n'existe
-        return parsedMap.entries
-            .map((e) => '**${e.key.toString().toUpperCase()}**\n${e.value}')
-            .join('\n\n');
-      }
 
-      // 3. Fallback de secours sur d'autres clés fréquentes
-      final fallbackKeys = ['text', 'report', 'response', 'result', 'answer', 'data'];
-      for (var key in fallbackKeys) {
-        if (rj[key] is String && (rj[key] as String).isNotEmpty) {
-          return rj[key] as String;
+    if (rj != null) {
+      if (rj['content'] is String && (rj['content'] as String).isNotEmpty) {
+        rawText = rj['content'] as String;
+      } else if (rj['parsed'] != null && rj['parsed'] is Map) {
+        final parsedMap = rj['parsed'] as Map;
+        if (parsedMap['content'] is String) rawText = parsedMap['content'];
+        else if (parsedMap['report'] is String) rawText = parsedMap['report'];
+      } else {
+        final fallbackKeys = ['text', 'report', 'response', 'result', 'answer', 'data'];
+        for (var key in fallbackKeys) {
+          if (rj[key] is String && (rj[key] as String).isNotEmpty) {
+            rawText = rj[key] as String;
+            break;
+          }
         }
-      }
-      
-      // 4. Dernier recours : Si le JSON n'est pas vide mais a des clés inconnues, 
-      // on l'affiche au format string brut plutôt que de renvoyer vide.
-      if (rj.isNotEmpty) {
-         return rj.toString(); 
+        if (rawText.isEmpty && rj.isNotEmpty) {
+           rawText = rj.toString(); 
+        }
       }
     }
     
-    // Si rien n'est trouvé dans resultJson, on vérifie le résumé de la base de données
-    if (a.summary != null && a.summary!.isNotEmpty) return a.summary!;
+    if (rawText.isEmpty && a.summary != null && a.summary!.isNotEmpty) {
+      rawText = a.summary!;
+    }
+
+    // ==========================================
+    // LE GRAND NETTOYAGE (FIX POUR LA LISIBILITÉ)
+    // ==========================================
+
+    // 1. Si l'IA a renvoyé le JSON sous forme de texte brut avec des échappements
+    if (rawText.trim().startsWith('{') && rawText.contains('"content"')) {
+      try {
+        final decoded = jsonDecode(rawText);
+        if (decoded is Map && decoded['content'] is String) {
+          rawText = decoded['content'];
+        }
+      } catch (_) {} // Ignore silencieusement si ce n'est pas un JSON valide
+    }
+
+    // 2. Transformer les "\n" littéraux en VRAIS sauts de ligne pour le Markdown
+    rawText = rawText.replaceAll('\\n', '\n');
     
-    return '';
+    // 3. Nettoyer les guillemets d'échappement (ex: \")
+    rawText = rawText.replaceAll('\\"', '"');
+
+    // 4. Enlever les guillemets résiduels de début et de fin si la chaîne entière est entourée
+    if (rawText.startsWith('"') && rawText.endsWith('"') && rawText.length > 1) {
+      rawText = rawText.substring(1, rawText.length - 1);
+    }
+
+    return rawText.trim();
   }
 
   List<String> _extractSources(ProjectAnalysis a) {
@@ -311,7 +337,6 @@ class AnalysisReportPage extends ConsumerWidget {
     final rj = a.resultJson;
     if (rj == null) return [];
     
-    // Essayer de trouver les URLs des résultats Tavily
     final search = rj['search'];
     if (search is Map && search['results'] is List) {
       return (search['results'] as List)
@@ -322,7 +347,6 @@ class AnalysisReportPage extends ConsumerWidget {
     return [];
   }
 
-  // C'est ICI qu'était l'erreur de syntaxe !
   String _formatDate(DateTime d) {
     final day = d.day.toString().padLeft(2, '0');
     final month = d.month.toString().padLeft(2, '0');
