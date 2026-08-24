@@ -1,6 +1,6 @@
 // lib/presentation/network/widgets/post_card.dart
 import 'dart:math';
-import 'dart:ui'; // ✅ Import nécessaire pour ImageFilter (Glassmorphism)
+import 'dart:ui'; 
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -19,10 +19,8 @@ import 'package:thix_id/features/network/presentation/providers/feed_provider.da
 import 'package:thix_id/models/network_post.dart';
 import 'package:thix_id/features/network/data/network_service_provider.dart';
 
-// ✅ DESIGN SYSTEM THIX OFFICIEL
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
-// ✅ CERTIFICATION & SYNCHRO PROFIL
 import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
 import 'package:thix_id/features/network/presentation/providers/user_profile_providers.dart';
@@ -316,8 +314,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20, vertical: ThixPolicy.s40),
         decoration: BoxDecoration(
           color: bgColor.withValues(alpha: 0.85), 
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.6))
+          borderRadius: BorderRadius.circular(0), // Full largeur
         ),
         alignment: Alignment.center,
         child: Text(
@@ -365,7 +362,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                 child: Container(
                   padding: const EdgeInsets.all(ThixPolicy.s12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.5), // Effet Verre
+                    color: Colors.white.withValues(alpha: 0.5), 
                     borderRadius: BorderRadius.circular(ThixPolicy.rSm),
                     border: Border.all(color: Colors.white.withValues(alpha: 0.8))
                   ),
@@ -392,7 +389,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
               ),
               backgroundColor: Colors.white.withValues(alpha: 0.5),
               borderRadius: 16,
-              removeElevation: true, // Ombre gérée manuellement si besoin
+              removeElevation: true, 
             ),
           ),
       ],
@@ -417,7 +414,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
   Widget _buildMediaGrid(List<String> urls) {
     if (urls.isEmpty) return const SizedBox.shrink();
     const spacing = 4.0;
-    final radius = BorderRadius.circular(16); // Bords plus doux
+    final radius = BorderRadius.circular(16); 
     final imageOnlyUrls = urls.where((u) => !_isVideoUrl(u)).toList();
 
     Widget mediaTile(String url, {double? width, double? height, Alignment alignment = Alignment.center}) {
@@ -442,17 +439,8 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       return ClipRRect(
         borderRadius: radius,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxHeight: 500, 
-            minHeight: 200, 
-          ),
-          child: SizedBox(
-            width: double.infinity,
-            child: mediaTile(
-              urls[0],
-              alignment: Alignment.topCenter, 
-            ),
-          ),
+          constraints: const BoxConstraints(maxHeight: 500, minHeight: 200),
+          child: SizedBox(width: double.infinity, child: mediaTile(urls[0], alignment: Alignment.topCenter)),
         ),
       );
     }
@@ -763,21 +751,18 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           });
 
           return Container(
-            margin: const EdgeInsets.only(bottom: ThixPolicy.s16, left: 12, right: 12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12, offset: const Offset(0, 4))
-              ],
+            // 🔴 FULL LARGEUR : Zéro marge sur les côtés, zéro ombre !
+            margin: EdgeInsets.zero,
+            decoration: const BoxDecoration(
+              // 🔴 LIGNE JAUNE DE SÉPARATION (Fine et élégante)
+              border: Border(bottom: BorderSide(color: ThixPolicy.gold, width: 1.5)),
             ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
+            child: ClipRect( // 🔴 Zéro Radius, prend tout l'espace disponible
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.65), // Translucide
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.2),
                   ),
                   child: Material(
                     color: Colors.transparent,
@@ -908,10 +893,8 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                             if (likesCount > 0)
                               _LikersStack(count: likesCount, postId: post.id, isLikedByMe: isLiked),
 
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              child: Divider(height: 1, color: Colors.white.withValues(alpha: 0.6), thickness: 1),
-                            ),
+                            // Espacement avant la barre d'action
+                            const SizedBox(height: 8),
 
                             _buildActionRow(post, isLiked, isOwner, isCurrentUserFree, ref),
                           ],
@@ -1090,7 +1073,7 @@ class _ActionBtn extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 22, color: color), // Légèrement plus grand
+            Icon(icon, size: 22, color: color), 
             if (label.isNotEmpty) ...[
               const SizedBox(width: 4),
               Text(label, style: ThixPolicy.labelStyle.copyWith(fontSize: 12.5, fontWeight: ThixPolicy.semiBold, color: color)),
