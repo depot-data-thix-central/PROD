@@ -33,7 +33,9 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
     _tabController = TabController(length: 4, vsync: this);
     Future.microtask(() async {
       try {
-        await ref.read(activeProjectProvider.notifier).setActive(widget.projectCode);
+        await ref
+            .read(activeProjectProvider.notifier)
+            .setActive(widget.projectCode);
         ref.read(analysesProvider.notifier).refresh();
         ref.read(projectMemoryProvider.notifier).refresh();
         ref.read(documentsProvider.notifier).refresh();
@@ -55,7 +57,9 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
 
     return activeAsync.when(
       loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: ThixPolicy.primary)),
+        body: Center(
+          child: CircularProgressIndicator(color: ThixPolicy.primary),
+        ),
       ),
       error: (e, _) => Scaffold(
         appBar: AppBar(
@@ -73,14 +77,22 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
               children: [
                 const Icon(Icons.error_outline, color: Colors.red, size: 48),
                 const SizedBox(height: 12),
-                Text('Impossible de charger le projet', style: ThixPolicy.h3Style),
+                Text(
+                  'Impossible de charger le projet',
+                  style: ThixPolicy.h3Style,
+                ),
                 const SizedBox(height: 8),
-                Text('$e', textAlign: TextAlign.center, style: ThixPolicy.bodySmallStyle),
+                Text(
+                  '$e',
+                  textAlign: TextAlign.center,
+                  style: ThixPolicy.bodySmallStyle,
+                ),
                 const SizedBox(height: 16),
                 ElevatedButton(
-                  onPressed: () =>
-                      ref.read(activeProjectProvider.notifier).setActive(widget.projectCode),
-                  child: const Text('Réessayer'),
+                  onPressed: () => ref
+                      .read(activeProjectProvider.notifier)
+                      .setActive(widget.projectCode),
+                  child: const Text('Reessayer'),
                 ),
                 TextButton(
                   onPressed: () => context.go(ThixIARoutes.projects),
@@ -119,7 +131,7 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
     return Scaffold(
       backgroundColor: ThixPolicy.surface,
       body: NestedScrollView(
-        headerSliverBuilder: (_, __) => [
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
           SliverAppBar(
             pinned: true,
             backgroundColor: Colors.white,
@@ -132,8 +144,13 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
             ),
             actions: [
               IconButton(
-                onPressed: () => context.push(ThixIARoutes.documentsPath(widget.projectCode)),
-                icon: const Icon(Icons.folder_rounded, color: ThixPolicy.textSecondary),
+                onPressed: () => context.push(
+                  ThixIARoutes.documentsPath(widget.projectCode),
+                ),
+                icon: const Icon(
+                  Icons.folder_rounded,
+                  color: ThixPolicy.textSecondary,
+                ),
               ),
             ],
             bottom: TabBar(
@@ -142,15 +159,18 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
               unselectedLabelColor: ThixPolicy.textMuted,
               indicatorColor: ThixPolicy.primary,
               tabs: const [
-                Tab(text: 'Vue d\'ensemble'),
+                Tab(text: "Vue d'ensemble"),
                 Tab(text: 'Analyses'),
-                Tab(text: 'Mémoire'),
+                Tab(text: 'Memoire'),
                 Tab(text: 'Documents'),
               ],
             ),
           ),
-          lowiverToBoxAdapter(
-            child: ProjectHeader(project: activeProject, progress: activeProject.progress),
+          SliverToBoxAdapter(
+            child: ProjectHeader(
+              project: activeProject,
+              progress: activeProject.progress,
+            ),
           ),
         ],
         body: TabBarView(
@@ -165,13 +185,12 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
       ),
       bottomNavigationBar: AiCommandBar(
         onSubmit: (text) => _handleAiCommand(text),
-        hintText: 'Demandez à THIX IA sur ${widget.projectCode}...',
+        hintText: 'Demandez a THIX IA sur ${widget.projectCode}...',
       ),
     );
   }
 
   void _handleAiCommand(String text) {
-    // Chat route non enregistrée pour l'instant → ouvrir analyse
     context.push(ThixIARoutes.analysisPath(widget.projectCode));
   }
 }
@@ -182,18 +201,23 @@ class _OverviewTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cityPart =
+        project.city != null ? ' • ${project.city}' : '';
+
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
       children: [
         Text(project.name, style: ThixPolicy.h2Style),
         const SizedBox(height: 8),
         Text(
-          '${project.sector} • \( {project.country} \){project.city != null ? ' • ${project.city}' : ''}',
-          style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary),
+          '${project.sector} • ${project.country}$cityPart',
+          style: ThixPolicy.bodySmallStyle.copyWith(
+            color: ThixPolicy.textSecondary,
+          ),
         ),
         if (project.summary != null && project.summary!.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Text('Résumé', style: ThixPolicy.labelStyle),
+          Text('Resume', style: ThixPolicy.labelStyle),
           const SizedBox(height: 6),
           Text(project.summary!, style: ThixPolicy.bodyStyle),
         ],
@@ -246,7 +270,9 @@ class _MemoryTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final memory = ref.watch(projectMemoryProvider).value;
     if (memory == null) {
-      return const Center(child: CircularProgressIndicator(color: ThixPolicy.primary));
+      return const Center(
+        child: CircularProgressIndicator(color: ThixPolicy.primary),
+      );
     }
     if (memory.facts.isEmpty) return const EmptyFacts();
     return ListView.builder(
@@ -268,9 +294,10 @@ class _DocsTab extends ConsumerWidget {
       return EmptyStateWidget(
         icon: Icons.folder_outlined,
         title: 'Aucun document',
-        subtitle: 'Importez votre pitch, business plan ou études.',
+        subtitle: 'Importez votre pitch, business plan ou etudes.',
         actionLabel: 'Importer',
-        onAction: () => context.push(ThixIARoutes.documentsPath(projectCode)),
+        onAction: () =>
+            context.push(ThixIARoutes.documentsPath(projectCode)),
       );
     }
     return ListView.builder(
