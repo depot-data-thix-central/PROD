@@ -15,7 +15,21 @@ class StrategyPage extends ConsumerStatefulWidget {
 }
 
 class _StrategyPageState extends ConsumerState<StrategyPage> {
-  
+  // 👇 MÉTHODE _startStrategy RÉINTÉGRÉE ICI
+  Future<void> _startStrategy() async {
+    await ref.read(analysesProvider.notifier).startFinanceAnalysis(
+          inputs: {
+            'type': 'strategy', 
+            'framework': 'SWOT + Porter + Lean Canvas'
+          },
+        );
+        
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Analyse stratégique lancée (SWOT, Porter, Go-to-Market)')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
