@@ -23,6 +23,7 @@ abstract class ThixIaRemoteDatasource {
   Future<ThixProject> createProject(Map<String, dynamic> data);
   Future<ThixProject> updateProject(String projectCode, Map<String, dynamic> data);
   Future<void> archiveProject(String projectCode);
+  Future<void> deleteProject(String projectCode);   
 
   // Memory
   Future<ProjectMemory> getProjectMemory(String projectCode);
