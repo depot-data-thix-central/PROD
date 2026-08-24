@@ -24,6 +24,7 @@ dependencies:
   flutter_svg: ^2.0.10+1
   shimmer: ^3.0.0
   flutter_highlight: ^0.7.0
+  flutter_markdown: ^0.7.4.2 
 
   # State Management & Hooks
   flutter_riverpod: ^2.5.1
