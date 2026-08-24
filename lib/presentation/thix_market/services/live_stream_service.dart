@@ -26,13 +26,12 @@ class LiveStreamService {
 
     _isHost = isHost;
 
-    // ✅ Agora 6.x : utiliser createAgoraRtcEngine
     _engine = createAgoraRtcEngine();
 
     await _engine.initialize(
       RtcEngineContext(
-        appId: 'YOUR_AGORA_APP_ID',
-        channelProfile: ChannelProfileType.channelProfileLiveBroadcasting, // ✅ corrigé
+        appId: 'YOUR_AGORA_APP_ID', // préférer la Edge Function côté player
+        channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
       ),
     );
 
@@ -43,11 +42,9 @@ class LiveStreamService {
         onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
           _isJoined = true;
         },
-
         onUserJoined: (RtcConnection connection, int uid, int elapsed) {
           _remoteUid = uid;
         },
-
         onUserOffline: (
           RtcConnection connection,
           int uid,
@@ -55,18 +52,16 @@ class LiveStreamService {
         ) {
           _remoteUid = 0;
         },
-
         onError: (ErrorCodeType err, String msg) {
           print('Agora error: $err - $msg');
         },
       ),
     );
 
-    // ✅ Définir le rôle avec les bonnes constantes
     if (_isHost) {
-      await _engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster); // ✅ corrigé
+      await _engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
     } else {
-      await _engine.setClientRole(role: ClientRoleType.clientRoleAudience); // ✅ corrigé
+      await _engine.setClientRole(role: ClientRoleType.clientRoleAudience);
     }
   }
 
@@ -103,7 +98,6 @@ class LiveStreamService {
   // =========================
   Future<void> toggleMute() async {
     _isMuted = !_isMuted;
-
     await _engine.muteLocalAudioStream(_isMuted);
   }
 
@@ -140,7 +134,7 @@ class LiveStreamService {
   }
 
   // =========================
-  // SUPABASE LIVE SESSION
+  // SUPABASE LIVE SESSION (TABLE UNIFIÉE)
   // =========================
   Future<Map<String, dynamic>> createLiveSession({
     required String shopId,
@@ -154,9 +148,11 @@ class LiveStreamService {
   }) async {
     final channelName = 'live_${DateTime.now().millisecondsSinceEpoch}';
     final token = await getAgoraToken(channelName);
+    final userId = _supabase.auth.currentUser?.id;
 
     final liveData = {
       'shop_id': shopId,
+      'host_id': userId,
       'title': title,
       'description': description,
       'channel_name': channelName,
@@ -167,11 +163,12 @@ class LiveStreamService {
       'auction_end_time': auctionEndTime?.toIso8601String(),
       'scheduled_start': (scheduledStart ?? DateTime.now().add(const Duration(minutes: 5))).toIso8601String(),
       'status': 'scheduled',
+      'source': 'market', // ✅ UNIFIÉ
       'created_at': DateTime.now().toIso8601String(),
     };
 
     final res = await _supabase
-        .from('lives')
+        .from('live_sessions') // ✅ UNIFIÉ
         .insert(liveData)
         .select()
         .single();
@@ -183,7 +180,7 @@ class LiveStreamService {
   // START LIVE
   // =========================
   Future<void> startLive(String liveId) async {
-    await _supabase.from('lives').update({
+    await _supabase.from('live_sessions').update({ // ✅ UNIFIÉ
       'status': 'live',
       'started_at': DateTime.now().toIso8601String(),
     }).eq('id', liveId);
@@ -193,7 +190,7 @@ class LiveStreamService {
   // END LIVE
   // =========================
   Future<void> endLive(String liveId) async {
-    await _supabase.from('lives').update({
+    await _supabase.from('live_sessions').update({ // ✅ UNIFIÉ
       'status': 'ended',
       'ended_at': DateTime.now().toIso8601String(),
     }).eq('id', liveId);
