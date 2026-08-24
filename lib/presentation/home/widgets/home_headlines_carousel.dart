@@ -1,7 +1,9 @@
 // lib/presentation/home/widgets/home_headlines_carousel.dart
 import 'dart:async';
+import 'dart:ui'; // ✅ NÉCESSAIRE POUR LE GLASSMORPHISM
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:cached_network_image/cached_network_image.dart'; // ✅ AJOUT DE CACHED NETWORK IMAGE
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/presentation/common/notifications_sheet.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
@@ -31,7 +33,7 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel> {
   Timer? _autoTimer;
   int _cardCount = 0;
   bool _isAdmin = false;
-  static const double _bannerHeight = 150;
+  static const double _bannerHeight = 160; // Légèrement plus haut pour l'élégance
 
   @override
   void initState() {
@@ -62,7 +64,7 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel> {
       if (!widget.controller.hasClients || _cardCount <= 1) return;
       final current = widget.controller.page?.round() ?? 0;
       final next = (current + 1) % _cardCount;
-      widget.controller.animateToPage(next, duration: const Duration(milliseconds: 550), curve: Curves.easeInOutCubic);
+      widget.controller.animateToPage(next, duration: const Duration(milliseconds: 600), curve: Curves.easeInOutCubic);
     });
   }
 
@@ -96,21 +98,28 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel> {
   Future<void> _deleteBanner(String id, String? imageUrl) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: ThixPolicy.surface,
-        title: const Text('Supprimer l\'annonce ?', style: TextStyle(fontWeight: FontWeight.w800)),
-        content: const Text('Cette action est irréversible. L\'annonce sera retirée pour tout le monde.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false), 
-            child: const Text('Annuler', style: TextStyle(color: ThixPolicy.textSecondary))
+      builder: (ctx) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: AlertDialog(
+          backgroundColor: Colors.white.withValues(alpha: 0.9),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.8)),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.danger),
-            onPressed: () => Navigator.pop(ctx, true), 
-            child: const Text('Supprimer', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))
-          ),
-        ],
+          title: const Text('Supprimer l\'annonce ?', style: TextStyle(fontWeight: FontWeight.w800, color: ThixPolicy.textMain)),
+          content: const Text('Cette action est irréversible. L\'annonce sera retirée pour tout le monde.', style: TextStyle(color: ThixPolicy.textSecondary)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false), 
+              child: const Text('Annuler', style: TextStyle(color: ThixPolicy.textSecondary))
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.danger, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              onPressed: () => Navigator.pop(ctx, true), 
+              child: const Text('Supprimer', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))
+            ),
+          ],
+        ),
       )
     );
 
@@ -145,10 +154,10 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel> {
 
   Color _getAccentColor(String tag) {
     final t = tag.toLowerCase();
-    if (t.contains('opportunit')) return ThixPolicy.domainOpportunity;
-    if (t.contains('info')) return ThixPolicy.domainInfo;
-    if (t.contains('urgent') || t.contains('sos')) return ThixPolicy.danger;
-    return ThixPolicy.primary;
+    if (t.contains('opportunit')) return ThixPolicy.domainOpportunity; // Or
+    if (t.contains('info')) return ThixPolicy.domainInfo; // Bleu Corporate
+    if (t.contains('urgent') || t.contains('sos')) return ThixPolicy.danger; // Rouge
+    return ThixPolicy.primaryDeep; // Indigo Corporate
   }
 
   IconData _getIcon(String tag) {
@@ -216,23 +225,27 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel> {
                       },
                     ),
                     
-                    // Bouton Corbeille pour l'admin
+                    // Bouton Corbeille pour l'admin (Glassmorphism Rouge)
                     if (_isAdmin)
                       Positioned(
-                        top: 10,
-                        left: 10,
+                        top: 12,
+                        left: 12,
                         child: GestureDetector(
                           onTap: () => _deleteBanner(id, imageUrl),
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: ThixPolicy.danger,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 4, offset: const Offset(0, 2)),
-                              ],
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(20),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: ThixPolicy.danger.withValues(alpha: 0.8),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1.2),
+                                ),
+                                child: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.white),
+                              ),
                             ),
-                            child: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.white),
                           ),
                         ),
                       ),
@@ -241,21 +254,27 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel> {
               );
             }
             
-            // 3. Fallback (Si absolument aucune annonce ni notification)
+            // 3. Fallback Premium (S'il n'y a aucune annonce)
             if (cards.isEmpty) {
-              return Container(
-                height: _bannerHeight,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: ThixPolicy.tint,
-                  borderRadius: BorderRadius.circular(ThixPolicy.rXl),
-                  border: Border.all(color: ThixPolicy.border),
-                ),
-                child: const Center(
-                  child: Text(
-                    'Aucune annonce pour le moment', 
-                    style: TextStyle(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600)
-                  )
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: Container(
+                    height: _bannerHeight,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.2),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'Aucune annonce pour le moment', 
+                        style: TextStyle(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600)
+                      )
+                    ),
+                  ),
                 ),
               );
             }
@@ -271,7 +290,7 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel> {
                   child: PageView(controller: widget.controller, children: cards)
                 ),
                 if (cards.length > 1) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   _CarouselDots(controller: widget.controller, count: cards.length),
                 ]
               ],
@@ -322,11 +341,11 @@ class _CarouselDotsState extends State<_CarouselDots> {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           margin: const EdgeInsets.symmetric(horizontal: 3),
-          width: active ? 16 : 6,
+          width: active ? 20 : 6,
           height: 6,
           decoration: BoxDecoration(
-            color: active ? ThixPolicy.premiumAccent : ThixPolicy.border,
-            borderRadius: BorderRadius.circular(3),
+            color: active ? ThixPolicy.primaryDeep : ThixPolicy.border,
+            borderRadius: BorderRadius.circular(4),
           ),
         );
       }),
@@ -359,96 +378,132 @@ class _HeadlineBanner extends StatelessWidget {
     
     return GestureDetector(
       onTap: onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(ThixPolicy.rXl),
-        child: Container(
-          height: height,
-          decoration: BoxDecoration(color: accent.withValues(alpha: 0.10), boxShadow: ThixPolicy.shadowCard()),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (hasImage)
-                Image.network(
-                  imageUrl!.trim(),
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, progress) {
-                    if (progress == null) return child;
-                    return Container(
-                      color: accent.withValues(alpha: 0.10),
-                      child: Center(
-                        child: SizedBox(
-                          width: 22, height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2.4, color: accent),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4.0), // Marge pour voir un peu la page suivante
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: hasImage ? 0 : 15, sigmaY: hasImage ? 0 : 15),
+            child: Container(
+              height: height,
+              decoration: BoxDecoration(
+                color: hasImage ? Colors.transparent : Colors.white.withValues(alpha: 0.6),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12, offset: const Offset(0, 4))
+                ],
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (hasImage)
+                    // ✅ CACHED NETWORK IMAGE
+                    CachedNetworkImage(
+                      imageUrl: imageUrl!.trim(),
+                      fit: BoxFit.cover,
+                      placeholder: (context, url) => Container(
+                        color: accent.withValues(alpha: 0.05),
+                        child: Center(
+                          child: SizedBox(
+                            width: 22, height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2.4, color: accent),
+                          ),
                         ),
                       ),
-                    );
-                  },
-                  errorBuilder: (_, __, ___) => Container(
-                    color: accent.withValues(alpha: 0.14),
-                    alignment: Alignment.center,
-                    child: Icon(icon, color: accent, size: 40),
-                  ),
-                )
-              else
-                Container(
-                  color: accent.withValues(alpha: 0.14),
-                  alignment: Alignment.center,
-                  child: Icon(icon, color: accent, size: 40),
-                ),
-                
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.0),
-                        Colors.black.withValues(alpha: hasImage ? 0.55 : 0.25),
-                      ],
-                      stops: const [0.35, 1.0],
-                    ),
-                  ),
-                ),
-              ),
-              
-              Positioned(
-                left: ThixPolicy.s16,
-                right: ThixPolicy.s16,
-                bottom: ThixPolicy.s12,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
+                      errorWidget: (context, url, error) => Container(
+                        color: accent.withValues(alpha: 0.1),
+                        alignment: Alignment.center,
+                        child: Icon(icon, color: accent.withValues(alpha: 0.5), size: 40),
+                      ),
+                    )
+                  else
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(8)),
-                      child: Text(
-                        label,
-                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
+                      color: accent.withValues(alpha: 0.05),
+                      alignment: Alignment.center,
+                      child: Icon(icon, color: accent.withValues(alpha: 0.4), size: 50),
+                    ),
+                    
+                  // Gradient Premium pour la lisibilité
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.0),
+                            Colors.black.withValues(alpha: hasImage ? 0.7 : 0.2), // Moins sombre s'il n'y a pas d'image
+                          ],
+                          stops: const [0.3, 1.0],
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      title,
-                      style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, height: 1.15),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                  ),
+                  
+                  // Textes (Titre & Catégorie)
+                  Positioned(
+                    left: ThixPolicy.s16,
+                    right: ThixPolicy.s16,
+                    bottom: ThixPolicy.s16,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Tag/Catégorie Glassmorphism
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(color: accent.withValues(alpha: 0.8)),
+                              child: Text(
+                                label,
+                                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          title,
+                          style: TextStyle(
+                            color: hasImage ? Colors.white : ThixPolicy.textMain, 
+                            fontSize: 16, 
+                            fontWeight: FontWeight.w900, 
+                            height: 1.2, 
+                            letterSpacing: -0.3
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  
+                  // Flèche de navigation Glassmorphism
+                  Positioned(
+                    right: ThixPolicy.s12,
+                    top: ThixPolicy.s12,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        child: Container(
+                          width: 32, height: 32,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.25),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1.2)
+                          ),
+                          child: Icon(Icons.arrow_forward_rounded, size: 18, color: hasImage ? Colors.white : ThixPolicy.textMain),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              
-              Positioned(
-                right: ThixPolicy.s12,
-                top: ThixPolicy.s12,
-                child: Container(
-                  width: 30, height: 30,
-                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.85), shape: BoxShape.circle),
-                  child: const Icon(Icons.chevron_right_rounded, size: 18, color: ThixPolicy.textMain),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
