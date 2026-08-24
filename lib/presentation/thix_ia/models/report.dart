@@ -19,13 +19,15 @@ extension ReportTypeParser on String {
       case 'tax_study': return ReportType.taxStudy;
       case 'financial_model': return ReportType.financialModel;
       case 'executive_summary': return ReportType.executiveSummary;
+      case 'full_dossier': return ReportType.fullDossier;
       default: return ReportType.fullDossier;
     }
   }
 }
 
-// 2. Extension sur ReportType pour l'affichage UI
+// 2. Extension sur ReportType pour l'affichage UI et la sauvegarde DB
 extension ReportTypeExtension on ReportType {
+  // Pour l'affichage UI
   String get label {
     switch (this) {
       case ReportType.marketStudy: return 'Étude de marché';
@@ -35,6 +37,19 @@ extension ReportTypeExtension on ReportType {
       case ReportType.financialModel: return 'Modèle financier';
       case ReportType.executiveSummary: return 'Résumé exécutif';
       case ReportType.fullDossier: return 'Dossier complet';
+    }
+  }
+
+  // 👇 AJOUT CRUCIAL : Pour la sauvegarde exacte en base de données (snake_case)
+  String get dbValue {
+    switch (this) {
+      case ReportType.marketStudy: return 'market_study';
+      case ReportType.businessPlan: return 'business_plan';
+      case ReportType.legalStudy: return 'legal_study';
+      case ReportType.taxStudy: return 'tax_study';
+      case ReportType.financialModel: return 'financial_model';
+      case ReportType.executiveSummary: return 'executive_summary';
+      case ReportType.fullDossier: return 'full_dossier';
     }
   }
 }
@@ -73,7 +88,7 @@ class Report extends Equatable {
   factory Report.fromJson(Map<String, dynamic> json) => Report(
         id: JsonUtils.stringValue(json, 'id'),
         projectCode: JsonUtils.stringValue(json, 'project_code'),
-        type: JsonUtils.stringValue(json, 'type', fallback: 'fullDossier').toReportType(),
+        type: JsonUtils.stringValue(json, 'type', fallback: 'full_dossier').toReportType(),
         title: JsonUtils.stringValue(json, 'title'),
         summary: JsonUtils.stringValue(json, 'summary'),
         filePath: JsonUtils.stringValue(json, 'file_path'),
@@ -88,7 +103,7 @@ class Report extends Equatable {
 
   Map<String, dynamic> toSupabase() => JsonUtils.cleanNulls({
         'project_code': projectCode,
-        'type': type.name,
+        'type': type.dbValue, // 👇 CORRECTION ICI : On utilise dbValue au lieu de name
         'title': title,
         'summary': summary,
         'file_path': filePath,
