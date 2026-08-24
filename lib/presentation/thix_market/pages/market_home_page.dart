@@ -1,21 +1,41 @@
 // lib/presentation/thix_market/pages/market_home_page.dart
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui'; // ✅ NÉCESSAIRE POUR LE GLASSMORPHISM
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:cached_network_image/cached_network_image.dart'; // ✅ CACHED NETWORK IMAGE
+import 'package:cached_network_image/cached_network_image.dart'; 
 
 // ✅ Design System THIX v1
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+
+// ✅ IMPORTS LIVE
+import 'package:thix_id/data/models/live/live_model.dart';
+import 'package:thix_id/presentation/network/live/live_viewer_screen.dart';
 
 import '../l10n/market_strings.dart';
 import '../providers/market_providers.dart';
 import '../providers/featured_products_provider.dart';
 import '../widgets/products/product_card.dart';
 import '../widgets/market/flash_sale_timer.dart';
+
+// ============================================================================
+// PROVIDER — SESSIONS LIVE ACTIVES POUR LE MARKET
+// ============================================================================
+final activeMarketLiveSessionsProvider = StreamProvider.autoDispose<List<Map<String, dynamic>>>((ref) {
+  try {
+    return Supabase.instance.client
+        .from('live_sessions')
+        .stream(primaryKey: ['id'])
+        .eq('status', 'live')
+        .limit(10);
+  } catch (_) {
+    return Stream.value(const <Map<String, dynamic>>[]);
+  }
+});
 
 class MarketHomePage extends ConsumerStatefulWidget {
   const MarketHomePage({super.key});
@@ -135,12 +155,22 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     return !dt.isAfter(DateTime.now());
   }
 
+  Widget _buildBlurOrb(Color color, double size) {
+    return Container(
+      width: size, height: size,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+      child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 50, sigmaY: 50), child: Container(color: Colors.transparent)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = context.mkt;
     final featuredAsync = ref.watch(featuredProductsProvider);
     final flashAsync = ref.watch(flashSalesProvider);
     final forYouAsync = ref.watch(forYouProvider);
+    final liveSessionsAsync = ref.watch(activeMarketLiveSessionsProvider); // NOUVEAU
+    
     final all = ref.watch(allMarketProductsProvider);
     final hasMore = ref.read(forYouProvider.notifier).hasMore;
     final mixedAll = _smartMix(all);
@@ -148,80 +178,104 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     featuredAsync.whenData((b) => WidgetsBinding.instance.addPostFrameCallback((_) => _startBannerAuto(b.length)));
 
     return Scaffold(
-      backgroundColor: ThixPolicy.surfaceSoft, // Fond Premium
-      body: RefreshIndicator(
-        color: ThixPolicy.primary,
-        backgroundColor: ThixPolicy.card,
-        onRefresh: () async {
-          ref.invalidate(featuredProductsProvider);
-          ref.invalidate(flashSalesProvider);
-          ref.invalidate(featuredShopsProvider);
-          await ref.read(forYouProvider.notifier).refresh();
-        },
-        child: CustomScrollView(
-          controller: _scroll,
-          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-          slivers: [
-            // ─── Header & Search ───
-            SliverToBoxAdapter(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: ThixPolicy.card,
-                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(ThixPolicy.rXl)),
-                  boxShadow: ThixPolicy.shadowSoft(),
+      backgroundColor: ThixPolicy.surfaceSoft,
+      extendBody: true, // Pour que la liste passe sous la bottom nav bar flottante
+      body: Stack(
+        children: [
+          // Orbes d'arrière-plan Glassmorphism
+          Positioned(top: -100, right: -50, child: _buildBlurOrb(ThixPolicy.domainMarket.withValues(alpha: 0.1), 250)),
+          Positioned(bottom: 200, left: -100, child: _buildBlurOrb(ThixPolicy.primary.withValues(alpha: 0.05), 300)),
+
+          RefreshIndicator(
+            color: ThixPolicy.primary,
+            backgroundColor: ThixPolicy.card,
+            onRefresh: () async {
+              ref.invalidate(featuredProductsProvider);
+              ref.invalidate(flashSalesProvider);
+              ref.invalidate(featuredShopsProvider);
+              ref.invalidate(activeMarketLiveSessionsProvider);
+              await ref.read(forYouProvider.notifier).refresh();
+            },
+            child: CustomScrollView(
+              controller: _scroll,
+              physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+              slivers: [
+                // ─── Header & Search (Glassmorphism) ───
+                SliverToBoxAdapter(
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(ThixPolicy.rXl)),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.65),
+                          border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.8), width: 1.5)),
+                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4))],
+                        ),
+                        child: Column(
+                          children: [
+                            _buildTopBar(t),
+                            _buildSearchBar(t),
+                            const SizedBox(height: ThixPolicy.s16),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
-                child: Column(
-                  children: [
-                    _buildTopBar(t),
-                    _buildSearchBar(t),
-                    const SizedBox(height: ThixPolicy.s16),
-                  ],
-                ),
-              ),
+                const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
+                
+                // ─── Hero Banner ───
+                SliverToBoxAdapter(child: _buildHero(featuredAsync, t)),
+                
+                // ─── Featured Products ───
+                SliverToBoxAdapter(child: _buildFeaturedStrip(featuredAsync, t)),
+                const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
+                
+                // ─── Trust Badges ───
+                SliverToBoxAdapter(child: _buildTrustBadges(t)),
+                const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s20)),
+                
+                // ─── LIVES EN COURS (NOUVEAU) ───
+                SliverToBoxAdapter(child: _buildLiveSection(liveSessionsAsync, t)),
+
+                // ─── Supermarchés ───
+                SliverToBoxAdapter(child: _buildSupermarketSection(t)),
+                const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s24)),
+                
+                // ─── Bannières Promo & B2B ───
+                SliverToBoxAdapter(child: _buildPromoBannersRow(t)),
+                const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
+                SliverToBoxAdapter(child: _buildB2BTools(t)),
+                const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s24)),
+                
+                // ─── Ventes Flash ───
+                SliverToBoxAdapter(child: _buildFlashSaleSection(flashAsync, t)),
+                
+                // ─── Pour Vous (Grille) ───
+                SliverToBoxAdapter(child: _buildSectionHeader(t.allProducts)),
+                const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
+                _buildGrid(forYouAsync, mixedAll, hasMore, t),
+                
+                const SliverToBoxAdapter(child: SizedBox(height: 120)),
+              ],
             ),
-            const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
-            
-            // ─── Hero Banner ───
-            SliverToBoxAdapter(child: _buildHero(featuredAsync, t)),
-            
-            // ─── Featured Products ───
-            SliverToBoxAdapter(child: _buildFeaturedStrip(featuredAsync, t)),
-            const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
-            
-            // ─── Trust Badges ───
-            SliverToBoxAdapter(child: _buildTrustBadges(t)),
-            const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s20)),
-            
-            // ─── Supermarchés ───
-            SliverToBoxAdapter(child: _buildSupermarketSection(t)),
-            const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s24)),
-            
-            // ─── Bannières Promo & B2B ───
-            SliverToBoxAdapter(child: _buildPromoBannersRow(t)),
-            const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
-            SliverToBoxAdapter(child: _buildB2BTools(t)),
-            const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s24)),
-            
-            // ─── Ventes Flash ───
-            SliverToBoxAdapter(child: _buildFlashSaleSection(flashAsync, t)),
-            
-            // ─── Pour Vous (Grille) ───
-            SliverToBoxAdapter(child: _buildSectionHeader(t.allProducts)),
-            const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
-            _buildGrid(forYouAsync, mixedAll, hasMore, t),
-            
-            const SliverToBoxAdapter(child: SizedBox(height: 120)),
-          ],
-        ),
+          ),
+
+          // ─── BOTTOM NAV BAR REDUITE ───
+          Positioned(
+            left: 0, right: 0, bottom: 0,
+            child: _buildBottomNavBar(t),
+          ),
+        ],
       ),
-      bottomNavigationBar: _buildBottomNavBar(t),
     );
   }
 
   Widget _buildTopBar(MarketStrings t) {
     return Container(
       color: Colors.transparent,
-      padding: const EdgeInsets.fromLTRB(ThixPolicy.s16, 54, ThixPolicy.s16, ThixPolicy.s12),
+      padding: EdgeInsets.fromLTRB(ThixPolicy.s16, MediaQuery.paddingOf(context).top + 12, ThixPolicy.s16, ThixPolicy.s12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -230,11 +284,12 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
               Container(
                 width: 44, height: 44,
                 decoration: BoxDecoration(
-                  color: ThixPolicy.tint,
+                  color: Colors.white.withValues(alpha: 0.8),
                   borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-                  border: Border.all(color: ThixPolicy.border),
+                  border: Border.all(color: Colors.white),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, 2))],
                 ),
-                child: const Icon(Icons.storefront_rounded, color: ThixPolicy.primary, size: 24),
+                child: const Icon(Icons.storefront_rounded, color: ThixPolicy.domainMarket, size: 24),
               ),
               const SizedBox(width: ThixPolicy.s12),
               Column(
@@ -260,7 +315,11 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                 borderRadius: BorderRadius.circular(ThixPolicy.rFull),
                 child: Container(
                   width: 38, height: 38,
-                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: ThixPolicy.border)),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.6),
+                    shape: BoxShape.circle, 
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.5)
+                  ),
                   child: const Icon(Icons.notifications_none_rounded, size: 20, color: ThixPolicy.textMain),
                 ),
               ),
@@ -270,7 +329,11 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                 borderRadius: BorderRadius.circular(ThixPolicy.rFull),
                 child: Container(
                   width: 38, height: 38,
-                  decoration: const BoxDecoration(gradient: ThixPolicy.brandGradient, shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                    gradient: ThixPolicy.brandGradient, 
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
                   child: const Icon(Icons.person_rounded, color: Colors.white, size: 18),
                 ),
               ),
@@ -293,9 +356,9 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                 height: 48,
                 padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
                 decoration: BoxDecoration(
-                  color: ThixPolicy.surfaceSoft,
+                  color: Colors.white.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), 
-                  border: Border.all(color: ThixPolicy.border, width: 1.2)
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2)
                 ),
                 child: Row(
                   children: [
@@ -314,7 +377,11 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
             child: Container(
               height: 48,
               padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
-              decoration: BoxDecoration(color: ThixPolicy.primaryDeep, borderRadius: BorderRadius.circular(ThixPolicy.inputRadius)),
+              decoration: BoxDecoration(
+                color: ThixPolicy.primaryDeep.withValues(alpha: 0.9), 
+                borderRadius: BorderRadius.circular(ThixPolicy.inputRadius),
+                boxShadow: [BoxShadow(color: ThixPolicy.primary.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(0, 4))]
+              ),
               child: const Center(child: Icon(Icons.tune_rounded, color: Colors.white, size: 20)),
             ),
           ),
@@ -369,11 +436,12 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                     child: Container(
                       padding: const EdgeInsets.all(ThixPolicy.s24),
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+                        borderRadius: BorderRadius.circular(20),
                         gradient: ThixPolicy.heroGradient,
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1),
                         image: imageUrl != null
                             ? DecorationImage(
-                                image: CachedNetworkImageProvider(imageUrl), // ✅ CACHED
+                                image: CachedNetworkImageProvider(imageUrl),
                                 fit: BoxFit.cover,
                                 colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.6), BlendMode.darken),
                               )
@@ -399,7 +467,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                           const SizedBox(height: ThixPolicy.s16),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(12)),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -456,9 +524,9 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
       margin: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s12, vertical: ThixPolicy.s16),
       decoration: BoxDecoration(
-        color: ThixPolicy.card,
-        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-        border: Border.all(color: ThixPolicy.border),
+        color: Colors.white.withValues(alpha: 0.5), // Glassmorphism
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -483,6 +551,114 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
         const SizedBox(height: 6),
         Text(label, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: ThixPolicy.textMain)),
       ],
+    );
+  }
+
+  // ─────────────────────────── NOUVELLE SECTION LIVE ───────────────────────────
+  Widget _buildLiveSection(AsyncValue<List<Map<String, dynamic>>> liveAsync, MarketStrings t) {
+    return liveAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (sessions) {
+        if (sessions.isEmpty) return const SizedBox.shrink();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 8, height: 8,
+                    decoration: const BoxDecoration(color: ThixPolicy.danger, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(t.live, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: ThixPolicy.textMain, letterSpacing: -0.5)),
+                ],
+              ),
+            ),
+            const SizedBox(height: ThixPolicy.s12),
+            SizedBox(
+              height: 140,
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                itemCount: sessions.length,
+                separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s12),
+                itemBuilder: (ctx, i) {
+                  final s = sessions[i];
+                  final hostAvatar = s['host_avatar']?.toString();
+                  final shopName = s['channel_name']?.toString() ?? s['host_name']?.toString() ?? t.client;
+                  
+                  return GestureDetector(
+                    onTap: () {
+                      final liveSession = LiveSession(
+                        id: s['id']?.toString() ?? '',
+                        channelName: s['channel_name']?.toString() ?? '',
+                        title: s['title']?.toString() ?? 'Live Market',
+                        hostId: s['host_id']?.toString() ?? '',
+                        hostName: s['host_name']?.toString() ?? t.client,
+                        hostAvatarUrl: hostAvatar,
+                      );
+                      Navigator.push(context, MaterialPageRoute(builder: (context) => LiveViewerScreen(session: liveSession)));
+                    },
+                    child: Container(
+                      width: 110,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: ThixPolicy.danger.withValues(alpha: 0.5), width: 1.2),
+                        boxShadow: [BoxShadow(color: ThixPolicy.danger.withValues(alpha: 0.1), blurRadius: 8, offset: const Offset(0, 4))],
+                      ),
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: hostAvatar != null && hostAvatar.isNotEmpty
+                                  ? CachedNetworkImage(imageUrl: hostAvatar, fit: BoxFit.cover)
+                                  : Container(color: ThixPolicy.surfaceSoft, child: const Icon(Icons.storefront, color: ThixPolicy.textSecondary, size: 40)),
+                            ),
+                          ),
+                          Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black.withOpacity(0.7)]),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 8, left: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: ThixPolicy.danger, borderRadius: BorderRadius.circular(4)),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(width: 4, height: 4, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle)),
+                                  const SizedBox(width: 4),
+                                  Text(t.live.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 8, left: 8, right: 8,
+                            child: Text(shopName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: ThixPolicy.s24),
+          ],
+        );
+      },
     );
   }
 
@@ -511,8 +687,8 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                           height: 64, width: 64,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: ThixPolicy.card,
-                            border: Border.all(color: ThixPolicy.border, width: 1.5),
+                            color: Colors.white.withValues(alpha: 0.6), // Glass
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.5),
                             boxShadow: ThixPolicy.shadowSoft(),
                             image: s['logo_url'] != null ? DecorationImage(image: CachedNetworkImageProvider(s['logo_url']), fit: BoxFit.cover) : null,
                           ),
@@ -548,8 +724,9 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                 padding: const EdgeInsets.all(ThixPolicy.s16),
                 decoration: BoxDecoration(
                   gradient: ThixPolicy.brandGradient,
-                  borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                  borderRadius: BorderRadius.circular(16),
                   boxShadow: ThixPolicy.shadowSoft(),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -579,9 +756,9 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                 height: 140,
                 padding: const EdgeInsets.all(ThixPolicy.s16),
                 decoration: BoxDecoration(
-                  color: ThixPolicy.card,
-                  borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                  border: Border.all(color: ThixPolicy.border),
+                  color: Colors.white.withValues(alpha: 0.5), // Glass
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
                   boxShadow: ThixPolicy.shadowSoft(),
                 ),
                 child: Column(
@@ -593,7 +770,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                     const Spacer(),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(color: ThixPolicy.primaryDeep, borderRadius: BorderRadius.circular(8)),
+                      decoration: BoxDecoration(color: ThixPolicy.primaryDeep.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(8)),
                       child: Text(t.start, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10)),
                     ),
                   ],
@@ -612,9 +789,9 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: ThixPolicy.s16, horizontal: ThixPolicy.s8),
         decoration: BoxDecoration(
-          color: ThixPolicy.card,
-          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          border: Border.all(color: ThixPolicy.border),
+          color: Colors.white.withValues(alpha: 0.5), // Glass
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
           boxShadow: ThixPolicy.shadowSoft(),
         ),
         child: Row(
@@ -638,7 +815,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
         padding: const EdgeInsets.all(4),
         child: Column(
           children: [
-            Container(padding: const EdgeInsets.all(10), decoration: const BoxDecoration(color: ThixPolicy.surface, shape: BoxShape.circle), child: Icon(icon, color: ThixPolicy.primaryDeep, size: 20)),
+            Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.8), shape: BoxShape.circle), child: Icon(icon, color: ThixPolicy.primaryDeep, size: 20)),
             const SizedBox(height: 8),
             Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: ThixPolicy.textMain)),
           ],
@@ -724,48 +901,61 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
+  // ─────────────────────────── NOUVELLE BOTTOM NAV BAR ───────────────────────────
   Widget _buildBottomNavBar(MarketStrings t) {
     return Container(
-      decoration: BoxDecoration(
-        color: ThixPolicy.card,
-        boxShadow: [BoxShadow(color: ThixPolicy.inkDeep.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, -5))],
-      ),
+      color: Colors.transparent, // Obligatoire pour le Glassmorphism flottant
       child: SafeArea(
         top: false,
-        child: SizedBox(
-          height: 66,
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.center,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _navItem(Icons.home_rounded, t.home, 0),
-                  _navItem(Icons.receipt_long_rounded, t.orders, 1),
-                  const SizedBox(width: 70), // Espace pour le FAB central
-                  _navItem(Icons.favorite_rounded, t.wishlist, 3),
-                  _navItem(Icons.notifications_active_rounded, t.alerts, 4),
-                ],
-              ),
-              Positioned(
-                top: -24,
-                child: GestureDetector(
-                  onTap: () => context.push('/market/cart'),
-                  child: Container(
-                    width: 64, height: 64,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      gradient: ThixPolicy.brandGradient,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: ThixPolicy.surfaceSoft, width: 4),
-                      boxShadow: ThixPolicy.shadowCard(),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+              child: Container(
+                height: 56, // HAUTEUR RÉDUITE
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 20, offset: const Offset(0, 10))],
+                ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _navItem(Icons.home_rounded, t.home, 0),
+                        _navItem(Icons.receipt_long_rounded, t.orders, 1),
+                        const SizedBox(width: 60), // Espace pour le FAB central
+                        _navItem(Icons.favorite_rounded, t.wishlist, 3),
+                        _navItem(Icons.notifications_active_rounded, t.alerts, 4),
+                      ],
                     ),
-                    child: const Icon(Icons.shopping_bag_rounded, color: Colors.white, size: 26),
-                  ),
+                    Positioned(
+                      top: -18, // Ajustement dû à la hauteur réduite
+                      child: GestureDetector(
+                        onTap: () => context.push('/market/cart'),
+                        child: Container(
+                          width: 56, height: 56, // TAILLE RÉDUITE DU BOUTON CENTRAL
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            gradient: ThixPolicy.brandGradient,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 3),
+                            boxShadow: [BoxShadow(color: ThixPolicy.primary.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 4))],
+                          ),
+                          child: const Icon(Icons.shopping_bag_rounded, color: Colors.white, size: 24),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -784,15 +974,15 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
         if (index == 4) context.push('/market/price-alerts');
       },
       child: Container(
-        width: 62,
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        width: 54, // TAILLE RÉDUITE
+        padding: const EdgeInsets.symmetric(vertical: 2),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: sel ? ThixPolicy.domainMarket : ThixPolicy.textSecondary, size: 24),
-            const SizedBox(height: 4),
-            Text(label, maxLines: 1, style: TextStyle(fontSize: 10, color: sel ? ThixPolicy.domainMarket : ThixPolicy.textSecondary, fontWeight: sel ? FontWeight.w800 : FontWeight.w600)),
+            Icon(icon, color: sel ? ThixPolicy.domainMarket : ThixPolicy.textSecondary.withValues(alpha: 0.8), size: 22),
+            const SizedBox(height: 2),
+            Text(label, maxLines: 1, style: TextStyle(fontSize: 9, color: sel ? ThixPolicy.domainMarket : ThixPolicy.textSecondary.withValues(alpha: 0.8), fontWeight: sel ? FontWeight.w800 : FontWeight.w600)),
           ],
         ),
       ),
