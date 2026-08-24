@@ -10,6 +10,7 @@ import '../providers/thix_ia_provider.dart';
 import '../providers/analysis_provider.dart';
 import '../providers/project_memory_provider.dart';
 import '../providers/document_provider.dart';
+import '../providers/chat_provider.dart';
 import '../widgets/project_header.dart';
 import '../widgets/fact_card.dart';
 import '../widgets/analysis_progress_widget.dart';
@@ -27,6 +28,7 @@ class ProjectDetailPage extends ConsumerStatefulWidget {
 class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  bool _isSending = false;
 
   @override
   void initState() {
@@ -38,9 +40,11 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
         ref.invalidate(analysesProvider);
         ref.invalidate(projectMemoryProvider);
         ref.invalidate(documentsProvider);
-        await ref.read(analysesProvider.notifier).refresh();
-        await ref.read(projectMemoryProvider.notifier).refresh();
-        await ref.read(documentsProvider.notifier).refresh();
+        await Future.wait([
+          ref.read(analysesProvider.notifier).refresh(),
+          ref.read(projectMemoryProvider.notifier).refresh(),
+          ref.read(documentsProvider.notifier).refresh(),
+        ]);
       } catch (e) {
         debugPrint('ProjectDetail init error: $e');
       }
@@ -63,14 +67,14 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
           );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Analyse marche lancee')),
+          const SnackBar(content: Text('Étude de marché lancée'), behavior: SnackBarBehavior.floating),
         );
         _tabController.animateTo(1);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
         );
       }
     }
@@ -86,27 +90,89 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
           );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Analyse legale lancee')),
+          const SnackBar(content: Text('Analyse réglementaire lancée'), behavior: SnackBarBehavior.floating),
         );
         _tabController.animateTo(1);
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
         );
       }
     }
   }
 
-  void _handleAiCommand(String text) {
-    final lower = text.toLowerCase();
-    if (lower.contains('marche') || lower.contains('market')) {
-      _startMarket();
-    } else if (lower.contains('reglement') || lower.contains('legal')) {
-      _startLegal();
-    } else {
-      context.push(ThixIARoutes.analysisPath(widget.projectCode));
+  Future<void> _handleAiCommand(String text) async {
+    final lower = text.toLowerCase().trim();
+    if (lower.isEmpty) return;
+
+    // Raccourcis intelligents
+    if (lower.contains('marché') || lower.contains('market') || lower.contains('etude')) {
+      await _startMarket();
+      return;
+    }
+    if (lower.contains('réglement') || lower.contains('legal') || lower.contains('loi')) {
+      await _startLegal();
+      return;
+    }
+
+    // Sinon → envoi dans le chat du projet
+    setState(() => _isSending = true);
+    try {
+      await ref.read(chatProvider.notifier).sendMessage(text);
+      if (mounted) {
+        context.push(ThixIARoutes.chatPath(widget.projectCode));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur chat: $e'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  Future<void> _confirmDeleteProject() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer le projet ?'),
+        content: Text(
+          'Le projet ${widget.projectCode} sera définitivement supprimé.\nCette action est irréversible.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      try {
+        await ref.read(projectServiceProvider).deleteProject(widget.projectCode);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Projet supprimé'), behavior: SnackBarBehavior.floating),
+          );
+          context.go(ThixIARoutes.projects);
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur suppression: $e'), backgroundColor: Colors.red),
+          );
+        }
+      }
     }
   }
 
@@ -122,7 +188,7 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
         appBar: AppBar(
           title: Text(widget.projectCode),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
+            icon: const Icon(Icons.arrow_back_rounded, size: 22),
             onPressed: () => context.go(ThixIARoutes.projects),
           ),
         ),
@@ -132,16 +198,15 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.error_outline, color: Colors.red, size: 48),
+                const Icon(Icons.error_outline_rounded, color: Colors.red, size: 40),
                 const SizedBox(height: 12),
                 Text('Impossible de charger le projet', style: ThixPolicy.h3Style),
                 const SizedBox(height: 8),
                 Text('$e', textAlign: TextAlign.center, style: ThixPolicy.bodySmallStyle),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () =>
-                      ref.read(activeProjectProvider.notifier).setActive(widget.projectCode),
-                  child: const Text('Reessayer'),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: () => ref.read(activeProjectProvider.notifier).setActive(widget.projectCode),
+                  child: const Text('Réessayer'),
                 ),
                 TextButton(
                   onPressed: () => context.go(ThixIARoutes.projects),
@@ -179,38 +244,96 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
     return Scaffold(
       backgroundColor: ThixPolicy.surface,
       body: NestedScrollView(
-        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+        headerSliverBuilder: (context, _) => [
+          // ========== APP BAR COMPACTE ==========
           SliverAppBar(
             pinned: true,
             backgroundColor: Colors.white,
+            elevation: 0,
+            titleSpacing: 0,
             title: Text(
               activeProject.projectCode,
               style: ThixPolicy.bodyStyle.copyWith(
                 fontFamily: 'monospace',
-                fontWeight: ThixPolicy.semiBold,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
               ),
             ),
             actions: [
               IconButton(
-                onPressed: () =>
-                    context.push(ThixIARoutes.documentsPath(widget.projectCode)),
-                icon: const Icon(Icons.folder_rounded, color: ThixPolicy.textSecondary),
+                tooltip: 'Documents',
+                onPressed: () => context.push(ThixIARoutes.documentsPath(widget.projectCode)),
+                icon: const Icon(Icons.folder_outlined, size: 20, color: ThixPolicy.textSecondary),
+              ),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert_rounded, size: 20),
+                padding: EdgeInsets.zero,
+                onSelected: (value) async {
+                  if (value == 'market') await _startMarket();
+                  if (value == 'legal') await _startLegal();
+                  if (value == 'delete') await _confirmDeleteProject();
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'market',
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.insights_outlined, size: 18),
+                        SizedBox(width: 10),
+                        Text('Lancer étude de marché', style: TextStyle(fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'legal',
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.balance_outlined, size: 18),
+                        SizedBox(width: 10),
+                        Text('Vérifier réglementation', style: TextStyle(fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_outline_rounded, size: 18, color: Colors.red),
+                        SizedBox(width: 10),
+                        Text('Supprimer le projet', style: TextStyle(fontSize: 13, color: Colors.red)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
-            bottom: TabBar(
-              controller: _tabController,
-              labelColor: ThixPolicy.primary,
-              unselectedLabelColor: ThixPolicy.textMuted,
-              indicatorColor: ThixPolicy.primary,
-              isScrollable: true,
-              tabs: const [
-                Tab(text: "Vue d'ensemble"),
-                Tab(text: 'Analyses'),
-                Tab(text: 'Memoire'),
-                Tab(text: 'Documents'),
-              ],
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(40),
+              child: TabBar(
+                controller: _tabController,
+                labelColor: ThixPolicy.primary,
+                unselectedLabelColor: ThixPolicy.textMuted,
+                indicatorColor: ThixPolicy.primary,
+                indicatorWeight: 2.5,
+                labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                unselectedLabelStyle: const TextStyle(fontSize: 13),
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                tabs: const [
+                  Tab(text: "Vue d'ensemble", height: 36),
+                  Tab(text: 'Analyses', height: 36),
+                  Tab(text: 'Mémoire', height: 36),
+                  Tab(text: 'Documents', height: 36),
+                ],
+              ),
             ),
           ),
+
+          // ========== HEADER PROJET COMPACT ==========
           SliverToBoxAdapter(
             child: ProjectHeader(
               project: activeProject,
@@ -228,40 +351,21 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
           ],
         ),
       ),
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _startMarket,
-                    icon: const Icon(Icons.auto_awesome, size: 16),
-                    label: const Text('Analyse marche', style: TextStyle(fontSize: 12)),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _startLegal,
-                    icon: const Icon(Icons.balance, size: 16),
-                    label: const Text('Reglementation', style: TextStyle(fontSize: 12)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          AiCommandBar(
-            onSubmit: _handleAiCommand,
-            hintText: 'Demandez a THIX IA sur ${widget.projectCode}...',
-          ),
-        ],
+
+      // ========== BARRE DE COMMANDE (sans boutons collés) ==========
+      bottomNavigationBar: AiCommandBar(
+        onSubmit: _handleAiCommand,
+        hintText: 'Demandez à THIX IA sur ${widget.projectCode}...',
+        isLoading: _isSending,
+        showSuggestions: true,
       ),
     );
   }
 }
+
+// ============================================================
+// TABS
+// ============================================================
 
 class _OverviewTab extends StatelessWidget {
   const _OverviewTab({required this.project});
@@ -270,36 +374,45 @@ class _OverviewTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cityPart = project.city != null ? ' • ${project.city}' : '';
+
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
       children: [
-        Text(project.name, style: ThixPolicy.h2Style),
-        const SizedBox(height: 8),
+        Text(project.name, style: ThixPolicy.h2Style.copyWith(fontSize: 20)),
+        const SizedBox(height: 4),
         Text(
           '${project.sector} • ${project.country}$cityPart',
-          style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary),
+          style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
         ),
         if (project.summary != null && project.summary!.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Text('Resume', style: ThixPolicy.labelStyle),
-          const SizedBox(height: 6),
-          Text(project.summary!, style: ThixPolicy.bodyStyle),
+          const SizedBox(height: 14),
+          Text('Résumé', style: ThixPolicy.labelStyle.copyWith(fontSize: 12)),
+          const SizedBox(height: 4),
+          Text(project.summary!, style: ThixPolicy.bodySmallStyle),
         ],
         const SizedBox(height: 16),
-        Text(
-          'Progression : ${(project.progress * 100).toInt()}%',
-          style: ThixPolicy.labelStyle,
+        Row(
+          children: [
+            Text(
+              'Progression  ${(project.progress * 100).toInt()}%',
+              style: ThixPolicy.labelStyle.copyWith(fontSize: 12),
+            ),
+            const Spacer(),
+            Text(
+              '${project.analysesCount} analyses  •  ${project.documentsCount} docs',
+              style: ThixPolicy.microStyle,
+            ),
+          ],
         ),
-        const SizedBox(height: 8),
-        LinearProgressIndicator(
-          value: project.progress.clamp(0.0, 1.0),
-          backgroundColor: ThixPolicy.surfaceStrong,
-          valueColor: const AlwaysStoppedAnimation(ThixPolicy.primary),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Analyses : ${project.analysesCount}  •  Documents : ${project.documentsCount}',
-          style: ThixPolicy.captionStyle,
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: project.progress.clamp(0.0, 1.0),
+            minHeight: 5,
+            backgroundColor: ThixPolicy.surfaceStrong,
+            valueColor: const AlwaysStoppedAnimation(ThixPolicy.primary),
+          ),
         ),
       ],
     );
@@ -318,28 +431,28 @@ class _AnalysesTab extends ConsumerWidget {
       loading: () => const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
-          child: CircularProgressIndicator(color: ThixPolicy.primary),
+          child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 2.5),
         ),
       ),
       error: (e, _) => ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          const Icon(Icons.error_outline, color: Colors.red, size: 40),
-          const SizedBox(height: 12),
+          const Icon(Icons.error_outline_rounded, color: Colors.red, size: 36),
+          const SizedBox(height: 10),
           Text('Erreur analyses', style: ThixPolicy.h3Style),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text('$e', style: ThixPolicy.bodySmallStyle),
-          const SizedBox(height: 16),
-          ElevatedButton(
+          const SizedBox(height: 14),
+          FilledButton(
             onPressed: () => ref.read(analysesProvider.notifier).refresh(),
-            child: const Text('Reessayer'),
+            child: const Text('Réessayer'),
           ),
         ],
       ),
       data: (analyses) {
         if (analyses.isEmpty) {
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 120),
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 100),
             children: [
               EmptyAnalyses(
                 onStart: () => context.push(ThixIARoutes.analysisPath(projectCode)),
@@ -348,7 +461,7 @@ class _AnalysesTab extends ConsumerWidget {
           );
         }
         return ListView.builder(
-          padding: const EdgeInsets.only(bottom: 120),
+          padding: const EdgeInsets.only(bottom: 100),
           itemCount: analyses.length,
           itemBuilder: (_, i) => AnalysisProgressWidget(analysis: analyses[i]),
         );
@@ -369,21 +482,21 @@ class _MemoryTab extends ConsumerWidget {
       loading: () => const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
-          child: CircularProgressIndicator(color: ThixPolicy.primary),
+          child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 2.5),
         ),
       ),
       error: (e, _) => ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          const Icon(Icons.error_outline, color: Colors.red, size: 40),
-          const SizedBox(height: 12),
-          Text('Erreur memoire', style: ThixPolicy.h3Style),
-          const SizedBox(height: 8),
+          const Icon(Icons.error_outline_rounded, color: Colors.red, size: 36),
+          const SizedBox(height: 10),
+          Text('Erreur mémoire', style: ThixPolicy.h3Style),
+          const SizedBox(height: 6),
           Text('$e', style: ThixPolicy.bodySmallStyle),
-          const SizedBox(height: 16),
-          ElevatedButton(
+          const SizedBox(height: 14),
+          FilledButton(
             onPressed: () => ref.read(projectMemoryProvider.notifier).refresh(),
-            child: const Text('Reessayer'),
+            child: const Text('Réessayer'),
           ),
         ],
       ),
@@ -391,12 +504,12 @@ class _MemoryTab extends ConsumerWidget {
         final facts = memory?.facts ?? [];
         if (facts.isEmpty) {
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 120),
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 100),
             children: const [EmptyFacts()],
           );
         }
         return ListView.builder(
-          padding: const EdgeInsets.only(bottom: 120),
+          padding: const EdgeInsets.only(bottom: 100),
           itemCount: facts.length,
           itemBuilder: (_, i) => FactCard(fact: facts[i]),
         );
@@ -412,26 +525,30 @@ class _DocsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final docs = ref.watch(documentsProvider).value ?? [];
+
     if (docs.isEmpty) {
       return ListView(
-        padding: const EdgeInsets.fromLTRB(16, 24, 16, 120),
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 100),
         children: [
           EmptyStateWidget(
             icon: Icons.folder_outlined,
             title: 'Aucun document',
-            subtitle: 'Importez votre pitch, business plan ou etudes.',
+            subtitle: 'Importez votre pitch, business plan ou études.',
             actionLabel: 'Importer',
             onAction: () => context.push(ThixIARoutes.documentsPath(projectCode)),
           ),
         ],
       );
     }
+
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 120),
+      padding: const EdgeInsets.only(bottom: 100),
       itemCount: docs.length,
       itemBuilder: (_, i) => ListTile(
-        title: Text(docs[i].fileName),
-        subtitle: Text(docs[i].status.name),
+        dense: true,
+        leading: const Icon(Icons.description_outlined, size: 20),
+        title: Text(docs[i].fileName, style: const TextStyle(fontSize: 14)),
+        subtitle: Text(docs[i].status.name, style: ThixPolicy.microStyle),
       ),
     );
   }
