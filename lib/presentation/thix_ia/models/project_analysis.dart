@@ -3,7 +3,7 @@ import 'package:equatable/equatable.dart';
 import '../core/utils/json_utils.dart';
 
 /// ============================================================================
-/// PROJECT ANALYSIS - Table: thix_analyses (anciennement project_analyses)
+/// PROJECT ANALYSIS - Table: thix_analyses
 /// Gère le versioning et la progression réelle (pas arbitraire)
 /// ============================================================================
 
@@ -26,7 +26,7 @@ class ProjectAnalysis extends Equatable {
   const ProjectAnalysis({
     required this.id,
     required this.projectCode,
-    required this.type, // idea, market, legal...
+    required this.type,
     required this.status,
     this.progress = 0,
     this.title,
@@ -48,12 +48,12 @@ class ProjectAnalysis extends Equatable {
   final String projectCode;
   final String type;
   final AnalysisStatus status;
-  final int progress; // 0-100 calculé sur livrables
+  final int progress; 
   final String? title;
-  final String? summary;
-  final Map<String, dynamic>? resultJson; // Résultat structuré
+  final String? summary; // C'est ici que l'UI affiche le rapport !
+  final Map<String, dynamic>? resultJson; 
   final double confidence;
-  final List<String> sources; // URLs
+  final List<String> sources; 
   final List<Citation> citations;
   final String? aiModelUsed;
   final String? promptVersion;
@@ -75,9 +75,15 @@ class ProjectAnalysis extends Equatable {
       status: JsonUtils.stringValue(json, 'status', fallback: 'queued').toAnalysisStatus(),
       progress: JsonUtils.intValue(json, 'progress'),
       title: JsonUtils.stringValue(json, 'title'),
-      summary: JsonUtils.stringValue(json, 'summary'),
-      // MODIFICATION ICI : On lit la colonne 'content' en priorité, avec un fallback sur 'result_json' au cas où
-      resultJson: JsonUtils.asMap(json['content']) ?? JsonUtils.asMap(json['result_json']),
+      
+      // ✅ CORRECTION MAJEURE ICI : 
+      // Le texte Markdown renvoyé par l'IA dans 'content' est un String.
+      // On le place directement dans 'summary' pour que l'InsightCard l'affiche.
+      summary: JsonUtils.stringValue(json, 'content') ?? JsonUtils.stringValue(json, 'summary'),
+      
+      // resultJson reste un Map uniquement pour les vrais objets JSON s'il y en a.
+      resultJson: JsonUtils.asMap(json['result_json']),
+      
       confidence: JsonUtils.doubleValue(json, 'confidence'),
       sources: JsonUtils.stringList(json, 'sources'),
       citations: JsonUtils.asList(json['citations'], fromMap: Citation.fromJson),
@@ -97,9 +103,11 @@ class ProjectAnalysis extends Equatable {
         'status': status.name,
         'progress': progress,
         'title': title,
+        // ✅ CORRECTION ICI : On sauvegarde le texte dans les deux colonnes 
+        // pour être sûr que la base de données et l'UI sont synchronisées.
         'summary': summary,
-        // MODIFICATION ICI : On sauvegarde dans la colonne 'content' (et non plus 'result_json')
-        'content': resultJson,
+        'content': summary, 
+        'result_json': resultJson,
         'confidence': confidence,
         'sources': sources,
         'ai_model_used': aiModelUsed,
@@ -107,7 +115,7 @@ class ProjectAnalysis extends Equatable {
         'version': version,
       });
 
-  ProjectAnalysis copyWith({AnalysisStatus? status, int? progress, Map<String, dynamic>? resultJson}) {
+  ProjectAnalysis copyWith({AnalysisStatus? status, int? progress, Map<String, dynamic>? resultJson, String? summary}) {
     return ProjectAnalysis(
       id: id,
       projectCode: projectCode,
@@ -115,7 +123,7 @@ class ProjectAnalysis extends Equatable {
       status: status ?? this.status,
       progress: progress ?? this.progress,
       title: title,
-      summary: summary,
+      summary: summary ?? this.summary,
       resultJson: resultJson ?? this.resultJson,
       confidence: confidence,
       sources: sources,
