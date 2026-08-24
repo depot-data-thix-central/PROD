@@ -13,7 +13,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/models/network_story.dart';
-import 'package:thix_id/data/models/live/live_model.dart'; // ✅ IMPORT AJOUTÉ POUR LIVESESSION
+import 'package:thix_id/data/models/live/live_model.dart';
 import 'package:thix_id/features/network/data/network_service_provider.dart';
 import 'package:thix_id/features/network/presentation/providers/feed_provider.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
@@ -108,7 +108,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
   bool _loadingStories = true;
   bool _isLoadingMore = false;
 
-  // ─── GESTION DES SUGGESTIONS (Aléatoire local optimisé) ───
   List<dynamic> _allSuggestions = [];
   List<dynamic> _displayedSuggestions = [];
   Timer? _suggestionTimer;
@@ -164,15 +163,12 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     }
   }
 
-  // ─── CHARGEMENT & MÉLANGE DES SUGGESTIONS ───
   Future<void> _loadSuggestions() async {
     try {
-      // On charge 30 suggestions une seule fois pour éviter de spammer la DB
       final data = await ref.read(networkServiceProvider).getSuggestedConnections(limit: 30);
       _allSuggestions = data;
       _shuffleSuggestions();
 
-      // Timer pour remélanger toutes les minutes
       _suggestionTimer?.cancel();
       _suggestionTimer = Timer.periodic(const Duration(minutes: 1), (_) {
         _shuffleSuggestions();
@@ -185,7 +181,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     setState(() {
       final list = List<dynamic>.from(_allSuggestions);
       list.shuffle(Random());
-      // On affiche uniquement 8 à 10 personnes à la fois
       _displayedSuggestions = list.take(10).toList();
     });
   }
@@ -223,7 +218,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     super.dispose();
   }
 
-  // ─────────────────────────── HELPER ORBE ───────────────────────────
   Widget _buildBlurOrb(Color color, double size) {
     return Container(
       width: size,
@@ -264,7 +258,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
         backgroundColor: ThixPolicy.surfaceSoft, 
         body: Stack(
           children: [
-            // Orbes décoratifs en arrière-plan pour l'effet Premium
             Positioned(top: -100, right: -50, child: _buildBlurOrb(ThixPolicy.primary.withValues(alpha: 0.08), 250)),
             Positioned(bottom: 200, left: -100, child: _buildBlurOrb(ThixPolicy.primaryDeep.withValues(alpha: 0.05), 300)),
 
@@ -276,29 +269,19 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                 controller: _scrollController,
                 physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
                 slivers: [
-                  _buildSliverAppBar(
-                    avatarUrl: currentUser.photoUrl,
-                  ),
-
-                  // ─── CRÉATION DE POST ───
+                  _buildSliverAppBar(avatarUrl: currentUser.photoUrl),
                   SliverToBoxAdapter(
                     child: _QuickPostEntryCard(
                       avatarUrl: currentUser.photoUrl,
                       onTap: () => showDialog(context: context, builder: (_) => const CreatePostDialog()),
                     ),
                   ),
-
-                  // ─── STORIES ───
                   SliverToBoxAdapter(child: _buildStories(currentUser.id, liveHostIds)),
-
-                  // ─── FILTRES DE FLUX ───
                   SliverToBoxAdapter(child: _buildFilters()),
-
-                  // ─── BANDE UNIQUE : SUGGESTIONS (Gauche) + LIVES (Droite) ───
+                  
                   if (_displayedSuggestions.isNotEmpty || liveSessions.isNotEmpty)
                     SliverToBoxAdapter(child: _buildUnifiedDiscoveryBand(liveSessions)),
 
-                  // ─── FIL D'ACTUALITÉ ───
                   feedAsync.when(
                     loading: () => SliverToBoxAdapter(child: _buildShimmerFeed()),
                     error: (e, _) => SliverToBoxAdapter(
@@ -313,15 +296,21 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                         itemCount: posts.length,
                         itemBuilder: (c, i) {
                           final post = posts[i];
-                          return PostCard(
-                            key: ValueKey(post.id),
-                            post: post,
-                            currentProfileId: currentUser.id,
-                            onLike: null,
-                            onComment: () => _openComments(post.id),
-                            onShare: () => _showShareSheet(post),
-                            onDelete: () => ref.read(feedProvider.notifier).deletePost(post.id),
-                            onRefresh: null,
+                          return Column(
+                            children: [
+                              PostCard(
+                                key: ValueKey(post.id),
+                                post: post,
+                                currentProfileId: currentUser.id,
+                                onLike: null,
+                                onComment: () => _openComments(post.id),
+                                onShare: () => _showShareSheet(post),
+                                onDelete: () => ref.read(feedProvider.notifier).deletePost(post.id),
+                                onRefresh: null,
+                              ),
+                              // 🔴 SÉPARATEUR JAUNE ENTRE LES PUBLICATIONS
+                              Divider(height: 1, thickness: 0.5, color: ThixPolicy.gold.withValues(alpha: 0.8)),
+                            ],
                           );
                         },
                       );
@@ -345,10 +334,9 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // ─────────────────────────── APP BAR GLASSMORPHISM ───────────────────────────
   Widget _buildSliverAppBar({required String? avatarUrl}) {
     return SliverAppBar(
-      backgroundColor: Colors.transparent, // Transparence pour le flou
+      backgroundColor: Colors.transparent, 
       elevation: 0,
       scrolledUnderElevation: 0,
       floating: true,
@@ -368,7 +356,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       ),
       title: Text('THIX PRO', style: ThixPolicy.h2Style.copyWith(fontWeight: ThixPolicy.bold, letterSpacing: -0.3, color: ThixPolicy.textMain)),
       actions: [
-        // 🔴 SYMBOLE LIVE EN ROUGE POUR LANCER UN DIRECT
         GestureDetector(
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LivePrepScreen())),
           child: Container(
@@ -415,7 +402,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // ─────────────────────────── STORIES ───────────────────────────
   Widget _buildStories(String currentUserId, Set<String> liveHostIds) {
     if (_loadingStories) {
       return Container(
@@ -480,7 +466,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // ─────────────────────────── FILTRES (Glass Pills) ───────────────────────────
   Widget _buildFilters() {
     final filters = {
       'foryou': 'Pour vous',
@@ -535,7 +520,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // ─────────────────────────── BANDE UNIQUE (SUGGESTIONS + LIVES) ───────────────────────────
   Widget _buildUnifiedDiscoveryBand(List<Map<String, dynamic>> liveSessions) {
     final int totalCount = _displayedSuggestions.length + liveSessions.length;
 
@@ -567,7 +551,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
               itemCount: totalCount,
               separatorBuilder: (_, __) => const SizedBox(width: 16),
               itemBuilder: (c, i) {
-                // SUGGESTIONS À GAUCHE
                 if (i < _displayedSuggestions.length) {
                   final u = _displayedSuggestions[i];
                   return GestureDetector(
@@ -604,7 +587,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                     ),
                   );
                 } 
-                // LIVES EN COURS À DROITE
                 else {
                   final liveIndex = i - _displayedSuggestions.length;
                   final s = liveSessions[liveIndex];
@@ -662,7 +644,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // ─────────────────────────── FEED UTILS ───────────────────────────
   Widget _buildShimmerFeed() {
     return Column(
       children: List.generate(3, (i) => Container(
@@ -708,7 +689,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     final link = 'https://thix.id/network/post/$id';
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent, // Pour l'effet blur
+      backgroundColor: Colors.transparent, 
       builder: (_) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
         child: Container(
@@ -747,7 +728,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // ─────────────────────────── BOTTOM NAV GLASSMORPHISM ───────────────────────────
   Widget _buildBottomNav(bool visible) {
     return AnimatedSlide(
       duration: const Duration(milliseconds: 260),
@@ -763,13 +743,13 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(32), // Arrondi style iOS/visionOS
+                borderRadius: BorderRadius.circular(32), 
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
                   child: Container(
                     height: 64,
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.65), // Très translucide
+                      color: Colors.white.withValues(alpha: 0.65), 
                       borderRadius: BorderRadius.circular(32),
                       border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
                       boxShadow: [
@@ -817,9 +797,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
   }
 }
 
-// ============================================================================
-// QUICK POST ENTRY
-// ============================================================================
 class _QuickPostEntryCard extends StatelessWidget {
   final String? avatarUrl;
   final VoidCallback onTap;
@@ -864,9 +841,6 @@ class _QuickPostEntryCard extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// STORIES CARD
-// ============================================================================
 class _StoryCard extends StatelessWidget {
   final bool isMe;
   final bool hasStory;
