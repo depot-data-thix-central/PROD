@@ -5,10 +5,6 @@ import '../services/analysis_service.dart';
 import 'thix_ia_provider.dart';
 import 'active_project_provider.dart';
 
-/// ============================================================================
-/// ANALYSIS PROVIDER - Liste + Lancement + Watch progress
-/// ============================================================================
-
 class AnalysesNotifier extends AsyncNotifier<List<ProjectAnalysis>> {
   @override
   Future<List<ProjectAnalysis>> build() async {
@@ -28,28 +24,41 @@ class AnalysesNotifier extends AsyncNotifier<List<ProjectAnalysis>> {
     });
   }
 
-  Future<ProjectAnalysis> startMarketAnalysis({required String country, required String sector}) async {
+  Future<ProjectAnalysis> startMarketAnalysis({
+    required String country,
+    required String sector,
+  }) async {
     final code = ref.read(activeProjectCodeProvider);
     if (code == null) throw Exception('Aucun projet actif');
 
     final service = ref.read(analysisServiceProvider);
-    final analysis = await service.startMarketAnalysis(projectCode: code, country: country, sector: sector);
+    final analysis = await service.startMarketAnalysis(
+      projectCode: code,
+      country: country,
+      sector: sector,
+    );
 
-    // Optimistic
-    final current = state.value?? [];
-    state = AsyncData([analysis,...current]);
+    final current = state.value ?? [];
+    state = AsyncData([analysis, ...current]);
     return analysis;
   }
 
-  Future<ProjectAnalysis> startLegalAnalysis({required String jurisdiction, required String sector}) async {
+  Future<ProjectAnalysis> startLegalAnalysis({
+    required String jurisdiction,
+    required String sector,
+  }) async {
     final code = ref.read(activeProjectCodeProvider);
     if (code == null) throw Exception('Aucun projet actif');
 
     final service = ref.read(analysisServiceProvider);
-    final analysis = await service.startLegalAnalysis(projectCode: code, jurisdiction: jurisdiction, sector: sector);
+    final analysis = await service.startLegalAnalysis(
+      projectCode: code,
+      jurisdiction: jurisdiction,
+      sector: sector,
+    );
 
-    final current = state.value?? [];
-    state = AsyncData([analysis,...current]);
+    final current = state.value ?? [];
+    state = AsyncData([analysis, ...current]);
     return analysis;
   }
 
@@ -58,35 +67,64 @@ class AnalysesNotifier extends AsyncNotifier<List<ProjectAnalysis>> {
     if (code == null) throw Exception('Aucun projet actif');
 
     final service = ref.read(analysisServiceProvider);
-    final analysis = await service.startFinanceAnalysis(projectCode: code, financialInputs: inputs);
+    final analysis = await service.startFinanceAnalysis(
+      projectCode: code,
+      financialInputs: inputs,
+    );
 
-    final current = state.value?? [];
-    state = AsyncData([analysis,...current]);
+    final current = state.value ?? [];
+    state = AsyncData([analysis, ...current]);
     return analysis;
   }
 
-  // Filtres locaux pour UI ultra rapide
+  // ====================== ACTIONS DE CONTRÔLE ======================
+
+  Future<void> pauseAnalysis(String analysisId) async {
+    final service = ref.read(analysisServiceProvider);
+    await service.pauseAnalysis(analysisId);
+    await refresh();
+  }
+
+  Future<void> cancelAnalysis(String analysisId) async {
+    final service = ref.read(analysisServiceProvider);
+    await service.cancelAnalysis(analysisId);
+    await refresh();
+  }
+
+  Future<void> deleteAnalysis(String analysisId) async {
+    final service = ref.read(analysisServiceProvider);
+    await service.deleteAnalysis(analysisId);
+    final current = state.value ?? [];
+    state = AsyncData(current.where((a) => a.id != analysisId).toList());
+  }
+
+  // Filtres
   List<ProjectAnalysis> byType(String type) {
-    final all = state.value?? [];
+    final all = state.value ?? [];
     return all.where((a) => a.type == type).toList();
   }
 
-  List<ProjectAnalysis> get completed => (state.value?? []).where((a) => a.isCompleted).toList();
-  List<ProjectAnalysis> get running => (state.value?? []).where((a) => a.isRunning).toList();
+  List<ProjectAnalysis> get completed =>
+      (state.value ?? []).where((a) => a.isCompleted).toList();
+  List<ProjectAnalysis> get running =>
+      (state.value ?? []).where((a) => a.isRunning).toList();
 }
 
-final analysesProvider = AsyncNotifierProvider<AnalysesNotifier, List<ProjectAnalysis>>(() {
+final analysesProvider =
+    AsyncNotifierProvider<AnalysesNotifier, List<ProjectAnalysis>>(() {
   return AnalysesNotifier();
 });
 
-// Provider famille pour un type précis
-final analysesByTypeProvider = Provider.family<List<ProjectAnalysis>, String>((ref, type) {
-  final analyses = ref.watch(analysesProvider).value?? [];
+final analysesByTypeProvider =
+    Provider.family<List<ProjectAnalysis>, String>((ref, type) {
+  final analyses = ref.watch(analysesProvider).value ?? [];
   return analyses.where((a) => a.type == type).toList();
 });
 
 final lastAnalysesProvider = Provider<List<ProjectAnalysis>>((ref) {
-  final analyses = ref.watch(analysesProvider).value?? [];
-  final sorted = [...analyses]..sort((a, b) => (b.createdAt?? DateTime.now()).compareTo(a.createdAt?? DateTime.now()));
+  final analyses = ref.watch(analysesProvider).value ?? [];
+  final sorted = [...analyses]
+    ..sort((a, b) => (b.createdAt ?? DateTime.now())
+        .compareTo(a.createdAt ?? DateTime.now()));
   return sorted.take(5).toList();
 });
