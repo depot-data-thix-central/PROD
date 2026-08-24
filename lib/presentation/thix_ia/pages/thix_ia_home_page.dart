@@ -102,11 +102,14 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
           );
           break;
         case ThixQuickAction.businessPlan:
-          await analyses.startFinanceAnalysis({
-            'sector': selected.sector,
-            'country': selected.country,
-          });
-          break;
+  await analyses.startFinanceAnalysis(
+    inputs: {
+      'sector': selected.sector,
+      'country': selected.country,
+    },
+  );
+  break;
+
         case ThixQuickAction.legal:
           await analyses.startLegalAnalysis(
             jurisdiction: selected.country,
