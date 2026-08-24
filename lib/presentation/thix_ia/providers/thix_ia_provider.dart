@@ -1,6 +1,7 @@
 // lib/presentation/thix_ia/providers/thix_ia_provider.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../datasources/thix_ia_remote_datasource.dart';
 import '../datasources/thix_ia_local_datasource.dart';
 import '../repositories/project_repository.dart';
@@ -10,6 +11,7 @@ import '../repositories/document_repository.dart';
 import '../services/project_service.dart';
 import '../services/project_intelligence_service.dart';
 import '../services/analysis_service.dart';
+import '../services/ai_service.dart';
 import '../models/thix_project.dart';
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -42,7 +44,6 @@ final memoryRepositoryProvider = Provider<MemoryRepository>((ref) {
 });
 
 final analysisRepositoryProvider = Provider<AnalysisRepository>((ref) {
-  // <-- CORRECTION ICI : AnalysisRepository attend un client, pas un remote/local
   return AnalysisRepository(
     client: ref.watch(supabaseClientProvider),
   );
@@ -74,6 +75,11 @@ final projectIntelligenceServiceProvider = Provider<ProjectIntelligenceService>(
     documentRepo: ref.watch(documentRepositoryProvider),
     projectService: ref.watch(projectServiceProvider),
   );
+});
+
+/// Service IA principal (appelle l'Edge Function thix_ai)
+final aiServiceProvider = Provider<AiService>((ref) {
+  return AiService(ref.watch(supabaseClientProvider));
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -108,7 +114,7 @@ final activeProjectProvider = AsyncNotifierProvider<ActiveProjectNotifier, ThixP
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// FOURNISSEURS ADDITIONNELS (Pour ProjectsPage)
+// FOURNISSEURS ADDITIONNELS
 // ────────────────────────────────────────────────────────────────────────────
 final projectSearchQueryProvider = StateProvider<String>((ref) => '');
 
@@ -116,7 +122,11 @@ final filteredProjectsProvider = Provider<List<ThixProject>>((ref) {
   final query = ref.watch(projectSearchQueryProvider).toLowerCase();
   final projects = ref.watch(projectsProvider).value ?? [];
   if (query.isEmpty) return projects;
-  return projects.where((p) => p.projectCode.toLowerCase().contains(query) || p.name.toLowerCase().contains(query)).toList();
+  return projects
+      .where((p) =>
+          p.projectCode.toLowerCase().contains(query) ||
+          p.name.toLowerCase().contains(query))
+      .toList();
 });
 
 // ────────────────────────────────────────────────────────────────────────────
