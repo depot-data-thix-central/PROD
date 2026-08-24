@@ -2,51 +2,81 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
 import '../../../../core/theme/thix_design_policy.dart';
+import '../core/constants/thix_ia_routes.dart';
 import '../providers/thix_ia_provider.dart';
 
 class CreateProjectPage extends ConsumerStatefulWidget {
   const CreateProjectPage({super.key});
+
   @override
   ConsumerState<CreateProjectPage> createState() => _CreateProjectPageState();
 }
 
 class _CreateProjectPageState extends ConsumerState<CreateProjectPage> {
   final _ideaController = TextEditingController();
+  final _cityController = TextEditingController();
   bool _isLoading = false;
 
-  final _sectors = ['AgriTech', 'Fintech', 'HealthTech', 'EdTech', 'Logistique', 'Energie', 'Commerce', 'Autre'];
+  final _sectors = const [
+    'AgriTech',
+    'Fintech',
+    'HealthTech',
+    'EdTech',
+    'Logistique',
+    'Energie',
+    'Commerce',
+    'Autre',
+  ];
   String _selectedSector = 'AgriTech';
   String _selectedCountry = 'RDC';
-  String? _selectedCity;
 
   @override
   void dispose() {
     _ideaController.dispose();
+    _cityController.dispose();
     super.dispose();
   }
 
   Future<void> _create() async {
+    // Anti double-tap / multi-submit
+    if (_isLoading) return;
+
     final idea = _ideaController.text.trim();
     if (idea.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Décrivez votre idée')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Decrivez votre idee')),
+      );
       return;
     }
+
     setState(() => _isLoading = true);
     try {
-      final project = await ref.read(projectsProvider.notifier).createFromIdea(idea);
-      if (mounted) {
-        // Update sector/country si sélectionné
-        await ref.read(projectRepositoryProvider).updateProject(project.projectCode, data: {
+      final project =
+          await ref.read(projectsProvider.notifier).createFromIdea(idea);
+
+      final city = _cityController.text.trim();
+      await ref.read(projectRepositoryProvider).updateProject(
+        project.projectCode,
+        data: {
           'sector': _selectedSector,
           'country': _selectedCountry,
-          'city': _selectedCity,
+          if (city.isNotEmpty) 'city': city,
           'summary': idea,
-        });
-        if (mounted) context.go('/thix-ia/project/${project.projectCode}');
-      }
+          'name': idea.length > 60 ? '${idea.substring(0, 57)}...' : idea,
+        },
+      );
+
+      if (!mounted) return;
+      // Route correcte : /thix-ia/projects/:code
+      context.go(ThixIARoutes.projectDetailPath(project.projectCode));
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -56,22 +86,40 @@ class _CreateProjectPageState extends ConsumerState<CreateProjectPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: ThixPolicy.surface,
-      appBar: AppBar(backgroundColor: Colors.white, title: Text('Nouveau Projet', style: ThixPolicy.h3Style)),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        title: Text('Nouveau Projet', style: ThixPolicy.h3Style),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(ThixPolicy.s20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Décrivez votre idée', style: ThixPolicy.h2Style),
+            Text('Decrivez votre idee', style: ThixPolicy.h2Style),
             const SizedBox(height: 8),
-            Text('THIX IA va analyser et structurer automatiquement votre projet.', style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary)),
-            const SizedBox(height: ThixPolicy.s20),
+            Text(
+              'THIX IA va analyser et structurer automatiquement votre projet.',
+              style: ThixPolicy.bodySmallStyle.copyWith(
+                color: ThixPolicy.textSecondary,
+              ),
+            ),
+            const SizedBox(height: ThixPolicy.s16),
             Container(
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(ThixPolicy.rLg), border: Border.all(color: ThixPolicy.border)),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                border: Border.all(color: ThixPolicy.border),
+              ),
               child: TextField(
                 controller: _ideaController,
                 maxLines: 6,
-                decoration: InputDecoration(hintText: 'Ex: Je veux créer une plateforme de livraison de produits agricoles à Kinshasa qui connecte les fermiers aux restaurants...', border: InputBorder.none, contentPadding: EdgeInsets.all(16)),
+                enabled: !_isLoading,
+                decoration: const InputDecoration(
+                  hintText:
+                      'Ex: Je veux creer une plateforme de livraison de produits agricoles a Kinshasa qui connecte les fermiers aux restaurants...',
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.all(16),
+                ),
                 style: ThixPolicy.bodyStyle,
               ),
             ),
@@ -80,9 +128,24 @@ class _CreateProjectPageState extends ConsumerState<CreateProjectPage> {
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
+              runSpacing: 8,
               children: _sectors.map((s) {
                 final selected = s == _selectedSector;
-                return ChoiceChip(label: Text(s), selected: selected, onSelected: (_) => setState(() => _selectedSector = s), selectedColor: ThixPolicy.primary.withOpacity(0.15), labelStyle: TextStyle(color: selected? ThixPolicy.primary : ThixPolicy.textSecondary));
+                return ChoiceChip(
+                  label: Text(s),
+                  selected: selected,
+                  onSelected: _isLoading
+                      ? null
+                      : (_) => setState(() => _selectedSector = s),
+                  selectedColor: ThixPolicy.primary.withOpacity(0.15),
+                  labelStyle: TextStyle(
+                    color: selected
+                        ? ThixPolicy.primary
+                        : ThixPolicy.textSecondary,
+                    fontWeight:
+                        selected ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                );
               }).toList(),
             ),
             const SizedBox(height: ThixPolicy.s16),
@@ -90,18 +153,84 @@ class _CreateProjectPageState extends ConsumerState<CreateProjectPage> {
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
               value: _selectedCountry,
-              items: ['RDC', 'RW', 'KE', 'UG', 'TZ', 'CM', 'CI'].map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-              onChanged: (v) => setState(() => _selectedCountry = v?? 'RDC'),
-              decoration: InputDecoration(filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd))),
+              items: const [
+                'RDC',
+                'RW',
+                'KE',
+                'UG',
+                'TZ',
+                'CM',
+                'CI',
+              ]
+                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                  .toList(),
+              onChanged: _isLoading
+                  ? null
+                  : (v) => setState(() => _selectedCountry = v ?? 'RDC'),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                ),
+              ),
+            ),
+            const SizedBox(height: ThixPolicy.s16),
+            Text('Ville (optionnel)', style: ThixPolicy.labelStyle),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _cityController,
+              enabled: !_isLoading,
+              decoration: InputDecoration(
+                hintText: 'Ex: Kinshasa',
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                ),
+              ),
             ),
             const SizedBox(height: ThixPolicy.s32),
             SizedBox(
               width: double.infinity,
               height: 52,
               child: ElevatedButton(
-                onPressed: _isLoading? null : _create,
-                style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd))),
-                child: _isLoading? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 18), SizedBox(width: 8), Text('Créer avec THIX IA', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600))]),
+                onPressed: _isLoading ? null : _create,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ThixPolicy.primary,
+                  disabledBackgroundColor:
+                      ThixPolicy.primary.withOpacity(0.5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                  ),
+                ),
+                child: _isLoading
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.auto_awesome_rounded,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Creer avec THIX IA',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
               ),
             ),
           ],
