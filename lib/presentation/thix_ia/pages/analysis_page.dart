@@ -21,8 +21,8 @@ class _AnalysisPageState extends ConsumerState<AnalysisPage> {
   }
 
   Future<void> _startMarket() async {
+    // CORRECTION : Suppression de projectCode (géré par le notifier)
     await ref.read(analysesProvider.notifier).startMarketAnalysis(
-          projectCode: widget.projectCode, // AJOUT OBLIGATOIRE
           country: 'RDC',
           sector: 'AgriTech',
         );
@@ -34,8 +34,8 @@ class _AnalysisPageState extends ConsumerState<AnalysisPage> {
   }
 
   Future<void> _startLegal() async {
+    // CORRECTION : Suppression de projectCode
     await ref.read(analysesProvider.notifier).startLegalAnalysis(
-          projectCode: widget.projectCode, // AJOUT OBLIGATOIRE
           jurisdiction: 'RDC',
           sector: 'AgriTech',
         );
@@ -47,12 +47,12 @@ class _AnalysisPageState extends ConsumerState<AnalysisPage> {
   }
 
   Future<void> _startFinance() async {
+    // CORRECTION : Suppression de projectCode
     await ref.read(analysesProvider.notifier).startFinanceAnalysis(
-          projectCode: widget.projectCode, // AJOUT OBLIGATOIRE
           financialInputs: {
             'initial_investment': 50000,
             'monthly_revenue': 10000
-          }, // PARAMÈTRE NOMMÉ CORRIGÉ
+          },
         );
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -111,7 +111,6 @@ class _AnalysisPageState extends ConsumerState<AnalysisPage> {
                         label: 'Concurrence',
                         color: ThixPolicy.primary,
                         onTap: () => ref.read(analysesProvider.notifier).startCompetitorAnalysis(
-                              projectCode: widget.projectCode, // AJOUT OBLIGATOIRE
                               country: 'RDC',
                               sector: 'Général',
                             ),
