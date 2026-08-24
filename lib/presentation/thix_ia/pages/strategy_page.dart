@@ -15,22 +15,7 @@ class StrategyPage extends ConsumerStatefulWidget {
 }
 
 class _StrategyPageState extends ConsumerState<StrategyPage> {
-  Future<void> _startStrategy() async {
-    // CORRECTION DE LA SYNTAXE (Paramètres nommés obligatoires)
-    await ref.read(analysesProvider.notifier).startFinanceAnalysis(
-          projectCode: widget.projectCode,
-          financialInputs: {
-            'type': 'strategy', 
-            'framework': 'SWOT + Porter + Lean Canvas'
-          },
-        );
-        
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Analyse stratégique lancée (SWOT, Porter, Go-to-Market)')),
-      );
-    }
-  }
+  
 
   @override
   Widget build(BuildContext context) {
