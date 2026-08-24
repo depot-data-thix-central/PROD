@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:file_picker/file_picker.dart'; // ✅ Nécessaire pour choisir la photo
+import 'package:file_picker/file_picker.dart'; 
 
 import 'package:thix_id/auth/auth_controller.dart';
 import 'package:thix_id/models/thix_profile.dart';
@@ -145,7 +145,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
       final fileName = 'banner_${DateTime.now().millisecondsSinceEpoch}.$ext';
       final storagePath = 'annonces/$fileName';
 
-      // 1. Upload sur le Storage (Assure-toi d'avoir un bucket public nommé 'banners')
+      // 1. Upload sur le Storage
       await Supabase.instance.client.storage
           .from('banners')
           .uploadBinary(storagePath, bytes);
@@ -248,7 +248,8 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   Future<void> _openThixAi() async {
     final auth = context.read<AuthController>();
     if (auth.isAuthenticated) {
-      context.push('/thix_ia');
+      // ✅ CORRECTION ICI : Pointeur vers la nouvelle route /thix-ia (avec le tiret)
+      context.push('/thix-ia');
       return;
     }
     context.push(AppRoutes.login);
@@ -264,14 +265,15 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   }
 
   Future<void> _openEmergency() async {
-  final auth = context.read<AuthController>();
-  if (auth.isAuthenticated) {
-    context.push('/home-swipe'); // sélecteur SOS ↔ RETROUVE
-    return;
+    final auth = context.read<AuthController>();
+    if (auth.isAuthenticated) {
+      context.push('/home-swipe'); 
+      return;
+    }
+    if (!mounted) return;
+    context.push(AppRoutes.login);
   }
-  if (!mounted) return;
-  context.push(AppRoutes.login);
-}
+
   void _openDocumentVault() {
     final auth = context.read<AuthController>();
     if (auth.isAuthenticated) {
@@ -395,7 +397,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
         context.push(AppRoutes.reservation);
         break;
       case 'thixRetrouve':
-        // Sélecteur SOS ↔ RETROUVE
         context.push('/home-swipe');
         break;
       default:
@@ -460,7 +461,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
 
               const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
 
-              // ✅ CARROUSEL AVEC BOUTON ADMIN SUPERPOSÉ
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
@@ -474,7 +474,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                         onOpportunityTap: () => context.push(AppRoutes.opportunities),
                       ),
 
-                      // Affichage du bouton de configuration uniquement pour les admins
                       if (_isAdmin)
                         Positioned(
                           top: 10,
@@ -488,7 +487,8 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.15),
+                                    // ✅ CORRECTION ICI : withOpacity pour compatibilité Github Actions
+                                    color: Colors.black.withOpacity(0.15),
                                     blurRadius: 6,
                                     offset: const Offset(0, 2),
                                   ),
@@ -570,7 +570,8 @@ class _HomePagePremiumState extends State<HomePagePremium> {
           if (_searching)
             Positioned.fill(
               child: Container(
-                color: Colors.black.withValues(alpha: 0.4),
+                // ✅ CORRECTION ICI : withOpacity
+                color: Colors.black.withOpacity(0.4),
                 child: const Center(
                   child: CircularProgressIndicator(color: ThixPolicy.primary),
                 ),
