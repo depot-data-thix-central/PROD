@@ -426,7 +426,7 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
               ListTile(
                 title: Text(
                   _auctionEndTime != null
-                      ? '\( {_auctionEndTime!.day}/ \){_auctionEndTime!.month}/${_auctionEndTime!.year} \( {_auctionEndTime!.hour}: \){_auctionEndTime!.minute.toString().padLeft(2, '0')}'
+                      ? "\( {_auctionEndTime!.day}/ \){_auctionEndTime!.month}/${_auctionEndTime!.year} \( {_auctionEndTime!.hour}: \){_auctionEndTime!.minute.toString().padLeft(2, '0')}"'
                       : 'Sélectionner une date',
                   style: TextStyle(
                     color: _auctionEndTime != null ? navy : textMuted,
