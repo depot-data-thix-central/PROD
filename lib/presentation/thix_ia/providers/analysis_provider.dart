@@ -24,18 +24,37 @@ class AnalysesNotifier extends AsyncNotifier<List<ProjectAnalysis>> {
     });
   }
 
+  // ====================== HELPERS ======================
+
+  /// Vérifie si une analyse du même type existe déjà (non annulée)
+  bool hasExistingAnalysis(String type) {
+    final analyses = state.value ?? [];
+    return analyses.any((a) =>
+        a.type == type &&
+        a.status != AnalysisStatus.cancelled &&
+        a.status != AnalysisStatus.failed);
+  }
+
+  // ====================== LANCEMENT DES ANALYSES ======================
+
   Future<ProjectAnalysis> startMarketAnalysis({
     required String country,
     required String sector,
+    String? ideaDescription,
   }) async {
     final code = ref.read(activeProjectCodeProvider);
     if (code == null) throw Exception('Aucun projet actif');
+
+    if (hasExistingAnalysis('market')) {
+      throw Exception('Une étude de marché existe déjà. Supprimez-la d\'abord.');
+    }
 
     final service = ref.read(analysisServiceProvider);
     final analysis = await service.startMarketAnalysis(
       projectCode: code,
       country: country,
       sector: sector,
+      additionalContext: ideaDescription,
     );
 
     final current = state.value ?? [];
@@ -46,15 +65,21 @@ class AnalysesNotifier extends AsyncNotifier<List<ProjectAnalysis>> {
   Future<ProjectAnalysis> startLegalAnalysis({
     required String jurisdiction,
     required String sector,
+    String? ideaDescription,
   }) async {
     final code = ref.read(activeProjectCodeProvider);
     if (code == null) throw Exception('Aucun projet actif');
+
+    if (hasExistingAnalysis('legal')) {
+      throw Exception('Une analyse réglementaire existe déjà. Supprimez-la d\'abord.');
+    }
 
     final service = ref.read(analysisServiceProvider);
     final analysis = await service.startLegalAnalysis(
       projectCode: code,
       jurisdiction: jurisdiction,
       sector: sector,
+      activityDescription: ideaDescription,
     );
 
     final current = state.value ?? [];
@@ -62,14 +87,49 @@ class AnalysesNotifier extends AsyncNotifier<List<ProjectAnalysis>> {
     return analysis;
   }
 
-  Future<ProjectAnalysis> startFinanceAnalysis(Map<String, dynamic> inputs) async {
+  Future<ProjectAnalysis> startCompetitorAnalysis({
+    required String country,
+    required String sector,
+    String? ideaDescription,
+  }) async {
     final code = ref.read(activeProjectCodeProvider);
     if (code == null) throw Exception('Aucun projet actif');
+
+    if (hasExistingAnalysis('competitor')) {
+      throw Exception('Une analyse concurrentielle existe déjà. Supprimez-la d\'abord.');
+    }
+
+    final service = ref.read(analysisServiceProvider);
+    final analysis = await service.startCompetitorAnalysis(
+      projectCode: code,
+      country: country,
+      sector: sector,
+      productDescription: ideaDescription,
+    );
+
+    final current = state.value ?? [];
+    state = AsyncData([analysis, ...current]);
+    return analysis;
+  }
+
+  Future<ProjectAnalysis> startFinanceAnalysis({
+    Map<String, dynamic> inputs = const {},
+    String? ideaDescription,
+  }) async {
+    final code = ref.read(activeProjectCodeProvider);
+    if (code == null) throw Exception('Aucun projet actif');
+
+    if (hasExistingAnalysis('finance')) {
+      throw Exception('Un modèle financier existe déjà. Supprimez-le d\'abord.');
+    }
 
     final service = ref.read(analysisServiceProvider);
     final analysis = await service.startFinanceAnalysis(
       projectCode: code,
-      financialInputs: inputs,
+      financialInputs: {
+        ...inputs,
+        if (ideaDescription != null) 'idea_context': ideaDescription,
+      },
     );
 
     final current = state.value ?? [];
@@ -77,7 +137,28 @@ class AnalysesNotifier extends AsyncNotifier<List<ProjectAnalysis>> {
     return analysis;
   }
 
-  // ====================== ACTIONS DE CONTRÔLE ======================
+  Future<ProjectAnalysis> startBusinessPlanAnalysis({
+    String? ideaDescription,
+  }) async {
+    final code = ref.read(activeProjectCodeProvider);
+    if (code == null) throw Exception('Aucun projet actif');
+
+    if (hasExistingAnalysis('business_plan')) {
+      throw Exception('Un business plan existe déjà. Supprimez-le d\'abord.');
+    }
+
+    final service = ref.read(analysisServiceProvider);
+    final analysis = await service.startBusinessPlanAnalysis(
+      projectCode: code,
+      ideaDescription: ideaDescription ?? 'Business plan complet',
+    );
+
+    final current = state.value ?? [];
+    state = AsyncData([analysis, ...current]);
+    return analysis;
+  }
+
+  // ====================== CONTRÔLE ======================
 
   Future<void> pauseAnalysis(String analysisId) async {
     final service = ref.read(analysisServiceProvider);
@@ -98,7 +179,8 @@ class AnalysesNotifier extends AsyncNotifier<List<ProjectAnalysis>> {
     state = AsyncData(current.where((a) => a.id != analysisId).toList());
   }
 
-  // Filtres
+  // ====================== FILTRES ======================
+
   List<ProjectAnalysis> byType(String type) {
     final all = state.value ?? [];
     return all.where((a) => a.type == type).toList();
@@ -106,6 +188,7 @@ class AnalysesNotifier extends AsyncNotifier<List<ProjectAnalysis>> {
 
   List<ProjectAnalysis> get completed =>
       (state.value ?? []).where((a) => a.isCompleted).toList();
+
   List<ProjectAnalysis> get running =>
       (state.value ?? []).where((a) => a.isRunning).toList();
 }
