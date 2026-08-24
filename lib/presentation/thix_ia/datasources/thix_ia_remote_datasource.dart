@@ -119,10 +119,34 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
     }
   }
 
-  @override
+@override
   Future<void> archiveProject(String projectCode) async {
     try {
-      await _supabase.from('projects').update({'status': 'archived'}).eq('project_code', projectCode);
+      await _supabase
+          .from('projects')
+          .update({'status': 'archived'})
+          .eq('project_code', projectCode);
+    } catch (e, s) {
+      throw ThixIAErrorMapper.map(e, s);
+    }
+  }
+
+  @override
+  Future<void> deleteProject(String projectCode) async {
+    try {
+      // Suppression définitive du projet
+      await _supabase
+          .from('projects')
+          .delete()
+          .eq('project_code', projectCode);
+
+      // Optionnel : log d'audit
+      await _supabase.from('audit_logs').insert({
+        'action': 'delete_project',
+        'entity_type': 'project',
+        'project_code': projectCode,
+        'metadata': {'deleted_at': DateTime.now().toIso8601String()},
+      });
     } catch (e, s) {
       throw ThixIAErrorMapper.map(e, s);
     }
