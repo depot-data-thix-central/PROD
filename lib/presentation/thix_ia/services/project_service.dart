@@ -55,27 +55,48 @@ class ProjectService {
     return score.clamp(0.0, 1.0);
   }
 
-  Future<List<ThixProject>> getProjectsPaginated({int page = 1, String? search, String? status}) {
-    final limit = page == 1? ThixIAConstants.defaultPageSize : ThixIAConstants.defaultPageSize;
-    return _projectRepo.getProjects(page: page, limit: limit, search: search, status: status);
+  Future<List<ThixProject>> getProjectsPaginated({
+    int page = 1,
+    String? search,
+    String? status,
+  }) {
+    final limit = ThixIAConstants.defaultPageSize;
+    return _projectRepo.getProjects(
+      page: page,
+      limit: limit,
+      search: search,
+      status: status,
+    );
   }
-Future<void> deleteProject(String projectCode) async {
-  await projectRepo.deleteProject(projectCode);
-}
+
+  Future<void> deleteProject(String projectCode) async {
+    await _projectRepo.deleteProject(projectCode);
+  }
+
   Future<ThixProject> createProjectFromIdea(String rawIdea) async {
     // Extraction simple - Phase 2 utilisera LLM pour extraction structurée
     final ideaLower = rawIdea.toLowerCase();
     String sector = 'General';
-    if (ideaLower.contains('agricole') || ideaLower.contains('agri')) sector = 'AgriTech';
-    if (ideaLower.contains('fintech') || ideaLower.contains('paiement')) sector = 'Fintech';
-    if (ideaLower.contains('santé') || ideaLower.contains('health')) sector = 'HealthTech';
+    if (ideaLower.contains('agricole') || ideaLower.contains('agri')) {
+      sector = 'AgriTech';
+    }
+    if (ideaLower.contains('fintech') || ideaLower.contains('paiement')) {
+      sector = 'Fintech';
+    }
+    if (ideaLower.contains('santé') || ideaLower.contains('health')) {
+      sector = 'HealthTech';
+    }
 
     String country = 'RDC';
     String? city;
     if (ideaLower.contains('kinshasa')) city = 'Kinshasa';
-    if (ideaLower.contains('kigali')) { country = 'RW'; city = 'Kigali'; }
+    if (ideaLower.contains('kigali')) {
+      country = 'RW';
+      city = 'Kigali';
+    }
 
-    final name = rawIdea.length > 60? '${rawIdea.substring(0, 60)}...' : rawIdea;
+    final name =
+        rawIdea.length > 60 ? '${rawIdea.substring(0, 60)}...' : rawIdea;
 
     return _projectRepo.createProject(
       name: name,
