@@ -14,10 +14,9 @@ class DesignPage extends ConsumerStatefulWidget {
 }
 
 class _DesignPageState extends ConsumerState<DesignPage> {
-  Future<void> _startDesign() async {
-    // CORRECTION : Suppression de projectCode (géré en interne par le Notifier)
+    Future<void> _startDesign() async {
     await ref.read(analysesProvider.notifier).startFinanceAnalysis(
-          financialInputs: {
+          inputs: { 
             'type': 'design', 
             'deliverables': ['wireframes', 'user_flow', 'ui_guidelines']
           },
@@ -29,6 +28,7 @@ class _DesignPageState extends ConsumerState<DesignPage> {
       );
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
