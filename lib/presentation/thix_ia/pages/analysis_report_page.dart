@@ -1,10 +1,10 @@
 // lib/presentation/thix_ia/pages/analysis_report_page.dart
-import 'dart:convert'; // NOUVEAU: Pour décoder le JSON brut
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter_markdown/flutter_markdown.dart'; // NOUVEAU: Pour un affichage parfait
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../../../core/theme/thix_design_policy.dart';
 import '../models/project_analysis.dart';
@@ -49,7 +49,7 @@ class AnalysisReportPage extends ConsumerWidget {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 80), // J'ai augmenté le padding du bas pour ne pas cacher le texte sous le bouton
         children: [
           // ========== HEADER ==========
           Container(
@@ -160,7 +160,6 @@ class AnalysisReportPage extends ConsumerWidget {
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: ThixPolicy.border),
             ),
-            // MODIFICATION ICI: MarkdownBody remplace SelectableText pour un rendu parfait
             child: MarkdownBody(
               data: content.isNotEmpty
                   ? content
@@ -271,10 +270,57 @@ class AnalysisReportPage extends ConsumerWidget {
           ],
         ],
       ),
+      
+      // ==========================================
+      // NOUVEAU: BOUTON FLOTTANT DE VALIDATION
+      // ==========================================
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          // 1. TODO: Connecter ici avec ton provider de Mémoire
+          // ref.read(memoryProvider.notifier).addFact(analysis.projectCode, analysis.type, content);
+          
+          // 2. Afficher la confirmation visuelle
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.check_circle_rounded, color: Colors.white),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Analyse validée et ajoutée à la mémoire du projet !',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: ThixPolicy.success,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              margin: const EdgeInsets.all(16),
+            ),
+          );
+          
+          // 3. Retourner à la liste des analyses
+          context.pop();
+        },
+        backgroundColor: ThixPolicy.primary,
+        elevation: 6,
+        icon: const Icon(Icons.verified_rounded, color: Colors.white),
+        label: Text(
+          'Valider l\'analyse',
+          style: ThixPolicy.bodyStyle.copyWith(
+            color: Colors.white, 
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
     );
   }
 
-  // ---------- Helpers mis à jour et robustes (AVEC NETTOYAGE) ----------
+  // ---------- Helpers ----------
   String _extractContent(ProjectAnalysis a) {
     String rawText = '';
     final rj = a.resultJson;
@@ -304,27 +350,18 @@ class AnalysisReportPage extends ConsumerWidget {
       rawText = a.summary!;
     }
 
-    // ==========================================
-    // LE GRAND NETTOYAGE (FIX POUR LA LISIBILITÉ)
-    // ==========================================
-
-    // 1. Si l'IA a renvoyé le JSON sous forme de texte brut avec des échappements
     if (rawText.trim().startsWith('{') && rawText.contains('"content"')) {
       try {
         final decoded = jsonDecode(rawText);
         if (decoded is Map && decoded['content'] is String) {
           rawText = decoded['content'];
         }
-      } catch (_) {} // Ignore silencieusement si ce n'est pas un JSON valide
+      } catch (_) {}
     }
 
-    // 2. Transformer les "\n" littéraux en VRAIS sauts de ligne pour le Markdown
     rawText = rawText.replaceAll('\\n', '\n');
-    
-    // 3. Nettoyer les guillemets d'échappement (ex: \")
     rawText = rawText.replaceAll('\\"', '"');
 
-    // 4. Enlever les guillemets résiduels de début et de fin si la chaîne entière est entourée
     if (rawText.startsWith('"') && rawText.endsWith('"') && rawText.length > 1) {
       rawText = rawText.substring(1, rawText.length - 1);
     }
