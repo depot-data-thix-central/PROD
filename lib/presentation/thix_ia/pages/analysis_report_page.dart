@@ -237,7 +237,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
                 h1: ThixPolicy.titleStyle.copyWith(fontSize: 22, fontWeight: FontWeight.bold),
                 h2: ThixPolicy.titleStyle.copyWith(fontSize: 18, fontWeight: FontWeight.bold),
                 h3: ThixPolicy.titleStyle.copyWith(fontSize: 16, fontWeight: FontWeight.bold),
-                listBullet: const TextStyle(color: ThixPolicy.primary),
+                listBullet: TextStyle(color: ThixPolicy.primary),
               ),
             ),
           ),
@@ -375,88 +375,53 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
     );
   }
 
-  // =========================================================================
-  // LOGIQUE ANTI-JSON : Nettoyage et Formatage
-  // =========================================================================
+  // ---------- Helpers de Nettoyage et Formatage ----------
   String _extractContent(ProjectAnalysis a) {
-    String rawText = a.summary ?? '';
+    String rawText = '';
+    final rj = a.resultJson;
 
-    // 1. Si summary est vide mais qu'on a un resultJson, on tente de l'utiliser
-    if (rawText.isEmpty && a.resultJson != null && a.resultJson!.isNotEmpty) {
-      if (a.resultJson!['content'] is String) {
-        rawText = a.resultJson!['content'];
+    if (rj != null) {
+      if (rj['content'] is String && (rj['content'] as String).isNotEmpty) {
+        rawText = rj['content'] as String;
+      } else if (rj['parsed'] != null && rj['parsed'] is Map) {
+        final parsedMap = rj['parsed'] as Map;
+        if (parsedMap['content'] is String) rawText = parsedMap['content'];
+        else if (parsedMap['report'] is String) rawText = parsedMap['report'];
       } else {
-        // C'est un objet (comme finance ou business_plan), on le convertit en Markdown !
-        rawText = _jsonToMarkdown(a.resultJson!);
-      }
-    }
-
-    // 2. ULTIME BOUCLIER : Si la chaîne brute qu'on a récupérée ressemble encore à du JSON "{...}"
-    rawText = rawText.trim();
-    if (rawText.startsWith('{') && rawText.endsWith('}')) {
-      try {
-        final decoded = jsonDecode(rawText);
-        if (decoded is Map) {
-          if (decoded['content'] is String) {
-            rawText = decoded['content'];
-          } else {
-            // Conversion magique du JSON en Markdown structuré
-            rawText = _jsonToMarkdown(decoded); 
+        final fallbackKeys = ['text', 'report', 'response', 'result', 'answer', 'data'];
+        for (var key in fallbackKeys) {
+          if (rj[key] is String && (rj[key] as String).isNotEmpty) {
+            rawText = rj[key] as String;
+            break;
           }
         }
-      } catch (_) {
-        // Si jsonDecode échoue, on laisse le texte tel quel (c'est probablement juste du texte avec des accolades)
+        if (rawText.isEmpty && rj.isNotEmpty) {
+           rawText = rj.toString(); 
+        }
       }
     }
+    
+    if (rawText.isEmpty && a.summary != null && a.summary!.isNotEmpty) {
+      rawText = a.summary!;
+    }
 
-    // 3. Nettoyage final des caractères d'échappement inutiles
-    rawText = rawText.replaceAll('\\n', '\n').replaceAll('\\"', '"');
+    if (rawText.trim().startsWith('{') && rawText.contains('"content"')) {
+      try {
+        final decoded = jsonDecode(rawText);
+        if (decoded is Map && decoded['content'] is String) {
+          rawText = decoded['content'];
+        }
+      } catch (_) {}
+    }
+
+    rawText = rawText.replaceAll('\\n', '\n');
+    rawText = rawText.replaceAll('\\"', '"');
+
     if (rawText.startsWith('"') && rawText.endsWith('"') && rawText.length > 1) {
       rawText = rawText.substring(1, rawText.length - 1);
     }
 
     return rawText.trim();
-  }
-
-  // Fonction récursive pour transformer n'importe quel objet JSON en Markdown propre
-  String _jsonToMarkdown(dynamic obj, [int depth = 2]) {
-    if (obj == null) return '';
-    if (obj is String) return obj;
-    if (obj is num || obj is bool) return obj.toString();
-
-    if (obj is List) {
-      return obj.map((e) {
-        if (e is Map || e is List) {
-          return _jsonToMarkdown(e, depth + 1);
-        }
-        return '- $e';
-      }).join('\n');
-    }
-
-    if (obj is Map) {
-      List<String> lines = [];
-      obj.forEach((key, value) {
-        // Formate la clé : "resume_executif" -> "Resume Executif"
-        String formattedKey = key.toString().replaceAll('_', ' ').replaceAllMapped(
-            RegExp(r'\b\w'), (match) => match.group(0)!.toUpperCase());
-
-        if (value is Map || (value is List && value.any((e) => e is Map || e is List))) {
-          String heading = List.filled(depth > 6 ? 6 : depth, '#').join('');
-          lines.add('\n$heading $formattedKey\n');
-          lines.add(_jsonToMarkdown(value, depth + 1));
-        } else if (value is List) {
-           String heading = List.filled(depth > 6 ? 6 : depth, '#').join('');
-           lines.add('\n$heading $formattedKey\n');
-           for (var item in value) {
-              lines.add('- $item');
-           }
-        } else {
-          lines.add('- **$formattedKey** : $value');
-        }
-      });
-      return lines.join('\n');
-    }
-    return obj.toString();
   }
 
   List<String> _extractSources(ProjectAnalysis a) {
