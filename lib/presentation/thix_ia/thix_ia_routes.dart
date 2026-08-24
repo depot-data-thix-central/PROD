@@ -15,6 +15,7 @@ import 'pages/strategy_page.dart';
 import 'pages/design_page.dart';
 import 'pages/documents_page.dart';
 import 'pages/reports_page.dart';
+import 'pages/chat_page.dart'; // L'import de ta page de chat
 
 class ThixIaRouter {
   static List<RouteBase> get routes => [
@@ -54,6 +55,23 @@ class ThixIaRouter {
             return ProjectDetailPage(projectCode: code);
           },
           routes: [
+            // 👇 LA ROUTE CHAT AVEC GESTION DU MESSAGE INITIAL 👇
+            GoRoute(
+              path: 'chat',
+              name: 'thix-ia-chat',
+              builder: (context, state) {
+                final code = state.pathParameters['projectCode']!;
+                
+                // On récupère le message envoyé par les boutons rapides
+                final extraMessage = state.extra as String?; 
+                
+                return ChatPage(
+                  projectCode: code,
+                  initialMessage: extraMessage, 
+                );
+              },
+            ),
+            // ----------------------------------------------------
             GoRoute(
               path: 'analysis',
               name: 'thix-ia-analysis',
