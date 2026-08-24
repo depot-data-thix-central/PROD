@@ -436,7 +436,21 @@ Inclus :
       );
     }
   }
+// ============================================================
+  // CONTRÔLE DES ANALYSES (Pause / Cancel / Delete)
+  // ============================================================
 
+  Future<void> pauseAnalysis(String analysisId) async {
+    await analysisRepo.updateStatus(analysisId, 'paused');
+  }
+
+  Future<void> cancelAnalysis(String analysisId) async {
+    await analysisRepo.updateStatus(analysisId, 'cancelled');
+  }
+
+  Future<void> deleteAnalysis(String analysisId) async {
+    await analysisRepo.deleteAnalysis(analysisId);
+  }
   // ============================================================
   // LECTURE
   // ============================================================
