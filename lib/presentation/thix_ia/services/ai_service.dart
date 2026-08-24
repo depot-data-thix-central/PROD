@@ -1,3 +1,4 @@
+// lib/presentation/thix_ia/services/ai_service.dart
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -99,8 +100,7 @@ class ThixAiResponse {
 class AiService {
   final SupabaseClient _supabase;
 
-  AiService([SupabaseClient? client])
-      : _supabase = client ?? Supabase.instance.client;
+  AiService([SupabaseClient? client]) : _supabase = client ?? Supabase.instance.client;
 
   /// Appel principal à la Edge Function thix_ai
   Future<ThixAiResponse> call({
@@ -165,7 +165,6 @@ class AiService {
 
   // ====================== HELPERS PRATIQUES ======================
 
-  /// Analyse d'idée business
   Future<ThixAiResponse> analyzeIdea({
     required String idea,
     String? projectCode,
@@ -179,7 +178,6 @@ class AiService {
     );
   }
 
-  /// Étude de marché (avec recherche Tavily automatique)
   Future<ThixAiResponse> marketStudy({
     required String query,
     String? projectCode,
@@ -194,7 +192,6 @@ class AiService {
     );
   }
 
-  /// Recherche web intelligente
   Future<ThixAiResponse> research({
     required String query,
     String? projectCode,
@@ -209,7 +206,6 @@ class AiService {
     );
   }
 
-  /// Chat libre
   Future<ThixAiResponse> chat({
     required String message,
     String? projectCode,
@@ -225,7 +221,6 @@ class AiService {
     );
   }
 
-  /// Réponses intelligentes (smart replies)
   Future<List<String>> smartReplies({
     required String lastMessage,
     List<Map<String, String>>? history,
