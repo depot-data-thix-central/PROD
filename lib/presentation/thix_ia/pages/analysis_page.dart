@@ -21,7 +21,6 @@ class _AnalysisPageState extends ConsumerState<AnalysisPage> {
   }
 
   Future<void> _startMarket() async {
-    // CORRECTION : Suppression de projectCode (géré par le notifier)
     await ref.read(analysesProvider.notifier).startMarketAnalysis(
           country: 'RDC',
           sector: 'AgriTech',
@@ -34,7 +33,6 @@ class _AnalysisPageState extends ConsumerState<AnalysisPage> {
   }
 
   Future<void> _startLegal() async {
-    // CORRECTION : Suppression de projectCode
     await ref.read(analysesProvider.notifier).startLegalAnalysis(
           jurisdiction: 'RDC',
           sector: 'AgriTech',
@@ -47,9 +45,9 @@ class _AnalysisPageState extends ConsumerState<AnalysisPage> {
   }
 
   Future<void> _startFinance() async {
-    // CORRECTION : Suppression de projectCode
+    // CORRECTION ICI : Remplacement de financialInputs par inputs
     await ref.read(analysesProvider.notifier).startFinanceAnalysis(
-          financialInputs: {
+          inputs: {
             'initial_investment': 50000,
             'monthly_revenue': 10000
           },
