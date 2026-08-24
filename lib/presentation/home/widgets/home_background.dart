@@ -13,6 +13,7 @@ class HomeSoftBackground extends StatefulWidget {
 
 class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
+  late final List<_NodeSeed> _nodeSeeds;
 
   @override
   void initState() {
@@ -20,6 +21,19 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
     // Animation très lente (25 secondes pour un tour complet) pour un effet relaxant
     _controller = AnimationController(vsync: this, duration: const Duration(seconds: 25))
       ..repeat();
+
+    // Graines stables pour les particules/nœuds (générées une seule fois)
+    final rnd = math.Random(42);
+    _nodeSeeds = List.generate(18, (i) {
+      return _NodeSeed(
+        baseX: rnd.nextDouble(),
+        baseY: rnd.nextDouble(),
+        radius: 40.0 + rnd.nextDouble() * 90.0,
+        speed: 0.4 + rnd.nextDouble() * 0.8,
+        phase: rnd.nextDouble() * 2 * math.pi,
+        dotRadius: 1.4 + rnd.nextDouble() * 1.6,
+      );
+    });
   }
 
   @override
@@ -52,6 +66,11 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
             final x3 = -50.0 + math.cos(t * 1.5) * 150.0;
             final y3 = size.height - 200.0 + math.sin(t) * 100.0;
 
+            // Orb 4 : Doux accent additionnel, très diffus, pour équilibrer le bas de l'écran
+            // (là où se trouve le hub hexagonal — évite un fond trop uniforme)
+            final x4 = size.width * 0.55 + math.sin(t * 0.6) * 100.0;
+            final y4 = size.height * 0.75 + math.cos(t * 0.9) * 90.0;
+
             return Stack(
               children: [
                 // 1. Fond de base (Gris/Bleu très pâle et propre)
@@ -72,6 +91,10 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
                   left: x3, top: y3,
                   child: _MovingBlob(size: 500, color: ThixPolicy.primaryDeep.withOpacity(0.35)),
                 ),
+                Positioned(
+                  left: x4, top: y4,
+                  child: _MovingBlob(size: 380, color: ThixPolicy.primary.withOpacity(0.18)),
+                ),
 
                 // 3. LE FLOU MAGIQUE (Mélange les couleurs en un nuage liquide)
                 Positioned.fill(
@@ -81,10 +104,19 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
                   ),
                 ),
 
-                // 4. La Texture Nette par-dessus le flou (Grille Tech)
+                // 4. La Texture Nette par-dessus le flou (Grille Tech + ondes)
                 Positioned.fill(
                   child: CustomPaint(
                     painter: _PremiumVisualTexturePainter(),
+                  ),
+                ),
+
+                // 5. NŒUDS FLOTTANTS — écho discret du hub hexagonal en dessous
+                // (petits points reliés qui dérivent lentement, très faible opacité,
+                // pour renforcer le thème "réseau connecté" sans distraire)
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _FloatingNodesPainter(seeds: _nodeSeeds, t: t, size: size),
                   ),
                 ),
               ],
@@ -114,6 +146,70 @@ class _MovingBlob extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Graine stable décrivant la trajectoire d'un nœud flottant
+class _NodeSeed {
+  final double baseX; // position de base normalisée (0..1)
+  final double baseY;
+  final double radius; // rayon du mouvement en pixels
+  final double speed; // multiplicateur de vitesse
+  final double phase; // déphasage initial
+  final double dotRadius; // taille du point
+
+  const _NodeSeed({
+    required this.baseX,
+    required this.baseY,
+    required this.radius,
+    required this.speed,
+    required this.phase,
+    required this.dotRadius,
+  });
+}
+
+/// Peintre : petits nœuds qui dérivent doucement et se relient par de fines lignes
+/// quand ils sont suffisamment proches — clin d'œil discret au hub hexagonal.
+class _FloatingNodesPainter extends CustomPainter {
+  final List<_NodeSeed> seeds;
+  final double t;
+  final Size size;
+
+  _FloatingNodesPainter({required this.seeds, required this.t, required this.size});
+
+  @override
+  void paint(Canvas canvas, Size canvasSize) {
+    final dotPaint = Paint()..color = ThixPolicy.primaryDeep.withOpacity(0.10);
+    final linePaint = Paint()
+      ..color = ThixPolicy.primaryDeep.withOpacity(0.06)
+      ..strokeWidth = 1.0;
+
+    final positions = <Offset>[];
+
+    for (final s in seeds) {
+      final cx = s.baseX * canvasSize.width;
+      final cy = s.baseY * canvasSize.height;
+      final angle = t * s.speed + s.phase;
+      final ox = cx + math.cos(angle) * s.radius;
+      final oy = cy + math.sin(angle) * s.radius;
+      final pos = Offset(ox, oy);
+      positions.add(pos);
+      canvas.drawCircle(pos, s.dotRadius, dotPaint);
+    }
+
+    // Relie les nœuds proches entre eux (effet toile discrète)
+    const double linkDistance = 130.0;
+    for (int i = 0; i < positions.length; i++) {
+      for (int j = i + 1; j < positions.length; j++) {
+        final d = (positions[i] - positions[j]).distance;
+        if (d < linkDistance) {
+          canvas.drawLine(positions[i], positions[j], linePaint);
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _FloatingNodesPainter oldDelegate) => true;
 }
 
 /// Peintre personnalisé pour dessiner la grille tech fine
