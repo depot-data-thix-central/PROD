@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/theme/thix_design_policy.dart';
 import '../models/project_analysis.dart';
-import '../core/extensions/analysis_extensions.dart';
 
 class AnalysisReportPage extends ConsumerWidget {
   const AnalysisReportPage({super.key, required this.analysis});
@@ -28,7 +27,7 @@ class AnalysisReportPage extends ConsumerWidget {
           onPressed: () => context.pop(),
         ),
         title: Text(
-          analysis.type.label,
+          analysis.type,
           style: ThixPolicy.bodyStyle.copyWith(fontWeight: FontWeight.w600),
         ),
         actions: [
@@ -68,12 +67,12 @@ class AnalysisReportPage extends ConsumerWidget {
                       width: 42,
                       height: 42,
                       decoration: BoxDecoration(
-                        color: analysis.type.color.withOpacity(0.12),
+                        color: ThixPolicy.primary.withOpacity(0.12), // Remplacé: type.color n'existe pas dans le modèle basique
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Icon(
-                        analysis.type.icon,
-                        color: analysis.type.color,
+                        Icons.analytics_rounded, // Icône par défaut
+                        color: ThixPolicy.primary,
                         size: 22,
                       ),
                     ),
@@ -83,7 +82,7 @@ class AnalysisReportPage extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            analysis.title ?? analysis.type.label,
+                            analysis.title ?? analysis.type,
                             style: ThixPolicy.bodyStyle
                                 .copyWith(fontWeight: FontWeight.w600),
                           ),
@@ -162,11 +161,11 @@ class AnalysisReportPage extends ConsumerWidget {
             child: SelectableText(
               content.isNotEmpty
                   ? content
-                  : 'Aucun contenu disponible pour ce rapport.',
+                  : 'Aucun contenu disponible pour ce rapport.\n\nVérifiez que l\'IA a bien retourné les données et qu\'elles sont sauvegardées dans Supabase.',
               style: ThixPolicy.bodyStyle.copyWith(
                 height: 1.55,
                 fontSize: 14.5,
-                color: ThixPolicy.textPrimary,
+                color: ThixPolicy.textMain,
               ),
             ),
           ),
@@ -265,17 +264,45 @@ class AnalysisReportPage extends ConsumerWidget {
     );
   }
 
-  // ---------- Helpers ----------
+  // ---------- Helpers mis à jour et robustes ----------
   String _extractContent(ProjectAnalysis a) {
     final rj = a.resultJson;
     if (rj != null) {
+      // 1. Chercher dans les clés standards
       if (rj['content'] is String && (rj['content'] as String).isNotEmpty) {
         return rj['content'] as String;
       }
-      if (rj['text'] is String) return rj['text'] as String;
-      if (rj['report'] is String) return rj['report'] as String;
+      
+      // 2. Si le Edge Function a renvoyé un mode 'parsed' JSON
+      if (rj['parsed'] != null && rj['parsed'] is Map) {
+        final parsedMap = rj['parsed'] as Map;
+        if (parsedMap['content'] is String) return parsedMap['content'];
+        if (parsedMap['report'] is String) return parsedMap['report'];
+        
+        // Formater le JSON en texte lisible si aucune clé texte explicite n'existe
+        return parsedMap.entries
+            .map((e) => '**${e.key.toString().toUpperCase()}**\n${e.value}')
+            .join('\n\n');
+      }
+
+      // 3. Fallback de secours sur d'autres clés fréquentes
+      final fallbackKeys = ['text', 'report', 'response', 'result', 'answer', 'data'];
+      for (var key in fallbackKeys) {
+        if (rj[key] is String && (rj[key] as String).isNotEmpty) {
+          return rj[key] as String;
+        }
+      }
+      
+      // 4. Dernier recours : Si le JSON n'est pas vide mais a des clés inconnues, 
+      // on l'affiche au format string brut plutôt que de renvoyer vide.
+      if (rj.isNotEmpty) {
+         return rj.toString(); 
+      }
     }
+    
+    // Si rien n'est trouvé dans resultJson, on vérifie le résumé de la base de données
     if (a.summary != null && a.summary!.isNotEmpty) return a.summary!;
+    
     return '';
   }
 
@@ -283,6 +310,8 @@ class AnalysisReportPage extends ConsumerWidget {
     if (a.sources.isNotEmpty) return a.sources;
     final rj = a.resultJson;
     if (rj == null) return [];
+    
+    // Essayer de trouver les URLs des résultats Tavily
     final search = rj['search'];
     if (search is Map && search['results'] is List) {
       return (search['results'] as List)
@@ -293,10 +322,11 @@ class AnalysisReportPage extends ConsumerWidget {
     return [];
   }
 
+  // C'est ICI qu'était l'erreur de syntaxe !
   String _formatDate(DateTime d) {
     final day = d.day.toString().padLeft(2, '0');
     final month = d.month.toString().padLeft(2, '0');
-    return '$day/\( month/ \){d.year}';
+    return '$day/$month/${d.year}';
   }
 }
 
