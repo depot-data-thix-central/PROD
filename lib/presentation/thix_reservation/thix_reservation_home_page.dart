@@ -1,5 +1,6 @@
 // lib/presentation/thix_reservation/thix_reservation_home_page.dart
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui'; // ✅ NÉCESSAIRE POUR LE GLASSMORPHISM
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,7 +22,7 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
   final PageController _heroController = PageController();
   Timer? _heroTimer;
   int _heroIndex = 0;
-  int _selectedNav = 0; // Pour la navigation
+  int _selectedNav = 0;
 
   final List<Map<String, dynamic>> _heroSlides = [
     {
@@ -46,7 +47,12 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
     },
   ];
 
-  @override void initState() { super.initState(); _loadCounts(); _startHeroAutoScroll(); }
+  @override 
+  void initState() { 
+    super.initState(); 
+    _loadCounts(); 
+    _startHeroAutoScroll(); 
+  }
   
   void _startHeroAutoScroll() {
     _heroTimer = Timer.periodic(const Duration(seconds: 5), (_) {
@@ -73,20 +79,16 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
     } catch (_) { if (mounted) setState(() => loadingCounts = false); }
   }
   
-  @override void dispose() { _heroTimer?.cancel(); _heroController.dispose(); super.dispose(); }
-
-  // 🌟 HELPER POUR LES ORBES DE FOND
-  Widget _buildBlurOrb(Color color, double size) {
-    return Container(
-      width: size, height: size,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
-      child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60), child: Container(color: Colors.transparent)),
-    );
+  @override 
+  void dispose() { 
+    _heroTimer?.cancel(); 
+    _heroController.dispose(); 
+    super.dispose(); 
   }
 
   @override Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB), // Fond Premium
+      backgroundColor: const Color(0xFFF4F7FB), // Fond Premium de base
       extendBodyBehindAppBar: true,
       extendBody: true,
       appBar: AppBar(
@@ -136,10 +138,10 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
       ),
       body: Stack(
         children: [
-          // 🌟 ARRIÈRE-PLAN IMMERSIF (Orbes)
-          Positioned(top: -50, right: -100, child: _buildBlurOrb(ThixPolicy.primaryDeep.withValues(alpha: 0.08), 350)),
-          Positioned(bottom: 200, left: -100, child: _buildBlurOrb(ThixPolicy.primary.withValues(alpha: 0.06), 300)),
-          Positioned(top: 300, right: -50, child: _buildBlurOrb(ThixPolicy.gold.withValues(alpha: 0.05), 250)),
+          // 🌟 ARRIÈRE-PLAN IMMERSIF ANIMÉ (Avions, Bus floutés)
+          const Positioned.fill(
+            child: _TravelAmbientBackground(),
+          ),
 
           RefreshIndicator(
             color: ThixPolicy.primary,
@@ -368,6 +370,97 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
             const SizedBox(height: 4),
             Text(label, maxLines: 1, style: TextStyle(fontSize: 9.5, color: sel ? ThixPolicy.primaryDeep : ThixPolicy.textSecondary.withValues(alpha: 0.8), fontWeight: sel ? FontWeight.w800 : FontWeight.w600)),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// WIDGET : BACKGROUND VOYAGE ANIMÉ & FLOUTÉ
+// ============================================================================
+class _TravelAmbientBackground extends StatefulWidget {
+  const _TravelAmbientBackground();
+
+  @override
+  State<_TravelAmbientBackground> createState() => _TravelAmbientBackgroundState();
+}
+
+class _TravelAmbientBackgroundState extends State<_TravelAmbientBackground> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    // Animation très lente (30s) pour un effet de déplacement hypnotique et calme
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 30))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+
+    return IgnorePointer(
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            final t = _controller.value * 2 * math.pi;
+
+            // Avion (Bleu) - Traverse en diagonale avec une rotation
+            final planeX = size.width * 0.5 + math.cos(t) * (size.width * 0.4);
+            final planeY = size.height * 0.3 + math.sin(t * 1.5) * (size.height * 0.2);
+
+            // Bus (Doré) - Traverse la zone basse
+            final busX = size.width * 0.3 + math.sin(t * 1.2) * (size.width * 0.5);
+            final busY = size.height * 0.6 + math.cos(t) * (size.height * 0.15);
+
+            // Globe/Localisation (Indigo) - Flotte au centre
+            final globeX = size.width * 0.7 + math.cos(t * 0.8) * 120.0;
+            final globeY = size.height * 0.5 + math.sin(t * 1.1) * 150.0;
+
+            return Stack(
+              children: [
+                // 1. Les énormes icônes colorées qui bougent
+                Positioned(
+                  left: planeX - 150, top: planeY - 150,
+                  child: Transform.rotate(
+                    angle: t * 0.5, // Tourne lentement
+                    child: Icon(Icons.flight_rounded, size: 300, color: ThixPolicy.primary.withValues(alpha: 0.35)),
+                  ),
+                ),
+                Positioned(
+                  left: busX - 150, top: busY - 150,
+                  child: Transform.rotate(
+                    angle: -t * 0.3,
+                    child: Icon(Icons.directions_bus_filled_rounded, size: 300, color: ThixPolicy.gold.withValues(alpha: 0.25)),
+                  ),
+                ),
+                Positioned(
+                  left: globeX - 150, top: globeY - 150,
+                  child: Transform.rotate(
+                    angle: t * 0.4,
+                    child: Icon(Icons.public_rounded, size: 300, color: ThixPolicy.primaryDeep.withValues(alpha: 0.30)),
+                  ),
+                ),
+
+                // 2. LE FLOU EXTRÊME 
+                // Ça transforme les icônes d'avions et de bus en de superbes taches de couleurs mouvantes (Mesh Gradient)
+                Positioned.fill(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 90, sigmaY: 90),
+                    child: Container(color: Colors.transparent),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
