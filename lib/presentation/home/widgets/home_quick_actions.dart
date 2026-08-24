@@ -1,4 +1,5 @@
 // lib/presentation/home/widgets/home_quick_actions.dart
+import 'dart:ui'; // ✅ NÉCESSAIRE POUR LE GLASSMORPHISM
 import 'package:flutter/material.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/services/notification_counters_service.dart';
@@ -112,52 +113,70 @@ class _QuickActionItem extends StatelessWidget {
     return _PressableScale(
       onTap: onTap,
       child: SizedBox(
-        width: 64,
+        width: 68, // Légèrement élargi pour accommoder le design Premium
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Stack(
               clipBehavior: Clip.none,
               children: [
+                // 🌟 EFFET GLASSMORPHISM
                 Container(
-                  width: 46,
-                  height: 46,
                   decoration: BoxDecoration(
-                    color: ThixPolicy.card, // Remplacé Colors.white par le Design System
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: accent.withValues(alpha: 0.35),
-                      width: 1.2,
-                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: accent.withValues(alpha: 0.22),
+                        color: Colors.black.withOpacity(0.04), // Ombre très douce
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       )
                     ],
                   ),
-                  alignment: Alignment.center,
-                  child: Icon(icon, size: 20, color: accent),
+                  child: ClipOval(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: Container(
+                        width: 50, // Bouton légèrement plus grand pour le confort (Corporate)
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.65), // Verre dépoli
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.9), // Bordure lumineuse
+                            width: 1.5,
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(icon, size: 22, color: accent), // Icône centrée avec couleur thématique
+                      ),
+                    ),
+                  ),
                 ),
                 if (badge > 0)
                   Positioned(
-                    top: -4,
-                    right: -4,
+                    top: -2,
+                    right: -2,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
                       decoration: BoxDecoration(
                         color: ThixPolicy.danger,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white, width: 1.2),
+                        border: Border.all(color: Colors.white, width: 1.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: ThixPolicy.danger.withOpacity(0.3),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          )
+                        ],
                       ),
                       child: Text(
                         badge > 9 ? '9+' : '$badge',
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 8,
+                          fontSize: 9,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -165,18 +184,19 @@ class _QuickActionItem extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 8.5,
+                fontSize: 9.5, // Texte un poil plus lisible
                 fontWeight: FontWeight.w700,
                 color: accent == ThixPolicy.danger
                     ? ThixPolicy.danger
-                    : ThixPolicy.textMain,
+                    : ThixPolicy.textMain, // Texte corporate sombre
                 height: 1.1,
+                letterSpacing: -0.2, // Interlettrage moderne
               ),
               textAlign: TextAlign.center,
             )
@@ -205,7 +225,7 @@ class _PressableScaleState extends State<_PressableScale> {
 
   void _setPressed(bool v) {
     if (_pressed == v) return;
-    setState(() => _pressed = v); // Correction ici : c'est bien _pressed et non pressed
+    setState(() => _pressed = v);
   }
 
   @override
@@ -216,11 +236,11 @@ class _PressableScaleState extends State<_PressableScale> {
       onTapCancel: () => _setPressed(false),
       onTapUp: (_) => _setPressed(false),
       child: AnimatedScale(
-        scale: _pressed ? 0.96 : 1.0,
+        scale: _pressed ? 0.94 : 1.0,
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
         child: AnimatedOpacity(
-          opacity: _pressed ? 0.92 : 1.0,
+          opacity: _pressed ? 0.85 : 1.0,
           duration: const Duration(milliseconds: 120),
           curve: Curves.easeOut,
           child: widget.child,
