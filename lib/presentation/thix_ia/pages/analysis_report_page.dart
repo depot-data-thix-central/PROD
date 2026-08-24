@@ -166,7 +166,7 @@ class AnalysisReportPage extends ConsumerWidget {
               style: ThixPolicy.bodyStyle.copyWith(
                 height: 1.55,
                 fontSize: 14.5,
-                color: ThixPolicy.textMain,
+                color: ThixPolicy.textPrimary,
               ),
             ),
           ),
