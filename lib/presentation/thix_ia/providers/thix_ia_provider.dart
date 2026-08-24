@@ -64,6 +64,7 @@ final analysisServiceProvider = Provider<AnalysisService>((ref) {
   return AnalysisService(
     analysisRepo: ref.watch(analysisRepositoryProvider),
     memoryRepo: ref.watch(memoryRepositoryProvider),
+    aiService: ref.watch(aiServiceProvider), // ← ajout important
   );
 });
 
