@@ -41,7 +41,18 @@ class BusinessPage extends ConsumerWidget {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  
+                  // 👇 AJOUT DE L'ACTION onPressed CORRIGÉE
+                  onPressed: () async {
+                    final idea = memory?.context.valueProposition ?? 'Générer un business plan complet pour ce projet';
+                    await ref.read(analysesProvider.notifier).startBusinessPlanAnalysis(
+                          ideaDescription: idea,
+                        );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Génération du Business Plan lancée !')),
+                      );
+                    }
+                  },
                   icon: const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 18),
                   label: const Text('Générer Business Plan complet'),
                   style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary),
