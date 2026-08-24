@@ -5,21 +5,28 @@ import '../models/thix_project.dart';
 
 class ProjectRepository {
   ProjectRepository({required this.remote, required this.local});
-  
+
   final ThixIaRemoteDatasource remote;
   final ThixIaLocalDatasource local;
 
-  // Adapté pour correspondre aux paramètres de ProjectService
-  Future<List<ThixProject>> getProjects({int page = 1, int limit = 20, String? search, String? status}) async {
-    return remote.getProjects(page: page, limit: limit, search: search, status: status);
+  Future<List<ThixProject>> getProjects({
+    int page = 1,
+    int limit = 20,
+    String? search,
+    String? status,
+  }) async {
+    return remote.getProjects(
+      page: page,
+      limit: limit,
+      search: search,
+      status: status,
+    );
   }
 
-  // Adapté pour ProjectIntelligenceService
   Future<ThixProject?> getProjectByCode(String code) async {
     return remote.getProjectByCode(code);
   }
 
-  // Adapté pour ProjectService.createProjectFromIdea
   Future<ThixProject> createProject({
     required String name,
     required String sector,
@@ -37,20 +44,25 @@ class ProjectRepository {
     return remote.createProject(data);
   }
 
-  // --- NOUVELLE MÉTHODE AJOUTÉE ---
-  // Règle l'erreur dans create_project_page.dart
-  Future<ThixProject> updateProject(String code, {required Map<String, dynamic> data}) async {
+  Future<ThixProject> updateProject(
+    String code, {
+    required Map<String, dynamic> data,
+  }) async {
     return remote.updateProject(code, data);
   }
 
-  // Gestion du projet actif
+  Future<void> deleteProject(String projectCode) async {
+    await remote.deleteProject(projectCode);
+  }
+
   Future<void> setActiveProject(String code) async {
-    // Si ta méthode s'appelle autrement dans ton localDatasource, ajuste ici
-    // await local.setActiveProject(code); 
+    // Optionnel : stocker le projet actif en local
+    // await local.setActiveProject(code);
   }
 
   Future<ThixProject?> getActiveProject() async {
-    // String? code = await local.getActiveProjectCode();
+    // Optionnel : récupérer le projet actif depuis le local
+    // final code = await local.getActiveProjectCode();
     // if (code != null) return getProjectByCode(code);
     return null;
   }
