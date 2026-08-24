@@ -15,9 +15,8 @@ class DesignPage extends ConsumerStatefulWidget {
 
 class _DesignPageState extends ConsumerState<DesignPage> {
   Future<void> _startDesign() async {
-    // CORRECTION ICI : Ajout des paramètres nommés requis
+    // CORRECTION : Suppression de projectCode (géré en interne par le Notifier)
     await ref.read(analysesProvider.notifier).startFinanceAnalysis(
-          projectCode: widget.projectCode,
           financialInputs: {
             'type': 'design', 
             'deliverables': ['wireframes', 'user_flow', 'ui_guidelines']
