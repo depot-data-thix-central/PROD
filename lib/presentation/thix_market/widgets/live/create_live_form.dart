@@ -424,41 +424,41 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
               ),
               const SizedBox(height: 4),
               ListTile(
-                title: Text(
-                  _auctionEndTime != null
-                      ? "\( {_auctionEndTime!.day}/ \){_auctionEndTime!.month}/${_auctionEndTime!.year} \( {_auctionEndTime!.hour}: \){_auctionEndTime!.minute.toString().padLeft(2, '0')}"'
-                      : 'Sélectionner une date',
-                  style: TextStyle(
-                    color: _auctionEndTime != null ? navy : textMuted,
-                  ),
-                ),
-                trailing: const Icon(Icons.calendar_today, color: gold),
-                onTap: () async {
-                  final date = await showDatePicker(
-                    context: context,
-                    initialDate: DateTime.now().add(const Duration(days: 1)),
-                    firstDate: DateTime.now().add(const Duration(hours: 2)),
-                    lastDate: DateTime.now().add(const Duration(days: 30)),
-                  );
-                  if (date != null) {
-                    final time = await showTimePicker(
-                      context: context,
-                      initialTime: const TimeOfDay(hour: 18, minute: 0),
-                    );
-                    if (time != null) {
-                      setState(() {
-                        _auctionEndTime = DateTime(
-                          date.year,
-                          date.month,
-                          date.day,
-                          time.hour,
-                          time.minute,
-                        );
-                      });
-                    }
-                  }
-                },
-              ),
+  title: Text(
+    _auctionEndTime != null
+        ? '\( {_auctionEndTime!.day}/ \){_auctionEndTime!.month}/${_auctionEndTime!.year} \( {_auctionEndTime!.hour}: \){_auctionEndTime!.minute.toString().padLeft(2, "0")}'
+        : 'Sélectionner une date',
+    style: TextStyle(
+      color: _auctionEndTime != null ? navy : textMuted,
+    ),
+  ),
+  trailing: const Icon(Icons.calendar_today, color: gold),
+  onTap: () async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now().add(const Duration(days: 1)),
+      firstDate: DateTime.now().add(const Duration(hours: 2)),
+      lastDate: DateTime.now().add(const Duration(days: 30)),
+    );
+    if (date != null) {
+      final time = await showTimePicker(
+        context: context,
+        initialTime: const TimeOfDay(hour: 18, minute: 0),
+      );
+      if (time != null) {
+        setState(() {
+          _auctionEndTime = DateTime(
+            date.year,
+            date.month,
+            date.day,
+            time.hour,
+            time.minute,
+          );
+        });
+      }
+    }
+  },
+),
             ],
 
             const SizedBox(height: 24),
