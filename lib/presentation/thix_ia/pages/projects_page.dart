@@ -3,15 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/thix_design_policy.dart';
-import '../providers/thix_ia_provider.dart'; // <-- C'est le seul import de provider dont on a besoin !
+import '../providers/thix_ia_provider.dart';
 import '../widgets/project_card.dart';
 import '../widgets/empty_state_widget.dart';
-
-// Ajout du provider manquant pour la barre de recherche
-final projectSearchQueryProvider = StateProvider<String>((ref) => '');
+import '../core/constants/thix_ia_routes.dart';
 
 class ProjectsPage extends ConsumerStatefulWidget {
   const ProjectsPage({super.key});
+
   @override
   ConsumerState<ProjectsPage> createState() => _ProjectsPageState();
 }
@@ -24,7 +23,8 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
   void initState() {
     super.initState();
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      if (_scrollController.position.pixels >=
+          _scrollController.position.maxScrollExtent - 200) {
         ref.read(projectsProvider.notifier).loadMore();
       }
     });
@@ -47,27 +47,40 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         title: Text('Mes Projets', style: ThixPolicy.h3Style),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add_rounded, color: ThixPolicy.primary),
+            onPressed: () => context.push(ThixIARoutes.createProject),
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(60),
           child: Padding(
             padding: const EdgeInsets.all(ThixPolicy.s16),
             child: TextField(
               controller: _searchController,
-              onChanged: (v) => ref.read(projectSearchQueryProvider.notifier).state = v,
+              onChanged: (v) =>
+                  ref.read(projectSearchQueryProvider.notifier).state = v,
               decoration: InputDecoration(
                 hintText: 'Rechercher THX-BIZ-...',
-                prefixIcon: const Icon(Icons.search_rounded, color: ThixPolicy.textMuted),
+                prefixIcon:
+                    const Icon(Icons.search_rounded, color: ThixPolicy.textMuted),
                 filled: true,
                 fillColor: ThixPolicy.surfaceStrong,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide.none),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               ),
             ),
           ),
         ),
       ),
       body: projectsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator(color: ThixPolicy.primary)),
+        loading: () =>
+            const Center(child: CircularProgressIndicator(color: ThixPolicy.primary)),
         error: (e, _) => Center(child: Text('Erreur $e')),
         data: (_) {
           if (filtered.isEmpty) {
@@ -76,7 +89,7 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
               title: 'Aucun projet trouvé',
               subtitle: 'Essayez un autre terme ou créez un nouveau projet.',
               actionLabel: 'Créer un projet',
-              onAction: () => context.push('/thix-ia/create'),
+              onAction: () => context.push(ThixIARoutes.createProject),
             );
           }
           return RefreshIndicator(
@@ -86,21 +99,45 @@ class _ProjectsPageState extends ConsumerState<ProjectsPage> {
               itemCount: filtered.length + 1,
               itemBuilder: (_, i) {
                 if (i == filtered.length) {
-                  return Padding(padding: const EdgeInsets.all(16), child: Center(child: Text('${filtered.length} projets', style: ThixPolicy.captionStyle)));
+                  return Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Center(
+                      child: Text(
+                        '${filtered.length} projets',
+                        style: ThixPolicy.captionStyle,
+                      ),
+                    ),
+                  );
                 }
                 final p = filtered[i];
                 return ProjectCard(
                   project: p,
-                  onTap: () => context.push('/thix-ia/project/${p.projectCode}'),
+                  // ✅ chemin correct
+                  onTap: () =>
+                      context.push(ThixIARoutes.projectDetailPath(p.projectCode)),
                   onLongPress: () async {
-                    await ref.read(activeProjectProvider.notifier).setActive(p.projectCode);
-                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${p.projectCode} défini comme actif')));
+                    await ref
+                        .read(activeProjectProvider.notifier)
+                        .setActive(p.projectCode);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('${p.projectCode} défini comme actif'),
+                        ),
+                      );
+                    }
                   },
                 );
               },
             ),
           );
         },
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.push(ThixIARoutes.createProject),
+        backgroundColor: ThixPolicy.primary,
+        icon: const Icon(Icons.add_rounded, color: Colors.white),
+        label: const Text('Nouveau', style: TextStyle(color: Colors.white)),
       ),
     );
   }
