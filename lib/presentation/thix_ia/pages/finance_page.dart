@@ -27,28 +27,6 @@ class _FinancePageState extends ConsumerState<FinancePage> {
     super.dispose();
   }
 
-  Future<void> _startFinance() async {
-    final inputs = {
-      'initial_investment': double.tryParse(_investmentController.text) ?? 50000,
-      'monthly_revenue': double.tryParse(_revenueController.text) ?? 10000,
-      'monthly_cost': double.tryParse(_costController.text) ?? 6000,
-      'growth_rate': double.tryParse(_growthController.text) ?? 15,
-      'deterministic': true,
-    };
-    
-    // CORRECTION APPORTÉE ICI : Utilisation des paramètres nommés requis
-    await ref.read(analysesProvider.notifier).startFinanceAnalysis(
-          projectCode: widget.projectCode,
-          financialInputs: inputs,
-        );
-        
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Modèle financier lancé - calculs déterministes')),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final financeAnalyses = ref.watch(analysesByTypeProvider('finance'));
