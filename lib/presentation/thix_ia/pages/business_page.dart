@@ -11,6 +11,18 @@ class BusinessPage extends ConsumerWidget {
   const BusinessPage({super.key, required this.projectCode});
   final String projectCode;
 
+  // Petit nettoyeur pour s'assurer que la carte de prévisualisation n'affiche jamais de code JSON
+  String _cleanSummary(String? raw) {
+    if (raw == null || raw.isEmpty) return 'Analyse en cours...';
+    String text = raw.trim();
+    if (text.startsWith('{')) {
+      // Nettoyage agressif des caractères JSON pour faire un résumé lisible
+      text = text.replaceAll(RegExp(r'["{}\[\]_]'), ' ').replaceAll(':', ' - ').trim();
+      return text.length > 120 ? '${text.substring(0, 120)}...' : text;
+    }
+    return text;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final businessAnalyses = ref.watch(analysesByTypeProvider('business_plan'));
@@ -41,7 +53,6 @@ class BusinessPage extends ConsumerWidget {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  // 👇 AJOUT DE L'ACTION onPressed CORRIGÉE
                   onPressed: () async {
                     final idea = memory?.context.valueProposition ?? 'Générer un business plan complet pour ce projet';
                     await ref.read(analysesProvider.notifier).startBusinessPlanAnalysis(
@@ -68,7 +79,8 @@ class BusinessPage extends ConsumerWidget {
           else
            ...businessAnalyses.map((a) => InsightCard(
              title: a.title ?? 'Business Plan', 
-             content: a.summary ?? '', 
+             // 👇 On utilise le nettoyeur ici pour le résumé de la carte
+             content: _cleanSummary(a.summary), 
              confidence: a.confidence, 
              type: 'business'
            )),
