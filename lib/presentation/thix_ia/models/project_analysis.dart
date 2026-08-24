@@ -3,7 +3,7 @@ import 'package:equatable/equatable.dart';
 import '../core/utils/json_utils.dart';
 
 /// ============================================================================
-/// PROJECT ANALYSIS - Table: project_analyses + ai_runs + citations
+/// PROJECT ANALYSIS - Table: thix_analyses (anciennement project_analyses)
 /// Gère le versioning et la progression réelle (pas arbitraire)
 /// ============================================================================
 
@@ -76,14 +76,15 @@ class ProjectAnalysis extends Equatable {
       progress: JsonUtils.intValue(json, 'progress'),
       title: JsonUtils.stringValue(json, 'title'),
       summary: JsonUtils.stringValue(json, 'summary'),
-      resultJson: JsonUtils.asMap(json['result_json']),
+      // MODIFICATION ICI : On lit la colonne 'content' en priorité, avec un fallback sur 'result_json' au cas où
+      resultJson: JsonUtils.asMap(json['content']) ?? JsonUtils.asMap(json['result_json']),
       confidence: JsonUtils.doubleValue(json, 'confidence'),
       sources: JsonUtils.stringList(json, 'sources'),
       citations: JsonUtils.asList(json['citations'], fromMap: Citation.fromJson),
       aiModelUsed: JsonUtils.stringValue(json, 'ai_model_used'),
       promptVersion: JsonUtils.stringValue(json, 'prompt_version'),
-      tokensUsed: json['tokens_used'] is int? json['tokens_used'] : null,
-      executionTimeMs: json['execution_time_ms'] is int? json['execution_time_ms'] : null,
+      tokensUsed: json['tokens_used'] is int ? json['tokens_used'] : null,
+      executionTimeMs: json['execution_time_ms'] is int ? json['execution_time_ms'] : null,
       createdAt: JsonUtils.dateTimeValue(json, 'created_at'),
       completedAt: JsonUtils.dateTimeValue(json, 'completed_at'),
       version: JsonUtils.intValue(json, 'version', fallback: 1),
@@ -97,7 +98,8 @@ class ProjectAnalysis extends Equatable {
         'progress': progress,
         'title': title,
         'summary': summary,
-        'result_json': resultJson,
+        // MODIFICATION ICI : On sauvegarde dans la colonne 'content' (et non plus 'result_json')
+        'content': resultJson,
         'confidence': confidence,
         'sources': sources,
         'ai_model_used': aiModelUsed,
@@ -110,11 +112,11 @@ class ProjectAnalysis extends Equatable {
       id: id,
       projectCode: projectCode,
       type: type,
-      status: status?? this.status,
-      progress: progress?? this.progress,
+      status: status ?? this.status,
+      progress: progress ?? this.progress,
       title: title,
       summary: summary,
-      resultJson: resultJson?? this.resultJson,
+      resultJson: resultJson ?? this.resultJson,
       confidence: confidence,
       sources: sources,
       citations: citations,
@@ -151,7 +153,7 @@ class Citation extends Equatable {
         id: JsonUtils.stringValue(json, 'id'),
         sourceUrl: JsonUtils.stringValue(json, 'source_url'),
         quote: JsonUtils.stringValue(json, 'quote'),
-        page: json['page'] is int? json['page'] : null,
+        page: json['page'] is int ? json['page'] : null,
         confidence: JsonUtils.doubleValue(json, 'confidence', fallback: 0.8),
       );
 
