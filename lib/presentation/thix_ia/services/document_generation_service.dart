@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 
 import '../models/project_memory.dart';
@@ -261,7 +260,7 @@ $context
           children: [
             pw.Text('Généré le $date', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
             pw.Text(
-              'Page \( {context.pageNumber}/ \){context.pagesCount}',
+              'Page ${context.pageNumber}/${context.pagesCount}',
               style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
             ),
           ],
@@ -293,6 +292,7 @@ $context
   }
 
   List<pw.Widget> _businessPlanPages(ThixProject p, Map<String, dynamic> c) {
+    final cityString = p.city != null ? ' • ${p.city}' : '';
     return [
       pw.Header(
         level: 0,
@@ -303,7 +303,7 @@ $context
       ),
       pw.Text(p.name, style: pw.TextStyle(fontSize: 16, color: PdfColors.indigo800)),
       pw.SizedBox(height: 8),
-      pw.Text('${p.sector} • \( {p.country} \){p.city != null ? ' • ${p.city}' : ''}'),
+      pw.Text('${p.sector} • ${p.country}$cityString'),
       pw.SizedBox(height: 24),
 
       _section('1. Résumé exécutif', c['executive_summary']?.toString() ?? ''),
@@ -358,6 +358,7 @@ $context
   }
 
   List<pw.Widget> _profilePages(ThixProject p, Map<String, dynamic> c) {
+    final locationString = p.city != null ? '${p.country}, ${p.city}' : p.country;
     return [
       pw.Header(level: 0, child: pw.Text('PROFIL PROJET', style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold))),
       pw.SizedBox(height: 12),
@@ -366,7 +367,7 @@ $context
       pw.SizedBox(height: 16),
       _section('Description', c['description']?.toString() ?? ''),
       _kv('Secteur', c['sector']?.toString() ?? p.sector),
-      _kv('Localisation', c['location']?.toString() ?? '\( {p.country} \){p.city != null ? ', ${p.city}' : ''}'),
+      _kv('Localisation', c['location']?.toString() ?? locationString),
       _kv('Stade', c['stage']?.toString() ?? 'Idée'),
       if (c['highlights'] is List) ...[
         pw.SizedBox(height: 12),
