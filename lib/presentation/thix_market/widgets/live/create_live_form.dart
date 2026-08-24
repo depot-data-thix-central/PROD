@@ -5,7 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 
-// Importation de la page de streaming
 import '../../pages/live_stream_page.dart';
 
 class CreateLiveForm extends StatefulWidget {
@@ -35,7 +34,6 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
 
   final ImagePicker _picker = ImagePicker();
 
-  // Couleurs de l'application
   static const Color navy = Color(0xFF1B2A4A);
   static const Color gold = Color(0xFFC9962C);
   static const Color danger = Color(0xFFE53935);
@@ -107,7 +105,7 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
 
   Future<void> _processLive({required bool startNow}) async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     if (_thumbnail == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -141,13 +139,10 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
     setState(() => _isLoading = true);
 
     try {
-      // 1. Upload du thumbnail
       final thumbnailUrl = await _uploadThumbnail();
-
-      // 2. Générer un channelName unique
       final channelName = 'live_${DateTime.now().millisecondsSinceEpoch}';
+      final userId = Supabase.instance.client.auth.currentUser?.id;
 
-      // 3. Appeler la Edge Function pour obtenir le token Agora
       String token;
       try {
         final tokenResponse = await Supabase.instance.client.functions.invoke(
@@ -169,15 +164,15 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
         }
       }
 
-      // 4. Définir le statut et l'heure en fonction du bouton cliqué
       final liveStatus = startNow ? 'live' : 'scheduled';
-      final startTimeString = startNow 
-          ? DateTime.now().toIso8601String() 
+      final startTimeString = startNow
+          ? DateTime.now().toIso8601String()
           : DateTime.now().add(const Duration(minutes: 5)).toIso8601String();
 
-      // 5. Créer l'enregistrement du live
+      // ✅ TABLE UNIFIÉE live_sessions
       final liveData = {
         'shop_id': widget.shopId,
+        'host_id': userId,
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim(),
         'thumbnail_url': thumbnailUrl,
@@ -188,13 +183,14 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
         'starting_price': _hasAuction ? _startingPrice : null,
         'auction_end_time': _hasAuction ? _auctionEndTime?.toIso8601String() : null,
         'status': liveStatus,
+        'source': 'market', // ✅ UNIFIÉ
         'scheduled_start': startTimeString,
         'started_at': startNow ? startTimeString : null,
         'created_at': DateTime.now().toIso8601String(),
       };
 
       final response = await Supabase.instance.client
-          .from('lives')
+          .from('live_sessions') // ✅ UNIFIÉ
           .insert(liveData)
           .select()
           .single();
@@ -208,10 +204,8 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
             backgroundColor: Colors.green,
           ),
         );
-        
-        // 🟢 REDIRECTION VERS LE LECTEUR VIDÉO
+
         if (startNow) {
-          // Si c'est un direct, on ouvre la page vidéo en tant que vendeur (isHost: true)
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
@@ -219,12 +213,11 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
                 liveId: response['id'].toString(),
                 channelName: channelName,
                 token: token,
-                isHost: true, 
+                isHost: true,
               ),
             ),
           );
         } else {
-          // Si c'est juste programmé, on ferme le formulaire et on rentre à l'accueil
           Navigator.pop(context);
         }
       }
@@ -252,7 +245,6 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Thumbnail
             const Text(
               'Miniature *',
               style: TextStyle(fontWeight: FontWeight.w500, color: navy),
@@ -276,23 +268,15 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
                     : Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
-                            Icons.add_photo_alternate,
-                            size: 40,
-                            color: textMuted,
-                          ),
+                          Icon(Icons.add_photo_alternate, size: 40, color: textMuted),
                           const SizedBox(height: 8),
-                          Text(
-                            'Ajouter une miniature',
-                            style: TextStyle(color: textMuted),
-                          ),
+                          Text('Ajouter une miniature', style: TextStyle(color: textMuted)),
                         ],
                       ),
               ),
             ),
             const SizedBox(height: 16),
 
-            // Titre
             const Text(
               'Titre *',
               style: TextStyle(fontWeight: FontWeight.w500, color: navy),
@@ -302,9 +286,7 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
               controller: _titleController,
               decoration: InputDecoration(
                 hintText: 'Ex: Vente flash mode été',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: const BorderSide(color: gold, width: 2),
@@ -314,7 +296,6 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
             ),
             const SizedBox(height: 12),
 
-            // Description
             const Text(
               'Description',
               style: TextStyle(fontWeight: FontWeight.w500, color: navy),
@@ -325,9 +306,7 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
               maxLines: 3,
               decoration: InputDecoration(
                 hintText: 'Décrivez votre live...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: const BorderSide(color: gold, width: 2),
@@ -336,7 +315,6 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
             ),
             const SizedBox(height: 16),
 
-            // Produits disponibles
             const Text(
               'Produits à présenter',
               style: TextStyle(fontWeight: FontWeight.w500, color: navy),
@@ -382,7 +360,8 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
                     },
                     selectedColor: gold.withOpacity(0.2),
                     checkmarkColor: gold,
-                    avatar: product['image_url'] != null && product['image_url'].toString().isNotEmpty
+                    avatar: product['image_url'] != null &&
+                            product['image_url'].toString().isNotEmpty
                         ? ClipRRect(
                             borderRadius: BorderRadius.circular(4),
                             child: Image.network(
@@ -398,7 +377,8 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
                                   child: CircularProgressIndicator(strokeWidth: 2),
                                 );
                               },
-                              errorBuilder: (_, __, ___) => const Icon(Icons.image, size: 16),
+                              errorBuilder: (_, __, ___) =>
+                                  const Icon(Icons.image, size: 16),
                             ),
                           )
                         : null,
@@ -407,12 +387,8 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
               ),
             const SizedBox(height: 16),
 
-            // Enchères
             SwitchListTile(
-              title: const Text(
-                'Activer les enchères',
-                style: TextStyle(color: navy),
-              ),
+              title: const Text('Activer les enchères', style: TextStyle(color: navy)),
               value: _hasAuction,
               onChanged: (value) => setState(() => _hasAuction = value),
               activeColor: gold,
@@ -431,18 +407,15 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
                 decoration: InputDecoration(
                   hintText: '0',
                   suffixText: 'FCFA',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: const BorderSide(color: gold, width: 2),
                   ),
                 ),
                 onChanged: (v) => _startingPrice = double.tryParse(v) ?? 0,
-                validator: (v) => _hasAuction && (v == null || v.isEmpty)
-                    ? 'Champ requis'
-                    : null,
+                validator: (v) =>
+                    _hasAuction && (v == null || v.isEmpty) ? 'Champ requis' : null,
               ),
               const SizedBox(height: 12),
               const Text(
@@ -453,7 +426,7 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
               ListTile(
                 title: Text(
                   _auctionEndTime != null
-                      ? '${_auctionEndTime!.day}/${_auctionEndTime!.month}/${_auctionEndTime!.year} ${_auctionEndTime!.hour}:${_auctionEndTime!.minute.toString().padLeft(2, '0')}'
+                      ? '\( {_auctionEndTime!.day}/ \){_auctionEndTime!.month}/${_auctionEndTime!.year} \( {_auctionEndTime!.hour}: \){_auctionEndTime!.minute.toString().padLeft(2, '0')}'
                       : 'Sélectionner une date',
                   style: TextStyle(
                     color: _auctionEndTime != null ? navy : textMuted,
@@ -490,17 +463,15 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
 
             const SizedBox(height: 24),
 
-            // --- DOUBLE BOUTON ---
             Column(
               children: [
-                // 🔴 BOUTON : Lancer le live maintenant
                 SizedBox(
                   width: double.infinity,
                   height: 48,
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : () => _processLive(startNow: true),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: danger, // Rouge pour le direct
+                      backgroundColor: danger,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -509,16 +480,18 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
                     ),
                     child: _isLoading
                         ? const SizedBox(
-                            width: 20, height: 20, 
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
                           )
-                        : const Text('Lancer le live maintenant', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                        : const Text(
+                            'Lancer le live maintenant',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                          ),
                   ),
                 ),
-                
                 const SizedBox(height: 12),
-                
-                // 🟡 BOUTON : Programmer le live
                 SizedBox(
                   width: double.infinity,
                   height: 48,
@@ -531,7 +504,10 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    child: const Text('Programmer pour plus tard', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                    child: const Text(
+                      'Programmer pour plus tard',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ),
               ],
