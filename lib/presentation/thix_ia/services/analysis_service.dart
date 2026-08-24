@@ -38,7 +38,6 @@ class AnalysisService {
     required String ideaDescription,
     ThixAiProvider provider = ThixAiProvider.openai,
   }) async {
-    // 1. Créer l'analyse en base (statut running)
     final analysis = await analysisRepo.startAnalysis(
       projectCode: projectCode,
       type: 'idea',
@@ -49,7 +48,6 @@ class AnalysisService {
       },
     );
 
-    // 2. Appel IA en arrière-plan
     _runIdeaAnalysisInBackground(
       analysisId: analysis.id,
       projectCode: projectCode,
@@ -91,10 +89,7 @@ class AnalysisService {
       }
     } catch (e, st) {
       debugPrint('❌ Idea analysis failed: $e\n$st');
-      await analysisRepo.failAnalysis(
-        analysisId: analysisId,
-        error: e.toString(),
-      );
+      await analysisRepo.failAnalysis(analysisId: analysisId, error: e.toString());
     }
   }
 
@@ -108,13 +103,20 @@ class AnalysisService {
     String? additionalContext,
     ThixAiProvider provider = ThixAiProvider.anthropic,
   }) async {
+    final shortIdea = additionalContext != null && additionalContext.length > 60
+        ? '${additionalContext.substring(0, 57)}...'
+        : additionalContext;
+
     final analysis = await analysisRepo.startAnalysis(
       projectCode: projectCode,
       type: 'market',
-      title: 'Étude de marché - $sector - $country',
+      title: shortIdea != null
+          ? 'Étude de marché – $shortIdea'
+          : 'Étude de marché - $sector - $country',
       payload: {
         'country': country,
         'sector': sector,
+        'idea_context': additionalContext,
         'country_context': country == 'RDC'
             ? 'République Démocratique du Congo, marché émergent Afrique centrale'
             : country,
@@ -146,9 +148,16 @@ class AnalysisService {
   }) async {
     try {
       final query = '''
-Étude de marché complète pour le secteur "$sector" en $country.
-${additionalContext != null ? 'Contexte supplémentaire : $additionalContext' : ''}
-Fournis une analyse structurée avec sources si possible.
+Tu es un expert en analyse de marché en Afrique centrale (spécialement RDC).
+
+**Idée business exacte à analyser en priorité :**
+${additionalContext ?? 'Non spécifiée'}
+
+Secteur : $sector
+Pays : $country
+
+Fais une étude de marché **spécifique à cette idée**, pas une analyse générale du secteur.
+Structure claire, données locales si possible, sources et recommandations concrètes.
 ''';
 
       final response = await aiService.marketStudy(
@@ -176,10 +185,7 @@ Fournis une analyse structurée avec sources si possible.
       }
     } catch (e, st) {
       debugPrint('❌ Market analysis failed: $e\n$st');
-      await analysisRepo.failAnalysis(
-        analysisId: analysisId,
-        error: e.toString(),
-      );
+      await analysisRepo.failAnalysis(analysisId: analysisId, error: e.toString());
     }
   }
 
@@ -193,10 +199,16 @@ Fournis une analyse structurée avec sources si possible.
     String? productDescription,
     ThixAiProvider provider = ThixAiProvider.openai,
   }) async {
+    final shortIdea = productDescription != null && productDescription.length > 50
+        ? '${productDescription.substring(0, 47)}...'
+        : productDescription;
+
     final analysis = await analysisRepo.startAnalysis(
       projectCode: projectCode,
       type: 'competitor',
-      title: 'Intelligence concurrentielle - $sector',
+      title: shortIdea != null
+          ? 'Concurrents – $shortIdea'
+          : 'Intelligence concurrentielle - $sector',
       payload: {
         'sector': sector,
         'country': country,
@@ -226,15 +238,22 @@ Fournis une analyse structurée avec sources si possible.
   }) async {
     try {
       final query = '''
-Analyse concurrentielle pour le secteur "$sector" en $country.
-${productDescription != null ? 'Produit/Service : $productDescription' : ''}
-Identifie les principaux acteurs, leurs forces/faiblesses, positionnement et opportunités de différenciation.
+Tu es un expert en intelligence concurrentielle en RDC / Afrique centrale.
+
+**Idée / Produit / Service à analyser :**
+${productDescription ?? 'Non spécifié'}
+
+Secteur : $sector
+Pays : $country
+
+Identifie les principaux acteurs (directs et indirects), leurs forces/faiblesses, 
+positionnement et les opportunités de différenciation pour cette idée précise.
 ''';
 
       final response = await aiService.call(
         action: ThixAiAction.competitor,
         message: query,
-        searchQuery: 'concurrents $sector $country',
+        searchQuery: 'concurrents $sector $country ${productDescription ?? ''}',
         projectCode: projectCode,
         provider: provider,
       );
@@ -258,10 +277,7 @@ Identifie les principaux acteurs, leurs forces/faiblesses, positionnement et opp
       }
     } catch (e, st) {
       debugPrint('❌ Competitor analysis failed: $e\n$st');
-      await analysisRepo.failAnalysis(
-        analysisId: analysisId,
-        error: e.toString(),
-      );
+      await analysisRepo.failAnalysis(analysisId: analysisId, error: e.toString());
     }
   }
 
@@ -275,13 +291,20 @@ Identifie les principaux acteurs, leurs forces/faiblesses, positionnement et opp
     String? activityDescription,
     ThixAiProvider provider = ThixAiProvider.anthropic,
   }) async {
+    final shortIdea = activityDescription != null && activityDescription.length > 50
+        ? '${activityDescription.substring(0, 47)}...'
+        : activityDescription;
+
     final analysis = await analysisRepo.startAnalysis(
       projectCode: projectCode,
       type: 'legal',
-      title: 'Réglementation - $sector - $jurisdiction',
+      title: shortIdea != null
+          ? 'Réglementation – $shortIdea'
+          : 'Réglementation - $sector - $jurisdiction',
       payload: {
         'jurisdiction': jurisdiction,
         'sector': sector,
+        'activity': activityDescription,
         'require_law_reference': true,
         'require_authority': true,
         'require_disclaimer': true,
@@ -310,8 +333,13 @@ Identifie les principaux acteurs, leurs forces/faiblesses, positionnement et opp
   }) async {
     try {
       final query = '''
-Analyse réglementaire et légale pour une activité dans le secteur "$sector" en $jurisdiction.
-${activityDescription != null ? 'Description de l\'activité : $activityDescription' : ''}
+Tu es un expert en réglementation et formalités administratives en RDC / Afrique centrale.
+
+**Activité / Idée exacte à analyser :**
+${activityDescription ?? 'Non spécifiée'}
+
+Secteur : $sector
+Juridiction : $jurisdiction
 
 Important :
 - Ne jamais inventer une loi ou une obligation.
@@ -322,7 +350,7 @@ Important :
       final response = await aiService.call(
         action: ThixAiAction.legalTax,
         message: query,
-        searchQuery: 'réglementation $sector $jurisdiction licences obligations',
+        searchQuery: 'réglementation $sector $jurisdiction licences obligations ${activityDescription ?? ''}',
         projectCode: projectCode,
         provider: provider,
       );
@@ -347,10 +375,7 @@ Important :
       }
     } catch (e, st) {
       debugPrint('❌ Legal analysis failed: $e\n$st');
-      await analysisRepo.failAnalysis(
-        analysisId: analysisId,
-        error: e.toString(),
-      );
+      await analysisRepo.failAnalysis(analysisId: analysisId, error: e.toString());
     }
   }
 
@@ -362,10 +387,14 @@ Important :
     required Map<String, dynamic> financialInputs,
     ThixAiProvider provider = ThixAiProvider.openai,
   }) async {
+    final idea = financialInputs['idea_context'] as String?;
+
     final analysis = await analysisRepo.startAnalysis(
       projectCode: projectCode,
       type: 'finance',
-      title: 'Modèle financier prévisionnel',
+      title: idea != null && idea.isNotEmpty
+          ? 'Modèle financier – \( {idea.length > 40 ? ' \){idea.substring(0, 37)}...' : idea}'
+          : 'Modèle financier prévisionnel',
       payload: {
         'inputs': financialInputs,
         'deterministic': true,
@@ -373,8 +402,6 @@ Important :
       },
     );
 
-    // Note : pour la finance, on peut faire un traitement plus déterministe plus tard.
-    // Pour l'instant on passe par l'IA.
     _runFinanceAnalysisInBackground(
       analysisId: analysis.id,
       projectCode: projectCode,
@@ -392,10 +419,18 @@ Important :
     required ThixAiProvider provider,
   }) async {
     try {
+      final idea = inputs['idea_context'] as String? ?? 'Non spécifiée';
+
       final query = '''
-Construis un modèle financier prévisionnel à partir des hypothèses suivantes :
+Tu es un expert en modélisation financière pour startups et PME en RDC.
+
+**Idée business :**
+$idea
+
+Hypothèses fournies :
 ${inputs.toString()}
 
+Construis un modèle financier prévisionnel réaliste.
 Inclus :
 - CAPEX / OPEX
 - Hypothèses de revenus
@@ -405,7 +440,7 @@ Inclus :
 ''';
 
       final response = await aiService.call(
-        action: ThixAiAction.businessPlan, // on réutilise pour l'instant
+        action: ThixAiAction.businessPlan,
         message: query,
         projectCode: projectCode,
         provider: provider,
@@ -430,16 +465,98 @@ Inclus :
       }
     } catch (e, st) {
       debugPrint('❌ Finance analysis failed: $e\n$st');
-      await analysisRepo.failAnalysis(
-        analysisId: analysisId,
-        error: e.toString(),
-      );
+      await analysisRepo.failAnalysis(analysisId: analysisId, error: e.toString());
     }
   }
-// ============================================================
-  // CONTRÔLE DES ANALYSES (Pause / Cancel / Delete)
-  // ============================================================
 
+  // ============================================================
+  // BUSINESS PLAN
+  // ============================================================
+  Future<ProjectAnalysis> startBusinessPlanAnalysis({
+    required String projectCode,
+    required String ideaDescription,
+    ThixAiProvider provider = ThixAiProvider.openai,
+  }) async {
+    final shortIdea = ideaDescription.length > 50
+        ? '${ideaDescription.substring(0, 47)}...'
+        : ideaDescription;
+
+    final analysis = await analysisRepo.startAnalysis(
+      projectCode: projectCode,
+      type: 'business_plan',
+      title: 'Business plan – $shortIdea',
+      payload: {
+        'idea': ideaDescription,
+        'require_full_plan': true,
+      },
+    );
+
+    _runBusinessPlanInBackground(
+      analysisId: analysis.id,
+      projectCode: projectCode,
+      idea: ideaDescription,
+      provider: provider,
+    );
+
+    return analysis;
+  }
+
+  Future<void> _runBusinessPlanInBackground({
+    required String analysisId,
+    required String projectCode,
+    required String idea,
+    required ThixAiProvider provider,
+  }) async {
+    try {
+      final query = '''
+Tu es un expert en business plan pour l'Afrique centrale (RDC).
+
+**Idée business exacte :**
+$idea
+
+Génère un business plan structuré et actionnable comprenant :
+1. Résumé exécutif
+2. Description de l'idée et proposition de valeur
+3. Analyse de marché
+4. Stratégie commerciale
+5. Organisation et équipe
+6. Plan financier sommaire
+7. Risques et mitigation
+8. Feuille de route (12-24 mois)
+''';
+
+      final response = await aiService.call(
+        action: ThixAiAction.businessPlan,
+        message: query,
+        projectCode: projectCode,
+        provider: provider,
+      );
+
+      if (response.success && response.content != null) {
+        await analysisRepo.completeAnalysis(
+          analysisId: analysisId,
+          result: {
+            'content': response.content,
+            'provider': response.provider,
+            'model': response.model,
+            'generated_at': DateTime.now().toIso8601String(),
+          },
+        );
+      } else {
+        await analysisRepo.failAnalysis(
+          analysisId: analysisId,
+          error: response.error ?? 'Erreur génération business plan',
+        );
+      }
+    } catch (e, st) {
+      debugPrint('❌ Business plan failed: $e\n$st');
+      await analysisRepo.failAnalysis(analysisId: analysisId, error: e.toString());
+    }
+  }
+
+  // ============================================================
+  // CONTRÔLE
+  // ============================================================
   Future<void> pauseAnalysis(String analysisId) async {
     await analysisRepo.updateStatus(analysisId, 'paused');
   }
@@ -451,9 +568,7 @@ Inclus :
   Future<void> deleteAnalysis(String analysisId) async {
     await analysisRepo.deleteAnalysis(analysisId);
   }
-  // ============================================================
-  // LECTURE
-  // ============================================================
+
   Future<List<ProjectAnalysis>> getProjectAnalyses(String projectCode, {String? type}) {
     return analysisRepo.getAnalyses(projectCode, type: type);
   }
