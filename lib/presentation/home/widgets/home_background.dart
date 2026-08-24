@@ -9,64 +9,69 @@ class HomeSoftBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
+      // RepaintBoundary est excellent pour les fonds statiques floutés (optimisation des performances)
       child: RepaintBoundary(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFFF7F9FF), ThixPolicy.surface],
-                  ),
+        child: Container(
+          // Fond Corporate ultra-propre et neutre
+          color: const Color(0xFFF7F8FA), 
+          child: Stack(
+            children: [
+              // Orbe Supérieur Droit (Bleu principal très doux)
+              Positioned(
+                top: -150,
+                right: -100,
+                child: _AmbientOrb(
+                  size: 450,
+                  color: ThixPolicy.primary.withValues(alpha: 0.06),
                 ),
               ),
-            ),
-            const Positioned(
-              top: -220,
-              right: -180,
-              child: _SoftBlob(
-                size: 420,
-                colors: [Color(0x2A003BFF), Color(0x1400214F)],
+              // Orbe Central Gauche (Bleu profond / Indigo)
+              Positioned(
+                top: 250,
+                left: -150,
+                child: _AmbientOrb(
+                  size: 380,
+                  color: ThixPolicy.primaryDeep.withValues(alpha: 0.04),
+                ),
               ),
-            ),
-            const Positioned(
-              top: -120,
-              left: -220,
-              child: _SoftBlob(
-                size: 360,
-                colors: [Color(0x1F003BFF), Color(0x1200214F)],
+              // Orbe Inférieur Droit (Touche infinitésimale de Gold Premium)
+              Positioned(
+                bottom: -100,
+                right: -50,
+                child: _AmbientOrb(
+                  size: 300,
+                  color: ThixPolicy.gold.withValues(alpha: 0.02),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _SoftBlob extends StatelessWidget {
+/// Crée un halo de lumière diffuse parfait pour les fonds Glassmorphism
+class _AmbientOrb extends StatelessWidget {
   final double size;
-  final List<Color> colors;
+  final Color color;
 
-  const _SoftBlob({required this.size, required this.colors});
+  const _AmbientOrb({
+    required this.size,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return ClipOval(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: colors,
-            ),
-          ),
+    // ImageFiltered applique le flou directement sur le widget lui-même (contrairement au BackdropFilter)
+    return ImageFiltered(
+      imageFilter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color,
         ),
       ),
     );
