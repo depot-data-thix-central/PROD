@@ -71,7 +71,11 @@ class AnalysisReportPage extends ConsumerWidget {
                         color: analysis.type.color.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Icon(analysis.type.icon, color: analysis.type.color, size: 22),
+                      child: Icon(
+                        analysis.type.icon,
+                        color: analysis.type.color,
+                        size: 22,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -80,7 +84,8 @@ class AnalysisReportPage extends ConsumerWidget {
                         children: [
                           Text(
                             analysis.title ?? analysis.type.label,
-                            style: ThixPolicy.bodyStyle.copyWith(fontWeight: FontWeight.w600),
+                            style: ThixPolicy.bodyStyle
+                                .copyWith(fontWeight: FontWeight.w600),
                           ),
                           const SizedBox(height: 2),
                           Text(
@@ -94,7 +99,10 @@ class AnalysisReportPage extends ConsumerWidget {
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: ThixPolicy.success.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(20),
@@ -126,7 +134,8 @@ class AnalysisReportPage extends ConsumerWidget {
                     if (analysis.confidence > 0)
                       Text(
                         'Confiance ${(analysis.confidence * 100).toInt()}%',
-                        style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
+                        style: ThixPolicy.captionStyle
+                            .copyWith(color: ThixPolicy.textSecondary),
                       ),
                   ],
                 ),
@@ -137,7 +146,10 @@ class AnalysisReportPage extends ConsumerWidget {
           const SizedBox(height: 20),
 
           // ========== CONTENU DU RAPPORT ==========
-          Text('Rapport', style: ThixPolicy.labelStyle.copyWith(fontSize: 13)),
+          Text(
+            'Rapport',
+            style: ThixPolicy.labelStyle.copyWith(fontSize: 13),
+          ),
           const SizedBox(height: 8),
           Container(
             width: double.infinity,
@@ -148,7 +160,9 @@ class AnalysisReportPage extends ConsumerWidget {
               border: Border.all(color: ThixPolicy.border),
             ),
             child: SelectableText(
-              content.isNotEmpty ? content : 'Aucun contenu disponible pour ce rapport.',
+              content.isNotEmpty
+                  ? content
+                  : 'Aucun contenu disponible pour ce rapport.',
               style: ThixPolicy.bodyStyle.copyWith(
                 height: 1.55,
                 fontSize: 14.5,
@@ -160,14 +174,20 @@ class AnalysisReportPage extends ConsumerWidget {
           // ========== SOURCES ==========
           if (sources.isNotEmpty) ...[
             const SizedBox(height: 24),
-            Text('Sources', style: ThixPolicy.labelStyle.copyWith(fontSize: 13)),
+            Text(
+              'Sources',
+              style: ThixPolicy.labelStyle.copyWith(fontSize: 13),
+            ),
             const SizedBox(height: 8),
             ...sources.asMap().entries.map((e) {
               final i = e.key + 1;
               final url = e.value;
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
@@ -195,7 +215,8 @@ class AnalysisReportPage extends ConsumerWidget {
                     Expanded(
                       child: Text(
                         url,
-                        style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.primary),
+                        style: ThixPolicy.captionStyle
+                            .copyWith(color: ThixPolicy.primary),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -219,7 +240,11 @@ class AnalysisReportPage extends ConsumerWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.info_outline_rounded, size: 18, color: Colors.amber.shade800),
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 18,
+                    color: Colors.amber.shade800,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -242,17 +267,14 @@ class AnalysisReportPage extends ConsumerWidget {
 
   // ---------- Helpers ----------
   String _extractContent(ProjectAnalysis a) {
-    // 1. resultJson['content']
     final rj = a.resultJson;
     if (rj != null) {
       if (rj['content'] is String && (rj['content'] as String).isNotEmpty) {
         return rj['content'] as String;
       }
-      // parfois le contenu est à la racine
       if (rj['text'] is String) return rj['text'] as String;
       if (rj['report'] is String) return rj['report'] as String;
     }
-    // 2. summary
     if (a.summary != null && a.summary!.isNotEmpty) return a.summary!;
     return '';
   }
@@ -272,12 +294,15 @@ class AnalysisReportPage extends ConsumerWidget {
   }
 
   String _formatDate(DateTime d) {
-    return '\( {d.day.toString().padLeft(2, '0')}/ \){d.month.toString().padLeft(2, '0')}/${d.year}';
+    final day = d.day.toString().padLeft(2, '0');
+    final month = d.month.toString().padLeft(2, '0');
+    return '$day/\( month/ \){d.year}';
   }
 }
 
 class _MetaChip extends StatelessWidget {
   const _MetaChip({required this.icon, required this.label});
+
   final IconData icon;
   final String label;
 
@@ -294,7 +319,11 @@ class _MetaChip extends StatelessWidget {
         children: [
           Icon(icon, size: 13, color: ThixPolicy.textSecondary),
           const SizedBox(width: 4),
-          Text(label, style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textSecondary)),
+          Text(
+            label,
+            style: ThixPolicy.microStyle
+                .copyWith(color: ThixPolicy.textSecondary),
+          ),
         ],
       ),
     );
