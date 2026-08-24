@@ -148,16 +148,17 @@ class AnalysisService {
   }) async {
     try {
       final query = '''
-Tu es un expert en analyse de marché en Afrique centrale (spécialement RDC).
+Tu es un expert en analyse de marché en Afrique (spécialement $country).
 
-**Idée business exacte à analyser en priorité :**
-${additionalContext ?? 'Non spécifiée'}
+**PROJET SPÉCIFIQUE À ANALYSER IMPÉRATIVEMENT :**
+"${additionalContext ?? 'Non spécifiée'}"
 
-Secteur : $sector
-Pays : $country
+Secteur général : $sector
+Pays cible : $country
 
-Fais une étude de marché **spécifique à cette idée**, pas une analyse générale du secteur.
-Structure claire, données locales si possible, sources et recommandations concrètes.
+DIRECTIVE CRITIQUE : Ton étude de marché doit être **ultra-ciblée** sur le projet spécifique mentionné ci-dessus (ex: si le projet est une usine d'eau à Kinshasa, ne parle pas du commerce général, mais uniquement du marché de l'eau potable à Kinshasa). 
+Structure : Taille du marché cible, Segments de clients potentiels pour CE projet, Tendances actuelles, Opportunités spécifiques et Menaces.
+Cite tes sources.
 ''';
 
       final response = await aiService.marketStudy(
@@ -238,16 +239,13 @@ Structure claire, données locales si possible, sources et recommandations concr
   }) async {
     try {
       final query = '''
-Tu es un expert en intelligence concurrentielle en RDC / Afrique centrale.
+Tu es un expert en intelligence concurrentielle pour le marché de $country.
 
-**Idée / Produit / Service à analyser :**
-${productDescription ?? 'Non spécifié'}
+**PROJET/PRODUIT SPÉCIFIQUE :**
+"${productDescription ?? 'Non spécifié'}"
 
-Secteur : $sector
-Pays : $country
-
-Identifie les principaux acteurs (directs et indirects), leurs forces/faiblesses, 
-positionnement et les opportunités de différenciation pour cette idée précise.
+DIRECTIVE CRITIQUE : Identifie les concurrents directs et indirects qui s'opposent EXACTEMENT à cette idée précise dans la région cible. 
+Pour chaque concurrent pertinent, donne : Ses forces, ses faiblesses, et surtout les opportunités de différenciation pour notre projet spécifique. Ne fais pas de généralités sur le secteur $sector.
 ''';
 
       final response = await aiService.call(
@@ -333,24 +331,20 @@ positionnement et les opportunités de différenciation pour cette idée précis
   }) async {
     try {
       final query = '''
-Tu es un expert en réglementation et formalités administratives en RDC / Afrique centrale.
+Tu es un avocat spécialisé en droit des affaires et réglementations en $jurisdiction.
 
-**Activité / Idée exacte à analyser :**
-${activityDescription ?? 'Non spécifiée'}
+**ACTIVITÉ EXACTE DU PROJET :**
+"${activityDescription ?? 'Non spécifiée'}"
 
-Secteur : $sector
-Juridiction : $jurisdiction
-
-Important :
-- Ne jamais inventer une loi ou une obligation.
-- Indiquer clairement les sources et le niveau de certitude.
-- Ajouter un avertissement recommandant une validation par un professionnel.
+DIRECTIVE CRITIQUE : Tu dois analyser les lois, les licences nécessaires, et les normes IMPÉRATIVES (ex: normes d'hygiène, autorisations environnementales, agréments) EXCLUSIVEMENT pour cette activité précise en $jurisdiction. 
+Quels ministères ou entités l'entrepreneur doit-il contacter ? Quelles sont les interdictions potentielles ?
+Ne jamais inventer une loi. Cite les institutions officielles.
 ''';
 
       final response = await aiService.call(
         action: ThixAiAction.legalTax,
         message: query,
-        searchQuery: 'réglementation $sector $jurisdiction licences obligations ${activityDescription ?? ''}',
+        searchQuery: 'réglementation lois licences $jurisdiction ${activityDescription ?? sector}',
         projectCode: projectCode,
         provider: provider,
       );
@@ -389,12 +383,15 @@ Important :
   }) async {
     final idea = financialInputs['idea_context'] as String?;
 
+    // ✅ FIX DE LA SYNTAXE ICI (Concaténation propre au lieu d'une interpolation cassée)
+    final titleString = (idea != null && idea.isNotEmpty)
+        ? 'Modèle financier – ' + (idea.length > 40 ? '${idea.substring(0, 37)}...' : idea)
+        : 'Modèle financier prévisionnel';
+
     final analysis = await analysisRepo.startAnalysis(
       projectCode: projectCode,
       type: 'finance',
-      title: idea != null && idea.isNotEmpty
-          ? 'Modèle financier – \( {idea.length > 40 ? ' \){idea.substring(0, 37)}...' : idea}'
-          : 'Modèle financier prévisionnel',
+      title: titleString,
       payload: {
         'inputs': financialInputs,
         'deterministic': true,
@@ -422,21 +419,20 @@ Important :
       final idea = inputs['idea_context'] as String? ?? 'Non spécifiée';
 
       final query = '''
-Tu es un expert en modélisation financière pour startups et PME en RDC.
+Tu es un directeur financier expert en modélisation pour startups en Afrique.
 
-**Idée business :**
-$idea
+**PROJET EXACT :**
+"$idea"
 
 Hypothèses fournies :
 ${inputs.toString()}
 
-Construis un modèle financier prévisionnel réaliste.
+DIRECTIVE CRITIQUE : Construis un modèle financier prévisionnel réaliste, SUR MESURE pour ce projet spécifique.
 Inclus :
-- CAPEX / OPEX
-- Hypothèses de revenus
-- Seuil de rentabilité
+- CAPEX (investissements initiaux typiques pour ce projet) / OPEX (coûts récurrents)
+- Modèle de revenus adapté
 - Scénarios (pessimiste, réaliste, optimiste)
-- Besoin de financement
+- Évaluation globale du besoin de financement
 ''';
 
       final response = await aiService.call(
@@ -509,20 +505,21 @@ Inclus :
   }) async {
     try {
       final query = '''
-Tu es un expert en business plan pour l'Afrique centrale (RDC).
+Tu es le directeur stratégique de THIX IA.
 
-**Idée business exacte :**
-$idea
+**IDÉE DE PROJET EXACTE :**
+"$idea"
 
-Génère un business plan structuré et actionnable comprenant :
+DIRECTIVE CRITIQUE : Génère un Business Plan complet, ultra-personnalisé et actionnable pour CE projet précis.
+Structure obligatoire :
 1. Résumé exécutif
-2. Description de l'idée et proposition de valeur
-3. Analyse de marché
-4. Stratégie commerciale
-5. Organisation et équipe
+2. Présentation du projet et Proposition de valeur unique
+3. Analyse de marché (ciblée)
+4. Stratégie commerciale et Marketing
+5. Organisation, Logistique et Équipe
 6. Plan financier sommaire
-7. Risques et mitigation
-8. Feuille de route (12-24 mois)
+7. Risques et mesures d'atténuation
+8. Feuille de route (12 à 24 mois)
 ''';
 
       final response = await aiService.call(
