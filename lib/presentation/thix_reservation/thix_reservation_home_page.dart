@@ -147,7 +147,7 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
       ),
       body: Stack(
         children: [
-          // 🌟 ARRIÈRE-PLAN IMMERSIF ANIMÉ (Avions, Bus floutés)
+          // 🌟 ARRIÈRE-PLAN IMMERSIF ANIMÉ (Avions, Bus, Globe floutés)
           const Positioned.fill(
             child: _TravelAmbientBackground(),
           ),
@@ -386,7 +386,7 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
 }
 
 // ============================================================================
-// WIDGET : BACKGROUND VOYAGE ANIMÉ & FLOUTÉ (CORRIGÉ)
+// WIDGET : BACKGROUND VOYAGE ANIMÉ & FLOUTÉ — v2 (profondeur + éléments enrichis)
 // ============================================================================
 class _TravelAmbientBackground extends StatefulWidget {
   const _TravelAmbientBackground();
@@ -401,8 +401,8 @@ class _TravelAmbientBackgroundState extends State<_TravelAmbientBackground> with
   @override
   void initState() {
     super.initState();
-    // 🌟 Animation plus rapide (12s au lieu de 30s) pour bien voir le mouvement !
-    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 12))..repeat();
+    // Cycle un peu plus long pour un mouvement plus fluide et moins "mécanique"
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 16))..repeat();
   }
 
   @override
@@ -422,48 +422,105 @@ class _TravelAmbientBackgroundState extends State<_TravelAmbientBackground> with
           builder: (context, child) {
             final t = _controller.value * 2 * math.pi;
 
-            // Avion (Bleu)
-            final planeX = size.width * 0.5 + math.cos(t) * (size.width * 0.4);
-            final planeY = size.height * 0.3 + math.sin(t * 1.5) * (size.height * 0.2);
+            // ── Couche arrière (plus lente, plus floue, plus grande = effet de profondeur) ──
+            final globeX = size.width * 0.7 + math.cos(t * 0.7) * 130.0;
+            final globeY = size.height * 0.48 + math.sin(t * 0.9) * 160.0;
 
-            // Bus (Doré)
-            final busX = size.width * 0.3 + math.sin(t * 1.2) * (size.width * 0.5);
-            final busY = size.height * 0.6 + math.cos(t) * (size.height * 0.15);
+            final ticketX = size.width * 0.15 + math.sin(t * 0.6 + 1.2) * 90.0;
+            final ticketY = size.height * 0.82 + math.cos(t * 0.5) * 110.0;
 
-            // Globe/Localisation (Indigo)
-            final globeX = size.width * 0.7 + math.cos(t * 0.8) * 120.0;
-            final globeY = size.height * 0.5 + math.sin(t * 1.1) * 150.0;
+            // ── Couche intermédiaire ──
+            final busX = size.width * 0.3 + math.sin(t * 1.1) * (size.width * 0.45);
+            final busY = size.height * 0.62 + math.cos(t) * (size.height * 0.14);
 
-            // 🌟 CORRECTION: On utilise ImageFiltered au lieu de BackdropFilter.
-            // C'est 100% compatible partout (Web/Mobile) et beaucoup plus net !
-            return ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 55, sigmaY: 55),
-              child: Stack(
-                children: [
-                  Positioned(
-                    left: planeX - 150, top: planeY - 150,
-                    child: Transform.rotate(
-                      angle: t * 0.5,
-                      // Opacité plus forte pour bien voir les couleurs bouger
-                      child: Icon(Icons.flight_rounded, size: 300, color: ThixPolicy.primary.withOpacity(0.55)),
+            // ── Couche avant (plus rapide, plus nette, plus petite) ──
+            final planeX = size.width * 0.5 + math.cos(t * 1.4) * (size.width * 0.38);
+            final planeY = size.height * 0.28 + math.sin(t * 1.8) * (size.height * 0.19);
+
+            final planeSmallX = size.width * 0.85 + math.sin(t * 1.6 + 2.0) * 80.0;
+            final planeSmallY = size.height * 0.16 + math.cos(t * 1.3) * 60.0;
+
+            return Stack(
+              children: [
+                // Couche arrière — très floue, grands halos de couleur
+                ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
+                  child: Stack(
+                    children: [
+                      Positioned(
+                        left: globeX - 160, top: globeY - 160,
+                        child: Transform.rotate(
+                          angle: t * 0.35,
+                          child: Icon(Icons.public_rounded, size: 320, color: ThixPolicy.primaryDeep.withOpacity(0.38)),
+                        ),
+                      ),
+                      Positioned(
+                        left: ticketX - 130, top: ticketY - 130,
+                        child: Transform.rotate(
+                          angle: -t * 0.25,
+                          child: Icon(Icons.confirmation_number_rounded, size: 260, color: ThixPolicy.gold.withOpacity(0.30)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Couche intermédiaire — flou moyen, mouvement modéré
+                ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: 55, sigmaY: 55),
+                  child: Stack(
+                    children: [
+                      Positioned(
+                        left: busX - 150, top: busY - 150,
+                        child: Transform.rotate(
+                          angle: -t * 0.3,
+                          child: Icon(Icons.directions_bus_filled_rounded, size: 300, color: ThixPolicy.gold.withOpacity(0.42)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Couche avant — flou plus léger, mouvement plus rapide, plus net
+                ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: 48, sigmaY: 48),
+                  child: Stack(
+                    children: [
+                      Positioned(
+                        left: planeX - 150, top: planeY - 150,
+                        child: Transform.rotate(
+                          angle: t * 0.5,
+                          child: Icon(Icons.flight_rounded, size: 300, color: ThixPolicy.primary.withOpacity(0.52)),
+                        ),
+                      ),
+                      Positioned(
+                        left: planeSmallX - 90, top: planeSmallY - 90,
+                        child: Transform.rotate(
+                          angle: -t * 0.6 + 1.0,
+                          child: Icon(Icons.flight_takeoff_rounded, size: 170, color: ThixPolicy.primaryDeep.withOpacity(0.32)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Voile clair très subtil pour garder la lisibilité du contenu au-dessus
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white.withOpacity(0.35),
+                          Colors.white.withOpacity(0.15),
+                          Colors.white.withOpacity(0.35),
+                        ],
+                      ),
                     ),
                   ),
-                  Positioned(
-                    left: busX - 150, top: busY - 150,
-                    child: Transform.rotate(
-                      angle: -t * 0.3,
-                      child: Icon(Icons.directions_bus_filled_rounded, size: 300, color: ThixPolicy.gold.withOpacity(0.45)),
-                    ),
-                  ),
-                  Positioned(
-                    left: globeX - 150, top: globeY - 150,
-                    child: Transform.rotate(
-                      angle: t * 0.4,
-                      child: Icon(Icons.public_rounded, size: 300, color: ThixPolicy.primaryDeep.withOpacity(0.40)),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             );
           },
         ),
