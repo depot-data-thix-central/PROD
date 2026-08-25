@@ -563,9 +563,9 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
         validatedAnalyses: validated,
       );
 
-      // 2. Enregistrer dans Documents
+      // 2. Enregistrer dans Documents (CORRECTION SYNTAXE ICI)
       final fileName =
-          'BusinessPlan_\( {project.projectCode}_ \){DateTime.now().millisecondsSinceEpoch}.pdf';
+          'BusinessPlan_${project.projectCode}_${DateTime.now().millisecondsSinceEpoch}.pdf';
 
       await ref.read(documentsProvider.notifier).upload(
             fileName: fileName,
@@ -635,11 +635,13 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
         final facts = memory?.facts ?? [];
 
         return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+          // 👇 MODIFICATION ICI: Padding horizontal réduit à 8 pour élargir les cartes
+          padding: const EdgeInsets.fromLTRB(8, 12, 8, 120),
           children: [
             // ========== BOUTON DOSSIER FINAL ==========
             Container(
               padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.symmetric(horizontal: 8), // Marge pour aligner avec les cartes
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
@@ -726,9 +728,12 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
             if (facts.isEmpty)
               const EmptyFacts()
             else ...[
-              Text(
-                'Faits en mémoire (${facts.length})',
-                style: ThixPolicy.labelStyle.copyWith(fontSize: 13),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  'Faits en mémoire (${facts.length})',
+                  style: ThixPolicy.labelStyle.copyWith(fontSize: 13),
+                ),
               ),
               const SizedBox(height: 8),
               ...facts.map((f) => FactCard(fact: f)),
@@ -794,50 +799,51 @@ class _DocsTab extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
           itemCount: docs.length,
           itemBuilder: (_, i) {
-  final d = docs[i];
-  final dateStr = d.createdAt == null
-      ? ''
-      : '\( {d.createdAt!.day.toString().padLeft(2, '0')}/ \){d.createdAt!.month.toString().padLeft(2, '0')}';
+            final d = docs[i];
+            // CORRECTION SYNTAXE ICI
+            final dateStr = d.createdAt == null
+                ? ''
+                : '${d.createdAt!.day.toString().padLeft(2, '0')}/${d.createdAt!.month.toString().padLeft(2, '0')}';
 
-  return Card(
-    margin: const EdgeInsets.only(bottom: 8),
-    elevation: 0,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(12),
-      side: BorderSide(color: ThixPolicy.border),
-    ),
-    child: ListTile(
-      dense: true,
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: ThixPolicy.primary.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: const Icon(
-          Icons.picture_as_pdf_rounded,
-          color: ThixPolicy.primary,
-          size: 20,
-        ),
-      ),
-      title: Text(
-        d.fileName,
-        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        d.status.name,
-        style: ThixPolicy.microStyle,
-      ),
-      trailing: Text(
-        dateStr,
-        style: ThixPolicy.microStyle,
-      ),
-    ),
-  );
-},
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: ThixPolicy.border),
+              ),
+              child: ListTile(
+                dense: true,
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: ThixPolicy.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.picture_as_pdf_rounded,
+                    color: ThixPolicy.primary,
+                    size: 20,
+                  ),
+                ),
+                title: Text(
+                  d.fileName,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  d.status.name,
+                  style: ThixPolicy.microStyle,
+                ),
+                trailing: Text(
+                  dateStr,
+                  style: ThixPolicy.microStyle,
+                ),
+              ),
+            );
+          },
         );
       },
     );
