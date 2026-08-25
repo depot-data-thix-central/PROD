@@ -809,7 +809,92 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   }
 }
 
-class _FilFeedView extends ConsumerStatefulWidget {
+isScrollControlled: true,
+      builder: (_) => _CommentsSheet(mediaId: item.id, mediaTitle: item.title),
+    ).then((_) { 
+      ref.invalidate(commentCountProvider(item.id)); 
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.catalog.isEmpty) {
+      return const Center(child: Text('Le fil est vide pour le moment.', style: TextStyle(color: Colors.white54)));
+    }
+
+    return PageView.builder(
+      scrollDirection: Axis.vertical,
+      onPageChanged: (index) => setState(() => _currentIndex = index),
+      itemCount: widget.catalog.length,
+      itemBuilder: (context, index) {
+        final item = widget.catalog[index];
+        final isCurrent = index == _currentIndex;
+        
+        final isLiked = _localLikes[item.id] ?? false;
+        final likeCount = _localLikeCounts[item.id] ?? item.likeCount;
+        final live = ref.watch(mediaCountsStreamProvider(item.id)).valueOrNull;
+        final commentCount = live?.commentCount ?? item.commentCount;
+        final viewCount = live?.viewCount ?? item.viewCount;
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            widget.buildImage(item.coverUrl, fit: BoxFit.cover),
+            BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+              child: Container(color: Colors.black.withValues(alpha: 0.6)),
+            ),
+            Center(
+              child: FeedVideoPlayer(
+                videoUrl: item.videoUrl,
+                coverUrl: item.coverUrl,
+                isPlaying: isCurrent,
+                onPlayStateChanged: (_) {},
+              ),
+            ),
+            // Info block + Actions (Glassmorphism)
+            Positioned(
+              left: 16, right: 16, bottom: 24,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        GestureDetector(
+                          onTap: () => widget.onOpenDetail(item),
+                          behavior: HitTestBehavior.opaque,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(color: _MediaColors.primary, borderRadius: BorderRadius.circular(8)),
+                                    child: Text(item.type.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900))),
+                                ],
+                              ),
+                              if (item.subtitle != null && item.subtitle!.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(item.subtitle!, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                              ],
+                            ],
+                          ),
+                        ),
+
+
+                       class _FilFeedView extends ConsumerStatefulWidget {
   final List<MediaContent> catalog;
   final Function(MediaContent) onOpenDetail;
   final Widget Function(String, {BoxFit fit}) buildImage;
@@ -830,15 +915,37 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
   int _currentIndex = 0;
   final Map<String, bool> _localLikes = {};
   final Map<String, int> _localLikeCounts = {};
+  
+  // 🌟 Liste locale qui sera mélangée à chaque ouverture de l'onglet "Fil"
+  late List<MediaContent> _shuffledCatalog;
 
   @override
   void initState() {
     super.initState();
+    // 🌟 On crée une copie de la liste et on la mélange dès l'ouverture
+    _shuffledCatalog = List.from(widget.catalog)..shuffle();
     _initLikes();
+  }
+
+  // 🌟 Gère le cas où de nouvelles vidéos sont chargées par la pagination pendant qu'on regarde le fil
+  @override
+  void didUpdateWidget(covariant _FilFeedView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.catalog.length != oldWidget.catalog.length) {
+      // On isole les nouvelles vidéos, on les mélange, et on les ajoute à la fin pour ne pas perturber la lecture en cours
+      final newItems = widget.catalog.where((e) => !_shuffledCatalog.any((s) => s.id == e.id)).toList()..shuffle();
+      if (newItems.isNotEmpty) {
+        _shuffledCatalog.addAll(newItems);
+        for (var item in newItems) {
+          _localLikeCounts[item.id] = item.likeCount;
+        }
+        _syncLikedStatus();
+      }
+    }
   }
   
   void _initLikes() {
-    for (var item in widget.catalog) {
+    for (var item in _shuffledCatalog) {
       _localLikeCounts[item.id] = item.likeCount;
     }
     _syncLikedStatus();
@@ -846,10 +953,10 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
 
   Future<void> _syncLikedStatus() async {
     final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null || widget.catalog.isEmpty) return;
+    if (uid == null || _shuffledCatalog.isEmpty) return;
     
     try {
-      final ids = widget.catalog.map((e) => e.id).toList();
+      final ids = _shuffledCatalog.map((e) => e.id).toList();
       final res = await Supabase.instance.client.rpc('get_liked_media_ids', params: {'p_media_ids': ids});
       if (mounted && res is List) {
         setState(() {
@@ -902,16 +1009,17 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.catalog.isEmpty) {
+    if (_shuffledCatalog.isEmpty) {
       return const Center(child: Text('Le fil est vide pour le moment.', style: TextStyle(color: Colors.white54)));
     }
 
     return PageView.builder(
       scrollDirection: Axis.vertical,
       onPageChanged: (index) => setState(() => _currentIndex = index),
-      itemCount: widget.catalog.length,
+      itemCount: _shuffledCatalog.length,
       itemBuilder: (context, index) {
-        final item = widget.catalog[index];
+        // 🌟 On utilise _shuffledCatalog au lieu de widget.catalog
+        final item = _shuffledCatalog[index];
         final isCurrent = index == _currentIndex;
         
         final isLiked = _localLikes[item.id] ?? false;
@@ -1040,7 +1148,7 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
   }
 }
 
-class _MediaPosterCard extends StatelessWidget {
+  class _MediaPosterCard extends StatelessWidget {
   final MediaContent item;
   final String Function(int) formatNumber;
   final Widget Function(String, {BoxFit fit}) buildImage;
