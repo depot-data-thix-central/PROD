@@ -8,20 +8,26 @@ import 'dart:convert';
 class JsonUtils {
   JsonUtils._();
 
+  /// Accepte Map, Map<dynamic,dynamic> (Supabase) et String JSON.
   static Map<String, dynamic> asMap(dynamic json) {
     if (json == null) return {};
-    // Accepte Map<String,dynamic> ET Map<dynamic,dynamic> (Supabase)
+
+    // Map<String,dynamic> OU Map<dynamic,dynamic> (cas Supabase / web)
     if (json is Map) {
       return Map<String, dynamic>.from(json);
     }
+
     if (json is String) {
       final s = json.trim();
       if (s.isEmpty) return {};
       try {
         final decoded = jsonDecode(s);
-        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
       } catch (_) {}
     }
+
     return {};
   }
 
@@ -31,9 +37,9 @@ class JsonUtils {
   }) {
     if (json is List) {
       return json
-         .whereType<Map<String, dynamic>>()
-         .map(fromMap)
-         .toList();
+          .whereType<Map>()
+          .map((e) => fromMap(Map<String, dynamic>.from(e)))
+          .toList();
     }
     if (json is Map && json['data'] is List) {
       return asList(json['data'], fromMap: fromMap);
@@ -51,7 +57,7 @@ class JsonUtils {
     final v = map[key];
     if (v is int) return v;
     if (v is double) return v.toInt();
-    if (v is String) return int.tryParse(v)?? fallback;
+    if (v is String) return int.tryParse(v) ?? fallback;
     return fallback;
   }
 
@@ -59,7 +65,7 @@ class JsonUtils {
     final v = map[key];
     if (v is double) return v;
     if (v is int) return v.toDouble();
-    if (v is String) return double.tryParse(v)?? fallback;
+    if (v is String) return double.tryParse(v) ?? fallback;
     return fallback;
   }
 
@@ -67,7 +73,10 @@ class JsonUtils {
     final v = map[key];
     if (v is bool) return v;
     if (v is int) return v == 1;
-    if (v is String) return v.toLowerCase() == 'true' || v == '1';
+    if (v is String) {
+      final s = v.toLowerCase();
+      return s == 'true' || s == '1';
+    }
     return fallback;
   }
 
@@ -92,7 +101,7 @@ class JsonUtils {
   static Map<String, dynamic> cleanNulls(Map<String, dynamic> map) {
     final cleaned = <String, dynamic>{};
     map.forEach((k, v) {
-      if (v!= null) cleaned[k] = v;
+      if (v != null) cleaned[k] = v;
     });
     return cleaned;
   }
