@@ -1,19 +1,19 @@
 // lib/presentation/thix_ia/pages/project_detail_page.dart
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'dart:typed_data';
-import '../services/document_generation_service.dart';
-import '../providers/thix_ia_provider.dart'; // si pas déjà là
+
 import '../../../../core/theme/thix_design_policy.dart';
 import '../core/constants/thix_ia_routes.dart';
 import '../models/thix_project.dart';
-import '../models/project_analysis.dart';
 import '../providers/thix_ia_provider.dart';
 import '../providers/analysis_provider.dart';
 import '../providers/project_memory_provider.dart';
 import '../providers/document_provider.dart';
 import '../providers/chat_provider.dart';
+import '../services/document_generation_service.dart';
 import '../widgets/project_header.dart';
 import '../widgets/fact_card.dart';
 import '../widgets/analysis_progress_widget.dart';
@@ -60,150 +60,83 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
     super.dispose();
   }
 
-  // ====================== HELPERS ======================
-
-  String _buildIdeaContext(ThixProject p) {
-    return [
-      p.name,
-      if (p.summary != null && p.summary!.trim().isNotEmpty) p.summary!,
-    ].where((e) => e.trim().isNotEmpty).join('\n');
-  }
-
-  void _onAnalysisStarted(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
-    );
-    _tabController.animateTo(1);
-  }
-
-  void _showError(Object e) {
-    if (!mounted) return;
-    final msg = e.toString().replaceFirst('Exception: ', '');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: msg.contains('existe déjà') ? Colors.orange : Colors.red,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-    if (msg.contains('existe déjà')) {
-      _tabController.animateTo(1);
-    }
-  }
-
-  // ====================== LANCEMENT DES CARTES ======================
-
   Future<void> _startMarket() async {
     final p = ref.read(activeProjectProvider).value;
     if (p == null) return;
-
     try {
       await ref.read(analysesProvider.notifier).startMarketAnalysis(
             country: p.country,
             sector: p.sector,
-            ideaDescription: _buildIdeaContext(p),
           );
-      _onAnalysisStarted('Étude de marché lancée');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Étude de marché lancée'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        _tabController.animateTo(1);
+      }
     } catch (e) {
-      _showError(e);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
   Future<void> _startLegal() async {
     final p = ref.read(activeProjectProvider).value;
     if (p == null) return;
-
     try {
       await ref.read(analysesProvider.notifier).startLegalAnalysis(
             jurisdiction: p.country,
             sector: p.sector,
-            ideaDescription: _buildIdeaContext(p),
           );
-      _onAnalysisStarted('Analyse réglementaire lancée');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Analyse réglementaire lancée'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        _tabController.animateTo(1);
+      }
     } catch (e) {
-      _showError(e);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
-
-  Future<void> _startCompetitor() async {
-    final p = ref.read(activeProjectProvider).value;
-    if (p == null) return;
-
-    try {
-      await ref.read(analysesProvider.notifier).startCompetitorAnalysis(
-            country: p.country,
-            sector: p.sector,
-            ideaDescription: _buildIdeaContext(p),
-          );
-      _onAnalysisStarted('Analyse concurrentielle lancée');
-    } catch (e) {
-      _showError(e);
-    }
-  }
-
-  Future<void> _startFinance() async {
-    final p = ref.read(activeProjectProvider).value;
-    if (p == null) return;
-
-    try {
-      await ref.read(analysesProvider.notifier).startFinanceAnalysis(
-            ideaDescription: _buildIdeaContext(p),
-          );
-      _onAnalysisStarted('Modèle financier lancé');
-    } catch (e) {
-      _showError(e);
-    }
-  }
-
-  Future<void> _startBusinessPlan() async {
-    final p = ref.read(activeProjectProvider).value;
-    if (p == null) return;
-
-    try {
-      await ref.read(analysesProvider.notifier).startBusinessPlanAnalysis(
-            ideaDescription: _buildIdeaContext(p),
-          );
-      _onAnalysisStarted('Business plan lancé');
-    } catch (e) {
-      _showError(e);
-    }
-  }
-
-  // ====================== COMMANDE IA ======================
 
   Future<void> _handleAiCommand(String text) async {
     final lower = text.toLowerCase().trim();
     if (lower.isEmpty) return;
 
-    if (lower.contains('marché') || lower.contains('market') || lower.contains('etude')) {
+    if (lower.contains('marché') ||
+        lower.contains('market') ||
+        lower.contains('etude')) {
       await _startMarket();
       return;
     }
-    if (lower.contains('réglement') || lower.contains('legal') || lower.contains('loi')) {
+    if (lower.contains('réglement') ||
+        lower.contains('legal') ||
+        lower.contains('loi')) {
       await _startLegal();
       return;
     }
-    if (lower.contains('concurrent') || lower.contains('competitor')) {
-      await _startCompetitor();
-      return;
-    }
-    if (lower.contains('financier') ||
-        lower.contains('finance') ||
-        lower.contains('modèle') ||
-        lower.contains('modele')) {
-      await _startFinance();
-      return;
-    }
-    if (lower.contains('business plan') ||
-        lower.contains('businessplan') ||
-        lower.contains('plan d\'affaires') ||
-        lower.contains('plan daffaires')) {
-      await _startBusinessPlan();
-      return;
-    }
 
-    // Sinon → chat libre
     setState(() => _isSending = true);
     try {
       await ref.read(chatProvider.notifier).sendMessage(text);
@@ -278,7 +211,9 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
 
     return activeAsync.when(
       loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: ThixPolicy.primary)),
+        body: Center(
+          child: CircularProgressIndicator(color: ThixPolicy.primary),
+        ),
       ),
       error: (e, _) => Scaffold(
         appBar: AppBar(
@@ -358,8 +293,13 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
             actions: [
               IconButton(
                 tooltip: 'Documents',
-                onPressed: () => context.push(ThixIARoutes.documentsPath(widget.projectCode)),
-                icon: const Icon(Icons.folder_outlined, size: 20, color: ThixPolicy.textSecondary),
+                onPressed: () =>
+                    context.push(ThixIARoutes.documentsPath(widget.projectCode)),
+                icon: const Icon(
+                  Icons.folder_outlined,
+                  size: 20,
+                  color: ThixPolicy.textSecondary,
+                ),
               ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert_rounded, size: 20),
@@ -367,9 +307,6 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
                 onSelected: (value) async {
                   if (value == 'market') await _startMarket();
                   if (value == 'legal') await _startLegal();
-                  if (value == 'competitor') await _startCompetitor();
-                  if (value == 'finance') await _startFinance();
-                  if (value == 'business_plan') await _startBusinessPlan();
                   if (value == 'delete') await _confirmDeleteProject();
                 },
                 itemBuilder: (context) => [
@@ -395,39 +332,6 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
                       ],
                     ),
                   ),
-                  const PopupMenuItem(
-                    value: 'competitor',
-                    height: 40,
-                    child: Row(
-                      children: [
-                        Icon(Icons.groups_outlined, size: 18),
-                        SizedBox(width: 10),
-                        Text('Analyse concurrentielle', style: TextStyle(fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'finance',
-                    height: 40,
-                    child: Row(
-                      children: [
-                        Icon(Icons.calculate_outlined, size: 18),
-                        SizedBox(width: 10),
-                        Text('Modèle financier', style: TextStyle(fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'business_plan',
-                    height: 40,
-                    child: Row(
-                      children: [
-                        Icon(Icons.description_outlined, size: 18),
-                        SizedBox(width: 10),
-                        Text('Business plan', style: TextStyle(fontSize: 13)),
-                      ],
-                    ),
-                  ),
                   const PopupMenuDivider(),
                   const PopupMenuItem(
                     value: 'delete',
@@ -436,7 +340,10 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
                       children: [
                         Icon(Icons.delete_outline_rounded, size: 18, color: Colors.red),
                         SizedBox(width: 10),
-                        Text('Supprimer le projet', style: TextStyle(fontSize: 13, color: Colors.red)),
+                        Text(
+                          'Supprimer le projet',
+                          style: TextStyle(fontSize: 13, color: Colors.red),
+                        ),
                       ],
                     ),
                   ),
@@ -476,7 +383,10 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
           children: [
             _OverviewTab(project: activeProject),
             _AnalysesTab(projectCode: widget.projectCode),
-            _MemoryTab(projectCode: widget.projectCode),
+            _MemoryTab(
+              projectCode: widget.projectCode,
+              onGoToDocuments: () => _tabController.animateTo(3),
+            ),
             _DocsTab(projectCode: widget.projectCode),
           ],
         ),
@@ -485,6 +395,7 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
         onSubmit: _handleAiCommand,
         hintText: 'Demandez à THIX IA sur ${widget.projectCode}...',
         isLoading: _isSending,
+        showSuggestions: true,
       ),
     );
   }
@@ -558,7 +469,10 @@ class _AnalysesTab extends ConsumerWidget {
       loading: () => const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
-          child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 2.5),
+          child: CircularProgressIndicator(
+            color: ThixPolicy.primary,
+            strokeWidth: 2.5,
+          ),
         ),
       ),
       error: (e, _) => ListView(
@@ -587,22 +501,24 @@ class _AnalysesTab extends ConsumerWidget {
             ],
           );
         }
-
         return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+          padding: const EdgeInsets.only(bottom: 100),
           itemCount: analyses.length,
-          itemBuilder: (context, index) {
-            final a = analyses[index];
-            return AnalysisProgressWidget(analysis: a);
-          },
+          itemBuilder: (_, i) => AnalysisProgressWidget(analysis: analyses[i]),
         );
       },
     );
   }
 }
+
 class _MemoryTab extends ConsumerStatefulWidget {
-  const _MemoryTab({required this.projectCode});
+  const _MemoryTab({
+    required this.projectCode,
+    this.onGoToDocuments,
+  });
+
   final String projectCode;
+  final VoidCallback? onGoToDocuments;
 
   @override
   ConsumerState<_MemoryTab> createState() => _MemoryTabState();
@@ -625,7 +541,6 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
       return;
     }
 
-    // Uniquement les analyses terminées
     final validated = analyses.where((a) => a.isCompleted).toList();
 
     if (validated.isEmpty && memory.facts.isEmpty) {
@@ -639,8 +554,8 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
     setState(() => _isGenerating = true);
 
     try {
+      // 1. Générer le PDF
       final service = ref.read(documentGenerationServiceProvider);
-
       final pdfBytes = await service.generate(
         type: DocumentType.businessPlan,
         project: project,
@@ -648,78 +563,30 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
         validatedAnalyses: validated,
       );
 
+      // 2. Enregistrer dans Documents
+      final fileName =
+          'BusinessPlan_\( {project.projectCode}_ \){DateTime.now().millisecondsSinceEpoch}.pdf';
+
+      await ref.read(documentsProvider.notifier).upload(
+            fileName: fileName,
+            bytes: pdfBytes,
+            mimeType: 'application/pdf',
+          );
+
+      // 3. Rafraîchir Documents
+      await ref.read(documentsProvider.notifier).refresh();
+
       if (!mounted) return;
 
-      // Afficher / télécharger le PDF
-      await _showPdfPreview(pdfBytes, project.projectCode);
+      _showSnack('Business Plan généré et ajouté aux Documents');
 
-      _showSnack('Business Plan généré avec succès');
+      // 4. Aller automatiquement à l’onglet Documents
+      widget.onGoToDocuments?.call();
     } catch (e) {
       _showSnack('Erreur génération : $e', isError: true);
     } finally {
       if (mounted) setState(() => _isGenerating = false);
     }
-  }
-
-  Future<void> _showPdfPreview(Uint8List bytes, String projectCode) async {
-    // Option simple : ouvrir dans une page de prévisualisation
-    // ou utiliser printing / share_plus selon tes deps
-    if (!mounted) return;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: ThixPolicy.border,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Icon(Icons.check_circle_rounded, color: ThixPolicy.success, size: 48),
-              const SizedBox(height: 12),
-              Text('Dossier final prêt', style: ThixPolicy.h3Style),
-              const SizedBox(height: 8),
-              Text(
-                'Business Plan généré à partir de ${ref.read(analysesProvider).value?.where((a) => a.isCompleted).length ?? 0} analyses + mémoire projet.',
-                textAlign: TextAlign.center,
-                style: ThixPolicy.bodySmallStyle,
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () {
-                    // TODO: share / download avec share_plus ou printing
-                    Navigator.pop(ctx);
-                    _showSnack('Fonction téléchargement à brancher (share_plus / printing)');
-                  },
-                  icon: const Icon(Icons.download_rounded, size: 20),
-                  label: const Text('Télécharger le PDF'),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Fermer'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   void _showSnack(String msg, {bool isError = false}) {
@@ -743,7 +610,10 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
       loading: () => const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
-          child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 2.5),
+          child: CircularProgressIndicator(
+            color: ThixPolicy.primary,
+            strokeWidth: 2.5,
+          ),
         ),
       ),
       error: (e, _) => ListView(
@@ -767,7 +637,7 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
           children: [
-            // ========== BOUTON ULTIME ==========
+            // ========== BOUTON DOSSIER FINAL ==========
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -791,7 +661,11 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
                           color: ThixPolicy.primary.withOpacity(0.12),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(Icons.auto_awesome, color: ThixPolicy.primary, size: 20),
+                        child: const Icon(
+                          Icons.auto_awesome,
+                          color: ThixPolicy.primary,
+                          size: 20,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -800,7 +674,8 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
                           children: [
                             Text(
                               'Dossier final investisseur',
-                              style: ThixPolicy.bodyStyle.copyWith(fontWeight: FontWeight.w700),
+                              style: ThixPolicy.bodyStyle
+                                  .copyWith(fontWeight: FontWeight.w700),
                             ),
                             const SizedBox(height: 2),
                             Text(
@@ -838,8 +713,9 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Collecte automatique de toutes les analyses + mémoire pour produire le vrai dossier final.',
-                    style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted),
+                    'Collecte automatique de toutes les analyses + mémoire. Le PDF est enregistré dans Documents.',
+                    style: ThixPolicy.microStyle
+                        .copyWith(color: ThixPolicy.textMuted),
                   ),
                 ],
               ),
@@ -847,7 +723,6 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
 
             const SizedBox(height: 20),
 
-            // ========== FAITS ==========
             if (facts.isEmpty)
               const EmptyFacts()
             else ...[
@@ -864,38 +739,100 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
     );
   }
 }
+
 class _DocsTab extends ConsumerWidget {
   const _DocsTab({required this.projectCode});
   final String projectCode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // On écoute le provider des documents
-    final docsAsync = ref.watch(documentsProvider);
+    final async = ref.watch(documentsProvider);
 
-    return docsAsync.when(
+    return async.when(
       loading: () => const Center(
-        child: CircularProgressIndicator(color: ThixPolicy.primary),
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: CircularProgressIndicator(
+            color: ThixPolicy.primary,
+            strokeWidth: 2.5,
+          ),
+        ),
       ),
-      error: (e, _) => Center(
-        child: Text('Erreur : $e', style: const TextStyle(color: Colors.red)),
+      error: (e, _) => ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          const Icon(Icons.error_outline_rounded, color: Colors.red, size: 36),
+          const SizedBox(height: 10),
+          Text('Erreur documents', style: ThixPolicy.h3Style),
+          const SizedBox(height: 6),
+          Text('$e', style: ThixPolicy.bodySmallStyle),
+          const SizedBox(height: 14),
+          FilledButton(
+            onPressed: () => ref.read(documentsProvider.notifier).refresh(),
+            child: const Text('Réessayer'),
+          ),
+        ],
       ),
       data: (docs) {
         if (docs.isEmpty) {
-          return const Center(
-            child: Text('Aucun document pour le moment.'),
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 100),
+            children: [
+              EmptyStateWidget(
+                icon: Icons.folder_outlined,
+                title: 'Aucun document',
+                subtitle:
+                    'Génère un Business Plan depuis l’onglet Mémoire ou importe un fichier.',
+                actionLabel: 'Aller à Mémoire',
+                onAction: () {},
+              ),
+            ],
           );
         }
 
         return ListView.builder(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
           itemCount: docs.length,
-          itemBuilder: (context, index) {
-            final doc = docs[index];
+          itemBuilder: (_, i) {
+            final d = docs[i];
             return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: ThixPolicy.border),
+              ),
               child: ListTile(
-                leading: const Icon(Icons.description_outlined),
-                title: Text('Document ${index + 1}'),
+                dense: true,
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: ThixPolicy.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.picture_as_pdf_rounded,
+                    color: ThixPolicy.primary,
+                    size: 20,
+                  ),
+                ),
+                title: Text(
+                  d.fileName,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  d.status.name,
+                  style: ThixPolicy.microStyle,
+                ),
+                trailing: Text(
+                  d.createdAt != null
+                      ? '\( {d.createdAt!.day.toString().padLeft(2, '0')}/ \){d.createdAt!.month.toString().padLeft(2, '0')}'
+                      : '',
+                  style: ThixPolicy.microStyle,
+                ),
               ),
             );
           },
