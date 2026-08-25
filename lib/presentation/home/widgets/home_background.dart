@@ -1,5 +1,4 @@
 // lib/presentation/home/widgets/home_background.dart
-import 'dart:ui';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
@@ -42,6 +41,29 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
     super.dispose();
   }
 
+  // 🌟 HELPER HAUTE PERFORMANCE : Remplace l'ancien conteneur flouté
+  // Utilise un RadialGradient pour un coût processeur nul (0% GPU blur)
+  Widget _buildPerformanceOrb(double left, double top, double size, Color color) {
+    return Positioned(
+      left: left,
+      top: top,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            colors: [
+              color, 
+              color.withOpacity(0.0) // Se fond de manière invisible dans le décor
+            ],
+            stops: const [0.0, 1.0], // Dégradé ultra doux du centre vers les bords
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
@@ -66,8 +88,7 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
             final x3 = -50.0 + math.cos(t * 1.5) * 150.0;
             final y3 = size.height - 200.0 + math.sin(t) * 100.0;
 
-            // Orb 4 : Doux accent additionnel, très diffus, pour équilibrer le bas de l'écran
-            // (là où se trouve le hub hexagonal — évite un fond trop uniforme)
+            // Orb 4 : Doux accent additionnel
             final x4 = size.width * 0.55 + math.sin(t * 0.6) * 100.0;
             final y4 = size.height * 0.75 + math.cos(t * 0.9) * 90.0;
 
@@ -78,42 +99,20 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
                   child: Container(color: const Color(0xFFF4F7FB)),
                 ),
 
-                // 2. Les orbes de couleur pure qui se déplacent
-                Positioned(
-                  left: x1, top: y1,
-                  child: _MovingBlob(size: 450, color: ThixPolicy.primary.withOpacity(0.4)),
-                ),
-                Positioned(
-                  left: x2, top: y2,
-                  child: _MovingBlob(size: 400, color: ThixPolicy.gold.withOpacity(0.25)),
-                ),
-                Positioned(
-                  left: x3, top: y3,
-                  child: _MovingBlob(size: 500, color: ThixPolicy.primaryDeep.withOpacity(0.35)),
-                ),
-                Positioned(
-                  left: x4, top: y4,
-                  child: _MovingBlob(size: 380, color: ThixPolicy.primary.withOpacity(0.18)),
-                ),
+                // 2. Les orbes lumineux utilisant RadialGradient (Zéro Flou GPU)
+                _buildPerformanceOrb(x1, y1, 450, ThixPolicy.primary.withOpacity(0.35)),
+                _buildPerformanceOrb(x2, y2, 400, ThixPolicy.gold.withOpacity(0.20)),
+                _buildPerformanceOrb(x3, y3, 500, ThixPolicy.primaryDeep.withOpacity(0.30)),
+                _buildPerformanceOrb(x4, y4, 380, ThixPolicy.primary.withOpacity(0.15)),
 
-                // 3. LE FLOU MAGIQUE (Mélange les couleurs en un nuage liquide)
-                Positioned.fill(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 100, sigmaY: 100), // Flou extrême
-                    child: Container(color: Colors.transparent),
-                  ),
-                ),
-
-                // 4. La Texture Nette par-dessus le flou (Grille Tech + ondes)
+                // 3. La Texture Nette par-dessus (Grille Tech + ondes)
                 Positioned.fill(
                   child: CustomPaint(
                     painter: _PremiumVisualTexturePainter(),
                   ),
                 ),
 
-                // 5. NŒUDS FLOTTANTS — écho discret du hub hexagonal en dessous
-                // (petits points reliés qui dérivent lentement, très faible opacité,
-                // pour renforcer le thème "réseau connecté" sans distraire)
+                // 4. NŒUDS FLOTTANTS — écho discret du hub hexagonal en dessous
                 Positioned.fill(
                   child: CustomPaint(
                     painter: _FloatingNodesPainter(seeds: _nodeSeeds, t: t, size: size),
@@ -123,26 +122,6 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
             );
           },
         ),
-      ),
-    );
-  }
-}
-
-/// Simple cercle de couleur (le flou est géré globalement par le BackdropFilter)
-class _MovingBlob extends StatelessWidget {
-  final double size;
-  final Color color;
-
-  const _MovingBlob({required this.size, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color,
       ),
     );
   }
@@ -168,7 +147,6 @@ class _NodeSeed {
 }
 
 /// Peintre : petits nœuds qui dérivent doucement et se relient par de fines lignes
-/// quand ils sont suffisamment proches — clin d'œil discret au hub hexagonal.
 class _FloatingNodesPainter extends CustomPainter {
   final List<_NodeSeed> seeds;
   final double t;
