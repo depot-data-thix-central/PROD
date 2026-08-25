@@ -635,14 +635,11 @@ class _MemoryTab extends ConsumerWidget {
           );
         }
 
-        // 3. On récupère la liste des faits
-        // 💡 NOTE : Si le compilateur te signale une erreur ici, remplace 
-        // "project_facts" par "projectFacts" avec un F majuscule.
-        final facts = memory.projectFacts;
+        // 3. LA CORRECTION EST ICI 👇: on utilise memory.facts
+        final factsList = memory.facts; 
 
-
-        // 4. Si la liste est vide ou nulle
-        if (facts == null || facts.isEmpty) {
+        // 4. Si la liste est vide
+        if (factsList.isEmpty) {
           return const Center(
             child: Text('Aucun fait mémorisé pour le moment.'),
           );
@@ -651,10 +648,10 @@ class _MemoryTab extends ConsumerWidget {
         // 5. On affiche la liste avec ton widget FactCard
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-          itemCount: facts.length,
+          itemCount: factsList.length,
           itemBuilder: (context, index) {
-            final fact = facts[index];
-            return FactCard(fact: fact);
+            final factItem = factsList[index];
+            return FactCard(fact: factItem);
           },
         );
       },
