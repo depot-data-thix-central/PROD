@@ -317,24 +317,36 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
   }
 
   @override
-  Future<String> uploadFile(String projectCode, String fileName,
-      List<int> bytes, String mimeType) async {
-    try {
-      final path =
-          '\( projectCode/ \){DateTime.now().millisecondsSinceEpoch}_$fileName';
+Future<String> uploadFile(
+  String projectCode,
+  String fileName,
+  List<int> bytes,
+  String mimeType,
+) async {
+  try {
+    // Nettoyer le nom de fichier (pas d'espaces ni caractères spéciaux)
+    final safeName = fileName
+        .replaceAll(RegExp(r'[^\w\.\-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_');
 
-      await _supabase.storage.from('thix-documents').uploadBinary(
-            path,
-            Uint8List.fromList(bytes),
-            fileOptions: FileOptions(contentType: mimeType, upsert: false),
-          );
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final path = '\( projectCode/ \){timestamp}_$safeName';
 
-      return _supabase.storage.from('thix-documents').getPublicUrl(path);
-    } catch (e, s) {
-      throw ThixIAErrorMapper.map(e, s);
-    }
+    await _supabase.storage.from('thix-documents').uploadBinary(
+      path,
+      Uint8List.fromList(bytes),
+      fileOptions: FileOptions(
+        contentType: mimeType,
+        upsert: true,
+      ),
+    );
+
+    // Retourner le path (pas forcément l’URL publique)
+    return path;
+  } catch (e, s) {
+    throw ThixIAErrorMapper.map(e, s);
   }
-
+}
   // ────────────────────────────────────────────────────────────────────────
   // REPORTS
   // ────────────────────────────────────────────────────────────────────────
