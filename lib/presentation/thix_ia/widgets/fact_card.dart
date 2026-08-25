@@ -1,6 +1,7 @@
 // lib/presentation/thix_ia/widgets/fact_card.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart'; // 👈 IMPORT AJOUTÉ ICI
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/thix_design_policy.dart';
 import '../models/project_memory.dart';
@@ -72,7 +73,17 @@ class FactCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(fact.content, style: ThixPolicy.bodyStyle.copyWith(height: 1.4)),
+                  // 👇 REMPLACEMENT ICI : MarkdownBody au lieu de Text
+                  MarkdownBody(
+                    data: fact.content,
+                    selectable: true,
+                    styleSheet: MarkdownStyleSheet(
+                      p: ThixPolicy.bodyStyle.copyWith(height: 1.4),
+                      listBullet: ThixPolicy.bodyStyle,
+                      h3: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      h2: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
                   if (fact.sourceName!= null || fact.sourceUrl!= null)...[
                     const SizedBox(height: ThixPolicy.s10),
                     GestureDetector(
