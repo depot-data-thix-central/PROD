@@ -1,876 +1,586 @@
-// lib/presentation/thix_event/thix_event_home.dart
-import 'dart:async';
-import 'dart:math' as math;
+// lib/presentation/thix_event/event_detail_page.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../providers/event_provider.dart';
 import '../../models/event_model.dart';
+import '../../models/ticket_tier.dart';
+import '../../services/event_seat_service.dart';
+import 'event_reservation_page.dart';
+import 'seat_selection_page.dart';
+import 'waiting_queue_page.dart';
 
 // ================= COULEURS SPÉCIFIQUES EVENT (DARK & NEON) =================
 class _ThixColors {
   static const bg = Color(0xFF050508); // Noir très profond
   static const surface = Color(0xFF111118);
+  static const surfaceAlt = Color(0xFF1A1A24); // ✅ CORRECTION : Ajout de surfaceAlt
   static const primary = Color(0xFFFF0A54); // Rose Néon
   static const primaryLight = Color(0xFFFF8FB0);
   static const gradientEnd = Color(0xFFFF8A00); // Orange Néon
   static const accentPurple = Color(0xFF7C3AED); // Violet Néon
   static const textSecondary = Color(0x99FFFFFF);
+  static const textMuted = Color(0x66FFFFFF);
 }
 
-// PROVIDER POUR VÉRIFIER LE RÔLE ADMIN
-final isEventAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
-  final uid = Supabase.instance.client.auth.currentUser?.id;
-  if (uid == null) return false;
-  try {
-    final res = await Supabase.instance.client
-        .from('profiles')
-        .select('role')
-        .eq('id', uid)
-        .maybeSingle();
-    return res != null && (res['role'] == 'admin' || res['role'] == 'superadmin');
-  } catch (_) {
-    return false;
-  }
-});
-
-class ThixEventHome extends ConsumerStatefulWidget {
-  const ThixEventHome({super.key});
+class EventDetailPage extends ConsumerStatefulWidget {
+  final String eventId;
+  const EventDetailPage({super.key, required this.eventId});
   @override
-  ConsumerState<ThixEventHome> createState() => _ThixEventHomeState();
+  ConsumerState<EventDetailPage> createState() => _EventDetailPageState();
 }
 
-class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
-  final ScrollController _scrollController = ScrollController();
-  final PageController _heroController = PageController(viewportFraction: 1.0);
-  final ScrollController _recScrollController = ScrollController();
-  Timer? _heroTimer;
-  Timer? _recTimer;
-  int _heroPage = 0;
-  bool _recForward = true;
+class _EventDetailPageState extends ConsumerState<EventDetailPage> {
+  late Event _event;
+  bool _isLoading = true;
+  bool _isFavorite = false;
+  bool _hasSeatMap = false;
+  int _availableSeats = 0;
+  bool _isCheckingQueue = false;
 
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(() {
-      if (_scrollController.position.pixels > _scrollController.position.maxScrollExtent - 300) {
-        ref.read(eventListProvider.notifier).loadMore();
-      }
-    });
-    _startHero();
-    _startRec();
+    _load();
   }
 
-  void _startHero() {
-    _heroTimer?.cancel();
-    _heroTimer = Timer.periodic(const Duration(seconds: 6), (_) {
-      if (!_heroController.hasClients) return;
-      final count = ref.read(featuredEventsProvider).valueOrNull?.length ?? 0;
-      if (count <= 1) return;
-      _heroPage = (_heroPage + 1) % count;
-      if (mounted) {
-        setState(() {});
-        _heroController.animateToPage(_heroPage, duration: const Duration(milliseconds: 700), curve: Curves.easeOutCubic);
-      }
+  Future<void> _load() async {
+    final svc = ref.read(eventServiceProvider);
+    final ev = await svc.getEventById(widget.eventId);
+    
+    if (!mounted) return;
+    if (ev == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Événement introuvable', style: TextStyle(color: Colors.white))));
+      context.pop();
+      return;
+    }
+
+    setState(() { 
+      _event = ev; 
+      _isLoading = false; 
+      _isFavorite = ev.isLiked; 
     });
+    
+    svc.incrementViews(widget.eventId);
+    _loadSeats();
   }
 
-  void _startRec() {
-    _recTimer?.cancel();
-    _recTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (!_recScrollController.hasClients) return;
-      final max = _recScrollController.position.maxScrollExtent;
-      final cur = _recScrollController.position.pixels;
-      if (_recForward) {
-        if (cur >= max - 20) {
-          _recForward = false;
-        } else {
-          _recScrollController.animateTo(cur + 268, duration: const Duration(milliseconds: 800), curve: Curves.easeOutCubic);
-        }
-      } else {
-        if (cur <= 20) {
-          _recForward = true;
-        } else {
-          _recScrollController.animateTo(cur - 268, duration: const Duration(milliseconds: 800), curve: Curves.easeOutCubic);
-        }
-      }
-    });
+  Future<void> _loadSeats() async {
+    try {
+      final seats = await EventSeatService(Supabase.instance.client).getSeatMap(widget.eventId);
+      if (!mounted) return;
+      setState(() { 
+        _hasSeatMap = seats.isNotEmpty; 
+        _availableSeats = seats.where((s) => s.isAvailable).length; 
+      });
+    } catch (_) {}
   }
 
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    _heroController.dispose();
-    _recScrollController.dispose();
-    _heroTimer?.cancel();
-    _recTimer?.cancel();
-    super.dispose();
+  Future<void> _toggleFav() async {
+    HapticFeedback.lightImpact();
+    final svc = ref.read(eventServiceProvider);
+    setState(() => _isFavorite = !_isFavorite);
+    if (_isFavorite) { 
+      await svc.likeEvent(widget.eventId); 
+    } else { 
+      await svc.unlikeEvent(widget.eventId); 
+    }
+    ref.invalidate(favoriteEventsProvider);
+  }
+
+  Future<void> _share() async {
+    HapticFeedback.lightImpact();
+    await Share.share('${_event.title}\n📅 ${_event.formattedDate}\n📍 ${_event.location}\n\n🎟️ Réservez sur THIX TICKETS');
+  }
+
+  void _goReservation({TicketTier? tier}) {
+    HapticFeedback.mediumImpact();
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => EventReservationPage(
+        eventId: _event.id, 
+        ticketCategory: tier?.name, 
+        ticketPrice: tier?.price
+      )
+    ));
+  }
+
+  void _goSeats() {
+    HapticFeedback.mediumImpact();
+    Navigator.push(context, MaterialPageRoute(builder: (_) => SeatSelectionPage(eventId: _event.id, event: _event)));
+  }
+
+  Future<void> _joinQueue() async {
+    HapticFeedback.selectionClick();
+    setState(() => _isCheckingQueue = true);
+
+    final showQueue = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: _ThixColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24), 
+          side: BorderSide(color: Colors.white.withOpacity(0.1))
+        ),
+        title: const Text('Catégorie épuisée', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w900, color: Colors.white, fontSize: 18)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.1), shape: BoxShape.circle),
+              child: const Icon(Icons.queue_rounded, size: 42, color: Color(0xFFF59E0B)),
+            ),
+            const SizedBox(height: 20),
+            const Text('Il n\'y a plus de billets disponibles pour cette catégorie.', textAlign: TextAlign.center, style: TextStyle(color: _ThixColors.textSecondary, height: 1.4, fontSize: 14)),
+            const SizedBox(height: 16),
+            const Text('Voulez-vous rejoindre la file d\'attente prioritaire ?', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white, fontSize: 14)),
+          ],
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler', style: TextStyle(color: _ThixColors.textMuted, fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFF59E0B),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              elevation: 0,
+            ),
+            child: const Text('Rejoindre', style: TextStyle(fontWeight: FontWeight.w900)),
+          ),
+        ],
+      ),
+    );
+
+    setState(() => _isCheckingQueue = false);
+
+    if (showQueue == true && mounted) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => WaitingQueuePage(eventId: _event.id, requestedQuantity: 1)));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final featuredAsync = ref.watch(featuredEventsProvider);
-    final eventsState = ref.watch(eventListProvider);
-    final recommended = ref.watch(recommendedEventsProvider);
-    final upcoming = ref.watch(upcomingEventsProvider);
-
-    ref.listen<AsyncValue<List<Event>>>(featuredEventsProvider, (prev, next) {
-      if (next.valueOrNull != null && next.valueOrNull!.length > 1) {
-        _startHero();
-      }
-    });
+    if (_isLoading) {
+      return const Scaffold(backgroundColor: _ThixColors.bg, body: Center(child: CircularProgressIndicator(color: _ThixColors.primary)));
+    }
 
     return Scaffold(
       backgroundColor: _ThixColors.bg,
       extendBodyBehindAppBar: true,
       extendBody: true,
-      appBar: _appBar(),
-      body: Stack(
-        children: [
-          // 🌟 FOND PROpre (Zéro voile blanc)
-          const Positioned.fill(child: _EventAmbientBackground()),
-
-          RefreshIndicator(
-            backgroundColor: _ThixColors.surface,
-            color: _ThixColors.primary,
-            onRefresh: () async {
-              await Future.wait([
-                ref.read(eventListProvider.notifier).refreshList(),
-                ref.read(featuredEventsProvider.notifier).refresh(),
-              ]);
-            },
-            child: CustomScrollView(
-              controller: _scrollController,
-              physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-              slivers: [
-                SliverToBoxAdapter(
-                  child: SizedBox(height: MediaQuery.of(context).padding.top + 56),
-                ),
-                SliverToBoxAdapter(
-                  child: featuredAsync.when(
-                    loading: () => const SizedBox(height: 460, child: Center(child: CircularProgressIndicator(color: _ThixColors.primary))),
-                    error: (e, _) => SizedBox(height: 460, child: Center(child: Text('Erreur: $e', style: const TextStyle(color: Colors.white70)))),
-                    data: (list) => _hero(list),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const SizedBox(height: 24),
-                    _quickFilters(),
-                    const SizedBox(height: 16),
-                    _dateFilters(),
-                    const SizedBox(height: 32),
-                    _headerSection('Les Plus Attendus', isPremium: true),
-                    const SizedBox(height: 16),
-                    if (recommended.isNotEmpty)
-                      SizedBox(
-                        height: 270,
-                        child: ListView.separated(
-                          controller: _recScrollController,
-                          scrollDirection: Axis.horizontal,
-                          physics: const BouncingScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                          itemCount: recommended.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 16),
-                          itemBuilder: (_, i) => SizedBox(width: 210, child: _card(recommended[i])),
-                        ),
-                      ),
-                    const SizedBox(height: 32),
-                    Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: _vipBanner()),
-                    const SizedBox(height: 36),
-                    _headerSection("À l'affiche"),
-                    const SizedBox(height: 16),
-                  ]),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  sliver: SliverGrid(
-                    delegate: SliverChildBuilderDelegate(
-                      (_, i) {
-                        final ev = upcoming.isNotEmpty ? upcoming[i] : (eventsState.valueOrNull?.items[i]);
-                        if (ev == null) return const SizedBox();
-                        return _card(ev);
-                      },
-                      childCount: upcoming.isNotEmpty ? upcoming.length : (eventsState.valueOrNull?.items.length ?? 0).clamp(0, 6),
-                    ),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 16,
-                      childAspectRatio: 0.68,
-                    ),
-                  ),
-                ),
-                const SliverToBoxAdapter(child: SizedBox(height: 140)),
-              ],
-            ),
-          ),
-          
-          // 🌟 NAVBAR FLOTTANTE NETTE
-          _bottomNav(),
-        ],
-      ),
-    );
-  }
-
-  PreferredSizeWidget _appBar() {
-    final isAdmin = ref.watch(isEventAdminProvider).valueOrNull ?? false;
-
-    return PreferredSize(
-      preferredSize: const Size.fromHeight(60),
-      child: ClipRRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-          child: Container(
-            color: _ThixColors.bg.withOpacity(0.8),
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.1), width: 1))),
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                child: Row(
-                  children: [
-                    Container(
-                      height: 32,
-                      width: 32,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(colors: [_ThixColors.primary, _ThixColors.gradientEnd]), 
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [BoxShadow(color: _ThixColors.primary.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 2))],
-                      ),
-                      child: const Icon(Icons.confirmation_num_rounded, color: Colors.white, size: 16),
-                    ),
-                    const SizedBox(width: 10),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: const [
-                        Text('THIX', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.5)),
-                        SizedBox(width: 3),
-                        Text('TICKETS', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w300, color: _ThixColors.textSecondary)),
-                      ],
-                    ),
-                    const Spacer(),
-                    IconButton(
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      icon: const Icon(Icons.search_rounded, color: Colors.white, size: 22),
-                      onPressed: () => context.push('/thix-event/search'),
-                    ),
-                    const SizedBox(width: 16),
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          icon: const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 22),
-                          onPressed: () {},
-                        ),
-                        Positioned(
-                          right: 2,
-                          top: 2,
-                          child: Container(
-                            height: 8,
-                            width: 8,
-                            decoration: const BoxDecoration(color: _ThixColors.primary, shape: BoxShape.circle),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (isAdmin) ...[
-                      const SizedBox(width: 12),
-                      InkWell(
-                        onTap: () => context.push('/thix-event/admin'),
-                        borderRadius: BorderRadius.circular(20),
-                        child: Container(
-                          height: 32,
-                          width: 32,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(colors: [_ThixColors.primary, _ThixColors.gradientEnd]),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white.withOpacity(0.2)),
-                          ),
-                          alignment: Alignment.center,
-                          child: const Text('AN', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white)),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _hero(List<Event> list) {
-    if (list.isEmpty) return const SizedBox(height: 320);
-    return SizedBox(
-      height: 480,
-      child: Stack(
-        children: [
-          PageView.builder(
-            controller: _heroController,
-            itemCount: list.length,
-            onPageChanged: (i) {
-              setState(() => _heroPage = i);
-            },
-            itemBuilder: (_, idx) {
-              final e = list[idx];
-              return Container(
-                margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: Colors.white.withOpacity(0.15)),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 20, offset: const Offset(0, 10))],
-                ),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Image.network(e.imageUrl ?? '', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: _ThixColors.surface)),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Colors.black.withOpacity(0.4), Colors.transparent, Colors.black.withOpacity(0.95)],
-                          stops: const [0.0, 0.4, 1.0],
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 16,
-                      top: 16,
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(color: _ThixColors.primary, borderRadius: BorderRadius.circular(20)),
-                            child: const Text('BEST-SELLER', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5)),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.4),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: Colors.white.withOpacity(0.2)),
-                            ),
-                            child: const Text('À VENIR', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Positioned(
-                      bottom: 24,
-                      left: 20,
-                      right: 20,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            e.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w900, letterSpacing: -0.5, height: 1.1),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Container(
-                                  height: 48,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.15),
-                                    border: Border.all(color: Colors.white.withOpacity(0.25)),
-                                    borderRadius: BorderRadius.circular(24),
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: Text(e.formattedPrice, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              GestureDetector(
-                                onTap: () { HapticFeedback.mediumImpact(); context.push('/thix-event/event/${e.id}'); },
-                                child: Container(
-                                  height: 48,
-                                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.white.withOpacity(0.2), blurRadius: 10)]),
-                                  alignment: Alignment.center,
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text('Réserver', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 15)),
-                                      SizedBox(width: 6),
-                                      Icon(Icons.arrow_forward_rounded, color: Colors.black, size: 18),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-          Positioned(
-            bottom: 12,
-            left: 0,
-            right: 0,
-            child: _heroDots(list.length),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _heroDots(int count) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(
-        count,
-        (i) => AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          margin: const EdgeInsets.symmetric(horizontal: 3),
-          height: 6,
-          width: _heroPage == i ? 20 : 6,
-          decoration: BoxDecoration(
-            color: _heroPage == i ? _ThixColors.primary : Colors.white.withOpacity(0.3),
-            borderRadius: BorderRadius.circular(4),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _quickFilters() {
-    final selected = ref.watch(eventCategoryProvider);
-    final filters = const [
-      {'value': 'all', 'label': 'Tous', 'icon': Icons.auto_awesome_rounded},
-      {'value': 'concert', 'label': 'Concerts', 'icon': Icons.music_note_rounded},
-      {'value': 'festival', 'label': 'Festivals', 'icon': Icons.confirmation_num_rounded},
-      {'value': 'business', 'label': 'Business', 'icon': Icons.work_outline_rounded},
-      {'value': 'sport', 'label': 'Sport', 'icon': Icons.emoji_events_rounded},
-      {'value': 'culture', 'label': 'Culture', 'icon': Icons.palette_outlined},
-    ];
-    return SizedBox(
-      height: 90,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
+      body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: filters.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (_, i) {
-          final f = filters[i];
-          final isSel = selected == f['value'];
-          return InkWell(
-            onTap: () { HapticFeedback.lightImpact(); ref.read(eventCategoryProvider.notifier).state = f['value'] as String; },
-            borderRadius: BorderRadius.circular(20),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: isSel ? _ThixColors.primary : _ThixColors.surface,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: isSel ? _ThixColors.primaryLight : Colors.white.withOpacity(0.1)),
-                boxShadow: isSel ? [BoxShadow(color: _ThixColors.primary.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4))] : [],
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(f['icon'] as IconData, color: isSel ? Colors.white : Colors.white70, size: 24),
-                  const SizedBox(height: 8),
-                  Text(
-                    f['label'] as String,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: isSel ? FontWeight.w900 : FontWeight.w600,
-                      color: isSel ? Colors.white : Colors.white70,
-                    ),
-                  ),
-                ],
-              ),
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 500,
+            pinned: true,
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            leading: Padding(
+              padding: const EdgeInsets.only(left: 8.0),
+              child: Center(child: _glassBtn(Icons.arrow_back_rounded, () => context.pop())),
             ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _dateFilters() {
-    final selected = ref.watch(eventDateFilterProvider);
-    final filters = const [
-      {'value': 'all', 'label': 'Toutes dates'},
-      {'value': 'today', 'label': "Aujourd'hui"},
-      {'value': 'week', 'label': 'Cette semaine'},
-      {'value': 'month', 'label': 'Ce mois-ci'},
-    ];
-    return SizedBox(
-      height: 38,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: filters.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (_, i) {
-          final f = filters[i];
-          final isSel = selected == f['value'];
-          return InkWell(
-            onTap: () { HapticFeedback.lightImpact(); ref.read(eventDateFilterProvider.notifier).state = f['value']!; },
-            borderRadius: BorderRadius.circular(20),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-              decoration: BoxDecoration(
-                color: isSel ? Colors.white : _ThixColors.surface,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: isSel ? Colors.white : Colors.white.withOpacity(0.15)),
-                boxShadow: isSel ? [BoxShadow(color: Colors.white.withOpacity(0.2), blurRadius: 8)] : [],
-              ),
-              alignment: Alignment.center,
-              child: Text(
-                f['label']!,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isSel ? FontWeight.w900 : FontWeight.w700,
-                  color: isSel ? Colors.black : Colors.white70,
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _headerSection(String t, {bool isPremium = false}) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                if (isPremium)
-                  Container(
-                    margin: const EdgeInsets.only(right: 10),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [_ThixColors.primary, _ThixColors.gradientEnd]),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text('PREMIUM', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5)),
-                  ),
-                Text(t, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.5)),
-              ],
-            ),
-            GestureDetector(
-              onTap: () => context.push('/thix-event/recommended'),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-                child: const Row(
-                  children: [
-                    Text('Tout voir', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
-                    SizedBox(width: 4),
-                    Icon(Icons.arrow_forward_ios_rounded, size: 12, color: Colors.white),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      );
-
-  Widget _card(Event event) => GestureDetector(
-        onTap: () { HapticFeedback.selectionClick(); context.push('/thix-event/event/${event.id}'); },
-        child: Container(
-          decoration: BoxDecoration(
-            color: _ThixColors.surface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Stack(
-                children: [
-                  AspectRatio(
-                    aspectRatio: 1.25,
-                    child: ClipRRect(
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(19)),
-                      child: Image.network(event.imageUrl ?? '', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: _ThixColors.surface)),
-                    ),
-                  ),
-                  Positioned(
-                    right: 10,
-                    top: 10,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white.withOpacity(0.2))),
-                      child: Text(event.formattedPrice, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
-                    ),
-                  ),
-                  Positioned(
-                    right: 10,
-                    bottom: 10,
-                    child: Container(
-                      height: 32,
-                      width: 32,
-                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), shape: BoxShape.circle, border: Border.all(color: Colors.white.withOpacity(0.2))),
-                      child: const Icon(Icons.favorite_border_rounded, color: Colors.white, size: 16),
-                    ),
-                  ),
-                ],
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        event.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.white, height: 1.2, letterSpacing: -0.2),
-                      ),
-                      Column(
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.calendar_today_rounded, size: 12, color: _ThixColors.primaryLight),
-                              const SizedBox(width: 6),
-                              Expanded(child: Text(event.shortDate, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700))),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              const Icon(Icons.location_on_rounded, size: 12, color: _ThixColors.primaryLight),
-                              const SizedBox(width: 6),
-                              Expanded(child: Text(event.location, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700))),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+            actions: [
+              _glassBtn(_isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded, _toggleFav, isActive: _isFavorite),
+              const SizedBox(width: 12),
+              _glassBtn(Icons.share_rounded, _share),
+              const SizedBox(width: 16),
             ],
-          ),
-        ),
-      );
-
-  Widget _vipBanner() => Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(colors: [_ThixColors.primary.withOpacity(0.85), _ThixColors.gradientEnd.withOpacity(0.85)]),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.white.withOpacity(0.3)),
-          boxShadow: [BoxShadow(color: _ThixColors.primary.withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 5))],
-        ),
-        child: Row(
-          children: [
-            Container(
-              height: 46,
-              width: 46,
-              decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.white.withOpacity(0.5))),
-              child: const Icon(Icons.verified_rounded, color: Colors.white, size: 24),
-            ),
-            const SizedBox(width: 16),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            flexibleSpace: FlexibleSpaceBar(
+              background: Stack(
+                fit: StackFit.expand,
                 children: [
-                  Text('THIX VIP ACCESS', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
-                  SizedBox(height: 2),
-                  Text('Billets infalsifiables, QR dynamique et coupe-file garanti.', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600, height: 1.3)),
+                  // Lueur radiale de fond pour l'effet Néon
+                  Positioned.fill(
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        gradient: RadialGradient(
+                          colors: [_ThixColors.accentPurple, _ThixColors.bg],
+                          radius: 1.5,
+                          center: Alignment(0, -0.5),
+                        ),
+                      ),
+                    ),
+                  ),
+                  
+                  // Image de l'Event
+                  (_event.imageUrl != null && _event.imageUrl!.isNotEmpty)
+                      ? Opacity(
+                          opacity: 0.85,
+                          child: Image.network(_event.imageUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: _ThixColors.surface))
+                        )
+                      : Container(color: _ThixColors.surfaceAlt, child: const Icon(Icons.confirmation_num_rounded, size: 80, color: _ThixColors.textMuted)),
+                  
+                  // Dégradé ultra-doux pour fondre l'image dans le noir
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter, 
+                        end: Alignment.bottomCenter, 
+                        colors: [
+                          _ThixColors.bg.withOpacity(0.4), 
+                          Colors.transparent, 
+                          _ThixColors.bg.withOpacity(0.9),
+                          _ThixColors.bg
+                        ],
+                        stops: const [0.0, 0.3, 0.8, 1.0],
+                      )
+                    )
+                  ),
+
+                  // Contenu texte par-dessus l'image
+                  Positioned(bottom: 24, left: 20, right: 20, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6), 
+                        decoration: BoxDecoration(gradient: const LinearGradient(colors: [_ThixColors.primary, _ThixColors.gradientEnd]), borderRadius: BorderRadius.circular(20)), 
+                        child: Text(_event.categoryLabel.toUpperCase(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5))
+                      ),
+                      const SizedBox(width: 10),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6), 
+                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.3))), 
+                            child: Text(_event.isFree ? 'GRATUIT' : 'PAYANT', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white))
+                          ),
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 18),
+                    Text(_event.title, style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Colors.white, height: 1.1, letterSpacing: -1.0)),
+                    const SizedBox(height: 12),
+                    Row(children: [const Icon(Icons.calendar_month_rounded, size: 16, color: _ThixColors.primaryLight), const SizedBox(width: 8), Text(_event.formattedDate, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700))]),
+                  ])),
                 ],
               ),
             ),
+          ),
+
+          SliverToBoxAdapter(
+            child: Padding(padding: const EdgeInsets.fromLTRB(20, 16, 20, 140), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              // Informations Clés (Heure, Lieu)
+              _infoRow(Icons.access_time_filled_rounded, _event.timeRange, 'Heure'),
+              const SizedBox(height: 12),
+              _infoRow(Icons.location_on_rounded, _event.location, 'Lieu'),
+              if (_event.address != null && _event.address!.isNotEmpty) ...[
+                const SizedBox(height: 12), 
+                _infoRow(Icons.map_rounded, _event.address!, 'Adresse exacte')
+              ],
+              const SizedBox(height: 32),
+              
+              if ((_event.organizerName ?? '').isNotEmpty) _organizer(),
+              
+              const SizedBox(height: 32),
+              const Text('À propos', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.5)),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity, 
+                padding: const EdgeInsets.all(20), 
+                decoration: BoxDecoration(color: _ThixColors.surface, borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.white.withOpacity(0.05))), 
+                child: Text(_event.description.isNotEmpty ? _event.description : 'Aucune description disponible pour cet événement.', style: const TextStyle(fontSize: 14, height: 1.6, color: _ThixColors.textSecondary))
+              ),
+              const SizedBox(height: 36),
+              
+              const Text('Billets & Réservation', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.5)),
+              const SizedBox(height: 16),
+              
+              if (_hasSeatMap) 
+                _seatCard()
+              else if (_event.ticketTiers.isNotEmpty) 
+                ..._event.ticketTiers.map(_tierCard)
+              else 
+                _defaultCard(),
+            ])),
+          ),
+        ],
+      ),
+      bottomNavigationBar: _bottomBar(),
+    );
+  }
+
+  // 🌟 BOUTONS GLASSMORPHISM POUR L'APPBAR
+  Widget _glassBtn(IconData icon, VoidCallback onTap, {bool isActive = false}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: InkWell(
+          onTap: onTap, 
+          child: Container(
+            height: 44, width: 44, 
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.3), 
+              shape: BoxShape.circle, 
+              border: Border.all(color: Colors.white.withOpacity(0.2))
+            ), 
+            child: Icon(icon, size: 20, color: isActive ? _ThixColors.primary : Colors.white)
+          )
+        ),
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String text, String label) {
+    return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+      Container(
+        height: 48, width: 48,
+        decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(0.05))), 
+        child: Icon(icon, size: 20, color: _ThixColors.textSecondary)
+      ),
+      const SizedBox(width: 16),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: const TextStyle(fontSize: 11, color: _ThixColors.textMuted, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 2),
+            Text(text, style: const TextStyle(fontSize: 14, color: Colors.white, fontWeight: FontWeight.w800)),
           ],
         ),
-      );
+      ),
+    ]);
+  }
 
-  Widget _bottomNav() => Positioned(
-    left: 0, right: 0, bottom: 0,
-    child: Container(
+  Widget _organizer() {
+    return Container(
+      padding: const EdgeInsets.all(16), 
+      decoration: BoxDecoration(color: _ThixColors.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.05))), 
+      child: Row(children: [
+        Container(
+          height: 50, width: 50, 
+          decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(0.1))), 
+          child: const Icon(Icons.business_center_rounded, color: Colors.white)
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, 
+            children: [
+              const Text('Organisé par', style: TextStyle(color: _ThixColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              Text(_event.organizerName ?? 'Anonyme', style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.white, fontSize: 15)), 
+              if (_event.contactPhone != null && _event.contactPhone!.isNotEmpty) 
+                Text(_event.contactPhone!, style: const TextStyle(color: _ThixColors.primaryLight, fontSize: 12, fontWeight: FontWeight.w700, height: 1.4))
+            ]
+          )
+        ),
+      ])
+    );
+  }
+
+  Widget _tierCard(TicketTier tier) {
+    final int remaining = tier.remaining ?? tier.capacity;
+    final bool soldOut = (tier.capacity > 0 && remaining <= 0) || (tier.remaining != null && tier.remaining! <= 0);
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16), 
+      padding: const EdgeInsets.all(20), 
+      decoration: BoxDecoration(
+        color: _ThixColors.surface, 
+        borderRadius: BorderRadius.circular(24), 
+        border: Border.all(color: soldOut ? Colors.white.withOpacity(0.05) : _ThixColors.primary.withOpacity(0.4)),
+        boxShadow: soldOut ? [] : [BoxShadow(color: _ThixColors.primary.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 5))]
+      ), 
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween, 
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start, 
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.confirmation_num_rounded, size: 18, color: soldOut ? _ThixColors.textMuted : _ThixColors.primary), 
+                      const SizedBox(width: 8), 
+                      Text(tier.name, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: soldOut ? _ThixColors.textMuted : Colors.white))
+                    ]
+                  ),
+                  const SizedBox(height: 6),
+                  if (tier.capacity > 0)
+                    Text(soldOut ? 'Épuisé' : '$remaining places restantes', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: soldOut ? Colors.redAccent : _ThixColors.primaryLight)),
+                ]
+              ),
+              Text(tier.price == 0 ? 'Gratuit' : '${tier.price.toInt()} ${_event.priceCurrency}', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: soldOut ? _ThixColors.textMuted : Colors.white)),
+            ]
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity, 
+            height: 52, 
+            child: ElevatedButton(
+              onPressed: soldOut ? _joinQueue : () => _goReservation(tier: tier), 
+              style: ElevatedButton.styleFrom(
+                backgroundColor: soldOut ? const Color(0xFFF59E0B).withOpacity(0.15) : Colors.white, 
+                foregroundColor: soldOut ? const Color(0xFFF59E0B) : Colors.black, 
+                elevation: 0, 
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: soldOut ? const BorderSide(color: Color(0xFFF59E0B)) : BorderSide.none)
+              ), 
+              child: Text(soldOut ? 'FILE D\'ATTENTE' : 'RÉSERVER', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5))
+            )
+          ),
+        ]
+      )
+    );
+  }
+
+  Widget _defaultCard() {
+    final bool soldOut = (_event.remainingTickets != null && _event.remainingTickets! <= 0);
+    
+    return Container(
+      padding: const EdgeInsets.all(20), 
+      decoration: BoxDecoration(
+        color: _ThixColors.surface, 
+        borderRadius: BorderRadius.circular(24), 
+        border: Border.all(color: soldOut ? Colors.white.withOpacity(0.05) : _ThixColors.primary.withOpacity(0.4)),
+        boxShadow: soldOut ? [] : [BoxShadow(color: _ThixColors.primary.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 5))]
+      ), 
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween, 
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start, 
+                children: [
+                  Text('Entrée Standard', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: soldOut ? _ThixColors.textMuted : Colors.white)),
+                  const SizedBox(height: 6),
+                  if (_event.remainingTickets != null)
+                    Text(soldOut ? 'Toutes les places sont vendues' : 'Places limitées', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: soldOut ? Colors.redAccent : _ThixColors.primaryLight))
+                ]
+              ), 
+              Text(_event.formattedPrice, style: TextStyle(fontWeight: FontWeight.w900, color: soldOut ? _ThixColors.textMuted : Colors.white, fontSize: 20))
+            ]
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity, 
+            height: 52, 
+            child: ElevatedButton(
+              onPressed: soldOut ? _joinQueue : () => _goReservation(), 
+              style: ElevatedButton.styleFrom(
+                backgroundColor: soldOut ? const Color(0xFFF59E0B).withOpacity(0.15) : Colors.white, 
+                foregroundColor: soldOut ? const Color(0xFFF59E0B) : Colors.black, 
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: soldOut ? const BorderSide(color: Color(0xFFF59E0B)) : BorderSide.none)
+              ), 
+              child: Text(soldOut ? 'FILE D\'ATTENTE' : 'RÉSERVER MAINTENANT', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5))
+            )
+          ),
+        ]
+      )
+    );
+  }
+
+  Widget _seatCard() {
+    final soldOut = _availableSeats <= 0;
+    return Container(
+      padding: const EdgeInsets.all(20), 
+      decoration: BoxDecoration(
+        color: _ThixColors.surface, 
+        borderRadius: BorderRadius.circular(24), 
+        border: Border.all(color: soldOut ? Colors.white.withOpacity(0.05) : _ThixColors.primary.withOpacity(0.4)),
+        boxShadow: soldOut ? [] : [BoxShadow(color: _ThixColors.primary.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 5))]
+      ), 
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(Icons.event_seat_rounded, color: soldOut ? _ThixColors.textMuted : _ThixColors.primaryLight, size: 22), 
+              const SizedBox(width: 12), 
+              Text(soldOut ? 'Complet' : '$_availableSeats places numérotées', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: soldOut ? _ThixColors.textMuted : Colors.white))
+            ]
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity, 
+            height: 52, 
+            child: ElevatedButton(
+              onPressed: soldOut ? _joinQueue : _goSeats, 
+              style: ElevatedButton.styleFrom(
+                backgroundColor: soldOut ? const Color(0xFFF59E0B).withOpacity(0.15) : Colors.white, 
+                foregroundColor: soldOut ? const Color(0xFFF59E0B) : Colors.black, 
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: soldOut ? const BorderSide(color: Color(0xFFF59E0B)) : BorderSide.none)
+              ), 
+              child: Text(soldOut ? 'FILE D\'ATTENTE' : 'CHOISIR MES PLACES', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5))
+            )
+          ),
+        ]
+      )
+    );
+  }
+
+  // 🌟 BOTTOM BAR FLOTTANTE EN VERRE DÉPOLI
+  Widget _bottomBar() {
+    final price = _event.ticketTiers.isNotEmpty ? '${_event.ticketTiers.first.price.toInt()} ${_event.priceCurrency}' : _event.formattedPrice;
+    return Container(
       color: Colors.transparent,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       child: SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: Container(
-            height: 64,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            decoration: BoxDecoration(
-              color: _ThixColors.surface,
-              borderRadius: BorderRadius.circular(32),
-              border: Border.all(color: Colors.white.withOpacity(0.15), width: 1.2),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 30, offset: const Offset(0, 10))],
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(36),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(36),
+                border: Border.all(color: Colors.white.withOpacity(0.15), width: 1.2),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 30, offset: const Offset(0, 10))],
+              ),
+              child: Row(
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start, 
+                    mainAxisSize: MainAxisSize.min, 
+                    children: [
+                      const Text('À partir de', style: TextStyle(color: _ThixColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w700)), 
+                      const SizedBox(height: 2), 
+                      Text(price, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900))
+                    ]
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => _hasSeatMap ? _goSeats() : _goReservation(), 
+                    child: Container(
+                      height: 52, 
+                      padding: const EdgeInsets.symmetric(horizontal: 28), 
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(colors: [_ThixColors.primary, _ThixColors.gradientEnd]),
+                        borderRadius: BorderRadius.circular(26),
+                        boxShadow: [BoxShadow(color: _ThixColors.primary.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))]
+                      ), 
+                      child: const Row(
+                        children: [
+                          Text('Réserver', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15)), 
+                          SizedBox(width: 8), 
+                          Icon(Icons.confirmation_num_rounded, size: 18, color: Colors.white)
+                        ]
+                      )
+                    )
+                  ),
+                ]
+              ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _navItem(icon: Icons.home_rounded, label: 'Accueil', selected: true, onTap: () {}),
-                _navItem(icon: Icons.explore_outlined, label: 'Explorer', onTap: () { HapticFeedback.selectionClick(); context.push('/thix-event/search'); }),
-                _navItem(icon: Icons.confirmation_num_outlined, label: 'Billets', onTap: () { HapticFeedback.selectionClick(); context.push('/thix-event/my-tickets'); }),
-                _navItem(icon: Icons.favorite_border_rounded, label: 'Favoris', onTap: () { HapticFeedback.selectionClick(); context.push('/thix-event/favorites'); }),
-                _navItem(icon: Icons.person_outline_rounded, label: 'Profil', onTap: () { HapticFeedback.selectionClick(); context.push('/profile'); }),
-              ],
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-
-  Widget _navItem({required IconData icon, required String label, bool selected = false, VoidCallback? onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 60,
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 24, color: selected ? _ThixColors.primaryLight : Colors.white.withOpacity(0.5)),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(fontSize: 10, fontWeight: selected ? FontWeight.w900 : FontWeight.w600, color: selected ? _ThixColors.primaryLight : Colors.white.withOpacity(0.5)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// WIDGET : BACKGROUND CONCERT ANIMÉ (OPTIMISÉ HAUTE PERFORMANCE)
-// ============================================================================
-class _EventAmbientBackground extends StatefulWidget {
-  const _EventAmbientBackground();
-
-  @override
-  State<_EventAmbientBackground> createState() => _EventAmbientBackgroundState();
-}
-
-class _EventAmbientBackgroundState extends State<_EventAmbientBackground> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 12))..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Widget _buildPerformanceLight(double left, double top, double size, Color color) {
-    return Positioned(
-      left: left - (size / 2),
-      top: top - (size / 2),
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [
-              color, 
-              color.withOpacity(0.0) 
-            ],
-            stops: const [0.0, 1.0], 
           ),
         ),
       ),
     );
   }
-
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-
-    return IgnorePointer(
-      child: RepaintBoundary( 
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            final t = _controller.value * 2 * math.pi;
-
-            final p1X = size.width * 0.3 + math.cos(t) * 200.0;
-            final p1Y = size.height * 0.2 + math.sin(t * 1.5) * 150.0;
-
-            final p2X = size.width * 0.7 + math.sin(t * 1.2) * 180.0;
-            final p2Y = size.height * 0.5 + math.cos(t * 0.8) * 200.0;
-
-            final p3X = size.width * 0.5 + math.cos(t * 0.7) * 250.0;
-            final p3Y = size.height * 0.8 + math.sin(t * 1.1) * 100.0;
-
-            return Stack(
-              children: [
-                Positioned.fill(child: Container(color: _ThixColors.bg)),
-                
-                _buildPerformanceLight(p1X, p1Y, 700, _ThixColors.primary.withOpacity(0.22)),
-                _buildPerformanceLight(p2X, p2Y, 800, _ThixColors.gradientEnd.withOpacity(0.16)),
-                _buildPerformanceLight(p3X, p3Y, 900, _ThixColors.accentPurple.withOpacity(0.18)),
-
-                Positioned.fill(
-                  child: CustomPaint(painter: _EventGridPainter()),
-                )
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _EventGridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final dotPaint = Paint()
-      ..color = Colors.white.withOpacity(0.04)
-      ..strokeWidth = 1.0
-      ..strokeCap = StrokeCap.round;
-
-    final points = <Offset>[];
-    const double spacing = 40.0; 
-
-    for (double x = 0; x < size.width; x += spacing) {
-      for (double y = 0; y < size.height; y += spacing) {
-        points.add(Offset(x, y));
-      }
-    }
-    canvas.drawPoints(PointMode.points, points, dotPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
