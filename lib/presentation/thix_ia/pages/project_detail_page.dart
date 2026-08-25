@@ -1,6 +1,5 @@
 // lib/presentation/thix_ia/pages/project_detail_page.dart
 import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/theme/thix_design_policy.dart';
 import '../core/constants/thix_ia_routes.dart';
 import '../models/thix_project.dart';
+import '../models/project_analysis.dart';
 import '../providers/thix_ia_provider.dart';
 import '../providers/analysis_provider.dart';
 import '../providers/project_memory_provider.dart';
@@ -60,6 +60,40 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
     super.dispose();
   }
 
+  // ====================== HELPERS ======================
+
+  String _buildIdeaContext(ThixProject p) {
+    return [
+      p.name,
+      if (p.summary != null && p.summary!.trim().isNotEmpty) p.summary!,
+    ].where((e) => e.trim().isNotEmpty).join('\n');
+  }
+
+  void _onAnalysisStarted(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+    _tabController.animateTo(1);
+  }
+
+  void _showError(Object e) {
+    if (!mounted) return;
+    final msg = e.toString().replaceFirst('Exception: ', '');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: msg.contains('existe déjà') ? Colors.orange : Colors.red,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    if (msg.contains('existe déjà')) {
+      _tabController.animateTo(1);
+    }
+  }
+
+  // ====================== LANCEMENT DES CARTES ======================
+
   Future<void> _startMarket() async {
     final p = ref.read(activeProjectProvider).value;
     if (p == null) return;
@@ -67,26 +101,11 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
       await ref.read(analysesProvider.notifier).startMarketAnalysis(
             country: p.country,
             sector: p.sector,
+            ideaDescription: _buildIdeaContext(p),
           );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Étude de marché lancée'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        _tabController.animateTo(1);
-      }
+      _onAnalysisStarted('Étude de marché lancée');
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      _showError(e);
     }
   }
 
@@ -97,46 +116,135 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
       await ref.read(analysesProvider.notifier).startLegalAnalysis(
             jurisdiction: p.country,
             sector: p.sector,
+            ideaDescription: _buildIdeaContext(p),
           );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Analyse réglementaire lancée'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        _tabController.animateTo(1);
-      }
+      _onAnalysisStarted('Analyse réglementaire lancée');
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur: $e'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      _showError(e);
     }
   }
+
+  Future<void> _startCompetitor() async {
+    final p = ref.read(activeProjectProvider).value;
+    if (p == null) return;
+    try {
+      await ref.read(analysesProvider.notifier).startCompetitorAnalysis(
+            country: p.country,
+            sector: p.sector,
+            ideaDescription: _buildIdeaContext(p),
+          );
+      _onAnalysisStarted('Analyse concurrentielle lancée');
+    } catch (e) {
+      _showError(e);
+    }
+  }
+
+  Future<void> _startFinance() async {
+    final p = ref.read(activeProjectProvider).value;
+    if (p == null) return;
+    try {
+      await ref.read(analysesProvider.notifier).startFinanceAnalysis(
+            ideaDescription: _buildIdeaContext(p),
+          );
+      _onAnalysisStarted('Modèle financier lancé');
+    } catch (e) {
+      _showError(e);
+    }
+  }
+
+  Future<void> _startBusinessPlan() async {
+    final p = ref.read(activeProjectProvider).value;
+    if (p == null) return;
+    try {
+      await ref.read(analysesProvider.notifier).startBusinessPlanAnalysis(
+            ideaDescription: _buildIdeaContext(p),
+          );
+      _onAnalysisStarted('Business plan lancé');
+    } catch (e) {
+      _showError(e);
+    }
+  }
+
+  // ====================== COMMANDE IA ======================
 
   Future<void> _handleAiCommand(String text) async {
     final lower = text.toLowerCase().trim();
     if (lower.isEmpty) return;
 
-    if (lower.contains('marché') ||
+    // ---------- ANALYSES (onglet Analyses) ----------
+    final isMarket = lower.contains('marché') ||
         lower.contains('market') ||
-        lower.contains('etude')) {
+        lower.contains('etude') ||
+        lower.contains('étude');
+
+    final isLegal = lower.contains('réglement') ||
+        lower.contains('reglement') ||
+        lower.contains('legal') ||
+        lower.contains('loi') ||
+        lower.contains('fiscal');
+
+    final isCompetitor = lower.contains('concurrent') ||
+        lower.contains('compétiteur') ||
+        lower.contains('competitor');
+
+    final isBusinessPlan = lower.contains('business plan') ||
+        lower.contains('businessplan') ||
+        lower.contains('dossier final') ||
+        lower.contains('génère le business') ||
+        lower.contains('genere le business');
+
+    if (isMarket) {
       await _startMarket();
       return;
     }
-    if (lower.contains('réglement') ||
-        lower.contains('legal') ||
-        lower.contains('loi')) {
+    if (isLegal) {
       await _startLegal();
       return;
     }
+    if (isCompetitor) {
+      // Lance une analyse concurrentielle si tu as la méthode,
+      // sinon envoie un message ciblé en restant sur Analyses
+      try {
+        final p = ref.read(activeProjectProvider).value;
+        if (p != null) {
+          await ref.read(analysesProvider.notifier).startCompetitorAnalysis(
+                country: p.country,
+                sector: p.sector,
+                ideaDescription: _buildIdeaContext(p),
+              );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Analyse concurrentielle lancée'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+            _tabController.animateTo(1); // Onglet Analyses
+          }
+        }
+      } catch (_) {
+        // Fallback chat si la méthode n'existe pas encore
+        await _sendToChat(text);
+      }
+      return;
+    }
+    if (isBusinessPlan) {
+      // Va sur Mémoire pour générer le BP final
+      _tabController.animateTo(2);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Va dans Mémoire → Générer le Business Plan final'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
 
+    // ---------- SINON → CHAT ----------
+    await _sendToChat(text);
+  }
+
+  Future<void> _sendToChat(String text) async {
     setState(() => _isSending = true);
     try {
       await ref.read(chatProvider.notifier).sendMessage(text);
@@ -211,9 +319,7 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
 
     return activeAsync.when(
       loading: () => const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(color: ThixPolicy.primary),
-        ),
+        body: Center(child: CircularProgressIndicator(color: ThixPolicy.primary)),
       ),
       error: (e, _) => Scaffold(
         appBar: AppBar(
@@ -293,13 +399,8 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
             actions: [
               IconButton(
                 tooltip: 'Documents',
-                onPressed: () =>
-                    context.push(ThixIARoutes.documentsPath(widget.projectCode)),
-                icon: const Icon(
-                  Icons.folder_outlined,
-                  size: 20,
-                  color: ThixPolicy.textSecondary,
-                ),
+                onPressed: () => context.push(ThixIARoutes.documentsPath(widget.projectCode)),
+                icon: const Icon(Icons.folder_outlined, size: 20, color: ThixPolicy.textSecondary),
               ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert_rounded, size: 20),
@@ -307,6 +408,9 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
                 onSelected: (value) async {
                   if (value == 'market') await _startMarket();
                   if (value == 'legal') await _startLegal();
+                  if (value == 'competitor') await _startCompetitor();
+                  if (value == 'finance') await _startFinance();
+                  if (value == 'business_plan') await _startBusinessPlan();
                   if (value == 'delete') await _confirmDeleteProject();
                 },
                 itemBuilder: (context) => [
@@ -332,6 +436,39 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
                       ],
                     ),
                   ),
+                  const PopupMenuItem(
+                    value: 'competitor',
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.groups_outlined, size: 18),
+                        SizedBox(width: 10),
+                        Text('Analyse concurrentielle', style: TextStyle(fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'finance',
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.calculate_outlined, size: 18),
+                        SizedBox(width: 10),
+                        Text('Modèle financier', style: TextStyle(fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'business_plan',
+                    height: 40,
+                    child: Row(
+                      children: [
+                        Icon(Icons.description_outlined, size: 18),
+                        SizedBox(width: 10),
+                        Text('Business plan', style: TextStyle(fontSize: 13)),
+                      ],
+                    ),
+                  ),
                   const PopupMenuDivider(),
                   const PopupMenuItem(
                     value: 'delete',
@@ -340,10 +477,7 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
                       children: [
                         Icon(Icons.delete_outline_rounded, size: 18, color: Colors.red),
                         SizedBox(width: 10),
-                        Text(
-                          'Supprimer le projet',
-                          style: TextStyle(fontSize: 13, color: Colors.red),
-                        ),
+                        Text('Supprimer le projet', style: TextStyle(fontSize: 13, color: Colors.red)),
                       ],
                     ),
                   ),
@@ -383,10 +517,7 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
           children: [
             _OverviewTab(project: activeProject),
             _AnalysesTab(projectCode: widget.projectCode),
-            _MemoryTab(
-              projectCode: widget.projectCode,
-              onGoToDocuments: () => _tabController.animateTo(3),
-            ),
+            _MemoryTab(projectCode: widget.projectCode),
             _DocsTab(projectCode: widget.projectCode),
           ],
         ),
@@ -395,7 +526,6 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
         onSubmit: _handleAiCommand,
         hintText: 'Demandez à THIX IA sur ${widget.projectCode}...',
         isLoading: _isSending,
-        showSuggestions: true,
       ),
     );
   }
@@ -469,10 +599,7 @@ class _AnalysesTab extends ConsumerWidget {
       loading: () => const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
-          child: CircularProgressIndicator(
-            color: ThixPolicy.primary,
-            strokeWidth: 2.5,
-          ),
+          child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 2.5),
         ),
       ),
       error: (e, _) => ListView(
@@ -501,10 +628,14 @@ class _AnalysesTab extends ConsumerWidget {
             ],
           );
         }
+
         return ListView.builder(
-          padding: const EdgeInsets.only(bottom: 100),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
           itemCount: analyses.length,
-          itemBuilder: (_, i) => AnalysisProgressWidget(analysis: analyses[i]),
+          itemBuilder: (context, index) {
+            final a = analyses[index];
+            return AnalysisProgressWidget(analysis: a);
+          },
         );
       },
     );
@@ -512,13 +643,8 @@ class _AnalysesTab extends ConsumerWidget {
 }
 
 class _MemoryTab extends ConsumerStatefulWidget {
-  const _MemoryTab({
-    required this.projectCode,
-    this.onGoToDocuments,
-  });
-
+  const _MemoryTab({required this.projectCode});
   final String projectCode;
-  final VoidCallback? onGoToDocuments;
 
   @override
   ConsumerState<_MemoryTab> createState() => _MemoryTabState();
@@ -541,6 +667,7 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
       return;
     }
 
+    // Uniquement les analyses terminées
     final validated = analyses.where((a) => a.isCompleted).toList();
 
     if (validated.isEmpty && memory.facts.isEmpty) {
@@ -554,8 +681,8 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
     setState(() => _isGenerating = true);
 
     try {
-      // 1. Générer le PDF
       final service = ref.read(documentGenerationServiceProvider);
+
       final pdfBytes = await service.generate(
         type: DocumentType.businessPlan,
         project: project,
@@ -563,30 +690,75 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
         validatedAnalyses: validated,
       );
 
-      // 2. Enregistrer dans Documents (CORRECTION SYNTAXE ICI)
-      final fileName =
-          'BusinessPlan_${project.projectCode}_${DateTime.now().millisecondsSinceEpoch}.pdf';
-
-      await ref.read(documentsProvider.notifier).upload(
-            fileName: fileName,
-            bytes: pdfBytes,
-            mimeType: 'application/pdf',
-          );
-
-      // 3. Rafraîchir Documents
-      await ref.read(documentsProvider.notifier).refresh();
-
       if (!mounted) return;
 
-      _showSnack('Business Plan généré et ajouté aux Documents');
+      // Afficher / télécharger le PDF
+      await _showPdfPreview(pdfBytes, project.projectCode);
 
-      // 4. Aller automatiquement à l’onglet Documents
-      widget.onGoToDocuments?.call();
+      _showSnack('Business Plan généré avec succès');
     } catch (e) {
       _showSnack('Erreur génération : $e', isError: true);
     } finally {
       if (mounted) setState(() => _isGenerating = false);
     }
+  }
+
+  Future<void> _showPdfPreview(Uint8List bytes, String projectCode) async {
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: ThixPolicy.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Icon(Icons.check_circle_rounded, color: ThixPolicy.success, size: 48),
+              const SizedBox(height: 12),
+              Text('Dossier final prêt', style: ThixPolicy.h3Style),
+              const SizedBox(height: 8),
+              Text(
+                'Business Plan généré à partir de ${ref.read(analysesProvider).value?.where((a) => a.isCompleted).length ?? 0} analyses + mémoire projet.',
+                textAlign: TextAlign.center,
+                style: ThixPolicy.bodySmallStyle,
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _showSnack('Fonction téléchargement à brancher (share_plus / printing)');
+                  },
+                  icon: const Icon(Icons.download_rounded, size: 20),
+                  label: const Text('Télécharger le PDF'),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Fermer'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _showSnack(String msg, {bool isError = false}) {
@@ -610,10 +782,7 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
       loading: () => const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
-          child: CircularProgressIndicator(
-            color: ThixPolicy.primary,
-            strokeWidth: 2.5,
-          ),
+          child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 2.5),
         ),
       ),
       error: (e, _) => ListView(
@@ -635,13 +804,11 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
         final facts = memory?.facts ?? [];
 
         return ListView(
-          // 👇 MODIFICATION ICI: Padding horizontal réduit à 8 pour élargir les cartes
-          padding: const EdgeInsets.fromLTRB(8, 12, 8, 120),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
           children: [
-            // ========== BOUTON DOSSIER FINAL ==========
+            // ========== BOUTON ULTIME ==========
             Container(
               padding: const EdgeInsets.all(16),
-              margin: const EdgeInsets.symmetric(horizontal: 8), // Marge pour aligner avec les cartes
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
@@ -663,11 +830,7 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
                           color: ThixPolicy.primary.withOpacity(0.12),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(
-                          Icons.auto_awesome,
-                          color: ThixPolicy.primary,
-                          size: 20,
-                        ),
+                        child: const Icon(Icons.auto_awesome, color: ThixPolicy.primary, size: 20),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -676,8 +839,7 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
                           children: [
                             Text(
                               'Dossier final investisseur',
-                              style: ThixPolicy.bodyStyle
-                                  .copyWith(fontWeight: FontWeight.w700),
+                              style: ThixPolicy.bodyStyle.copyWith(fontWeight: FontWeight.w700),
                             ),
                             const SizedBox(height: 2),
                             Text(
@@ -715,9 +877,8 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Collecte automatique de toutes les analyses + mémoire. Le PDF est enregistré dans Documents.',
-                    style: ThixPolicy.microStyle
-                        .copyWith(color: ThixPolicy.textMuted),
+                    'Collecte automatique de toutes les analyses + mémoire pour produire le vrai dossier final.',
+                    style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted),
                   ),
                 ],
               ),
@@ -725,15 +886,13 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
 
             const SizedBox(height: 20),
 
+            // ========== FAITS ==========
             if (facts.isEmpty)
               const EmptyFacts()
             else ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Text(
-                  'Faits en mémoire (${facts.length})',
-                  style: ThixPolicy.labelStyle.copyWith(fontSize: 13),
-                ),
+              Text(
+                'Faits en mémoire (${facts.length})',
+                style: ThixPolicy.labelStyle.copyWith(fontSize: 13),
               ),
               const SizedBox(height: 8),
               ...facts.map((f) => FactCard(fact: f)),
@@ -751,96 +910,32 @@ class _DocsTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(documentsProvider);
+    // On écoute le provider des documents
+    final docsAsync = ref.watch(documentsProvider);
 
-    return async.when(
+    return docsAsync.when(
       loading: () => const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: CircularProgressIndicator(
-            color: ThixPolicy.primary,
-            strokeWidth: 2.5,
-          ),
-        ),
+        child: CircularProgressIndicator(color: ThixPolicy.primary),
       ),
-      error: (e, _) => ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.red, size: 36),
-          const SizedBox(height: 10),
-          Text('Erreur documents', style: ThixPolicy.h3Style),
-          const SizedBox(height: 6),
-          Text('$e', style: ThixPolicy.bodySmallStyle),
-          const SizedBox(height: 14),
-          FilledButton(
-            onPressed: () => ref.read(documentsProvider.notifier).refresh(),
-            child: const Text('Réessayer'),
-          ),
-        ],
+      error: (e, _) => Center(
+        child: Text('Erreur : $e', style: const TextStyle(color: Colors.red)),
       ),
       data: (docs) {
         if (docs.isEmpty) {
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 100),
-            children: [
-              EmptyStateWidget(
-                icon: Icons.folder_outlined,
-                title: 'Aucun document',
-                subtitle:
-                    'Génère un Business Plan depuis l’onglet Mémoire ou importe un fichier.',
-                actionLabel: 'Aller à Mémoire',
-                onAction: () {},
-              ),
-            ],
+          return const Center(
+            child: Text('Aucun document pour le moment.'),
           );
         }
 
         return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
+          padding: const EdgeInsets.all(16),
           itemCount: docs.length,
-          itemBuilder: (_, i) {
-            final d = docs[i];
-            // CORRECTION SYNTAXE ICI
-            final dateStr = d.createdAt == null
-                ? ''
-                : '${d.createdAt!.day.toString().padLeft(2, '0')}/${d.createdAt!.month.toString().padLeft(2, '0')}';
-
+          itemBuilder: (context, index) {
+            final doc = docs[index];
             return Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: ThixPolicy.border),
-              ),
               child: ListTile(
-                dense: true,
-                leading: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: ThixPolicy.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.picture_as_pdf_rounded,
-                    color: ThixPolicy.primary,
-                    size: 20,
-                  ),
-                ),
-                title: Text(
-                  d.fileName,
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  d.status.name,
-                  style: ThixPolicy.microStyle,
-                ),
-                trailing: Text(
-                  dateStr,
-                  style: ThixPolicy.microStyle,
-                ),
+                leading: const Icon(Icons.description_outlined),
+                title: Text('Document ${index + 1}'),
               ),
             );
           },
