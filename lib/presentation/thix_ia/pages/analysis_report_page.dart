@@ -32,14 +32,15 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
             const SnackBar(
               content: Text('Aucun contenu à envoyer en mémoire'),
               backgroundColor: Colors.orange,
+              behavior: SnackBarBehavior.floating,
             ),
           );
         }
         return;
       }
 
-      // Tronquer si très long (limite pratique pour un fact)
-      final payload = text.length > 8000 ? '${text.substring(0, 8000)}…' : text;
+      final payload =
+          text.length > 8000 ? '${text.substring(0, 8000)}…' : text;
 
       await ref.read(projectMemoryProvider.notifier).addFact(
             type: 'validated_analysis',
@@ -80,6 +81,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
           SnackBar(
             content: Text('Erreur envoi mémoire : $e'),
             backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
