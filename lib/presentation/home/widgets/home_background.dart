@@ -18,20 +18,20 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
   @override
   void initState() {
     super.initState();
-    // Animation ralentie (35 secondes) pour une fluidité "corporate" et apaisante
-    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 35))
+    // Animation très lente (25 secondes pour un tour complet) pour un effet relaxant
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 25))
       ..repeat();
 
     // Graines stables pour les particules/nœuds (générées une seule fois)
     final rnd = math.Random(42);
-    _nodeSeeds = List.generate(15, (i) { // Réduction légère du nombre de nœuds pour plus d'épure
+    _nodeSeeds = List.generate(18, (i) {
       return _NodeSeed(
         baseX: rnd.nextDouble(),
         baseY: rnd.nextDouble(),
-        radius: 40.0 + rnd.nextDouble() * 120.0,
-        speed: 0.2 + rnd.nextDouble() * 0.5,
+        radius: 40.0 + rnd.nextDouble() * 90.0,
+        speed: 0.4 + rnd.nextDouble() * 0.8,
         phase: rnd.nextDouble() * 2 * math.pi,
-        dotRadius: 1.2 + rnd.nextDouble() * 1.5,
+        dotRadius: 1.4 + rnd.nextDouble() * 1.6,
       );
     });
   }
@@ -76,43 +76,43 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
             // "t" va de 0.0 à 2*PI au fil de l'animation
             final t = _controller.value * 2 * math.pi;
 
-            // Orb 1 : Halo très clair (Haut gauche)
-            final x1 = size.width * 0.2 + math.cos(t) * 150.0;
-            final y1 = size.height * 0.15 + math.sin(t) * 100.0;
+            // Orb 1 : Bleu THIX clair (Bouge en cercle en haut à gauche)
+            final x1 = size.width * 0.2 + math.cos(t) * 120.0;
+            final y1 = size.height * 0.1 + math.sin(t) * 80.0;
 
-            // Orb 2 : Reflet Blanc pur (Centre droit)
-            final x2 = size.width * 0.85 + math.sin(t * 1.2) * 120.0;
-            final y2 = size.height * 0.35 + math.cos(t * 0.8) * 150.0;
+            // Orb 2 : Or très doux (Bouge en huit/ellipse au centre droit)
+            final x2 = size.width * 0.8 + math.sin(t * 1.3) * 150.0;
+            final y2 = size.height * 0.3 + math.cos(t * 0.8) * 120.0;
 
-            // Orb 3 : Subtil Bleu Institutionnel (Bas gauche)
-            final x3 = size.width * 0.15 + math.cos(t * 1.5) * 180.0;
-            final y3 = size.height * 0.85 + math.sin(t) * 120.0;
+            // Orb 3 : Bleu clair (Bouge en arc en bas à gauche) — plus de indigo foncé
+            final x3 = size.width * 0.1 + math.cos(t * 1.5) * 150.0;
+            final y3 = size.height * 0.8 + math.sin(t) * 100.0;
 
-            // Orb 4 : Reflet Blanc (Bas droit)
-            final x4 = size.width * 0.7 + math.sin(t * 0.6) * 100.0;
-            final y4 = size.height * 0.75 + math.cos(t * 0.9) * 110.0;
+            // Orb 4 : Accent additionnel très léger
+            final x4 = size.width * 0.6 + math.sin(t * 0.6) * 100.0;
+            final y4 = size.height * 0.7 + math.cos(t * 0.9) * 90.0;
 
             return Stack(
               children: [
-                // 1. Fond de base (Ultra clair et propre)
+                // 1. Fond de base — presque blanc, très lumineux
                 Positioned.fill(
-                  child: Container(color: ThixPolicy.surfaceSoft),
+                  child: Container(color: const Color(0xFFFAFBFD)),
                 ),
 
-                // 2. Les orbes lumineux (Blanc dominant et Bleu très diaphane)
-                _buildPerformanceOrb(x1, y1, 700, ThixPolicy.primary.withOpacity(0.04)),
-                _buildPerformanceOrb(x2, y2, 800, Colors.white.withOpacity(0.6)),
-                _buildPerformanceOrb(x3, y3, 650, ThixPolicy.primaryDeep.withOpacity(0.03)),
-                _buildPerformanceOrb(x4, y4, 600, Colors.white.withOpacity(0.5)),
+                // 2. Les orbes lumineux, opacités réduites pour un rendu clair et aéré
+                _buildPerformanceOrb(x1, y1, 600, ThixPolicy.primary.withOpacity(0.16)),
+                _buildPerformanceOrb(x2, y2, 500, ThixPolicy.gold.withOpacity(0.12)),
+                _buildPerformanceOrb(x3, y3, 650, ThixPolicy.primary.withOpacity(0.14)),
+                _buildPerformanceOrb(x4, y4, 450, ThixPolicy.gold.withOpacity(0.08)),
 
-                // 3. La Texture Nette par-dessus (Grille Tech + ondes très diffuses)
+                // 3. La Texture Nette par-dessus (Grille Tech + ondes) — tons clairs
                 Positioned.fill(
                   child: CustomPaint(
                     painter: _PremiumVisualTexturePainter(),
                   ),
                 ),
 
-                // 4. NŒUDS FLOTTANTS — Réseau d'entreprise
+                // 4. NŒUDS FLOTTANTS — écho discret du hub hexagonal en dessous
                 Positioned.fill(
                   child: CustomPaint(
                     painter: _FloatingNodesPainter(seeds: _nodeSeeds, t: t, size: size),
@@ -129,12 +129,12 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
 
 /// Graine stable décrivant la trajectoire d'un nœud flottant
 class _NodeSeed {
-  final double baseX; 
+  final double baseX; // position de base normalisée (0..1)
   final double baseY;
-  final double radius; 
-  final double speed; 
-  final double phase; 
-  final double dotRadius; 
+  final double radius; // rayon du mouvement en pixels
+  final double speed; // multiplicateur de vitesse
+  final double phase; // déphasage initial
+  final double dotRadius; // taille du point
 
   const _NodeSeed({
     required this.baseX,
@@ -156,10 +156,10 @@ class _FloatingNodesPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size canvasSize) {
-    // Teintes très discrètes pour ne pas surcharger l'œil
-    final dotPaint = Paint()..color = ThixPolicy.primary.withOpacity(0.08);
+    // Tons clairs (primary au lieu de primaryDeep) et opacités réduites
+    final dotPaint = Paint()..color = ThixPolicy.primary.withOpacity(0.14);
     final linePaint = Paint()
-      ..color = ThixPolicy.primaryDeep.withOpacity(0.03)
+      ..color = ThixPolicy.primary.withOpacity(0.05)
       ..strokeWidth = 1.0;
 
     final positions = <Offset>[];
@@ -175,15 +175,12 @@ class _FloatingNodesPainter extends CustomPainter {
       canvas.drawCircle(pos, s.dotRadius, dotPaint);
     }
 
-    // Relie les nœuds proches entre eux
-    const double linkDistance = 140.0;
+    // Relie les nœuds proches entre eux (effet toile discrète)
+    const double linkDistance = 130.0;
     for (int i = 0; i < positions.length; i++) {
       for (int j = i + 1; j < positions.length; j++) {
         final d = (positions[i] - positions[j]).distance;
         if (d < linkDistance) {
-          // Atténuation dynamique de la ligne en fonction de la distance
-          final opacity = (1.0 - (d / linkDistance)) * 0.04;
-          linePaint.color = ThixPolicy.primaryDeep.withOpacity(opacity);
           canvas.drawLine(positions[i], positions[j], linePaint);
         }
       }
@@ -194,18 +191,18 @@ class _FloatingNodesPainter extends CustomPainter {
   bool shouldRepaint(covariant _FloatingNodesPainter oldDelegate) => true;
 }
 
-/// Peintre personnalisé pour dessiner la grille tech fine
+/// Peintre personnalisé pour dessiner la grille tech fine — version claire
 class _PremiumVisualTexturePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    // ─── GRILLE DE POINTS (Style Fintech minimaliste) ───
+    // ─── GRILLE DE POINTS (Style Fintech), très légère ───
     final dotPaint = Paint()
-      ..color = ThixPolicy.inkDeep.withOpacity(0.025) // Gris très subtil
+      ..color = ThixPolicy.primary.withOpacity(0.03)
       ..strokeWidth = 1.5
       ..strokeCap = StrokeCap.round;
 
     final points = <Offset>[];
-    const double spacing = 40.0; // Espacement élargi pour aérer le design
+    const double spacing = 35.0; // Espacement de la grille
 
     for (double x = 0; x < size.width; x += spacing) {
       for (double y = 0; y < size.height; y += spacing) {
@@ -216,7 +213,7 @@ class _PremiumVisualTexturePainter extends CustomPainter {
     // Dessine tous les points en une seule opération ultra-rapide
     canvas.drawPoints(PointMode.points, points, dotPaint);
 
-    // ─── ONDES ABSTRAITES très subtiles (Filigrane) ───
+    // ─── ONDES ABSTRAITES très subtiles, tons clairs ───
     final wavePaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
@@ -226,7 +223,7 @@ class _PremiumVisualTexturePainter extends CustomPainter {
       end: Alignment.centerRight,
       colors: [
         ThixPolicy.primary.withOpacity(0.0),
-        ThixPolicy.primary.withOpacity(0.06), // Transparence drastiquement réduite
+        ThixPolicy.primary.withOpacity(0.08),
         ThixPolicy.primary.withOpacity(0.0),
       ],
     ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
