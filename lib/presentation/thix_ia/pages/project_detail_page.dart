@@ -489,7 +489,7 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
 }
 
 // ============================================================
-// TABS (gardés tels quels – tu peux coller tes versions existantes)
+// TABS
 // ============================================================
 
 class _OverviewTab extends StatelessWidget {
@@ -627,7 +627,7 @@ class _MemoryTab extends ConsumerWidget {
           ),
         ],
       ),
-            data: (memory) {
+      data: (memory) {
         // 1. On vérifie si l'objet mémoire est null (et non si une liste est vide)
         if (memory == null) {
           return const Center(
@@ -651,33 +651,9 @@ class _MemoryTab extends ConsumerWidget {
           ],
         );
       },
-
-
-        // 3. On affiche la liste des données sauvegardées
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-          itemCount: memories.length,
-          itemBuilder: (context, index) {
-            final memoryItem = memories[index];
-            
-            // 💡 NOTE : Utilise ton widget FactCard ou un Card classique ici 
-            // Tu devras adapter les propriétés (title, content, etc.) 
-            // selon le modèle de ton objet ProjectMemory.
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: ListTile(
-                title: Text('Fait sauvegardé #${index + 1}'),
-                // Remplace memoryItem.toString() par le bon champ (ex: memoryItem.description)
-                subtitle: Text(memoryItem.toString()), 
-              ),
-            );
-          },
-        );
-      },
     );
   }
 }
-
 
 class _DocsTab extends ConsumerWidget {
   const _DocsTab({required this.projectCode});
