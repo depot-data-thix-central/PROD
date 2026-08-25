@@ -266,11 +266,11 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
                     ),
                   ),
                 ),
-                // —— Tableaux compacts ——
+                // Tableaux — API 0.7.x uniquement
                 tableHead: TextStyle(
                   fontWeight: FontWeight.w700,
                   fontSize: 12.5,
-                  color: Colors.white,
+                  color: ThixPolicy.primary,
                 ),
                 tableBody: TextStyle(
                   fontSize: 12.5,
@@ -281,23 +281,13 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
                 tableBorder: TableBorder.all(
                   color: ThixPolicy.border,
                   width: 0.8,
-                  borderRadius: BorderRadius.circular(8),
                 ),
                 tableColumnWidth: const FlexColumnWidth(),
                 tableCellsPadding: const EdgeInsets.symmetric(
                   horizontal: 10,
                   vertical: 7,
                 ),
-                tableHeadCellDecoration: BoxDecoration(
-                  color: ThixPolicy.primary,
-                ),
-                tableCellsDecoration: BoxDecoration(
-                  color: ThixPolicy.surface.withOpacity(0.35),
-                ),
               ),
-            ),
-          ),
-
           // ========== SOURCES ==========
           if (sources.isNotEmpty) ...[
             const SizedBox(height: 24),
