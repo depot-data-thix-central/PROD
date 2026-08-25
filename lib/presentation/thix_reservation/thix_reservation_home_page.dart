@@ -1,14 +1,13 @@
 // lib/presentation/thix_reservation/thix_reservation_home_page.dart
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui'; // ✅ NÉCESSAIRE POUR LE GLASSMORPHISM ET LE FLOU
+import 'dart:ui'; // Utilisé uniquement pour les cartes en verre dépoli (UI statique/légère)
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/nav.dart'; 
 
-// ✅ Import de la Policy de Design
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
 class ThixReservationHomePage extends StatefulWidget {
@@ -86,18 +85,9 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
     super.dispose(); 
   }
 
-  // 🌟 HELPER POUR LES ORBES DE FOND FIXES (si besoin en complément)
-  Widget _buildBlurOrb(Color color, double size) {
-    return Container(
-      width: size, height: size,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
-      child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60), child: Container(color: Colors.transparent)),
-    );
-  }
-
   @override Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F7FB), // Fond Premium de base
+      backgroundColor: const Color(0xFFF4F7FB),
       extendBodyBehindAppBar: true,
       extendBody: true,
       appBar: AppBar(
@@ -147,7 +137,7 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
       ),
       body: Stack(
         children: [
-          // 🌟 ARRIÈRE-PLAN IMMERSIF ANIMÉ (Avions, Bus, Globe floutés)
+          // 🌟 ARRIÈRE-PLAN IMMERSIF ANIMÉ ET OPTIMISÉ
           const Positioned.fill(
             child: _TravelAmbientBackground(),
           ),
@@ -386,7 +376,7 @@ class _ThixReservationHomePageState extends State<ThixReservationHomePage> {
 }
 
 // ============================================================================
-// WIDGET : BACKGROUND VOYAGE ANIMÉ & FLOUTÉ — v2 (profondeur + éléments enrichis)
+// WIDGET : BACKGROUND VOYAGE ANIMÉ & OPTIMISÉ 100% (Zéro Flou GPU)
 // ============================================================================
 class _TravelAmbientBackground extends StatefulWidget {
   const _TravelAmbientBackground();
@@ -401,7 +391,7 @@ class _TravelAmbientBackgroundState extends State<_TravelAmbientBackground> with
   @override
   void initState() {
     super.initState();
-    // Cycle un peu plus long pour un mouvement plus fluide et moins "mécanique"
+    // Cycle fluide et continu (16s)
     _controller = AnimationController(vsync: this, duration: const Duration(seconds: 16))..repeat();
   }
 
@@ -409,6 +399,31 @@ class _TravelAmbientBackgroundState extends State<_TravelAmbientBackground> with
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+
+  // 🌟 HELPER HAUTE PERFORMANCE : Utilise un RadialGradient elliptique au lieu d'un Flou GPU
+  Widget _buildPerformanceOrb(double left, double top, double width, double height, Color color, double angle) {
+    return Positioned(
+      left: left - (width / 2),
+      top: top - (height / 2),
+      child: Transform.rotate(
+        angle: angle,
+        child: Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.all(Radius.elliptical(width, height)),
+            gradient: RadialGradient(
+              colors: [
+                color,
+                color.withOpacity(0.0), // Fondu doux et naturel
+              ],
+              stops: const [0.1, 1.0],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -422,18 +437,16 @@ class _TravelAmbientBackgroundState extends State<_TravelAmbientBackground> with
           builder: (context, child) {
             final t = _controller.value * 2 * math.pi;
 
-            // ── Couche arrière (plus lente, plus floue, plus grande = effet de profondeur) ──
+            // ── Calcul des trajectoires (identiques à la version non-optimisée) ──
             final globeX = size.width * 0.7 + math.cos(t * 0.7) * 130.0;
             final globeY = size.height * 0.48 + math.sin(t * 0.9) * 160.0;
 
             final ticketX = size.width * 0.15 + math.sin(t * 0.6 + 1.2) * 90.0;
             final ticketY = size.height * 0.82 + math.cos(t * 0.5) * 110.0;
 
-            // ── Couche intermédiaire ──
             final busX = size.width * 0.3 + math.sin(t * 1.1) * (size.width * 0.45);
             final busY = size.height * 0.62 + math.cos(t) * (size.height * 0.14);
 
-            // ── Couche avant (plus rapide, plus nette, plus petite) ──
             final planeX = size.width * 0.5 + math.cos(t * 1.4) * (size.width * 0.38);
             final planeY = size.height * 0.28 + math.sin(t * 1.8) * (size.height * 0.19);
 
@@ -442,69 +455,24 @@ class _TravelAmbientBackgroundState extends State<_TravelAmbientBackground> with
 
             return Stack(
               children: [
-                // Couche arrière — très floue, grands halos de couleur
-                ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        left: globeX - 160, top: globeY - 160,
-                        child: Transform.rotate(
-                          angle: t * 0.35,
-                          child: Icon(Icons.public_rounded, size: 320, color: ThixPolicy.primaryDeep.withOpacity(0.38)),
-                        ),
-                      ),
-                      Positioned(
-                        left: ticketX - 130, top: ticketY - 130,
-                        child: Transform.rotate(
-                          angle: -t * 0.25,
-                          child: Icon(Icons.confirmation_number_rounded, size: 260, color: ThixPolicy.gold.withOpacity(0.30)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                // Orbes dessinées via RadialGradient (Coût GPU = 0)
+                
+                // Globe (Grand Rond)
+                _buildPerformanceOrb(globeX, globeY, 600, 600, ThixPolicy.primaryDeep.withOpacity(0.18), t * 0.35),
+                
+                // Ticket (Ovale)
+                _buildPerformanceOrb(ticketX, ticketY, 450, 550, ThixPolicy.gold.withOpacity(0.15), -t * 0.25),
 
-                // Couche intermédiaire — flou moyen, mouvement modéré
-                ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 55, sigmaY: 55),
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        left: busX - 150, top: busY - 150,
-                        child: Transform.rotate(
-                          angle: -t * 0.3,
-                          child: Icon(Icons.directions_bus_filled_rounded, size: 300, color: ThixPolicy.gold.withOpacity(0.42)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                // Bus (Ovale horizontal grand)
+                _buildPerformanceOrb(busX, busY, 600, 450, ThixPolicy.gold.withOpacity(0.20), -t * 0.3),
 
-                // Couche avant — flou plus léger, mouvement plus rapide, plus net
-                ImageFiltered(
-                  imageFilter: ImageFilter.blur(sigmaX: 48, sigmaY: 48),
-                  child: Stack(
-                    children: [
-                      Positioned(
-                        left: planeX - 150, top: planeY - 150,
-                        child: Transform.rotate(
-                          angle: t * 0.5,
-                          child: Icon(Icons.flight_rounded, size: 300, color: ThixPolicy.primary.withOpacity(0.52)),
-                        ),
-                      ),
-                      Positioned(
-                        left: planeSmallX - 90, top: planeSmallY - 90,
-                        child: Transform.rotate(
-                          angle: -t * 0.6 + 1.0,
-                          child: Icon(Icons.flight_takeoff_rounded, size: 170, color: ThixPolicy.primaryDeep.withOpacity(0.32)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                // Plane (Ovale très allongé pour simuler l'avion)
+                _buildPerformanceOrb(planeX, planeY, 550, 350, ThixPolicy.primary.withOpacity(0.25), t * 0.5),
 
-                // Voile clair très subtil pour garder la lisibilité du contenu au-dessus
+                // Small Plane (Petit ovale rapide)
+                _buildPerformanceOrb(planeSmallX, planeSmallY, 350, 200, ThixPolicy.primaryDeep.withOpacity(0.18), -t * 0.6 + 1.0),
+
+                // Voile clair très subtil par-dessus pour harmoniser les couleurs
                 Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -512,9 +480,9 @@ class _TravelAmbientBackgroundState extends State<_TravelAmbientBackground> with
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.white.withOpacity(0.35),
-                          Colors.white.withOpacity(0.15),
-                          Colors.white.withOpacity(0.35),
+                          Colors.white.withOpacity(0.25),
+                          Colors.white.withOpacity(0.10),
+                          Colors.white.withOpacity(0.25),
                         ],
                       ),
                     ),
