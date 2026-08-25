@@ -605,9 +605,61 @@ class _MemoryTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return const Center(child: Text('Mémoire projet'));
+    // 1. On écoute le provider qui contient les données de la mémoire
+    final memoryAsync = ref.watch(projectMemoryProvider);
+
+    return memoryAsync.when(
+      loading: () => const Center(
+        child: CircularProgressIndicator(color: ThixPolicy.primary),
+      ),
+      error: (e, _) => ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          const Icon(Icons.error_outline_rounded, color: Colors.red, size: 36),
+          const SizedBox(height: 10),
+          Text('Erreur de la mémoire', style: ThixPolicy.h3Style, textAlign: TextAlign.center),
+          const SizedBox(height: 6),
+          Text('$e', style: ThixPolicy.bodySmallStyle, textAlign: TextAlign.center),
+          const SizedBox(height: 14),
+          FilledButton(
+            onPressed: () => ref.read(projectMemoryProvider.notifier).refresh(),
+            child: const Text('Réessayer'),
+          ),
+        ],
+      ),
+      data: (memories) {
+        // 2. Si la base est vide
+        if (memories.isEmpty) {
+          return const Center(
+            child: Text('La mémoire de ce projet est vide.'),
+          );
+        }
+
+        // 3. On affiche la liste des données sauvegardées
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+          itemCount: memories.length,
+          itemBuilder: (context, index) {
+            final memoryItem = memories[index];
+            
+            // 💡 NOTE : Utilise ton widget FactCard ou un Card classique ici 
+            // Tu devras adapter les propriétés (title, content, etc.) 
+            // selon le modèle de ton objet ProjectMemory.
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: ListTile(
+                title: Text('Fait sauvegardé #${index + 1}'),
+                // Remplace memoryItem.toString() par le bon champ (ex: memoryItem.description)
+                subtitle: Text(memoryItem.toString()), 
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 }
+
 
 class _DocsTab extends ConsumerWidget {
   const _DocsTab({required this.projectCode});
@@ -615,6 +667,37 @@ class _DocsTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return const Center(child: Text('Documents'));
+    // On écoute le provider des documents
+    final docsAsync = ref.watch(documentsProvider);
+
+    return docsAsync.when(
+      loading: () => const Center(
+        child: CircularProgressIndicator(color: ThixPolicy.primary),
+      ),
+      error: (e, _) => Center(
+        child: Text('Erreur : $e', style: const TextStyle(color: Colors.red)),
+      ),
+      data: (docs) {
+        if (docs.isEmpty) {
+          return const Center(
+            child: Text('Aucun document pour le moment.'),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          itemBuilder: (context, index) {
+            final doc = docs[index];
+            return Card(
+              child: ListTile(
+                leading: const Icon(Icons.description_outlined),
+                title: Text('Document ${index + 1}'), // À adapter avec doc.name par exemple
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 }
