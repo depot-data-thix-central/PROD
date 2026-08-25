@@ -1,5 +1,6 @@
 // lib/presentation/home/widgets/home_background.dart
 import 'dart:math' as math;
+import 'dart:ui'; // Requis pour PointMode
 import 'package:flutter/material.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
@@ -41,12 +42,11 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
     super.dispose();
   }
 
-  // 🌟 HELPER HAUTE PERFORMANCE : Remplace l'ancien conteneur flouté
-  // Utilise un RadialGradient pour un coût processeur nul (0% GPU blur)
+  // 🌟 HELPER HAUTE PERFORMANCE : Utilise un RadialGradient elliptique au lieu d'un Flou GPU
   Widget _buildPerformanceOrb(double left, double top, double size, Color color) {
     return Positioned(
-      left: left,
-      top: top,
+      left: left - (size / 2),
+      top: top - (size / 2),
       child: Container(
         width: size,
         height: size,
@@ -77,20 +77,20 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
             final t = _controller.value * 2 * math.pi;
 
             // Orb 1 : Bleu THIX (Bouge en cercle en haut à gauche)
-            final x1 = -100.0 + math.cos(t) * 120.0;
-            final y1 = -50.0 + math.sin(t) * 80.0;
+            final x1 = size.width * 0.2 + math.cos(t) * 120.0;
+            final y1 = size.height * 0.1 + math.sin(t) * 80.0;
 
             // Orb 2 : Or (Bouge en huit/ellipse au centre droit)
-            final x2 = size.width - 250.0 + math.sin(t * 1.3) * 150.0;
+            final x2 = size.width * 0.8 + math.sin(t * 1.3) * 150.0;
             final y2 = size.height * 0.3 + math.cos(t * 0.8) * 120.0;
 
             // Orb 3 : Indigo THIX (Bouge en arc en bas à gauche)
-            final x3 = -50.0 + math.cos(t * 1.5) * 150.0;
-            final y3 = size.height - 200.0 + math.sin(t) * 100.0;
+            final x3 = size.width * 0.1 + math.cos(t * 1.5) * 150.0;
+            final y3 = size.height * 0.8 + math.sin(t) * 100.0;
 
             // Orb 4 : Doux accent additionnel
-            final x4 = size.width * 0.55 + math.sin(t * 0.6) * 100.0;
-            final y4 = size.height * 0.75 + math.cos(t * 0.9) * 90.0;
+            final x4 = size.width * 0.6 + math.sin(t * 0.6) * 100.0;
+            final y4 = size.height * 0.7 + math.cos(t * 0.9) * 90.0;
 
             return Stack(
               children: [
@@ -100,10 +100,10 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
                 ),
 
                 // 2. Les orbes lumineux utilisant RadialGradient (Zéro Flou GPU)
-                _buildPerformanceOrb(x1, y1, 450, ThixPolicy.primary.withOpacity(0.35)),
-                _buildPerformanceOrb(x2, y2, 400, ThixPolicy.gold.withOpacity(0.20)),
-                _buildPerformanceOrb(x3, y3, 500, ThixPolicy.primaryDeep.withOpacity(0.30)),
-                _buildPerformanceOrb(x4, y4, 380, ThixPolicy.primary.withOpacity(0.15)),
+                _buildPerformanceOrb(x1, y1, 600, ThixPolicy.primary.withOpacity(0.35)),
+                _buildPerformanceOrb(x2, y2, 500, ThixPolicy.gold.withOpacity(0.20)),
+                _buildPerformanceOrb(x3, y3, 650, ThixPolicy.primaryDeep.withOpacity(0.30)),
+                _buildPerformanceOrb(x4, y4, 450, ThixPolicy.primary.withOpacity(0.15)),
 
                 // 3. La Texture Nette par-dessus (Grille Tech + ondes)
                 Positioned.fill(
