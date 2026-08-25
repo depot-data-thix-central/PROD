@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:audioplayers/audioplayers.dart'; // ✅ Import pour le son des appels
+import 'package:audioplayers/audioplayers.dart';
 
 import '../../../../models/chat/call_invite.dart';
 import '../../../../models/chat/call_status.dart';
@@ -97,9 +97,8 @@ class CallState {
 class CallNotifier extends StateNotifier<CallState> {
   final _media = CallMediaService();
   final _signal = CallSignalingService();
-  final Ref ref; 
-  
-  // ✅ Lecteur audio dédié aux sonneries
+  final Ref ref;
+
   final AudioPlayer _ringPlayer = AudioPlayer();
 
   Timer? _timer;
@@ -108,11 +107,11 @@ class CallNotifier extends StateNotifier<CallState> {
 
   CallNotifier(this.ref) : super(const CallState());
 
-  // ─── GESTION DES SONS ───────────────────────────────────────────────────────
+  // ─── SONS ──────────────────────────────────────────────────────────────────
 
   Future<void> _playRingtone() async {
     try {
-      await _ringPlayer.setReleaseMode(ReleaseMode.loop); // Boucle infinie
+      await _ringPlayer.setReleaseMode(ReleaseMode.loop);
       await _ringPlayer.play(AssetSource('sounds/ringtone.mp3'));
     } catch (e) {
       debugPrint('Erreur lecture sonnerie: $e');
@@ -121,7 +120,7 @@ class CallNotifier extends StateNotifier<CallState> {
 
   Future<void> _playOfflineTone() async {
     try {
-      await _ringPlayer.setReleaseMode(ReleaseMode.release); // Joue une seule fois
+      await _ringPlayer.setReleaseMode(ReleaseMode.release);
       await _ringPlayer.play(AssetSource('sounds/offline.mp3'));
     } catch (e) {
       debugPrint('Erreur lecture son hors-ligne: $e');
@@ -134,7 +133,7 @@ class CallNotifier extends StateNotifier<CallState> {
     } catch (_) {}
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
+  // ─── HELPERS ───────────────────────────────────────────────────────────────
 
   int _uidFrom(String userId) {
     var hash = 0x811c9dc5;
@@ -146,7 +145,10 @@ class CallNotifier extends StateNotifier<CallState> {
     return uid == 0 ? 1 : uid;
   }
 
-  Future<String?> _getOrCreateConversationId(String currentUserId, String otherUserId) async {
+  Future<String?> _getOrCreateConversationId(
+    String currentUserId,
+    String otherUserId,
+  ) async {
     try {
       final db = Supabase.instance.client;
       final res = await db
@@ -166,11 +168,20 @@ class CallNotifier extends StateNotifier<CallState> {
         return newConv['id'] as String;
       }
     } catch (e) {
+      debugPrint('_getOrCreateConversationId: $e');
       return null;
     }
   }
 
-  /// Caller démarre l'appel
+  /// Marque l'appel en échec + log visible dans la console
+  void _fail(String where, Object e) {
+    final msg = '$e';
+    debugPrint('❌ CALL FAIL [$where]: $msg');
+    state = state.copyWith(status: CallStatus.failed, error: msg);
+  }
+
+  // ─── CALLER ────────────────────────────────────────────────────────────────
+
   Future<void> start({
     required String myUserId,
     required String calleeId,
@@ -180,7 +191,8 @@ class CallNotifier extends StateNotifier<CallState> {
     String? conversationId,
   }) async {
     try {
-      final convId = conversationId ?? await _getOrCreateConversationId(myUserId, calleeId);
+      final convId =
+          conversationId ?? await _getOrCreateConversationId(myUserId, calleeId);
 
       state = state.copyWith(
         status: CallStatus.ringing,
@@ -195,13 +207,17 @@ class CallNotifier extends StateNotifier<CallState> {
 
       final invite = await _signal.startCall(calleeId: calleeId, type: type);
 
-      // 🔴 Si la personne est déjà en appel ou refuse d'office
       if (invite.status == CallStatus.busy) {
         state = state.copyWith(status: CallStatus.busy, error: 'Occupé');
-        _playOfflineTone(); // 🔊 Joue le bip bip d'erreur
-        
-        // Arrêt auto après 3 secondes d'erreur
+        _playOfflineTone();
         Future.delayed(const Duration(seconds: 3), () => hangUp(skipSignal: true));
+        return;
+      }
+
+      if (invite.channelName.isEmpty) {
+        _fail('start', 'channel_name vide après rpc_start_call');
+        _playOfflineTone();
+        Future.delayed(const Duration(seconds: 2), () => hangUp(skipSignal: true));
         return;
       }
 
@@ -210,10 +226,8 @@ class CallNotifier extends StateNotifier<CallState> {
         channelName: invite.channelName,
       );
 
-      // 🟢 Si la connexion réussit, ça sonne !
-      _playRingtone(); // 🔊 Joue le "Tuut... Tuut..." en boucle
+      _playRingtone();
 
-      // Timeout 45s (Si pas de réponse)
       _ringTimeout?.cancel();
       _ringTimeout = Timer(const Duration(seconds: 45), () async {
         if (state.status == CallStatus.ringing && state.inviteId != null) {
@@ -222,30 +236,29 @@ class CallNotifier extends StateNotifier<CallState> {
         }
       });
 
-      // Écoute accept / reject / offline
       _statusSub?.cancel();
       _statusSub = _signal.watchInviteStatus(invite.id).listen((s) async {
         if (s == CallStatus.accepted || s == CallStatus.ongoing) {
           _ringTimeout?.cancel();
-          _stopRingtone(); // 🔇 La personne a décroché, on coupe la sonnerie !
+          _stopRingtone();
           await _joinAgora(myUserId);
         } else if (s == CallStatus.rejected || s == CallStatus.canceled) {
           _stopRingtone();
-          _playOfflineTone(); // 🔊 Joue le son "Raccroché"
+          _playOfflineTone();
           Future.delayed(const Duration(seconds: 2), () => hangUp(skipSignal: true));
         } else if (s.isFinished) {
           await hangUp(skipSignal: true);
         }
       });
     } catch (e) {
-      debugPrint('❌ start call: $e');
-      state = state.copyWith(status: CallStatus.failed, error: '$e');
-      _playOfflineTone(); // 🔊 Joue le son hors ligne si erreur réseau
+      _fail('start', e);
+      _playOfflineTone();
       Future.delayed(const Duration(seconds: 2), () => hangUp(skipSignal: true));
     }
   }
 
-  /// Callee accepte
+  // ─── CALLEE ────────────────────────────────────────────────────────────────
+
   Future<void> acceptIncoming({
     required CallInvite invite,
     required String myUserId,
@@ -253,7 +266,17 @@ class CallNotifier extends StateNotifier<CallState> {
     String? callerAvatar,
   }) async {
     try {
-      final convId = await _getOrCreateConversationId(myUserId, invite.callerId);
+      debugPrint(
+        '📞 acceptIncoming id=\( {invite.id} channel= \){invite.channelName} caller=${invite.callerId}',
+      );
+
+      if (invite.channelName.trim().isEmpty) {
+        _fail('acceptIncoming', 'channel_name manquant sur l’invite');
+        return;
+      }
+
+      final convId =
+          await _getOrCreateConversationId(myUserId, invite.callerId);
 
       state = state.copyWith(
         status: CallStatus.accepted,
@@ -268,53 +291,84 @@ class CallNotifier extends StateNotifier<CallState> {
         clearError: true,
       );
 
-      _stopRingtone(); // Coupe la sonnerie entrante si elle tournait via un autre service
+      _stopRingtone();
       await _signal.accept(invite.id);
       await _joinAgora(myUserId);
     } catch (e) {
-      state = state.copyWith(status: CallStatus.failed, error: '$e');
+      _fail('acceptIncoming', e);
     }
   }
 
   Future<void> rejectIncoming(String inviteId) async {
     _stopRingtone();
-    await _signal.reject(inviteId);
+    try {
+      await _signal.reject(inviteId);
+    } catch (e) {
+      debugPrint('rejectIncoming: $e');
+    }
     state = const CallState();
   }
 
+  // ─── AGORA ─────────────────────────────────────────────────────────────────
+
   Future<void> _joinAgora(String myUserId) async {
-    final channel = state.channelName;
+    final channel = state.channelName?.trim();
     final inviteId = state.inviteId;
-    if (channel == null) return;
 
-    final uid = _uidFrom(myUserId);
-
-    await _media.join(
-      channel: channel,
-      type: state.type,
-      uid: uid,
-      onUserJoined: (remoteUid) async {
-        state = state.copyWith(
-          remoteUid: remoteUid,
-          status: CallStatus.ongoing,
-        );
-        if (inviteId != null) {
-          await _signal.markOngoing(inviteId);
-        }
-        _startTimer();
-      },
-      onUserLeft: (_) async {
-        _playOfflineTone(); // 🔊 Joue un bip si l'autre raccroche en plein appel
-        Future.delayed(const Duration(seconds: 1), () => hangUp());
-      },
-      onError: (err) {
-        state = state.copyWith(error: err);
-      },
+    debugPrint(
+      '📞 _joinAgora channel=\( channel uid= \){_uidFrom(myUserId)} type=${state.type}',
     );
 
-    if (state.status == CallStatus.accepted) {
-      state = state.copyWith(status: CallStatus.ongoing);
-      _startTimer();
+    if (channel == null || channel.isEmpty) {
+      _fail('_joinAgora', 'channel_name vide — impossible de joindre Agora');
+      return;
+    }
+
+    try {
+      final uid = _uidFrom(myUserId);
+
+      await _media.join(
+        channel: channel,
+        type: state.type,
+        uid: uid,
+        onUserJoined: (remoteUid) async {
+          debugPrint('📞 remote joined uid=$remoteUid');
+          state = state.copyWith(
+            remoteUid: remoteUid,
+            status: CallStatus.ongoing,
+          );
+          if (inviteId != null) {
+            try {
+              await _signal.markOngoing(inviteId);
+            } catch (e) {
+              debugPrint('markOngoing: $e');
+            }
+          }
+          _startTimer();
+        },
+        onUserLeft: (_) async {
+          _playOfflineTone();
+          Future.delayed(const Duration(seconds: 1), () => hangUp());
+        },
+        onError: (err) {
+          // Erreur Agora runtime (token invalide, etc.)
+          debugPrint('❌ Agora onError: $err');
+          state = state.copyWith(
+            status: CallStatus.failed,
+            error: err,
+          );
+        },
+      );
+
+      // Join local OK → on passe en ongoing même si remote pas encore là
+      if (state.status == CallStatus.accepted) {
+        state = state.copyWith(status: CallStatus.ongoing);
+        _startTimer();
+      }
+    } catch (e, st) {
+      debugPrint('❌ _joinAgora exception: $e\n$st');
+      // Messages typiques : token, micro, caméra, network
+      _fail('_joinAgora', e);
     }
   }
 
@@ -325,6 +379,8 @@ class CallNotifier extends StateNotifier<CallState> {
       state = state.copyWith(duration: DateTime.now().difference(start));
     });
   }
+
+  // ─── CONTROLES ─────────────────────────────────────────────────────────────
 
   Future<void> toggleMute() async {
     final next = !state.muted;
@@ -349,6 +405,8 @@ class CallNotifier extends StateNotifier<CallState> {
     state = state.copyWith(speakerOn: next);
   }
 
+  // ─── HANG UP ───────────────────────────────────────────────────────────────
+
   Future<void> hangUp({bool skipSignal = false}) async {
     _stopRingtone();
 
@@ -364,7 +422,6 @@ class CallNotifier extends StateNotifier<CallState> {
     _ringTimeout?.cancel();
     _statusSub?.cancel();
 
-    // ✅ Libère complètement Agora (preview + channel + engine)
     await _media.disposeEngine();
 
     if (!skipSignal && inviteId != null) {
@@ -380,16 +437,14 @@ class CallNotifier extends StateNotifier<CallState> {
     if (convId != null && convId.isNotEmpty) {
       try {
         final chatSvc = ref.read(chatServiceProvider);
-        
         final isMissed = duration.inSeconds == 0;
         final mediaTypeStr = isVideoCall ? 'call_video' : 'call_audio';
         final textType = isVideoCall ? 'Appel vidéo' : 'Appel audio';
-        
+
         final m = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
         final s = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
         final h = duration.inHours;
         final timeStr = h > 0 ? '$h:$m:$s' : '$m:$s';
-
         final textDuration = isMissed ? 'manqué' : '($timeStr)';
         final content = '$textType $textDuration';
 
@@ -411,7 +466,7 @@ class CallNotifier extends StateNotifier<CallState> {
   @override
   void dispose() {
     _stopRingtone();
-    _ringPlayer.dispose(); // Libère la mémoire
+    _ringPlayer.dispose();
     _timer?.cancel();
     _ringTimeout?.cancel();
     _statusSub?.cancel();
