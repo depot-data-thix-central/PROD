@@ -1,5 +1,4 @@
 // lib/presentation/home/widgets/home_quick_actions.dart
-import 'dart:ui'; // ✅ NÉCESSAIRE POUR LE GLASSMORPHISM
 import 'package:flutter/material.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/services/notification_counters_service.dart';
@@ -47,45 +46,40 @@ class HomeQuickActions extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: Center(
-            child: _QuickActionItem(
-              icon: Icons.smart_toy_rounded,
-              label: l10n.t('quickThixIA'),
-              accent: ThixPolicy.primaryDeep,
-              onTap: onScanTap,
-            ),
+          child: _QuickActionItem(
+            icon: Icons.auto_awesome_rounded,
+            label: 'THIX IA',
+            accent: ThixPolicy.primaryDeep,
+            onTap: onScanTap,
           ),
         ),
+        const SizedBox(width: 10),
         Expanded(
-          child: Center(
-            child: _QuickActionItem(
-              icon: Icons.folder_shared_rounded,
-              label: 'THIX DOC',
-              accent: ThixPolicy.domainLearning,
-              onTap: onDocumentTap,
-            ),
+          child: _QuickActionItem(
+            icon: Icons.folder_shared_rounded,
+            label: 'THIX DOC',
+            accent: ThixPolicy.primary,
+            onTap: onDocumentTap,
           ),
         ),
+        const SizedBox(width: 10),
         Expanded(
-          child: Center(
-            child: _QuickActionItem(
-              icon: Icons.forum_rounded,
-              label: l10n.t('quickChat'),
-              accent: ThixPolicy.domainNetwork,
-              onTap: onChatTap,
-              badge: chatBadge,
-            ),
+          child: _QuickActionItem(
+            icon: Icons.chat_bubble_rounded,
+            label: 'THIX CHAT',
+            accent: ThixPolicy.gold,
+            onTap: onChatTap,
+            badge: chatBadge,
           ),
         ),
+        const SizedBox(width: 10),
         Expanded(
-          child: Center(
-            child: _QuickActionItem(
-              icon: Icons.emergency_rounded,
-              label: 'THIX SOS',
-              accent: ThixPolicy.danger,
-              onTap: onSecurityTap,
-              badge: sosBadge,
-            ),
+          child: _QuickActionItem(
+            icon: Icons.emergency_rounded,
+            label: 'THIX SOS',
+            accent: ThixPolicy.danger,
+            onTap: onSecurityTap,
+            badge: sosBadge,
           ),
         ),
       ],
@@ -110,59 +104,53 @@ class _QuickActionItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isAlert = accent == ThixPolicy.danger;
+
     return _PressableScale(
       onTap: onTap,
-      child: SizedBox(
-        width: 68, // Légèrement élargi pour accommoder le design Premium
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+        decoration: BoxDecoration(
+          color: Colors.white, // Fond propre Enterprise
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isAlert ? ThixPolicy.danger.withOpacity(0.3) : Colors.grey.shade200,
+            width: 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            )
+          ],
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Stack(
               clipBehavior: Clip.none,
               children: [
-                // 🌟 EFFET GLASSMORPHISM
+                // Container de l'icône teinté
                 Container(
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04), // Ombre très douce
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      )
-                    ],
+                    color: accent.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: ClipOval(
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                      child: Container(
-                        width: 50, // Bouton légèrement plus grand pour le confort (Corporate)
-                        height: 50,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.65), // Verre dépoli
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.9), // Bordure lumineuse
-                            width: 1.5,
-                          ),
-                        ),
-                        alignment: Alignment.center,
-                        child: Icon(icon, size: 22, color: accent), // Icône centrée avec couleur thématique
-                      ),
-                    ),
-                  ),
+                  child: Icon(icon, size: 24, color: accent),
                 ),
                 if (badge > 0)
                   Positioned(
-                    top: -2,
-                    right: -2,
+                    top: -6,
+                    right: -6,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                       constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
                       decoration: BoxDecoration(
                         color: ThixPolicy.danger,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white, width: 1.5),
+                        border: Border.all(color: Colors.white, width: 2),
                         boxShadow: [
                           BoxShadow(
                             color: ThixPolicy.danger.withOpacity(0.3),
@@ -184,19 +172,16 @@ class _QuickActionItem extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 10),
             Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 9.5, // Texte un poil plus lisible
-                fontWeight: FontWeight.w700,
-                color: accent == ThixPolicy.danger
-                    ? ThixPolicy.danger
-                    : ThixPolicy.textMain, // Texte corporate sombre
-                height: 1.1,
-                letterSpacing: -0.2, // Interlettrage moderne
+                fontSize: 9.5,
+                fontWeight: FontWeight.w800,
+                color: isAlert ? ThixPolicy.danger : const Color(0xFF0F172A), // Slate 900
+                letterSpacing: -0.2,
               ),
               textAlign: TextAlign.center,
             )
@@ -207,6 +192,9 @@ class _QuickActionItem extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// WIDGET : ANIMATION DE CLIC (Scale Down)
+// ============================================================================
 class _PressableScale extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
