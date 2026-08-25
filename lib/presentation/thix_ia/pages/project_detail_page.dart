@@ -638,7 +638,8 @@ class _MemoryTab extends ConsumerWidget {
         // 3. On récupère la liste des faits
         // 💡 NOTE : Si le compilateur te signale une erreur ici, remplace 
         // "project_facts" par "projectFacts" avec un F majuscule.
-        final facts = memory.project_facts; 
+        final facts = memory.projectFacts;
+
 
         // 4. Si la liste est vide ou nulle
         if (facts == null || facts.isEmpty) {
