@@ -1,343 +1,136 @@
-// lib/presentation/home/widgets/home_header_delegate.dart
-import 'dart:async';
-import 'dart:ui'; // ✅ NÉCESSAIRE POUR LE GLASSMORPHISM
+// lib/core/theme/thix_design_policy.dart
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart';
-import 'package:go_router/go_router.dart';
 
-import 'package:thix_id/nav.dart';
-import 'package:thix_id/models/app_user.dart';
-import 'package:thix_id/presentation/common/notifications_sheet.dart';
-import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
-import 'package:thix_id/widgets/language_sheet.dart';
-import 'package:thix_id/l10n/locale_controller.dart';
-import 'package:thix_id/services/notification_counters_service.dart';
-import 'package:thix_id/core/theme/thix_design_policy.dart';
+/// ══════════════════════════════════════════════════════════════════════════
+/// THIX DESIGN SYSTEM v2.0 — "Premium Light Enterprise"
+/// ══════════════════════════════════════════════════════════════════════════
+/// Cette charte visuelle unifie l'application autour d'un design clair, 
+/// luxueux, et institutionnel (inspiré des néo-banques et de l'écosystème Apple).
+/// Fini les fonds sombres/ternes, place au Glassmorphism clair et au minimalisme.
 
-class HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
-  final double safeTop;
-  final String displayName;
-  final String? photoUrl;
-  final bool isAuthenticated;
-  final Stream<SectionBadgeCounts> badgeCountsStream;
-  final VoidCallback onProfileTap;
-  final VoidCallback onAccountRequest;
+class ThixPolicy {
+  ThixPolicy._();
 
-  HomeHeaderDelegate({
-    required this.safeTop,
-    required this.displayName,
-    required this.photoUrl,
-    required this.isAuthenticated,
-    required this.badgeCountsStream,
-    required this.onProfileTap,
-    required this.onAccountRequest,
-  });
+  // ─── 1. PALETTE DE COULEURS FONDAMENTALES ────────────────────────────────
+  
+  /// Fond principal de l'application (Gris-Bleu ultra clair, très luxueux)
+  static const Color surfaceSoft = Color(0xFFF8FAFC); // Slate 50
+  
+  /// Fond des cartes et conteneurs (Blanc pur)
+  static const Color surface = Color(0xFFFFFFFF);
+  static const Color card = Color(0xFFFFFFFF);
 
-  double _headerExtent() => safeTop + 72; // Hauteur ajustée pour plus d'élégance
+  // ─── 2. COULEURS DE MARQUE (Brand) ───────────────────────────────────────
+  
+  /// Bleu THIX Institutionnel (Confiance, Finance, Sécurité)
+  static const Color primary = Color(0xFF2563EB); // Blue 600
+  
+  /// Indigo/Bleu très sombre pour les accents premium et textes forts
+  static const Color primaryDeep = Color(0xFF1E1B4B); // Indigo 950
+  
+  /// Noir "Encre" pour les éléments nécessitant un contraste absolu
+  static const Color inkDeep = Color(0xFF0F172A); // Slate 900
+  
+  /// Couleur de fond teintée (ex: fond d'icône avec primary)
+  static const Color tint = Color(0xFFEFF6FF); // Blue 50
 
-  @override
-  double get maxExtent => _headerExtent();
+  // ─── 3. TEXTES & BORDURES ────────────────────────────────────────────────
+  
+  /// Texte principal (Presque noir, excellente lisibilité)
+  static const Color textMain = Color(0xFF0F172A); // Slate 900
+  
+  /// Texte secondaire (Gris élégant)
+  static const Color textSecondary = Color(0xFF64748B); // Slate 500
+  
+  /// Bordures très douces pour délimiter les cartes blanches
+  static const Color border = Color(0xFFE2E8F0); // Slate 200
+  static const Color borderStrong = Color(0xFFCBD5E1); // Slate 300
 
-  @override
-  double get minExtent => _headerExtent();
+  // ─── 4. COULEURS SÉMANTIQUES (Feedback) ──────────────────────────────────
+  
+  static const Color success = Color(0xFF059669); // Emerald 600
+  static const Color danger = Color(0xFFDC2626); // Red 600
+  static const Color warning = Color(0xFFD97706); // Amber 600
+  static const Color gold = Color(0xFFF59E0B); // Doré Premium (Amber 500)
 
-  @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-    // 🌟 EFFET GLASSMORPHISM SUR LE HEADER AU SCROLL
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: overlapsContent ? 20 : 0, sigmaY: overlapsContent ? 20 : 0),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          decoration: BoxDecoration(
-            color: overlapsContent ? Colors.white.withValues(alpha: 0.7) : Colors.transparent,
-            border: overlapsContent ? Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.8), width: 1.2)) : null,
-            boxShadow: overlapsContent
-                ? [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.03),
-                      blurRadius: 14,
-                      offset: const Offset(0, 4),
-                    )
-                  ]
-                : null,
-          ),
-          child: _PremiumHeader(
-            safeTop: safeTop,
-            displayName: displayName,
-            isAuthenticated: isAuthenticated,
-            badgeCountsStream: badgeCountsStream,
-            onProfileTap: onProfileTap,
-            onAccountRequest: onAccountRequest,
-          ),
-        ),
+  // ─── 5. COULEURS DES DOMAINES / MODULES ──────────────────────────────────
+  // Utilisées dans la grille de services pour différencier les écosystèmes
+  
+  static const Color domainHealth = Color(0xFF0D9488); // Teal (THIX Santé)
+  static const Color domainMarket = Color(0xFF7C3AED); // Violet (THIX Market)
+  static const Color domainEvents = Color(0xFFE11D48); // Rose/Rouge (THIX Event)
+  static const Color domainOpportunity = Color(0xFFD97706); // Ambre (Opportunités)
+  static const Color domainJobs = Color(0xFF0284C7); // Cyan (Emplois)
+  static const Color domainNetwork = Color(0xFF4F46E5); // Indigo (Réseau Pro)
+  static const Color domainLearning = Color(0xFF059669); // Emeraude (Formations)
+  static const Color domainMedia = Color(0xFFBE123C); // Rose foncé (Médias/TDIA)
+  static const Color domainInfo = Color(0xFF475569); // Ardoise (Actualités)
+  static const Color premiumAccent = Color(0xFFB45309); // Accent Doré foncé
+
+  // ─── 6. DÉGRADÉS ─────────────────────────────────────────────────────────
+
+  /// Dégradé Premium pour les cartes VIP, Boutons d'action majeurs, etc.
+  static const LinearGradient brandGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [
+      Color(0xFF2563EB), // primary
+      Color(0xFF1E3A8A), // variant deep blue
+    ],
+  );
+
+  // ─── 7. TYPOGRAPHIE & ESPACEMENTS ────────────────────────────────────────
+
+  static const double s8 = 8.0;
+  static const double s12 = 12.0;
+  static const double s16 = 16.0;
+  static const double s20 = 20.0;
+  static const double s24 = 24.0;
+  static const double s32 = 32.0;
+
+  static const double rSm = 8.0;
+  static const double rMd = 12.0;
+  static const double rLg = 16.0;
+  static const double rXl = 24.0;
+  static const double r2Xl = 32.0;
+  static const double rFull = 999.0;
+  
+  /// Rayon standard pour les champs de texte
+  static const double inputRadius = 16.0;
+
+  // ─── 8. CONSTANTES HÉRITÉES (Rétrocompatibilité) ─────────────────────────
+  // Permet de ne pas casser les widgets qui utilisent encore ces variables
+  
+  static const double constellationStageHeight = 340.0;
+  static const double constellationHubRadius = 35.0;
+  static const double constellationMaxRadius = 140.0;
+  static const double constellationOuterPadding = 20.0;
+  
+  static const double constellationNodeSize = 48.0;
+  static const double constellationNodeHalf = 24.0;
+  static const double constellationNodeIconSize = 22.0;
+
+  // ─── 9. OMBRES (Shadows) CLAIRES & PREMIUM ───────────────────────────────
+  
+  /// Ombre très diffuse pour faire décoller les cartes de l'arrière-plan
+  static List<BoxShadow> shadowSoft() {
+    return [
+      BoxShadow(
+        color: Colors.black.withOpacity(0.03),
+        blurRadius: 10,
+        offset: const Offset(0, 4),
       ),
-    );
+    ];
   }
 
-  @override
-  bool shouldRebuild(covariant HomeHeaderDelegate oldDelegate) {
-    return safeTop != oldDelegate.safeTop ||
-        displayName != oldDelegate.displayName ||
-        photoUrl != oldDelegate.photoUrl ||
-        isAuthenticated != oldDelegate.isAuthenticated;
-  }
-}
-
-class _PremiumHeader extends StatelessWidget {
-  final double safeTop;
-  final String displayName;
-  final bool isAuthenticated;
-  final Stream<SectionBadgeCounts> badgeCountsStream;
-  final VoidCallback onProfileTap;
-  final VoidCallback onAccountRequest;
-
-  const _PremiumHeader({
-    required this.safeTop,
-    required this.displayName,
-    required this.isAuthenticated,
-    required this.badgeCountsStream,
-    required this.onProfileTap,
-    required this.onAccountRequest,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final localeCode = context.select<LocaleController, String>((c) => c.locale.languageCode);
-
-    return Padding(
-      padding: EdgeInsets.fromLTRB(ThixPolicy.s20, safeTop + 12, ThixPolicy.s20, 12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const _RotatingGreeting(),
-                // ── Nom + badge certification ──
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        displayName,
-                        style: const TextStyle(
-                          color: ThixPolicy.textMain,
-                          fontSize: 16, // Légèrement plus grand
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.3,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    // Badge visible seulement si connecté
-                    if (isAuthenticated)
-                      const CertificationNameBadge(
-                        iconSize: 14,
-                        padding: EdgeInsets.only(left: 6),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Row(
-            children: [
-              // 🌟 BOUTON LANGUE (Glassmorphism)
-              GestureDetector(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    backgroundColor: Colors.transparent,
-                    builder: (_) => const LanguageSheet(),
-                  );
-                },
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.65), // Verre dépoli
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.5),
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 6, offset: const Offset(0, 2))
-                    ],
-                  ),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      const Icon(Icons.language_rounded, size: 20, color: ThixPolicy.primaryDeep),
-                      Positioned(
-                        right: 0,
-                        bottom: 0,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
-                          decoration: BoxDecoration(
-                            color: ThixPolicy.primaryDeep,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.white, width: 1.2),
-                            boxShadow: [BoxShadow(color: ThixPolicy.primaryDeep.withValues(alpha: 0.3), blurRadius: 2, offset: const Offset(0, 1))],
-                          ),
-                          child: Text(
-                            localeCode.toUpperCase(),
-                            style: const TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w900),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-
-              // 🌟 BOUTON NOTIFICATIONS (Glassmorphism)
-              StreamBuilder<SectionBadgeCounts>(
-                stream: badgeCountsStream,
-                builder: (context, snap) {
-                  final c = snap.data ?? SectionBadgeCounts.zero;
-                  final total = c.messages + c.opportunities + c.jobs + c.events + c.formations +
-                      c.info + c.market + c.media + c.network + c.health + c.money + c.monPays + c.reservation;
-
-                  return GestureDetector(
-                    onTap: () {
-                      HapticFeedback.lightImpact();
-                      if (isAuthenticated) {
-                        NotificationsSheet.show(context);
-                      } else {
-                        context.push(AppRoutes.login);
-                      }
-                    },
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.65), // Verre dépoli
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.5),
-                        boxShadow: [
-                          BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 6, offset: const Offset(0, 2))
-                        ],
-                      ),
-                      child: Stack(
-                        alignment: Alignment.center,
-                        clipBehavior: Clip.none,
-                        children: [
-                          const Icon(Icons.notifications_none_rounded, size: 22, color: ThixPolicy.primaryDeep),
-                          if (total > 0)
-                            Positioned(
-                              right: -2,
-                              top: -2,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: ThixPolicy.danger,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: Colors.white, width: 1.5),
-                                  boxShadow: [BoxShadow(color: ThixPolicy.danger.withValues(alpha: 0.3), blurRadius: 4, offset: const Offset(0, 2))],
-                                ),
-                                child: Text(
-                                  total > 9 ? '9+' : '$total',
-                                  style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        ],
+  /// Ombre un peu plus prononcée pour les cartes interactives ou flottantes
+  static List<BoxShadow> shadowCard() {
+    return [
+      BoxShadow(
+        color: Colors.black.withOpacity(0.05),
+        blurRadius: 15,
+        offset: const Offset(0, 6),
       ),
-    );
-  }
-}
-
-class _RotatingGreeting extends StatefulWidget {
-  const _RotatingGreeting();
-  @override
-  State<_RotatingGreeting> createState() => _RotatingGreetingState();
-}
-
-class _RotatingGreetingState extends State<_RotatingGreeting> {
-  static const List<Map<String, String>> _greetings = [
-    {'lang': 'Lingala', 'text': 'Mbote'},
-    {'lang': 'Kiswahili', 'text': 'Jambo'},
-    {'lang': 'Tshiluba', 'text': 'Moyo'},
-    {'lang': 'Kikongo', 'text': 'Mbote'},
-  ];
-
-  int _index = 0;
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
-      if (!mounted) return;
-      setState(() => _index = (_index + 1) % _greetings.length);
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final g = _greetings[_index];
-    return SizedBox(
-      height: 18,
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 400),
-        transitionBuilder: (child, anim) => FadeTransition(
-          opacity: anim,
-          child: SlideTransition(
-            position: Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(anim),
-            child: child,
-          ),
-        ),
-        child: Row(
-          key: ValueKey(g['lang']),
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              g['text']!,
-              style: TextStyle(
-                color: ThixPolicy.textSecondary.withValues(alpha: 0.8),
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.6),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                g['lang']!,
-                style: const TextStyle(
-                  color: ThixPolicy.primaryDeep,
-                  fontSize: 8.5,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    ];
   }
 }
