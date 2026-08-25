@@ -794,48 +794,50 @@ class _DocsTab extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 100),
           itemCount: docs.length,
           itemBuilder: (_, i) {
-            final d = docs[i];
-            return Card(
-              margin: const EdgeInsets.only(bottom: 8),
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: ThixPolicy.border),
-              ),
-              child: ListTile(
-                dense: true,
-                leading: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: ThixPolicy.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.picture_as_pdf_rounded,
-                    color: ThixPolicy.primary,
-                    size: 20,
-                  ),
-                ),
-                title: Text(
-                  d.fileName,
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  d.status.name,
-                  style: ThixPolicy.microStyle,
-                ),
-                trailing: Text(
-                  d.createdAt != null
-                      ? '\( {d.createdAt!.day.toString().padLeft(2, '0')}/ \){d.createdAt!.month.toString().padLeft(2, '0')}'
-                      : '',
-                  style: ThixPolicy.microStyle,
-                ),
-              ),
-            );
-          },
+  final d = docs[i];
+  final dateStr = d.createdAt == null
+      ? ''
+      : '\( {d.createdAt!.day.toString().padLeft(2, '0')}/ \){d.createdAt!.month.toString().padLeft(2, '0')}';
+
+  return Card(
+    margin: const EdgeInsets.only(bottom: 8),
+    elevation: 0,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+      side: BorderSide(color: ThixPolicy.border),
+    ),
+    child: ListTile(
+      dense: true,
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: ThixPolicy.primary.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: const Icon(
+          Icons.picture_as_pdf_rounded,
+          color: ThixPolicy.primary,
+          size: 20,
+        ),
+      ),
+      title: Text(
+        d.fileName,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        d.status.name,
+        style: ThixPolicy.microStyle,
+      ),
+      trailing: Text(
+        dateStr,
+        style: ThixPolicy.microStyle,
+      ),
+    ),
+  );
+},
         );
       },
     );
