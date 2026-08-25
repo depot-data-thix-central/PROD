@@ -2,7 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
+import 'dart:typed_data';
+import '../services/document_generation_service.dart';
+import '../providers/thix_ia_provider.dart'; // si pas déjà là
 import '../../../../core/theme/thix_design_policy.dart';
 import '../core/constants/thix_ia_routes.dart';
 import '../models/thix_project.dart';
