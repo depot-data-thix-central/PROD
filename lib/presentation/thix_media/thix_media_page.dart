@@ -21,19 +21,18 @@ import '../../services/media_service.dart';
 import 'create_post_page.dart';
 import 'user_profile_page.dart';
 
+// ✅ PALETTE PREMIUM PROFONDE (Mode Cinéma/Netflix)
 class _MediaColors {
-  static const navyDeep = Color(0xFF0A1F44);
-  static const navy = Color(0xFF123B7A);
-  static const primary = Color(0xFF2D6CDF);
+  static const navyDeep = Color(0xFF030712); // Midnight très profond
+  static const navy = Color(0xFF0F172A);
+  static const primary = Color(0xFF3B82F6); // Bleu vif pour l'accent
   static const whiteAccent = Colors.white;
-  static const whiteMuted = Color(0xFFE2E8F0);
-  static const ivory = Color(0xFFF6F7FB);
-  static const card = Color(0xFF11213F);
-  static const cardLight = Color(0xFF16294D);
+  static const whiteMuted = Color(0xFF94A3B8); // Gris perle
+  static const card = Color(0xFF1E293B);
+  static const cardLight = Color(0xFF334155);
   static const border = Color(0x1AFFFFFF);
-  static const textMuted = Color(0xFFAEB9D4);
-  static const danger = ThixPolicy.danger;
-  static const success = ThixPolicy.success;
+  static const danger = Color(0xFFEF4444);
+  static const success = Color(0xFF10B981);
 
   static const gradientHeader = LinearGradient(
     begin: Alignment.topLeft,
@@ -44,7 +43,7 @@ class _MediaColors {
   static const gradientWhite = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Colors.white, whiteMuted],
+    colors: [Colors.white, Color(0xFFE2E8F0)],
   );
 }
 
@@ -356,7 +355,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     final showSearchOverlay = _searchFocusNode.hasFocus && hasQuery;
 
     return Scaffold(
-      backgroundColor: _MediaColors.navyDeep,
+      backgroundColor: _MediaColors.navyDeep, // 🔥 FOND PROFOND
       body: asyncMedia.when(
         loading: () => const Center(child: CircularProgressIndicator(color: _MediaColors.whiteAccent)),
         error: (e, st) => Center(child: Text('ERREUR : $e', style: const TextStyle(color: _MediaColors.danger, fontWeight: FontWeight.bold))),
@@ -454,10 +453,20 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     return SliverAppBar(
       pinned: true,
       floating: true,
-      backgroundColor: _MediaColors.navyDeep,
+      backgroundColor: Colors.transparent, // 🌟 TRANSPARENT POUR GLASSMORPHISM
       elevation: 0,
-      toolbarHeight: 64,
-      flexibleSpace: Container(decoration: const BoxDecoration(gradient: _MediaColors.gradientHeader)),
+      toolbarHeight: 70,
+      flexibleSpace: ClipRRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            decoration: BoxDecoration(
+              color: _MediaColors.navyDeep.withValues(alpha: 0.85), // 🌟 FOND PROFOND TRANSLUCIDE
+              border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1))
+            ),
+          ),
+        ),
+      ),
       title: Row(
         children: const [
           Icon(Icons.play_circle_filled_rounded, color: Colors.white, size: 26),
@@ -484,61 +493,63 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
           },
           icon: const Icon(Icons.person_outline_rounded, color: Colors.white, size: 22),
         ),
-        IconButton(
-          onPressed: () {},
-          icon: const Icon(Icons.notifications_none_rounded, color: Colors.white, size: 22),
-        ),
         const SizedBox(width: 6),
       ],
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(56),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Container(
-            height: 42,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.search_rounded, color: Colors.white70, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    key: _searchKey,
-                    controller: _searchController,
-                    focusNode: _searchFocusNode,
-                    onChanged: _onSearchChanged,
-                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                    cursorColor: Colors.white,
-                    autocorrect: false,
-                    enableSuggestions: false, 
-                    decoration: const InputDecoration(
-                      hintText: 'Découvrir des vidéos, séries, créateurs…',
-                      hintStyle: TextStyle(color: Colors.white54, fontSize: 13.5),
-                      filled: false,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      disabledBorder: InputBorder.none,
-                      isDense: true,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                height: 42,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.1), // 🌟 RECHERCHE TRANSLUCIDE
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
                 ),
-                if (hasQuery)
-                  GestureDetector(
-                    onTap: () { 
-                      _searchFocusNode.unfocus(); 
-                      _searchController.clear(); 
-                      setState(() => _searchResults = []); 
-                    },
-                    child: const Icon(Icons.close_rounded, color: Colors.white70, size: 16),
-                  ),
-              ],
+                child: Row(
+                  children: [
+                    const Icon(Icons.search_rounded, color: Colors.white70, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        key: _searchKey,
+                        controller: _searchController,
+                        focusNode: _searchFocusNode,
+                        onChanged: _onSearchChanged,
+                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        cursorColor: Colors.white,
+                        autocorrect: false,
+                        enableSuggestions: false, 
+                        decoration: const InputDecoration(
+                          hintText: 'Découvrir des vidéos, séries, créateurs…',
+                          hintStyle: TextStyle(color: Colors.white54, fontSize: 13.5),
+                          filled: false,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ),
+                    if (hasQuery)
+                      GestureDetector(
+                        onTap: () { 
+                          _searchFocusNode.unfocus(); 
+                          _searchController.clear(); 
+                          setState(() => _searchResults = []); 
+                        },
+                        child: const Icon(Icons.close_rounded, color: Colors.white70, size: 16),
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -580,7 +591,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     final featured = _catalog.take(6).toList();
     if (featured.isEmpty) return const SizedBox.shrink();
     return SizedBox(
-      height: 210,
+      height: 220,
       child: PageView.builder(
         controller: PageController(viewportFraction: 0.88),
         itemCount: featured.length,
@@ -591,7 +602,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
             child: GestureDetector(
               onTap: () => _openDetail(item),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(24),
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -600,7 +611,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                          colors: [Colors.transparent, _MediaColors.navyDeep.withValues(alpha: 0.92)],
+                          colors: [Colors.transparent, _MediaColors.navyDeep.withValues(alpha: 0.95)], // Ombre plus profonde
                           stops: const [0.35, 1],
                         ),
                       ),
@@ -609,20 +620,26 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                       left: 16, right: 16, top: 14,
                       child: Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(gradient: _MediaColors.gradientWhite, borderRadius: BorderRadius.circular(20)),
-                            child: const Text('À LA UNE', style: TextStyle(color: _MediaColors.navyDeep, fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(20),
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.8), border: Border.all(color: Colors.white)),
+                                child: const Text('À LA UNE', style: TextStyle(color: _MediaColors.navyDeep, fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                              ),
+                            ),
                           ),
                           if (item.isPaid) ...[
                             const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.45), borderRadius: BorderRadius.circular(20)),
+                              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(20)),
                               child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(Icons.lock_rounded, size: 11, color: Colors.white),
+                                Icon(Icons.lock_rounded, size: 11, color: ThixPolicy.gold),
                                 SizedBox(width: 3),
-                                Text('Premium', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+                                Text('Premium', style: TextStyle(color: ThixPolicy.gold, fontSize: 10, fontWeight: FontWeight.w700)),
                               ]),
                             ),
                           ],
@@ -635,12 +652,12 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
-                          const SizedBox(height: 4),
+                              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+                          const SizedBox(height: 6),
                           Row(children: [
                             const Icon(Icons.play_circle_fill_rounded, color: Colors.white70, size: 14),
                             const SizedBox(width: 4),
-                            Text(_formatNumber(item.viewCount), style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                            Text(_formatNumber(item.viewCount), style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
                           ]),
                         ],
                       ),
@@ -672,21 +689,26 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
               HapticFeedback.selectionClick();
               setState(() => _selectedCategory = cat);
             },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-              decoration: BoxDecoration(
-                gradient: sel ? _MediaColors.gradientWhite : null,
-                color: sel ? null : Colors.black.withValues(alpha: 0.3), 
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(color: sel ? Colors.transparent : Colors.white.withValues(alpha: 0.2)),
-              ),
-              child: Text(
-                cat,
-                style: TextStyle(
-                  color: sel ? _MediaColors.navyDeep : Colors.white,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(30),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: sel ? 0 : 10, sigmaY: sel ? 0 : 10),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: sel ? Colors.white : Colors.white.withValues(alpha: 0.1), 
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(color: sel ? Colors.white : Colors.white.withValues(alpha: 0.2)),
+                  ),
+                  child: Text(
+                    cat,
+                    style: TextStyle(
+                      color: sel ? _MediaColors.navyDeep : Colors.white,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -709,11 +731,11 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
               children: const [
                 Icon(Icons.video_library_rounded, size: 16, color: Colors.white),
                 SizedBox(width: 8),
-                Text('Séries', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800)),
+                Text('Séries', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           SizedBox(
             height: 190,
             child: ListView.separated(
@@ -746,9 +768,9 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
           setState(() {}); 
         },
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15), // Effet verre sur tout l'écran
           child: Container(
-            color: _MediaColors.navyDeep.withValues(alpha: 0.94),
+            color: _MediaColors.navyDeep.withValues(alpha: 0.85),
             padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top + 130, left: 16, right: 16),
             child: _searching
                 ? const Center(child: CircularProgressIndicator(color: Colors.white))
@@ -914,17 +936,18 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
                 onPlayStateChanged: (_) {},
               ),
             ),
+            // Info block + Actions (Glassmorphism)
             Positioned(
               left: 16, right: 16, bottom: 24,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(24),
                 child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
                   child: Container(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.1),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                      color: Colors.white.withValues(alpha: 0.15),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -943,18 +966,18 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
                                     child: Text(item.type.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
                                   ),
                                   const SizedBox(width: 8),
-                                  Expanded(child: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold))),
+                                  Expanded(child: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900))),
                                 ],
                               ),
                               if (item.subtitle != null && item.subtitle!.isNotEmpty) ...[
                                 const SizedBox(height: 6),
-                                Text(item.subtitle!, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                                Text(item.subtitle!, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 13)),
                               ],
                             ],
                           ),
                         ),
                         const SizedBox(height: 12),
-                        Container(height: 1, color: Colors.white.withValues(alpha: 0.1)),
+                        Container(height: 1, color: Colors.white.withValues(alpha: 0.2)),
                         const SizedBox(height: 8),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -1005,10 +1028,10 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Row(
           children: [
-            Icon(icon, color: color, size: 20),
+            Icon(icon, color: color, size: 22),
             if (text.isNotEmpty) ...[
               const SizedBox(width: 6),
-              Text(text, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+              Text(text, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.bold)),
             ]
           ],
         ),
@@ -1043,7 +1066,7 @@ class _MediaPosterCard extends StatelessWidget {
         children: [
           Expanded(
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(16),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -1052,8 +1075,8 @@ class _MediaPosterCard extends StatelessWidget {
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Colors.black.withValues(alpha: 0.75)],
-                        stops: const [0.5, 1],
+                        colors: [Colors.transparent, Colors.black.withValues(alpha: 0.85)],
+                        stops: const [0.4, 1],
                       ),
                     ),
                   ),
@@ -1062,8 +1085,8 @@ class _MediaPosterCard extends StatelessWidget {
                       top: 8, right: 8,
                       child: Container(
                         padding: const EdgeInsets.all(5),
-                        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                        child: const Icon(Icons.lock_rounded, size: 12, color: _MediaColors.navyDeep),
+                        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), shape: BoxShape.circle),
+                        child: const Icon(Icons.lock_rounded, size: 12, color: ThixPolicy.gold),
                       ),
                     ),
                   if (_isSeries)
@@ -1071,25 +1094,25 @@ class _MediaPosterCard extends StatelessWidget {
                       top: 8, left: 8,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.55), borderRadius: BorderRadius.circular(6)),
-                        child: Text('${item.episodesUrls.length + 1} parties', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700)),
+                        decoration: BoxDecoration(color: _MediaColors.primary.withValues(alpha: 0.8), borderRadius: BorderRadius.circular(6)),
+                        child: Text('${item.episodesUrls.length + 1} parties', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
                       ),
                     ),
                   Positioned(
                     left: 8, right: 8, bottom: 8,
                     child: Row(children: [
-                      const Icon(Icons.play_circle_fill_rounded, color: Colors.white70, size: 12),
+                      const Icon(Icons.play_circle_fill_rounded, color: Colors.white70, size: 14),
                       const SizedBox(width: 4),
-                      Text(formatNumber(item.viewCount), style: const TextStyle(color: Colors.white70, fontSize: 10.5, fontWeight: FontWeight.w600)),
+                      Text(formatNumber(item.viewCount), style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
                     ]),
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           Text(item.title, maxLines: compact ? 1 : 2, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w700, height: 1.2)),
+              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800, height: 1.2)),
         ],
       ),
     );
@@ -1187,11 +1210,18 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
 
     return Scaffold(
       backgroundColor: _MediaColors.navyDeep,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        backgroundColor: _MediaColors.navyDeep,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-        title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+        flexibleSpace: ClipRRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(color: _MediaColors.navyDeep.withValues(alpha: 0.6)),
+          ),
+        ),
+        title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -1221,7 +1251,7 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Épisodes', style: TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w800)),
+                    const Text('Épisodes', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 8, runSpacing: 8,
@@ -1236,10 +1266,9 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
                             duration: const Duration(milliseconds: 160),
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                             decoration: BoxDecoration(
-                              gradient: active ? _MediaColors.gradientWhite : null,
-                              color: active ? null : Colors.white.withValues(alpha: 0.07),
+                              color: active ? Colors.white : Colors.white.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: active ? Colors.transparent : Colors.white.withValues(alpha: 0.14)),
+                              border: Border.all(color: active ? Colors.white : Colors.transparent),
                             ),
                             child: Text(
                               'Partie ${i + 1}',
@@ -1263,16 +1292,16 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
                   GestureDetector(
                     onTap: () { if (!creatorIsOfficial && creatorId.isNotEmpty) Navigator.push(context, MaterialPageRoute(builder: (_) => UserProfilePage(userId: creatorId))); },
                     child: Container(
-                      width: 42, height: 42,
+                      width: 46, height: 46,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 1.6),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.6),
                         image: creatorProfile != null && creatorProfile['avatar_url'] != null
                             ? DecorationImage(image: CachedNetworkImageProvider(creatorProfile['avatar_url']), fit: BoxFit.cover)
                             : null,
                       ),
                       child: creatorProfile == null || creatorProfile['avatar_url'] == null
-                          ? const Icon(Icons.person, size: 20, color: Colors.white70)
+                          ? const Icon(Icons.person, size: 24, color: Colors.white70)
                           : null,
                     ),
                   ),
@@ -1281,8 +1310,8 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('@$displayName', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
-                        Text(item.type, style: const TextStyle(color: _MediaColors.textMuted, fontSize: 11.5)),
+                        Text('@$displayName', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
+                        Text(item.type, style: const TextStyle(color: _MediaColors.whiteMuted, fontSize: 12)),
                       ],
                     ),
                   ),
@@ -1290,64 +1319,70 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
                     GestureDetector(
                       onTap: () { setState(() => _newlyFollowed.add(creatorId)); MediaService().toggleFollow(creatorId); },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                        decoration: BoxDecoration(gradient: _MediaColors.gradientWhite, borderRadius: BorderRadius.circular(20)),
-                        child: const Text('Suivre', style: TextStyle(color: _MediaColors.navyDeep, fontSize: 12.5, fontWeight: FontWeight.w800)),
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
+                        child: const Text('Suivre', style: TextStyle(color: _MediaColors.navyDeep, fontSize: 13, fontWeight: FontWeight.w900)),
                       ),
                     ),
                 ],
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                ),
-                child: Row(
-                  children: [
-                    _detailActionBtn(
-                      icon: _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                      label: _formatNumber(live?.likeCount ?? item.likeCount),
-                      color: _liked ? _MediaColors.danger : Colors.white,
-                      onTap: _toggleLike,
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
                     ),
-                    _detailActionBtn(
-                      icon: Icons.chat_bubble_outline_rounded,
-                      label: _formatNumber(live?.commentCount ?? item.commentCount),
-                      color: Colors.white,
-                      onTap: _openComments,
+                    child: Row(
+                      children: [
+                        _detailActionBtn(
+                          icon: _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                          label: _formatNumber(live?.likeCount ?? item.likeCount),
+                          color: _liked ? _MediaColors.danger : Colors.white,
+                          onTap: _toggleLike,
+                        ),
+                        _detailActionBtn(
+                          icon: Icons.chat_bubble_outline_rounded,
+                          label: _formatNumber(live?.commentCount ?? item.commentCount),
+                          color: Colors.white,
+                          onTap: _openComments,
+                        ),
+                        _detailActionBtn(
+                          icon: Icons.remove_red_eye_outlined,
+                          label: _formatNumber(live?.viewCount ?? item.viewCount),
+                          color: Colors.white70,
+                          onTap: () {},
+                        ),
+                        _detailActionBtn(
+                          icon: _saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                          label: 'Sauver',
+                          color: _saved ? Colors.white : Colors.white70,
+                          onTap: _toggleSave,
+                        ),
+                      ],
                     ),
-                    _detailActionBtn(
-                      icon: Icons.remove_red_eye_outlined,
-                      label: _formatNumber(live?.viewCount ?? item.viewCount),
-                      color: Colors.white,
-                      onTap: () {},
-                    ),
-                    _detailActionBtn(
-                      icon: _saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                      label: 'Sauver',
-                      color: _saved ? _MediaColors.whiteAccent : Colors.white,
-                      onTap: _toggleSave,
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
             if (item.subtitle != null && item.subtitle!.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                child: Text(item.subtitle!, style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.5)),
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+                child: Text(item.subtitle!, style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5)),
               )
             else
               const SizedBox(height: 24),
             if (_suggestions.isNotEmpty) ...[
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Text('À découvrir aussi', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+                child: Text('À découvrir aussi', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
               ),
               const SizedBox(height: 16),
               GridView.builder(
@@ -1387,9 +1422,9 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: Column(
             children: [
-              Icon(icon, color: color, size: 21),
+              Icon(icon, color: color, size: 24),
               const SizedBox(height: 4),
-              Text(label, style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w700)),
+              Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800)),
             ],
           ),
         ),
@@ -1401,42 +1436,42 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
     return Container(
       decoration: item.coverUrl.isNotEmpty ? BoxDecoration(image: DecorationImage(image: CachedNetworkImageProvider(item.coverUrl), fit: BoxFit.cover)) : const BoxDecoration(color: _MediaColors.card),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30), // Flou intense
         child: Container(
-          color: _MediaColors.navyDeep.withValues(alpha: 0.88),
+          color: _MediaColors.navyDeep.withValues(alpha: 0.75),
           alignment: Alignment.center,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.all(18),
-                decoration: const BoxDecoration(shape: BoxShape.circle, gradient: _MediaColors.gradientWhite),
-                child: const Icon(Icons.lock_rounded, size: 36, color: _MediaColors.navyDeep),
+                padding: const EdgeInsets.all(20),
+                decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                child: const Icon(Icons.lock_rounded, size: 40, color: _MediaColors.navyDeep),
               ),
-              const SizedBox(height: 18),
-              const Text('Contenu Premium', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 20),
+              const Text('Contenu Premium', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
               const SizedBox(height: 10),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 36),
                 child: Text(
                   "Fin de l'aperçu gratuit. Débloquez la suite pour ${_formatPrice()}.",
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.5),
+                  style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 28),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
+                  backgroundColor: ThixPolicy.gold,
                   foregroundColor: _MediaColors.navyDeep,
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                 ),
                 onPressed: () {
                   setState(() { _unlocked = true; _previewExpired = false; });
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vidéo débloquée avec succès !'), backgroundColor: _MediaColors.success));
                 },
-                child: Text('Débloquer (${_formatPrice()})', style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900)),
+                child: Text('Débloquer (${_formatPrice()})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
               ),
             ],
           ),
@@ -1550,8 +1585,8 @@ class _FeedVideoPlayerState extends State<FeedVideoPlayer> {
                     return Stack(
                       alignment: Alignment.bottomLeft,
                       children: [
-                        Container(height: _isDragging ? 4 : 1.5, width: double.infinity, color: Colors.white.withValues(alpha: 0.3)),
-                        Container(height: _isDragging ? 4 : 1.5, width: MediaQuery.of(context).size.width * pct, color: Colors.white),
+                        Container(height: _isDragging ? 6 : 2, width: double.infinity, color: Colors.white.withValues(alpha: 0.3)),
+                        Container(height: _isDragging ? 6 : 2, width: MediaQuery.of(context).size.width * pct, color: Colors.white),
                       ],
                     );
                   },
@@ -1696,11 +1731,11 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                 children: [
                   Row(
                     children: [
-                      GestureDetector(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => UserProfilePage(userId: c.userId))), child: Text(c.userName, style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600))),
+                      GestureDetector(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => UserProfilePage(userId: c.userId))), child: Text(c.userName, style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700))),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(c.content, style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.3)),
+                  Text(c.content, style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.3)),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -1708,7 +1743,7 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                       const SizedBox(width: 16),
                       GestureDetector(
                         onTap: () { setState(() { _replyingTo = c; _editingComment = null; }); _focusNode.requestFocus(); },
-                        child: const Text('Répondre', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
+                        child: const Text('Répondre', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
                       ),
                       const Spacer(),
                       GestureDetector(
@@ -1718,7 +1753,7 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                           setState(() { if (isLiked) { _likedIds.remove(c.id); _localCommentLikes[c.id] = (currentLikes - 1).clamp(0, 999999); } else { _likedIds.add(c.id); _localCommentLikes[c.id] = currentLikes + 1; } });
                           try { await Supabase.instance.client.rpc('toggle_comment_like', params: {'p_comment_id': c.id}); } catch (_) { if (mounted) { setState(() { if (isLiked) { _likedIds.add(c.id); _localCommentLikes[c.id] = currentLikes; } else { _likedIds.remove(c.id); _localCommentLikes[c.id] = currentLikes; } }); } }
                         },
-                        child: Row(children: [Icon(isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: isLiked ? _MediaColors.danger : Colors.white54, size: 14), const SizedBox(width: 4), Text(currentLikes > 0 ? '$currentLikes' : "", style: TextStyle(color: isLiked ? _MediaColors.danger : Colors.white54, fontSize: 12, fontWeight: FontWeight.bold))]),
+                        child: Row(children: [Icon(isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: isLiked ? _MediaColors.danger : Colors.white54, size: 16), const SizedBox(width: 4), Text(currentLikes > 0 ? '$currentLikes' : "", style: TextStyle(color: isLiked ? _MediaColors.danger : Colors.white54, fontSize: 12, fontWeight: FontWeight.bold))]),
                       )
                     ],
                   ),
@@ -1730,7 +1765,7 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                         children: [
                           Container(width: 24, height: 1, color: Colors.white24),
                           const SizedBox(width: 8),
-                          Text(_expanded.contains(c.id) ? 'Masquer' : 'Voir les ${c.replyCount} réponses', style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w700)),
+                          Text(_expanded.contains(c.id) ? 'Masquer' : 'Voir les ${c.replyCount} réponses', style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w800)),
                         ],
                       ),
                     )
@@ -1753,28 +1788,28 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
       duration: const Duration(milliseconds: 150),
       padding: EdgeInsets.only(bottom: insets),
       child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20), // Flou intense
           child: Container(
-            height: MediaQuery.of(context).size.height * 0.70,
+            height: MediaQuery.of(context).size.height * 0.75,
             decoration: BoxDecoration(
-              color: _MediaColors.card.withValues(alpha: 0.97),
-              border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1)),
+              color: _MediaColors.navyDeep.withValues(alpha: 0.85),
+              border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.15), width: 1.5)),
             ),
             child: Column(
               children: [
                 const SizedBox(height: 12),
-                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(4))),
+                Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(10))),
                 const SizedBox(height: 16),
-                Text('${_roots.length} commentaires', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
+                Text('${_roots.length} commentaires', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 12),
 
                 Expanded(
                   child: _loading
                       ? const Center(child: CircularProgressIndicator(color: Colors.white))
                       : _roots.isEmpty
-                          ? const Center(child: Text('Soyez le premier à commenter !', style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w500)))
+                          ? const Center(child: Text('Soyez le premier à commenter !', style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w600)))
                           : ListView.builder(
                               padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                               itemCount: _roots.length,
@@ -1784,20 +1819,20 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
 
                 Container(
                   decoration: BoxDecoration(
-                    color: _MediaColors.cardLight,
-                    border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.05))),
+                    color: Colors.black.withValues(alpha: 0.4),
+                    border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
                   ),
                   child: Column(
                     children: [
                       if (_replyingTo != null || _editingComment != null)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          color: Colors.black26,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          color: Colors.white.withValues(alpha: 0.05),
                           child: Row(
                             children: [
-                              Text(_editingComment != null ? 'Modification' : 'Réponse à @${_replyingTo!.userName}', style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+                              Text(_editingComment != null ? 'Modification' : 'Réponse à @${_replyingTo!.userName}', style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
                               const Spacer(),
-                              GestureDetector(onTap: () { setState(() { _replyingTo = null; _editingComment = null; }); _controller.clear(); }, child: const Icon(Icons.close_rounded, color: Colors.white54, size: 16)),
+                              GestureDetector(onTap: () { setState(() { _replyingTo = null; _editingComment = null; }); _controller.clear(); }, child: const Icon(Icons.close_rounded, color: Colors.white70, size: 18)),
                             ],
                           ),
                         ),
@@ -1809,9 +1844,9 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 16),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.08),
+                                  color: Colors.white.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(24),
-                                  border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
                                 ),
                                 child: TextField(
                                   controller: _controller,
@@ -1819,7 +1854,7 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                                   minLines: 1,
                                   maxLines: 4,
                                   onSubmitted: (_) => _submit(),
-                                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                                  style: const TextStyle(color: Colors.white, fontSize: 15),
                                   cursorColor: Colors.white,
                                   decoration: InputDecoration(
                                     hintText: _editingComment != null ? 'Modifier...' : (_replyingTo != null ? 'Votre réponse...' : 'Ajouter un commentaire...'),
@@ -1831,7 +1866,7 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                                     focusedBorder: InputBorder.none,
                                     disabledBorder: InputBorder.none,
                                     isDense: true,
-                                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
                                   ),
                                 ),
                               ),
@@ -1840,15 +1875,14 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                             GestureDetector(
                               onTap: _submit,
                               child: Container(
-                                width: 44, height: 44,
+                                width: 46, height: 46,
                                 decoration: BoxDecoration(
-                                  gradient: _sending ? null : _MediaColors.gradientWhite,
-                                  color: _sending ? Colors.white10 : null,
+                                  color: _sending ? Colors.white10 : Colors.white,
                                   shape: BoxShape.circle,
                                 ),
                                 child: _sending
                                     ? const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(color: _MediaColors.navyDeep, strokeWidth: 2))
-                                    : const Icon(Icons.send_rounded, color: _MediaColors.navyDeep, size: 18),
+                                    : const Icon(Icons.send_rounded, color: _MediaColors.navyDeep, size: 20),
                               ),
                             )
                           ],
