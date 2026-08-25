@@ -1,7 +1,7 @@
 // lib/presentation/thix_ia/widgets/fact_card.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown/flutter_markdown.dart'; // 👈 IMPORT AJOUTÉ ICI
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/thix_design_policy.dart';
 import '../models/project_memory.dart';
@@ -23,7 +23,8 @@ class FactCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s6),
+      // 👇 MODIFICATION ICI : On enlève la marge horizontale pour prendre toute la largeur
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(ThixPolicy.rMd),
         border: Border.all(color: ThixPolicy.border),
@@ -33,7 +34,7 @@ class FactCard extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(ThixPolicy.rMd),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch, // Prend toute la largeur interne
           children: [
             // Header type + confiance
             Container(
@@ -69,11 +70,10 @@ class FactCard extends StatelessWidget {
             ),
             // Contenu
             Padding(
-              padding: const EdgeInsets.all(ThixPolicy.s12),
+              padding: const EdgeInsets.all(ThixPolicy.s16), // Padding interne légèrement augmenté
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 👇 REMPLACEMENT ICI : MarkdownBody au lieu de Text
                   MarkdownBody(
                     data: fact.content,
                     selectable: true,
@@ -82,10 +82,16 @@ class FactCard extends StatelessWidget {
                       listBullet: ThixPolicy.bodyStyle,
                       h3: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       h2: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      // 👇 NOUVEAU : DESIGN POUR LES TABLEAUX
+                      tableBorder: TableBorder.all(color: ThixPolicy.border, width: 1),
+                      tableCellsPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      tableHead: ThixPolicy.bodyStyle.copyWith(fontWeight: FontWeight.bold),
+                      tableHeadAlign: TextAlign.left,
+                      tableBody: ThixPolicy.bodyStyle,
                     ),
                   ),
                   if (fact.sourceName!= null || fact.sourceUrl!= null)...[
-                    const SizedBox(height: ThixPolicy.s10),
+                    const SizedBox(height: ThixPolicy.s12),
                     GestureDetector(
                       onTap: fact.sourceUrl!= null? () => _openUrl(fact.sourceUrl!) : null,
                       child: Container(
@@ -110,7 +116,7 @@ class FactCard extends StatelessWidget {
                       ),
                     ),
                   ],
-                  const SizedBox(height: ThixPolicy.s10),
+                  const SizedBox(height: ThixPolicy.s12),
                   Row(
                     children: [
                       if (fact.dateCollected!= null) _Meta(icon: Icons.calendar_today_rounded, text: 'Collecté ${fact.dateCollected!.timeAgo}'),
