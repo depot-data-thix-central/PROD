@@ -28,12 +28,27 @@ class ProjectMemoryNotifier extends AsyncNotifier<ProjectMemory?> {
     });
   }
 
-  Future<void> addFact({required String type, required String content, String? sourceUrl, String? sourceName, double confidence = 0.8}) async {
+  Future<void> addFact({
+    required String type,
+    required String content,
+    String? sourceUrl,
+    String? sourceName,
+    double confidence = 0.8,
+  }) async {
     final code = ref.read(activeProjectCodeProvider);
-    if (code == null) return;
+    if (code == null) {
+      throw Exception('Aucun projet actif');
+    }
 
     final repo = ref.read(memoryRepositoryProvider);
-    await repo.addFact(projectCode: code, type: type, content: content, sourceUrl: sourceUrl, sourceName: sourceName, confidence: confidence);
+    await repo.addFact(
+      projectCode: code,
+      type: type,
+      content: content,
+      sourceUrl: sourceUrl,
+      sourceName: sourceName,
+      confidence: confidence,
+    );
     await refresh();
   }
 
@@ -41,18 +56,19 @@ class ProjectMemoryNotifier extends AsyncNotifier<ProjectMemory?> {
     final code = ref.read(activeProjectCodeProvider);
     if (code == null) return;
     final repo = ref.read(memoryRepositoryProvider);
-    await repo.addIdea(projectCode: code, title: title, description: description);
+    await repo.addIdea(
+        projectCode: code, title: title, description: description);
     await refresh();
   }
 }
 
-final projectMemoryProvider = AsyncNotifierProvider<ProjectMemoryNotifier, ProjectMemory?>(() {
+final projectMemoryProvider =
+    AsyncNotifierProvider<ProjectMemoryNotifier, ProjectMemory?>(() {
   return ProjectMemoryNotifier();
 });
 
-// Selectors ultra-performants
 final projectFactsProvider = Provider<List<ProjectFact>>((ref) {
-  return ref.watch(projectMemoryProvider).value?.facts?? [];
+  return ref.watch(projectMemoryProvider).value?.facts ?? [];
 });
 
 final verifiedFactsProvider = Provider<List<ProjectFact>>((ref) {
@@ -61,5 +77,5 @@ final verifiedFactsProvider = Provider<List<ProjectFact>>((ref) {
 });
 
 final openQuestionsProvider = Provider<List<String>>((ref) {
-  return ref.watch(projectMemoryProvider).value?.openQuestions?? [];
+  return ref.watch(projectMemoryProvider).value?.openQuestions ?? [];
 });
