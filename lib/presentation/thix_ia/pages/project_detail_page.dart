@@ -479,10 +479,54 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
           ],
         ),
       ),
-      bottomNavigationBar: AiCommandBar(
-        onSubmit: _handleAiCommand,
-        hintText: 'Demandez à THIX IA sur ${widget.projectCode}...',
-        isLoading: _isSending,
+      // 👇 NOUVELLE BARRE DU BAS ICI
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.all(16).copyWith(
+          bottom: MediaQuery.of(context).padding.bottom + 16,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -5),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  backgroundColor: ThixPolicy.primary,
+                ),
+                onPressed: _startBusinessPlan,
+                icon: const Icon(Icons.auto_awesome),
+                label: const Text(
+                  'Générer le Business Plan',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            IconButton.filledTonal(
+              style: IconButton.styleFrom(
+                padding: const EdgeInsets.all(16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              tooltip: 'Ouvrir le chat',
+              onPressed: () => context.push(ThixIARoutes.chatPath(widget.projectCode)),
+              icon: const Icon(Icons.chat_bubble_outline_rounded),
+            ),
+          ],
+        ),
       ),
     );
   }
