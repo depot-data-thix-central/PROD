@@ -107,14 +107,12 @@ class CallNotifier extends StateNotifier<CallState> {
 
   CallNotifier(this.ref) : super(const CallState());
 
-  // ─── SONS ──────────────────────────────────────────────────────────────────
-
   Future<void> _playRingtone() async {
     try {
       await _ringPlayer.setReleaseMode(ReleaseMode.loop);
       await _ringPlayer.play(AssetSource('sounds/ringtone.mp3'));
     } catch (e) {
-      debugPrint('Erreur lecture sonnerie: $e');
+      debugPrint('Erreur sonnerie: $e');
     }
   }
 
@@ -123,7 +121,7 @@ class CallNotifier extends StateNotifier<CallState> {
       await _ringPlayer.setReleaseMode(ReleaseMode.release);
       await _ringPlayer.play(AssetSource('sounds/offline.mp3'));
     } catch (e) {
-      debugPrint('Erreur lecture son hors-ligne: $e');
+      debugPrint('Erreur offline tone: $e');
     }
   }
 
@@ -132,8 +130,6 @@ class CallNotifier extends StateNotifier<CallState> {
       await _ringPlayer.stop();
     } catch (_) {}
   }
-
-  // ─── HELPERS ───────────────────────────────────────────────────────────────
 
   int _uidFrom(String userId) {
     var hash = 0x811c9dc5;
@@ -158,29 +154,24 @@ class CallNotifier extends StateNotifier<CallState> {
           .eq('is_group', false)
           .maybeSingle();
 
-      if (res != null) {
-        return res['id'] as String;
-      } else {
-        final newConv = await db.from('conversations').insert({
-          'participant_ids': [currentUserId, otherUserId],
-          'is_group': false,
-        }).select('id').single();
-        return newConv['id'] as String;
-      }
+      if (res != null) return res['id'] as String;
+
+      final newConv = await db.from('conversations').insert({
+        'participant_ids': [currentUserId, otherUserId],
+        'is_group': false,
+      }).select('id').single();
+      return newConv['id'] as String;
     } catch (e) {
       debugPrint('_getOrCreateConversationId: $e');
       return null;
     }
   }
 
-  /// Marque l'appel en échec + log visible dans la console
   void _fail(String where, Object e) {
     final msg = '$e';
     debugPrint('❌ CALL FAIL [$where]: $msg');
     state = state.copyWith(status: CallStatus.failed, error: msg);
   }
-
-  // ─── CALLER ────────────────────────────────────────────────────────────────
 
   Future<void> start({
     required String myUserId,
@@ -191,8 +182,8 @@ class CallNotifier extends StateNotifier<CallState> {
     String? conversationId,
   }) async {
     try {
-      final convId =
-          conversationId ?? await _getOrCreateConversationId(myUserId, calleeId);
+      final convId = conversationId ??
+          await _getOrCreateConversationId(myUserId, calleeId);
 
       state = state.copyWith(
         status: CallStatus.ringing,
@@ -210,14 +201,16 @@ class CallNotifier extends StateNotifier<CallState> {
       if (invite.status == CallStatus.busy) {
         state = state.copyWith(status: CallStatus.busy, error: 'Occupé');
         _playOfflineTone();
-        Future.delayed(const Duration(seconds: 3), () => hangUp(skipSignal: true));
+        Future.delayed(
+            const Duration(seconds: 3), () => hangUp(skipSignal: true));
         return;
       }
 
       if (invite.channelName.isEmpty) {
         _fail('start', 'channel_name vide après rpc_start_call');
         _playOfflineTone();
-        Future.delayed(const Duration(seconds: 2), () => hangUp(skipSignal: true));
+        Future.delayed(
+            const Duration(seconds: 2), () => hangUp(skipSignal: true));
         return;
       }
 
@@ -245,7 +238,8 @@ class CallNotifier extends StateNotifier<CallState> {
         } else if (s == CallStatus.rejected || s == CallStatus.canceled) {
           _stopRingtone();
           _playOfflineTone();
-          Future.delayed(const Duration(seconds: 2), () => hangUp(skipSignal: true));
+          Future.delayed(
+              const Duration(seconds: 2), () => hangUp(skipSignal: true));
         } else if (s.isFinished) {
           await hangUp(skipSignal: true);
         }
@@ -253,11 +247,10 @@ class CallNotifier extends StateNotifier<CallState> {
     } catch (e) {
       _fail('start', e);
       _playOfflineTone();
-      Future.delayed(const Duration(seconds: 2), () => hangUp(skipSignal: true));
+      Future.delayed(
+          const Duration(seconds: 2), () => hangUp(skipSignal: true));
     }
   }
-
-  // ─── CALLEE ────────────────────────────────────────────────────────────────
 
   Future<void> acceptIncoming({
     required CallInvite invite,
@@ -267,11 +260,11 @@ class CallNotifier extends StateNotifier<CallState> {
   }) async {
     try {
       debugPrint(
-        '📞 acceptIncoming id=\( {invite.id} channel= \){invite.channelName} caller=${invite.callerId}',
+        '📞 acceptIncoming id=\( {invite.id} channel= \){invite.channelName}',
       );
 
       if (invite.channelName.trim().isEmpty) {
-        _fail('acceptIncoming', 'channel_name manquant sur l’invite');
+        _fail('acceptIncoming', 'channel_name manquant');
         return;
       }
 
@@ -309,8 +302,6 @@ class CallNotifier extends StateNotifier<CallState> {
     state = const CallState();
   }
 
-  // ─── AGORA ─────────────────────────────────────────────────────────────────
-
   Future<void> _joinAgora(String myUserId) async {
     final channel = state.channelName?.trim();
     final inviteId = state.inviteId;
@@ -320,7 +311,7 @@ class CallNotifier extends StateNotifier<CallState> {
     );
 
     if (channel == null || channel.isEmpty) {
-      _fail('_joinAgora', 'channel_name vide — impossible de joindre Agora');
+      _fail('_joinAgora', 'channel_name vide');
       return;
     }
 
@@ -332,7 +323,7 @@ class CallNotifier extends StateNotifier<CallState> {
         type: state.type,
         uid: uid,
         onUserJoined: (remoteUid) async {
-          debugPrint('📞 remote joined uid=$remoteUid');
+          debugPrint('📞 remote joined $remoteUid');
           state = state.copyWith(
             remoteUid: remoteUid,
             status: CallStatus.ongoing,
@@ -351,8 +342,7 @@ class CallNotifier extends StateNotifier<CallState> {
           Future.delayed(const Duration(seconds: 1), () => hangUp());
         },
         onError: (err) {
-          // Erreur Agora runtime (token invalide, etc.)
-          debugPrint('❌ Agora onError: $err');
+          debugPrint('❌ media onError: $err');
           state = state.copyWith(
             status: CallStatus.failed,
             error: err,
@@ -360,14 +350,12 @@ class CallNotifier extends StateNotifier<CallState> {
         },
       );
 
-      // Join local OK → on passe en ongoing même si remote pas encore là
       if (state.status == CallStatus.accepted) {
         state = state.copyWith(status: CallStatus.ongoing);
         _startTimer();
       }
     } catch (e, st) {
-      debugPrint('❌ _joinAgora exception: $e\n$st');
-      // Messages typiques : token, micro, caméra, network
+      debugPrint('❌ _joinAgora: $e\n$st');
       _fail('_joinAgora', e);
     }
   }
@@ -379,8 +367,6 @@ class CallNotifier extends StateNotifier<CallState> {
       state = state.copyWith(duration: DateTime.now().difference(start));
     });
   }
-
-  // ─── CONTROLES ─────────────────────────────────────────────────────────────
 
   Future<void> toggleMute() async {
     final next = !state.muted;
@@ -404,8 +390,6 @@ class CallNotifier extends StateNotifier<CallState> {
     await _media.setSpeaker(next);
     state = state.copyWith(speakerOn: next);
   }
-
-  // ─── HANG UP ───────────────────────────────────────────────────────────────
 
   Future<void> hangUp({bool skipSignal = false}) async {
     _stopRingtone();
@@ -434,29 +418,26 @@ class CallNotifier extends StateNotifier<CallState> {
       } catch (_) {}
     }
 
-    if (convId != null && convId.isNotEmpty) {
+    if (convId != null && convId.isNotEmpty && wasCaller) {
       try {
         final chatSvc = ref.read(chatServiceProvider);
         final isMissed = duration.inSeconds == 0;
         final mediaTypeStr = isVideoCall ? 'call_video' : 'call_audio';
         final textType = isVideoCall ? 'Appel vidéo' : 'Appel audio';
-
         final m = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
         final s = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
         final h = duration.inHours;
         final timeStr = h > 0 ? '$h:$m:$s' : '$m:$s';
-        final textDuration = isMissed ? 'manqué' : '($timeStr)';
-        final content = '$textType $textDuration';
+        final content =
+            '$textType ${isMissed ? 'manqué' : '($timeStr)'}';
 
-        if (wasCaller) {
-          await chatSvc.sendMessage(
-            conversationId: convId,
-            content: content,
-            mediaType: mediaTypeStr,
-          );
-        }
+        await chatSvc.sendMessage(
+          conversationId: convId,
+          content: content,
+          mediaType: mediaTypeStr,
+        );
       } catch (e) {
-        debugPrint('Erreur sauvegarde historique appel dans chat: $e');
+        debugPrint('Erreur historique appel: $e');
       }
     }
 
