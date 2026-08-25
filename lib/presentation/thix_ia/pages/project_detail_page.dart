@@ -636,8 +636,8 @@ class _MemoryTab extends ConsumerWidget {
         }
 
         // 3. On récupère la liste des faits
-        // 💡 NOTE : Si tu as une erreur ici, vérifie si dans ta classe le champ
-        // s'écrit "project_facts" ou "projectFacts" (avec un F majuscule)
+        // 💡 NOTE : Si le compilateur te signale une erreur ici, remplace 
+        // "project_facts" par "projectFacts" avec un F majuscule.
         final facts = memory.project_facts; 
 
         // 4. Si la liste est vide ou nulle
@@ -647,14 +647,12 @@ class _MemoryTab extends ConsumerWidget {
           );
         }
 
-        // 5. On affiche la liste avec ton beau widget FactCard !
+        // 5. On affiche la liste avec ton widget FactCard
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
           itemCount: facts.length,
           itemBuilder: (context, index) {
             final fact = facts[index];
-            
-            // On utilise le widget FactCard que tu avais déjà importé en haut du fichier
             return FactCard(fact: fact);
           },
         );
@@ -662,7 +660,6 @@ class _MemoryTab extends ConsumerWidget {
     );
   }
 }
-
 
 class _DocsTab extends ConsumerWidget {
   const _DocsTab({required this.projectCode});
@@ -695,7 +692,7 @@ class _DocsTab extends ConsumerWidget {
             return Card(
               child: ListTile(
                 leading: const Icon(Icons.description_outlined),
-                title: Text('Document ${index + 1}'), // À adapter avec doc.name par exemple
+                title: Text('Document ${index + 1}'),
               ),
             );
           },
