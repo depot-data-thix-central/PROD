@@ -120,9 +120,9 @@ class _PremiumHeader extends StatelessWidget {
                         displayName,
                         style: const TextStyle(
                           color: ThixPolicy.textMain, // Slate 900
-                          fontSize: 15.5, // Réduit (était 18)
+                          fontSize: 13, // Réduit (était 15.5)
                           fontWeight: FontWeight.w900,
-                          letterSpacing: -0.4,
+                          letterSpacing: -0.3,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -130,8 +130,8 @@ class _PremiumHeader extends StatelessWidget {
                     // Badge visible seulement si connecté
                     if (isAuthenticated)
                       const CertificationNameBadge(
-                        iconSize: 14,
-                        padding: EdgeInsets.only(left: 5),
+                        iconSize: 12,
+                        padding: EdgeInsets.only(left: 4),
                       ),
                   ],
                 ),
