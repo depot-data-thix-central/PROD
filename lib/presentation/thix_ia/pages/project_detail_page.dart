@@ -19,6 +19,7 @@ import '../widgets/fact_card.dart';
 import '../widgets/analysis_progress_widget.dart';
 import '../widgets/empty_state_widget.dart';
 import '../widgets/ai_command_bar.dart';
+import '../widgets/phase_switcher.dart'; // 👈 Import du nouveau Switcher
 
 class ProjectDetailPage extends ConsumerStatefulWidget {
   const ProjectDetailPage({super.key, required this.projectCode});
@@ -32,6 +33,7 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _isSending = false;
+  bool _isExecutionMode = false; // 👈 État pour gérer le basculement SaaS
 
   @override
   void initState() {
@@ -484,55 +486,116 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
                 ],
               ),
             ],
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(40),
-              child: TabBar(
-                controller: _tabController,
-                labelColor: ThixPolicy.primary,
-                unselectedLabelColor: ThixPolicy.textMuted,
-                indicatorColor: ThixPolicy.primary,
-                indicatorWeight: 2.5,
-                labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                unselectedLabelStyle: const TextStyle(fontSize: 13),
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                tabs: const [
-                  Tab(text: "Vue d'ensemble", height: 36),
-                  Tab(text: 'Analyses', height: 36),
-                  Tab(text: 'Mémoire', height: 36),
-                  Tab(text: 'Documents', height: 36),
-                ],
-              ),
-            ),
+            // 👈 Si on est en mode Exécution, on cache la barre d'onglets (Analyse, Mémoire...)
+            bottom: _isExecutionMode
+                ? null
+                : PreferredSize(
+                    preferredSize: const Size.fromHeight(40),
+                    child: TabBar(
+                      controller: _tabController,
+                      labelColor: ThixPolicy.primary,
+                      unselectedLabelColor: ThixPolicy.textMuted,
+                      indicatorColor: ThixPolicy.primary,
+                      indicatorWeight: 2.5,
+                      labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                      unselectedLabelStyle: const TextStyle(fontSize: 13),
+                      isScrollable: true,
+                      tabAlignment: TabAlignment.start,
+                      tabs: const [
+                        Tab(text: "Vue d'ensemble", height: 36),
+                        Tab(text: 'Analyses', height: 36),
+                        Tab(text: 'Mémoire', height: 36),
+                        Tab(text: 'Documents', height: 36),
+                      ],
+                    ),
+                  ),
           ),
           SliverToBoxAdapter(
-            child: ProjectHeader(
-              project: activeProject,
-              progress: activeProject.progress,
+            child: Column(
+              children: [
+                // 👈 Intégration du Switcher de Phase
+                PhaseSwitcher(
+                  isExecutionMode: _isExecutionMode,
+                  onModeChanged: (val) {
+                    setState(() {
+                      _isExecutionMode = val;
+                    });
+                  },
+                ),
+                // L'en-tête du projet ne s'affiche qu'en mode Analyse
+                if (!_isExecutionMode)
+                  ProjectHeader(
+                    project: activeProject,
+                    progress: activeProject.progress,
+                  ),
+              ],
             ),
           ),
         ],
-        body: TabBarView(
-          controller: _tabController,
+        // 👈 Basculement du corps de la page
+        body: _isExecutionMode
+            ? const _ExecutionDashboardPlaceholder() // Mode SaaS Exécution
+            : TabBarView(
+                controller: _tabController,
+                children: [
+                  _OverviewTab(project: activeProject),
+                  _AnalysesTab(projectCode: widget.projectCode),
+                  _MemoryTab(projectCode: widget.projectCode),
+                  _DocsTab(projectCode: widget.projectCode),
+                ],
+              ),
+      ),
+      // 👈 On cache la barre de chat IA quand on pilote l'exécution pour avoir un écran propre
+      bottomNavigationBar: _isExecutionMode
+          ? null 
+          : AiCommandBar(
+              onSubmit: _handleAiCommand,
+              hintText: 'Demandez à THIX IA sur ${widget.projectCode}...',
+              isLoading: _isSending,
+            ),
+    );
+  }
+}
+
+// ============================================================
+// WIDGET PLACEHOLDER POUR L'EXÉCUTION (LE FUTUR SAAS)
+// ============================================================
+class _ExecutionDashboardPlaceholder extends StatelessWidget {
+  const _ExecutionDashboardPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _OverviewTab(project: activeProject),
-            _AnalysesTab(projectCode: widget.projectCode),
-            _MemoryTab(projectCode: widget.projectCode),
-            _DocsTab(projectCode: widget.projectCode),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444).withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.rocket_launch_rounded, size: 48, color: Color(0xFFEF4444)),
+            ),
+            const SizedBox(height: 24),
+            Text('Phase d\'Exécution (SaaS)', style: ThixPolicy.h2Style, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            Text(
+              'Le "Financial Engine" (Burn rate, budget), l\'Auto-Kanban et le tableau de bord de pilotage seront bientôt intégrés ici.',
+              style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary),
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
-      ),
-      bottomNavigationBar: AiCommandBar(
-        onSubmit: _handleAiCommand,
-        hintText: 'Demandez à THIX IA sur ${widget.projectCode}...',
-        isLoading: _isSending,
       ),
     );
   }
 }
 
 // ============================================================
-// TABS
+// TABS (ANALYSE)
 // ============================================================
 
 class _OverviewTab extends StatelessWidget {
@@ -667,7 +730,6 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
       return;
     }
 
-    // Uniquement les analyses terminées
     final validated = analyses.where((a) => a.isCompleted).toList();
 
     if (validated.isEmpty && memory.facts.isEmpty) {
@@ -692,7 +754,6 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
 
       if (!mounted) return;
 
-      // Afficher / télécharger le PDF
       await _showPdfPreview(pdfBytes, project.projectCode);
 
       _showSnack('Business Plan généré avec succès');
@@ -910,7 +971,6 @@ class _DocsTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // On écoute le provider des documents
     final docsAsync = ref.watch(documentsProvider);
 
     return docsAsync.when(
