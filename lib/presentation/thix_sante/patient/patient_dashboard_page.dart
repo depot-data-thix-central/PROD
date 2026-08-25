@@ -569,8 +569,8 @@ class _PatientDashboardPageState extends ConsumerState<PatientDashboardPage> {
   }
 }
 
-// ============================================================================
-// WIDGET : BACKGROUND MÉDICAL ANIMÉ & FLOUTÉ
+// // ============================================================================
+// WIDGET : BACKGROUND MÉDICAL ANIMÉ (OPTIMISÉ POUR HAUTES PERFORMANCES)
 // ============================================================================
 class _MedicalAmbientBackground extends StatefulWidget {
   const _MedicalAmbientBackground();
@@ -585,7 +585,7 @@ class _MedicalAmbientBackgroundState extends State<_MedicalAmbientBackground> wi
   @override
   void initState() {
     super.initState();
-    // Animation douce
+    // Animation douce (15 secondes)
     _controller = AnimationController(vsync: this, duration: const Duration(seconds: 15))..repeat();
   }
 
@@ -595,56 +595,61 @@ class _MedicalAmbientBackgroundState extends State<_MedicalAmbientBackground> wi
     super.dispose();
   }
 
+  // 🌟 HELPER HAUTE PERFORMANCE : Utilise un RadialGradient au lieu d'un Flou GPU
+  Widget _buildPerformanceOrb(double x, double y, double size, Color color) {
+    return Positioned(
+      left: x - (size / 2),
+      top: y - (size / 2),
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            colors: [
+              color, 
+              color.withOpacity(0.0) // Se fond de manière invisible dans le décor
+            ],
+            stops: const [0.1, 1.0], // Crée un effet de halo très doux
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
 
     return IgnorePointer(
-      child: RepaintBoundary(
+      child: RepaintBoundary( // Empêche l'animation de recalculer l'UI entière
         child: AnimatedBuilder(
           animation: _controller,
           builder: (context, child) {
             final t = _controller.value * 2 * math.pi;
 
-            // Cœur (Rouge doux)
+            // Orb 1 (Rouge doux)
             final heartX = size.width * 0.5 + math.cos(t) * (size.width * 0.4);
             final heartY = size.height * 0.2 + math.sin(t * 1.5) * (size.height * 0.2);
 
-            // Croix (Teal)
+            // Orb 2 (Teal)
             final crossX = size.width * 0.3 + math.sin(t * 1.2) * (size.width * 0.5);
             final crossY = size.height * 0.6 + math.cos(t) * (size.height * 0.15);
 
-            // Bouclier (Bleu)
+            // Orb 3 (Bleu)
             final shieldX = size.width * 0.7 + math.cos(t * 0.8) * 120.0;
             final shieldY = size.height * 0.5 + math.sin(t * 1.1) * 150.0;
 
-            return ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60), // Fort flou
-              child: Stack(
-                children: [
-                  Positioned(
-                    left: heartX - 150, top: heartY - 150,
-                    child: Transform.rotate(
-                      angle: t * 0.5,
-                      child: Icon(Icons.favorite_rounded, size: 300, color: _HealthColors.emergency.withValues(alpha: 0.15)),
-                    ),
-                  ),
-                  Positioned(
-                    left: crossX - 150, top: crossY - 150,
-                    child: Transform.rotate(
-                      angle: -t * 0.3,
-                      child: Icon(Icons.health_and_safety_rounded, size: 300, color: _HealthColors.primary.withValues(alpha: 0.25)),
-                    ),
-                  ),
-                  Positioned(
-                    left: shieldX - 150, top: shieldY - 150,
-                    child: Transform.rotate(
-                      angle: t * 0.4,
-                      child: Icon(Icons.medical_information_rounded, size: 300, color: _HealthColors.info.withValues(alpha: 0.15)),
-                    ),
-                  ),
-                ],
-              ),
+            return Stack(
+              children: [
+                // Fond propre
+                Positioned.fill(child: Container(color: const Color(0xFFF4F7FB))),
+                
+                // Orbes animés sans aucun flou GPU (Coût de performance = 0)
+                _buildPerformanceOrb(heartX, heartY, 500, _HealthColors.emergency.withOpacity(0.12)),
+                _buildPerformanceOrb(crossX, crossY, 550, _HealthColors.primary.withOpacity(0.15)),
+                _buildPerformanceOrb(shieldX, shieldY, 600, _HealthColors.info.withOpacity(0.10)),
+              ],
             );
           },
         ),
