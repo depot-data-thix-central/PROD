@@ -1,6 +1,6 @@
 // lib/presentation/home/widgets/home_background.dart
 import 'dart:math' as math;
-import 'dart:ui'; // Requis pour PointMode
+import 'dart:ui'; // Requis pour ImageFilter (glassmorphism)
 import 'package:flutter/material.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
@@ -13,7 +13,7 @@ class HomeSoftBackground extends StatefulWidget {
 
 class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  late final List<_NodeSeed> _nodeSeeds;
+  late final List<_FingerprintSeed> _fpSeeds;
 
   @override
   void initState() {
@@ -22,16 +22,17 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
     _controller = AnimationController(vsync: this, duration: const Duration(seconds: 25))
       ..repeat();
 
-    // Graines stables pour les particules/nœuds (générées une seule fois)
+    // Graines stables pour les empreintes digitales flottantes (générées une seule fois)
     final rnd = math.Random(42);
-    _nodeSeeds = List.generate(18, (i) {
-      return _NodeSeed(
+    _fpSeeds = List.generate(9, (i) {
+      return _FingerprintSeed(
         baseX: rnd.nextDouble(),
         baseY: rnd.nextDouble(),
-        radius: 40.0 + rnd.nextDouble() * 90.0,
-        speed: 0.4 + rnd.nextDouble() * 0.8,
+        radius: 35.0 + rnd.nextDouble() * 80.0,
+        speed: 0.3 + rnd.nextDouble() * 0.6,
         phase: rnd.nextDouble() * 2 * math.pi,
-        dotRadius: 1.4 + rnd.nextDouble() * 1.6,
+        size: 16.0 + rnd.nextDouble() * 18.0,
+        pulsePhase: rnd.nextDouble() * 2 * math.pi,
       );
     });
   }
@@ -84,7 +85,7 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
             final x2 = size.width * 0.8 + math.sin(t * 1.3) * 150.0;
             final y2 = size.height * 0.3 + math.cos(t * 0.8) * 120.0;
 
-            // Orb 3 : Bleu clair (Bouge en arc en bas à gauche) — plus de indigo foncé
+            // Orb 3 : Bleu clair (Bouge en arc en bas à gauche)
             final x3 = size.width * 0.1 + math.cos(t * 1.5) * 150.0;
             final y3 = size.height * 0.8 + math.sin(t) * 100.0;
 
@@ -94,28 +95,48 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
 
             return Stack(
               children: [
-                // 1. Fond de base — presque blanc, très lumineux
+                // 1. Fond de base — blanc opaque
                 Positioned.fill(
-                  child: Container(color: const Color(0xFFFAFBFD)),
+                  child: Container(color: Colors.white),
                 ),
 
-                // 2. Les orbes lumineux, opacités réduites pour un rendu clair et aéré
-                _buildPerformanceOrb(x1, y1, 600, ThixPolicy.primary.withOpacity(0.16)),
-                _buildPerformanceOrb(x2, y2, 500, ThixPolicy.gold.withOpacity(0.12)),
-                _buildPerformanceOrb(x3, y3, 650, ThixPolicy.primary.withOpacity(0.14)),
-                _buildPerformanceOrb(x4, y4, 450, ThixPolicy.gold.withOpacity(0.08)),
+                // 2. Les orbes lumineux, très en retrait (opacités faibles) puisque
+                // le fond doit rester majoritairement blanc opaque
+                _buildPerformanceOrb(x1, y1, 600, ThixPolicy.primary.withOpacity(0.08)),
+                _buildPerformanceOrb(x2, y2, 500, ThixPolicy.gold.withOpacity(0.06)),
+                _buildPerformanceOrb(x3, y3, 650, ThixPolicy.primary.withOpacity(0.07)),
+                _buildPerformanceOrb(x4, y4, 450, ThixPolicy.gold.withOpacity(0.05)),
 
-                // 3. La Texture Nette par-dessus (Grille Tech + ondes) — tons clairs
+                // 3. GLASSMORPHISM EXCESSIF — voile de verre dépoli très marqué
+                // qui écrase les orbes en une brume blanche laiteuse
+                Positioned.fill(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
+                    child: Container(color: Colors.white.withOpacity(0.55)),
+                  ),
+                ),
+
+                // 4. Seconde couche de verre, plus fine, pour renforcer l'effet
+                // "glass on glass" sans revenir à des couleurs sombres
+                Positioned.fill(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                    child: Container(color: Colors.white.withOpacity(0.25)),
+                  ),
+                ),
+
+                // 5. La Texture Nette par-dessus (Grille Tech + ondes) — tons très clairs
                 Positioned.fill(
                   child: CustomPaint(
                     painter: _PremiumVisualTexturePainter(),
                   ),
                 ),
 
-                // 4. NŒUDS FLOTTANTS — écho discret du hub hexagonal en dessous
+                // 6. EMPREINTES DIGITALES FLOTTANTES — écho discret de l'identité THIX ID,
+                // dérivent lentement et pulsent doucement en opacité
                 Positioned.fill(
                   child: CustomPaint(
-                    painter: _FloatingNodesPainter(seeds: _nodeSeeds, t: t, size: size),
+                    painter: _FloatingFingerprintsPainter(seeds: _fpSeeds, t: t, size: size),
                   ),
                 ),
               ],
@@ -127,77 +148,84 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
   }
 }
 
-/// Graine stable décrivant la trajectoire d'un nœud flottant
-class _NodeSeed {
+/// Graine stable décrivant la trajectoire et le rythme d'une empreinte flottante
+class _FingerprintSeed {
   final double baseX; // position de base normalisée (0..1)
   final double baseY;
   final double radius; // rayon du mouvement en pixels
   final double speed; // multiplicateur de vitesse
-  final double phase; // déphasage initial
-  final double dotRadius; // taille du point
+  final double phase; // déphasage initial du mouvement
+  final double size; // taille de l'icône
+  final double pulsePhase; // déphasage du pulse d'opacité
 
-  const _NodeSeed({
+  const _FingerprintSeed({
     required this.baseX,
     required this.baseY,
     required this.radius,
     required this.speed,
     required this.phase,
-    required this.dotRadius,
+    required this.size,
+    required this.pulsePhase,
   });
 }
 
-/// Peintre : petits nœuds qui dérivent doucement et se relient par de fines lignes
-class _FloatingNodesPainter extends CustomPainter {
-  final List<_NodeSeed> seeds;
+/// Peintre : petites empreintes digitales qui dérivent doucement et pulsent en opacité,
+/// clin d'œil discret à l'identité THIX ID sans surcharger le fond.
+class _FloatingFingerprintsPainter extends CustomPainter {
+  final List<_FingerprintSeed> seeds;
   final double t;
   final Size size;
 
-  _FloatingNodesPainter({required this.seeds, required this.t, required this.size});
+  _FloatingFingerprintsPainter({required this.seeds, required this.t, required this.size});
 
   @override
   void paint(Canvas canvas, Size canvasSize) {
-    // Tons clairs (primary au lieu de primaryDeep) et opacités réduites
-    final dotPaint = Paint()..color = ThixPolicy.primary.withOpacity(0.14);
-    final linePaint = Paint()
-      ..color = ThixPolicy.primary.withOpacity(0.05)
-      ..strokeWidth = 1.0;
-
-    final positions = <Offset>[];
-
     for (final s in seeds) {
       final cx = s.baseX * canvasSize.width;
       final cy = s.baseY * canvasSize.height;
       final angle = t * s.speed + s.phase;
       final ox = cx + math.cos(angle) * s.radius;
       final oy = cy + math.sin(angle) * s.radius;
-      final pos = Offset(ox, oy);
-      positions.add(pos);
-      canvas.drawCircle(pos, s.dotRadius, dotPaint);
-    }
 
-    // Relie les nœuds proches entre eux (effet toile discrète)
-    const double linkDistance = 130.0;
-    for (int i = 0; i < positions.length; i++) {
-      for (int j = i + 1; j < positions.length; j++) {
-        final d = (positions[i] - positions[j]).distance;
-        if (d < linkDistance) {
-          canvas.drawLine(positions[i], positions[j], linePaint);
-        }
-      }
+      // Pulse doux d'opacité entre 0.05 et 0.14 pour rester très discret
+      final pulse = (math.sin(t * 0.8 + s.pulsePhase) + 1) / 2; // 0..1
+      final opacity = 0.05 + pulse * 0.09;
+
+      _paintFingerprintGlyph(canvas, Offset(ox, oy), s.size, ThixPolicy.primary.withOpacity(opacity));
+    }
+  }
+
+  /// Dessine un petit glyphe d'empreinte digitale stylisé (arcs concentriques
+  /// incomplets), en Canvas pur pour rester léger — pas besoin de police d'icônes.
+  void _paintFingerprintGlyph(Canvas canvas, Offset center, double size, Color color) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size * 0.09
+      ..strokeCap = StrokeCap.round;
+
+    final rings = 4;
+    for (var i = 0; i < rings; i++) {
+      final r = size * (0.3 + i * 0.18);
+      final rect = Rect.fromCircle(center: center, radius: r);
+      // Arc incomplet (comme une crête d'empreinte), angle et ouverture variés par anneau
+      final startAngle = -math.pi / 2 - (i * 0.35);
+      final sweepAngle = math.pi * 1.3 - (i * 0.12);
+      canvas.drawArc(rect, startAngle, sweepAngle, false, paint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant _FloatingNodesPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _FloatingFingerprintsPainter oldDelegate) => true;
 }
 
-/// Peintre personnalisé pour dessiner la grille tech fine — version claire
+/// Peintre personnalisé pour dessiner la grille tech fine — version très claire
 class _PremiumVisualTexturePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    // ─── GRILLE DE POINTS (Style Fintech), très légère ───
+    // ─── GRILLE DE POINTS (Style Fintech), quasi invisible ───
     final dotPaint = Paint()
-      ..color = ThixPolicy.primary.withOpacity(0.03)
+      ..color = ThixPolicy.primary.withOpacity(0.025)
       ..strokeWidth = 1.5
       ..strokeCap = StrokeCap.round;
 
@@ -213,7 +241,7 @@ class _PremiumVisualTexturePainter extends CustomPainter {
     // Dessine tous les points en une seule opération ultra-rapide
     canvas.drawPoints(PointMode.points, points, dotPaint);
 
-    // ─── ONDES ABSTRAITES très subtiles, tons clairs ───
+    // ─── ONDES ABSTRAITES très subtiles, tons très clairs ───
     final wavePaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
@@ -223,7 +251,7 @@ class _PremiumVisualTexturePainter extends CustomPainter {
       end: Alignment.centerRight,
       colors: [
         ThixPolicy.primary.withOpacity(0.0),
-        ThixPolicy.primary.withOpacity(0.08),
+        ThixPolicy.primary.withOpacity(0.06),
         ThixPolicy.primary.withOpacity(0.0),
       ],
     ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
