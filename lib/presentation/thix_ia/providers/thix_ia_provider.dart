@@ -1,7 +1,7 @@
 // lib/presentation/thix_ia/providers/thix_ia_provider.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import '../services/document_generation_service.dart';
 import '../datasources/thix_ia_remote_datasource.dart';
 import '../datasources/thix_ia_local_datasource.dart';
 import '../repositories/project_repository.dart';
@@ -82,7 +82,11 @@ final projectIntelligenceServiceProvider = Provider<ProjectIntelligenceService>(
 final aiServiceProvider = Provider<AiService>((ref) {
   return AiService(ref.watch(supabaseClientProvider));
 });
-
+final documentGenerationServiceProvider = Provider<DocumentGenerationService>((ref) {
+  return DocumentGenerationService(
+    aiService: ref.watch(aiServiceProvider),
+  );
+});
 // ────────────────────────────────────────────────────────────────────────────
 // ACTIVE PROJECT
 // ────────────────────────────────────────────────────────────────────────────
