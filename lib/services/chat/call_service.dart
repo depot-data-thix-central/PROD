@@ -20,12 +20,27 @@ class CallMediaService {
   bool get isJoined => _joined;
 
   Future<void> _ensurePermissions(CallType type) async {
-    final mic = await Permission.microphone.request();
-    if (!mic.isGranted) throw Exception('Micro refusé');
+    // Sur web, permission_handler est limité : on tente quand même
+    try {
+      final mic = await Permission.microphone.request();
+      if (!mic.isGranted && !kIsWeb) {
+        throw Exception('Micro refusé');
+      }
+    } catch (e) {
+      if (!kIsWeb) rethrow;
+      debugPrint('⚠️ permission micro (web): $e');
+    }
 
     if (type == CallType.video) {
-      final cam = await Permission.camera.request();
-      if (!cam.isGranted) throw Exception('Caméra refusée');
+      try {
+        final cam = await Permission.camera.request();
+        if (!cam.isGranted && !kIsWeb) {
+          throw Exception('Caméra refusée');
+        }
+      } catch (e) {
+        if (!kIsWeb) rethrow;
+        debugPrint('⚠️ permission caméra (web): $e');
+      }
     }
   }
 
@@ -37,14 +52,35 @@ class CallMediaService {
     required void Function(int remoteUid) onUserLeft,
     required void Function(String error) onError,
   }) async {
-    await _ensurePermissions(type);
+    try {
+      await _ensurePermissions(type);
+    } catch (e) {
+      debugPrint('❌ permissions: $e');
+      onError('permission: $e');
+      rethrow;
+    }
 
-    // Toujours repartir propre (évite handlers empilés + preview morte)
     if (_engine != null) {
       await disposeEngine();
     }
 
-    final cred = await CallTokenService().getToken(channel: channel, uid: uid);
+    late final CallTokenResult cred;
+    try {
+      cred = await CallTokenService().getToken(channel: channel, uid: uid);
+      debugPrint(
+        '✅ Token OK appId=\( {cred.appId} channel= \){cred.channel} '
+        'uid=\( {cred.uid} tokenLen= \){cred.token.length}',
+      );
+    } catch (e) {
+      debugPrint('❌ getToken failed: $e');
+      onError('token: $e');
+      rethrow;
+    }
+
+    if (cred.appId.isEmpty || cred.token.isEmpty) {
+      onError('token: appId ou token vide');
+      throw Exception('appId ou token vide');
+    }
 
     _engine = createAgoraRtcEngine();
     await _engine!.initialize(
@@ -55,7 +91,9 @@ class CallMediaService {
     );
 
     await _engine!.enableAudio();
-    await _engine!.enableVideo();
+    if (type == CallType.video) {
+      await _engine!.enableVideo();
+    }
     await _engine!.setEnableSpeakerphone(true);
 
     _engine!.registerEventHandler(
@@ -69,12 +107,12 @@ class CallMediaService {
           onUserJoined(remoteUid);
         },
         onUserOffline: (conn, remoteUid, reason) {
-          debugPrint('👤 Remote left $remoteUid');
+          debugPrint('👤 Remote left $remoteUid reason=$reason');
           onUserLeft(remoteUid);
         },
         onError: (err, msg) {
-          debugPrint('❌ Agora error $err $msg');
-          onError('$err: $msg');
+          debugPrint('❌ Agora error code=$err msg=$msg');
+          onError('agora: $err $msg');
         },
       ),
     );
@@ -88,19 +126,26 @@ class CallMediaService {
 
     _channel = channel;
 
-    await _engine!.joinChannel(
-      token: cred.token,
-      channelId: channel,
-      uid: uid,
-      options: ChannelMediaOptions(
-        clientRoleType: ClientRoleType.clientRoleBroadcaster,
-        channelProfile: ChannelProfileType.channelProfileCommunication,
-        publishMicrophoneTrack: true,
-        publishCameraTrack: type == CallType.video,
-        autoSubscribeAudio: true,
-        autoSubscribeVideo: true,
-      ),
-    );
+    try {
+      await _engine!.joinChannel(
+        token: cred.token,
+        channelId: channel,
+        uid: uid,
+        options: ChannelMediaOptions(
+          clientRoleType: ClientRoleType.clientRoleBroadcaster,
+          channelProfile: ChannelProfileType.channelProfileCommunication,
+          publishMicrophoneTrack: true,
+          publishCameraTrack: type == CallType.video,
+          autoSubscribeAudio: true,
+          autoSubscribeVideo: true,
+        ),
+      );
+      debugPrint('✅ joinChannel called channel=$channel uid=$uid');
+    } catch (e) {
+      debugPrint('❌ joinChannel failed: $e');
+      onError('joinChannel: $e');
+      rethrow;
+    }
   }
 
   Future<void> setMuted(bool muted) async {
