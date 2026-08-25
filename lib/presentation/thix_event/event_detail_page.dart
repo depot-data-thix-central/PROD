@@ -19,6 +19,7 @@ import 'waiting_queue_page.dart';
 class _ThixColors {
   static const bg = Color(0xFF050508); // Noir très profond
   static const surface = Color(0xFF111118);
+  static const surfaceAlt = Color(0xFF1A1A24); // ✅ CORRECTION : Ajout de surfaceAlt
   static const primary = Color(0xFFFF0A54); // Rose Néon
   static const primaryLight = Color(0xFFFF8FB0);
   static const gradientEnd = Color(0xFFFF8A00); // Orange Néon
