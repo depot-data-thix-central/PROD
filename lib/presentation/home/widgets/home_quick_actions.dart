@@ -49,8 +49,9 @@ class HomeQuickActions extends StatelessWidget {
         Expanded(
           child: Center(
             child: _QuickActionItem(
-              icon: Icons.smart_toy_rounded,
-              label: l10n.t('quickThixIA'),
+              // 🌟 Icône unique et distinctive pour l'IA (au lieu du robot générique)
+              icon: Icons.auto_awesome_rounded,
+              label: 'Sona',
               accent: ThixPolicy.primaryDeep,
               onTap: onScanTap,
             ),
@@ -113,7 +114,7 @@ class _QuickActionItem extends StatelessWidget {
     return _PressableScale(
       onTap: onTap,
       child: SizedBox(
-        width: 68, // Légèrement élargi pour accommoder le design Premium
+        width: 58, // Réduit (était 68)
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -127,8 +128,8 @@ class _QuickActionItem extends StatelessWidget {
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.04), // Ombre très douce
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
                       )
                     ],
                   ),
@@ -136,18 +137,18 @@ class _QuickActionItem extends StatelessWidget {
                     child: BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                       child: Container(
-                        width: 50, // Bouton légèrement plus grand pour le confort (Corporate)
-                        height: 50,
+                        width: 42, // Réduit (était 50)
+                        height: 42,
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.65), // Verre dépoli
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: Colors.white.withOpacity(0.9), // Bordure lumineuse
-                            width: 1.5,
+                            width: 1.2,
                           ),
                         ),
                         alignment: Alignment.center,
-                        child: Icon(icon, size: 22, color: accent), // Icône centrée avec couleur thématique
+                        child: Icon(icon, size: 18, color: accent), // Réduit (était 22)
                       ),
                     ),
                   ),
@@ -157,12 +158,12 @@ class _QuickActionItem extends StatelessWidget {
                     top: -2,
                     right: -2,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+                      constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
                       decoration: BoxDecoration(
                         color: ThixPolicy.danger,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white, width: 1.5),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white, width: 1.2),
                         boxShadow: [
                           BoxShadow(
                             color: ThixPolicy.danger.withOpacity(0.3),
@@ -176,7 +177,7 @@ class _QuickActionItem extends StatelessWidget {
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 9,
+                          fontSize: 8,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -184,13 +185,13 @@ class _QuickActionItem extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 5),
             Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 9.5, // Texte un poil plus lisible
+                fontSize: 8.5, // Réduit (était 9.5)
                 fontWeight: FontWeight.w700,
                 color: accent == ThixPolicy.danger
                     ? ThixPolicy.danger
