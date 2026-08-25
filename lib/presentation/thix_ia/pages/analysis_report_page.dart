@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-
+import '../providers/project_memory_provider.dart';
 import '../../../../core/theme/thix_design_policy.dart';
 import '../models/project_analysis.dart';
 
@@ -25,6 +25,31 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
       ProjectAnalysis analysis, String contentToSave) async {
     setState(() => isValidating = true);
     try {
+      final text = contentToSave.trim();
+      if (text.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Aucun contenu à envoyer en mémoire'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Tronquer si très long (limite pratique pour un fact)
+      final payload = text.length > 8000 ? '${text.substring(0, 8000)}…' : text;
+
+      await ref.read(projectMemoryProvider.notifier).addFact(
+            type: 'validated_analysis',
+            content:
+                '【${analysis.type.toUpperCase()}】 ${analysis.title ?? analysis.type}\n\n$payload',
+            sourceName: analysis.title ?? analysis.type,
+            confidence:
+                analysis.confidence > 0 ? analysis.confidence : 0.9,
+          );
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -52,7 +77,10 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Erreur envoi mémoire : $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
