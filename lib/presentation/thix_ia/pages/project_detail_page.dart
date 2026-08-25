@@ -598,28 +598,160 @@ class _AnalysesTab extends ConsumerWidget {
     );
   }
 }
-
-class _MemoryTab extends ConsumerWidget {
+class _MemoryTab extends ConsumerStatefulWidget {
   const _MemoryTab({required this.projectCode});
   final String projectCode;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // 1. On écoute le provider qui contient les données de la mémoire
-    final memoryAsync = ref.watch(projectMemoryProvider);
+  ConsumerState<_MemoryTab> createState() => _MemoryTabState();
+}
 
-    return memoryAsync.when(
+class _MemoryTabState extends ConsumerState<_MemoryTab> {
+  bool _isGenerating = false;
+
+  Future<void> _generateFinalDossier() async {
+    final project = ref.read(activeProjectProvider).value;
+    final memory = ref.read(projectMemoryProvider).value;
+    final analyses = ref.read(analysesProvider).value ?? [];
+
+    if (project == null) {
+      _showSnack('Aucun projet actif', isError: true);
+      return;
+    }
+    if (memory == null) {
+      _showSnack('Mémoire non chargée', isError: true);
+      return;
+    }
+
+    // Uniquement les analyses terminées
+    final validated = analyses.where((a) => a.isCompleted).toList();
+
+    if (validated.isEmpty && memory.facts.isEmpty) {
+      _showSnack(
+        'Lance d\'abord au moins une analyse (marché, réglementation…)',
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() => _isGenerating = true);
+
+    try {
+      final service = ref.read(documentGenerationServiceProvider);
+
+      final pdfBytes = await service.generate(
+        type: DocumentType.businessPlan,
+        project: project,
+        memory: memory,
+        validatedAnalyses: validated,
+      );
+
+      if (!mounted) return;
+
+      // Afficher / télécharger le PDF
+      await _showPdfPreview(pdfBytes, project.projectCode);
+
+      _showSnack('Business Plan généré avec succès');
+    } catch (e) {
+      _showSnack('Erreur génération : $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _isGenerating = false);
+    }
+  }
+
+  Future<void> _showPdfPreview(Uint8List bytes, String projectCode) async {
+    // Option simple : ouvrir dans une page de prévisualisation
+    // ou utiliser printing / share_plus selon tes deps
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: ThixPolicy.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Icon(Icons.check_circle_rounded, color: ThixPolicy.success, size: 48),
+              const SizedBox(height: 12),
+              Text('Dossier final prêt', style: ThixPolicy.h3Style),
+              const SizedBox(height: 8),
+              Text(
+                'Business Plan généré à partir de ${ref.read(analysesProvider).value?.where((a) => a.isCompleted).length ?? 0} analyses + mémoire projet.',
+                textAlign: TextAlign.center,
+                style: ThixPolicy.bodySmallStyle,
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () {
+                    // TODO: share / download avec share_plus ou printing
+                    Navigator.pop(ctx);
+                    _showSnack('Fonction téléchargement à brancher (share_plus / printing)');
+                  },
+                  icon: const Icon(Icons.download_rounded, size: 20),
+                  label: const Text('Télécharger le PDF'),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Fermer'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showSnack(String msg, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: isError ? Colors.red : null,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(projectMemoryProvider);
+    final analyses = ref.watch(analysesProvider).value ?? [];
+    final completedCount = analyses.where((a) => a.isCompleted).length;
+
+    return async.when(
       loading: () => const Center(
-        child: CircularProgressIndicator(color: ThixPolicy.primary),
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 2.5),
+        ),
       ),
       error: (e, _) => ListView(
         padding: const EdgeInsets.all(24),
         children: [
           const Icon(Icons.error_outline_rounded, color: Colors.red, size: 36),
           const SizedBox(height: 10),
-          Text('Erreur de la mémoire', style: ThixPolicy.h3Style, textAlign: TextAlign.center),
+          Text('Erreur mémoire', style: ThixPolicy.h3Style),
           const SizedBox(height: 6),
-          Text('$e', style: ThixPolicy.bodySmallStyle, textAlign: TextAlign.center),
+          Text('$e', style: ThixPolicy.bodySmallStyle),
           const SizedBox(height: 14),
           FilledButton(
             onPressed: () => ref.read(projectMemoryProvider.notifier).refresh(),
@@ -628,37 +760,108 @@ class _MemoryTab extends ConsumerWidget {
         ],
       ),
       data: (memory) {
-        // 2. Si l'objet global est nul
-        if (memory == null) {
-          return const Center(
-            child: Text('La mémoire de ce projet est vide.'),
-          );
-        }
+        final facts = memory?.facts ?? [];
 
-        // 3. LA CORRECTION EST ICI 👇: on utilise memory.facts
-        final factsList = memory.facts; 
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
+          children: [
+            // ========== BOUTON ULTIME ==========
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    ThixPolicy.primary.withOpacity(0.08),
+                    ThixPolicy.primary.withOpacity(0.03),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: ThixPolicy.primary.withOpacity(0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: ThixPolicy.primary.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.auto_awesome, color: ThixPolicy.primary, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Dossier final investisseur',
+                              style: ThixPolicy.bodyStyle.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '$completedCount analyses • ${facts.length} faits validés',
+                              style: ThixPolicy.captionStyle,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: FilledButton.icon(
+                      onPressed: _isGenerating ? null : _generateFinalDossier,
+                      icon: _isGenerating
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.rocket_launch_rounded, size: 20),
+                      label: Text(
+                        _isGenerating
+                            ? 'Génération en cours…'
+                            : 'Générer le Business Plan final',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Collecte automatique de toutes les analyses + mémoire pour produire le vrai dossier final.',
+                    style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted),
+                  ),
+                ],
+              ),
+            ),
 
-        // 4. Si la liste est vide
-        if (factsList.isEmpty) {
-          return const Center(
-            child: Text('Aucun fait mémorisé pour le moment.'),
-          );
-        }
+            const SizedBox(height: 20),
 
-        // 5. On affiche la liste avec ton widget FactCard
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-          itemCount: factsList.length,
-          itemBuilder: (context, index) {
-            final factItem = factsList[index];
-            return FactCard(fact: factItem);
-          },
+            // ========== FAITS ==========
+            if (facts.isEmpty)
+              const EmptyFacts()
+            else ...[
+              Text(
+                'Faits en mémoire (${facts.length})',
+                style: ThixPolicy.labelStyle.copyWith(fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              ...facts.map((f) => FactCard(fact: f)),
+            ],
+          ],
         );
       },
     );
   }
 }
-
 class _DocsTab extends ConsumerWidget {
   const _DocsTab({required this.projectCode});
   final String projectCode;
