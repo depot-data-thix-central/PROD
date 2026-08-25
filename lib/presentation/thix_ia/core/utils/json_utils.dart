@@ -9,11 +9,17 @@ class JsonUtils {
   JsonUtils._();
 
   static Map<String, dynamic> asMap(dynamic json) {
-    if (json is Map<String, dynamic>) return json;
+    if (json == null) return {};
+    // Accepte Map<String,dynamic> ET Map<dynamic,dynamic> (Supabase)
+    if (json is Map) {
+      return Map<String, dynamic>.from(json);
+    }
     if (json is String) {
+      final s = json.trim();
+      if (s.isEmpty) return {};
       try {
-        final decoded = jsonDecode(json);
-        if (decoded is Map<String, dynamic>) return decoded;
+        final decoded = jsonDecode(s);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
       } catch (_) {}
     }
     return {};
