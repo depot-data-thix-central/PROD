@@ -1,6 +1,6 @@
 // lib/presentation/home/home_page.dart
 import 'dart:io';
-import 'dart:ui';
+import 'dart:ui'; // ✅ Nécessaire pour ImageFilter (Glassmorphism)
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -18,13 +18,16 @@ import 'package:thix_id/services/notification_counters_service.dart';
 import 'package:thix_id/services/thix_id_service.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 
+// THIX DESIGN SYSTEM v1
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
+// WIDGETS
+import 'widgets/home_background.dart';
 import 'widgets/home_header_delegate.dart';
 import 'widgets/home_search.dart';
 import 'widgets/home_headlines_carousel.dart';
 import 'widgets/home_quick_actions.dart';
-import 'widgets/home_services_constellation.dart'; // Garde le même nom d'import, mais on va changer son contenu
+import 'widgets/home_services_constellation.dart';
 import 'widgets/home_premium_card.dart';
 import 'widgets/home_personalised.dart';
 import 'widgets/account_request_sheet.dart';
@@ -45,6 +48,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   static final RegExp _uidLikeRegex = RegExp(r'^[A-Za-z0-9-]{20,}$');
   bool _searching = false;
 
+  // ✅ Variables pour la gestion Admin
   bool _isAdmin = false;
   bool _uploadingBanner = false;
 
@@ -62,76 +66,269 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // LOGIQUE ADMIN (Inchangée)
+  // LOGIQUE ADMIN (Bannières)
   // ══════════════════════════════════════════════════════════════════════════
+
   Future<void> _checkAdminRole() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
     try {
-      final data = await Supabase.instance.client.from('profiles').select('role, account_type').eq('id', user.id).maybeSingle();
+      final data = await Supabase.instance.client
+          .from('profiles')
+          .select('role, account_type')
+          .eq('id', user.id)
+          .maybeSingle();
+
       if (data != null && mounted) {
         final role = (data['role'] ?? data['account_type'] ?? '').toString().toLowerCase();
-        if (role == 'admin' || role == 'entreprise' || role == 'support') setState(() => _isAdmin = true);
+        if (role == 'admin' || role == 'entreprise' || role == 'support') {
+          setState(() => _isAdmin = true);
+        }
       }
-    } catch (_) {}
+    } catch (_) {
+      // Ignorer silencieusement si erreur
+    }
   }
 
   Future<void> _showAddBannerDialog() async {
-    // ... [Ton code de modale inchangé] ...
+    final titleCtrl = TextEditingController();
+    final typeCtrl = TextEditingController(text: 'À la une');
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: AlertDialog(
+          backgroundColor: Colors.white.withOpacity(0.95),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: Colors.white.withOpacity(0.8)),
+          ),
+          title: const Text('Nouvelle annonce', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: ThixPolicy.textMain)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleCtrl,
+                decoration: InputDecoration(
+                  labelText: 'Titre de l\'annonce', 
+                  filled: true,
+                  fillColor: Colors.white.withOpacity(0.5),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                )
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: typeCtrl,
+                decoration: InputDecoration(
+                  labelText: 'Tag (ex: Opportunité, Info)', 
+                  filled: true,
+                  fillColor: Colors.white.withOpacity(0.5),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                )
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Annuler', style: TextStyle(color: ThixPolicy.textSecondary))
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              onPressed: () {
+                Navigator.pop(ctx);
+                _pickAndUploadBanner(titleCtrl.text.trim(), typeCtrl.text.trim());
+              },
+              child: const Text('Choisir une photo', style: TextStyle(color: Colors.white)),
+            )
+          ],
+        ),
+      )
+    );
   }
 
   Future<void> _pickAndUploadBanner(String title, String type) async {
-    // ... [Ton code d'upload inchangé] ...
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.image);
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.first;
+      final bytes = file.bytes ?? (file.path != null ? await File(file.path!).readAsBytes() : null);
+      if (bytes == null) return;
+
+      setState(() => _uploadingBanner = true);
+
+      final ext = file.extension ?? 'jpg';
+      final fileName = 'banner_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final storagePath = 'annonces/$fileName';
+
+      // 1. Upload sur le Storage
+      await Supabase.instance.client.storage
+          .from('banners')
+          .uploadBinary(storagePath, bytes);
+
+      final publicUrl = Supabase.instance.client.storage
+          .from('banners')
+          .getPublicUrl(storagePath);
+
+      // 2. Insertion dans la table 'banners'
+      await Supabase.instance.client.from('banners').insert({
+        'image_url': publicUrl,
+        'title': title.isEmpty ? 'Nouvelle annonce' : title,
+        'tag': type.isEmpty ? 'À la une' : type,
+        'is_active': true,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Bannière ajoutée avec succès ! Rafraîchissement requis.'), backgroundColor: ThixPolicy.success),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur lors de l\'upload : $e'), backgroundColor: ThixPolicy.danger),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingBanner = false);
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // LOGIQUE MÉTIER & RECHERCHE (Inchangée)
+  // LOGIQUE MÉTIER & RECHERCHE
   // ══════════════════════════════════════════════════════════════════════════
+
   Future<void> _handleHomeSearchVerify() async {
-    // ... [Ton code de recherche inchangé] ...
+    final l10n = AppLocalizations.of(context);
+    final raw = _searchController.text.trim();
+
+    if (raw.isEmpty) {
+      await FullScreenMessage.showError(context, title: l10n.t('home_required_id_title'), message: l10n.t('home_required_id_msg'));
+      return;
+    }
+
+    final normalized = ThixIdService.normalize(raw);
+    final isThix = normalized.startsWith('THIX-');
+    final isUid = _uidLikeRegex.hasMatch(raw);
+
+    if (!isThix && !isUid) {
+      await FullScreenMessage.showError(context, title: l10n.t('home_invalid_id_title'), message: l10n.t('home_invalid_id_msg'));
+      return;
+    }
+
+    setState(() => _searching = true);
+
+    try {
+      ThixProfile? profile;
+      if (isThix) {
+        profile = await _profileService.fetchPublicProfileByThixId(normalized);
+      } else {
+        profile = await _profileService.fetchPublicProfileByUserId(raw);
+      }
+
+      if (!mounted) return;
+      if (profile == null) {
+        await FullScreenMessage.showError(context, title: l10n.t('home_profile_not_found_title'), message: l10n.t('home_profile_not_found_msg'));
+        return;
+      }
+
+      final thix = profile.thixId.trim().toUpperCase();
+      if (thix.isNotEmpty) {
+        context.push('${AppRoutes.publicProfile}?thixId=$thix');
+      } else {
+        await ThixIdentitySheets.showVerifySheet(context, initialUidOrThixId: profile.userId);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      await FullScreenMessage.showError(context, title: l10n.t('home_verify_error_title'), message: l10n.t('home_verify_error_msg'));
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
   }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // NAVIGATION & ACTIONS
+  // ══════════════════════════════════════════════════════════════════════════
 
   void _onProfileTap() {
     HapticFeedback.mediumImpact();
     final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) { context.push(AppRoutes.login); } else { context.go(AppRoutes.userDashboard); }
+    if (user == null) {
+      context.push(AppRoutes.login);
+    } else {
+      context.go(AppRoutes.userDashboard);
+    }
   }
 
   Future<void> _openThixAi() async {
     final auth = context.read<AuthController>();
-    if (auth.isAuthenticated) { context.push('/thix-ia'); return; }
+    if (auth.isAuthenticated) {
+      context.push('/thix-ia');
+      return;
+    }
     context.push(AppRoutes.login);
   }
 
   Future<void> _openThixChat() async {
     final auth = context.read<AuthController>();
-    if (auth.isAuthenticated) { context.go(AppRoutes.chat); } else { context.push(AppRoutes.login); }
+    if (auth.isAuthenticated) {
+      context.go(AppRoutes.chat);
+    } else {
+      context.push(AppRoutes.login);
+    }
   }
 
   Future<void> _openEmergency() async {
     final auth = context.read<AuthController>();
-    if (auth.isAuthenticated) { context.push('/home-swipe'); return; }
+    if (auth.isAuthenticated) {
+      context.push('/home-swipe'); 
+      return;
+    }
     if (!mounted) return;
     context.push(AppRoutes.login);
   }
 
   void _openDocumentVault() {
     final auth = context.read<AuthController>();
-    if (auth.isAuthenticated) { context.push(AppRoutes.vault); } else { context.push(AppRoutes.login); }
+    if (auth.isAuthenticated) {
+      context.push(AppRoutes.vault);
+    } else {
+      context.push(AppRoutes.login);
+    }
   }
 
   void _openScanQr() => ThixIdentitySheets.showQrScanSheet(context);
 
   void _openMiniApps() {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context).t('home_mini_apps_coming_soon'))));
+    final l10n = AppLocalizations.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(l10n.t('home_mini_apps_coming_soon')))
+    );
   }
 
   Future<void> _handleRequestAccount() async {
-    // ... [Ton code de requête de compte inchangé] ...
+    final auth = context.read<AuthController>();
+    final res = await showModalBottomSheet<AccountRequestChoice>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => const AccountRequestSheet()
+    );
+
+    switch (res) {
+      case AccountRequestChoice.personal:
+        if (auth.isAuthenticated) { await auth.signOut(); }
+        if (mounted) { context.push(AppRoutes.personalReg); }
+        return;
+      case null:
+        return;
+    }
   }
 
   void _handleServiceTap(String serviceKey) {
-    // ... [Ton code de navigation inchangé] ...
     final uid = context.read<AuthController>().currentUser?.id;
     if (uid != null) {
       final counters = NotificationCountersService();
@@ -150,7 +347,9 @@ class _HomePagePremiumState extends State<HomePagePremium> {
         case 'monPays': section = ThixSection.monPays; break;
         case 'reservation': section = ThixSection.reservation; break;
       }
-      if (section != null) counters.markSectionSeen(uid: uid, section: section);
+      if (section != null) {
+        counters.markSectionSeen(uid: uid, section: section);
+      }
     }
 
     switch (serviceKey) {
@@ -172,8 +371,20 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // UI ORCHESTRATION (DESIGN PREMIUM CLAIR)
+  // UI ORCHESTRATION
   // ══════════════════════════════════════════════════════════════════════════
+
+  // Assistant pour les orbes de fond (Premium Corporate)
+  Widget _buildBlurOrb(Color color, double size) {
+    return Container(
+      width: size, height: size,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60), 
+        child: Container(color: Colors.transparent)
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -192,24 +403,14 @@ class _HomePagePremiumState extends State<HomePagePremium> {
         : _counters.streamCounts(auth.currentUser!.id);
 
     return Scaffold(
-      // 🌟 FOND CLAIR PREMIUM (Slate 50) - Fini le jaune/bleu moche
-      backgroundColor: const Color(0xFFF8FAFC), 
+      backgroundColor: const Color(0xFFF7F8FA), // Fond ultra clean, légèrement gris bleuté (Corporate)
       body: Stack(
         children: [
-          // Très légère lueur bleue en haut pour ancrer le header, sans salir le reste
-          Positioned(
-            top: -150, left: -50, right: -50,
-            child: Container(
-              height: 300,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [ThixPolicy.primary.withOpacity(0.08), Colors.transparent],
-                  stops: const [0.2, 1.0],
-                )
-              ),
-            ),
-          ),
+          // Orbes décoratifs en arrière-plan pour l'effet Premium discret
+          Positioned(top: -100, right: -50, child: _buildBlurOrb(ThixPolicy.primary.withOpacity(0.04), 300)),
+          Positioned(bottom: 200, left: -100, child: _buildBlurOrb(ThixPolicy.primaryDeep.withOpacity(0.03), 350)),
+
+          const HomeSoftBackground(), // Conservé pour d'éventuelles vagues de fond très douces
 
           CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
@@ -227,11 +428,11 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                 ),
               ),
 
-              const SliverToBoxAdapter(child: SizedBox(height: 16)),
+              const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
 
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
                   child: HomeSearch(
                     controller: _searchController,
                     isSearching: _searching,
@@ -240,12 +441,11 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                 ),
               ),
 
-              const SliverToBoxAdapter(child: SizedBox(height: 24)),
+              const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
 
-              // CARROUSEL BANNIÈRES
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
                   child: Stack(
                     clipBehavior: Clip.none,
                     children: [
@@ -255,17 +455,36 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                         onThixInfoTap: () => context.push(AppRoutes.thixInfo),
                         onOpportunityTap: () => context.push(AppRoutes.opportunities),
                       ),
+
                       if (_isAdmin)
                         Positioned(
-                          top: 10, right: 10,
+                          top: 10,
+                          right: 10,
                           child: GestureDetector(
                             onTap: _uploadingBanner ? null : _showAddBannerDialog,
-                            child: Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8, offset: const Offset(0, 4))]),
-                              child: _uploadingBanner
-                                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))
-                                  : const Icon(Icons.add_a_photo_rounded, size: 20, color: ThixPolicy.primaryDeep),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(20),
+                              child: BackdropFilter(
+                                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                                child: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.7),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white.withOpacity(0.9), width: 1.5),
+                                    boxShadow: [
+                                      BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 4)),
+                                    ],
+                                  ),
+                                  child: _uploadingBanner
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary)
+                                        )
+                                      : const Icon(Icons.add_a_photo_rounded, size: 20, color: ThixPolicy.primaryDeep),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -274,12 +493,11 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                 ),
               ),
 
-              const SliverToBoxAdapter(child: SizedBox(height: 24)),
+              const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
 
-              // ACTIONS RAPIDES (Refaites au design clair)
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
                   child: HomeQuickActions(
                     onScanTap: _openThixAi,
                     onDocumentTap: _openDocumentVault,
@@ -290,27 +508,18 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                 ),
               ),
 
-              const SliverToBoxAdapter(child: SizedBox(height: 32)),
+              const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)), // Un peu plus d'espace
 
-              // TITRE DE SECTION POUR L'ÉCOSYSTÈME
-              const SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 24),
-                  child: Text('Écosystème THIX', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A), letterSpacing: -0.5)),
-                ),
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: 16)),
-
-              // 🌟 LA NOUVELLE GRILLE (Fini le cercle brouillon)
               SliverToBoxAdapter(
                 child: StreamBuilder<SectionBadgeCounts>(
                   stream: badgeCountsStream,
                   builder: (context, snap) {
                     final counts = snap.data ?? SectionBadgeCounts.zero;
-                    return HomeServicesConstellation( // Le nom reste le même pour ne pas casser tes imports
+                    return HomeServicesConstellation(
                       counts: counts,
                       avatarUrl: photoUrl,
                       onServiceTap: _handleServiceTap,
+                      // ✅ Le tap sur le centre ouvre directement le profil (on passe la même fonction)
                       onHomeTap: _onProfileTap, 
                       onMiniAppsTap: _openMiniApps,
                       onDocumentsTap: _openDocumentVault,
@@ -321,16 +530,22 @@ class _HomePagePremiumState extends State<HomePagePremium> {
                 ),
               ),
 
-              const SliverToBoxAdapter(child: SizedBox(height: 24)),
+              const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
 
               const SliverToBoxAdapter(
-                child: Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: HomePremiumCard()),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
+                  child: HomePremiumCard(),
+                ),
               ),
 
-              const SliverToBoxAdapter(child: SizedBox(height: 24)),
+              const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
 
               const SliverToBoxAdapter(
-                child: Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: HomePersonalised()),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
+                  child: HomePersonalised(),
+                ),
               ),
 
               const SliverToBoxAdapter(child: SizedBox(height: 100)),
@@ -341,8 +556,13 @@ class _HomePagePremiumState extends State<HomePagePremium> {
             Positioned.fill(
               child: ClipRRect(
                 child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                  child: Container(color: Colors.white.withOpacity(0.7), child: const Center(child: CircularProgressIndicator(color: ThixPolicy.primary))),
+                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: Container(
+                    color: Colors.white.withOpacity(0.6), // Overlay premium
+                    child: const Center(
+                      child: CircularProgressIndicator(color: ThixPolicy.primary),
+                    ),
+                  ),
                 ),
               ),
             ),
