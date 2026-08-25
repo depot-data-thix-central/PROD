@@ -30,7 +30,6 @@ class _MediaColors {
   static const whiteMuted = Color(0xFF94A3B8); // Gris perle
   static const card = Color(0xFF1E293B);
   static const cardLight = Color(0xFF334155);
-  static const border = Color(0x1AFFFFFF);
   static const danger = Color(0xFFEF4444);
   static const success = Color(0xFF10B981);
 
@@ -355,7 +354,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     final showSearchOverlay = _searchFocusNode.hasFocus && hasQuery;
 
     return Scaffold(
-      backgroundColor: _MediaColors.navyDeep, // 🔥 FOND PROFOND
+      backgroundColor: _MediaColors.navyDeep, 
       body: asyncMedia.when(
         loading: () => const Center(child: CircularProgressIndicator(color: _MediaColors.whiteAccent)),
         error: (e, st) => Center(child: Text('ERREUR : $e', style: const TextStyle(color: _MediaColors.danger, fontWeight: FontWeight.bold))),
@@ -453,7 +452,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     return SliverAppBar(
       pinned: true,
       floating: true,
-      backgroundColor: Colors.transparent, // 🌟 TRANSPARENT POUR GLASSMORPHISM
+      backgroundColor: Colors.transparent,
       elevation: 0,
       toolbarHeight: 70,
       flexibleSpace: ClipRRect(
@@ -461,8 +460,8 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
             decoration: BoxDecoration(
-              color: _MediaColors.navyDeep.withValues(alpha: 0.85), // 🌟 FOND PROFOND TRANSLUCIDE
-              border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1))
+              color: _MediaColors.navyDeep.withOpacity(0.85),
+              border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.1), width: 1))
             ),
           ),
         ),
@@ -507,9 +506,9 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                 height: 42,
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1), // 🌟 RECHERCHE TRANSLUCIDE
+                  color: Colors.white.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                  border: Border.all(color: Colors.white.withOpacity(0.2)),
                 ),
                 child: Row(
                   children: [
@@ -611,7 +610,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                          colors: [Colors.transparent, _MediaColors.navyDeep.withValues(alpha: 0.95)], // Ombre plus profonde
+                          colors: [Colors.transparent, _MediaColors.navyDeep.withOpacity(0.95)],
                           stops: const [0.35, 1],
                         ),
                       ),
@@ -626,7 +625,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                               filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.8), border: Border.all(color: Colors.white)),
+                                decoration: BoxDecoration(color: Colors.white.withOpacity(0.8), border: Border.all(color: Colors.white)),
                                 child: const Text('À LA UNE', style: TextStyle(color: _MediaColors.navyDeep, fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
                               ),
                             ),
@@ -635,7 +634,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                             const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(20)),
+                              decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(20)),
                               child: const Row(mainAxisSize: MainAxisSize.min, children: [
                                 Icon(Icons.lock_rounded, size: 11, color: ThixPolicy.gold),
                                 SizedBox(width: 3),
@@ -697,9 +696,9 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                   duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
                   decoration: BoxDecoration(
-                    color: sel ? Colors.white : Colors.white.withValues(alpha: 0.1), 
+                    color: sel ? Colors.white : Colors.white.withOpacity(0.1), 
                     borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: sel ? Colors.white : Colors.white.withValues(alpha: 0.2)),
+                    border: Border.all(color: sel ? Colors.white : Colors.white.withOpacity(0.2)),
                   ),
                   child: Text(
                     cat,
@@ -768,9 +767,9 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
           setState(() {}); 
         },
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15), // Effet verre sur tout l'écran
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
           child: Container(
-            color: _MediaColors.navyDeep.withValues(alpha: 0.85),
+            color: _MediaColors.navyDeep.withOpacity(0.85),
             padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top + 130, left: 16, right: 16),
             child: _searching
                 ? const Center(child: CircularProgressIndicator(color: Colors.white))
@@ -794,7 +793,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                                 fit: StackFit.expand,
                                 children: [
                                   _buildImage(item.coverUrl),
-                                  Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black.withValues(alpha: 0.9), Colors.transparent]))),
+                                  Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black.withOpacity(0.9), Colors.transparent]))),
                                   Positioned(left: 6, right: 6, bottom: 6, child: Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700))),
                                 ],
                               ),
@@ -809,92 +808,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   }
 }
 
-isScrollControlled: true,
-      builder: (_) => _CommentsSheet(mediaId: item.id, mediaTitle: item.title),
-    ).then((_) { 
-      ref.invalidate(commentCountProvider(item.id)); 
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.catalog.isEmpty) {
-      return const Center(child: Text('Le fil est vide pour le moment.', style: TextStyle(color: Colors.white54)));
-    }
-
-    return PageView.builder(
-      scrollDirection: Axis.vertical,
-      onPageChanged: (index) => setState(() => _currentIndex = index),
-      itemCount: widget.catalog.length,
-      itemBuilder: (context, index) {
-        final item = widget.catalog[index];
-        final isCurrent = index == _currentIndex;
-        
-        final isLiked = _localLikes[item.id] ?? false;
-        final likeCount = _localLikeCounts[item.id] ?? item.likeCount;
-        final live = ref.watch(mediaCountsStreamProvider(item.id)).valueOrNull;
-        final commentCount = live?.commentCount ?? item.commentCount;
-        final viewCount = live?.viewCount ?? item.viewCount;
-
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            widget.buildImage(item.coverUrl, fit: BoxFit.cover),
-            BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-              child: Container(color: Colors.black.withValues(alpha: 0.6)),
-            ),
-            Center(
-              child: FeedVideoPlayer(
-                videoUrl: item.videoUrl,
-                coverUrl: item.coverUrl,
-                isPlaying: isCurrent,
-                onPlayStateChanged: (_) {},
-              ),
-            ),
-            // Info block + Actions (Glassmorphism)
-            Positioned(
-              left: 16, right: 16, bottom: 24,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        GestureDetector(
-                          onTap: () => widget.onOpenDetail(item),
-                          behavior: HitTestBehavior.opaque,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(color: _MediaColors.primary, borderRadius: BorderRadius.circular(8)),
-                                    child: Text(item.type.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(child: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900))),
-                                ],
-                              ),
-                              if (item.subtitle != null && item.subtitle!.isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Text(item.subtitle!, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white70, fontSize: 13)),
-                              ],
-                            ],
-                          ),
-                        ),
-
-
-                       class _FilFeedView extends ConsumerStatefulWidget {
+class _FilFeedView extends ConsumerStatefulWidget {
   final List<MediaContent> catalog;
   final Function(MediaContent) onOpenDetail;
   final Widget Function(String, {BoxFit fit}) buildImage;
@@ -916,23 +830,20 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
   final Map<String, bool> _localLikes = {};
   final Map<String, int> _localLikeCounts = {};
   
-  // 🌟 Liste locale qui sera mélangée à chaque ouverture de l'onglet "Fil"
+  // 🌟 Liste mélangée propre à la vue "Fil"
   late List<MediaContent> _shuffledCatalog;
 
   @override
   void initState() {
     super.initState();
-    // 🌟 On crée une copie de la liste et on la mélange dès l'ouverture
     _shuffledCatalog = List.from(widget.catalog)..shuffle();
     _initLikes();
   }
 
-  // 🌟 Gère le cas où de nouvelles vidéos sont chargées par la pagination pendant qu'on regarde le fil
   @override
   void didUpdateWidget(covariant _FilFeedView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.catalog.length != oldWidget.catalog.length) {
-      // On isole les nouvelles vidéos, on les mélange, et on les ajoute à la fin pour ne pas perturber la lecture en cours
       final newItems = widget.catalog.where((e) => !_shuffledCatalog.any((s) => s.id == e.id)).toList()..shuffle();
       if (newItems.isNotEmpty) {
         _shuffledCatalog.addAll(newItems);
@@ -1018,7 +929,6 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
       onPageChanged: (index) => setState(() => _currentIndex = index),
       itemCount: _shuffledCatalog.length,
       itemBuilder: (context, index) {
-        // 🌟 On utilise _shuffledCatalog au lieu de widget.catalog
         final item = _shuffledCatalog[index];
         final isCurrent = index == _currentIndex;
         
@@ -1034,7 +944,7 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
             widget.buildImage(item.coverUrl, fit: BoxFit.cover),
             BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-              child: Container(color: Colors.black.withValues(alpha: 0.6)),
+              child: Container(color: Colors.black.withOpacity(0.6)),
             ),
             Center(
               child: FeedVideoPlayer(
@@ -1044,7 +954,6 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
                 onPlayStateChanged: (_) {},
               ),
             ),
-            // Info block + Actions (Glassmorphism)
             Positioned(
               left: 16, right: 16, bottom: 24,
               child: ClipRRect(
@@ -1054,8 +963,8 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
                   child: Container(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                      color: Colors.white.withOpacity(0.15),
+                      border: Border.all(color: Colors.white.withOpacity(0.2)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1085,7 +994,7 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        Container(height: 1, color: Colors.white.withValues(alpha: 0.2)),
+                        Container(height: 1, color: Colors.white.withOpacity(0.2)),
                         const SizedBox(height: 8),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -1148,7 +1057,7 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
   }
 }
 
-  class _MediaPosterCard extends StatelessWidget {
+class _MediaPosterCard extends StatelessWidget {
   final MediaContent item;
   final String Function(int) formatNumber;
   final Widget Function(String, {BoxFit fit}) buildImage;
@@ -1183,7 +1092,7 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Colors.black.withValues(alpha: 0.85)],
+                        colors: [Colors.transparent, Colors.black.withOpacity(0.85)],
                         stops: const [0.4, 1],
                       ),
                     ),
@@ -1193,7 +1102,7 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
                       top: 8, right: 8,
                       child: Container(
                         padding: const EdgeInsets.all(5),
-                        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), shape: BoxShape.circle),
+                        decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), shape: BoxShape.circle),
                         child: const Icon(Icons.lock_rounded, size: 12, color: ThixPolicy.gold),
                       ),
                     ),
@@ -1202,7 +1111,7 @@ class _FilFeedViewState extends ConsumerState<_FilFeedView> {
                       top: 8, left: 8,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(color: _MediaColors.primary.withValues(alpha: 0.8), borderRadius: BorderRadius.circular(6)),
+                        decoration: BoxDecoration(color: _MediaColors.primary.withOpacity(0.8), borderRadius: BorderRadius.circular(6)),
                         child: Text('${item.episodesUrls.length + 1} parties', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
                       ),
                     ),
@@ -1326,7 +1235,7 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
         flexibleSpace: ClipRRect(
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(color: _MediaColors.navyDeep.withValues(alpha: 0.6)),
+            child: Container(color: _MediaColors.navyDeep.withOpacity(0.6)),
           ),
         ),
         title: Text(item.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800)),
@@ -1374,7 +1283,7 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
                             duration: const Duration(milliseconds: 160),
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                             decoration: BoxDecoration(
-                              color: active ? Colors.white : Colors.white.withValues(alpha: 0.1),
+                              color: active ? Colors.white : Colors.white.withOpacity(0.1),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(color: active ? Colors.white : Colors.transparent),
                             ),
@@ -1403,7 +1312,7 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
                       width: 46, height: 46,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.6),
+                        border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.6),
                         image: creatorProfile != null && creatorProfile['avatar_url'] != null
                             ? DecorationImage(image: CachedNetworkImageProvider(creatorProfile['avatar_url']), fit: BoxFit.cover)
                             : null,
@@ -1444,9 +1353,9 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.1),
+                      color: Colors.white.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                      border: Border.all(color: Colors.white.withOpacity(0.15)),
                     ),
                     child: Row(
                       children: [
@@ -1546,7 +1455,7 @@ class _MediaDetailPageState extends ConsumerState<_MediaDetailPage> {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30), // Flou intense
         child: Container(
-          color: _MediaColors.navyDeep.withValues(alpha: 0.75),
+          color: _MediaColors.navyDeep.withOpacity(0.75),
           alignment: Alignment.center,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -1693,7 +1602,7 @@ class _FeedVideoPlayerState extends State<FeedVideoPlayer> {
                     return Stack(
                       alignment: Alignment.bottomLeft,
                       children: [
-                        Container(height: _isDragging ? 6 : 2, width: double.infinity, color: Colors.white.withValues(alpha: 0.3)),
+                        Container(height: _isDragging ? 6 : 2, width: double.infinity, color: Colors.white.withOpacity(0.3)),
                         Container(height: _isDragging ? 6 : 2, width: MediaQuery.of(context).size.width * pct, color: Colors.white),
                       ],
                     );
@@ -1773,14 +1682,37 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
       } else {
         final p = await Supabase.instance.client.from('profiles').select('username, full_name, avatar_url').eq('id', uid).maybeSingle();
         final authUser = Supabase.instance.client.auth.currentUser;
-        final name = (p?['username'] as String?)?.isNotEmpty == true ? p!['username'] : (p?['full_name'] as String?)?.isNotEmpty == true ? p!['full_name'] : (authUser?.userMetadata?['full_name'] as String?)?.isNotEmpty == true ? authUser!.userMetadata!['full_name'] : 'Utilisateur';
+        
+        String name = 'Utilisateur';
+        if (p != null && p['username'] != null && p['username'].toString().trim().isNotEmpty) {
+          name = p['username'].toString();
+        } else if (p != null && p['full_name'] != null && p['full_name'].toString().trim().isNotEmpty) {
+          name = p['full_name'].toString();
+        } else if (authUser?.userMetadata?['full_name'] != null && authUser!.userMetadata!['full_name'].toString().trim().isNotEmpty) {
+          name = authUser.userMetadata!['full_name'].toString();
+        }
+        
         final parentId = _replyingTo?.parentId ?? _replyingTo?.id;
 
-        await Supabase.instance.client.from('media_comments').insert({'media_id': widget.mediaId, 'user_id': uid, 'user_name': name, 'avatar_url': p?['avatar_url'], 'content': t, 'parent_id': parentId});
+        await Supabase.instance.client.from('media_comments').insert({
+          'media_id': widget.mediaId, 
+          'user_id': uid, 
+          'user_name': name, 
+          'avatar_url': p?['avatar_url'], 
+          'content': t, 
+          'parent_id': parentId
+        });
         if (parentId != null) await _fetchReplies(parentId); else await _fetchRoots();
       }
-      _controller.clear(); _focusNode.unfocus(); setState(() => _replyingTo = null); ref.invalidate(commentCountProvider(widget.mediaId));
-    } catch (e) { _showError("Échec de l'envoi."); } finally { if (mounted) setState(() => _sending = false); }
+      _controller.clear(); 
+      _focusNode.unfocus(); 
+      setState(() => _replyingTo = null); 
+      ref.invalidate(commentCountProvider(widget.mediaId));
+    } catch (e) { 
+      _showError("Échec de l'envoi."); 
+    } finally { 
+      if (mounted) setState(() => _sending = false); 
+    }
   }
 
   Future<void> _delete(String id) async {
@@ -1839,11 +1771,11 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                 children: [
                   Row(
                     children: [
-                      GestureDetector(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => UserProfilePage(userId: c.userId))), child: Text(c.userName, style: const TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w700))),
+                      GestureDetector(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => UserProfilePage(userId: c.userId))), child: Text(c.userName, style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600))),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(c.content, style: const TextStyle(color: Colors.white, fontSize: 15, height: 1.3)),
+                  Text(c.content, style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.3)),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -1851,7 +1783,7 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                       const SizedBox(width: 16),
                       GestureDetector(
                         onTap: () { setState(() { _replyingTo = c; _editingComment = null; }); _focusNode.requestFocus(); },
-                        child: const Text('Répondre', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+                        child: const Text('Répondre', style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
                       ),
                       const Spacer(),
                       GestureDetector(
@@ -1861,7 +1793,7 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                           setState(() { if (isLiked) { _likedIds.remove(c.id); _localCommentLikes[c.id] = (currentLikes - 1).clamp(0, 999999); } else { _likedIds.add(c.id); _localCommentLikes[c.id] = currentLikes + 1; } });
                           try { await Supabase.instance.client.rpc('toggle_comment_like', params: {'p_comment_id': c.id}); } catch (_) { if (mounted) { setState(() { if (isLiked) { _likedIds.add(c.id); _localCommentLikes[c.id] = currentLikes; } else { _likedIds.remove(c.id); _localCommentLikes[c.id] = currentLikes; } }); } }
                         },
-                        child: Row(children: [Icon(isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: isLiked ? _MediaColors.danger : Colors.white54, size: 16), const SizedBox(width: 4), Text(currentLikes > 0 ? '$currentLikes' : "", style: TextStyle(color: isLiked ? _MediaColors.danger : Colors.white54, fontSize: 12, fontWeight: FontWeight.bold))]),
+                        child: Row(children: [Icon(isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: isLiked ? _MediaColors.danger : Colors.white54, size: 14), const SizedBox(width: 4), Text(currentLikes > 0 ? '$currentLikes' : "", style: TextStyle(color: isLiked ? _MediaColors.danger : Colors.white54, fontSize: 12, fontWeight: FontWeight.bold))]),
                       )
                     ],
                   ),
@@ -1873,7 +1805,7 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                         children: [
                           Container(width: 24, height: 1, color: Colors.white24),
                           const SizedBox(width: 8),
-                          Text(_expanded.contains(c.id) ? 'Masquer' : 'Voir les ${c.replyCount} réponses', style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w800)),
+                          Text(_expanded.contains(c.id) ? 'Masquer' : 'Voir les ${c.replyCount} réponses', style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.w700)),
                         ],
                       ),
                     )
@@ -1896,28 +1828,28 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
       duration: const Duration(milliseconds: 150),
       padding: EdgeInsets.only(bottom: insets),
       child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20), // Flou intense
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
           child: Container(
-            height: MediaQuery.of(context).size.height * 0.75,
+            height: MediaQuery.of(context).size.height * 0.70,
             decoration: BoxDecoration(
-              color: _MediaColors.navyDeep.withValues(alpha: 0.85),
-              border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.15), width: 1.5)),
+              color: _MediaColors.card.withOpacity(0.97),
+              border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1), width: 1)),
             ),
             child: Column(
               children: [
                 const SizedBox(height: 12),
-                Container(width: 40, height: 5, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(10))),
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(4))),
                 const SizedBox(height: 16),
-                Text('${_roots.length} commentaires', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
+                Text('${_roots.length} commentaires', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 12),
 
                 Expanded(
                   child: _loading
                       ? const Center(child: CircularProgressIndicator(color: Colors.white))
                       : _roots.isEmpty
-                          ? const Center(child: Text('Soyez le premier à commenter !', style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w600)))
+                          ? const Center(child: Text('Soyez le premier à commenter !', style: TextStyle(color: Colors.white54, fontWeight: FontWeight.w500)))
                           : ListView.builder(
                               padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                               itemCount: _roots.length,
@@ -1927,20 +1859,20 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
 
                 Container(
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.4),
-                    border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                    color: _MediaColors.cardLight,
+                    border: Border(top: BorderSide(color: Colors.white.withOpacity(0.05))),
                   ),
                   child: Column(
                     children: [
                       if (_replyingTo != null || _editingComment != null)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          color: Colors.white.withValues(alpha: 0.05),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          color: Colors.black26,
                           child: Row(
                             children: [
-                              Text(_editingComment != null ? 'Modification' : 'Réponse à @${_replyingTo!.userName}', style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
+                              Text(_editingComment != null ? 'Modification' : 'Réponse à @${_replyingTo!.userName}', style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
                               const Spacer(),
-                              GestureDetector(onTap: () { setState(() { _replyingTo = null; _editingComment = null; }); _controller.clear(); }, child: const Icon(Icons.close_rounded, color: Colors.white70, size: 18)),
+                              GestureDetector(onTap: () { setState(() { _replyingTo = null; _editingComment = null; }); _controller.clear(); }, child: const Icon(Icons.close_rounded, color: Colors.white54, size: 16)),
                             ],
                           ),
                         ),
@@ -1952,9 +1884,9 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 16),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.1),
+                                  color: Colors.white.withOpacity(0.08),
                                   borderRadius: BorderRadius.circular(24),
-                                  border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                                  border: Border.all(color: Colors.white.withOpacity(0.06)),
                                 ),
                                 child: TextField(
                                   controller: _controller,
@@ -1962,7 +1894,7 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                                   minLines: 1,
                                   maxLines: 4,
                                   onSubmitted: (_) => _submit(),
-                                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                                  style: const TextStyle(color: Colors.white, fontSize: 14),
                                   cursorColor: Colors.white,
                                   decoration: InputDecoration(
                                     hintText: _editingComment != null ? 'Modifier...' : (_replyingTo != null ? 'Votre réponse...' : 'Ajouter un commentaire...'),
@@ -1974,7 +1906,7 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                                     focusedBorder: InputBorder.none,
                                     disabledBorder: InputBorder.none,
                                     isDense: true,
-                                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                                    contentPadding: const EdgeInsets.symmetric(vertical: 10),
                                   ),
                                 ),
                               ),
@@ -1983,14 +1915,15 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                             GestureDetector(
                               onTap: _submit,
                               child: Container(
-                                width: 46, height: 46,
+                                width: 44, height: 44,
                                 decoration: BoxDecoration(
-                                  color: _sending ? Colors.white10 : Colors.white,
+                                  gradient: _sending ? null : _MediaColors.gradientWhite,
+                                  color: _sending ? Colors.white10 : null,
                                   shape: BoxShape.circle,
                                 ),
                                 child: _sending
                                     ? const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(color: _MediaColors.navyDeep, strokeWidth: 2))
-                                    : const Icon(Icons.send_rounded, color: _MediaColors.navyDeep, size: 20),
+                                    : const Icon(Icons.send_rounded, color: _MediaColors.navyDeep, size: 18),
                               ),
                             )
                           ],
