@@ -1,7 +1,7 @@
 // lib/presentation/thix_event/thix_event_home.dart
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui'; // Requis pour le Glassmorphism (uniquement sur l'UI statique)
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -130,7 +130,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
       appBar: _appBar(),
       body: Stack(
         children: [
-          // 🌟 ARRIÈRE-PLAN LUMIÈRES DE CONCERT (OPTIMISÉ)
+          // 🌟 FOND PROpre (Zéro voile blanc)
           const Positioned.fill(child: _EventAmbientBackground()),
 
           RefreshIndicator(
@@ -147,7 +147,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
               physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
               slivers: [
                 SliverToBoxAdapter(
-                  child: SizedBox(height: MediaQuery.of(context).padding.top + 52),
+                  child: SizedBox(height: MediaQuery.of(context).padding.top + 56),
                 ),
                 SliverToBoxAdapter(
                   child: featuredAsync.when(
@@ -208,9 +208,11 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
               ],
             ),
           ),
+          
+          // 🌟 NAVBAR FLOTTANTE NETTE
+          _bottomNav(),
         ],
       ),
-      bottomNavigationBar: _bottomNav(),
     );
   }
 
@@ -218,17 +220,17 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     final isAdmin = ref.watch(isEventAdminProvider).valueOrNull ?? false;
 
     return PreferredSize(
-      preferredSize: const Size.fromHeight(56),
+      preferredSize: const Size.fromHeight(60),
       child: ClipRRect(
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
           child: Container(
-            color: _ThixColors.bg.withOpacity(0.65),
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.08), width: 1))),
+            color: _ThixColors.bg.withOpacity(0.8),
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.1), width: 1))),
             child: SafeArea(
               bottom: false,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 child: Row(
                   children: [
                     Container(
@@ -258,7 +260,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                       icon: const Icon(Icons.search_rounded, color: Colors.white, size: 22),
                       onPressed: () => context.push('/thix-event/search'),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 16),
                     Stack(
                       clipBehavior: Clip.none,
                       children: [
@@ -326,8 +328,8 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                 clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: Colors.white.withOpacity(0.1)),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 20, offset: const Offset(0, 10))],
+                  border: Border.all(color: Colors.white.withOpacity(0.15)),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.6), blurRadius: 20, offset: const Offset(0, 10))],
                 ),
                 child: Stack(
                   fit: StackFit.expand,
@@ -338,7 +340,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [Colors.black.withOpacity(0.5), Colors.transparent, Colors.black.withOpacity(0.95)],
+                          colors: [Colors.black.withOpacity(0.4), Colors.transparent, Colors.black.withOpacity(0.95)],
                           stops: const [0.0, 0.4, 1.0],
                         ),
                       ),
@@ -348,31 +350,20 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                       top: 16,
                       child: Row(
                         children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(color: _ThixColors.primary.withOpacity(0.8), border: Border.all(color: _ThixColors.primaryLight)),
-                                child: const Text('BEST-SELLER', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5)),
-                              ),
-                            ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(color: _ThixColors.primary, borderRadius: BorderRadius.circular(20)),
+                            child: const Text('BEST-SELLER', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5)),
                           ),
                           const SizedBox(width: 8),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.15),
-                                  border: Border.all(color: Colors.white.withOpacity(0.3)),
-                                ),
-                                child: const Text('À VENIR', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
-                              ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.4),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: Colors.white.withOpacity(0.2)),
                             ),
+                            child: const Text('À VENIR', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
                           ),
                         ],
                       ),
@@ -394,20 +385,15 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                           Row(
                             children: [
                               Expanded(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(24),
-                                  child: BackdropFilter(
-                                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                                    child: Container(
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.1),
-                                        border: Border.all(color: Colors.white.withOpacity(0.2)),
-                                      ),
-                                      alignment: Alignment.center,
-                                      child: Text(e.formattedPrice, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
-                                    ),
+                                child: Container(
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.15),
+                                    border: Border.all(color: Colors.white.withOpacity(0.25)),
+                                    borderRadius: BorderRadius.circular(24),
                                   ),
+                                  alignment: Alignment.center,
+                                  child: Text(e.formattedPrice, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -497,7 +483,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: isSel ? _ThixColors.primary : Colors.white.withOpacity(0.05),
+                color: isSel ? _ThixColors.primary : _ThixColors.surface,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: isSel ? _ThixColors.primaryLight : Colors.white.withOpacity(0.1)),
                 boxShadow: isSel ? [BoxShadow(color: _ThixColors.primary.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4))] : [],
@@ -551,7 +537,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
               duration: const Duration(milliseconds: 200),
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
               decoration: BoxDecoration(
-                color: isSel ? Colors.white : Colors.white.withOpacity(0.08),
+                color: isSel ? Colors.white : _ThixColors.surface,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: isSel ? Colors.white : Colors.white.withOpacity(0.15)),
                 boxShadow: isSel ? [BoxShadow(color: Colors.white.withOpacity(0.2), blurRadius: 8)] : [],
@@ -610,142 +596,120 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
         ),
       );
 
-  // 🟢 CARTE ÉVÈNEMENT (GLASSMORPHISM)
   Widget _card(Event event) => GestureDetector(
         onTap: () { HapticFeedback.selectionClick(); context.push('/thix-event/event/${event.id}'); },
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withOpacity(0.15)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        child: Container(
+          decoration: BoxDecoration(
+            color: _ThixColors.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
                 children: [
-                  Stack(
-                    children: [
-                      AspectRatio(
-                        aspectRatio: 1.25,
-                        child: Image.network(event.imageUrl ?? '', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: _ThixColors.surface)),
-                      ),
-                      Positioned(
-                        right: 10,
-                        top: 10,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                              decoration: BoxDecoration(color: Colors.black.withOpacity(0.4), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white.withOpacity(0.2))),
-                              child: Text(event.formattedPrice, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
-                            ),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        right: 10,
-                        bottom: 10,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                            child: Container(
-                              height: 32,
-                              width: 32,
-                              decoration: BoxDecoration(color: Colors.black.withOpacity(0.4), shape: BoxShape.circle, border: Border.all(color: Colors.white.withOpacity(0.2))),
-                              child: const Icon(Icons.favorite_border_rounded, color: Colors.white, size: 16),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                  AspectRatio(
+                    aspectRatio: 1.25,
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(19)),
+                      child: Image.network(event.imageUrl ?? '', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: _ThixColors.surface)),
+                    ),
                   ),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            event.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.white, height: 1.2, letterSpacing: -0.2),
-                          ),
-                          Column(
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.calendar_today_rounded, size: 12, color: _ThixColors.primaryLight),
-                                  const SizedBox(width: 6),
-                                  Expanded(child: Text(event.shortDate, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700))),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  const Icon(Icons.location_on_rounded, size: 12, color: _ThixColors.primaryLight),
-                                  const SizedBox(width: 6),
-                                  Expanded(child: Text(event.location, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700))),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                  Positioned(
+                    right: 10,
+                    top: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white.withOpacity(0.2))),
+                      child: Text(event.formattedPrice, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
+                    ),
+                  ),
+                  Positioned(
+                    right: 10,
+                    bottom: 10,
+                    child: Container(
+                      height: 32,
+                      width: 32,
+                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), shape: BoxShape.circle, border: Border.all(color: Colors.white.withOpacity(0.2))),
+                      child: const Icon(Icons.favorite_border_rounded, color: Colors.white, size: 16),
                     ),
                   ),
                 ],
               ),
-            ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        event.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.white, height: 1.2, letterSpacing: -0.2),
+                      ),
+                      Column(
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.calendar_today_rounded, size: 12, color: _ThixColors.primaryLight),
+                              const SizedBox(width: 6),
+                              Expanded(child: Text(event.shortDate, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700))),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              const Icon(Icons.location_on_rounded, size: 12, color: _ThixColors.primaryLight),
+                              const SizedBox(width: 6),
+                              Expanded(child: Text(event.location, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700))),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       );
 
-  Widget _vipBanner() => ClipRRect(
-    borderRadius: BorderRadius.circular(24),
-    child: BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-      child: Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [_ThixColors.primary.withOpacity(0.8), _ThixColors.gradientEnd.withOpacity(0.8)]),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: Colors.white.withOpacity(0.3)),
-              boxShadow: [BoxShadow(color: _ThixColors.primary.withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 5))],
+  Widget _vipBanner() => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(colors: [_ThixColors.primary.withOpacity(0.85), _ThixColors.gradientEnd.withOpacity(0.85)]),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white.withOpacity(0.3)),
+          boxShadow: [BoxShadow(color: _ThixColors.primary.withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 5))],
+        ),
+        child: Row(
+          children: [
+            Container(
+              height: 46,
+              width: 46,
+              decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.white.withOpacity(0.5))),
+              child: const Icon(Icons.verified_rounded, color: Colors.white, size: 24),
             ),
-            child: Row(
-              children: [
-                Container(
-                  height: 46,
-                  width: 46,
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(14), border: Border.all(color: Colors.white.withOpacity(0.5))),
-                  child: const Icon(Icons.verified_rounded, color: Colors.white, size: 24),
-                ),
-                const SizedBox(width: 16),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('THIX VIP ACCESS', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
-                      SizedBox(height: 2),
-                      Text('Billets infalsifiables, QR dynamique et coupe-file garanti.', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600, height: 1.3)),
-                    ],
-                  ),
-                ),
-              ],
+            const SizedBox(width: 16),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('THIX VIP ACCESS', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                  SizedBox(height: 2),
+                  Text('Billets infalsifiables, QR dynamique et coupe-file garanti.', style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600, height: 1.3)),
+                ],
+              ),
             ),
-          ),
-    ),
-  );
+          ],
+        ),
+      );
 
-  // 🌟 BOTTOM NAV BAR GLASSMORPHISM FLOTTANTE
   Widget _bottomNav() => Positioned(
     left: 0, right: 0, bottom: 0,
     child: Container(
@@ -754,30 +718,24 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(32),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-              child: Container(
-                height: 64,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(32),
-                  border: Border.all(color: Colors.white.withOpacity(0.2), width: 1.2),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 30, offset: const Offset(0, 10))],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _navItem(icon: Icons.home_rounded, label: 'Accueil', selected: true, onTap: () {}),
-                    _navItem(icon: Icons.explore_outlined, label: 'Explorer', onTap: () { HapticFeedback.selectionClick(); context.push('/thix-event/search'); }),
-                    _navItem(icon: Icons.confirmation_num_outlined, label: 'Billets', onTap: () { HapticFeedback.selectionClick(); context.push('/thix-event/my-tickets'); }),
-                    _navItem(icon: Icons.favorite_border_rounded, label: 'Favoris', onTap: () { HapticFeedback.selectionClick(); context.push('/thix-event/favorites'); }),
-                    _navItem(icon: Icons.person_outline_rounded, label: 'Profil', onTap: () { HapticFeedback.selectionClick(); context.push('/profile'); }),
-                  ],
-                ),
-              ),
+          child: Container(
+            height: 64,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: _ThixColors.surface,
+              borderRadius: BorderRadius.circular(32),
+              border: Border.all(color: Colors.white.withOpacity(0.15), width: 1.2),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 30, offset: const Offset(0, 10))],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _navItem(icon: Icons.home_rounded, label: 'Accueil', selected: true, onTap: () {}),
+                _navItem(icon: Icons.explore_outlined, label: 'Explorer', onTap: () { HapticFeedback.selectionClick(); context.push('/thix-event/search'); }),
+                _navItem(icon: Icons.confirmation_num_outlined, label: 'Billets', onTap: () { HapticFeedback.selectionClick(); context.push('/thix-event/my-tickets'); }),
+                _navItem(icon: Icons.favorite_border_rounded, label: 'Favoris', onTap: () { HapticFeedback.selectionClick(); context.push('/thix-event/favorites'); }),
+                _navItem(icon: Icons.person_outline_rounded, label: 'Profil', onTap: () { HapticFeedback.selectionClick(); context.push('/profile'); }),
+              ],
             ),
           ),
         ),
@@ -795,11 +753,11 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 24, color: selected ? _ThixColors.primaryLight : Colors.white.withOpacity(0.6)),
+            Icon(icon, size: 24, color: selected ? _ThixColors.primaryLight : Colors.white.withOpacity(0.5)),
             const SizedBox(height: 4),
             Text(
               label,
-              style: TextStyle(fontSize: 10, fontWeight: selected ? FontWeight.w800 : FontWeight.w600, color: selected ? _ThixColors.primaryLight : Colors.white.withOpacity(0.6)),
+              style: TextStyle(fontSize: 10, fontWeight: selected ? FontWeight.w900 : FontWeight.w600, color: selected ? _ThixColors.primaryLight : Colors.white.withOpacity(0.5)),
             ),
           ],
         ),
@@ -824,7 +782,6 @@ class _EventAmbientBackgroundState extends State<_EventAmbientBackground> with S
   @override
   void initState() {
     super.initState();
-    // Animation fluide (12s) qui imite des faisceaux lumineux lents
     _controller = AnimationController(vsync: this, duration: const Duration(seconds: 12))..repeat();
   }
 
@@ -834,7 +791,6 @@ class _EventAmbientBackgroundState extends State<_EventAmbientBackground> with S
     super.dispose();
   }
 
-  // 🌟 HELPER HAUTE PERFORMANCE : Utilise un RadialGradient (Zéro Flou GPU)
   Widget _buildPerformanceLight(double left, double top, double size, Color color) {
     return Positioned(
       left: left - (size / 2),
@@ -847,7 +803,7 @@ class _EventAmbientBackgroundState extends State<_EventAmbientBackground> with S
           gradient: RadialGradient(
             colors: [
               color, 
-              color.withOpacity(0.0) // Se fond dans le noir absolu
+              color.withOpacity(0.0) 
             ],
             stops: const [0.0, 1.0], 
           ),
@@ -867,29 +823,23 @@ class _EventAmbientBackgroundState extends State<_EventAmbientBackground> with S
           builder: (context, child) {
             final t = _controller.value * 2 * math.pi;
 
-            // Projecteur 1 : Rose Néon (Bouge en haut à gauche)
             final p1X = size.width * 0.3 + math.cos(t) * 200.0;
             final p1Y = size.height * 0.2 + math.sin(t * 1.5) * 150.0;
 
-            // Projecteur 2 : Orange (Bouge au centre droit)
             final p2X = size.width * 0.7 + math.sin(t * 1.2) * 180.0;
             final p2Y = size.height * 0.5 + math.cos(t * 0.8) * 200.0;
 
-            // Projecteur 3 : Violet Profond (Balaye le bas)
             final p3X = size.width * 0.5 + math.cos(t * 0.7) * 250.0;
             final p3Y = size.height * 0.8 + math.sin(t * 1.1) * 100.0;
 
             return Stack(
               children: [
-                // Fond noir pur
                 Positioned.fill(child: Container(color: _ThixColors.bg)),
                 
-                // Lumières animées (Coût GPU = 0)
-                _buildPerformanceLight(p1X, p1Y, 700, _ThixColors.primary.withOpacity(0.18)),
-                _buildPerformanceLight(p2X, p2Y, 800, _ThixColors.gradientEnd.withOpacity(0.12)),
-                _buildPerformanceLight(p3X, p3Y, 900, _ThixColors.accentPurple.withOpacity(0.15)),
+                _buildPerformanceLight(p1X, p1Y, 700, _ThixColors.primary.withOpacity(0.22)),
+                _buildPerformanceLight(p2X, p2Y, 800, _ThixColors.gradientEnd.withOpacity(0.16)),
+                _buildPerformanceLight(p3X, p3Y, 900, _ThixColors.accentPurple.withOpacity(0.18)),
 
-                // Grille visuelle subtile pour le côté "Technologie/Billet"
                 Positioned.fill(
                   child: CustomPaint(painter: _EventGridPainter()),
                 )
@@ -906,7 +856,7 @@ class _EventGridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final dotPaint = Paint()
-      ..color = Colors.white.withOpacity(0.03)
+      ..color = Colors.white.withOpacity(0.04)
       ..strokeWidth = 1.0
       ..strokeCap = StrokeCap.round;
 
