@@ -109,8 +109,13 @@ class MemoryRepositoryImpl implements MemoryRepository {
       payload['source_name'] = sourceName;
     }
 
-    await remote.upsertProjectFact(payload);
+    // Si l'utilisateur est connecté
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid != null) {
+      payload['user_id'] = uid;
+    }
 
+    await remote.upsertProjectFact(payload);
     try {
       final updated = await remote.getProjectMemory(projectCode);
       await local.cacheProjectMemory(updated);
