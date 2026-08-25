@@ -19,7 +19,7 @@ import '../widgets/fact_card.dart';
 import '../widgets/analysis_progress_widget.dart';
 import '../widgets/empty_state_widget.dart';
 import '../widgets/ai_command_bar.dart';
-import '../widgets/phase_switcher.dart'; // 👈 Import du nouveau Switcher
+import '../widgets/phase_switcher.dart'; 
 
 class ProjectDetailPage extends ConsumerStatefulWidget {
   const ProjectDetailPage({super.key, required this.projectCode});
@@ -33,7 +33,7 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _isSending = false;
-  bool _isExecutionMode = false; // 👈 État pour gérer le basculement SaaS
+  bool _isExecutionMode = false;
 
   @override
   void initState() {
@@ -204,8 +204,6 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
       return;
     }
     if (isCompetitor) {
-      // Lance une analyse concurrentielle si tu as la méthode,
-      // sinon envoie un message ciblé en restant sur Analyses
       try {
         final p = ref.read(activeProjectProvider).value;
         if (p != null) {
@@ -221,17 +219,15 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
                 behavior: SnackBarBehavior.floating,
               ),
             );
-            _tabController.animateTo(1); // Onglet Analyses
+            _tabController.animateTo(1);
           }
         }
       } catch (_) {
-        // Fallback chat si la méthode n'existe pas encore
         await _sendToChat(text);
       }
       return;
     }
     if (isBusinessPlan) {
-      // Va sur Mémoire pour générer le BP final
       _tabController.animateTo(2);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -486,55 +482,57 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
                 ],
               ),
             ],
-            // 👈 Si on est en mode Exécution, on cache la barre d'onglets (Analyse, Mémoire...)
-            bottom: _isExecutionMode
-                ? null
-                : PreferredSize(
-                    preferredSize: const Size.fromHeight(40),
-                    child: TabBar(
-                      controller: _tabController,
-                      labelColor: ThixPolicy.primary,
-                      unselectedLabelColor: ThixPolicy.textMuted,
-                      indicatorColor: ThixPolicy.primary,
-                      indicatorWeight: 2.5,
-                      labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                      unselectedLabelStyle: const TextStyle(fontSize: 13),
-                      isScrollable: true,
-                      tabAlignment: TabAlignment.start,
-                      tabs: const [
-                        Tab(text: "Vue d'ensemble", height: 36),
-                        Tab(text: 'Analyses', height: 36),
-                        Tab(text: 'Mémoire', height: 36),
-                        Tab(text: 'Documents', height: 36),
-                      ],
+            // 👇 LE SWITCHER EST MAINTENANT ÉPINGLÉ DANS L'APPBAR 👇
+            bottom: PreferredSize(
+              // Taille ajustée automatiquement selon que les tabs soient visibles ou non
+              preferredSize: Size.fromHeight(_isExecutionMode ? 64 : 112),
+              child: Container(
+                color: Colors.white, // Garantit un fond propre lors du scroll
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    PhaseSwitcher(
+                      isExecutionMode: _isExecutionMode,
+                      onModeChanged: (val) {
+                        setState(() {
+                          _isExecutionMode = val;
+                        });
+                      },
                     ),
-                  ),
+                    if (!_isExecutionMode)
+                      TabBar(
+                        controller: _tabController,
+                        labelColor: ThixPolicy.primary,
+                        unselectedLabelColor: ThixPolicy.textMuted,
+                        indicatorColor: ThixPolicy.primary,
+                        indicatorWeight: 2.5,
+                        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                        unselectedLabelStyle: const TextStyle(fontSize: 13),
+                        isScrollable: true,
+                        tabAlignment: TabAlignment.start,
+                        tabs: const [
+                          Tab(text: "Vue d'ensemble", height: 36),
+                          Tab(text: 'Analyses', height: 36),
+                          Tab(text: 'Mémoire', height: 36),
+                          Tab(text: 'Documents', height: 36),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ),
           ),
           SliverToBoxAdapter(
-            child: Column(
-              children: [
-                // 👈 Intégration du Switcher de Phase
-                PhaseSwitcher(
-                  isExecutionMode: _isExecutionMode,
-                  onModeChanged: (val) {
-                    setState(() {
-                      _isExecutionMode = val;
-                    });
-                  },
-                ),
-                // L'en-tête du projet ne s'affiche qu'en mode Analyse
-                if (!_isExecutionMode)
-                  ProjectHeader(
+            child: _isExecutionMode
+                ? const SizedBox.shrink()
+                : ProjectHeader(
                     project: activeProject,
                     progress: activeProject.progress,
                   ),
-              ],
-            ),
           ),
         ],
-        // 👈 Basculement du corps de la page
         body: _isExecutionMode
-            ? const _ExecutionDashboardPlaceholder() // Mode SaaS Exécution
+            ? const _ExecutionDashboardPlaceholder() // Vue SaaS Execution
             : TabBarView(
                 controller: _tabController,
                 children: [
@@ -545,9 +543,8 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
                 ],
               ),
       ),
-      // 👈 On cache la barre de chat IA quand on pilote l'exécution pour avoir un écran propre
       bottomNavigationBar: _isExecutionMode
-          ? null 
+          ? null
           : AiCommandBar(
               onSubmit: _handleAiCommand,
               hintText: 'Demandez à THIX IA sur ${widget.projectCode}...',
