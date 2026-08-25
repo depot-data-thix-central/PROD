@@ -3,6 +3,7 @@ import '../datasources/thix_ia_remote_datasource.dart';
 import '../datasources/thix_ia_local_datasource.dart';
 import '../models/project_memory.dart';
 import '../core/errors/thix_ia_exception.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 abstract class MemoryRepository {
   Future<ProjectMemory> getMemory(String projectCode,
