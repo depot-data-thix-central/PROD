@@ -1,6 +1,7 @@
 // lib/presentation/profile/public_profile_page.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:thix_id/auth/auth_controller.dart';
@@ -10,11 +11,8 @@ import 'package:thix_id/services/access_request_service.dart';
 import 'package:thix_id/services/profile_service.dart';
 import 'package:thix_id/services/document_service.dart';
 
-const _blue = Color(0xFF0D2CC1);
-const _blueDark = Color(0xFF0A1E8A);
-const _red = Color(0xFFD32F2F);
-const _fieldBg = Color(0xFFF7F8FC);
-const _fieldBorder = Color(0xFFE7EAF3);
+// ✅ Design System THIX v2
+import 'package:thix_id/core/theme/thix_design_policy.dart';
 
 // -----------------------------------------------------------------------------
 // HELPERS & EXTRACTEURS DE DONNÉES
@@ -28,6 +26,18 @@ String _translateStatus(String? status) {
     case 'active': return 'Actif';
     case 'inactive': return 'Inactif';
     default: return status;
+  }
+}
+
+Color _getStatusColor(String? status) {
+  if (status == null || status.trim().isEmpty) return ThixPolicy.textSecondary;
+  switch (status.toLowerCase()) {
+    case 'pending': return ThixPolicy.warning;
+    case 'verified': return ThixPolicy.success;
+    case 'rejected': return ThixPolicy.danger;
+    case 'active': return ThixPolicy.success;
+    case 'inactive': return ThixPolicy.textSecondary;
+    default: return ThixPolicy.textSecondary;
   }
 }
 
@@ -197,242 +207,256 @@ class _PState extends State<PublicProfilePage> {
     return ChangeNotifierProvider.value(
       value: ctrl,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF5F6FB),
+        backgroundColor: ThixPolicy.surfaceSoft, // Fond gris-bleuté clair premium
         body: Consumer<PublicProfileCtrl>(builder: (_, c, __) {
-          if (c.loading) return const Center(child: CircularProgressIndicator(color: _blue));
-          if (c.error != null) return Center(child: Text(c.error!));
+          if (c.loading) return const Center(child: CircularProgressIndicator(color: ThixPolicy.primary));
+          if (c.error != null) return Center(child: Text(c.error!, style: const TextStyle(color: ThixPolicy.textSecondary)));
 
           final p = c.profile!;
           final meId = context.read<AuthController>().currentUser?.id;
           final isOwner = meId == p.userId;
           final canSee = isOwner || c.canSeePrivate;
 
-          return CustomScrollView(slivers: [
-            SliverToBoxAdapter(child: _RefHeader(p: p, onBack: () => context.go(AppRoutes.home))),
-            SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: _RefStats(p: p))),
-            const SliverToBoxAdapter(child: SizedBox(height: 16)),
+          return CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(child: _RefHeader(p: p, onBack: () { HapticFeedback.lightImpact(); context.pop(); })),
+              SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: _RefStats(p: p))),
+              const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
-            if (!canSee) SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: _GateCard(ctrl: c))),
+              if (!canSee) SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: _GateCard(ctrl: c))),
 
-            if (canSee)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(children: [
+              if (canSee)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(children: [
 
-                    // 1. Identité Civile
-                    _Cadre(
-                      title: 'Identité civile',
-                      icon: Icons.account_circle_rounded,
-                      child: _MaskableContent(
-                        canSee: canSee,
-                        child: Column(children: [
-                          _Row(label: 'Nom complet', value: p.fullName ?? p.displayName),
-                          _Row(label: 'Date naissance', value: p.dateOfBirth ?? '—'),
-                          _Row(label: 'Lieu naissance', value: p.placeOfBirth ?? '—'),
-                          _Row(label: 'Nationalité', value: p.nationality ?? '—'),
-                          _Row(label: 'État civil', value: p.maritalStatus ?? '—'),
-                          _Row(label: 'Genre', value: p.gender ?? '—'),
-                          _Row(label: 'Adresse', value: p.address ?? '—'),
-                          _Row(label: 'Père', value: p.fatherName ?? '—'),
-                          _Row(label: 'Mère', value: p.motherName ?? '—'),
-                          _Row(label: 'Contact', value: p.contactPhone ?? '—'),
-                        ]),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // 2. Origine
-                    _Cadre(title: 'Origine', icon: Icons.map_rounded, child: _MaskableContent(canSee: canSee, child: Column(children: [_Row(label: 'Province origine', value: p.originProvince ?? '—'), _Row(label: 'Territoire', value: p.originTerritory ?? '—'), _Row(label: 'Secteur', value: p.originSector ?? '—')]))),
-                    const SizedBox(height: 16),
-
-                    // 3. Résidence actuelle
-                    _Cadre(title: 'Résidence actuelle', icon: Icons.home_work_rounded, child: _MaskableContent(canSee: canSee, child: Column(children: [_Row(label: 'Pays', value: p.residenceCountry ?? '—'), _Row(label: 'Province', value: p.residenceProvince ?? '—'), _Row(label: 'Territoire', value: p.residenceTerritory ?? '—'), _Row(label: 'Ville', value: p.residenceCity ?? '—'), _Row(label: 'Commune', value: p.residenceCommune ?? '—'), _Row(label: 'Quartier', value: p.residenceQuarter ?? '—'), _Row(label: 'Avenue', value: p.residenceAvenue ?? '—'), _Row(label: 'Numéro', value: p.residenceNumber ?? '—')]))),
-                    const SizedBox(height: 16),
-
-                    // 4. Biographie
-                    _Cadre(title: 'Biographie', icon: Icons.history_edu_rounded, child: _MaskableContent(canSee: canSee, child: _ExpandableTextBody(text: p.bio ?? 'Aucune biographie renseignée.'))),
-                    const SizedBox(height: 16),
-
-                    // 5. Profil Professionnel
-                    _Cadre(title: 'Profil Professionnel', icon: Icons.work_outline_rounded, child: _MaskableContent(canSee: canSee, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_Row(label: 'Profession', value: p.profession ?? p.occupation ?? '—'), _ExpandableRow(label: 'Compétence', value: p.competence ?? '—'), _Row(label: 'THIX CHAT', value: p.thixChat ?? '—')]))),
-                    const SizedBox(height: 16),
-
-                    // 6. Langues
-                    _Cadre(
-                      title: 'Langues', 
-                      icon: Icons.language_rounded, 
-                      child: _MaskableContent(
-                        canSee: canSee, 
-                        child: (p.languagesDetailed.isNotEmpty || p.languages.isNotEmpty)
-                          ? Wrap(
-                              spacing: 8, 
-                              runSpacing: 8, 
-                              children: (p.languagesDetailed.isNotEmpty ? p.languagesDetailed : p.languages.map((e) => {'name': e}).toList()).map((l) { 
-                                final name = (l['name'] ?? '').toString(); 
-                                final level = l['level'] != null && l['level'].toString().isNotEmpty ? ' - ${l['level']}' : ''; 
-                                return Chip(
-                                  label: Text('$name$level', style: const TextStyle(fontSize: 12, color: _blueDark, fontWeight: FontWeight.bold)), 
-                                  backgroundColor: const Color(0xFFEFF4FF), 
-                                  side: BorderSide.none,
-                                ); 
-                              }).toList()
-                            )
-                          : const Text('Aucune langue renseignée', style: TextStyle(fontSize: 12, color: Colors.black54)),
-                      )
-                    ),
-                    const SizedBox(height: 16),
-
-                    // 7. Contact urgence
-                    _Cadre(title: 'Contact urgence', icon: Icons.contact_emergency_rounded, child: _MaskableContent(canSee: canSee, child: Column(children: [_Row(label: 'Nom', value: p.emergencyContactName ?? '—'), _Row(label: 'Téléphone', value: p.emergencyContactPhone ?? '—'), _Row(label: 'Lien', value: p.emergencyContactRelation ?? '—'), if (p.emergencyContacts.isNotEmpty) ...p.emergencyContacts.map((e) => ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text((e['name'] ?? '—').toString(), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)), subtitle: Text('${e['relation'] ?? ''} - ${e['phone'] ?? ''}', style: const TextStyle(fontSize: 12))))]))),
-                    const SizedBox(height: 16),
-
-                    // 8. Infos physiques
-                    _Cadre(title: 'Infos physiques', icon: Icons.monitor_weight_rounded, child: _MaskableContent(canSee: canSee, child: Column(children: [_Row(label: 'Taille cm', value: p.height ?? '—'), _Row(label: 'Poids kg', value: p.weight ?? '—'), _Row(label: 'Groupe sanguin', value: p.bloodGroup ?? '—'), _Row(label: 'Handicap', value: (p.hasPhysicalDisability ?? false) ? 'Oui : ${p.physicalDisabilityDescription ?? ''}' : 'Non')]))),
-                    const SizedBox(height: 16),
-
-                    // 9. Identité nationale (Miniatures photos cliquables)
-                    _Cadre(
-                      title: 'Identité nationale',
-                      icon: Icons.verified_user_rounded,
-                      child: _MaskableContent(
-                        canSee: canSee,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _Row(label: 'Numéro', value: p.nationalIdNumber ?? '—'),
-                            _Row(label: 'Type', value: p.idDocumentType ?? '—'),
-                            _Row(label: 'Date émission', value: p.idDocumentIssueDate ?? '—'),
-                            _Row(label: 'Date expiration', value: p.idDocumentExpiryDate ?? '—'),
-                            _Row(label: 'Lieu émission', value: p.idDocumentIssuePlace ?? '—'),
-                            _Row(label: 'Statut', value: _translateStatus(p.idVerificationStatus)),
-
-                            Builder(
-                              builder: (context) {
-                                List<Map<String, String>> idDocs = [];
-                                for (var d in c.remoteDocs) {
-                                  final type = (d['doc_type'] ?? '').toString().toLowerCase();
-                                  if (type.contains('id') || type.contains('identit') || type.contains('recto') || type.contains('verso') || type.contains('selfie') || type.contains('carte') || type.contains('national')) {
-                                    final url = d['download_url']?.toString() ?? d['fileUrl']?.toString() ?? d['url']?.toString() ?? '';
-                                    if (url.isNotEmpty && !idDocs.any((doc) => doc['url'] == url)) {
-                                       String label = 'Pièce';
-                                       if(type.contains('recto')) label = 'Recto';
-                                       else if(type.contains('verso')) label = 'Verso';
-                                       else if(type.contains('selfie')) label = 'Selfie';
-                                       idDocs.add({'url': url, 'label': label});
-                                    }
-                                  }
-                                }
-
-                                if (idDocs.isEmpty) return const SizedBox.shrink();
-
-                                return Padding(
-                                  padding: const EdgeInsets.only(top: 12),
-                                  child: Wrap(
-                                    spacing: 12,
-                                    runSpacing: 12,
-                                    children: idDocs.map((doc) {
-                                      return _ThumbnailViewerButton(label: doc['label']!, documentUrl: doc['url']!);
-                                    }).toList(),
-                                  ),
-                                );
-                              }
-                            )
-                          ],
+                      // 1. Identité Civile
+                      _Cadre(
+                        title: 'Identité civile',
+                        icon: Icons.account_circle_rounded,
+                        child: _MaskableContent(
+                          canSee: canSee,
+                          child: Column(children: [
+                            _Row(label: 'Nom complet', value: p.fullName ?? p.displayName),
+                            _Row(label: 'Date naissance', value: p.dateOfBirth ?? '—'),
+                            _Row(label: 'Lieu naissance', value: p.placeOfBirth ?? '—'),
+                            _Row(label: 'Nationalité', value: p.nationality ?? '—'),
+                            _Row(label: 'État civil', value: p.maritalStatus ?? '—'),
+                            _Row(label: 'Genre', value: p.gender ?? '—'),
+                            _Row(label: 'Adresse', value: p.address ?? '—'),
+                            _Row(label: 'Père', value: p.fatherName ?? '—'),
+                            _Row(label: 'Mère', value: p.motherName ?? '—'),
+                            _Row(label: 'Contact', value: p.contactPhone ?? '—'),
+                          ]),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
+                      const SizedBox(height: 16),
 
-                    // 10. Parcours scolaire (fiches détaillées + "Voir plus" si > 3)
-                    _Cadre(
-                      title: 'Cursus & Formations',
-                      icon: Icons.account_balance_rounded,
-                      child: _MaskableContent(
-                        canSee: canSee,
-                        child: p.education.isEmpty 
-                          ? const Text('Aucun parcours scolaire enregistré', style: TextStyle(fontSize: 12, color: Colors.black54)) 
-                          : _LimitedList(
-                              limit: 3,
-                              children: p.education.map((e) {
-                                final institution = _get(e, ['institution', 'ecole', 'etablissement', 'school']);
-                                final degree = _get(e, ['degree', 'diplome', 'titre', 'certification']);
-                                final city = _get(e, ['city', 'ville', 'lieu']);
-                                final start = _get(e, ['startYear', 'debut', 'start_year']);
-                                final end = _get(e, ['endYear', 'fin', 'end_year']);
-                                final desc = _get(e, ['description', 'details']);
+                      // 2. Origine
+                      _Cadre(title: 'Origine', icon: Icons.map_rounded, child: _MaskableContent(canSee: canSee, child: Column(children: [_Row(label: 'Province origine', value: p.originProvince ?? '—'), _Row(label: 'Territoire', value: p.originTerritory ?? '—'), _Row(label: 'Secteur', value: p.originSector ?? '—')]))),
+                      const SizedBox(height: 16),
 
-                                String periodStr = '';
-                                if (start.isNotEmpty && end.isNotEmpty) periodStr = '$start - $end';
-                                else if (start.isNotEmpty) periodStr = start;
-                                else if (end.isNotEmpty) periodStr = end;
-                                else periodStr = _get(e, ['period', 'periode']);
+                      // 3. Résidence actuelle
+                      _Cadre(title: 'Résidence actuelle', icon: Icons.home_work_rounded, child: _MaskableContent(canSee: canSee, child: Column(children: [_Row(label: 'Pays', value: p.residenceCountry ?? '—'), _Row(label: 'Province', value: p.residenceProvince ?? '—'), _Row(label: 'Territoire', value: p.residenceTerritory ?? '—'), _Row(label: 'Ville', value: p.residenceCity ?? '—'), _Row(label: 'Commune', value: p.residenceCommune ?? '—'), _Row(label: 'Quartier', value: p.residenceQuarter ?? '—'), _Row(label: 'Avenue', value: p.residenceAvenue ?? '—'), _Row(label: 'Numéro', value: p.residenceNumber ?? '—')]))),
+                      const SizedBox(height: 16),
 
-                                return _RecordCard(
-                                  headerIcon: Icons.school_rounded,
-                                  headerTitle: degree.isNotEmpty ? degree : 'Formation',
-                                  fields: [
-                                    if (institution.isNotEmpty) _RecordFieldRow(icon: Icons.account_balance, label: 'Établissement / École', value: institution),
-                                    if (degree.isNotEmpty) _RecordFieldRow(icon: Icons.workspace_premium_rounded, label: 'Diplôme / Titre obtenu', value: degree),
-                                    if (city.isNotEmpty) _RecordFieldRow(icon: Icons.location_city, label: 'Ville', value: city),
-                                    if (periodStr.isNotEmpty) _RecordFieldRow(icon: Icons.calendar_month_rounded, label: 'Période', value: periodStr),
-                                  ],
-                                  descriptionLabel: 'Description',
-                                  description: desc,
-                                  documentUrls: _extractDocs(e),
-                                );
-                              }).toList(),
-                            ),
+                      // 4. Biographie
+                      _Cadre(title: 'Biographie', icon: Icons.history_edu_rounded, child: _MaskableContent(canSee: canSee, child: _ExpandableTextBody(text: p.bio ?? 'Aucune biographie renseignée.'))),
+                      const SizedBox(height: 16),
+
+                      // 5. Profil Professionnel
+                      _Cadre(title: 'Profil Professionnel', icon: Icons.work_outline_rounded, child: _MaskableContent(canSee: canSee, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [_Row(label: 'Profession', value: p.profession ?? p.occupation ?? '—'), _ExpandableRow(label: 'Compétence', value: p.competence ?? '—'), _Row(label: 'THIX CHAT', value: p.thixChat ?? '—')]))),
+                      const SizedBox(height: 16),
+
+                      // 6. Langues
+                      _Cadre(
+                        title: 'Langues', 
+                        icon: Icons.language_rounded, 
+                        child: _MaskableContent(
+                          canSee: canSee, 
+                          child: (p.languagesDetailed.isNotEmpty || p.languages.isNotEmpty)
+                            ? Wrap(
+                                spacing: 8, 
+                                runSpacing: 8, 
+                                children: (p.languagesDetailed.isNotEmpty ? p.languagesDetailed : p.languages.map((e) => {'name': e}).toList()).map((l) { 
+                                  final name = (l['name'] ?? '').toString(); 
+                                  final level = l['level'] != null && l['level'].toString().isNotEmpty ? ' - ${l['level']}' : ''; 
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: ThixPolicy.tint,
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(color: ThixPolicy.primary.withOpacity(0.1)),
+                                    ),
+                                    child: Text('$name$level', style: const TextStyle(fontSize: 12, color: ThixPolicy.primaryDeep, fontWeight: FontWeight.w700)),
+                                  ); 
+                                }).toList()
+                              )
+                            : const Text('Aucune langue renseignée', style: TextStyle(fontSize: 12, color: ThixPolicy.textSecondary)),
+                        )
                       ),
-                    ),
-                    const SizedBox(height: 16),
+                      const SizedBox(height: 16),
 
-                    // 11. Expériences Pro (fiches détaillées + "Voir plus" si > 3)
-                    _Cadre(
-                      title: 'Expériences Pro',
-                      icon: Icons.business_center_rounded,
-                      child: _MaskableContent(
-                        canSee: canSee,
-                        child: p.experience.isEmpty 
-                          ? const Text('Aucune expérience enregistrée', style: TextStyle(fontSize: 12, color: Colors.black54)) 
-                          : _LimitedList(
-                              limit: 3,
-                              children: p.experience.map((e) {
-                                final title = _get(e, ['title', 'poste', 'jobTitle']);
-                                final company = _get(e, ['company', 'entreprise', 'organisation', 'org', 'employeur']);
-                                final sector = _get(e, ['sector', 'secteur', 'domaine']);
-                                final city = _get(e, ['city', 'ville', 'lieu']);
-                                final period = _get(e, ['period', 'periode', 'dates', 'duree']);
-                                final missions = _get(e, ['missions', 'realisations', 'description', 'tasks', 'taches']);
+                      // 7. Contact urgence
+                      _Cadre(title: 'Contact urgence', icon: Icons.contact_emergency_rounded, child: _MaskableContent(canSee: canSee, child: Column(children: [_Row(label: 'Nom', value: p.emergencyContactName ?? '—'), _Row(label: 'Téléphone', value: p.emergencyContactPhone ?? '—'), _Row(label: 'Lien', value: p.emergencyContactRelation ?? '—'), if (p.emergencyContacts.isNotEmpty) ...p.emergencyContacts.map((e) => ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text((e['name'] ?? '—').toString(), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: ThixPolicy.textMain)), subtitle: Text('${e['relation'] ?? ''} - ${e['phone'] ?? ''}', style: const TextStyle(fontSize: 12, color: ThixPolicy.textSecondary))))]))),
+                      const SizedBox(height: 16),
 
-                                return _RecordCard(
-                                  headerIcon: Icons.work_rounded,
-                                  headerTitle: title.isNotEmpty ? title : 'Expérience',
-                                  fields: [
-                                    if (title.isNotEmpty) _RecordFieldRow(icon: Icons.badge_rounded, label: 'Titre du poste', value: title),
-                                    if (company.isNotEmpty) _RecordFieldRow(icon: Icons.apartment_rounded, label: 'Entreprise / Organisation', value: company),
-                                    if (sector.isNotEmpty) _RecordFieldRow(icon: Icons.category_rounded, label: 'Secteur', value: sector),
-                                    if (city.isNotEmpty) _RecordFieldRow(icon: Icons.location_city, label: 'Ville', value: city),
-                                    if (period.isNotEmpty) _RecordFieldRow(icon: Icons.calendar_month_rounded, label: 'Période', value: period),
-                                  ],
-                                  descriptionLabel: 'Missions et réalisations',
-                                  description: missions,
-                                  documentUrls: _extractDocs(e),
-                                );
-                              }).toList(),
-                            ),
+                      // 8. Infos physiques
+                      _Cadre(title: 'Infos physiques', icon: Icons.monitor_weight_rounded, child: _MaskableContent(canSee: canSee, child: Column(children: [_Row(label: 'Taille cm', value: p.height ?? '—'), _Row(label: 'Poids kg', value: p.weight ?? '—'), _Row(label: 'Groupe sanguin', value: p.bloodGroup ?? '—'), _Row(label: 'Handicap', value: (p.hasPhysicalDisability ?? false) ? 'Oui : ${p.physicalDisabilityDescription ?? ''}' : 'Non')]))),
+                      const SizedBox(height: 16),
+
+                      // 9. Identité nationale (Miniatures photos cliquables)
+                      _Cadre(
+                        title: 'Identité nationale',
+                        icon: Icons.verified_user_rounded,
+                        child: _MaskableContent(
+                          canSee: canSee,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _Row(label: 'Numéro', value: p.nationalIdNumber ?? '—'),
+                              _Row(label: 'Type', value: p.idDocumentType ?? '—'),
+                              _Row(label: 'Date émission', value: p.idDocumentIssueDate ?? '—'),
+                              _Row(label: 'Date expiration', value: p.idDocumentExpiryDate ?? '—'),
+                              _Row(label: 'Lieu émission', value: p.idDocumentIssuePlace ?? '—'),
+                              // Affichage du statut avec couleur dynamique
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  const SizedBox(width: 130, child: Text('Statut', style: TextStyle(fontSize: 12, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600))),
+                                  Expanded(child: Text(_translateStatus(p.idVerificationStatus), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _getStatusColor(p.idVerificationStatus)))),
+                                ]),
+                              ),
+
+                              Builder(
+                                builder: (context) {
+                                  List<Map<String, String>> idDocs = [];
+                                  for (var d in c.remoteDocs) {
+                                    final type = (d['doc_type'] ?? '').toString().toLowerCase();
+                                    if (type.contains('id') || type.contains('identit') || type.contains('recto') || type.contains('verso') || type.contains('selfie') || type.contains('carte') || type.contains('national')) {
+                                      final url = d['download_url']?.toString() ?? d['fileUrl']?.toString() ?? d['url']?.toString() ?? '';
+                                      if (url.isNotEmpty && !idDocs.any((doc) => doc['url'] == url)) {
+                                         String label = 'Pièce';
+                                         if(type.contains('recto')) label = 'Recto';
+                                         else if(type.contains('verso')) label = 'Verso';
+                                         else if(type.contains('selfie')) label = 'Selfie';
+                                         idDocs.add({'url': url, 'label': label});
+                                      }
+                                    }
+                                  }
+
+                                  if (idDocs.isEmpty) return const SizedBox.shrink();
+
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 12),
+                                    child: Wrap(
+                                      spacing: 12,
+                                      runSpacing: 12,
+                                      children: idDocs.map((doc) {
+                                        return _ThumbnailViewerButton(label: doc['label']!, documentUrl: doc['url']!);
+                                      }).toList(),
+                                    ),
+                                  );
+                                }
+                              )
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 32),
+                      const SizedBox(height: 16),
 
-                    // 12. THIX ID CARD
-                    _ThixIdCardWidget(profile: p),
+                      // 10. Parcours scolaire
+                      _Cadre(
+                        title: 'Cursus & Formations',
+                        icon: Icons.account_balance_rounded,
+                        child: _MaskableContent(
+                          canSee: canSee,
+                          child: p.education.isEmpty 
+                            ? const Text('Aucun parcours scolaire enregistré', style: TextStyle(fontSize: 12, color: ThixPolicy.textSecondary)) 
+                            : _LimitedList(
+                                limit: 3,
+                                children: p.education.map((e) {
+                                  final institution = _get(e, ['institution', 'ecole', 'etablissement', 'school']);
+                                  final degree = _get(e, ['degree', 'diplome', 'titre', 'certification']);
+                                  final city = _get(e, ['city', 'ville', 'lieu']);
+                                  final start = _get(e, ['startYear', 'debut', 'start_year']);
+                                  final end = _get(e, ['endYear', 'fin', 'end_year']);
+                                  final desc = _get(e, ['description', 'details']);
 
-                  ]),
+                                  String periodStr = '';
+                                  if (start.isNotEmpty && end.isNotEmpty) periodStr = '$start - $end';
+                                  else if (start.isNotEmpty) periodStr = start;
+                                  else if (end.isNotEmpty) periodStr = end;
+                                  else periodStr = _get(e, ['period', 'periode']);
+
+                                  return _RecordCard(
+                                    headerIcon: Icons.school_rounded,
+                                    headerTitle: degree.isNotEmpty ? degree : 'Formation',
+                                    fields: [
+                                      if (institution.isNotEmpty) _RecordFieldRow(icon: Icons.account_balance_rounded, label: 'Établissement / École', value: institution),
+                                      if (degree.isNotEmpty) _RecordFieldRow(icon: Icons.workspace_premium_rounded, label: 'Diplôme / Titre obtenu', value: degree),
+                                      if (city.isNotEmpty) _RecordFieldRow(icon: Icons.location_city_rounded, label: 'Ville', value: city),
+                                      if (periodStr.isNotEmpty) _RecordFieldRow(icon: Icons.calendar_month_rounded, label: 'Période', value: periodStr),
+                                    ],
+                                    descriptionLabel: 'Description',
+                                    description: desc,
+                                    documentUrls: _extractDocs(e),
+                                  );
+                                }).toList(),
+                              ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // 11. Expériences Pro
+                      _Cadre(
+                        title: 'Expériences Pro',
+                        icon: Icons.business_center_rounded,
+                        child: _MaskableContent(
+                          canSee: canSee,
+                          child: p.experience.isEmpty 
+                            ? const Text('Aucune expérience enregistrée', style: TextStyle(fontSize: 12, color: ThixPolicy.textSecondary)) 
+                            : _LimitedList(
+                                limit: 3,
+                                children: p.experience.map((e) {
+                                  final title = _get(e, ['title', 'poste', 'jobTitle']);
+                                  final company = _get(e, ['company', 'entreprise', 'organisation', 'org', 'employeur']);
+                                  final sector = _get(e, ['sector', 'secteur', 'domaine']);
+                                  final city = _get(e, ['city', 'ville', 'lieu']);
+                                  final period = _get(e, ['period', 'periode', 'dates', 'duree']);
+                                  final missions = _get(e, ['missions', 'realisations', 'description', 'tasks', 'taches']);
+
+                                  return _RecordCard(
+                                    headerIcon: Icons.work_rounded,
+                                    headerTitle: title.isNotEmpty ? title : 'Expérience',
+                                    fields: [
+                                      if (title.isNotEmpty) _RecordFieldRow(icon: Icons.badge_rounded, label: 'Titre du poste', value: title),
+                                      if (company.isNotEmpty) _RecordFieldRow(icon: Icons.apartment_rounded, label: 'Entreprise / Organisation', value: company),
+                                      if (sector.isNotEmpty) _RecordFieldRow(icon: Icons.category_rounded, label: 'Secteur', value: sector),
+                                      if (city.isNotEmpty) _RecordFieldRow(icon: Icons.location_city_rounded, label: 'Ville', value: city),
+                                      if (period.isNotEmpty) _RecordFieldRow(icon: Icons.calendar_month_rounded, label: 'Période', value: period),
+                                    ],
+                                    descriptionLabel: 'Missions et réalisations',
+                                    description: missions,
+                                    documentUrls: _extractDocs(e),
+                                  );
+                                }).toList(),
+                              ),
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+
+                      // 12. THIX ID CARD (Refonte Enterprise)
+                      _ThixIdCardWidget(profile: p),
+
+                    ]),
+                  ),
                 ),
-              ),
-            const SliverToBoxAdapter(child: SizedBox(height: 100)),
-          ]);
+              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+            ]
+          );
         }),
       ),
     );
@@ -440,7 +464,7 @@ class _PState extends State<PublicProfilePage> {
 }
 
 // -----------------------------------------------------------------------------
-// COMPOSANTS UI EXISTANTS
+// COMPOSANTS UI (DESIGN PREMIUM LIGHT)
 // -----------------------------------------------------------------------------
 
 class _Cadre extends StatelessWidget {
@@ -451,21 +475,27 @@ class _Cadre extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white, 
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))
-        ],
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: ThixPolicy.border, width: 1.2),
+        boxShadow: ThixPolicy.shadowSoft(),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(icon, size: 20, color: _blue), 
-          const SizedBox(width: 8), 
-          Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: _blueDark))
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: ThixPolicy.primary.withOpacity(0.1), shape: BoxShape.circle),
+            child: Icon(icon, size: 20, color: ThixPolicy.primary)
+          ), 
+          const SizedBox(width: 12), 
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: ThixPolicy.textMain, letterSpacing: -0.3))
         ]),
-        const Divider(height: 24, color: Color(0xFFE0E0E0)),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 16),
+          child: Divider(height: 1, color: ThixPolicy.border),
+        ),
         child,
       ]),
     );
@@ -481,8 +511,8 @@ class _Row extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SizedBox(width: 130, child: Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w600))),
-        Expanded(child: Text(value.isEmpty ? '—' : value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700))),
+        SizedBox(width: 130, child: Text(label, style: const TextStyle(fontSize: 12, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600))),
+        Expanded(child: Text(value.isEmpty ? '—' : value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: ThixPolicy.textMain))),
       ]),
     );
   }
@@ -500,15 +530,15 @@ class _ExpandableTextBodyState extends State<_ExpandableTextBody> {
   Widget build(BuildContext context) {
     final rawText = widget.text.trim();
     if (rawText.isEmpty || rawText == 'Aucune biographie renseignée.') {
-      return Text(rawText, style: const TextStyle(fontSize: 13, color: Colors.black54));
+      return Text(rawText, style: const TextStyle(fontSize: 13, color: ThixPolicy.textSecondary));
     }
     final isLong = rawText.length > 120;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(rawText, maxLines: _expanded ? null : 3, overflow: _expanded ? null : TextOverflow.fade, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, height: 1.5, color: Colors.black87)),
+        Text(rawText, maxLines: _expanded ? null : 3, overflow: _expanded ? null : TextOverflow.fade, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, height: 1.5, color: ThixPolicy.textMain)),
         if (isLong)
-          Align(alignment: Alignment.centerRight, child: InkWell(onTap: () => setState(() => _expanded = !_expanded), child: Padding(padding: const EdgeInsets.only(top: 8, bottom: 4), child: Text(_expanded ? 'Voir moins' : 'Voir plus', style: const TextStyle(color: _blue, fontSize: 12, fontWeight: FontWeight.w900))))),
+          Align(alignment: Alignment.centerRight, child: InkWell(onTap: () => setState(() => _expanded = !_expanded), child: Padding(padding: const EdgeInsets.only(top: 8, bottom: 4), child: Text(_expanded ? 'Voir moins' : 'Voir plus', style: const TextStyle(color: ThixPolicy.primary, fontSize: 12, fontWeight: FontWeight.w900))))),
       ],
     );
   }
@@ -530,13 +560,13 @@ class _ExpandableRowState extends State<_ExpandableRow> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        SizedBox(width: 130, child: Text(widget.label, style: const TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w600))),
+        SizedBox(width: 130, child: Text(widget.label, style: const TextStyle(fontSize: 12, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600))),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, height: 1.4), maxLines: _expanded ? null : 3, overflow: _expanded ? null : TextOverflow.ellipsis),
-              if (isLong) InkWell(onTap: () => setState(() => _expanded = !_expanded), child: Padding(padding: const EdgeInsets.only(top: 4), child: Text(_expanded ? 'Voir moins' : 'Voir plus', style: const TextStyle(color: _blue, fontSize: 12, fontWeight: FontWeight.w800))))
+              Text(text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: ThixPolicy.textMain, height: 1.4), maxLines: _expanded ? null : 3, overflow: _expanded ? null : TextOverflow.ellipsis),
+              if (isLong) InkWell(onTap: () => setState(() => _expanded = !_expanded), child: Padding(padding: const EdgeInsets.only(top: 4), child: Text(_expanded ? 'Voir moins' : 'Voir plus', style: const TextStyle(color: ThixPolicy.primary, fontSize: 12, fontWeight: FontWeight.w900))))
             ],
           ),
         ),
@@ -553,15 +583,24 @@ class _MaskableContent extends StatelessWidget {
   Widget build(BuildContext context) {
     if (canSee) return child;
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 20),
+      padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
+      decoration: BoxDecoration(
+        color: ThixPolicy.surfaceSoft,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: ThixPolicy.border),
+      ),
       alignment: Alignment.center,
-      child: const Column(
+      child: Column(
         children: [
-          Icon(Icons.lock_rounded, color: Colors.grey, size: 28),
-          SizedBox(height: 8),
-          Text("Informations masquées", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
-          SizedBox(height: 4),
-          Text("Veuillez demander l'autorisation pour avoir accès à ces données.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12)),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: ThixPolicy.shadowSoft()),
+            child: const Icon(Icons.lock_rounded, color: ThixPolicy.textSecondary, size: 24)
+          ),
+          const SizedBox(height: 16),
+          const Text("Informations masquées", style: TextStyle(fontWeight: FontWeight.w900, color: ThixPolicy.textMain, fontSize: 15)),
+          const SizedBox(height: 6),
+          const Text("Veuillez demander l'autorisation pour avoir accès à ces données personnelles.", textAlign: TextAlign.center, style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 12, height: 1.4)),
         ],
       ),
     );
@@ -572,36 +611,60 @@ class _RefHeader extends StatelessWidget {
   final ThixProfile p;
   final VoidCallback onBack;
   const _RefHeader({required this.p, required this.onBack});
+  
   @override
   Widget build(BuildContext context) {
-    return Stack(clipBehavior: Clip.none, children: [
-      Container(height: 230, decoration: const BoxDecoration(gradient: LinearGradient(colors: [_blue, _blueDark]), borderRadius: BorderRadius.only(bottomLeft: Radius.circular(32), bottomRight: Radius.circular(32)))),
-      SafeArea(child: Padding(padding: const EdgeInsets.all(12), child: Row(children: [
-        InkWell(onTap: onBack, child: const Icon(Icons.arrow_back, color: Colors.white)), 
-        const Spacer(), 
-        const Text('THIX ID Public', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
-        const Spacer(),
-        const SizedBox(width: 24),
-      ]))),
-      Positioned(
-        top: 110,
-        left: 16,
-        right: 16,
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 20)]),
-          child: Row(children: [
-            CircleAvatar(radius: 38, backgroundColor: const Color(0xFFEFF4FF), backgroundImage: p.photoUrl != null && p.photoUrl!.isNotEmpty ? NetworkImage(p.photoUrl!) : null),
-            const SizedBox(width: 16),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(p.displayName, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)), 
-              const SizedBox(height: 4),
-              Text('THIX ID: ${p.thixId}', style: const TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w600)),
-            ])),
-          ]),
-        ),
+    return Container(
+      padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top + 16, bottom: 24, left: 20, right: 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(32)),
+        border: const Border(bottom: BorderSide(color: ThixPolicy.border)),
+        boxShadow: ThixPolicy.shadowSoft(),
       ),
-    ]);
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(onPressed: onBack, icon: const Icon(Icons.arrow_back_ios_new_rounded, color: ThixPolicy.textMain, size: 20), padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+              const Text('THIX ID PUBLIC', style: TextStyle(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 1.0)),
+              const SizedBox(width: 20), // Spacer pour équilibrer
+            ]
+          ),
+          const SizedBox(height: 24),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: ThixPolicy.primary.withOpacity(0.2), width: 2)),
+                child: CircleAvatar(
+                  radius: 40, 
+                  backgroundColor: ThixPolicy.tint, 
+                  backgroundImage: p.photoUrl != null && p.photoUrl!.isNotEmpty ? NetworkImage(p.photoUrl!) : null,
+                  child: (p.photoUrl == null || p.photoUrl!.isEmpty) ? const Icon(Icons.person_rounded, size: 36, color: ThixPolicy.primary) : null,
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start, 
+                  children: [
+                    Text(p.displayName, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 24, color: ThixPolicy.textMain, letterSpacing: -0.5, height: 1.1)), 
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(8), border: Border.all(color: ThixPolicy.border)),
+                      child: Text('THIX ID: ${p.thixId}', style: const TextStyle(fontSize: 11, color: ThixPolicy.textMain, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                    ),
+                  ]
+                )
+              ),
+            ]
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -611,13 +674,13 @@ class _RefStats extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(top: 52),
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))]),
+      margin: const EdgeInsets.only(top: 24),
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: ThixPolicy.border, width: 1.2), boxShadow: ThixPolicy.shadowSoft()),
       child: Row(children: [
-        Expanded(child: Column(children: [const Icon(Icons.school, color: _blue, size: 24), const SizedBox(height: 6), Text('${p.education.length}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)), const Text('Diplômes', style: TextStyle(fontSize: 11, color: Colors.black54))])),
-        Expanded(child: Column(children: [const Icon(Icons.business_center, color: _blue, size: 24), const SizedBox(height: 6), Text('${p.experience.length}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)), const Text('Expériences', style: TextStyle(fontSize: 11, color: Colors.black54))])),
-        Expanded(child: Column(children: [const Icon(Icons.psychology, color: _blue, size: 24), const SizedBox(height: 6), Text('${p.skills.length}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)), const Text('Compétences', style: TextStyle(fontSize: 11, color: Colors.black54))])),
+        Expanded(child: Column(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: ThixPolicy.tint, shape: BoxShape.circle), child: const Icon(Icons.school_rounded, color: ThixPolicy.primary, size: 20)), const SizedBox(height: 10), Text('${p.education.length}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: ThixPolicy.textMain)), const Text('Diplômes', style: TextStyle(fontSize: 11, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600))])),
+        Expanded(child: Column(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: ThixPolicy.tint, shape: BoxShape.circle), child: const Icon(Icons.business_center_rounded, color: ThixPolicy.primary, size: 20)), const SizedBox(height: 10), Text('${p.experience.length}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: ThixPolicy.textMain)), const Text('Expériences', style: TextStyle(fontSize: 11, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600))])),
+        Expanded(child: Column(children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: ThixPolicy.tint, shape: BoxShape.circle), child: const Icon(Icons.psychology_rounded, color: ThixPolicy.primary, size: 20)), const SizedBox(height: 10), Text('${p.skills.length}', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: ThixPolicy.textMain)), const Text('Compétences', style: TextStyle(fontSize: 11, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600))])),
       ]),
     );
   }
@@ -632,26 +695,34 @@ class _GateCard extends StatelessWidget {
     final s = ctrl.accessState;
     final rawStatus = s?.status?.name;
 
-    String label = "Demander l'accès";
+    String label = "Demander l'accès complet";
     bool isPending = rawStatus == 'pending' || rawStatus == 'En attente';
 
-    if (isPending) label = 'Demande envoyée (En attente)';
+    if (isPending) label = 'Demande en attente...';
     if (rawStatus == 'rejected') label = 'Refusé - Redemander';
 
-    final btnColor = isPending ? Colors.grey : _red;
+    final btnColor = isPending ? ThixPolicy.textSecondary : (rawStatus == 'rejected' ? ThixPolicy.danger : ThixPolicy.primary);
 
     return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: _blue.withOpacity(0.15))),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: ThixPolicy.border, width: 1.2), boxShadow: ThixPolicy.shadowSoft()),
       child: Column(children: [
-        const Icon(Icons.lock_rounded, color: _blue, size: 32),
-        const SizedBox(height: 12),
-        const Text('Profil privé - accès 10 min après approbation', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14), textAlign: TextAlign.center),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: ThixPolicy.primary.withOpacity(0.1), shape: BoxShape.circle),
+          child: const Icon(Icons.lock_person_rounded, color: ThixPolicy.primary, size: 28)
+        ),
         const SizedBox(height: 16),
+        const Text('Profil sécurisé', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: ThixPolicy.textMain)),
+        const SizedBox(height: 8),
+        const Text('Accès aux données complètes disponible uniquement après approbation (délai de 10 min).', style: TextStyle(fontSize: 12, color: ThixPolicy.textSecondary, height: 1.4), textAlign: TextAlign.center),
+        const SizedBox(height: 20),
         SizedBox(
           width: double.infinity,
-          child: FilledButton(
+          height: 48,
+          child: ElevatedButton(
             onPressed: (isPending || ctrl.isRequestingAccess) ? null : () async {
+              HapticFeedback.mediumImpact();
               final me = context.read<AuthController>().currentUser;
               if (me == null) {
                 context.go(AppRoutes.login);
@@ -659,14 +730,15 @@ class _GateCard extends StatelessWidget {
               }
               await ctrl.requestAccess(me.id);
             },
-            style: FilledButton.styleFrom(
+            style: ElevatedButton.styleFrom(
               backgroundColor: btnColor,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              elevation: 0,
             ),
             child: ctrl.isRequestingAccess
               ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              : Text(label, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
           ),
         ),
       ]),
@@ -677,8 +749,6 @@ class _GateCard extends StatelessWidget {
 // -----------------------------------------------------------------------------
 // LISTE LIMITÉE
 // -----------------------------------------------------------------------------
-
-/// Limite l'affichage à X éléments, et ajoute un bouton "Voir plus" / "Voir moins"
 class _LimitedList extends StatefulWidget {
   final List<Widget> children;
   final int limit;
@@ -704,14 +774,14 @@ class _LimitedListState extends State<_LimitedList> {
       children: [
         ...visibleChildren,
         InkWell(
-          onTap: () => setState(() => _expanded = !_expanded),
-          borderRadius: BorderRadius.circular(8),
+          onTap: () { HapticFeedback.lightImpact(); setState(() => _expanded = !_expanded); },
+          borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Center(
               child: Text(
                 _expanded ? 'Voir moins' : 'Voir plus (${widget.children.length - widget.limit})',
-                style: const TextStyle(color: _blue, fontWeight: FontWeight.w900, fontSize: 13),
+                style: const TextStyle(color: ThixPolicy.primary, fontWeight: FontWeight.w900, fontSize: 13),
               ),
             ),
           ),
@@ -722,11 +792,8 @@ class _LimitedListState extends State<_LimitedList> {
 }
 
 // -----------------------------------------------------------------------------
-// FICHE DÉTAILLÉE — Cursus & Expériences (miroir du formulaire d'ajout)
+// FICHE DÉTAILLÉE — Cursus & Expériences
 // -----------------------------------------------------------------------------
-
-/// Une ligne de champ affichée dans une fiche : icône + label + valeur,
-/// dans un encadré gris clair — même esprit que les champs du formulaire.
 class _RecordFieldRow {
   final IconData icon;
   final String label;
@@ -734,8 +801,6 @@ class _RecordFieldRow {
   const _RecordFieldRow({required this.icon, required this.label, required this.value});
 }
 
-/// Fiche complète (Formation ou Expérience) : en-tête + champs + description
-/// + galerie de preuves (documents/photos) cliquables.
 class _RecordCard extends StatelessWidget {
   final IconData headerIcon;
   final String headerTitle;
@@ -757,13 +822,13 @@ class _RecordCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasDescription = description != null && description!.trim().isNotEmpty;
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _fieldBorder),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 3))],
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: ThixPolicy.border),
+        boxShadow: ThixPolicy.shadowSoft(),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -771,50 +836,50 @@ class _RecordCard extends StatelessWidget {
           Row(children: [
             Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: _blue.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-              child: Icon(headerIcon, color: _blue, size: 20),
+              decoration: BoxDecoration(color: ThixPolicy.tint, borderRadius: BorderRadius.circular(10)),
+              child: Icon(headerIcon, color: ThixPolicy.primary, size: 20),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 12),
             Expanded(
-              child: Text(headerTitle, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14.5, color: _blueDark)),
+              child: Text(headerTitle, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: ThixPolicy.textMain, letterSpacing: -0.3)),
             ),
           ]),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           ...fields.map((f) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: _fieldTile(f),
               )),
           if (hasDescription) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: _fieldBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: _fieldBorder)),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(16), border: Border.all(color: ThixPolicy.border)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(children: [
-                    const Icon(Icons.notes_rounded, size: 15, color: Colors.black45),
-                    const SizedBox(width: 6),
-                    Text(descriptionLabel ?? 'Description', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54)),
+                    const Icon(Icons.notes_rounded, size: 16, color: ThixPolicy.textSecondary),
+                    const SizedBox(width: 8),
+                    Text(descriptionLabel ?? 'Description', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: ThixPolicy.textSecondary)),
                   ]),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                   _ExpandableTextBody(text: description!),
                 ],
               ),
             ),
           ],
           if (documentUrls.isNotEmpty) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Row(children: [
-              const Icon(Icons.attach_file_rounded, size: 15, color: Colors.black45),
-              const SizedBox(width: 6),
-              Text('Documents & Photos (${documentUrls.length})', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54)),
+              const Icon(Icons.attach_file_rounded, size: 16, color: ThixPolicy.textSecondary),
+              const SizedBox(width: 8),
+              Text('Documents & Photos (${documentUrls.length})', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: ThixPolicy.textSecondary)),
             ]),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Wrap(
-              spacing: 10,
-              runSpacing: 10,
+              spacing: 12,
+              runSpacing: 12,
               children: documentUrls
                   .map((url) => _ThumbnailViewerButton(label: 'Preuve', documentUrl: url))
                   .toList(),
@@ -828,18 +893,18 @@ class _RecordCard extends StatelessWidget {
   Widget _fieldTile(_RecordFieldRow f) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(color: _fieldBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: _fieldBorder)),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(16), border: Border.all(color: ThixPolicy.border)),
       child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-        Icon(f.icon, size: 17, color: Colors.grey.shade600),
-        const SizedBox(width: 10),
+        Icon(f.icon, size: 18, color: ThixPolicy.textSecondary),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(f.label, style: const TextStyle(fontSize: 10.5, color: Colors.black45, fontWeight: FontWeight.w600)),
+              Text(f.label, style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600)),
               const SizedBox(height: 2),
-              Text(f.value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.black87)),
+              Text(f.value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: ThixPolicy.textMain)),
             ],
           ),
         ),
@@ -848,7 +913,6 @@ class _RecordCard extends StatelessWidget {
   }
 }
 
-/// Affiche une vraie miniature carrée (photo) cliquable
 class _ThumbnailViewerButton extends StatelessWidget {
   final String label;
   final String documentUrl;
@@ -860,7 +924,7 @@ class _ThumbnailViewerButton extends StatelessWidget {
       context: context,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(10),
+        insetPadding: const EdgeInsets.all(16),
         child: Stack(
           alignment: Alignment.center,
           children: [
@@ -870,14 +934,14 @@ class _ThumbnailViewerButton extends StatelessWidget {
               minScale: 0.5,
               maxScale: 4,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(24),
                 child: Image.network(
                   documentUrl,
                   fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => Container(
                     color: Colors.white,
-                    padding: const EdgeInsets.all(20),
-                    child: const Text('Le format du document n\'est pas supporté pour l\'aperçu.', textAlign: TextAlign.center),
+                    padding: const EdgeInsets.all(24),
+                    child: const Text('Le format du document n\'est pas supporté pour l\'aperçu.', textAlign: TextAlign.center, style: TextStyle(color: ThixPolicy.textMain, fontWeight: FontWeight.w600)),
                   ),
                 ),
               ),
@@ -886,7 +950,11 @@ class _ThumbnailViewerButton extends StatelessWidget {
               top: 10,
               right: 10,
               child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                icon: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.black.withOpacity(0.5), shape: BoxShape.circle),
+                  child: const Icon(Icons.close_rounded, color: Colors.white, size: 20)
+                ),
                 onPressed: () => Navigator.of(ctx).pop(),
               ),
             )
@@ -900,50 +968,47 @@ class _ThumbnailViewerButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: () => _showDocument(context),
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        width: 84,
+        width: 90,
         decoration: BoxDecoration(
-          color: const Color(0xFFEFF4FF),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: _blue.withOpacity(0.2)),
+          color: ThixPolicy.tint,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: ThixPolicy.border),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Miniature de l'image (Aperçu)
             SizedBox(
-              height: 64,
+              height: 70,
               width: double.infinity,
               child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
                 child: Image.network(
                   documentUrl,
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stackTrace) => const Center(
-                    child: Icon(Icons.description_rounded, color: _blue, size: 28),
+                    child: Icon(Icons.description_rounded, color: ThixPolicy.primary, size: 28),
                   ),
                 ),
               ),
             ),
-            // Petit texte sous la miniature (ex: "Recto", "Preuve")
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 2),
-              decoration: BoxDecoration(
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
-                border: Border(top: BorderSide(color: _blue.withOpacity(0.1))),
+                borderRadius: BorderRadius.vertical(bottom: Radius.circular(15)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.zoom_in_rounded, size: 11, color: _blueDark),
-                  const SizedBox(width: 3),
+                  const Icon(Icons.zoom_in_rounded, size: 12, color: ThixPolicy.textMain),
+                  const SizedBox(width: 4),
                   Flexible(
                     child: Text(
                       label,
-                      style: const TextStyle(fontSize: 10, color: _blueDark, fontWeight: FontWeight.bold),
+                      style: const TextStyle(fontSize: 10, color: ThixPolicy.textMain, fontWeight: FontWeight.w800),
                       textAlign: TextAlign.center,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -960,7 +1025,7 @@ class _ThumbnailViewerButton extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// 12. THIX ID CARD WIDGET
+// 12. THIX ID CARD WIDGET (Refonte Premium "Digital Wallet")
 // -----------------------------------------------------------------------------
 class _ThixIdCardWidget extends StatelessWidget {
   final ThixProfile profile;
@@ -971,100 +1036,115 @@ class _ThixIdCardWidget extends StatelessWidget {
     return Column(
       children: [
         AspectRatio(
-          aspectRatio: 1.58, // Format standard carte ID
+          aspectRatio: 1.58, 
           child: Container(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(24),
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [Color(0xFFE5C158), Color(0xFFF9E8A2), Color(0xFFD4AF37), Color(0xFFF9E8A2), Color(0xFFB59325)],
-                stops: [0.0, 0.3, 0.5, 0.8, 1.0],
+                colors: [ThixPolicy.primaryDeep, Color(0xFF0F172A)], // Indigo sombre et élégant
               ),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 15, offset: const Offset(0, 8))],
+              boxShadow: [BoxShadow(color: ThixPolicy.primaryDeep.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))],
             ),
             child: Stack(
               children: [
-                Positioned.fill(
-                  child: Center(
-                    child: Icon(Icons.fingerprint, size: 180, color: Colors.white.withOpacity(0.25)),
-                  ),
+                // Filigrane abstrait moderne (pas une grosse empreinte)
+                Positioned(
+                  right: -40,
+                  top: -40,
+                  child: Icon(Icons.fingerprint_rounded, size: 200, color: Colors.white.withOpacity(0.03)),
                 ),
+                Positioned(
+                  left: -20,
+                  bottom: -20,
+                  child: Container(width: 150, height: 150, decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white.withOpacity(0.05), width: 20))),
+                ),
+                
                 Padding(
-                  padding: const EdgeInsets.all(12.0),
+                  padding: const EdgeInsets.all(20.0),
                   child: Column(
                     children: [
+                      // Header de la carte
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(color: const Color(0xFF8B0000), borderRadius: BorderRadius.circular(6)),
-                            child: const Text('THIX ID', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1.5)),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('THIX ID', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18, letterSpacing: 2.0)),
+                              const SizedBox(height: 2),
+                              Text('DIGITAL IDENTITY', style: TextStyle(color: Colors.white.withOpacity(0.6), fontWeight: FontWeight.w700, fontSize: 8, letterSpacing: 1.5)),
+                            ],
                           ),
                           const Spacer(),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              const Text('DIGITAL IDENTITY CARD', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 0.5, shadows: [Shadow(color: Colors.black45, blurRadius: 2)])),
-                              Text('ID NAT : ${profile.nationalIdNumber ?? 'NON RENSEIGNÉ'}', style: const TextStyle(color: Color(0xFF5A4000), fontWeight: FontWeight.bold, fontSize: 10)),
-                              const Text('VILLE / PAYS D\'EMISSION : KINSHASA / RDC', style: TextStyle(color: Color(0xFF5A4000), fontWeight: FontWeight.bold, fontSize: 10)),
-                            ],
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.white.withOpacity(0.2))),
+                            child: const Text('RDC', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 11, letterSpacing: 1.0)),
                           ),
                         ],
                       ),
+                      
                       const Spacer(),
+                      
+                      // Corps de la carte
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
+                          // Photo
                           Container(
-                            width: 85,
-                            height: 110,
+                            width: 80,
+                            height: 100,
                             decoration: BoxDecoration(
-                              color: Colors.grey[200],
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: Colors.white, width: 2),
+                              color: Colors.white.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
                               image: profile.photoUrl != null && profile.photoUrl!.isNotEmpty
                                   ? DecorationImage(image: NetworkImage(profile.photoUrl!), fit: BoxFit.cover)
                                   : null,
                             ),
                             child: profile.photoUrl == null || profile.photoUrl!.isEmpty
-                                ? const Icon(Icons.person, color: Colors.grey, size: 50) : null,
+                                ? const Icon(Icons.person_rounded, color: Colors.white54, size: 40) : null,
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 16),
+                          
+                          // Infos
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
-                                _CardLabelValue('Name / Nom', profile.fullName ?? profile.displayName),
-                                _CardLabelValue('Place / Lieu', profile.placeOfBirth ?? '—'),
-                                _CardLabelValue('Address / Adresse', '${profile.residenceCity ?? ''} ${profile.residenceCommune ?? ''}'.trim()),
-                                _CardLabelValue('Profession / Occupation', profile.profession ?? profile.occupation ?? '—'),
+                                _CardLabelValue('NOM COMPLET', profile.fullName ?? profile.displayName),
+                                const SizedBox(height: 6),
+                                _CardLabelValue('PROFESSION', profile.profession ?? profile.occupation ?? '—'),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Expanded(child: _CardLabelValue('NAISSANCE', profile.dateOfBirth ?? '—')),
+                                    Expanded(child: _CardLabelValue('NATIONALITÉ', profile.nationality ?? 'CONGOLAISE')),
+                                  ],
+                                ),
                               ],
                             ),
                           ),
-                          Column(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              const Text('DIGITAL ID', style: TextStyle(color: Color(0xFF333333), fontWeight: FontWeight.w900, fontSize: 12)),
-                              Text(profile.thixId, style: const TextStyle(color: Color(0xFF8B0000), fontWeight: FontWeight.bold, fontSize: 10)),
-                              const SizedBox(height: 4),
-                              Container(
-                                padding: const EdgeInsets.all(2),
-                                color: Colors.white,
-                                child: const Icon(Icons.qr_code_2, size: 55, color: Color(0xFF8B0000)), // Faux QR
-                              ),
-                              const SizedBox(height: 4),
-                              const Text('CONGOLAIS', style: TextStyle(color: Color(0xFF333333), fontWeight: FontWeight.w900, fontSize: 11)),
-                              const Text('NATIONALITY / NATIONALITÉ', style: TextStyle(color: Color(0xFF5A4000), fontSize: 7, fontWeight: FontWeight.bold)),
-                              const SizedBox(height: 4),
-                              Text(profile.dateOfBirth ?? '—', style: const TextStyle(color: Color(0xFF333333), fontWeight: FontWeight.w900, fontSize: 12)),
-                            ],
-                          )
                         ],
-                      )
+                      ),
+                      
+                      const SizedBox(height: 16),
+                      
+                      // Footer de la carte
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(color: Colors.black.withOpacity(0.3), borderRadius: BorderRadius.circular(8)),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(profile.thixId, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'Courier', letterSpacing: 3.0)),
+                            const Icon(Icons.qr_code_2_rounded, size: 20, color: Colors.white70),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1073,11 +1153,11 @@ class _ThixIdCardWidget extends StatelessWidget {
           ),
         ),
         const Padding(
-          padding: EdgeInsets.only(top: 12.0, left: 8, right: 8),
+          padding: EdgeInsets.only(top: 16.0, left: 16, right: 16),
           child: Text(
-            "Cette pièce n'est pas une pièce d'identité officielle d'un gouvernement. Elle est générée automatiquement par THIX ID à titre strictement informatif.",
+            "Ceci est une identité numérique générée par THIX. Elle ne remplace pas une pièce d'identité gouvernementale officielle.",
             textAlign: TextAlign.center,
-            style: TextStyle(color: _red, fontSize: 11, fontWeight: FontWeight.bold),
+            style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
           ),
         ),
       ],
@@ -1092,15 +1172,13 @@ class _CardLabelValue extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(color: Color(0xFF5A4000), fontSize: 8, fontWeight: FontWeight.w700)),
-          Text(value.isEmpty ? '—' : value.toUpperCase(), style: const TextStyle(color: Color(0xFF222222), fontSize: 11, fontWeight: FontWeight.w900, height: 1.1)),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 8, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+        const SizedBox(height: 2),
+        Text(value.isEmpty ? '—' : value.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900, height: 1.1, letterSpacing: 0.2)),
+      ],
     );
   }
 }
