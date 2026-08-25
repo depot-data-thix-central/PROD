@@ -17,20 +17,20 @@ import 'package:thix_id/services/document_service.dart';
 import '../../core/theme/thix_design_policy.dart';
 
 // =============================================================
-// COULEURS DU COFFRE-FORT (DARK ENTERPRISE)
+// COULEURS DU COFFRE-FORT (LIGHT & SECURE ENTERPRISE)
 // =============================================================
 class _VaultColors {
-  static const bg = Color(0xFF050508);
-  static const surface = Color(0xFF111118);
-  static const surfaceLight = Color(0xFF1C1C26);
-  static const primary = Color(0xFF3B82F6); // Bleu Tech
-  static const primaryLight = Color(0xFF60A5FA);
-  static const gold = Color(0xFFF59E0B); // Accent premium
-  static const border = Color(0x1AFFFFFF);
-  static const textMain = Colors.white;
-  static const textSecondary = Color(0x99FFFFFF);
-  static const danger = Color(0xFFEF4444);
-  static const success = Color(0xFF10B981);
+  static const bg = Color(0xFFF8FAFC); // Blanc bleuté très propre (Fini le noir)
+  static const surface = Color(0xFFFFFFFF); // Cartes blanches pures
+  static const surfaceLight = Color(0xFFF1F5F9);
+  static const primary = Color(0xFF2563EB); // Bleu Institutionnel
+  static const primaryLight = Color(0xFF3B82F6);
+  static const gold = Color(0xFFD97706); // Doré sécurisé
+  static const border = Color(0xFFE2E8F0);
+  static const textMain = Color(0xFF0F172A); // Texte sombre contrasté
+  static const textSecondary = Color(0xFF64748B); // Gris lisible
+  static const danger = Color(0xFFDC2626);
+  static const success = Color(0xFF059669);
 }
 
 class DocumentVaultPage extends StatefulWidget {
@@ -52,7 +52,6 @@ class _DocumentVaultPageState extends State<DocumentVaultPage> with SingleTicker
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(() => setState(() {}));
-    // 🟢 SUPPRESSION DU VÉROUILLAGE : Accès direct au coffre
   }
 
   @override
@@ -99,15 +98,17 @@ class _DocumentVaultPageState extends State<DocumentVaultPage> with SingleTicker
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: _GlassModalContainer(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text('Nouveau dossier', style: TextStyle(color: _VaultColors.textMain, fontSize: 18, fontWeight: FontWeight.w900)),
               const SizedBox(height: 16),
-              _GlassTextField(controller: ctrl, label: 'Nom du dossier'),
+              _LightTextField(controller: ctrl, label: 'Nom du dossier'),
               const SizedBox(height: 24),
               Row(
                 children: [
@@ -219,14 +220,15 @@ class _DocumentVaultPageState extends State<DocumentVaultPage> with SingleTicker
     );
   }
 
-  // 🟢 RECHERCHE PUBLIQUE AVEC AFFICHAGE IMAGE EN GRAND
   Future<void> _searchById() async {
     final ctrl = TextEditingController();
     final query = await showDialog<String>(
       context: context,
       builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: _GlassModalContainer(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -235,7 +237,7 @@ class _DocumentVaultPageState extends State<DocumentVaultPage> with SingleTicker
               const SizedBox(height: 12),
               const Text('Entrez l\'identifiant unique de certification (ex: THIX-DOC-...)', style: TextStyle(fontSize: 12, color: _VaultColors.textSecondary)),
               const SizedBox(height: 20),
-              _GlassTextField(controller: ctrl, label: 'Identifiant THIX-DOC'),
+              _LightTextField(controller: ctrl, label: 'Identifiant THIX-DOC'),
               const SizedBox(height: 24),
               Row(
                 children: [
@@ -279,10 +281,11 @@ class _DocumentVaultPageState extends State<DocumentVaultPage> with SingleTicker
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.white,
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        child: _GlassModalContainer(
-          padding: const EdgeInsets.all(20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -291,30 +294,30 @@ class _DocumentVaultPageState extends State<DocumentVaultPage> with SingleTicker
                 children: [
                   CircleAvatar(
                     radius: 20,
-                    backgroundColor: Colors.white.withOpacity(0.1),
+                    backgroundColor: _VaultColors.surfaceLight,
                     backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
-                    child: avatarUrl.isEmpty ? Text(((res['owner_name'] as String?)?.isNotEmpty == true ? (res['owner_name'] as String).substring(0, 1) : '?').toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)) : null,
+                    child: avatarUrl.isEmpty ? Text(((res['owner_name'] as String?)?.isNotEmpty == true ? (res['owner_name'] as String).substring(0, 1) : '?').toUpperCase(), style: const TextStyle(color: _VaultColors.primary, fontWeight: FontWeight.bold)) : null,
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text((res['owner_name'] as String?) ?? 'Émetteur certifié', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: _VaultColors.textMain)),
+                        Text((res['owner_name'] as String?) ?? 'Émetteur certifié', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: _VaultColors.textMain)),
                         Text((res['owner_thix_id'] as String?) ?? '—', style: const TextStyle(fontSize: 11, color: _VaultColors.textSecondary, fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: _VaultColors.success.withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
+                    decoration: BoxDecoration(color: _VaultColors.success.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
                     child: const Row(children: [Icon(Icons.verified_rounded, size: 12, color: _VaultColors.success), SizedBox(width: 4), Text('CERTIFIÉ', style: TextStyle(color: _VaultColors.success, fontSize: 9, fontWeight: FontWeight.w900))]),
                   )
                 ],
               ),
               const SizedBox(height: 20),
               
-              // 🟢 AFFICHAGE EN GRAND DE L'IMAGE
+              // AFFICHAGE EN GRAND DE L'IMAGE
               InkWell(
                 borderRadius: BorderRadius.circular(16),
                 onTap: downloadFuture == null ? null : () async {
@@ -326,9 +329,9 @@ class _DocumentVaultPageState extends State<DocumentVaultPage> with SingleTicker
                   } catch (_) {}
                 },
                 child: Container(
-                  height: isImage ? 300 : 150, // Beaucoup plus grand si c'est une image
+                  height: isImage ? 300 : 150,
                   width: double.infinity,
-                  decoration: BoxDecoration(color: Colors.black.withOpacity(0.3), borderRadius: BorderRadius.circular(16), border: Border.all(color: accent.withOpacity(0.4))),
+                  decoration: BoxDecoration(color: _VaultColors.surfaceLight, borderRadius: BorderRadius.circular(16), border: Border.all(color: accent.withOpacity(0.3))),
                   clipBehavior: Clip.antiAlias,
                   child: isImage && downloadFuture != null
                       ? FutureBuilder<String>(
@@ -368,7 +371,7 @@ class _DocumentVaultPageState extends State<DocumentVaultPage> with SingleTicker
                 width: double.infinity,
                 height: 48,
                 child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.white.withOpacity(0.1), foregroundColor: _VaultColors.textMain, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                  style: ElevatedButton.styleFrom(backgroundColor: _VaultColors.surfaceLight, foregroundColor: _VaultColors.textMain, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                   onPressed: () => Navigator.pop(ctx),
                   child: const Text('Fermer', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
@@ -393,14 +396,18 @@ class _DocumentVaultPageState extends State<DocumentVaultPage> with SingleTicker
       isScrollControlled: true,
       builder: (_) {
         return StatefulBuilder(
-          builder: (ctx, setSheet) => _GlassModalContainer(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+          builder: (ctx, setSheet) => Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+            ),
+            padding: const EdgeInsets.all(24),
             child: SafeArea(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 24), decoration: BoxDecoration(color: Colors.white.withOpacity(0.3), borderRadius: BorderRadius.circular(2)))),
+                  Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 24), decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -421,25 +428,25 @@ class _DocumentVaultPageState extends State<DocumentVaultPage> with SingleTicker
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: () => showQrDialog(context, title: title, value: docId.isNotEmpty ? docId : title),
-                          icon: const Icon(Icons.qr_code_2_rounded, size: 18, color: Colors.white),
-                          label: const Text('QR Code', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white)),
-                          style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), side: BorderSide(color: Colors.white.withOpacity(0.2)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                          icon: const Icon(Icons.qr_code_2_rounded, size: 18, color: _VaultColors.primary),
+                          label: const Text('QR Code', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _VaultColors.textMain)),
+                          style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), side: const BorderSide(color: _VaultColors.border), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: () => showDocIdDialog(context, docId: docId.isNotEmpty ? docId : '—', title: title),
-                          icon: const Icon(Icons.badge_outlined, size: 18, color: Colors.white),
-                          label: const Text('Identifiant', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white)),
-                          style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), side: BorderSide(color: Colors.white.withOpacity(0.2)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                          icon: const Icon(Icons.badge_outlined, size: 18, color: _VaultColors.primary),
+                          label: const Text('Identifiant', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _VaultColors.textMain)),
+                          style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14), side: const BorderSide(color: _VaultColors.border), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 24),
                   Container(
-                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(0.1))),
+                    decoration: BoxDecoration(color: _VaultColors.surfaceLight, borderRadius: BorderRadius.circular(16), border: Border.all(color: _VaultColors.border)),
                     child: SwitchListTile(
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       title: Text(isPublic ? 'Archive Publique' : 'Archive Privée', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _VaultColors.textMain)),
@@ -487,142 +494,126 @@ class _DocumentVaultPageState extends State<DocumentVaultPage> with SingleTicker
 
     return Scaffold(
       backgroundColor: _VaultColors.bg,
-      extendBodyBehindAppBar: true,
-      body: Stack(
-        children: [
-          // LUEUR DE FOND
-          Positioned(
-            top: -100, right: -50,
-            child: Container(width: 300, height: 300, decoration: BoxDecoration(shape: BoxShape.circle, gradient: RadialGradient(colors: [_VaultColors.primary.withOpacity(0.15), Colors.transparent]))),
-          ),
-
-          SafeArea(
-            bottom: false,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // ===== ENTERPRISE TOP BAR (Glassmorphism) =====
-                ClipRRect(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                    child: Container(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-                      decoration: BoxDecoration(
-                        color: _VaultColors.surface.withOpacity(0.8),
-                        border: const Border(bottom: BorderSide(color: _VaultColors.border)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ===== TOP BAR ÉPURÉE (Blanc & Propre) =====
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: const Border(bottom: BorderSide(color: _VaultColors.border)),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 2))],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
                         children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _VaultColors.textMain, size: 20),
-                                    onPressed: () {
-                                      final auth = context.read<AuthController>();
-                                      if (auth.isAuthenticated) {
-                                        final t = auth.currentUser?.accountType;
-                                        context.go(t == AccountType.enterprise ? AppRoutes.enterpriseDashboard : AppRoutes.userDashboard);
-                                        return;
-                                      }
-                                      context.go(AppRoutes.home);
-                                    },
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  const Text('THIX VAULT', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 22, letterSpacing: -0.5)),
-                                ],
-                              ),
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(color: _VaultColors.success.withOpacity(0.15), borderRadius: BorderRadius.circular(20), border: Border.all(color: _VaultColors.success.withOpacity(0.3))),
-                                    child: const Row(
-                                      children: [
-                                        Icon(Icons.shield_rounded, color: _VaultColors.success, size: 14),
-                                        SizedBox(width: 6),
-                                        Text('SÉCURISÉ', style: TextStyle(color: _VaultColors.success, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  IconButton(
-                                    icon: const Icon(Icons.search_rounded, color: _VaultColors.textMain, size: 24),
-                                    onPressed: _searchById,
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                                ],
-                              ),
-                            ],
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _VaultColors.textMain, size: 20),
+                            onPressed: () {
+                              final auth = context.read<AuthController>();
+                              if (auth.isAuthenticated) {
+                                final t = auth.currentUser?.accountType;
+                                context.go(t == AccountType.enterprise ? AppRoutes.enterpriseDashboard : AppRoutes.userDashboard);
+                                return;
+                              }
+                              context.go(AppRoutes.home);
+                            },
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
                           ),
-                          const SizedBox(height: 24),
-                          // SEARCH FILTER BAR
-                          _GlassTextField(
-                            onChanged: (v) => setState(() => _searchQuery = v.trim().toLowerCase()),
-                            label: 'Filtrer vos archives...',
-                            icon: Icons.filter_list_rounded,
-                          ),
-                          const SizedBox(height: 20),
+                          const SizedBox(width: 12),
+                          const Text('THIX VAULT', style: TextStyle(color: _VaultColors.textMain, fontWeight: FontWeight.w900, fontSize: 22, letterSpacing: -0.5)),
+                        ],
+                      ),
+                      Row(
+                        children: [
                           Container(
-                            height: 44,
-                            decoration: BoxDecoration(color: Colors.black.withOpacity(0.3), borderRadius: BorderRadius.circular(22), border: Border.all(color: _VaultColors.border)),
-                            child: TabBar(
-                              controller: _tabController,
-                              indicator: BoxDecoration(color: _VaultColors.primary, borderRadius: BorderRadius.circular(22), boxShadow: [BoxShadow(color: _VaultColors.primary.withOpacity(0.4), blurRadius: 8)]),
-                              labelColor: Colors.white,
-                              unselectedLabelColor: _VaultColors.textSecondary,
-                              labelStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
-                              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-                              indicatorSize: TabBarIndicatorSize.tab,
-                              dividerColor: Colors.transparent,
-                              tabs: const [
-                                Tab(text: 'Coffre'),
-                                Tab(text: 'Transmettre'),
-                                Tab(text: 'Reçus'),
-                                Tab(text: 'Audit'),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(color: _VaultColors.success.withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: _VaultColors.success.withOpacity(0.3))),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.shield_rounded, color: _VaultColors.success, size: 14),
+                                SizedBox(width: 6),
+                                Text('SÉCURISÉ', style: TextStyle(color: _VaultColors.success, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
                               ],
                             ),
                           ),
+                          const SizedBox(width: 12),
+                          IconButton(
+                            icon: const Icon(Icons.search_rounded, color: _VaultColors.textMain, size: 24),
+                            onPressed: _searchById,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
                         ],
                       ),
-                    ),
-                  ),
-                ),
-
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    physics: const BouncingScrollPhysics(),
-                    children: [
-                      _DepotTab(
-                        me: me,
-                        docsService: _docs,
-                        formatDate: _formatDate,
-                        formatSize: _formatSize,
-                        onOpenDoc: _openDoc,
-                        onMore: (row) => _showDocMenu(row: row),
-                        onDeposit: _pickAndUpload,
-                        folderFilter: _folderFilter,
-                        onFolderSelected: (id) => setState(() => _folderFilter = id),
-                        onCreateFolder: _createFolder,
-                        searchQuery: _searchQuery,
-                      ),
-                      _EnvoyerTab(me: me, docsService: _docs, formatDate: _formatDate, onOpenSend: _openSendSheet),
-                      _RecuTab(me: me, docsService: _docs, onOpenDoc: _openDoc, formatDate: _formatDate),
-                      _HistoriqueTab(me: me, docsService: _docs, formatDate: _formatDate),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 20),
+                  // BARRE DE RECHERCHE CLAIRE
+                  _LightTextField(
+                    onChanged: (v) => setState(() => _searchQuery = v.trim().toLowerCase()),
+                    label: 'Filtrer vos archives...',
+                    icon: Icons.filter_list_rounded,
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    height: 44,
+                    decoration: BoxDecoration(color: _VaultColors.surfaceLight, borderRadius: BorderRadius.circular(22), border: Border.all(color: _VaultColors.border)),
+                    child: TabBar(
+                      controller: _tabController,
+                      indicator: BoxDecoration(color: _VaultColors.primary, borderRadius: BorderRadius.circular(22), boxShadow: [BoxShadow(color: _VaultColors.primary.withOpacity(0.3), blurRadius: 6, offset: const Offset(0, 2))]),
+                      labelColor: Colors.white,
+                      unselectedLabelColor: _VaultColors.textSecondary,
+                      labelStyle: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+                      unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                      indicatorSize: TabBarIndicatorSize.tab,
+                      dividerColor: Colors.transparent,
+                      tabs: const [
+                        Tab(text: 'Coffre'),
+                        Tab(text: 'Transmettre'),
+                        Tab(text: 'Reçus'),
+                        Tab(text: 'Audit'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                physics: const BouncingScrollPhysics(),
+                children: [
+                  _DepotTab(
+                    me: me,
+                    docsService: _docs,
+                    formatDate: _formatDate,
+                    formatSize: _formatSize,
+                    onOpenDoc: _openDoc,
+                    onMore: (row) => _showDocMenu(row: row),
+                    onDeposit: _pickAndUpload,
+                    folderFilter: _folderFilter,
+                    onFolderSelected: (id) => setState(() => _folderFilter = id),
+                    onCreateFolder: _createFolder,
+                    searchQuery: _searchQuery,
+                  ),
+                  _EnvoyerTab(me: me, docsService: _docs, formatDate: _formatDate, onOpenSend: _openSendSheet),
+                  _RecuTab(me: me, docsService: _docs, onOpenDoc: _openDoc, formatDate: _formatDate),
+                  _HistoriqueTab(me: me, docsService: _docs, formatDate: _formatDate),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
       floatingActionButton: _tabController.index == 0
           ? FloatingActionButton.extended(
@@ -631,7 +622,7 @@ class _DocumentVaultPageState extends State<DocumentVaultPage> with SingleTicker
               label: const Text("SÉCURISER", style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
               backgroundColor: _VaultColors.primary,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              elevation: 8,
+              elevation: 6,
             )
           : null,
     );
@@ -639,53 +630,25 @@ class _DocumentVaultPageState extends State<DocumentVaultPage> with SingleTicker
 }
 
 // =============================================================
-// REUSABLE GLASS COMPONENTS
+// COMPOSANTS UI LIGHT CLEAN
 // =============================================================
-class _GlassModalContainer extends StatelessWidget {
-  final Widget child;
-  final EdgeInsetsGeometry padding;
-  final BorderRadiusGeometry? borderRadius;
-
-  const _GlassModalContainer({required this.child, this.padding = const EdgeInsets.all(24), this.borderRadius});
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: borderRadius ?? BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            color: _VaultColors.surfaceLight.withOpacity(0.75),
-            borderRadius: borderRadius ?? BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.15), width: 1.5),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 20, offset: const Offset(0, 10))],
-          ),
-          child: child,
-        ),
-      ),
-    );
-  }
-}
-
-class _GlassTextField extends StatelessWidget {
+class _LightTextField extends StatelessWidget {
   final TextEditingController? controller;
   final String label;
   final IconData? icon;
   final bool obscureText;
   final ValueChanged<String>? onChanged;
 
-  const _GlassTextField({this.controller, required this.label, this.icon, this.obscureText = false, this.onChanged});
+  const _LightTextField({this.controller, required this.label, this.icon, this.obscureText = false, this.onChanged});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 48,
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.2),
+        color: _VaultColors.surfaceLight,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(color: _VaultColors.border),
       ),
       child: TextField(
         controller: controller,
@@ -713,7 +676,7 @@ Color _typeAccentColor(String? mime, String? docType) {
   if (m.contains('image')) return const Color(0xFF8B5CF6);
   if (m.contains('pdf')) return _VaultColors.danger;
   if (t.contains('diplome') || t.contains('diplôme') || t.contains('attestation')) return _VaultColors.success;
-  if (t == 'cin' || t == 'passeport' || t == 'permis') return _VaultColors.primaryLight;
+  if (t == 'cin' || t == 'passeport' || t == 'permis') return _VaultColors.primary;
   return _VaultColors.gold;
 }
 
@@ -735,8 +698,10 @@ void showQrDialog(BuildContext context, {required String title, required String 
   showDialog(
     context: context,
     builder: (ctx) => Dialog(
-      backgroundColor: Colors.transparent,
-      child: _GlassModalContainer(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -744,13 +709,13 @@ void showQrDialog(BuildContext context, {required String title, required String 
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+              decoration: BoxDecoration(color: _VaultColors.bg, borderRadius: BorderRadius.circular(16), border: Border.all(color: _VaultColors.border)),
               child: QrImageView(
                 data: value,
                 version: QrVersions.auto,
                 size: 200,
-                backgroundColor: Colors.white,
-                eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: _VaultColors.bg),
+                backgroundColor: _VaultColors.bg,
+                eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: _VaultColors.textMain),
                 dataModuleStyle: const QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: _VaultColors.primary),
               ),
             ),
@@ -776,8 +741,10 @@ void showDocIdDialog(BuildContext context, {required String docId, required Stri
   showDialog(
     context: context,
     builder: (ctx) => Dialog(
-      backgroundColor: Colors.transparent,
-      child: _GlassModalContainer(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -786,8 +753,8 @@ void showDocIdDialog(BuildContext context, {required String docId, required Stri
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: Colors.black.withOpacity(0.3), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.white.withOpacity(0.1))),
-              child: SelectableText(docId, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: _VaultColors.primaryLight, letterSpacing: 1.0)),
+              decoration: BoxDecoration(color: _VaultColors.surfaceLight, borderRadius: BorderRadius.circular(12), border: Border.all(color: _VaultColors.border)),
+              child: SelectableText(docId, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: _VaultColors.primary, letterSpacing: 1.0)),
             ),
             const SizedBox(height: 24),
             SizedBox(
@@ -823,10 +790,10 @@ class FolderChip extends StatelessWidget {
         margin: const EdgeInsets.only(right: 12),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: selected ? _VaultColors.primary : Colors.white.withOpacity(0.05),
+          color: selected ? _VaultColors.primary : Colors.white,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: selected ? _VaultColors.primaryLight : Colors.white.withOpacity(0.1)),
-          boxShadow: selected ? [BoxShadow(color: _VaultColors.primary.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 2))] : null,
+          border: Border.all(color: selected ? _VaultColors.primary : _VaultColors.border),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(selected ? 0.1 : 0.02), blurRadius: 6, offset: const Offset(0, 2))],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -899,9 +866,10 @@ class DocSquareCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(24),
       child: Container(
         decoration: BoxDecoration(
-          color: _VaultColors.surfaceLight.withOpacity(0.5),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.white.withOpacity(0.08)),
+          border: Border.all(color: _VaultColors.border),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))],
         ),
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -917,7 +885,7 @@ class DocSquareCard extends StatelessWidget {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(color: _VaultColors.gold, borderRadius: BorderRadius.circular(8)),
-                        child: const Text('PUBLIC', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: _VaultColors.bg)),
+                        child: const Text('PUBLIC', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white)),
                       ),
                     ),
                 ],
@@ -940,9 +908,9 @@ class DocSquareCard extends StatelessWidget {
             Container(
               height: 36,
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.2),
+                color: _VaultColors.surfaceLight,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withOpacity(0.05)),
+                border: Border.all(color: _VaultColors.border),
               ),
               child: Row(
                 children: [
@@ -950,15 +918,15 @@ class DocSquareCard extends StatelessWidget {
                     child: InkWell(
                       borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
                       onTap: onShowQr,
-                      child: const Center(child: Icon(Icons.qr_code_2_rounded, size: 16, color: _VaultColors.primaryLight)),
+                      child: const Center(child: Icon(Icons.qr_code_2_rounded, size: 16, color: _VaultColors.primary)),
                     ),
                   ),
-                  Container(width: 1, height: 16, color: Colors.white.withOpacity(0.1)),
+                  Container(width: 1, height: 16, color: _VaultColors.border),
                   Expanded(
                     child: InkWell(
                       borderRadius: const BorderRadius.horizontal(right: Radius.circular(12)),
                       onTap: onShowId,
-                      child: const Center(child: Icon(Icons.badge_outlined, size: 16, color: _VaultColors.primaryLight)),
+                      child: const Center(child: Icon(Icons.badge_outlined, size: 16, color: _VaultColors.primary)),
                     ),
                   ),
                 ],
@@ -1002,9 +970,10 @@ class DocItem extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: _VaultColors.surfaceLight.withOpacity(0.5),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.white.withOpacity(0.05)),
+          border: Border.all(color: _VaultColors.border),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 3))],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1016,7 +985,7 @@ class DocItem extends StatelessWidget {
                   children: [
                     Container(
                       width: 48, height: 48,
-                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: accentColor.withOpacity(0.15)),
+                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), color: accentColor.withOpacity(0.12)),
                       alignment: Alignment.center,
                       child: Icon(icon, color: accentColor, size: 24),
                     ),
@@ -1025,7 +994,7 @@ class DocItem extends StatelessWidget {
                         right: -4, bottom: -4,
                         child: Container(
                           padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(color: _VaultColors.bg, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1.5)),
+                          decoration: BoxDecoration(color: _VaultColors.textMain, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1.5)),
                           child: const Icon(Icons.lock_rounded, size: 10, color: Colors.white),
                         ),
                       ),
@@ -1045,8 +1014,8 @@ class DocItem extends StatelessWidget {
                 if (trailing != null)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.3), borderRadius: BorderRadius.circular(8)),
-                    child: Text(trailing!, style: const TextStyle(color: _VaultColors.primaryLight, fontSize: 11, fontWeight: FontWeight.w900)),
+                    decoration: BoxDecoration(color: _VaultColors.surfaceLight, borderRadius: BorderRadius.circular(8)),
+                    child: Text(trailing!, style: const TextStyle(color: _VaultColors.primary, fontSize: 11, fontWeight: FontWeight.w900)),
                   ),
               ],
             ),
@@ -1210,7 +1179,7 @@ class _DepotTab extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 60),
                   child: Column(
                     children: [
-                      Icon(Icons.shield_outlined, size: 60, color: Colors.white.withOpacity(0.1)),
+                      Icon(Icons.shield_outlined, size: 60, color: _VaultColors.border),
                       const SizedBox(height: 16),
                       const Text('Le coffre est vide.', style: TextStyle(color: _VaultColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 24),
@@ -1312,16 +1281,16 @@ class _EnvoyerTabState extends State<_EnvoyerTab> {
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: _VaultColors.surfaceLight.withOpacity(0.5),
+              color: Colors.white,
               borderRadius: BorderRadius.circular(24),
               border: Border.all(color: _VaultColors.primary.withOpacity(0.3), width: 1.5),
-              boxShadow: [BoxShadow(color: _VaultColors.primary.withOpacity(0.1), blurRadius: 20)],
+              boxShadow: [BoxShadow(color: _VaultColors.primary.withOpacity(0.08), blurRadius: 20, offset: const Offset(0, 4))],
             ),
             child: Column(
               children: [
-                Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: _VaultColors.primary.withOpacity(0.15), shape: BoxShape.circle), child: const Icon(Icons.admin_panel_settings_rounded, size: 40, color: _VaultColors.primaryLight)),
+                Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: _VaultColors.primary.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.admin_panel_settings_rounded, size: 40, color: _VaultColors.primary)),
                 const SizedBox(height: 16),
-                const Text('Transmission Sécurisée', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+                const Text('Transmission Sécurisée', style: TextStyle(color: _VaultColors.textMain, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
                 const SizedBox(height: 8),
                 const Text('Partagez vos documents avec chiffrement E2E, auto-destruction et traçabilité absolue.', textAlign: TextAlign.center, style: TextStyle(color: _VaultColors.textSecondary, fontSize: 12, height: 1.4, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 24),
@@ -1444,15 +1413,17 @@ class _RecuTabState extends State<_RecuTab> {
         context: context,
         builder: (ctx) => StatefulBuilder(
           builder: (ctx, setDlg) => Dialog(
-            backgroundColor: Colors.transparent,
-            child: _GlassModalContainer(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text('Mot de passe requis', style: TextStyle(color: _VaultColors.textMain, fontSize: 18, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 16),
-                  _GlassTextField(controller: ctrl, label: 'Mot de passe', obscureText: true),
+                  _LightTextField(controller: ctrl, label: 'Mot de passe', obscureText: true),
                   if (error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, style: const TextStyle(color: _VaultColors.danger, fontSize: 12))),
                   const SizedBox(height: 24),
                   ElevatedButton(
@@ -1520,7 +1491,7 @@ class _RecuTabState extends State<_RecuTab> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.inbox_rounded, size: 60, color: Colors.white.withOpacity(0.1)),
+                Icon(Icons.inbox_rounded, size: 60, color: _VaultColors.border),
                 const SizedBox(height: 16),
                 const Text('Boîte de réception vide.', style: TextStyle(color: _VaultColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w600)),
               ],
@@ -1552,7 +1523,7 @@ class _RecuTabState extends State<_RecuTab> {
 
             Widget? progress;
             if (status == 'pending' && availableFrom != null && availableFrom.isAfter(DateTime.now())) {
-              progress = CountdownBar(start: createdAt, target: availableFrom, label: 'Déverrouillage dans', color: _VaultColors.primaryLight);
+              progress = CountdownBar(start: createdAt, target: availableFrom, label: 'Déverrouillage dans', color: _VaultColors.primary);
             } else if (autoDestructAt != null) {
               progress = CountdownBar(start: createdAt, target: autoDestructAt, label: 'Auto-destruction', color: _VaultColors.danger);
             }
@@ -1626,7 +1597,7 @@ class _HistoriqueTab extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.history_rounded, size: 60, color: Colors.white.withOpacity(0.1)),
+                Icon(Icons.history_rounded, size: 60, color: _VaultColors.border),
                 const SizedBox(height: 16),
                 const Text('Aucun journal d\'audit.', style: TextStyle(color: _VaultColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w600)),
               ],
@@ -1642,7 +1613,7 @@ class _HistoriqueTab extends StatelessWidget {
             final action = (t['action'] as String?) ?? '';
             return DocItem(
               icon: _iconForAction(action),
-              accentColor: action == 'delete' ? _VaultColors.danger : (action == 'screenshot' ? _VaultColors.gold : _VaultColors.primaryLight),
+              accentColor: action == 'delete' ? _VaultColors.danger : (action == 'screenshot' ? _VaultColors.gold : _VaultColors.primary),
               title: _labelForAction(action),
               subtitle: '${(t['detail'] as String?) ?? (t['doc_id'] as String?) ?? ''}',
               trailing: formatDate(t['created_at']),
@@ -1705,7 +1676,7 @@ class _UploadDocumentSheetState extends State<_UploadDocumentSheet> {
       firstDate: now.subtract(const Duration(days: 365 * 20)),
       lastDate: now.add(const Duration(days: 365 * 50)),
       builder: (context, child) => Theme(
-        data: ThemeData.dark().copyWith(colorScheme: const ColorScheme.dark(primary: _VaultColors.primary, surface: _VaultColors.surface)),
+        data: ThemeData.light().copyWith(colorScheme: const ColorScheme.light(primary: _VaultColors.primary, surface: Colors.white)),
         child: child!,
       ),
     );
@@ -1719,15 +1690,19 @@ class _UploadDocumentSheetState extends State<_UploadDocumentSheet> {
 
     return Padding(
       padding: EdgeInsets.only(bottom: bottomPadding),
-      child: _GlassModalContainer(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        padding: const EdgeInsets.all(24),
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 24), decoration: BoxDecoration(color: Colors.white.withOpacity(0.3), borderRadius: BorderRadius.circular(2)))),
+              Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 24), decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -1736,15 +1711,15 @@ class _UploadDocumentSheetState extends State<_UploadDocumentSheet> {
                 ],
               ),
               const SizedBox(height: 8),
-              Text(widget.fileName, style: const TextStyle(color: _VaultColors.primaryLight, fontSize: 13, fontWeight: FontWeight.w800)),
+              Text(widget.fileName, style: const TextStyle(color: _VaultColors.primary, fontSize: 13, fontWeight: FontWeight.w800)),
               const SizedBox(height: 8),
               const Text('Identifiant unique généré automatiquement (THIX-DOC...)', style: TextStyle(color: _VaultColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
               const SizedBox(height: 24),
               DropdownButtonFormField<String?>(
                 value: _folderId,
-                dropdownColor: _VaultColors.surface,
+                dropdownColor: Colors.white,
                 style: const TextStyle(color: _VaultColors.textMain, fontWeight: FontWeight.w600),
-                decoration: InputDecoration(labelText: 'Dossier de destination', labelStyle: const TextStyle(color: _VaultColors.textSecondary), filled: true, fillColor: Colors.black.withOpacity(0.2), border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withOpacity(0.1)))),
+                decoration: InputDecoration(labelText: 'Dossier de destination', labelStyle: const TextStyle(color: _VaultColors.textSecondary), filled: true, fillColor: _VaultColors.surfaceLight, border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _VaultColors.border))),
                 items: [
                   const DropdownMenuItem(value: null, child: Text('Racine principale')),
                   ...widget.folders.map((f) => DropdownMenuItem(value: f['id'] as String, child: Text(f['name'] as String? ?? 'Dossier'))),
@@ -1754,7 +1729,7 @@ class _UploadDocumentSheetState extends State<_UploadDocumentSheet> {
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
                 value: _type,
-                dropdownColor: _VaultColors.surface,
+                dropdownColor: Colors.white,
                 style: const TextStyle(color: _VaultColors.textMain, fontWeight: FontWeight.w600),
                 items: const [
                   DropdownMenuItem(value: 'CIN', child: Text('Pièce d\'identité — CIN')),
@@ -1765,17 +1740,17 @@ class _UploadDocumentSheetState extends State<_UploadDocumentSheet> {
                   DropdownMenuItem(value: 'Autre', child: Text('Document Général')),
                 ],
                 onChanged: (v) => setState(() { _type = v ?? 'Autre'; if (!_needsExpiry) _expiresAt = null; }),
-                decoration: InputDecoration(labelText: 'Classification', labelStyle: const TextStyle(color: _VaultColors.textSecondary), filled: true, fillColor: Colors.black.withOpacity(0.2), border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withOpacity(0.1)))),
+                decoration: InputDecoration(labelText: 'Classification', labelStyle: const TextStyle(color: _VaultColors.textSecondary), filled: true, fillColor: _VaultColors.surfaceLight, border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _VaultColors.border))),
               ),
               const SizedBox(height: 16),
-              _GlassTextField(controller: _titleC, label: 'Libellé (Optionnel, ex: Master 2025)'),
+              _LightTextField(controller: _titleC, label: 'Libellé (Optionnel, ex: Master 2025)'),
               if (_needsExpiry) ...[
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
                   onPressed: _pickExpiry,
-                  icon: const Icon(Icons.event_available_rounded, size: 18, color: _VaultColors.primaryLight),
-                  label: Text('Expiration : $expiryLabel', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), side: BorderSide(color: Colors.white.withOpacity(0.2)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                  icon: const Icon(Icons.event_available_rounded, size: 18, color: _VaultColors.primary),
+                  label: Text('Expiration : $expiryLabel', style: const TextStyle(color: _VaultColors.textMain, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), side: const BorderSide(color: _VaultColors.border), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                 ),
               ],
               const SizedBox(height: 32),
@@ -1888,7 +1863,7 @@ class _SendDocumentSheetState extends State<_SendDocumentSheet> {
       initialDate: now, 
       firstDate: now, 
       lastDate: now.add(const Duration(days: 365 * 2)),
-      builder: (context, child) => Theme(data: ThemeData.dark().copyWith(colorScheme: const ColorScheme.dark(primary: _VaultColors.primary, surface: _VaultColors.surface)), child: child!),
+      builder: (context, child) => Theme(data: ThemeData.light().copyWith(colorScheme: const ColorScheme.light(primary: _VaultColors.primary, surface: Colors.white)), child: child!),
     );
     if (picked == null) return;
     if (!mounted) return;
@@ -1904,14 +1879,19 @@ class _SendDocumentSheetState extends State<_SendDocumentSheet> {
 
     return Padding(
       padding: EdgeInsets.only(bottom: bottom),
-      child: _GlassModalContainer(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+      child: Container(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.92),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+        ),
         child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
           physics: const BouncingScrollPhysics(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 24), decoration: BoxDecoration(color: Colors.white.withOpacity(0.3), borderRadius: BorderRadius.circular(2)))),
+              Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 24), decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -1922,9 +1902,9 @@ class _SendDocumentSheetState extends State<_SendDocumentSheet> {
               const SizedBox(height: 24),
               DropdownButtonFormField<String>(
                 value: _selectedDocId,
-                dropdownColor: _VaultColors.surface,
+                dropdownColor: Colors.white,
                 style: const TextStyle(color: _VaultColors.textMain, fontWeight: FontWeight.w600),
-                decoration: InputDecoration(labelText: 'Archive à transmettre', labelStyle: const TextStyle(color: _VaultColors.textSecondary), filled: true, fillColor: Colors.black.withOpacity(0.2), border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withOpacity(0.1)))),
+                decoration: InputDecoration(labelText: 'Archive à transmettre', labelStyle: const TextStyle(color: _VaultColors.textSecondary), filled: true, fillColor: _VaultColors.surfaceLight, border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _VaultColors.border))),
                 items: widget.documents.map((d) {
                   final id = d['id'].toString();
                   final title = (d['title'] as String?) ?? (d['generated_doc_id'] as String?) ?? 'Document';
@@ -1933,7 +1913,7 @@ class _SendDocumentSheetState extends State<_SendDocumentSheet> {
                 onChanged: (v) => setState(() => _selectedDocId = v),
               ),
               const SizedBox(height: 16),
-              _GlassTextField(controller: _recipientsC, onChanged: _onRecipientsChanged, label: 'THIX ID du destinataire (ex: THIX-882-091)'),
+              _LightTextField(controller: _recipientsC, onChanged: _onRecipientsChanged, label: 'THIX ID du destinataire (ex: THIX-882-091)'),
               if (_verifying)
                 const Padding(padding: EdgeInsets.only(top: 6, left: 4), child: Text('Vérification...', style: TextStyle(fontSize: 12, color: _VaultColors.textSecondary)))
               else if (_verifiedName != null)
@@ -1948,18 +1928,18 @@ class _SendDocumentSheetState extends State<_SendDocumentSheet> {
                   ),
                 ),
               const SizedBox(height: 16),
-              _GlassTextField(controller: _subjectC, label: 'Objet de la transmission'),
+              _LightTextField(controller: _subjectC, label: 'Objet de la transmission'),
               const SizedBox(height: 16),
               Container(
                 height: 100,
-                decoration: BoxDecoration(color: Colors.black.withOpacity(0.2), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(0.1))),
+                decoration: BoxDecoration(color: _VaultColors.surfaceLight, borderRadius: BorderRadius.circular(16), border: Border.all(color: _VaultColors.border)),
                 child: TextField(controller: _bodyC, maxLines: 4, style: const TextStyle(color: _VaultColors.textMain, fontWeight: FontWeight.w600), decoration: const InputDecoration(hintText: 'Message confidentiel', hintStyle: TextStyle(color: _VaultColors.textSecondary), border: InputBorder.none, contentPadding: EdgeInsets.all(16))),
               ),
               const SizedBox(height: 16),
-              _GlassTextField(controller: _passwordC, label: 'Mot de passe optionnel', obscureText: true),
+              _LightTextField(controller: _passwordC, label: 'Mot de passe optionnel', obscureText: true),
               const SizedBox(height: 24),
               Container(
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(0.1))),
+                decoration: BoxDecoration(color: _VaultColors.surfaceLight, borderRadius: BorderRadius.circular(16), border: Border.all(color: _VaultColors.border)),
                 child: SwitchListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   title: const Text('Auto-destruction', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _VaultColors.textMain)),
@@ -1973,17 +1953,17 @@ class _SendDocumentSheetState extends State<_SendDocumentSheet> {
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    Expanded(flex: 2, child: _GlassTextField(controller: _durationValueC, label: 'Délai')),
+                    Expanded(flex: 2, child: _LightTextField(controller: _durationValueC, label: 'Délai')),
                     const SizedBox(width: 12),
                     Expanded(
                       flex: 3,
                       child: DropdownButtonFormField<String>(
                         value: _durationUnit,
-                        dropdownColor: _VaultColors.surface,
+                        dropdownColor: Colors.white,
                         style: const TextStyle(color: _VaultColors.textMain, fontWeight: FontWeight.w800),
                         items: const [DropdownMenuItem(value: 'secondes', child: Text('Secondes')), DropdownMenuItem(value: 'minutes', child: Text('Minutes')), DropdownMenuItem(value: 'heures', child: Text('Heures')), DropdownMenuItem(value: 'jours', child: Text('Jours'))],
                         onChanged: (v) => setState(() => _durationUnit = v ?? 'minutes'),
-                        decoration: InputDecoration(filled: true, fillColor: Colors.black.withOpacity(0.2), border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: Colors.white.withOpacity(0.1)))),
+                        decoration: InputDecoration(filled: true, fillColor: _VaultColors.surfaceLight, border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _VaultColors.border))),
                       ),
                     ),
                   ],
@@ -1992,14 +1972,14 @@ class _SendDocumentSheetState extends State<_SendDocumentSheet> {
               const SizedBox(height: 16),
               OutlinedButton.icon(
                 onPressed: _pickAvailableDate,
-                icon: const Icon(Icons.schedule_rounded, size: 18, color: _VaultColors.primaryLight),
+                icon: const Icon(Icons.schedule_rounded, size: 18, color: _VaultColors.primary),
                 label: Text(
                   _availableFrom == null
                       ? 'Disponibilité immédiate (Modifier)'
                       : 'Prévu le ${_availableFrom!.day}/${_availableFrom!.month}/${_availableFrom!.year} à ${_availableFrom!.hour.toString().padLeft(2, '0')}:${_availableFrom!.minute.toString().padLeft(2, '0')}',
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _VaultColors.textMain),
                 ),
-                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), side: BorderSide(color: Colors.white.withOpacity(0.2)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16), side: const BorderSide(color: _VaultColors.border), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
               ),
               const SizedBox(height: 32),
               ElevatedButton.icon(
