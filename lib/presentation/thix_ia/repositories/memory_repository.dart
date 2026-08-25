@@ -9,7 +9,8 @@ import '../core/errors/thix_ia_exception.dart';
 /// ============================================================================
 
 abstract class MemoryRepository {
-  Future<ProjectMemory> getMemory(String projectCode, {bool forceRefresh = false});
+  Future<ProjectMemory> getMemory(String projectCode,
+      {bool forceRefresh = false});
   Future<ProjectFact> addFact({
     required String projectCode,
     required String type,
@@ -56,27 +57,20 @@ class MemoryRepositoryImpl implements MemoryRepository {
     String projectCode, {
     bool forceRefresh = false,
   }) async {
-    // 1) Cache local (jamais faire planter l'UI)
     if (!forceRefresh) {
       try {
         final cached = await local.getCachedMemory(projectCode);
         if (cached != null) return cached;
-      } catch (_) {
-        // Hive / late non init → on ignore le cache
-      }
+      } catch (_) {}
     }
 
-    // 2) Supabase
     try {
       final fresh = await remote.getProjectMemory(projectCode);
       try {
         await local.cacheProjectMemory(fresh);
-      } catch (_) {
-        // cache en échec = non bloquant
-      }
+      } catch (_) {}
       return fresh;
     } catch (_) {
-      // Tables vides / erreur parse → mémoire vide (empty state UI)
       return _empty(projectCode);
     }
   }
@@ -107,16 +101,21 @@ class MemoryRepositoryImpl implements MemoryRepository {
       dateVerified: DateTime.now(),
     );
 
-    await remote.upsertProjectFact({
+    // Colonnes réellement présentes dans project_facts (sans date_collected / date_verified)
+    final payload = <String, dynamic>{
       'project_code': projectCode,
       'type': fact.type,
       'content': fact.content,
-      'source_url': fact.sourceUrl,
-      'source_name': fact.sourceName,
       'confidence': fact.confidence,
-      'date_collected': fact.dateCollected?.toIso8601String(),
-      'date_verified': fact.dateVerified?.toIso8601String(),
-    });
+    };
+    if (fact.sourceUrl != null && fact.sourceUrl!.isNotEmpty) {
+      payload['source_url'] = fact.sourceUrl;
+    }
+    if (fact.sourceName != null && fact.sourceName!.isNotEmpty) {
+      payload['source_name'] = fact.sourceName;
+    }
+
+    await remote.upsertProjectFact(payload);
 
     try {
       final updated = await remote.getProjectMemory(projectCode);
@@ -132,12 +131,16 @@ class MemoryRepositoryImpl implements MemoryRepository {
     required String title,
     String? description,
   }) async {
-    await remote.upsertProjectFact({
+    final payload = <String, dynamic>{
       'project_code': projectCode,
       'type': 'idea',
-      'title': title,
-      'description': description,
-    });
+      'content': description?.trim().isNotEmpty == true
+          ? '\( {title.trim()}\n\n \){description!.trim()}'
+          : title.trim(),
+      'source_name': title.trim(),
+      'confidence': 0.7,
+    };
+    await remote.upsertProjectFact(payload);
   }
 
   @override
@@ -146,12 +149,15 @@ class MemoryRepositoryImpl implements MemoryRepository {
     required String title,
     String? reason,
   }) async {
-    await remote.upsertProjectFact({
+    final payload = <String, dynamic>{
       'project_code': projectCode,
       'type': 'decision',
-      'title': title,
-      'reason': reason,
-      'decided_at': DateTime.now().toIso8601String(),
-    });
+      'content': reason?.trim().isNotEmpty == true
+          ? '\( {title.trim()}\n\n \){reason!.trim()}'
+          : title.trim(),
+      'source_name': title.trim(),
+      'confidence': 0.9,
+    };
+    await remote.upsertProjectFact(payload);
   }
 }
