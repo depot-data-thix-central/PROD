@@ -278,10 +278,10 @@ class _CorporateRadialBranchesPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // TRACER L'OCTOGONE EXTÉRIEUR (Très fin et translucide)
+    // TRACER L'OCTOGONE EXTÉRIEUR (Fin, légèrement plus visible sur fond blanc)
     if (nodeOffsets.length == 12) {
       final perimeterPaint = Paint()
-        ..color = Colors.white.withOpacity(0.6)
+        ..color = ThixPolicy.border.withOpacity(0.9)
         ..strokeWidth = 1.0
         ..style = PaintingStyle.stroke;
 
@@ -296,9 +296,9 @@ class _CorporateRadialBranchesPainter extends CustomPainter {
     for (var i = 0; i < nodeOffsets.length; i++) {
       final end = nodeOffsets[i];
 
-      // Ligne très propre
+      // Ligne visible sur fond blanc (gris clair au lieu de blanc translucide)
       final trackPaint = Paint()
-        ..color = Colors.white.withOpacity(0.7)
+        ..color = ThixPolicy.border
         ..strokeWidth = 1.2
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke;
@@ -312,13 +312,13 @@ class _CorporateRadialBranchesPainter extends CustomPainter {
       // Halo élégant blanc/doré
       final haloPaint = Paint()
         ..shader = RadialGradient(
-          colors: [Colors.white.withOpacity(0.9), ThixPolicy.gold.withOpacity(0.2), Colors.transparent],
+          colors: [Colors.white.withOpacity(0.9), ThixPolicy.gold.withOpacity(0.3), Colors.transparent],
           stops: const [0.0, 0.4, 1.0],
         ).createShader(Rect.fromCircle(center: shinePos, radius: 8));
       canvas.drawCircle(shinePos, 8, haloPaint);
 
       // Cœur de l'étincelle
-      final corePaint = Paint()..color = Colors.white;
+      final corePaint = Paint()..color = ThixPolicy.gold;
       canvas.drawCircle(shinePos, 1.5, corePaint);
     }
   }
@@ -330,8 +330,9 @@ class _CorporateRadialBranchesPainter extends CustomPainter {
 }
 
 /// Nœud de service en style Glassmorphism Corporate
-/// Le contour reste neutre (comme la rangée Quick Actions) : seule l'icône
-/// à l'intérieur porte la couleur du service.
+/// Le contour reste neutre (comme la rangée Quick Actions), mais renforcé
+/// pour bien se détacher d'un fond blanc opaque : fond légèrement plus
+/// opaque, ombre plus marquée, bordure plus visible.
 class _ConstellationNode extends StatefulWidget {
   final _ServiceNodeData data;
   final double width;
@@ -394,8 +395,9 @@ class _ConstellationNodeState extends State<_ConstellationNode> with SingleTicke
               Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  // Cercle Glassmorphism — contour neutre (comme Quick Actions),
-                  // pas de teinte de fond ni de bordure colorée par service.
+                  // Cercle Glassmorphism — contour neutre mais renforcé pour rester
+                  // bien visible sur un fond blanc opaque : fond plus opaque (0.92),
+                  // ombre plus marquée, bordure grise nette plutôt que blanche.
                   ClipOval(
                     child: BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
@@ -403,11 +405,12 @@ class _ConstellationNodeState extends State<_ConstellationNode> with SingleTicke
                         width: size,
                         height: size,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.65),
+                          color: Colors.white.withOpacity(0.92),
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white.withOpacity(0.9), width: 1.2),
+                          border: Border.all(color: ThixPolicy.border, width: 1.3),
                           boxShadow: [
-                            BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2)),
+                            BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 3)),
+                            BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 2, offset: const Offset(0, 1)),
                           ],
                         ),
                         alignment: Alignment.center,
