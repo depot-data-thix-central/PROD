@@ -864,9 +864,8 @@ class _SuiviGrossessePageState extends ConsumerState<SuiviGrossessePage> with Si
             )
           ]);
 
-  // ================= AUTRES MÉTHODES CONSERVÉES À L'IDENTIQUE =================
+  // ================= AUTRES MÉTHODES =================
   Widget _createProfileWizard() {
-    // ... [Même code que précédemment, encapsulé dans un GlassCard si souhaité, mais fonctionnel]
     final ctrl = TextEditingController();
     PregnancyType selectedType = PregnancyType.singleton;
     
@@ -974,8 +973,74 @@ class _SuiviGrossessePageState extends ConsumerState<SuiviGrossessePage> with Si
                 ]))).toList());
   }
 
-  // --- Les fonctions _addVital, _showAddValiseItemDialog, _addJournalPhoto, etc., restent inchangées en logique, juste les styles boutons mis à jour si besoin.
-  // [Le reste des fonctions utilitaires (_addVital, _pickDoc, _addConsultation, _exportPdf) reste le même que ton code original]
+  // 🌟 MODALE AJOUT PRÉNOM (Celle qui causait l'erreur)
+  void _showAddPrenomDialog() {
+    final ctrl = TextEditingController();
+    bool isFille = true;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setStateLocal) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Nouvelle idée de prénom', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: ctrl, 
+                decoration: InputDecoration(
+                  hintText: 'Ex: Léo, Mia...', 
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16))
+                )
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: ChoiceChip(
+                      label: const Text('Fille 🌸', style: TextStyle(fontWeight: FontWeight.bold)), 
+                      selected: isFille, 
+                      selectedColor: _PregnancyColors.secondary.withOpacity(0.2),
+                      onSelected: (v) => setStateLocal(() => isFille = true)
+                    )
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ChoiceChip(
+                      label: const Text('Garçon 💙', style: TextStyle(fontWeight: FontWeight.bold)), 
+                      selected: !isFille, 
+                      selectedColor: Colors.blue.withOpacity(0.2),
+                      onSelected: (v) => setStateLocal(() => isFille = false)
+                    )
+                  ),
+                ],
+              )
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler', style: TextStyle(fontWeight: FontWeight.bold))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _PregnancyColors.primary, 
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+              ),
+              onPressed: () {
+                if(ctrl.text.trim().isNotEmpty) {
+                  setState(() {
+                    if (isFille) _prenomsFilles.add(ctrl.text.trim());
+                    else _prenomsGarcons.add(ctrl.text.trim());
+                  });
+                }
+                Navigator.pop(context);
+              }, 
+              child: const Text('Ajouter', style: TextStyle(fontWeight: FontWeight.bold))
+            )
+          ],
+        )
+      )
+    );
+  }
 
   void _addVital(String type) async {
     final c = TextEditingController();
