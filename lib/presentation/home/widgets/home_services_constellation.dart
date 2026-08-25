@@ -90,7 +90,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> w
     super.dispose();
   }
 
-  /// Génère la liste des nœuds séparés en 2 orbites, chacun avec sa propre couleur
+  /// Génère la liste des nœuds séparés en 2 orbites, chacun avec sa propre couleur d'icône
   List<_ServiceNodeData> _getGroupedNodes(AppLocalizations l10n) {
     final c = widget.counts;
     return [
@@ -330,6 +330,8 @@ class _CorporateRadialBranchesPainter extends CustomPainter {
 }
 
 /// Nœud de service en style Glassmorphism Corporate
+/// Le contour reste neutre (comme la rangée Quick Actions) : seule l'icône
+/// à l'intérieur porte la couleur du service.
 class _ConstellationNode extends StatefulWidget {
   final _ServiceNodeData data;
   final double width;
@@ -392,7 +394,8 @@ class _ConstellationNodeState extends State<_ConstellationNode> with SingleTicke
               Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  // Cercle Glassmorphism, teinté légèrement selon la couleur du service
+                  // Cercle Glassmorphism — contour neutre (comme Quick Actions),
+                  // pas de teinte de fond ni de bordure colorée par service.
                   ClipOval(
                     child: BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
@@ -400,9 +403,9 @@ class _ConstellationNodeState extends State<_ConstellationNode> with SingleTicke
                         width: size,
                         height: size,
                         decoration: BoxDecoration(
-                          color: Color.alphaBlend(d.color.withOpacity(0.06), Colors.white.withOpacity(0.65)),
+                          color: Colors.white.withOpacity(0.65),
                           shape: BoxShape.circle,
-                          border: Border.all(color: d.color.withOpacity(0.35), width: 1.1),
+                          border: Border.all(color: Colors.white.withOpacity(0.9), width: 1.2),
                           boxShadow: [
                             BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2)),
                           ],
