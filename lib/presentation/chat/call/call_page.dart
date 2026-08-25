@@ -31,20 +31,23 @@ class _CallPageState extends ConsumerState<CallPage> {
     final notifier = ref.read(callProvider.notifier);
     final media = CallMediaService();
 
-    // ── Surface les échecs silencieux (permission refusée, token
-    // invalide, etc.) au lieu de laisser l'écran figé sans explication.
+    // Affiche l'erreur BRUTE pour debug (token / agora / permission)
     ref.listen(callProvider, (previous, next) {
       if (next.status == CallStatus.failed && !_errorHandled) {
         _errorHandled = true;
         final message = next.error ?? "L'appel a échoué.";
+        debugPrint('❌ CALL UI error: $message');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(_humanizeCallError(message)),
+            content: Text(
+              message,
+              style: const TextStyle(fontSize: 12),
+            ),
             backgroundColor: const Color(0xFFEF4444),
-            duration: const Duration(seconds: 4),
+            duration: const Duration(seconds: 10),
           ),
         );
-        Future.delayed(const Duration(milliseconds: 800), () {
+        Future.delayed(const Duration(seconds: 4), () {
           if (context.mounted) Navigator.of(context).pop();
         });
       }
@@ -66,7 +69,6 @@ class _CallPageState extends ConsumerState<CallPage> {
       body: SafeArea(
         child: Stack(
           children: [
-            // Vidéo remote — garde-fou sur channelId nullable
             if (state.isVideo &&
                 state.remoteUid != null &&
                 media.engine != null &&
@@ -114,9 +116,21 @@ class _CallPageState extends ConsumerState<CallPage> {
                         fontSize: 16,
                       ),
                     ),
-                    // ── Indicateur explicite si la vidéo est prévue mais
-                    // le moteur/caméra pas encore prêt, au lieu de rien
-                    // afficher et laisser croire à un bug.
+                    if (state.status == CallStatus.failed &&
+                        state.error != null) ...[
+                      const SizedBox(height: 12),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Text(
+                          state.error!,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFFFCA5A5),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
                     if (state.isVideo &&
                         state.status == CallStatus.ongoing &&
                         media.engine == null) ...[
@@ -131,7 +145,7 @@ class _CallPageState extends ConsumerState<CallPage> {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        "Initialisation de la caméra...",
+                        'Initialisation de la caméra...',
                         style: TextStyle(color: Colors.white38, fontSize: 12),
                       ),
                     ],
@@ -139,7 +153,6 @@ class _CallPageState extends ConsumerState<CallPage> {
                 ),
               ),
 
-            // Preview locale (vidéo)
             if (state.isVideo && !state.videoOff && media.engine != null)
               Positioned(
                 right: 16,
@@ -180,7 +193,6 @@ class _CallPageState extends ConsumerState<CallPage> {
                 ),
               ),
 
-            // Controls
             Positioned(
               left: 0,
               right: 0,
@@ -223,9 +235,13 @@ class _CallPageState extends ConsumerState<CallPage> {
                     onTap: () async {
                       try {
                         final isMissed = state.duration.inSeconds == 0;
-                        final type = state.isVideo ? 'call_video' : 'call_audio';
-                        final textType = state.isVideo ? 'Appel vidéo' : 'Appel audio';
-                        final textDuration = isMissed ? 'manqué' : '(${_fmt(state.duration)})';
+                        final type =
+                            state.isVideo ? 'call_video' : 'call_audio';
+                        final textType =
+                            state.isVideo ? 'Appel vidéo' : 'Appel audio';
+                        final textDuration = isMissed
+                            ? 'manqué'
+                            : '(${_fmt(state.duration)})';
                         final content = '$textType $textDuration';
 
                         final chatSvc = ref.read(chatServiceProvider);
@@ -239,7 +255,7 @@ class _CallPageState extends ConsumerState<CallPage> {
                           );
                         }
                       } catch (e) {
-                        debugPrint('Erreur lors de la création de la bulle d\'historique : $e');
+                        debugPrint('Erreur bulle historique: $e');
                       }
 
                       await notifier.hangUp();
@@ -254,24 +270,6 @@ class _CallPageState extends ConsumerState<CallPage> {
         ),
       ),
     );
-  }
-
-  /// Traduit les exceptions techniques en messages compréhensibles.
-  String _humanizeCallError(String raw) {
-    final lower = raw.toLowerCase();
-    if (lower.contains('caméra refusée') || lower.contains('camera')) {
-      return "Accès à la caméra refusé. Activez-le dans les réglages de votre téléphone.";
-    }
-    if (lower.contains('micro refusé') || lower.contains('microphone')) {
-      return "Accès au microphone refusé. Activez-le dans les réglages de votre téléphone.";
-    }
-    if (lower.contains('token')) {
-      return "Erreur de connexion au serveur d'appel. Réessayez.";
-    }
-    if (lower.contains('non authentifié')) {
-      return "Session expirée. Reconnectez-vous.";
-    }
-    return "L'appel n'a pas pu aboutir.";
   }
 }
 
