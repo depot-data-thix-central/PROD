@@ -8,9 +8,6 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../../../core/theme/thix_design_policy.dart';
 import '../models/project_analysis.dart';
-// TODO: Décommente et adapte le chemin vers ton provider de mémoire
-// import '../providers/project_memory_provider.dart';
-// import '../providers/analyses_provider.dart';
 
 class AnalysisReportPage extends ConsumerStatefulWidget {
   const AnalysisReportPage({super.key, required this.analysis});
@@ -27,18 +24,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
   Future<void> _validateAndSendToMemory(
       ProjectAnalysis analysis, String contentToSave) async {
     setState(() => isValidating = true);
-
     try {
-      // TODO: Décommente quand projectMemoryProvider est prêt
-      /*
-      await ref.read(projectMemoryProvider.notifier).addFact(
-            type: 'validated_analysis',
-            content: '【${analysis.type.toUpperCase()}】 ${analysis.title ?? analysis.type}\n\n$contentToSave',
-            sourceName: analysis.title,
-            confidence: analysis.confidence > 0 ? analysis.confidence : 0.9,
-          );
-      */
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -57,8 +43,8 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
             ),
             backgroundColor: ThixPolicy.success,
             behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
           ),
         );
         context.pop();
@@ -111,7 +97,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
         children: [
-          // ========== HEADER ==========
+          // HEADER
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -132,11 +118,8 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
                         color: ThixPolicy.primary.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Icon(
-                        Icons.analytics_rounded,
-                        color: ThixPolicy.primary,
-                        size: 22,
-                      ),
+                      child: Icon(Icons.analytics_rounded,
+                          color: ThixPolicy.primary, size: 22),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -205,7 +188,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
 
           const SizedBox(height: 20),
 
-          // ========== CONTENU DU RAPPORT ==========
+          // RAPPORT
           Text('Rapport', style: ThixPolicy.labelStyle.copyWith(fontSize: 13)),
           const SizedBox(height: 8),
           Container(
@@ -244,10 +227,11 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
             ),
           ),
 
-          // ========== SOURCES ==========
+          // SOURCES
           if (sources.isNotEmpty) ...[
             const SizedBox(height: 24),
-            Text('Sources', style: ThixPolicy.labelStyle.copyWith(fontSize: 13)),
+            Text('Sources',
+                style: ThixPolicy.labelStyle.copyWith(fontSize: 13)),
             const SizedBox(height: 8),
             ...sources.asMap().entries.map((e) {
               final i = e.key + 1;
@@ -295,7 +279,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
             }),
           ],
 
-          // ========== AVERTISSEMENT LÉGAL ==========
+          // AVERTISSEMENT LÉGAL
           if (widget.analysis.type == 'legal' ||
               widget.analysis.type == 'tax') ...[
             const SizedBox(height: 24),
@@ -327,7 +311,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
             ),
           ],
 
-          // ========== VALIDER EN MÉMOIRE ==========
+          // VALIDER
           Padding(
             padding: const EdgeInsets.only(top: 32, bottom: 20),
             child: Column(
@@ -378,180 +362,200 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // EXTRACTION + CONVERSION JSON → MARKDOWN
+  // EXTRACTION ROBUSTE + JSON → MARKDOWN
   // ═══════════════════════════════════════════════════════════
 
   String _extractContent(ProjectAnalysis a) {
-    String rawText = '';
-    final rj = a.resultJson;
+    dynamic source = a.resultJson;
 
-    if (rj != null) {
-      // 1) content = String (marché, concurrence, légal…)
-      if (rj['content'] is String && (rj['content'] as String).isNotEmpty) {
-        rawText = rj['content'] as String;
-      }
-      // 2) content = Map (business plan, finance…)
-      else if (rj['content'] is Map) {
-        rawText = _jsonToMarkdown(Map<String, dynamic>.from(rj['content'] as Map));
-      }
-      // 3) parsed.*
-      else if (rj['parsed'] is Map) {
-        final parsed = Map<String, dynamic>.from(rj['parsed'] as Map);
-        if (parsed['content'] is String) {
-          rawText = parsed['content'] as String;
-        } else if (parsed['content'] is Map) {
-          rawText = _jsonToMarkdown(Map<String, dynamic>.from(parsed['content'] as Map));
-        } else if (parsed['report'] is String) {
-          rawText = parsed['report'] as String;
-        } else if (parsed['business_plan'] is Map) {
-          rawText = _jsonToMarkdown({'business_plan': parsed['business_plan']});
-        } else {
-          rawText = _jsonToMarkdown(parsed);
-        }
-      }
-      // 4) clés racines fréquentes
-      else if (rj['business_plan'] is Map) {
-        rawText = _jsonToMarkdown({'business_plan': rj['business_plan']});
-      } else if (rj['plan_financier'] is Map || rj['financial_model'] is Map) {
-        rawText = _jsonToMarkdown(Map<String, dynamic>.from(rj));
-      } else if (rj['report'] is String) {
-        rawText = rj['report'] as String;
-      } else if (rj['text'] is String) {
-        rawText = rj['text'] as String;
-      } else if (rj['response'] is String) {
-        rawText = rj['response'] as String;
-      } else if (rj['result'] is String) {
-        rawText = rj['result'] as String;
-      } else if (rj['answer'] is String) {
-        rawText = rj['answer'] as String;
-      } else if (rj['data'] is String) {
-        rawText = rj['data'] as String;
-      } else if (rj['data'] is Map) {
-        rawText = _jsonToMarkdown(Map<String, dynamic>.from(rj['data'] as Map));
-      }
-      // 5) dernier recours : tout le JSON formaté
-      else if (rj.isNotEmpty) {
-        // Enlever les clés purement techniques avant formatage
-        final cleaned = Map<String, dynamic>.from(rj)
-          ..remove('model')
-          ..remove('ai_model')
-          ..remove('ai_model_used')
-          ..remove('tokens')
-          ..remove('usage')
-          ..remove('search');
-        if (cleaned.isNotEmpty) {
-          rawText = _jsonToMarkdown(cleaned);
-        }
+    // Si resultJson est vide, tenter le summary
+    if (source == null || (source is Map && source.isEmpty)) {
+      if (a.summary != null && a.summary!.trim().isNotEmpty) {
+        source = a.summary;
       }
     }
 
-    // Fallback summary
-    if (rawText.isEmpty && a.summary != null && a.summary!.isNotEmpty) {
-      rawText = a.summary!;
-    }
+    // Convertir en Markdown
+    final md = _anyToMarkdown(source);
+    if (md.trim().isNotEmpty) return md.trim();
 
-    // Si c’est encore une string JSON
-    if (rawText.trim().startsWith('{')) {
-      try {
-        final decoded = jsonDecode(rawText);
-        if (decoded is Map) {
-          final m = Map<String, dynamic>.from(decoded);
-          if (m['content'] is String) {
-            rawText = m['content'] as String;
-          } else if (m['content'] is Map) {
-            rawText = _jsonToMarkdown(Map<String, dynamic>.from(m['content'] as Map));
-          } else {
-            m.remove('model');
-            m.remove('ai_model');
-            rawText = _jsonToMarkdown(m);
-          }
-        }
-      } catch (_) {}
-    }
-
-    // Nettoyage échappements
-    rawText = rawText.replaceAll('\\n', '\n');
-    rawText = rawText.replaceAll('\\"', '"');
-    rawText = rawText.replaceAll(r'\"', '"');
-
-    if (rawText.startsWith('"') && rawText.endsWith('"') && rawText.length > 1) {
-      rawText = rawText.substring(1, rawText.length - 1);
-    }
-
-    // Enlever un éventuel préfixe technique "model: xxx, content:"
-    rawText = rawText.replaceAll(
-      RegExp(r'^\{?\s*model:\s*[^\s,\}]+,?\s*content:\s*', caseSensitive: false),
-      '',
-    );
-
-    return rawText.trim();
+    return 'Aucun contenu disponible pour ce rapport.';
   }
 
-  /// Convertit un Map JSON imbriqué en Markdown lisible
-  String _jsonToMarkdown(Map map, {int level = 0}) {
-    final buffer = StringBuffer();
+  /// Accepte String | Map | List et renvoie du Markdown
+  String _anyToMarkdown(dynamic value, {int level = 0}) {
+    if (value == null) return '';
 
-    map.forEach((key, value) {
+    // --- String ---
+    if (value is String) {
+      var s = value.trim();
+      if (s.isEmpty) return '';
+
+      // Nettoyage échappements
+      s = s.replaceAll(r'\n', '\n').replaceAll(r'\"', '"').replaceAll(r"\'", "'");
+
+      // Enlever guillemets externes
+      if (s.length > 1 &&
+          ((s.startsWith('"') && s.endsWith('"')) ||
+              (s.startsWith("'") && s.endsWith("'")))) {
+        s = s.substring(1, s.length - 1).trim();
+      }
+
+      // Si ça ressemble à du JSON → parser
+      if (s.startsWith('{') || s.startsWith('[')) {
+        final parsed = _tryDecodeJson(s);
+        if (parsed != null) {
+          return _anyToMarkdown(parsed, level: level);
+        }
+      }
+
+      // Texte Markdown déjà prêt
+      return s;
+    }
+
+    // --- Map ---
+    if (value is Map) {
+      return _mapToMarkdown(Map<String, dynamic>.from(value), level: level);
+    }
+
+    // --- List ---
+    if (value is List) {
+      final buf = StringBuffer();
+      for (final item in value) {
+        if (item is Map) {
+          buf.write(_mapToMarkdown(Map<String, dynamic>.from(item),
+              level: level));
+        } else if (item != null && item.toString().trim().isNotEmpty) {
+          buf.writeln('- ${item.toString().trim()}');
+        }
+      }
+      return buf.toString();
+    }
+
+    return value.toString();
+  }
+
+  String _mapToMarkdown(Map<String, dynamic> map, {int level = 0}) {
+    final buf = StringBuffer();
+    final headingLevel = (level + 2).clamp(2, 6);
+    final hashes = '#' * headingLevel;
+
+    // Si une seule clé "content" / "business_plan" / "report" → plonger dedans
+    if (map.length == 1) {
+      final onlyKey = map.keys.first;
+      final onlyVal = map[onlyKey];
+      final k = onlyKey.toString().toLowerCase();
+      if (k == 'content' ||
+          k == 'business_plan' ||
+          k == 'plan_financier' ||
+          k == 'financial_model' ||
+          k == 'report' ||
+          k == 'data' ||
+          k == 'result' ||
+          k == 'parsed') {
+        return _anyToMarkdown(onlyVal, level: level);
+      }
+    }
+
+    // Si "content" est présent avec d'autres clés techniques, prioriser content
+    if (map.containsKey('content') && map['content'] != null) {
+      final c = map['content'];
+      final rest = Map<String, dynamic>.from(map)
+        ..remove('content')
+        ..remove('model')
+        ..remove('ai_model')
+        ..remove('ai_model_used')
+        ..remove('tokens')
+        ..remove('usage')
+        ..remove('search');
+      final main = _anyToMarkdown(c, level: level);
+      if (rest.isEmpty) return main;
+      return '\( main\n\n \){_mapToMarkdown(rest, level: level)}';
+    }
+
+    map.forEach((key, val) {
       final k = key.toString().toLowerCase();
-      // Ignorer métadonnées techniques
       if (k == 'model' ||
           k == 'ai_model' ||
           k == 'ai_model_used' ||
           k == 'tokens' ||
           k == 'usage' ||
-          k == 'prompt_version') {
+          k == 'prompt_version' ||
+          k == 'search') {
         return;
       }
 
       final title = _humanizeKey(key.toString());
-      final headingLevel = (level + 2).clamp(2, 6);
-      final hashes = '#' * headingLevel;
 
-      if (value is Map) {
-        buffer.writeln('$hashes $title');
-        buffer.writeln();
-        buffer.write(
-            _jsonToMarkdown(Map<String, dynamic>.from(value), level: level + 1));
-      } else if (value is List) {
-        buffer.writeln('$hashes $title');
-        buffer.writeln();
-        for (final item in value) {
+      if (val is Map) {
+        buf.writeln('$hashes $title');
+        buf.writeln();
+        buf.write(_mapToMarkdown(Map<String, dynamic>.from(val),
+            level: level + 1));
+      } else if (val is List) {
+        buf.writeln('$hashes $title');
+        buf.writeln();
+        for (final item in val) {
           if (item is Map) {
-            buffer.write(_jsonToMarkdown(
-                Map<String, dynamic>.from(item),
-                level: level + 1));
+            // Liste d'objets (ex: équipe)
+            final poste = item['poste'] ?? item['role'] ?? item['title'];
+            final nombre = item['nombre'] ?? item['count'];
+            final resp =
+                item['responsabilites'] ?? item['responsibilities'] ?? item['description'];
+            if (poste != null) {
+              final n = nombre != null ? ' (x$nombre)' : '';
+              buf.writeln('- **$poste**$n');
+              if (resp != null && resp.toString().trim().isNotEmpty) {
+                buf.writeln('  - ${resp.toString().trim()}');
+              }
+            } else {
+              buf.write(_mapToMarkdown(Map<String, dynamic>.from(item),
+                  level: level + 1));
+            }
           } else if (item != null && item.toString().trim().isNotEmpty) {
-            buffer.writeln('- ${item.toString().trim()}');
+            buf.writeln('- ${item.toString().trim()}');
           }
         }
-        buffer.writeln();
-      } else if (value != null && value.toString().trim().isNotEmpty) {
-        final text = value.toString().trim();
-        // Texte long → paragraphe sous un titre
-        if (text.length > 80 || text.contains('\n')) {
-          buffer.writeln('$hashes $title');
-          buffer.writeln();
-          buffer.writeln(text);
-          buffer.writeln();
+        buf.writeln();
+      } else if (val != null && val.toString().trim().isNotEmpty) {
+        final text = val.toString().trim();
+        if (text.length > 90 || text.contains('\n')) {
+          buf.writeln('$hashes $title');
+          buf.writeln();
+          buf.writeln(text);
+          buf.writeln();
         } else {
-          buffer.writeln('**$title** : $text');
-          buffer.writeln();
+          buf.writeln('**$title** : $text');
+          buf.writeln();
         }
       }
     });
 
-    return buffer.toString();
+    return buf.toString();
+  }
+
+  dynamic _tryDecodeJson(String s) {
+    try {
+      return jsonDecode(s);
+    } catch (_) {}
+
+    // Tentative de réparation légère (trailing commas)
+    try {
+      var fixed = s.replaceAll(RegExp(r',\s*}'), '}');
+      fixed = fixed.replaceAll(RegExp(r',\s*]'), ']');
+      return jsonDecode(fixed);
+    } catch (_) {}
+
+    return null;
   }
 
   String _humanizeKey(String key) {
-    // resume_executif → Resume executif, puis capitaliser
     var cleaned = key
         .replaceAll('_', ' ')
         .replaceAllMapped(
             RegExp(r'([a-z])([A-Z])'), (m) => '${m[1]} ${m[2]}')
         .trim();
 
-    // Petites traductions utiles
     const labels = {
       'business plan': 'Business Plan',
       'resume executif': 'Résumé exécutif',
@@ -566,6 +570,14 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
       'innovations': 'Innovations',
       'positionnement': 'Positionnement',
       'marches cibles': 'Marchés cibles',
+      'chiffre affaires previsionnel': "Chiffre d'affaires prévisionnel",
+      'seuil rentabilite': 'Seuil de rentabilité',
+      'investissement initial': 'Investissement initial',
+      'partenaires strategiques': 'Partenaires stratégiques',
+      'equipe': 'Équipe',
+      'logistique': 'Logistique',
+      'infrastructure': 'Infrastructure',
+      'id projet': 'ID projet',
       'pour les consommateurs': 'Pour les consommateurs',
       'pour l environnement': "Pour l'environnement",
       'pour la societe': 'Pour la société',
@@ -573,7 +585,6 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
 
     final lower = cleaned.toLowerCase();
     if (labels.containsKey(lower)) return labels[lower]!;
-
     if (cleaned.isEmpty) return key;
     return cleaned[0].toUpperCase() + cleaned.substring(1);
   }
@@ -582,7 +593,6 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
     if (a.sources.isNotEmpty) return a.sources;
     final rj = a.resultJson;
     if (rj == null) return [];
-
     final search = rj['search'];
     if (search is Map && search['results'] is List) {
       return (search['results'] as List)
