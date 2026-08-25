@@ -97,7 +97,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
         children: [
-          // HEADER
+          // ========== HEADER ==========
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -188,7 +188,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
 
           const SizedBox(height: 20),
 
-          // RAPPORT
+          // ========== RAPPORT ==========
           Text('Rapport', style: ThixPolicy.labelStyle.copyWith(fontSize: 13)),
           const SizedBox(height: 8),
           Container(
@@ -227,7 +227,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
             ),
           ),
 
-          // SOURCES
+          // ========== SOURCES ==========
           if (sources.isNotEmpty) ...[
             const SizedBox(height: 24),
             Text('Sources',
@@ -279,7 +279,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
             }),
           ],
 
-          // AVERTISSEMENT LÉGAL
+          // ========== AVERTISSEMENT LÉGAL ==========
           if (widget.analysis.type == 'legal' ||
               widget.analysis.type == 'tax') ...[
             const SizedBox(height: 24),
@@ -311,7 +311,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
             ),
           ],
 
-          // VALIDER
+          // ========== VALIDER ==========
           Padding(
             padding: const EdgeInsets.only(top: 32, bottom: 20),
             child: Column(
@@ -362,45 +362,55 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // EXTRACTION ROBUSTE + JSON → MARKDOWN
+  // EXTRACTION JSON → MARKDOWN
   // ═══════════════════════════════════════════════════════════
 
   String _extractContent(ProjectAnalysis a) {
     final rj = a.resultJson;
 
-    // --- Cas Map (données structurées) ---
     if (rj != null && rj.isNotEmpty) {
-      // content string → parser
+      // content = String (souvent le gros JSON business plan)
       if (rj['content'] is String) {
-        final parsed = _forceJsonToMarkdown((rj['content'] as String).trim());
+        final parsed =
+            _tryParseToMarkdown((rj['content'] as String).trim());
         if (parsed.isNotEmpty) return parsed;
       }
-      // content Map
+      // content = Map
       if (rj['content'] is Map) {
-        return _jsonToMarkdown(Map<String, dynamic>.from(rj['content'] as Map));
+        return _jsonToMarkdown(
+            Map<String, dynamic>.from(rj['content'] as Map));
       }
-      // business_plan / finance à la racine
+      // business_plan / finance / résumé à la racine
       if (rj.containsKey('business_plan') ||
           rj.containsKey('plan_financier') ||
           rj.containsKey('financial_model') ||
           rj.containsKey('resume_executif')) {
         return _jsonToMarkdown(Map<String, dynamic>.from(rj));
       }
+      // parsed
       if (rj['parsed'] is Map) {
-        return _jsonToMarkdown(Map<String, dynamic>.from(rj['parsed'] as Map));
+        return _jsonToMarkdown(
+            Map<String, dynamic>.from(rj['parsed'] as Map));
       }
-      // report / text / etc. en string
-      for (final key in ['report', 'text', 'response', 'result', 'answer', 'data']) {
+      // clés string de secours
+      for (final key in [
+        'report',
+        'text',
+        'response',
+        'result',
+        'answer',
+        'data'
+      ]) {
         final v = rj[key];
         if (v is String && v.trim().isNotEmpty) {
-          final parsed = _forceJsonToMarkdown(v.trim());
+          final parsed = _tryParseToMarkdown(v.trim());
           if (parsed.isNotEmpty) return parsed;
         }
         if (v is Map) {
           return _jsonToMarkdown(Map<String, dynamic>.from(v));
         }
       }
-      // tout le map restant
+      // reste du map (sans métadonnées techniques)
       final cleaned = Map<String, dynamic>.from(rj)
         ..remove('model')
         ..remove('ai_model')
@@ -413,9 +423,9 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
       }
     }
 
-    // --- Fallback summary ---
+    // Fallback summary
     if (a.summary != null && a.summary!.trim().isNotEmpty) {
-      final parsed = _forceJsonToMarkdown(a.summary!.trim());
+      final parsed = _tryParseToMarkdown(a.summary!.trim());
       if (parsed.isNotEmpty) return parsed;
       return a.summary!.trim();
     }
@@ -423,9 +433,10 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
     return 'Aucun contenu disponible pour ce rapport.';
   }
 
-  /// Force le passage JSON string → Markdown (sans exiger la clé "content")
-  String _forceJsonToMarkdown(String s) {
+  /// String JSON → Markdown (sans exiger la clé "content")
+  String _tryParseToMarkdown(String s) {
     if (s.isEmpty) return '';
+
     var text = s
         .replaceAll(r'\n', '\n')
         .replaceAll(r'\"', '"')
@@ -437,7 +448,6 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
       text = text.substring(1, text.length - 1).trim();
     }
 
-    // Tout string qui commence par { ou [ est traité comme JSON
     if (text.startsWith('{') || text.startsWith('[')) {
       try {
         final decoded = jsonDecode(text);
@@ -456,147 +466,108 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
           return buf.toString();
         }
       } catch (_) {
-        // JSON invalide → on laisse le texte
+        // JSON invalide → texte brut
       }
     }
     return text;
   }
-  /// Accepte String | Map | List et renvoie du Markdown
-  String _anyToMarkdown(dynamic value, {int level = 0}) {
-    if (value == null) return '';
 
-    // --- String ---
-    if (value is String) {
-      final s = value.trim();
-      if (s.isEmpty) return '';
-      final parsed = _tryParseToMarkdown(s);
-      return parsed.isNotEmpty ? parsed : s;
-    }
-
-    // --- Map ---
-    if (value is Map) {
-      return _jsonToMarkdown(Map<String, dynamic>.from(value));
-    }
-
-    // --- List ---
-    if (value is List) {
-      final buf = StringBuffer();
-      for (final item in value) {
-        if (item is Map) {
-          buf.write(_jsonToMarkdown(Map<String, dynamic>.from(item)));
-        } else if (item != null && item.toString().trim().isNotEmpty) {
-          buf.writeln('- ${item.toString().trim()}');
-        }
-      }
-      return buf.toString();
-    }
-
-    return value.toString();
-  }
-
-  /// Conversion Map JSON → Markdown structuré (titres, listes, gras)
-  String _jsonToMarkdown(Map<String, dynamic> map, {int level = 0}) {
-    final buf = StringBuffer();
+  /// Map imbriqué → Markdown
+  String _jsonToMarkdown(Map map, {int level = 0}) {
+    final buffer = StringBuffer();
     final headingLevel = (level + 2).clamp(2, 6);
     final hashes = '#' * headingLevel;
 
-    // Si une seule clé "content" / "business_plan" / "report" → plonger dedans
+    // Une seule clé utile → plonger dedans
     if (map.length == 1) {
-      final onlyKey = map.keys.first;
-      final onlyVal = map[onlyKey];
-      final k = onlyKey.toString().toLowerCase();
-      if (k == 'content' ||
-          k == 'business_plan' ||
-          k == 'plan_financier' ||
-          k == 'financial_model' ||
-          k == 'report' ||
-          k == 'data' ||
-          k == 'result' ||
-          k == 'parsed') {
-        return _anyToMarkdown(onlyVal, level: level);
+      final onlyKey = map.keys.first.toString().toLowerCase();
+      final onlyVal = map.values.first;
+      if (onlyKey == 'content' ||
+          onlyKey == 'business_plan' ||
+          onlyKey == 'plan_financier' ||
+          onlyKey == 'financial_model' ||
+          onlyKey == 'report' ||
+          onlyKey == 'data' ||
+          onlyKey == 'result' ||
+          onlyKey == 'parsed') {
+        if (onlyVal is Map) {
+          return _jsonToMarkdown(Map<String, dynamic>.from(onlyVal),
+              level: level);
+        }
+        if (onlyVal is String) {
+          return _tryParseToMarkdown(onlyVal);
+        }
       }
     }
 
-    // Si "content" est présent avec d'autres clés techniques, prioriser content
-    if (map.containsKey('content') && map['content'] != null) {
-      final c = map['content'];
-      final rest = Map<String, dynamic>.from(map)
-        ..remove('content')
-        ..remove('model')
-        ..remove('ai_model')
-        ..remove('ai_model_used')
-        ..remove('tokens')
-        ..remove('usage')
-        ..remove('search');
-      final main = _anyToMarkdown(c, level: level);
-      if (rest.isEmpty) return main;
-      return '$main\n\n${_jsonToMarkdown(rest, level: level)}';
-    }
-
-    map.forEach((key, val) {
+    map.forEach((key, value) {
       final k = key.toString().toLowerCase();
       if (k == 'model' ||
           k == 'ai_model' ||
           k == 'ai_model_used' ||
           k == 'tokens' ||
           k == 'usage' ||
-          k == 'prompt_version' ||
-          k == 'search') {
+          k == 'prompt_version') {
         return;
       }
 
       final title = _humanizeKey(key.toString());
 
-      if (val is Map) {
-        buf.writeln('$hashes $title');
-        buf.writeln();
-        buf.write(_jsonToMarkdown(Map<String, dynamic>.from(val),
+      if (value is Map) {
+        buffer.writeln('$hashes $title');
+        buffer.writeln();
+        buffer.write(_jsonToMarkdown(Map<String, dynamic>.from(value),
             level: level + 1));
-      } else if (val is List) {
-        buf.writeln('$hashes $title');
-        buf.writeln();
-        for (final item in val) {
+      } else if (value is List) {
+        buffer.writeln('$hashes $title');
+        buffer.writeln();
+        for (final item in value) {
           if (item is Map) {
-            // Liste d'objets (ex: équipe)
-            final poste = item['poste'] ?? item['role'] ?? item['title'];
-            final nombre = item['nombre'] ?? item['count'];
-            final resp =
-                item['responsabilites'] ?? item['responsibilities'] ?? item['description'];
+            final poste =
+                item['poste'] ?? item['role'] ?? item['title'] ?? item['segment'];
+            final nombre = item['nombre'] ?? item['count'] ?? item['taille'];
+            final resp = item['responsabilites'] ??
+                item['responsibilities'] ??
+                item['description'] ??
+                item['besoins'];
             if (poste != null) {
-              final n = nombre != null ? ' (x$nombre)' : '';
-              buf.writeln('- **$poste**$n');
+              final n = nombre != null ? ' ($nombre)' : '';
+              buffer.writeln('- **$poste**$n');
               if (resp != null && resp.toString().trim().isNotEmpty) {
-                buf.writeln('  - ${resp.toString().trim()}');
+                buffer.writeln('  - ${resp.toString().trim()}');
+              }
+              final profil = item['profil'];
+              if (profil != null && profil.toString().trim().isNotEmpty) {
+                buffer.writeln('  - Profil : ${profil.toString().trim()}');
+              }
+              final canaux = item['canaux'];
+              if (canaux != null && canaux.toString().trim().isNotEmpty) {
+                buffer.writeln('  - Canaux : ${canaux.toString().trim()}');
               }
             } else {
-              buf.write(_jsonToMarkdown(Map<String, dynamic>.from(item),
+              buffer.write(_jsonToMarkdown(Map<String, dynamic>.from(item),
                   level: level + 1));
             }
           } else if (item != null && item.toString().trim().isNotEmpty) {
-            buf.writeln('- ${item.toString().trim()}');
+            buffer.writeln('- ${item.toString().trim()}');
           }
         }
-        buf.writeln();
-      } else if (val != null && val.toString().trim().isNotEmpty) {
-        // Si la valeur string est elle-même du JSON encodé, on la déplie aussi
-        final rawText = val.toString().trim();
-        final text = (rawText.startsWith('{') || rawText.startsWith('['))
-            ? _tryParseToMarkdown(rawText)
-            : rawText;
-
+        buffer.writeln();
+      } else if (value != null && value.toString().trim().isNotEmpty) {
+        final text = value.toString().trim();
         if (text.length > 90 || text.contains('\n')) {
-          buf.writeln('$hashes $title');
-          buf.writeln();
-          buf.writeln(text);
-          buf.writeln();
+          buffer.writeln('$hashes $title');
+          buffer.writeln();
+          buffer.writeln(text);
+          buffer.writeln();
         } else {
-          buf.writeln('**$title** : $text');
-          buf.writeln();
+          buffer.writeln('**$title** : $text');
+          buffer.writeln();
         }
       }
     });
 
-    return buf.toString();
+    return buffer.toString();
   }
 
   String _humanizeKey(String key) {
@@ -628,19 +599,19 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
       'logistique': 'Logistique',
       'infrastructure': 'Infrastructure',
       'id projet': 'ID projet',
+      'effectifs': 'Effectifs',
+      'effectif initial': 'Effectif initial',
+      'recrutement': 'Recrutement',
+      'partenariats cles': 'Partenariats clés',
+      'strategie commerciale marketing': 'Stratégie commerciale & marketing',
+      'ciblage': 'Ciblage',
+      'menaces': 'Menaces',
+      'opportunites': 'Opportunités',
+      'forces': 'Forces',
+      'faiblesses': 'Faiblesses',
       'pour les consommateurs': 'Pour les consommateurs',
       'pour l environnement': "Pour l'environnement",
       'pour la societe': 'Pour la société',
-      'ciblage': 'Ciblage',
-      'segments clients': 'Segments clients',
-      'strategie commerciale marketing': 'Stratégie commerciale et marketing',
-      'menaces': 'Menaces',
-      'opportunites': 'Opportunités',
-      'partenariats cles': 'Partenariats clés',
-      'effectif initial': 'Effectif initial',
-      'recrutement': 'Recrutement',
-      'qualite': 'Qualité',
-      'administratif': 'Administratif',
     };
 
     final lower = cleaned.toLowerCase();
@@ -666,7 +637,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
   String _formatDate(DateTime d) {
     final day = d.day.toString().padLeft(2, '0');
     final month = d.month.toString().padLeft(2, '0');
-    return '$day/$month/${d.year}';
+    return '$day/\( month/ \){d.year}';
   }
 
   String _typeLabel(String type) {
