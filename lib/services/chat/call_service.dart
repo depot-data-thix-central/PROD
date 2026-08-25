@@ -68,86 +68,97 @@ class CallMediaService {
     try {
       cred = await CallTokenService().getToken(channel: channel, uid: uid);
       debugPrint(
-        '✅ Token OK appId=\( {cred.appId} channel= \){cred.channel} '
-        'uid=\( {cred.uid} tokenLen= \){cred.token.length}',
+        '✅ Token OK appId=\( {cred.appId} len= \){cred.appId.length} '
+        'channel=\( {cred.channel} uid= \){cred.uid} tokenLen=${cred.token.length}',
       );
     } catch (e) {
-      debugPrint('❌ getToken failed: $e');
+      debugPrint('❌ getToken: $e');
       onError('token: $e');
       rethrow;
     }
 
-    if (cred.appId.isEmpty || cred.token.isEmpty) {
+    if (cred.appId.trim().isEmpty || cred.token.trim().isEmpty) {
       onError('token: appId ou token vide');
       throw Exception('appId ou token vide');
     }
 
-    _engine = createAgoraRtcEngine();
-    await _engine!.initialize(
-      RtcEngineContext(
-        appId: cred.appId,
-        channelProfile: ChannelProfileType.channelProfileCommunication,
-      ),
-    );
-
-    await _engine!.enableAudio();
-    if (type == CallType.video) {
-      await _engine!.enableVideo();
+    // App ID Agora = 32 caractères hex en général
+    if (cred.appId.trim().length < 10) {
+      onError('token: appId suspect (${cred.appId})');
+      throw Exception('appId invalide: ${cred.appId}');
     }
-    await _engine!.setEnableSpeakerphone(true);
-
-    _engine!.registerEventHandler(
-      RtcEngineEventHandler(
-        onJoinChannelSuccess: (conn, elapsed) {
-          debugPrint('✅ Joined ${conn.channelId}');
-          _joined = true;
-        },
-        onUserJoined: (conn, remoteUid, elapsed) {
-          debugPrint('👤 Remote joined $remoteUid');
-          onUserJoined(remoteUid);
-        },
-        onUserOffline: (conn, remoteUid, reason) {
-          debugPrint('👤 Remote left $remoteUid reason=$reason');
-          onUserLeft(remoteUid);
-        },
-        onError: (err, msg) {
-          debugPrint('❌ Agora error code=$err msg=$msg');
-          onError('agora: $err $msg');
-        },
-      ),
-    );
-
-    if (type == CallType.video) {
-      await _engine!.enableLocalVideo(true);
-      await _engine!.startPreview();
-    } else {
-      await _engine!.enableLocalVideo(false);
-    }
-
-    _channel = channel;
 
     try {
+      _engine = createAgoraRtcEngine();
+      await _engine!.initialize(
+        RtcEngineContext(
+          appId: cred.appId.trim(),
+          channelProfile: ChannelProfileType.channelProfileCommunication,
+        ),
+      );
+
+      // ⚠️ Important sur Web : laisser le temps au moteur de démarrer
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      await _engine!.enableAudio();
+      if (type == CallType.video) {
+        await _engine!.enableVideo();
+      }
+      await _engine!.setClientRole(
+        role: ClientRoleType.clientRoleBroadcaster,
+      );
+      await _engine!.setEnableSpeakerphone(true);
+
+      _engine!.registerEventHandler(
+        RtcEngineEventHandler(
+          onJoinChannelSuccess: (conn, elapsed) {
+            debugPrint('✅ Joined ${conn.channelId}');
+            _joined = true;
+          },
+          onUserJoined: (conn, remoteUid, elapsed) {
+            debugPrint('👤 Remote joined $remoteUid');
+            onUserJoined(remoteUid);
+          },
+          onUserOffline: (conn, remoteUid, reason) {
+            debugPrint('👤 Remote left $remoteUid');
+            onUserLeft(remoteUid);
+          },
+          onError: (err, msg) {
+            debugPrint('❌ Agora onError code=$err msg=$msg');
+            onError('agora: $err $msg');
+          },
+        ),
+      );
+
+      if (type == CallType.video) {
+        await _engine!.enableLocalVideo(true);
+        await _engine!.startPreview();
+      } else {
+        await _engine!.enableLocalVideo(false);
+      }
+
+      _channel = channel;
+
       await _engine!.joinChannel(
-        token: cred.token,
+        token: cred.token.trim(),
         channelId: channel,
         uid: uid,
-        options: ChannelMediaOptions(
+        options: const ChannelMediaOptions(
           clientRoleType: ClientRoleType.clientRoleBroadcaster,
           channelProfile: ChannelProfileType.channelProfileCommunication,
           publishMicrophoneTrack: true,
-          publishCameraTrack: type == CallType.video,
           autoSubscribeAudio: true,
           autoSubscribeVideo: true,
         ),
       );
-      debugPrint('✅ joinChannel called channel=$channel uid=$uid');
+      debugPrint('✅ joinChannel OK channel=$channel uid=$uid');
     } catch (e) {
-      debugPrint('❌ joinChannel failed: $e');
-      onError('joinChannel: $e');
+      debugPrint('❌ Agora init/join: $e');
+      onError('agora: $e');
+      await disposeEngine();
       rethrow;
     }
   }
-
   Future<void> setMuted(bool muted) async {
     await _engine?.muteLocalAudioStream(muted);
   }
