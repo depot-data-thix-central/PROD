@@ -9,7 +9,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import '../../../../core/theme/thix_design_policy.dart';
 import '../models/project_analysis.dart';
 // TODO: Décommente et adapte le chemin vers ton provider de mémoire
-// import '../providers/project_memory_provider.dart'; 
+// import '../providers/project_memory_provider.dart';
 // import '../providers/analyses_provider.dart';
 
 class AnalysisReportPage extends ConsumerStatefulWidget {
@@ -24,12 +24,12 @@ class AnalysisReportPage extends ConsumerStatefulWidget {
 class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
   bool isValidating = false;
 
-  Future<void> _validateAndSendToMemory(ProjectAnalysis analysis, String contentToSave) async {
+  Future<void> _validateAndSendToMemory(
+      ProjectAnalysis analysis, String contentToSave) async {
     setState(() => isValidating = true);
-    
+
     try {
-      // 1. Appel du provider pour ajouter le fait à la mémoire
-      // TODO: Décommente ces lignes quand ton projectMemoryProvider sera prêt
+      // TODO: Décommente quand projectMemoryProvider est prêt
       /*
       await ref.read(projectMemoryProvider.notifier).addFact(
             type: 'validated_analysis',
@@ -38,9 +38,6 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
             confidence: analysis.confidence > 0 ? analysis.confidence : 0.9,
           );
       */
-
-      // 2. (Optionnel) Marquer l'analyse comme validée en base
-      // await ref.read(analysesProvider.notifier).markAsValidated(analysis.id);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -52,18 +49,18 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
                 Expanded(
                   child: Text(
                     'Analyse validée et envoyée en Mémoire !',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
             ),
             backgroundColor: ThixPolicy.success,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
-        
-        // On retourne à l'écran précédent après validation
         context.pop();
       }
     } catch (e) {
@@ -92,7 +89,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
           onPressed: () => context.pop(),
         ),
         title: Text(
-          widget.analysis.type,
+          _typeLabel(widget.analysis.type),
           style: ThixPolicy.bodyStyle.copyWith(fontWeight: FontWeight.w600),
         ),
         actions: [
@@ -147,7 +144,8 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            widget.analysis.title ?? widget.analysis.type,
+                            widget.analysis.title ??
+                                _typeLabel(widget.analysis.type),
                             style: ThixPolicy.bodyStyle
                                 .copyWith(fontWeight: FontWeight.w600),
                           ),
@@ -164,9 +162,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
+                          horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: ThixPolicy.success.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(20),
@@ -210,10 +206,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
           const SizedBox(height: 20),
 
           // ========== CONTENU DU RAPPORT ==========
-          Text(
-            'Rapport',
-            style: ThixPolicy.labelStyle.copyWith(fontSize: 13),
-          ),
+          Text('Rapport', style: ThixPolicy.labelStyle.copyWith(fontSize: 13)),
           const SizedBox(height: 8),
           Container(
             width: double.infinity,
@@ -234,10 +227,19 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
                   fontSize: 14.5,
                   color: ThixPolicy.textMain,
                 ),
-                h1: ThixPolicy.titleStyle.copyWith(fontSize: 22, fontWeight: FontWeight.bold),
-                h2: ThixPolicy.titleStyle.copyWith(fontSize: 18, fontWeight: FontWeight.bold),
-                h3: ThixPolicy.titleStyle.copyWith(fontSize: 16, fontWeight: FontWeight.bold),
+                h1: ThixPolicy.titleStyle
+                    .copyWith(fontSize: 22, fontWeight: FontWeight.bold),
+                h2: ThixPolicy.titleStyle
+                    .copyWith(fontSize: 18, fontWeight: FontWeight.bold),
+                h3: ThixPolicy.titleStyle
+                    .copyWith(fontSize: 16, fontWeight: FontWeight.bold),
+                h4: ThixPolicy.titleStyle
+                    .copyWith(fontSize: 15, fontWeight: FontWeight.w600),
                 listBullet: TextStyle(color: ThixPolicy.primary),
+                strong: ThixPolicy.bodyStyle.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: ThixPolicy.textMain,
+                ),
               ),
             ),
           ),
@@ -245,20 +247,15 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
           // ========== SOURCES ==========
           if (sources.isNotEmpty) ...[
             const SizedBox(height: 24),
-            Text(
-              'Sources',
-              style: ThixPolicy.labelStyle.copyWith(fontSize: 13),
-            ),
+            Text('Sources', style: ThixPolicy.labelStyle.copyWith(fontSize: 13)),
             const SizedBox(height: 8),
             ...sources.asMap().entries.map((e) {
               final i = e.key + 1;
               final url = e.value;
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
@@ -299,7 +296,8 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
           ],
 
           // ========== AVERTISSEMENT LÉGAL ==========
-          if (widget.analysis.type == 'legal' || widget.analysis.type == 'tax') ...[
+          if (widget.analysis.type == 'legal' ||
+              widget.analysis.type == 'tax') ...[
             const SizedBox(height: 24),
             Container(
               padding: const EdgeInsets.all(14),
@@ -311,11 +309,8 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.info_outline_rounded,
-                    size: 18,
-                    color: Colors.amber.shade800,
-                  ),
+                  Icon(Icons.info_outline_rounded,
+                      size: 18, color: Colors.amber.shade800),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -332,9 +327,7 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
             ),
           ],
 
-          // ==========================================
-          // ACTION : VALIDER EN MÉMOIRE
-          // ==========================================
+          // ========== VALIDER EN MÉMOIRE ==========
           Padding(
             padding: const EdgeInsets.only(top: 32, bottom: 20),
             child: Column(
@@ -342,22 +335,30 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed: isValidating ? null : () => _validateAndSendToMemory(widget.analysis, content),
+                    onPressed: isValidating
+                        ? null
+                        : () => _validateAndSendToMemory(
+                            widget.analysis, content),
                     icon: isValidating
                         ? const SizedBox(
-                            width: 18, 
-                            height: 18, 
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
                           )
                         : const Icon(Icons.verified_rounded, size: 20),
                     label: Text(
-                      isValidating ? 'Envoi en cours...' : 'Valider & envoyer en Mémoire',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      isValidating
+                          ? 'Envoi en cours...'
+                          : 'Valider & envoyer en Mémoire',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 15),
                     ),
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       backgroundColor: ThixPolicy.primary,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                 ),
@@ -365,7 +366,8 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
                 Text(
                   'Cette analyse sera ajoutée à la mémoire du projet et servira à générer les documents officiels.',
                   textAlign: TextAlign.center,
-                  style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, height: 1.4),
+                  style: ThixPolicy.captionStyle
+                      .copyWith(color: ThixPolicy.textMuted, height: 1.4),
                 ),
               ],
             ),
@@ -375,60 +377,212 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
     );
   }
 
-  // ---------- Helpers de Nettoyage et Formatage ----------
+  // ═══════════════════════════════════════════════════════════
+  // EXTRACTION + CONVERSION JSON → MARKDOWN
+  // ═══════════════════════════════════════════════════════════
+
   String _extractContent(ProjectAnalysis a) {
     String rawText = '';
     final rj = a.resultJson;
 
     if (rj != null) {
+      // 1) content = String (marché, concurrence, légal…)
       if (rj['content'] is String && (rj['content'] as String).isNotEmpty) {
         rawText = rj['content'] as String;
-      } else if (rj['parsed'] != null && rj['parsed'] is Map) {
-        final parsedMap = rj['parsed'] as Map;
-        if (parsedMap['content'] is String) rawText = parsedMap['content'];
-        else if (parsedMap['report'] is String) rawText = parsedMap['report'];
-      } else {
-        final fallbackKeys = ['text', 'report', 'response', 'result', 'answer', 'data'];
-        for (var key in fallbackKeys) {
-          if (rj[key] is String && (rj[key] as String).isNotEmpty) {
-            rawText = rj[key] as String;
-            break;
-          }
+      }
+      // 2) content = Map (business plan, finance…)
+      else if (rj['content'] is Map) {
+        rawText = _jsonToMarkdown(Map<String, dynamic>.from(rj['content'] as Map));
+      }
+      // 3) parsed.*
+      else if (rj['parsed'] is Map) {
+        final parsed = Map<String, dynamic>.from(rj['parsed'] as Map);
+        if (parsed['content'] is String) {
+          rawText = parsed['content'] as String;
+        } else if (parsed['content'] is Map) {
+          rawText = _jsonToMarkdown(Map<String, dynamic>.from(parsed['content'] as Map));
+        } else if (parsed['report'] is String) {
+          rawText = parsed['report'] as String;
+        } else if (parsed['business_plan'] is Map) {
+          rawText = _jsonToMarkdown({'business_plan': parsed['business_plan']});
+        } else {
+          rawText = _jsonToMarkdown(parsed);
         }
-        if (rawText.isEmpty && rj.isNotEmpty) {
-           rawText = rj.toString(); 
+      }
+      // 4) clés racines fréquentes
+      else if (rj['business_plan'] is Map) {
+        rawText = _jsonToMarkdown({'business_plan': rj['business_plan']});
+      } else if (rj['plan_financier'] is Map || rj['financial_model'] is Map) {
+        rawText = _jsonToMarkdown(Map<String, dynamic>.from(rj));
+      } else if (rj['report'] is String) {
+        rawText = rj['report'] as String;
+      } else if (rj['text'] is String) {
+        rawText = rj['text'] as String;
+      } else if (rj['response'] is String) {
+        rawText = rj['response'] as String;
+      } else if (rj['result'] is String) {
+        rawText = rj['result'] as String;
+      } else if (rj['answer'] is String) {
+        rawText = rj['answer'] as String;
+      } else if (rj['data'] is String) {
+        rawText = rj['data'] as String;
+      } else if (rj['data'] is Map) {
+        rawText = _jsonToMarkdown(Map<String, dynamic>.from(rj['data'] as Map));
+      }
+      // 5) dernier recours : tout le JSON formaté
+      else if (rj.isNotEmpty) {
+        // Enlever les clés purement techniques avant formatage
+        final cleaned = Map<String, dynamic>.from(rj)
+          ..remove('model')
+          ..remove('ai_model')
+          ..remove('ai_model_used')
+          ..remove('tokens')
+          ..remove('usage')
+          ..remove('search');
+        if (cleaned.isNotEmpty) {
+          rawText = _jsonToMarkdown(cleaned);
         }
       }
     }
-    
+
+    // Fallback summary
     if (rawText.isEmpty && a.summary != null && a.summary!.isNotEmpty) {
       rawText = a.summary!;
     }
 
-    if (rawText.trim().startsWith('{') && rawText.contains('"content"')) {
+    // Si c’est encore une string JSON
+    if (rawText.trim().startsWith('{')) {
       try {
         final decoded = jsonDecode(rawText);
-        if (decoded is Map && decoded['content'] is String) {
-          rawText = decoded['content'];
+        if (decoded is Map) {
+          final m = Map<String, dynamic>.from(decoded);
+          if (m['content'] is String) {
+            rawText = m['content'] as String;
+          } else if (m['content'] is Map) {
+            rawText = _jsonToMarkdown(Map<String, dynamic>.from(m['content'] as Map));
+          } else {
+            m.remove('model');
+            m.remove('ai_model');
+            rawText = _jsonToMarkdown(m);
+          }
         }
       } catch (_) {}
     }
 
+    // Nettoyage échappements
     rawText = rawText.replaceAll('\\n', '\n');
     rawText = rawText.replaceAll('\\"', '"');
+    rawText = rawText.replaceAll(r'\"', '"');
 
     if (rawText.startsWith('"') && rawText.endsWith('"') && rawText.length > 1) {
       rawText = rawText.substring(1, rawText.length - 1);
     }
 
+    // Enlever un éventuel préfixe technique "model: xxx, content:"
+    rawText = rawText.replaceAll(
+      RegExp(r'^\{?\s*model:\s*[^\s,\}]+,?\s*content:\s*', caseSensitive: false),
+      '',
+    );
+
     return rawText.trim();
+  }
+
+  /// Convertit un Map JSON imbriqué en Markdown lisible
+  String _jsonToMarkdown(Map map, {int level = 0}) {
+    final buffer = StringBuffer();
+
+    map.forEach((key, value) {
+      final k = key.toString().toLowerCase();
+      // Ignorer métadonnées techniques
+      if (k == 'model' ||
+          k == 'ai_model' ||
+          k == 'ai_model_used' ||
+          k == 'tokens' ||
+          k == 'usage' ||
+          k == 'prompt_version') {
+        return;
+      }
+
+      final title = _humanizeKey(key.toString());
+      final headingLevel = (level + 2).clamp(2, 6);
+      final hashes = '#' * headingLevel;
+
+      if (value is Map) {
+        buffer.writeln('$hashes $title');
+        buffer.writeln();
+        buffer.write(
+            _jsonToMarkdown(Map<String, dynamic>.from(value), level: level + 1));
+      } else if (value is List) {
+        buffer.writeln('$hashes $title');
+        buffer.writeln();
+        for (final item in value) {
+          if (item is Map) {
+            buffer.write(_jsonToMarkdown(
+                Map<String, dynamic>.from(item),
+                level: level + 1));
+          } else if (item != null && item.toString().trim().isNotEmpty) {
+            buffer.writeln('- ${item.toString().trim()}');
+          }
+        }
+        buffer.writeln();
+      } else if (value != null && value.toString().trim().isNotEmpty) {
+        final text = value.toString().trim();
+        // Texte long → paragraphe sous un titre
+        if (text.length > 80 || text.contains('\n')) {
+          buffer.writeln('$hashes $title');
+          buffer.writeln();
+          buffer.writeln(text);
+          buffer.writeln();
+        } else {
+          buffer.writeln('**$title** : $text');
+          buffer.writeln();
+        }
+      }
+    });
+
+    return buffer.toString();
+  }
+
+  String _humanizeKey(String key) {
+    // resume_executif → Resume executif, puis capitaliser
+    var cleaned = key
+        .replaceAll('_', ' ')
+        .replaceAllMapped(
+            RegExp(r'([a-z])([A-Z])'), (m) => '${m[1]} ${m[2]}')
+        .trim();
+
+    // Petites traductions utiles
+    const labels = {
+      'business plan': 'Business Plan',
+      'resume executif': 'Résumé exécutif',
+      'objectifs strategiques': 'Objectifs stratégiques',
+      'analyse marche': 'Analyse de marché',
+      'analyse marche ciblee': 'Analyse de marché ciblée',
+      'plan financier': 'Plan financier',
+      'financial model': 'Modèle financier',
+      'retour sur investissement': 'Retour sur investissement',
+      'proposition valeur unique': 'Proposition de valeur unique',
+      'presentation projet': 'Présentation du projet',
+      'innovations': 'Innovations',
+      'positionnement': 'Positionnement',
+      'marches cibles': 'Marchés cibles',
+      'pour les consommateurs': 'Pour les consommateurs',
+      'pour l environnement': "Pour l'environnement",
+      'pour la societe': 'Pour la société',
+    };
+
+    final lower = cleaned.toLowerCase();
+    if (labels.containsKey(lower)) return labels[lower]!;
+
+    if (cleaned.isEmpty) return key;
+    return cleaned[0].toUpperCase() + cleaned.substring(1);
   }
 
   List<String> _extractSources(ProjectAnalysis a) {
     if (a.sources.isNotEmpty) return a.sources;
     final rj = a.resultJson;
     if (rj == null) return [];
-    
+
     final search = rj['search'];
     if (search is Map && search['results'] is List) {
       return (search['results'] as List)
@@ -442,7 +596,32 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
   String _formatDate(DateTime d) {
     final day = d.day.toString().padLeft(2, '0');
     final month = d.month.toString().padLeft(2, '0');
-    return '$day/$month/${d.year}';
+    return '$day/\( month/ \){d.year}';
+  }
+
+  String _typeLabel(String type) {
+    switch (type.toLowerCase()) {
+      case 'business_plan':
+      case 'business':
+        return 'Business Plan';
+      case 'market':
+      case 'market_study':
+        return 'Étude de marché';
+      case 'competitor':
+      case 'competition':
+        return 'Analyse concurrentielle';
+      case 'legal':
+        return 'Analyse réglementaire';
+      case 'tax':
+        return 'Analyse fiscale';
+      case 'finance':
+      case 'financial_model':
+        return 'Plan financier';
+      case 'strategy':
+        return 'Stratégie';
+      default:
+        return type;
+    }
   }
 }
 
