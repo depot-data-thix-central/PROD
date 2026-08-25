@@ -628,32 +628,41 @@ class _MemoryTab extends ConsumerWidget {
         ],
       ),
       data: (memory) {
-        // 1. On vérifie si l'objet mémoire est null (et non si une liste est vide)
+        // 2. Si l'objet global est nul
         if (memory == null) {
           return const Center(
             child: Text('La mémoire de ce projet est vide.'),
           );
         }
 
-        // 2. On affiche le contenu de cet objet unique
-        return ListView(
+        // 3. On récupère la liste des faits
+        // 💡 NOTE : Si tu as une erreur ici, vérifie si dans ta classe le champ
+        // s'écrit "project_facts" ou "projectFacts" (avec un F majuscule)
+        final facts = memory.project_facts; 
+
+        // 4. Si la liste est vide ou nulle
+        if (facts == null || facts.isEmpty) {
+          return const Center(
+            child: Text('Aucun fait mémorisé pour le moment.'),
+          );
+        }
+
+        // 5. On affiche la liste avec ton beau widget FactCard !
+        return ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-          children: [
-            Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: ListTile(
-                title: const Text('Mémoire du projet'),
-                // Remplace memory.toString() par les vrais champs de ta classe 
-                // par exemple : memory.summary ou memory.content
-                subtitle: Text(memory.toString()), 
-              ),
-            ),
-          ],
+          itemCount: facts.length,
+          itemBuilder: (context, index) {
+            final fact = facts[index];
+            
+            // On utilise le widget FactCard que tu avais déjà importé en haut du fichier
+            return FactCard(fact: fact);
+          },
         );
       },
     );
   }
 }
+
 
 class _DocsTab extends ConsumerWidget {
   const _DocsTab({required this.projectCode});
