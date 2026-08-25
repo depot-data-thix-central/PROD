@@ -288,6 +288,9 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
                   vertical: 7,
                 ),
               ),
+            ), // <--- Correction 1 : MarkdownBody fermé ici
+          ), // <--- Correction 1 : Container fermé ici
+
           // ========== SOURCES ==========
           if (sources.isNotEmpty) ...[
             const SizedBox(height: 24),
@@ -643,8 +646,9 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
           buffer.writeln('| Indicateur | Valeur |');
           buffer.writeln('|:-----------|-------:|');
           m.forEach((mk, mv) {
+            // Correction 2 : Syntaxe d'interpolation string Dart
             buffer.writeln(
-                '| \( {_humanizeKey(mk.toString())} | ** \){_formatCell(mv)}** |');
+                '| ${_humanizeKey(mk.toString())} | **${_formatCell(mv)}** |');
           });
           buffer.writeln();
         } else if (_isPriceMap(m)) {
@@ -653,8 +657,9 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
           buffer.writeln('| Produit / Offre | Prix |');
           buffer.writeln('|:----------------|-----:|');
           m.forEach((mk, mv) {
+            // Correction 2 : Syntaxe d'interpolation string Dart
             buffer.writeln(
-                '| \( {_humanizeKey(mk.toString())} | ** \){_formatCell(mv)}** |');
+                '| ${_humanizeKey(mk.toString())} | **${_formatCell(mv)}** |');
           });
           buffer.writeln();
         } else {
@@ -895,7 +900,8 @@ class _AnalysisReportPageState extends ConsumerState<AnalysisReportPage> {
   String _formatDate(DateTime d) {
     final day = d.day.toString().padLeft(2, '0');
     final month = d.month.toString().padLeft(2, '0');
-    return '$day/\( month/ \){d.year}';
+    // Correction 3 : Format de date propre
+    return '$day/$month/${d.year}';
   }
 
   String _typeLabel(String type) {
