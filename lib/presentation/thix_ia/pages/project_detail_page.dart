@@ -3,7 +3,6 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import '../../../../core/theme/thix_design_policy.dart';
 import '../core/constants/thix_ia_routes.dart';
 import '../models/thix_project.dart';
@@ -23,6 +22,7 @@ import '../widgets/phase_switcher.dart';
 import '../widgets/business_plan_preflight_sheet.dart';
 import 'execution/execution_dashboard_final.dart';
 import 'execution/execution_dashboard.dart';
+import 'bp_document_editor_page.dart';
 
 class ProjectDetailPage extends ConsumerStatefulWidget {
   const ProjectDetailPage({super.key, required this.projectCode});
