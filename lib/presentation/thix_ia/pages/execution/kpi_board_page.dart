@@ -519,8 +519,8 @@ class _KpiBoardPageState extends ConsumerState<KpiBoardPage> {
                             'unit': unitCtrl.text.trim(),
                             'category': category,
                             'trend': trend,
-                            'period_date':
-                                '\( {periodDate.year}- \){periodDate.month.toString().padLeft(2, '0')}-${periodDate.day.toString().padLeft(2, '0')}',
+                           'period_date':
+    '\( {periodDate.year}- \){periodDate.month.toString().padLeft(2, '0')}-${periodDate.day.toString().padLeft(2, '0')}',
                             'notes': notesCtrl.text.trim().isEmpty
                                 ? null
                                 : notesCtrl.text.trim(),
@@ -737,7 +737,7 @@ class _KpiCard extends StatelessWidget {
       final d = DateTime.tryParse(period);
       if (d != null) {
         periodLabel =
-            '\( {d.day.toString().padLeft(2, '0')}/ \){d.month.toString().padLeft(2, '0')}/${d.year}';
+    '\( {d.day.toString().padLeft(2, '0')}/ \){d.month.toString().padLeft(2, '0')}/${d.year}';
       }
     }
 
