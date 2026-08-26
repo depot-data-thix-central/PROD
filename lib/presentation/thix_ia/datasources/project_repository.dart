@@ -1,4 +1,5 @@
-// lib/presentation/thix_ia/repositories/project_repository.dart
+// lib/presentation/thix_ia/datasources/project_repository.dart
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/errors/thix_ia_exception.dart';
 import '../core/utils/project_code_generator.dart';
 import '../datasources/thix_ia_remote_datasource.dart';
@@ -12,13 +13,32 @@ import '../models/project_memory.dart';
 /// ============================================================================
 
 abstract class ProjectRepository {
-  Future<List<ThixProject>> getProjects({int page = 1, int limit = 20, String? status, String? search, bool forceRefresh = false});
+  Future<List<ThixProject>> getProjects({
+    int page = 1,
+    int limit = 20,
+    String? status,
+    String? search,
+    bool forceRefresh = false,
+  });
   Future<ThixProject> getProjectByCode(String code, {bool forceRefresh = false});
-  Future<ThixProject> createProject({required String name, required String sector, required String country, String? city, String? summary});
-  Future<ThixProject> updateProject(String code, {String? name, String? status, String? summary});
+  Future<ThixProject> createProject({
+    required String name,
+    required String sector,
+    required String country,
+    String? city,
+    String? summary,
+  });
+  Future<ThixProject> updateProject(
+    String code, {
+    String? name,
+    String? status,
+    String? summary,
+    Map<String, dynamic>? data,
+  });
   Future<void> setActiveProject(String code);
   Future<ThixProject?> getActiveProject();
   Future<ProjectMemory> getProjectMemory(String code, {bool forceRefresh = false});
+  Future<void> deleteProject(String projectCode);
 }
 
 class ProjectRepositoryImpl implements ProjectRepository {
@@ -28,13 +48,21 @@ class ProjectRepositoryImpl implements ProjectRepository {
   final ThixIaLocalDatasource local;
 
   @override
-  Future<List<ThixProject>> getProjects({int page = 1, int limit = 20, String? status, String? search, bool forceRefresh = false}) async {
+  Future<List<ThixProject>> getProjects({
+    int page = 1,
+    int limit = 20,
+    String? status,
+    String? search,
+    bool forceRefresh = false,
+  }) async {
     // Page 1 sans recherche = cache d'abord pour instantanéité
-    if (page == 1 && !forceRefresh && (search== null || search.isEmpty)) {
+    if (page == 1 && !forceRefresh && (search == null || search.isEmpty)) {
       final cached = await local.getCachedProjects();
       if (cached.isNotEmpty) {
         // Fire and forget refresh en background
-        remote.getProjects(page: page, limit: limit, status: status, search: search).then((fresh) {
+        remote
+            .getProjects(page: page, limit: limit, status: status, search: search)
+            .then((fresh) {
           local.cacheProjects(fresh);
         }).catchError((_) {});
         return cached;
@@ -42,7 +70,12 @@ class ProjectRepositoryImpl implements ProjectRepository {
     }
 
     try {
-      final fresh = await remote.getProjects(page: page, limit: limit, status: status, search: search);
+      final fresh = await remote.getProjects(
+        page: page,
+        limit: limit,
+        status: status,
+        search: search,
+      );
       if (page == 1) await local.cacheProjects(fresh);
       return fresh;
     } on ThixIANetworkException {
@@ -57,7 +90,7 @@ class ProjectRepositoryImpl implements ProjectRepository {
   Future<ThixProject> getProjectByCode(String code, {bool forceRefresh = false}) async {
     if (!forceRefresh) {
       final cached = await local.getCachedProjectByCode(code);
-      if (cached!= null) return cached;
+      if (cached != null) return cached;
     }
     final fresh = await remote.getProjectByCode(code);
     await local.cacheProject(fresh);
@@ -65,10 +98,20 @@ class ProjectRepositoryImpl implements ProjectRepository {
   }
 
   @override
-  Future<ThixProject> createProject({required String name, required String sector, required String country, String? city, String? summary}) async {
-    if (name.trim().isEmpty) throw const ThixIAValidationException(message: 'Le nom du projet est requis');
+  Future<ThixProject> createProject({
+    required String name,
+    required String sector,
+    required String country,
+    String? city,
+    String? summary,
+  }) async {
+    if (name.trim().isEmpty) {
+      throw const ThixIAValidationException(message: 'Le nom du projet est requis');
+    }
 
     final projectCode = ProjectCodeGenerator.generate();
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+
     final data = {
       'project_code': projectCode,
       'name': name.trim(),
@@ -80,6 +123,7 @@ class ProjectRepositoryImpl implements ProjectRepository {
       'progress': 0.05,
       'analyses_count': 0,
       'documents_count': 0,
+      if (userId != null) 'owner_id': userId, // ← important pour RLS + ownership
     };
 
     final created = await remote.createProject(data);
@@ -89,14 +133,22 @@ class ProjectRepositoryImpl implements ProjectRepository {
   }
 
   @override
-  Future<ThixProject> updateProject(String code, {String? name, String? status, String? summary}) async {
-    final data = <String, dynamic>{
-      if (name!= null) 'name': name,
-      if (status!= null) 'status': status,
-      if (summary!= null) 'summary': summary,
+  Future<ThixProject> updateProject(
+    String code, {
+    String? name,
+    String? status,
+    String? summary,
+    Map<String, dynamic>? data,
+  }) async {
+    final payload = <String, dynamic>{
+      if (name != null) 'name': name,
+      if (status != null) 'status': status,
+      if (summary != null) 'summary': summary,
+      if (data != null) ...data,
       'updated_at': DateTime.now().toIso8601String(),
     };
-    final updated = await remote.updateProject(code, data);
+
+    final updated = await remote.updateProject(code, payload);
     await local.cacheProject(updated);
     return updated;
   }
@@ -119,10 +171,17 @@ class ProjectRepositoryImpl implements ProjectRepository {
   Future<ProjectMemory> getProjectMemory(String code, {bool forceRefresh = false}) async {
     if (!forceRefresh) {
       final cached = await local.getCachedMemory(code);
-      if (cached!= null) return cached;
+      if (cached != null) return cached;
     }
     final fresh = await remote.getProjectMemory(code);
     await local.cacheProjectMemory(fresh);
     return fresh;
+  }
+
+  @override
+  Future<void> deleteProject(String projectCode) async {
+    await remote.deleteProject(projectCode);
+    // Optionnel : nettoyer le cache local
+    // await local.removeProjectFromCache(projectCode);
   }
 }
