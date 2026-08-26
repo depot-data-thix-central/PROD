@@ -55,9 +55,10 @@ class ExecutionDashboardFinal extends ConsumerWidget {
           },
           child: CustomScrollView(
             slivers: [
-              _buildHeader(context, ref),
-              (SliverToBoxAdapter(
+                            _buildHeader(context, ref),
+              SliverToBoxAdapter(
                 child: dashAsync.when(
+
                   loading: () => const Padding(
                     padding: EdgeInsets.all(32),
                     child: Center(child: CircularProgressIndicator()),
@@ -278,9 +279,9 @@ class ExecutionDashboardFinal extends ConsumerWidget {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
   }
 
-  (SliverAppBar Function(BuildContext, WidgetRef) get _buildHeader) =>
-      (context, ref) {
+    SliverAppBar _buildHeader(BuildContext context, WidgetRef ref) {
     return SliverAppBar(
+
       pinned: true,
       backgroundColor: Colors.white,
       elevation: 0,
@@ -815,17 +816,18 @@ class _EnterpriseModulesGrid extends StatelessWidget {
       ),
     ];
 
-    return GridView.builder(
+        return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: modules.length,
-      gridDelegate: const (SliverGridDelegateWithFixedCrossAxisCount(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         mainAxisSpacing: 10,
         crossAxisSpacing: 10,
         childAspectRatio: 1.55,
-      )),
+      ),
       itemBuilder: (context, i) {
+
         final m = modules[i];
         return InkWell(
           onTap: m.onTap,
