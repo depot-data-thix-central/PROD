@@ -64,7 +64,6 @@ class _TeamPageState extends State<TeamPage> {
               : ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
-                    // DÉTECTION INTELLIGENTE DES RETARDS (Dynamique sans mock)
                     FutureBuilder<List<Map<String, dynamic>>>(
                       future: Supabase.instance.client
                           .from('thix_execution_tasks')
@@ -77,7 +76,6 @@ class _TeamPageState extends State<TeamPage> {
                         final tasks = snap.data!;
                         final now = DateTime.now();
 
-                        // Filtrer les tâches en retard non terminées
                         final lateTasks = tasks.where((t) {
                           if (t['due_date'] == null || t['status'] == 'done') return false;
                           final dueDate = DateTime.tryParse(t['due_date'].toString());
@@ -86,9 +84,7 @@ class _TeamPageState extends State<TeamPage> {
 
                         if (lateTasks.isEmpty) return const SizedBox.shrink();
 
-                        // Compter par membre
                         final groupedByName = <String, int>{};
-                        // Compter par catégorie pour trouver le département le plus touché
                         final groupedByCategory = <String, int>{};
 
                         for (var t in lateTasks) {
@@ -101,10 +97,8 @@ class _TeamPageState extends State<TeamPage> {
 
                         if (groupedByName.isEmpty) return const SizedBox.shrink();
 
-                        // Membre ayant le plus de retard
                         final worstMember = groupedByName.entries.reduce((a, b) => a.value > b.value ? a : b);
                         
-                        // Catégorie la plus touchée avec calcul du pourcentage réel
                         final worstCategory = groupedByCategory.entries.isEmpty 
                             ? null 
                             : groupedByCategory.entries.reduce((a, b) => a.value > b.value ? a : b);
@@ -127,7 +121,7 @@ class _TeamPageState extends State<TeamPage> {
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  '${worstMember.value} tâches en retard chez ${worst.key}${worstCategory != null ? ' — $categoryPercent% en ${worstCategory.key}' : ''}',
+                                  '${worstMember.value} tâches en retard chez ${worstMember.key}${worstCategory != null ? ' — $categoryPercent% en ${worstCategory.key}' : ''}',
                                   style: const TextStyle(fontSize: 12, color: Colors.black87, fontWeight: FontWeight.w500),
                                 ),
                               ),
@@ -137,7 +131,6 @@ class _TeamPageState extends State<TeamPage> {
                       },
                     ),
 
-                    // LISTE DES MEMBRES
                     ...members.map((m) => Container(
                           margin: const EdgeInsets.only(bottom: 10),
                           padding: const EdgeInsets.all(14),
