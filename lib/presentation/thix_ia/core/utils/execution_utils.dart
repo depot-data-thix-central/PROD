@@ -1,6 +1,6 @@
 import 'dart:math';
 import '../constants/thix_ia_execution_constants.dart';
-import '../models/execution_finance.dart';
+import '../../models/execution_finance.dart'; 
 
 class ExecutionUtils {
   static double calculateRunway({
