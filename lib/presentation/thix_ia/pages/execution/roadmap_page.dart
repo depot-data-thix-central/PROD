@@ -5,34 +5,103 @@ import '../../providers/execution_provider.dart';
 class RoadmapPage extends ConsumerStatefulWidget {
   const RoadmapPage({super.key, required this.projectCode});
   final String projectCode;
-  @override ConsumerState<RoadmapPage> createState() => _RoadmapPageState();
+  
+  @override 
+  ConsumerState<RoadmapPage> createState() => _RoadmapPageState();
 }
 
 class _RoadmapPageState extends ConsumerState<RoadmapPage> {
-  @override Widget build(BuildContext context) {
+  @override 
+  Widget build(BuildContext context) {
     final roadmapAsync = ref.watch(executionRoadmapProvider(widget.projectCode));
+    
     return Scaffold(
       appBar: AppBar(title: const Text('Roadmap de Lancement')),
       body: roadmapAsync.when(
-        loading: ()=> const Center(child: CircularProgressIndicator()),
-        error: (e,s)=> Center(child: Text('Erreur $e')),
-        data: (steps){
-          if(steps.isEmpty) return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [const Text('Roadmap vide'), ElevatedButton(onPressed: _createDefaultRoadmap, child: const Text('Créer roadmap par défaut'))]));
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, s) => Center(child: Text('Erreur $e')),
+        data: (steps) {
+          if (steps.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center, 
+                children: [
+                  const Text('Roadmap vide'), 
+                  ElevatedButton(
+                    onPressed: _createDefaultRoadmap, 
+                    child: const Text('Créer roadmap par défaut')
+                  )
+                ]
+              )
+            );
+          }
+          
           return ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: steps.length,
-            itemBuilder: (c,i){
+            itemBuilder: (c, i) {
               final s = steps[i];
-              final isDone = s['status']=='done';
-              final isCurrent = s['status']=='doing';
-              return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Column(children: [
-                  CircleAvatar(radius: 20, backgroundColor: isDone? Colors.green : isCurrent? Colors.blue : Colors.grey.shade300, child: isDone? const Icon(Icons.check, color: Colors.white) : Text('${s['order_index']}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
-                  if(i!= steps.length-1) Container(width: 2, height: 40, color: isDone? Colors.green : Colors.grey.shade300),
-                ]),
-                const SizedBox(width: 12),
-                Expanded(child: Container(margin: const EdgeInsets.only(bottom: 16), padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: isCurrent? Colors.blue.shade50 : Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: isCurrent? Colors.blue : Colors.grey.shade200)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(s['title'].toString(), style: const TextStyle(fontWeight: FontWeight.bold)), const SizedBox(height: 4), Text(s['description']?.toString()?? '', style: const TextStyle(fontSize: 12, color: Colors.grey)), const SizedBox(height: 8), Row(children: [Chip(label: Text(s['status'].toString(), style: const TextStyle(fontSize: 10)), const Spacer(), if(!isDone) ElevatedButton(onPressed: () async { await ref.read(supabaseClientProvider).from('thix_execution_roadmap').update({'status':'done'}).eq('id', s['id']); ref.invalidate(executionRoadmapProvider); }, child: const Text('Valider', style: TextStyle(fontSize: 10)))])]))),
-              ]);
+              final isDone = s['status'] == 'done';
+              final isCurrent = s['status'] == 'doing';
+              
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start, 
+                children: [
+                  Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 20, 
+                        backgroundColor: isDone ? Colors.green : (isCurrent ? Colors.blue : Colors.grey.shade300), 
+                        child: isDone 
+                          ? const Icon(Icons.check, color: Colors.white) 
+                          : Text('${s['order_index']}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))
+                      ),
+                      if (i != steps.length - 1) 
+                        Container(
+                          width: 2, 
+                          height: 40, 
+                          color: isDone ? Colors.green : Colors.grey.shade300
+                        ),
+                    ]
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 16), 
+                      padding: const EdgeInsets.all(16), 
+                      decoration: BoxDecoration(
+                        color: isCurrent ? Colors.blue.shade50 : Colors.white, 
+                        borderRadius: BorderRadius.circular(12), 
+                        border: Border.all(color: isCurrent ? Colors.blue : Colors.grey.shade200)
+                      ), 
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start, 
+                        children: [
+                          Text(s['title'].toString(), style: const TextStyle(fontWeight: FontWeight.bold)), 
+                          const SizedBox(height: 4), 
+                          Text(s['description']?.toString() ?? '', style: const TextStyle(fontSize: 12, color: Colors.grey)), 
+                          const SizedBox(height: 8), 
+                          Row(
+                            children: [
+                              // LA CORRECTION EST ICI : la parenthèse du Chip est bien fermée
+                              Chip(label: Text(s['status'].toString(), style: const TextStyle(fontSize: 10))), 
+                              const Spacer(), 
+                              if (!isDone) 
+                                ElevatedButton(
+                                  onPressed: () async { 
+                                    await ref.read(supabaseClientProvider).from('thix_execution_roadmap').update({'status':'done'}).eq('id', s['id']); 
+                                    ref.invalidate(executionRoadmapProvider); 
+                                  }, 
+                                  child: const Text('Valider', style: TextStyle(fontSize: 10))
+                                )
+                            ]
+                          )
+                        ]
+                      )
+                    )
+                  ),
+                ]
+              );
             },
           );
         },
