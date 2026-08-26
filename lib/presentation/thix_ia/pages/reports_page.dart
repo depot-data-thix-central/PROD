@@ -567,8 +567,7 @@ class _ReportCard extends StatelessWidget {
               runSpacing: 4,
               children: [
                 if (r.tasksTotal > 0)
-                  _MetaChip(
-                      Icons.task_alt, '\( {r.tasksDone}/ \){r.tasksTotal} tâches'),
+                  _MetaChip(Icons.task_alt, '\( {r.tasksDone}/ \){r.tasksTotal} tâches'),
                 if (r.lateTasks > 0)
                   _MetaChip(Icons.schedule, '${r.lateTasks} retard',
                       color: Colors.red),
