@@ -260,7 +260,8 @@ class _ExperimentPageState extends ConsumerState<ExperimentPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-                'Analyse : \( {analysis['result']} ( \){analysis['confidence']}%)'),
+  'Analyse : \( {analysis['result']} ( \){analysis['confidence']}%)',
+),
             backgroundColor: analysis['status'] == 'validated'
                 ? Colors.green.shade700
                 : analysis['status'] == 'invalidated'
