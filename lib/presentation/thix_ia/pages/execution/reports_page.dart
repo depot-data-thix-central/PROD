@@ -372,9 +372,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
 
       // ── 6. Insert Supabase ─────────────────────────────────
       final periodLabel = period == 'monthly' ? 'Mensuel' : 'Hebdomadaire';
-      final title =
-          'Rapport $periodLabel \( {now.day.toString().padLeft(2, '0')}/ \){now.month.toString().padLeft(2, '0')}/${now.year}';
-
+      
+      // LIGNE CORRIGÉE : C'est ici que l'erreur se produisait !
+      final title = 'Rapport $periodLabel ${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+      
       await client.from('thix_execution_reports').insert({
         'project_code': code,
         'period': period,
@@ -568,8 +569,7 @@ class _ReportCard extends StatelessWidget {
               runSpacing: 4,
               children: [
                 if (r.tasksTotal > 0)
-                  _MetaChip(
-                      Icons.task_alt, '\( {r.tasksDone}/ \){r.tasksTotal} tâches'),
+                  _MetaChip(Icons.task_alt, '${r.tasksDone}/${r.tasksTotal} tâches'),
                 if (r.lateTasks > 0)
                   _MetaChip(Icons.schedule, '${r.lateTasks} retard',
                       color: Colors.red),
@@ -595,8 +595,8 @@ class _ReportCard extends StatelessWidget {
             if (r.createdAt != null) ...[
               const SizedBox(height: 6),
               Text(
-                '\( {r.createdAt!.day}/ \){r.createdAt!.month}/${r.createdAt!.year} \( {r.createdAt!.hour.toString().padLeft(2, '0')}: \){r.createdAt!.minute.toString().padLeft(2, '0')}',
-                style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                '${r.createdAt!.day}/${r.createdAt!.month}/${r.createdAt!.year} ${r.createdAt!.hour.toString().padLeft(2, '0')}:${r.createdAt!.minute.toString().padLeft(2, '0')}',
+                  style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
               ),
             ],
           ],
