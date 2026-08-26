@@ -20,7 +20,8 @@ import '../widgets/analysis_progress_widget.dart';
 import '../widgets/empty_state_widget.dart';
 import '../widgets/ai_command_bar.dart';
 import '../widgets/phase_switcher.dart'; 
-import 'execution_dashboard.dart'; // 👈 IMPORT DE TON NOUVEAU DASHBOARD SAAS
+import 'execution/execution_dashboard_final.dart';
+import 'execution/execution_dashboard.dart'; 
 
 class ProjectDetailPage extends ConsumerStatefulWidget {
   const ProjectDetailPage({super.key, required this.projectCode});
