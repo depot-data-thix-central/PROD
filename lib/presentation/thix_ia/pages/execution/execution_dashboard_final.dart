@@ -31,7 +31,7 @@ class ExecutionDashboardFinal extends ConsumerWidget {
               title: Column(
                 crossAxisAlignment: CrossAxisAlignment.start, 
                 children: [
-                  Text('Bonjour, Lionel 👋', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)), 
+                  Text('Bonjour 👋', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)), 
                   Row(
                     children: [
                       Text(projectName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black)), 
@@ -40,7 +40,6 @@ class ExecutionDashboardFinal extends ConsumerWidget {
                   )
                 ]
               ),
-              // CORRECTION 1 : Le CircleAvatar est maintenant correctement placé à côté du Stack, pas dedans
               actions: [
                 Stack(
                   children: [
@@ -51,14 +50,17 @@ class ExecutionDashboardFinal extends ConsumerWidget {
                       child: Container(
                         padding: const EdgeInsets.all(4), 
                         decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle), 
-                        child: const Text('3', style: TextStyle(fontSize: 8, color: Colors.white))
+                        child: const Text('0', style: TextStyle(fontSize: 8, color: Colors.white))
                       )
                     )
                   ]
                 ), 
-                const Padding(
-                  padding: EdgeInsets.only(right: 16.0, left: 8.0),
-                  child: CircleAvatar(backgroundImage: NetworkImage('https://i.pravatar.cc/100?img=12')),
+                Padding(
+                  padding: const EdgeInsets.only(right: 16.0, left: 8.0),
+                  child: CircleAvatar(
+                    backgroundColor: Colors.grey.shade100,
+                    child: const Icon(Icons.person, color: Colors.grey),
+                  ),
                 )
               ],
             ),
@@ -110,7 +112,7 @@ class ExecutionDashboardFinal extends ConsumerWidget {
                                     crossAxisAlignment: CrossAxisAlignment.start, 
                                     children: [
                                       const Text('Trésorerie actuelle', style: TextStyle(fontSize: 12, color: Colors.grey)), 
-                                      Text(ExecutionUtils.formatCurrency(health?.treasury ?? 45890.5), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22))
+                                      Text(ExecutionUtils.formatCurrency(health?.treasury ?? 0.0), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22))
                                     ]
                                   ),
                                   const Spacer(),
@@ -118,7 +120,7 @@ class ExecutionDashboardFinal extends ConsumerWidget {
                                     children: [
                                       SizedBox(width: 80, height: 30, child: CustomPaint(painter: _MiniChartPainter())), 
                                       const SizedBox(height: 4), 
-                                      const Row(children: [Icon(Icons.arrow_upward, size: 12, color: Colors.green), Text('12.5%', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold))]), 
+                                      const Row(children: [Icon(Icons.arrow_upward, size: 12, color: Colors.green), Text('0.0%', style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold))]), 
                                       const Text('vs mois dernier', style: TextStyle(fontSize: 9, color: Colors.grey))
                                     ]
                                   ),
@@ -128,11 +130,11 @@ class ExecutionDashboardFinal extends ConsumerWidget {
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween, 
                                 children: [
-                                  _BottomKpi(icon: Icons.local_fire_department, iconBg: Colors.orange.shade50, iconColor: Colors.orange, label: 'Burn Rate', value: '\$ ${(health?.burnRate ?? 2340).toInt()} /mo'),
+                                  _BottomKpi(icon: Icons.local_fire_department, iconBg: Colors.orange.shade50, iconColor: Colors.orange, label: 'Burn Rate', value: '\$ ${(health?.burnRate ?? 0.0).toInt()} /mo'),
                                   Container(width: 1, height: 30, color: Colors.grey.shade200),
-                                  _BottomKpi(icon: Icons.flight, iconBg: Colors.green.shade50, iconColor: Colors.green, label: 'Runway', value: '${(health?.runwayMonths ?? 19).toInt()} Mois'),
+                                  _BottomKpi(icon: Icons.flight, iconBg: Colors.green.shade50, iconColor: Colors.green, label: 'Runway', value: '${(health?.runwayMonths ?? 0).toInt()} Mois'),
                                   Container(width: 1, height: 30, color: Colors.grey.shade200),
-                                  _BottomKpi(icon: Icons.trending_up, iconBg: Colors.blue.shade50, iconColor: Colors.blue, label: 'MRR', value: '\$ ${(health?.mrr ?? 5670).toInt()} /mo'),
+                                  _BottomKpi(icon: Icons.trending_up, iconBg: Colors.blue.shade50, iconColor: Colors.blue, label: 'MRR', value: '\$ ${(health?.mrr ?? 0.0).toInt()} /mo'),
                                 ]
                               )
                             ]
@@ -147,7 +149,14 @@ class ExecutionDashboardFinal extends ConsumerWidget {
                           loading: () => const SizedBox(height: 80, child: Center(child: CircularProgressIndicator())),
                           error: (_, __) => const SizedBox(),
                           data: (goals) {
-                            if (goals.isEmpty) return Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)), child: const Text('Aucun objectif - ajoutez 500 clients', style: TextStyle(fontSize: 12)));
+                            if (goals.isEmpty) {
+                              return Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(16), 
+                                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)), 
+                                child: const Center(child: Text('Aucun objectif défini', style: TextStyle(fontSize: 12, color: Colors.grey)))
+                              );
+                            }
                             return SizedBox(
                               height: 95, 
                               child: ListView.separated(
@@ -192,58 +201,92 @@ class ExecutionDashboardFinal extends ConsumerWidget {
                         ),
                         const SizedBox(height: 16),
                         
-                        // ROADMAP
+                        // ROADMAP DYNAMIQUE (Depuis DB)
                         _SectionHeader(title: 'Roadmap de Lancement', onViewAll: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RoadmapPage(projectCode: projectCode)))),
                         const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.all(16), 
-                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)), 
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween, 
-                            children: List.generate(4, (i) {
-                              final titles = ['Business Plan\nValidé', 'Création Juridique\n& RCCM', 'Achat & Importation\nÉquipements', 'Lancement de la\nProduction'];
-                              final months = ['Mois 1', 'Mois 2', 'Mois 3', 'Mois 4'];
-                              final isDone = i < 2; 
-                              final isCurrent = i == 2;
-                              return Column(
-                                children: [
-                                  Container(
-                                    width: 36, height: 36, 
-                                    decoration: BoxDecoration(color: isDone ? Colors.green.shade100 : isCurrent ? Colors.white : Colors.grey.shade100, shape: BoxShape.circle, border: Border.all(color: isDone ? Colors.green : isCurrent ? Colors.blue : Colors.grey.shade300, width: isCurrent ? 2 : 1)), 
-                                    child: Center(child: isDone ? const Icon(Icons.check, size: 18, color: Colors.green) : Text('${i + 1}', style: TextStyle(fontWeight: FontWeight.bold, color: isCurrent ? Colors.blue : Colors.grey)))
-                                  ), 
-                                  const SizedBox(height: 6), 
-                                  SizedBox(width: 70, child: Text(titles[i], textAlign: TextAlign.center, style: TextStyle(fontSize: 9, fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal))), 
-                                  Text(months[i], style: TextStyle(fontSize: 9, color: isCurrent ? Colors.blue : Colors.grey))
-                                ]
+                        FutureBuilder<List<dynamic>>(
+                          future: ref.read(supabaseClientProvider).from('thix_execution_roadmap').select().eq('project_code', projectCode).order('order_index').limit(4).then((v) => v as List<dynamic>),
+                          builder: (c, snap) {
+                            if (snap.connectionState == ConnectionState.waiting) return const SizedBox(height: 80, child: Center(child: CircularProgressIndicator()));
+                            final list = snap.data ?? [];
+                            if (list.isEmpty) {
+                              return Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(16), 
+                                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)), 
+                                child: const Center(child: Text('Aucune étape de roadmap définie', style: TextStyle(fontSize: 12, color: Colors.grey)))
                               );
-                            })
-                          )
+                            }
+                            
+                            return Container(
+                              padding: const EdgeInsets.all(16), 
+                              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)), 
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: list.map<Widget>((r) {
+                                    final i = list.indexOf(r);
+                                    final title = r['title']?.toString() ?? '';
+                                    final month = r['month']?.toString() ?? '';
+                                    final status = r['status']?.toString() ?? 'todo';
+                                    final isDone = status == 'done';
+                                    final isCurrent = status == 'doing';
+                                    
+                                    return Padding(
+                                      padding: const EdgeInsets.only(right: 16.0),
+                                      child: Column(
+                                        children: [
+                                          Container(
+                                            width: 36, height: 36, 
+                                            decoration: BoxDecoration(color: isDone ? Colors.green.shade100 : isCurrent ? Colors.white : Colors.grey.shade100, shape: BoxShape.circle, border: Border.all(color: isDone ? Colors.green : isCurrent ? Colors.blue : Colors.grey.shade300, width: isCurrent ? 2 : 1)), 
+                                            child: Center(child: isDone ? const Icon(Icons.check, size: 18, color: Colors.green) : Text('${r['order_index'] ?? i + 1}', style: TextStyle(fontWeight: FontWeight.bold, color: isCurrent ? Colors.blue : Colors.grey)))
+                                          ), 
+                                          const SizedBox(height: 6), 
+                                          SizedBox(width: 80, child: Text(title, textAlign: TextAlign.center, style: TextStyle(fontSize: 9, fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal), maxLines: 2, overflow: TextOverflow.ellipsis)), 
+                                          Text(month, style: TextStyle(fontSize: 9, color: isCurrent ? Colors.blue : Colors.grey))
+                                        ]
+                                      ),
+                                    );
+                                  }).toList(),
+                                )
+                              )
+                            );
+                          }
                         ),
                         const SizedBox(height: 16),
                         
                         // FOURNISSEURS
                         _SectionHeader(title: 'Fournisseurs & Partenaires', onViewAll: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SuppliersPage(projectCode: projectCode)))),
                         const SizedBox(height: 8),
-                        // CORRECTION 2 et 3 : Typage fort et bon provider
                         FutureBuilder<List<dynamic>>(
                           future: ref.read(supabaseClientProvider).from('thix_execution_suppliers').select().eq('project_code', projectCode).limit(3).then((v) => v as List<dynamic>), 
                           builder: (c, snap) {
+                            if (snap.connectionState == ConnectionState.waiting) return const SizedBox(height: 60, child: Center(child: CircularProgressIndicator()));
                             final list = snap.data ?? <dynamic>[];
+                            
+                            if (list.isEmpty) {
+                              return Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(16), 
+                                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)), 
+                                child: const Center(child: Text('Aucun fournisseur enregistré', style: TextStyle(fontSize: 12, color: Colors.grey)))
+                              );
+                            }
+                            
                             return Container(
                               padding: const EdgeInsets.all(12), 
                               decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)), 
                               child: Column(
-                                children: list.isEmpty 
-                                  ? [
-                                      const ListTile(title: Text('TechMachinery GmbH', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)), subtitle: Text('Équipement', style: TextStyle(fontSize: 10)), trailing: Chip(label: Text('Validé', style: TextStyle(fontSize: 9)), backgroundColor: Color(0xFFE6F9ED)))
-                                    ] 
-                                  : list.map<Widget>((s) => ListTile(
-                                      leading: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.business, size: 16)), 
-                                      title: Text(s['name'].toString(), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)), 
-                                      subtitle: Text(s['category'].toString(), style: const TextStyle(fontSize: 10)), 
-                                      trailing: Chip(label: Text(s['status'].toString(), style: const TextStyle(fontSize: 9)), backgroundColor: s['status'] == 'Validé' ? const Color(0xFFE6F9ED) : Colors.orange.shade50)
-                                    )).toList()
+                                children: list.map<Widget>((s) => ListTile(
+                                  leading: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.business, size: 16)), 
+                                  title: Text(s['name'].toString(), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)), 
+                                  subtitle: Text(s['category'].toString(), style: const TextStyle(fontSize: 10)), 
+                                  trailing: Chip(
+                                    label: Text(s['status'].toString(), style: const TextStyle(fontSize: 9)), 
+                                    backgroundColor: s['status'] == 'Validé' ? const Color(0xFFE6F9ED) : (s['status'] == 'Négociation' ? Colors.orange.shade50 : Colors.grey.shade100)
+                                  )
+                                )).toList()
                               )
                             );
                           }
@@ -280,7 +323,14 @@ class ExecutionDashboardFinal extends ConsumerWidget {
                                 loading: () => const CircularProgressIndicator(),
                                 error: (e, s) => Text('$e'),
                                 data: (tasks) {
-                                  if (tasks.isEmpty) return const Text('Aucune tâche', style: TextStyle(fontSize: 12));
+                                  if (tasks.isEmpty) {
+                                    return const Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.symmetric(vertical: 16.0),
+                                        child: Text('Aucune tâche', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                                      ),
+                                    );
+                                  }
                                   return Column(
                                     children: tasks.take(3).map((t) => Padding(
                                       padding: const EdgeInsets.only(bottom: 10), 
@@ -288,18 +338,29 @@ class ExecutionDashboardFinal extends ConsumerWidget {
                                         children: [
                                           Icon(t.status == 'done' ? Icons.check_circle : Icons.radio_button_unchecked, color: t.status == 'done' ? Colors.green : Colors.grey, size: 20), 
                                           const SizedBox(width: 10), 
-                                          Expanded(child: Text(t.title, style: TextStyle(fontSize: 12, decoration: t.status == 'done' ? TextDecoration.lineThrough : null))), 
+                                          Expanded(child: Text(t.title, style: TextStyle(fontSize: 12, decoration: t.status == 'done' ? TextDecoration.lineThrough : null), maxLines: 1, overflow: TextOverflow.ellipsis)), 
                                           Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: t.category == 'Légal' ? Colors.red.shade50 : t.category == 'Finance' ? Colors.green.shade50 : Colors.purple.shade50, borderRadius: BorderRadius.circular(6)), child: Text(t.category, style: const TextStyle(fontSize: 9))), 
-                                          const SizedBox(width: 8), 
-                                          const Icon(Icons.auto_awesome, size: 14, color: Colors.indigo), 
-                                          const Text(' IA', style: TextStyle(fontSize: 10, color: Colors.indigo))
+                                          if (t.isAiSuggested) ...[
+                                            const SizedBox(width: 8), 
+                                            const Icon(Icons.auto_awesome, size: 14, color: Colors.indigo), 
+                                            const Text(' IA', style: TextStyle(fontSize: 10, color: Colors.indigo))
+                                          ]
                                         ] 
                                       )
                                     )).toList()
                                   );
                                 },
                               ),
-                              Center(child: TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TasksPage(projectCode: projectCode))), child: const Text('Voir toutes les tâches (3)', style: TextStyle(fontSize: 11)))),
+                              Center(
+                                child: TextButton(
+                                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => TasksPage(projectCode: projectCode))), 
+                                  // Texte dynamique mis à jour ici 👇
+                                  child: tasksStream.maybeWhen(
+                                    data: (tasks) => Text('Voir toutes les tâches (${tasks.length})', style: const TextStyle(fontSize: 11)),
+                                    orElse: () => const Text('Voir toutes les tâches', style: TextStyle(fontSize: 11)),
+                                  )
+                                )
+                              ),
                             ]
                           ),
                         ),
