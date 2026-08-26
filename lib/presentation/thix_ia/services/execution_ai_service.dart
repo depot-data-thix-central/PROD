@@ -9,7 +9,8 @@ class ExecutionAiService {
   final ExecutionRepository _repo;
 
   Future<Map<String,dynamic>> generateNextAction(String projectCode) async {
-    final dashboard = await _repo._ds.getExecutionProject(projectCode);
+    
+    final dashboard = await _repo.getOrCreateHealth(projectCode);
     final tasks = await _repo.getTasks(projectCode, limit: 100);
     final goals = await _repo.getGoals(projectCode);
     
@@ -20,17 +21,17 @@ class ExecutionAiService {
     try {
       final res = await _supabase.functions.invoke('thix-ia-orchestrator', body: {
         'project_code': projectCode,
-        'context': {'late_tasks': late, 'at_risk_goals': atRisk.map((e)=> e.title).toList(), 'health': dashboard?.healthScore},
+        'context': {'late_tasks': late, 'at_risk_goals': atRisk.map((e)=> e.title).toList(), 'health': dashboard.healthScore},
         'action': 'next_best_action'
       });
       if(res.data != null && res.data['title'] != null) return Map<String,dynamic>.from(res.data);
     } catch(_){}
 
     return ExecutionUtils.buildNextBestAction(
-      healthScore: (dashboard?.healthScore ?? 0).toDouble(),
+      healthScore: dashboard.healthScore.toDouble(),
       tasksLate: tasks.where((t)=> t.isLate).toList(),
       goalsAtRisk: atRisk.map((e)=> e.title).toList(),
-      runway: dashboard?.runwayMonths ?? 0,
+      runway: dashboard.runwayMonths,
     );
   }
 
