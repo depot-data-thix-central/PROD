@@ -186,7 +186,7 @@ class _RoadmapPageState extends ConsumerState<RoadmapPage> {
               onPressed: _busy ? null : _createDefaultRoadmap,
               backgroundColor: Colors.indigo.shade100,
               foregroundColor: Colors.indigo,
-              const Icon(Icons.auto_awesome),
+              icon: const Icon(Icons.auto_awesome),
               label: const Text('Template startup'),
             ),
           if ((ref.watch(executionRoadmapProvider(widget.projectCode)).valueOrNull ?? [])
@@ -848,7 +848,7 @@ class _EmptyRoadmap extends StatelessWidget {
                       height: 16,
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.auto_fix_group),
+                  : const Icon(Icons.auto_awesome),
               label: const Text('Template startup (6 étapes)'),
             ),
             const SizedBox(height: 10),
