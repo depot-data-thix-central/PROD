@@ -48,7 +48,8 @@ class ExecutionService {
       currentPriorityTitle: nextAction['title'], currentPriorityReason: nextAction['reason'],
     );
 
-    return _repo._ds.upsertExecutionProject(project);
+    // LA CORRECTION EST ICI 👇 : On enlève "._ds"
+    return _repo.upsertExecutionProject(project);
   }
 
   Future<Map<String,dynamic>> getDashboard(String projectCode) async {
