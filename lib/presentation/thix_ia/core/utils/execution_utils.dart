@@ -3,21 +3,28 @@ import '../constants/thix_ia_execution_constants.dart';
 import '../models/execution_finance.dart';
 
 class ExecutionUtils {
-  static double calculateRunway({required double treasury, required double burnRate}) {
+  static double calculateRunway({
+    required double treasury,
+    required double burnRate,
+  }) {
     if (burnRate <= 0) return 0;
     return treasury / burnRate;
   }
 
-  static double calculateBurnRate(List<Map<String, dynamic>> last3MonthsExpenses) {
+  static double calculateBurnRate(
+      List<Map<String, dynamic>> last3MonthsExpenses) {
     if (last3MonthsExpenses.isEmpty) return 0;
     final total = last3MonthsExpenses.fold<double>(
-        0, (s, e) => s + (e['amount'] as num).toDouble());
+      0,
+      (s, e) => s + (e['amount'] as num).toDouble(),
+    );
     return total / last3MonthsExpenses.length;
   }
 
   /// Calcule trésorerie, burn, runway, mrr à partir des transactions réelles
   static Map<String, double> computeFinanceFromTransactions(
-      List<FinanceTransaction> transactions) {
+    List<FinanceTransaction> transactions,
+  ) {
     double treasury = 0;
     double totalIncome = 0;
     double totalExpense = 0;
@@ -37,7 +44,9 @@ class ExecutionUtils {
         case FinanceTransactionType.income:
           treasury += amount;
           totalIncome += amount;
-          if (date.isAfter(thirtyDaysAgo)) incomeLast30 += amount;
+          if (date.isAfter(thirtyDaysAgo)) {
+            incomeLast30 += amount;
+          }
           break;
         case FinanceTransactionType.capital:
           treasury += amount;
@@ -46,20 +55,22 @@ class ExecutionUtils {
         case FinanceTransactionType.expense:
           treasury -= amount;
           totalExpense += amount;
-          if (date.isAfter(thirtyDaysAgo)) expenseLast30 += amount;
+          if (date.isAfter(thirtyDaysAgo)) {
+            expenseLast30 += amount;
+          }
           break;
       }
     }
 
-    // Burn rate = dépenses des 30 derniers jours (ou total si peu de data)
     final burn = expenseLast30 > 0
         ? expenseLast30
         : (totalExpense > 0 ? totalExpense : 0.0);
 
-    // MRR simplifié = revenus des 30 derniers jours
     final mrr = incomeLast30 > 0 ? incomeLast30 : totalIncome;
 
-    final runway = burn > 0 ? (treasury / burn) : (treasury > 0 ? 99.0 : 0.0);
+    final runway = burn > 0
+        ? (treasury / burn)
+        : (treasury > 0 ? 99.0 : 0.0);
 
     return {
       'treasury': treasury,
@@ -72,7 +83,10 @@ class ExecutionUtils {
     };
   }
 
-  static double calculateProgress({required num current, required num target}) {
+  static double calculateProgress({
+    required num current,
+    required num target,
+  }) {
     if (target == 0) return 0;
     return (current / target * 100).clamp(0, 100).toDouble();
   }
@@ -86,11 +100,17 @@ class ExecutionUtils {
   }
 
   static String generateTaskId(String projectCode) {
-    return '\( {projectCode}_TASK_ \){DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(9999)}';
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final rnd = Random().nextInt(9999);
+    return '\( {projectCode}_TASK_ \){ts}_$rnd';
   }
 
-  static String formatCurrency(double amount, {String currency = '\$'}) {
-    return '$currency \( {amount.toStringAsFixed(2).replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => ' \){m[1]},')}';
+  static String formatCurrency(double amount, {String currency = r'$'}) {
+    final formatted = amount.toStringAsFixed(2).replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]},',
+    );
+    return '$currency $formatted';
   }
 
   static Map<String, dynamic> buildNextBestAction({
@@ -103,34 +123,34 @@ class ExecutionUtils {
       return {
         'title': 'Sécuriser la trésorerie',
         'reason': 'Runway < 3 mois',
-        'priority': 'critical'
+        'priority': 'critical',
       };
     }
     if (tasksLate.length > 3) {
       return {
         'title': 'Rattraper ${tasksLate.length} tâches en retard',
-        'reason': 'Risque d\'échéance',
-        'priority': 'high'
+        'reason': 'Risque d échéance',
+        'priority': 'high',
       };
     }
     if (goalsAtRisk.isNotEmpty) {
       return {
         'title': 'Valider ${goalsAtRisk.first}',
         'reason': 'Objectif à risque',
-        'priority': 'high'
+        'priority': 'high',
       };
     }
     if (healthScore < 60) {
       return {
         'title': 'Améliorer la conformité',
         'reason': 'Health $healthScore%',
-        'priority': 'medium'
+        'priority': 'medium',
       };
     }
     return {
       'title': 'Valider la demande auprès de 20 clients',
       'reason': 'Hypothèse commerciale non validée',
-      'priority': 'medium'
+      'priority': 'medium',
     };
   }
 }
