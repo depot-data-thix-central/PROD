@@ -1,6 +1,7 @@
 // lib/presentation/thix_ia/services/analysis_service.dart
 import 'package:flutter/foundation.dart';
-
+import '../repositories/bp_config_repository.dart';
+import '../models/business_plan_config.dart';
 import '../repositories/analysis_repository.dart';
 import '../repositories/memory_repository.dart';
 import '../models/project_analysis.dart';
@@ -31,42 +32,89 @@ class AnalysisService {
   ];
 
   // ============================================================
-  // ANALYSE D'IDÉE
+  // BUSINESS PLAN (données fondateur = Supabase uniquement)
   // ============================================================
-  Future<ProjectAnalysis> startIdeaAnalysis({
+  Future<ProjectAnalysis> startBusinessPlanAnalysis({
     required String projectCode,
     required String ideaDescription,
     ThixAiProvider provider = ThixAiProvider.openai,
   }) async {
+    final bpRepo = BpConfigRepository();
+
+    // 1) Config fondateur depuis Supabase (peut être null)
+    final founderConfig = await bpRepo.getByProject(projectCode);
+
+    // 2) Seed Execution (capital → thix_execution_finances)
+    await bpRepo.seedExecution(projectCode);
+
+    final shortIdea = ideaDescription.length > 50
+        ? '${ideaDescription.substring(0, 47)}...'
+        : ideaDescription;
+
     final analysis = await analysisRepo.startAnalysis(
       projectCode: projectCode,
-      type: 'idea',
-      title: 'Analyse d\'idée',
+      type: 'business_plan',
+      title: 'Business plan – $shortIdea',
       payload: {
         'idea': ideaDescription,
-        'require_verdict': true,
+        'require_full_plan': true,
+        if (founderConfig != null) 'founder_config_id': founderConfig.id,
+        if (founderConfig != null) 'founder_config': founderConfig.toJson(),
       },
     );
 
-    _runIdeaAnalysisInBackground(
+    _runBusinessPlanInBackground(
       analysisId: analysis.id,
       projectCode: projectCode,
       idea: ideaDescription,
+      founderConfig: founderConfig,
       provider: provider,
     );
 
     return analysis;
   }
 
-  Future<void> _runIdeaAnalysisInBackground({
+  Future<void> _runBusinessPlanInBackground({
     required String analysisId,
     required String projectCode,
     required String idea,
+    BusinessPlanConfig? founderConfig,
     required ThixAiProvider provider,
   }) async {
     try {
-      final response = await aiService.analyzeIdea(
-        idea: idea,
+      final founderBlock = founderConfig != null
+          ? founderConfig.toPromptBlock()
+          : 'Aucune donnée fondateur en base (thix_bp_config vide). '
+              'Estime de façon réaliste pour le pays / secteur du projet.';
+
+      final query = '''
+Tu es le directeur stratégique de THIX IA.
+
+**IDÉE DE PROJET EXACTE :**
+"$idea"
+
+$founderBlock
+
+DIRECTIVE CRITIQUE :
+- Utilise IMPÉRATIVEMENT les données fondateur ci-dessus si présentes (nom produit, capital, USP, cible, levée, équipe).
+- Ne contredis JAMAIS les chiffres fournis par le fondateur.
+- Si un champ est absent, estime de façon réaliste pour l'Afrique / le pays du projet.
+- BP prêt investisseurs, ultra-personnalisé et actionnable.
+
+Structure obligatoire :
+1. Résumé exécutif
+2. Présentation du projet et Proposition de valeur unique
+3. Analyse de marché (ciblée)
+4. Stratégie commerciale et Marketing
+5. Organisation, Logistique et Équipe
+6. Plan financier sommaire (aligné sur capital / levée indiqués)
+7. Risques et mesures d'atténuation
+8. Feuille de route (12 à 24 mois)
+''';
+
+      final response = await aiService.call(
+        action: ThixAiAction.businessPlan,
+        message: query,
         projectCode: projectCode,
         provider: provider,
       );
@@ -76,6 +124,8 @@ class AnalysisService {
           analysisId: analysisId,
           result: {
             'content': response.content,
+            if (founderConfig != null)
+              'founder_config': founderConfig.toJson(),
             'provider': response.provider,
             'model': response.model,
             'generated_at': DateTime.now().toIso8601String(),
@@ -84,15 +134,17 @@ class AnalysisService {
       } else {
         await analysisRepo.failAnalysis(
           analysisId: analysisId,
-          error: response.error ?? 'Erreur inconnue lors de l\'analyse d\'idée',
+          error: response.error ?? 'Erreur génération business plan',
         );
       }
     } catch (e, st) {
-      debugPrint('❌ Idea analysis failed: $e\n$st');
-      await analysisRepo.failAnalysis(analysisId: analysisId, error: e.toString());
+      debugPrint('❌ Business plan failed: $e\n$st');
+      await analysisRepo.failAnalysis(
+        analysisId: analysisId,
+        error: e.toString(),
+      );
     }
   }
-
   // ============================================================
   // ÉTUDE DE MARCHÉ
   // ============================================================
