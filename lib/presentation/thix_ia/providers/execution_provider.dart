@@ -1,112 +1,67 @@
-// lib/presentation/thix_ia/providers/execution_provider.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../datasources/execution_remote_datasource.dart';
+import '../repositories/execution_repository.dart';
+import '../services/execution_service.dart';
+import '../services/execution_ai_service.dart';
+import '../models/execution_task.dart';
+import '../models/execution_goal.dart';
+import '../models/execution_finance.dart';
+import '../models/execution_support.dart';
 import '../models/execution_project.dart';
-// Note: Le repository sera créé dans les prochains fichiers, on anticipe son import
-import '../repositories/execution_repository.dart'; 
 
-/// Provider global pour accéder au contrôleur d'exécution d'un projet spécifique
-final executionProvider = StateNotifierProvider.family<ExecutionNotifier, AsyncValue<ExecutionProject>, String>((ref, projectCode) {
-  final repository = ref.watch(executionRepositoryProvider);
-  return ExecutionNotifier(repository, projectCode);
+final supabaseClientProvider = Provider<SupabaseClient>((ref)=> Supabase.instance.client);
+
+final executionDatasourceProvider = Provider<ExecutionRemoteDatasource>((ref){
+  return ExecutionRemoteDatasource(ref.read(supabaseClientProvider));
 });
 
-class ExecutionNotifier extends StateNotifier<AsyncValue<ExecutionProject>> {
-  final ExecutionRepository _repository;
-  final String _projectCode;
+final executionRepositoryProvider = Provider<ExecutionRepository>((ref){
+  return ExecutionRepository(ref.read(executionDatasourceProvider));
+});
 
-  ExecutionNotifier(this._repository, this._projectCode) : super(const AsyncValue.loading()) {
-    _loadProjectData();
-  }
+final executionServiceProvider = Provider<ExecutionService>((ref){
+  return ExecutionService(ref.read(executionRepositoryProvider));
+});
 
-  /// Charge les données depuis la base de données (Supabase/API)
-  Future<void> _loadProjectData() async {
-    try {
-      state = const AsyncValue.loading();
-      final project = await _repository.getExecutionProject(_projectCode);
-      state = AsyncValue.data(project);
-    } catch (e, stackTrace) {
-      state = AsyncValue.error(e, stackTrace);
-    }
-  }
+final executionAiServiceProvider = Provider<ExecutionAiService>((ref){
+  return ExecutionAiService(ref.read(supabaseClientProvider), ref.read(executionRepositoryProvider));
+});
 
-  /// Rafraîchissement manuel
-  Future<void> refresh() async {
-    await _loadProjectData();
-  }
+// DASHBOARD COMPLET
+final executionDashboardProvider = FutureProvider.family<Map<String,dynamic>, String>((ref, projectCode) async {
+  final service = ref.read(executionServiceProvider);
+  return service.getDashboard(projectCode);
+});
 
-  /// ==========================================================================
-  /// ACTIONS D'EXÉCUTION (Met à jour le State visuel ET la Base de Données)
-  /// ==========================================================================
+final executionTasksProvider = StreamProvider.family<List<ExecutionTask>, String>((ref, projectCode){
+  return ref.read(executionRepositoryProvider).watchTasks(projectCode);
+});
 
-  Future<void> addTransaction({required double amount, required bool isExpense, required String category}) async {
-    final currentState = state.value;
-    if (currentState == null) return;
+final executionTasksFutureProvider = FutureProvider.family<List<ExecutionTask>, String>((ref, code) async {
+  return ref.read(executionRepositoryProvider).getTasks(code, limit: 200);
+});
 
-    final newTransaction = ExecutionTransaction(
-      id: DateTime.now().millisecondsSinceEpoch.toString(), // ID temporaire
-      amount: amount,
-      isExpense: isExpense,
-      category: category,
-      date: DateTime.now(),
-    );
+final executionGoalsProvider = FutureProvider.family<List<ExecutionGoal>, String>((ref, code) async {
+  return ref.read(executionRepositoryProvider).getGoals(code);
+});
 
-    // 1. Mise à jour optimiste de l'UI (instantané)
-    state = AsyncValue.data(currentState.copyWith(
-      transactions: [...currentState.transactions, newTransaction],
-    ));
+final executionFinanceProvider = FutureProvider.family<FinancialSnapshot?, String>((ref, code) async {
+  try{ return await ref.read(executionRepositoryProvider).getFinanceSnapshot(code); }catch(_){ return null; }
+});
 
-    try {
-      // 2. Sauvegarde en base de données
-      await _repository.addTransaction(_projectCode, newTransaction);
-    } catch (e) {
-      // En cas d'erreur, on annule et on recharge les vraies données
-      _loadProjectData(); 
-      throw Exception('Erreur lors de l\'ajout de la transaction : $e');
-    }
-  }
+final executionSuppliersProvider = FutureProvider.family<List<Supplier>, String>((ref, code) async {
+  return ref.read(executionRepositoryProvider).getSuppliers(code);
+});
 
-  Future<void> toggleTaskStatus(String taskId) async {
-    final currentState = state.value;
-    if (currentState == null) return;
+final executionRisksProvider = FutureProvider.family<List<RiskItem>, String>((ref, code) async {
+  return ref.read(executionRepositoryProvider).getRisks(code);
+});
 
-    // Trouve la tâche et inverse son statut
-    final updatedTasks = currentState.tasks.map((t) {
-      if (t.id == taskId) return t.copyWith(isDone: !t.isDone);
-      return t;
-    }).toList();
+final executionRoadmapProvider = FutureProvider.family<List<Map<String,dynamic>>, String>((ref, code) async {
+  return ref.read(executionRepositoryProvider).getRoadmap(code);
+});
 
-    // 1. Mise à jour optimiste de l'UI
-    state = AsyncValue.data(currentState.copyWith(tasks: updatedTasks));
-
-    try {
-      // 2. Sauvegarde en base de données
-      final taskToUpdate = updatedTasks.firstWhere((t) => t.id == taskId);
-      await _repository.updateTaskStatus(_projectCode, taskId, taskToUpdate.isDone);
-    } catch (e) {
-      _loadProjectData();
-      throw Exception('Erreur lors de la mise à jour de la tâche');
-    }
-  }
-
-  Future<void> addTask({required String title, required String category}) async {
-    final currentState = state.value;
-    if (currentState == null) return;
-
-    final newTask = ExecutionTask(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      title: title,
-      category: category,
-      isAiGenerated: false, // Tâche manuelle
-      createdAt: DateTime.now(),
-    );
-
-    state = AsyncValue.data(currentState.copyWith(tasks: [...currentState.tasks, newTask]));
-
-    try {
-      await _repository.addTask(_projectCode, newTask);
-    } catch (e) {
-      _loadProjectData();
-      throw Exception('Erreur lors de la création de la tâche');
-    }
-  }
-}
+final executionTransactionsProvider = FutureProvider.family<List<FinanceTransaction>, String>((ref, code) async {
+  return ref.read(executionRepositoryProvider).getTransactions(code);
+});
