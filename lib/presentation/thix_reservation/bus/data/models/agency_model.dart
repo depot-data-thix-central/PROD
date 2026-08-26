@@ -3,15 +3,15 @@ import 'package:flutter/foundation.dart';
 
 class AgencyModel {
   final String id;
-  final String ownerId; // UID Supabase = lié au THIX ID utilisateur
+  final String ownerId;
   final String name;
   final String slug;
   final String? logoUrl;
   final String? description;
-  final String countryCode; // CD, CI...
+  final String countryCode;
   final bool isVerified;
-  final String status; // pending, active, suspended
-  final String subscriptionPlan; // free, pro
+  final String status; // pending | active | suspended
+  final String subscriptionPlan;
   final double ratingAvg;
   final int ratingCount;
   final DateTime createdAt;
@@ -32,21 +32,28 @@ class AgencyModel {
     required this.createdAt,
   });
 
+  bool get isActive => status == 'active' || status == 'approved';
+  bool get isPending => status == 'pending';
+
   factory AgencyModel.fromJson(Map<String, dynamic> json) {
+    final name = (json['name'] as String?) ?? '';
+    final id = json['id']?.toString() ?? '';
+    final createdRaw = json['created_at']?.toString();
     return AgencyModel(
-      id: json['id'] as String,
-      ownerId: json['owner_id'] as String,
-      name: json['name'] as String,
-      slug: json['slug'] as String,
+      id: id,
+      ownerId: (json['owner_id'] ?? json['user_id'] ?? '').toString(),
+      name: name,
+      slug: (json['slug'] as String?) ??
+          (name.isEmpty ? id : name.toLowerCase().replaceAll(RegExp(r'\s+'), '-')),
       logoUrl: json['logo_url'] as String?,
       description: json['description'] as String?,
-      countryCode: json['country_code'] as String? ?? 'CD',
+      countryCode: (json['country_code'] ?? json['country'] ?? 'CD').toString(),
       isVerified: json['is_verified'] as bool? ?? false,
-      status: json['status'] as String? ?? 'pending',
+      status: (json['status'] as String?) ?? 'pending',
       subscriptionPlan: json['subscription_plan'] as String? ?? 'free',
       ratingAvg: (json['rating_avg'] as num?)?.toDouble() ?? 0.0,
       ratingCount: json['rating_count'] as int? ?? 0,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: createdRaw != null ? DateTime.parse(createdRaw) : DateTime.now(),
     );
   }
 
