@@ -112,8 +112,8 @@ class ProjectRepositoryImpl implements ProjectRepository {
     final projectCode = ProjectCodeGenerator.generate();
     final userId = Supabase.instance.client.auth.currentUser?.id;
 
-    final data = {
-      'project_code': projectCode,
+        final data = {
+      'code': projectCode, 
       'name': name.trim(),
       'sector': sector.trim(),
       'country': country.trim(),
@@ -123,8 +123,9 @@ class ProjectRepositoryImpl implements ProjectRepository {
       'progress': 0.05,
       'analyses_count': 0,
       'documents_count': 0,
-      if (userId != null) 'owner_id': userId, // ← important pour RLS + ownership
+      if (userId != null) 'owner_id': userId,
     };
+
 
     final created = await remote.createProject(data);
     await local.cacheProject(created);
