@@ -7,6 +7,9 @@ import '../repositories/memory_repository.dart';
 import '../models/project_analysis.dart';
 import '../core/errors/thix_ia_exception.dart';
 import 'ai_service.dart';
+import '../repositories/bp_config_repository.dart';
+import '../models/business_plan_config.dart';
+import 'bp_post_process_service.dart';
 
 class AnalysisService {
   AnalysisService({
@@ -32,7 +35,7 @@ class AnalysisService {
   ];
 
   // ============================================================
-  // BUSINESS PLAN (données fondateur = Supabase uniquement)
+  // BUSINESS PLAN
   // ============================================================
   Future<ProjectAnalysis> startBusinessPlanAnalysis({
     required String projectCode,
@@ -40,11 +43,7 @@ class AnalysisService {
     ThixAiProvider provider = ThixAiProvider.openai,
   }) async {
     final bpRepo = BpConfigRepository();
-
-    // 1) Config fondateur depuis Supabase (peut être null)
     final founderConfig = await bpRepo.getByProject(projectCode);
-
-    // 2) Seed Execution (capital → thix_execution_finances)
     await bpRepo.seedExecution(projectCode);
 
     final shortIdea = ideaDescription.length > 50
@@ -59,7 +58,6 @@ class AnalysisService {
         'idea': ideaDescription,
         'require_full_plan': true,
         if (founderConfig != null) 'founder_config_id': founderConfig.id,
-        if (founderConfig != null) 'founder_config': founderConfig.toJson(),
       },
     );
 
@@ -84,8 +82,7 @@ class AnalysisService {
     try {
       final founderBlock = founderConfig != null
           ? founderConfig.toPromptBlock()
-          : 'Aucune donnée fondateur en base (thix_bp_config vide). '
-              'Estime de façon réaliste pour le pays / secteur du projet.';
+          : 'Aucune donnée fondateur en base (thix_bp_config).';
 
       final query = '''
 Tu es le directeur stratégique de THIX IA.
@@ -96,10 +93,8 @@ Tu es le directeur stratégique de THIX IA.
 $founderBlock
 
 DIRECTIVE CRITIQUE :
-- Utilise IMPÉRATIVEMENT les données fondateur ci-dessus si présentes (nom produit, capital, USP, cible, levée, équipe).
-- Ne contredis JAMAIS les chiffres fournis par le fondateur.
-- Si un champ est absent, estime de façon réaliste pour l'Afrique / le pays du projet.
-- BP prêt investisseurs, ultra-personnalisé et actionnable.
+- Utilise les données fondateur si présentes.
+- BP prêt investisseurs, personnalisé.
 
 Structure obligatoire :
 1. Résumé exécutif
@@ -107,7 +102,7 @@ Structure obligatoire :
 3. Analyse de marché (ciblée)
 4. Stratégie commerciale et Marketing
 5. Organisation, Logistique et Équipe
-6. Plan financier sommaire (aligné sur capital / levée indiqués)
+6. Plan financier sommaire
 7. Risques et mesures d'atténuation
 8. Feuille de route (12 à 24 mois)
 ''';
@@ -131,6 +126,13 @@ Structure obligatoire :
             'generated_at': DateTime.now().toIso8601String(),
           },
         );
+
+        await BpPostProcessService().processCompletedBusinessPlan(
+          projectCode: projectCode,
+          analysisId: analysisId,
+          rawContent: response.content!,
+          founderConfigJson: founderConfig?.toJson(),
+        );
       } else {
         await analysisRepo.failAnalysis(
           analysisId: analysisId,
@@ -140,9 +142,7 @@ Structure obligatoire :
     } catch (e, st) {
       debugPrint('❌ Business plan failed: $e\n$st');
       await analysisRepo.failAnalysis(
-        analysisId: analysisId,
-        error: e.toString(),
-      );
+          analysisId: analysisId, error: e.toString());
     }
   }
   // ============================================================
