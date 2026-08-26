@@ -902,22 +902,59 @@ class _DocsTab extends ConsumerWidget {
         child: Text('Erreur : $e', style: const TextStyle(color: Colors.red)),
       ),
       data: (docs) {
-        if (docs.isEmpty) {
-          return const Center(child: Text('Aucun document pour le moment.'));
-        }
-
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          itemBuilder: (context, index) {
-            final doc = docs[index];
-            return Card(
-              child: ListTile(
-                leading: const Icon(Icons.description_outlined),
-                title: Text('Document ${index + 1}'),
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          children: [
+            // ── BOUTON FIXE : BUSINESS PLAN ──────────────────────────────
+            Card(
+              margin: const EdgeInsets.only(bottom: 24),
+              elevation: 0,
+              color: ThixPolicy.primary.withOpacity(0.08),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: ThixPolicy.primary.withOpacity(0.2)),
               ),
-            );
-          },
+              child: ListTile(
+                leading: const Icon(Icons.menu_book_outlined, color: ThixPolicy.primary),
+                title: const Text(
+                  'Business Plan (livre A4)',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: const Text('Éditer sections · recompiler PDF'),
+                trailing: const Icon(Icons.chevron_right_rounded, color: ThixPolicy.primary),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => BpDocumentEditorPage(projectCode: projectCode),
+                    ),
+                  );
+                },
+              ),
+            ),
+
+            // ── AUTRES DOCUMENTS ─────────────────────────────────────────
+            if (docs.isEmpty)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(32.0),
+                  child: Text(
+                    'Aucun autre document pour le moment.',
+                    style: TextStyle(color: ThixPolicy.textMuted),
+                  ),
+                ),
+              )
+            else
+              ...docs.map((doc) {
+                final index = docs.indexOf(doc);
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: const Icon(Icons.description_outlined),
+                    title: Text('Document ${index + 1}'),
+                  ),
+                );
+              }),
+          ],
         );
       },
     );
