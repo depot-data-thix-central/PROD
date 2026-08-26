@@ -9,15 +9,12 @@ import 'package:intl/intl.dart';
 import '../models/business_plan_config.dart';
 import '../repositories/bp_config_repository.dart';
 
-/// Après génération BP :
-/// 1) Parse contenu → sections livre A4
-/// 2) Upsert thix_bp_documents + project_documents
-/// 3) Injecte budget / OKRs / roadmap dans Exécution
 class BpPostProcessService {
   BpPostProcessService({SupabaseClient? client})
       : _client = client ?? Supabase.instance.client;
 
   final SupabaseClient _client;
+  static const _bucket = 'thix-documents';
 
   Future<void> processCompletedBusinessPlan({
     required String projectCode,
@@ -32,32 +29,32 @@ class BpPostProcessService {
           })
         : await BpConfigRepository().getByProject(projectCode);
 
-    // 1) Structurer les sections (livre)
     final sections = _parseSections(rawContent, founder);
-
-    // 2) Snapshot financier pour Exécution
     final financial = _extractFinancial(sections, founder);
-
-    // 3) Sauvegarder document BP éditable
     final userId = _client.auth.currentUser?.id;
-    final docRow = await _client
-        .from('thix_bp_documents')
-        .upsert({
-          'project_code': projectCode,
-          'analysis_id': analysisId,
-          'title': founder?.productName != null
-              ? 'Business Plan – ${founder!.productName}'
-              : 'Business Plan',
-          'status': 'draft',
-          'sections': sections,
-          'financial_snapshot': financial,
-          if (userId != null) 'owner_id': userId,
-          'updated_at': DateTime.now().toIso8601String(),
-        }, onConflict: 'project_code')
-        .select()
-        .maybeSingle();
 
-    // Si pas de contrainte unique project_code, fallback insert
+    Map<String, dynamic>? docRow;
+    try {
+      docRow = await _client
+          .from('thix_bp_documents')
+          .upsert({
+            'project_code': projectCode,
+            'analysis_id': analysisId,
+            'title': founder?.productName != null
+                ? 'Business Plan – ${founder!.productName}'
+                : 'Business Plan',
+            'status': 'draft',
+            'sections': sections,
+            'financial_snapshot': financial,
+            if (userId != null) 'owner_id': userId,
+            'updated_at': DateTime.now().toIso8601String(),
+          }, onConflict: 'project_code')
+          .select()
+          .maybeSingle();
+    } catch (_) {
+      docRow = null;
+    }
+
     final bpDocId = docRow?['id']?.toString() ??
         (await _client
                 .from('thix_bp_documents')
@@ -74,7 +71,6 @@ class BpPostProcessService {
                 .single())['id']
             .toString();
 
-    // 4) Générer PDF A4 + upload Storage + ligne project_documents
     try {
       final pdfBytes = await buildA4Pdf(
         projectCode: projectCode,
@@ -90,7 +86,6 @@ class BpPostProcessService {
       debugPrint('PDF upload skipped: $e');
     }
 
-    // 5) Injecter Exécution
     await _injectExecution(
       projectCode: projectCode,
       bpDocId: bpDocId,
@@ -101,10 +96,7 @@ class BpPostProcessService {
   }
 
   Map<String, dynamic> _parseSections(
-    String raw,
-    BusinessPlanConfig? founder,
-  ) {
-    // Essaie JSON ; sinon découpe markdown par titres
+      String raw, BusinessPlanConfig? founder) {
     try {
       final start = raw.indexOf('{');
       final end = raw.lastIndexOf('}');
@@ -116,35 +108,25 @@ class BpPostProcessService {
 
     return {
       'title': founder?.productName ?? 'Business Plan',
-      'executive_summary': _extractBetween(raw, [
-        'résumé exécutif',
-        'executive summary',
-        '1.'
-      ], [
-        '2.',
-        'présentation'
-      ]),
-      'value_proposition': _extractBetween(raw, [
-        'proposition de valeur',
-        'présentation'
-      ], [
-        '3.',
-        'marché'
-      ]),
-      'market': _extractBetween(raw, ['marché', '3.'], ['4.', 'stratégie']),
+      'executive_summary': _extractBetween(
+          raw, ['résumé exécutif', 'executive summary', '1.'],
+          ['2.', 'présentation']),
+      'value_proposition': _extractBetween(
+          raw, ['proposition de valeur', 'présentation'],
+          ['3.', 'marché']),
+      'market':
+          _extractBetween(raw, ['marché', '3.'], ['4.', 'stratégie']),
       'strategy':
           _extractBetween(raw, ['stratégie', '4.'], ['5.', 'organisation']),
-      'team': _extractBetween(raw, ['équipe', 'organisation', '5.'], [
-        '6.',
-        'financier'
-      ]),
+      'team': _extractBetween(
+          raw, ['équipe', 'organisation', '5.'], ['6.', 'financier']),
       'financials':
           _extractBetween(raw, ['financier', '6.'], ['7.', 'risques']),
-      'risks': _extractBetween(raw, ['risques', '7.'], ['8.', 'feuille']),
-      'roadmap': _extractBetween(raw, ['feuille de route', 'roadmap', '8.'], [
-        'fin',
-        'conclusion'
-      ]),
+      'risks':
+          _extractBetween(raw, ['risques', '7.'], ['8.', 'feuille']),
+      'roadmap': _extractBetween(
+          raw, ['feuille de route', 'roadmap', '8.'],
+          ['fin', 'conclusion']),
       'raw': raw,
     };
   }
@@ -172,9 +154,8 @@ class BpPostProcessService {
   ) {
     final capital = founder?.initialCapital ?? 0.0;
     final target = founder?.fundingTarget ?? 0.0;
-    final raised = capital; // pour l’instant = capital fondateur
+    final raised = capital;
     final gap = (target - raised).clamp(0, double.infinity);
-
     return {
       'initial_capital': capital,
       'funding_target': target,
@@ -195,7 +176,6 @@ class BpPostProcessService {
   }) async {
     final pdf = pw.Document();
     final date = DateFormat('dd/MM/yyyy').format(DateTime.now());
-
     final order = [
       ('Résumé exécutif', 'executive_summary'),
       ('Proposition de valeur', 'value_proposition'),
@@ -233,9 +213,11 @@ class BpPostProcessService {
             pw.Text('Généré le $date',
                 style: const pw.TextStyle(
                     fontSize: 9, color: PdfColors.grey600)),
-            pw.Text('Page \( {ctx.pageNumber}/ \){ctx.pagesCount}',
-                style: const pw.TextStyle(
-                    fontSize: 9, color: PdfColors.grey600)),
+            pw.Text(
+              'Page \( {ctx.pageNumber}/ \){ctx.pagesCount}',
+              style: const pw.TextStyle(
+                  fontSize: 9, color: PdfColors.grey600),
+            ),
           ],
         ),
         build: (ctx) => [
@@ -266,8 +248,9 @@ class BpPostProcessService {
     required Uint8List bytes,
   }) async {
     final path =
-        '\( projectCode/business_plan_ \){DateTime.now().millisecondsSinceEpoch}.pdf';
-    await _client.storage.from('project-documents').uploadBinary(
+        '\( projectCode/business_plans/BP_ \){DateTime.now().millisecondsSinceEpoch}.pdf';
+
+    await _client.storage.from(_bucket).uploadBinary(
           path,
           bytes,
           fileOptions: const FileOptions(
@@ -276,23 +259,27 @@ class BpPostProcessService {
           ),
         );
 
+    final publicUrl = _client.storage.from(_bucket).getPublicUrl(path);
+
     await _client.from('thix_bp_documents').update({
       'pdf_path': path,
+      'pdf_url': publicUrl,
       'pdf_size': bytes.length,
       'updated_at': DateTime.now().toIso8601String(),
     }).eq('id', bpDocId);
 
-    // Ligne visible dans l’onglet Documents
-    await _client.from('project_documents').insert({
-      'project_code': projectCode,
-      'file_name': 'Business_Plan_A4.pdf',
-      'file_path': path,
-      'file_type': 'pdf',
-      'file_size': bytes.length,
-      'mime_type': 'application/pdf',
-      'status': 'indexed',
-      'summary': 'Business Plan généré par THIX IA (format A4)',
-    });
+    try {
+      await _client.from('project_documents').insert({
+        'project_code': projectCode,
+        'file_name': 'Business_Plan_A4.pdf',
+        'file_path': path,
+        'file_type': 'pdf',
+        'file_size': bytes.length,
+        'mime_type': 'application/pdf',
+        'status': 'indexed',
+        'summary': 'Business Plan généré par THIX IA (format A4)',
+      });
+    } catch (_) {}
   }
 
   Future<void> _injectExecution({
@@ -304,52 +291,59 @@ class BpPostProcessService {
   }) async {
     final capital = (financial['initial_capital'] as num?)?.toDouble() ?? 0;
     final target = (financial['funding_target'] as num?)?.toDouble() ?? 0;
-    final raised = (financial['funding_raised'] as num?)?.toDouble() ?? capital;
+    final raised =
+        (financial['funding_raised'] as num?)?.toDouble() ?? capital;
     final gap = (financial['funding_gap'] as num?)?.toDouble() ?? 0;
 
-    // Budget
-    await _client.from('thix_execution_budget').upsert({
-      'project_code': projectCode,
-      'initial_capital': capital,
-      'funding_target': target,
-      'funding_raised': raised,
-      'funding_gap': gap,
-      'allocation': founder?.fundAllocation != null
-          ? {'raw': founder!.fundAllocation}
-          : {},
-      'year1_goal': founder?.year1Goal,
-      'source_bp_doc_id': bpDocId,
-      'updated_at': DateTime.now().toIso8601String(),
-    }, onConflict: 'project_code');
-
-    // Trésorerie
-    if (capital > 0) {
-      await BpConfigRepository().seedExecution(projectCode);
-      await _client.from('thix_execution_projects').upsert({
+    try {
+      await _client.from('thix_execution_budget').upsert({
         'project_code': projectCode,
-        'treasury': capital,
+        'initial_capital': capital,
+        'funding_target': target,
+        'funding_raised': raised,
+        'funding_gap': gap,
+        'allocation': founder?.fundAllocation != null
+            ? {'raw': founder!.fundAllocation}
+            : {},
+        'year1_goal': founder?.year1Goal,
+        'source_bp_doc_id': bpDocId,
         'updated_at': DateTime.now().toIso8601String(),
       }, onConflict: 'project_code');
+    } catch (e) {
+      debugPrint('budget upsert: $e');
     }
 
-    // Objectif stratégique (gap de financement)
+    if (capital > 0) {
+      await BpConfigRepository().seedExecution(projectCode);
+      try {
+        await _client.from('thix_execution_projects').upsert({
+          'project_code': projectCode,
+          'treasury': capital,
+          'updated_at': DateTime.now().toIso8601String(),
+        }, onConflict: 'project_code');
+      } catch (_) {}
+    }
+
     if (target > 0) {
-      await _client.from('thix_execution_goals').upsert({
-        'project_code': projectCode,
-        'title': 'Atteindre la levée de fonds',
-        'description':
-            'Objectif : \\[ {target.toStringAsFixed(0)}. Déjà : \ \]{raised.toStringAsFixed(0)}. Reste : \\[ {gap.toStringAsFixed(0)}',
-        'target_value': target,
-        'current_value': raised,
-        'unit': 'USD',
-        'status': 'active',
-        'progress': target > 0 ? ((raised / target) * 100).clamp(0, 100) : 0,
-      }, onConflict: 'project_code,title');
+      try {
+        await _client.from('thix_execution_goals').insert({
+          'project_code': projectCode,
+          'title': 'Atteindre la levée de fonds',
+          'description':
+              'Objectif: \\[ {target.toStringAsFixed(0)}. Déjà: \ \]{raised.toStringAsFixed(0)}. Reste: \\[ {gap.toStringAsFixed(0)}',
+          'target_value': target,
+          'current_value': raised,
+          'unit': 'USD',
+          'status': 'active',
+          'progress':
+              target > 0 ? ((raised / target) * 100).clamp(0, 100) : 0,
+        });
+      } catch (_) {}
     }
 
-    // Tâches roadmap simplifiées
-    final tasks = [
-      if (gap > 0) 'Préparer le pitch investisseurs (reste \ \]{gap.toStringAsFixed(0)})',
+    final tasks = <String>[
+      if (gap > 0)
+        'Préparer le pitch investisseurs (reste \ \]{gap.toStringAsFixed(0)})',
       if (founder?.missingRoles != null)
         'Recruter : ${founder!.missingRoles}',
       if (founder?.acquisitionChannel != null)
