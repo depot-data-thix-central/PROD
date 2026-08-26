@@ -185,9 +185,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
       final code = widget.projectCode;
 
       // ── 1. Charger toutes les sources (parallèle) ──────────
-      final results = await Future.wait([
+            final results = await Future.wait(<Future<dynamic>>[
         client
             .from('thix_execution_tasks')
+
             .select()
             .eq('project_code', code),
         client
