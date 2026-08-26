@@ -186,7 +186,7 @@ class _RoadmapPageState extends ConsumerState<RoadmapPage> {
               onPressed: _busy ? null : _createDefaultRoadmap,
               backgroundColor: Colors.indigo.shade100,
               foregroundColor: Colors.indigo,
-              const Icon(Icons.auto_awesome)
+              const Icon(Icons.auto_awesome),
               label: const Text('Template startup'),
             ),
           if ((ref.watch(executionRoadmapProvider(widget.projectCode)).valueOrNull ?? [])
