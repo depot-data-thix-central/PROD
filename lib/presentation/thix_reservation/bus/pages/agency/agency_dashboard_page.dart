@@ -27,6 +27,38 @@ class _AgencyDashboardPageState extends ConsumerState<AgencyDashboardPage> {
     final state = ref.watch(agencyDashboardProvider);
     final notifier = ref.read(agencyDashboardProvider.notifier);
 
+    if (!state.isLoading && !state.hasAgency) {
+      return Scaffold(
+        backgroundColor: ThixPolicy.surface,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          title: const Text('Mon Agence', style: TextStyle(fontWeight: FontWeight.w900)),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.storefront_outlined, size: 56, color: ThixPolicy.textSecondary),
+                const SizedBox(height: 12),
+                const Text(
+                  'Aucune agence liée à ce compte',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () => context.go('/agency/onboarding'),
+                  child: const Text('Créer mon agence'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: ThixPolicy.surface,
       appBar: AppBar(
@@ -41,11 +73,11 @@ class _AgencyDashboardPageState extends ConsumerState<AgencyDashboardPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.qr_code_scanner_rounded, color: ThixPolicy.textMain),
-            onPressed: () => context.push('/agency/scan'),
+            onPressed: state.isAgencyActive ? () => context.push('/agency/scan') : null,
           ),
           IconButton(
             icon: const Icon(Icons.add_rounded, color: ThixPolicy.primary),
-            onPressed: () => context.push('/agency/create-trip'),
+            onPressed: state.isAgencyActive ? () => context.push('/agency/trip/create') : null,
           ),
           const SizedBox(width: 4),
         ],
@@ -62,24 +94,60 @@ class _AgencyDashboardPageState extends ConsumerState<AgencyDashboardPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (state.isPending)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF7E6),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Text(
+                          'Agence en attente de validation. Le dashboard complet s’ouvre dès le statut active.',
+                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                        ),
+                      ),
                     Row(
                       children: [
-                        Expanded(child: _StatCard(label: 'Réservations du jour', value: '${state.todayBookingsCount}', icon: Icons.receipt_long_rounded, color: ThixPolicy.primary)),
+                        Expanded(
+                          child: _StatCard(
+                            label: 'Réservations du jour',
+                            value: '${state.todayBookingsCount}',
+                            icon: Icons.receipt_long_rounded,
+                            color: ThixPolicy.primary,
+                          ),
+                        ),
                         const SizedBox(width: 12),
-                        Expanded(child: _StatCard(label: 'Revenu du jour', value: '${state.todayRevenue} FC', icon: Icons.payments_rounded, color: ThixPolicy.success)),
+                        Expanded(
+                          child: _StatCard(
+                            label: 'Revenu du jour',
+                            value: '${state.todayRevenue} FC',
+                            icon: Icons.payments_rounded,
+                            color: ThixPolicy.success,
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 20),
-
-                    const Text('Trajets à venir', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: ThixPolicy.textMain)),
+                    const Text(
+                      'Trajets à venir',
+                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: ThixPolicy.textMain),
+                    ),
                     const SizedBox(height: 10),
-
                     if (state.myTrips.isEmpty)
                       Container(
                         padding: const EdgeInsets.all(30),
                         alignment: Alignment.center,
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(ThixPolicy.rLg), border: Border.all(color: ThixPolicy.border)),
-                        child: const Text('Aucun trajet programmé', style: TextStyle(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600)),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+                          border: Border.all(color: ThixPolicy.border),
+                        ),
+                        child: const Text(
+                          'Aucun trajet programmé',
+                          style: TextStyle(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600),
+                        ),
                       )
                     else
                       ListView.builder(
@@ -91,7 +159,12 @@ class _AgencyDashboardPageState extends ConsumerState<AgencyDashboardPage> {
                           return Container(
                             margin: const EdgeInsets.only(bottom: 10),
                             padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(ThixPolicy.rMd), border: Border.all(color: ThixPolicy.border), boxShadow: ThixPolicy.shadowSoft()),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                              border: Border.all(color: ThixPolicy.border),
+                              boxShadow: ThixPolicy.shadowSoft(),
+                            ),
                             child: Row(
                               children: [
                                 const Icon(Icons.directions_bus_rounded, color: ThixPolicy.primary),
@@ -100,10 +173,23 @@ class _AgencyDashboardPageState extends ConsumerState<AgencyDashboardPage> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      // 🌟 Utilisation de departureCity et arrivalCity
-                                      Text('${trip.departureCity} → ${trip.arrivalCity}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: ThixPolicy.textMain)),
+                                      Text(
+                                        '${trip.departureCity} → ${trip.arrivalCity}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 13.5,
+                                          color: ThixPolicy.textMain,
+                                        ),
+                                      ),
                                       const SizedBox(height: 2),
-                                      Text('${trip.priceFcfa} FCFA • ${trip.availableSeats} places dispo', style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w500)),
+                                      Text(
+                                        '${trip.priceFcfa} FCFA • ${trip.availableSeats} places dispo',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: ThixPolicy.textSecondary,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -124,17 +210,32 @@ class _StatCard extends StatelessWidget {
   final String label, value;
   final IconData icon;
   final Color color;
-  const _StatCard({required this.label, required this.value, required this.icon, required this.color});
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(ThixPolicy.rMd), border: Border.all(color: ThixPolicy.border), boxShadow: ThixPolicy.shadowSoft()),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+        border: Border.all(color: ThixPolicy.border),
+        boxShadow: ThixPolicy.shadowSoft(),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(width: 32, height: 32, decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, size: 16, color: color)),
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+            child: Icon(icon, size: 16, color: color),
+          ),
           const SizedBox(height: 10),
           Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: ThixPolicy.textMain)),
           const SizedBox(height: 2),
