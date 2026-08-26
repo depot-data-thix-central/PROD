@@ -1,3 +1,4 @@
+// lib/presentation/thix_ia/pages/execution/risk_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/execution_provider.dart';
@@ -264,10 +265,10 @@ class _RiskPageState extends ConsumerState<RiskPage> {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
         onPressed: _saving ? null : () => _showRiskSheet(),
-        label: const Text('Nouveau risque'),
-        icon: const Icon(Icons.warning_amber),
+        backgroundColor: Colors.indigo,
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
@@ -711,7 +712,7 @@ class _RiskCard extends StatelessWidget {
               ),
               Chip(
                 label: Text(
-                  'P\( {risk.probability} × I \){risk.impact} = ${risk.level}',
+                  'P(${risk.probability} × I${risk.impact}) = ${risk.level}',
                   style: const TextStyle(fontSize: 10),
                 ),
                 visualDensity: VisualDensity.compact,
