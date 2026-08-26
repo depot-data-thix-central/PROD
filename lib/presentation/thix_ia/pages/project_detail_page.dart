@@ -401,9 +401,12 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
                   ),
           ),
         ],
-        // 👇 C'EST ICI QUE LE DASHBOARD EST CONNECTÉ 👇
+        // 👇 DASHBOARD SAAS CONNECTÉ ICI AVEC LE VRAI NOM DU PROJET 👇
         body: _isExecutionMode
-            ? ExecutionDashboard(projectCode: widget.projectCode) // Le nouveau tableau de bord SaaS
+            ? ExecutionDashboardFinal(
+                projectCode: widget.projectCode,
+                projectName: activeProject.name, // <- IMPORTANT: passe le vrai nom
+              )
             : TabBarView(
                 controller: _tabController,
                 children: [
