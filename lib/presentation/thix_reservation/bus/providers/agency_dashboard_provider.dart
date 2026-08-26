@@ -7,9 +7,6 @@ import '../data/models/bus_trip_model.dart';
 import '../data/models/booking_model.dart';
 import '../data/services/bus_agency_service.dart';
 
-// ─────────────────────────────────────────────────────────────
-// ÉTAT IMMUABLE DU DASHBOARD AGENCE
-// ─────────────────────────────────────────────────────────────
 class AgencyDashboardState {
   final AgencyModel? myAgency;
   final List<BusTripModel> myTrips;
@@ -51,10 +48,9 @@ class AgencyDashboardState {
     );
   }
 
-  // --- Getters Utilitaires ---
   bool get hasAgency => myAgency != null;
-  bool get isAgencyActive => myAgency?.status == 'active';
-  bool get isPending => myAgency?.status == 'pending';
+  bool get isAgencyActive => myAgency?.isActive == true;
+  bool get isPending => myAgency?.isPending == true;
 
   int get todayBookingsCount => stats?['bookings_today'] ?? 0;
   int get todayRevenue => stats?['revenue_today'] ?? 0;
@@ -63,19 +59,12 @@ class AgencyDashboardState {
       .length;
 }
 
-// ─────────────────────────────────────────────────────────────
-// NOTIFIER (Logique Métier)
-// ─────────────────────────────────────────────────────────────
 class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
   final BusAgencyService _service = BusAgencyService();
 
   @override
-  AgencyDashboardState build() {
-    // État initial (le init sera appelé par l'UI)
-    return const AgencyDashboardState();
-  }
+  AgencyDashboardState build() => const AgencyDashboardState();
 
-  // --- INIT : Chargé dès que l'utilisateur clique sur "Espace Agence" ---
   Future<void> init() async {
     state = state.copyWith(isLoading: true, clearError: true);
 
@@ -83,7 +72,6 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
       final agency = await _service.getMyAgency();
 
       if (agency != null) {
-        // Charge tout en parallèle pour de meilleures performances
         final results = await Future.wait([
           _service.getMyTrips(agency.id),
           _service.getAgencyBookings(agency.id),
@@ -98,7 +86,7 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
           isLoading: false,
         );
       } else {
-        state = state.copyWith(isLoading: false);
+        state = const AgencyDashboardState(isLoading: false);
       }
     } catch (e) {
       debugPrint('Erreur chargement agence: $e');
@@ -109,28 +97,24 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
     }
   }
 
-  // --- Création Agence (Onboarding SaaS) ---
   Future<bool> createMyAgency({
     required String name,
     required String countryCode,
     String? description,
   }) async {
     state = state.copyWith(isCreating: true, clearError: true);
-    
+
     try {
       final newAgency = await _service.createAgency(
         name: name,
         countryCode: countryCode,
         description: description,
+        autoApprove: true,
       );
 
-      state = state.copyWith(myAgency: newAgency);
-      
-      // Recharge les stats et listes vides après création
+      state = state.copyWith(myAgency: newAgency, isCreating: false);
       await init();
-      
-      state = state.copyWith(isCreating: false);
-      return true;
+      return state.hasAgency;
     } catch (e) {
       state = state.copyWith(
         error: e.toString(),
@@ -140,7 +124,6 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
     }
   }
 
-  // --- Création Trajet ---
   Future<bool> createTrip({
     required String from,
     required String to,
@@ -152,7 +135,7 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
     required int totalSeats,
     required String busType,
   }) async {
-    if (state.myAgency == null) return false;
+    if (state.myAgency == null || !state.isAgencyActive) return false;
 
     state = state.copyWith(isCreating: true, clearError: true);
 
@@ -170,7 +153,6 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
         busType: busType,
       );
 
-      // On ajoute le nouveau trajet en tête de liste sans recharger toute la DB
       state = state.copyWith(
         myTrips: [newTrip, ...state.myTrips],
         isCreating: false,
@@ -185,22 +167,20 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
     }
   }
 
-  // --- Validation Ticket QR ---
   Future<BookingModel?> validateQr(String qrCode) async {
     if (state.myAgency == null) return null;
 
     try {
       final booking = await _service.validateTicketByQr(state.myAgency!.id, qrCode);
-      
-      // Met à jour la liste locale immuable
+
       final newBookings = List<BookingModel>.from(state.agencyBookings);
       final index = newBookings.indexWhere((b) => b.id == booking.id);
-      
+
       if (index != -1) {
         newBookings[index] = booking;
         state = state.copyWith(agencyBookings: newBookings);
       }
-      
+
       return booking;
     } catch (e) {
       state = state.copyWith(
@@ -211,9 +191,7 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// PROVIDER GLOBAL
-// ─────────────────────────────────────────────────────────────
-final agencyDashboardProvider = NotifierProvider<AgencyDashboardNotifier, AgencyDashboardState>(() {
-  return AgencyDashboardNotifier();
-});
+final agencyDashboardProvider =
+    NotifierProvider<AgencyDashboardNotifier, AgencyDashboardState>(
+  AgencyDashboardNotifier.new,
+);
