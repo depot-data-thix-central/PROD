@@ -1,15 +1,13 @@
 import 'dart:typed_data';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/thix_bp_document.dart';
 import '../services/bp_post_process_service.dart';
 
 abstract class BpDocumentRepository {
   Future<ThixBpDocument?> getLatestDocument(String projectCode);
   Future<ThixBpDocument> updateSections(
-    String docId,
-    Map<String, dynamic> sections,
-  );
+      String docId, Map<String, dynamic> sections);
   Future<ThixBpDocument> recompileAndUploadPdf(
     String projectCode,
     String docId,
@@ -63,7 +61,6 @@ class BpDocumentRepositoryImpl implements BpDocumentRepository {
     String docId,
     Map<String, dynamic> sections,
   ) async {
-    // 1) Vrai PDF A4 (pas de mock)
     final Uint8List pdfBytes = await BpPostProcessService().buildA4Pdf(
       projectCode: projectCode,
       title: sections['title']?.toString() ?? 'Business Plan',
@@ -73,7 +70,6 @@ class BpDocumentRepositoryImpl implements BpDocumentRepository {
     final ts = DateTime.now().millisecondsSinceEpoch;
     final path = '$projectCode/business_plans/BP_$ts.pdf';
 
-    // 2) Upload bucket existant du dépôt
     await _supabase.storage.from(_bucket).uploadBinary(
           path,
           pdfBytes,
@@ -85,7 +81,6 @@ class BpDocumentRepositoryImpl implements BpDocumentRepository {
 
     final publicUrl = _supabase.storage.from(_bucket).getPublicUrl(path);
 
-    // 3) Maj thix_bp_documents
     final res = await _supabase
         .from('thix_bp_documents')
         .update({
@@ -98,7 +93,6 @@ class BpDocumentRepositoryImpl implements BpDocumentRepository {
         .select()
         .single();
 
-    // 4) Visible dans onglet Documents (table du dépôt)
     try {
       await _supabase.from('project_documents').insert({
         'project_code': projectCode,
@@ -110,9 +104,7 @@ class BpDocumentRepositoryImpl implements BpDocumentRepository {
         'status': 'indexed',
         'summary': 'Business Plan A4 (recompilé)',
       });
-    } catch (_) {
-      // ignore doublon éventuel
-    }
+    } catch (_) {}
 
     return ThixBpDocument.fromJson(Map<String, dynamic>.from(res));
   }
