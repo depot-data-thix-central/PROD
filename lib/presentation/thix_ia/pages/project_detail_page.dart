@@ -19,9 +19,10 @@ import '../widgets/fact_card.dart';
 import '../widgets/analysis_progress_widget.dart';
 import '../widgets/empty_state_widget.dart';
 import '../widgets/ai_command_bar.dart';
-import '../widgets/phase_switcher.dart'; 
+import '../widgets/phase_switcher.dart';
+import '../widgets/business_plan_preflight_sheet.dart';
 import 'execution/execution_dashboard_final.dart';
-import 'execution/execution_dashboard.dart'; 
+import 'execution/execution_dashboard.dart';
 
 class ProjectDetailPage extends ConsumerStatefulWidget {
   const ProjectDetailPage({super.key, required this.projectCode});
@@ -43,7 +44,9 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
     _tabController = TabController(length: 4, vsync: this);
     Future.microtask(() async {
       try {
-        await ref.read(activeProjectProvider.notifier).setActive(widget.projectCode);
+        await ref
+            .read(activeProjectProvider.notifier)
+            .setActive(widget.projectCode);
         ref.invalidate(analysesProvider);
         ref.invalidate(projectMemoryProvider);
         ref.invalidate(documentsProvider);
@@ -87,7 +90,8 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: msg.contains('existe déjà') ? Colors.orange : Colors.red,
+        backgroundColor:
+            msg.contains('existe déjà') ? Colors.orange : Colors.red,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -96,7 +100,7 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
     }
   }
 
-  // ====================== LANCEMENT DES CARTES ======================
+  // ====================== LANCEMENT DES ANALYSES ======================
 
   Future<void> _startMarket() async {
     final p = ref.read(activeProjectProvider).value;
@@ -156,14 +160,24 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
     }
   }
 
+  /// Pre-Flight Supabase → puis génération BP
   Future<void> _startBusinessPlan() async {
     final p = ref.read(activeProjectProvider).value;
     if (p == null) return;
+
+    final config = await showBusinessPlanPreflightSheet(
+      context,
+      projectCode: widget.projectCode,
+    );
+    if (config == null || !mounted) return;
+
     try {
       await ref.read(analysesProvider.notifier).startBusinessPlanAnalysis(
             ideaDescription: _buildIdeaContext(p),
           );
-      _onAnalysisStarted('Business plan lancé');
+      _onAnalysisStarted(
+        'Business plan lancé (données fondateur enregistrées dans Supabase)',
+      );
     } catch (e) {
       _showError(e);
     }
@@ -175,10 +189,23 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
     final lower = text.toLowerCase().trim();
     if (lower.isEmpty) return;
 
-    final isMarket = lower.contains('marché') || lower.contains('market') || lower.contains('etude') || lower.contains('étude');
-    final isLegal = lower.contains('réglement') || lower.contains('reglement') || lower.contains('legal') || lower.contains('loi') || lower.contains('fiscal');
-    final isCompetitor = lower.contains('concurrent') || lower.contains('compétiteur') || lower.contains('competitor');
-    final isBusinessPlan = lower.contains('business plan') || lower.contains('businessplan') || lower.contains('dossier final') || lower.contains('génère le business') || lower.contains('genere le business');
+    final isMarket = lower.contains('marché') ||
+        lower.contains('market') ||
+        lower.contains('etude') ||
+        lower.contains('étude');
+    final isLegal = lower.contains('réglement') ||
+        lower.contains('reglement') ||
+        lower.contains('legal') ||
+        lower.contains('loi') ||
+        lower.contains('fiscal');
+    final isCompetitor = lower.contains('concurrent') ||
+        lower.contains('compétiteur') ||
+        lower.contains('competitor');
+    final isBusinessPlan = lower.contains('business plan') ||
+        lower.contains('businessplan') ||
+        lower.contains('dossier final') ||
+        lower.contains('génère le business') ||
+        lower.contains('genere le business');
 
     if (isMarket) {
       await _startMarket();
@@ -199,7 +226,10 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
               );
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Analyse concurrentielle lancée'), behavior: SnackBarBehavior.floating),
+              const SnackBar(
+                content: Text('Analyse concurrentielle lancée'),
+                behavior: SnackBarBehavior.floating,
+              ),
             );
             _tabController.animateTo(1);
           }
@@ -210,10 +240,7 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
       return;
     }
     if (isBusinessPlan) {
-      _tabController.animateTo(2);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Va dans Mémoire → Générer le Business Plan final'), behavior: SnackBarBehavior.floating),
-      );
+      await _startBusinessPlan();
       return;
     }
 
@@ -230,7 +257,11 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur chat: $e'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
+          SnackBar(
+            content: Text('Erreur chat: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     } finally {
@@ -243,10 +274,20 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Supprimer le projet ?'),
-        content: Text('Le projet ${widget.projectCode} sera définitivement supprimé.\nCette action est irréversible.'),
+        content: Text(
+          'Le projet ${widget.projectCode} sera définitivement supprimé.\n'
+          'Cette action est irréversible.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), style: TextButton.styleFrom(foregroundColor: Colors.red), child: const Text('Supprimer')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
         ],
       ),
     );
@@ -256,14 +297,20 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
         await ref.read(projectServiceProvider).deleteProject(widget.projectCode);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Projet supprimé'), behavior: SnackBarBehavior.floating),
+            const SnackBar(
+              content: Text('Projet supprimé'),
+              behavior: SnackBarBehavior.floating,
+            ),
           );
           context.go(ThixIARoutes.projects);
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Erreur suppression: $e'), backgroundColor: Colors.red),
+            SnackBar(
+              content: Text('Erreur suppression: $e'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       }
@@ -275,23 +322,45 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
     final activeAsync = ref.watch(activeProjectProvider);
 
     return activeAsync.when(
-      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator(color: ThixPolicy.primary))),
+      loading: () => const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: ThixPolicy.primary),
+        ),
+      ),
       error: (e, _) => Scaffold(
-        appBar: AppBar(title: Text(widget.projectCode), leading: IconButton(icon: const Icon(Icons.arrow_back_rounded, size: 22), onPressed: () => context.go(ThixIARoutes.projects))),
+        appBar: AppBar(
+          title: Text(widget.projectCode),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded, size: 22),
+            onPressed: () => context.go(ThixIARoutes.projects),
+          ),
+        ),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.error_outline_rounded, color: Colors.red, size: 40),
+                const Icon(Icons.error_outline_rounded,
+                    color: Colors.red, size: 40),
                 const SizedBox(height: 12),
-                Text('Impossible de charger le projet', style: ThixPolicy.h3Style),
+                Text('Impossible de charger le projet',
+                    style: ThixPolicy.h3Style),
                 const SizedBox(height: 8),
-                Text('$e', textAlign: TextAlign.center, style: ThixPolicy.bodySmallStyle),
+                Text('$e',
+                    textAlign: TextAlign.center,
+                    style: ThixPolicy.bodySmallStyle),
                 const SizedBox(height: 20),
-                FilledButton(onPressed: () => ref.read(activeProjectProvider.notifier).setActive(widget.projectCode), child: const Text('Réessayer')),
-                TextButton(onPressed: () => context.go(ThixIARoutes.projects), child: const Text('Retour aux projets')),
+                FilledButton(
+                  onPressed: () => ref
+                      .read(activeProjectProvider.notifier)
+                      .setActive(widget.projectCode),
+                  child: const Text('Réessayer'),
+                ),
+                TextButton(
+                  onPressed: () => context.go(ThixIARoutes.projects),
+                  child: const Text('Retour aux projets'),
+                ),
               ],
             ),
           ),
@@ -306,7 +375,10 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text('Projet introuvable'),
-                  TextButton(onPressed: () => context.go(ThixIARoutes.projects), child: const Text('Mes projets')),
+                  TextButton(
+                    onPressed: () => context.go(ThixIARoutes.projects),
+                    child: const Text('Mes projets'),
+                  ),
                 ],
               ),
             ),
@@ -329,10 +401,20 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
             titleSpacing: 0,
             title: Text(
               activeProject.projectCode,
-              style: ThixPolicy.bodyStyle.copyWith(fontFamily: 'monospace', fontWeight: FontWeight.w600, fontSize: 14),
+              style: ThixPolicy.bodyStyle.copyWith(
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
             ),
             actions: [
-              IconButton(tooltip: 'Documents', onPressed: () => context.push(ThixIARoutes.documentsPath(widget.projectCode)), icon: const Icon(Icons.folder_outlined, size: 20, color: ThixPolicy.textSecondary)),
+              IconButton(
+                tooltip: 'Documents',
+                onPressed: () =>
+                    context.push(ThixIARoutes.documentsPath(widget.projectCode)),
+                icon: const Icon(Icons.folder_outlined,
+                    size: 20, color: ThixPolicy.textSecondary),
+              ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert_rounded, size: 20),
                 padding: EdgeInsets.zero,
@@ -345,13 +427,66 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
                   if (value == 'delete') await _confirmDeleteProject();
                 },
                 itemBuilder: (context) => [
-                  const PopupMenuItem(value: 'market', height: 40, child: Row(children: [Icon(Icons.insights_outlined, size: 18), SizedBox(width: 10), Text('Lancer étude de marché', style: TextStyle(fontSize: 13))])),
-                  const PopupMenuItem(value: 'legal', height: 40, child: Row(children: [Icon(Icons.balance_outlined, size: 18), SizedBox(width: 10), Text('Vérifier réglementation', style: TextStyle(fontSize: 13))])),
-                  const PopupMenuItem(value: 'competitor', height: 40, child: Row(children: [Icon(Icons.groups_outlined, size: 18), SizedBox(width: 10), Text('Analyse concurrentielle', style: TextStyle(fontSize: 13))])),
-                  const PopupMenuItem(value: 'finance', height: 40, child: Row(children: [Icon(Icons.calculate_outlined, size: 18), SizedBox(width: 10), Text('Modèle financier', style: TextStyle(fontSize: 13))])),
-                  const PopupMenuItem(value: 'business_plan', height: 40, child: Row(children: [Icon(Icons.description_outlined, size: 18), SizedBox(width: 10), Text('Business plan', style: TextStyle(fontSize: 13))])),
+                  const PopupMenuItem(
+                    value: 'market',
+                    height: 40,
+                    child: Row(children: [
+                      Icon(Icons.insights_outlined, size: 18),
+                      SizedBox(width: 10),
+                      Text('Lancer étude de marché',
+                          style: TextStyle(fontSize: 13)),
+                    ]),
+                  ),
+                  const PopupMenuItem(
+                    value: 'legal',
+                    height: 40,
+                    child: Row(children: [
+                      Icon(Icons.balance_outlined, size: 18),
+                      SizedBox(width: 10),
+                      Text('Vérifier réglementation',
+                          style: TextStyle(fontSize: 13)),
+                    ]),
+                  ),
+                  const PopupMenuItem(
+                    value: 'competitor',
+                    height: 40,
+                    child: Row(children: [
+                      Icon(Icons.groups_outlined, size: 18),
+                      SizedBox(width: 10),
+                      Text('Analyse concurrentielle',
+                          style: TextStyle(fontSize: 13)),
+                    ]),
+                  ),
+                  const PopupMenuItem(
+                    value: 'finance',
+                    height: 40,
+                    child: Row(children: [
+                      Icon(Icons.calculate_outlined, size: 18),
+                      SizedBox(width: 10),
+                      Text('Modèle financier', style: TextStyle(fontSize: 13)),
+                    ]),
+                  ),
+                  const PopupMenuItem(
+                    value: 'business_plan',
+                    height: 40,
+                    child: Row(children: [
+                      Icon(Icons.description_outlined, size: 18),
+                      SizedBox(width: 10),
+                      Text('Business plan', style: TextStyle(fontSize: 13)),
+                    ]),
+                  ),
                   const PopupMenuDivider(),
-                  const PopupMenuItem(value: 'delete', height: 40, child: Row(children: [Icon(Icons.delete_outline_rounded, size: 18, color: Colors.red), SizedBox(width: 10), Text('Supprimer le projet', style: TextStyle(fontSize: 13, color: Colors.red))])),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    height: 40,
+                    child: Row(children: [
+                      Icon(Icons.delete_outline_rounded,
+                          size: 18, color: Colors.red),
+                      SizedBox(width: 10),
+                      Text('Supprimer le projet',
+                          style: TextStyle(fontSize: 13, color: Colors.red)),
+                    ]),
+                  ),
                 ],
               ),
             ],
@@ -365,9 +500,7 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
                     PhaseSwitcher(
                       isExecutionMode: _isExecutionMode,
                       onModeChanged: (val) {
-                        setState(() {
-                          _isExecutionMode = val;
-                        });
+                        setState(() => _isExecutionMode = val);
                       },
                     ),
                     if (!_isExecutionMode)
@@ -377,7 +510,8 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
                         unselectedLabelColor: ThixPolicy.textMuted,
                         indicatorColor: ThixPolicy.primary,
                         indicatorWeight: 2.5,
-                        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                        labelStyle: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w600),
                         unselectedLabelStyle: const TextStyle(fontSize: 13),
                         isScrollable: true,
                         tabAlignment: TabAlignment.start,
@@ -393,20 +527,20 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
               ),
             ),
           ),
-          SliverToBoxAdapter(
-            child: _isExecutionMode
-                ? const SizedBox.shrink()
-                : ProjectHeader(
-                    project: activeProject,
-                    progress: activeProject.progress,
-                  ),
-          ),
+          if (!_isExecutionMode)
+            (SliverToBoxAdapter(
+              child: ProjectHeader(
+                project: activeProject,
+                progress: activeProject.progress,
+              ),
+            ))
+          else
+            const SliverToBoxAdapter(child: SizedBox.shrink()),
         ],
-        // 👇 DASHBOARD SAAS CONNECTÉ ICI AVEC LE VRAI NOM DU PROJET 👇
         body: _isExecutionMode
             ? ExecutionDashboardFinal(
                 projectCode: widget.projectCode,
-                projectName: activeProject.name, // <- IMPORTANT: passe le vrai nom
+                projectName: activeProject.name,
               )
             : TabBarView(
                 controller: _tabController,
@@ -430,7 +564,7 @@ class _ProjectDetailPageState extends ConsumerState<ProjectDetailPage>
 }
 
 // ============================================================
-// TABS (ANALYSE)
+// TABS
 // ============================================================
 
 class _OverviewTab extends StatelessWidget {
@@ -448,7 +582,8 @@ class _OverviewTab extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           '${project.sector} • ${project.country}$cityPart',
-          style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
+          style: ThixPolicy.captionStyle
+              .copyWith(color: ThixPolicy.textSecondary),
         ),
         if (project.summary != null && project.summary!.isNotEmpty) ...[
           const SizedBox(height: 14),
@@ -459,9 +594,15 @@ class _OverviewTab extends StatelessWidget {
         const SizedBox(height: 16),
         Row(
           children: [
-            Text('Progression  ${(project.progress * 100).toInt()}%', style: ThixPolicy.labelStyle.copyWith(fontSize: 12)),
+            Text(
+              'Progression  ${(project.progress * 100).toInt()}%',
+              style: ThixPolicy.labelStyle.copyWith(fontSize: 12),
+            ),
             const Spacer(),
-            Text('${project.analysesCount} analyses  •  ${project.documentsCount} docs', style: ThixPolicy.microStyle),
+            Text(
+              '${project.analysesCount} analyses  •  ${project.documentsCount} docs',
+              style: ThixPolicy.microStyle,
+            ),
           ],
         ),
         const SizedBox(height: 6),
@@ -488,7 +629,15 @@ class _AnalysesTab extends ConsumerWidget {
     final async = ref.watch(analysesProvider);
 
     return async.when(
-      loading: () => const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 2.5))),
+      loading: () => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: CircularProgressIndicator(
+            color: ThixPolicy.primary,
+            strokeWidth: 2.5,
+          ),
+        ),
+      ),
       error: (e, _) => ListView(
         padding: const EdgeInsets.all(24),
         children: [
@@ -498,7 +647,10 @@ class _AnalysesTab extends ConsumerWidget {
           const SizedBox(height: 6),
           Text('$e', style: ThixPolicy.bodySmallStyle),
           const SizedBox(height: 14),
-          FilledButton(onPressed: () => ref.read(analysesProvider.notifier).refresh(), child: const Text('Réessayer')),
+          FilledButton(
+            onPressed: () => ref.read(analysesProvider.notifier).refresh(),
+            child: const Text('Réessayer'),
+          ),
         ],
       ),
       data: (analyses) {
@@ -506,7 +658,10 @@ class _AnalysesTab extends ConsumerWidget {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 24, 16, 100),
             children: [
-              EmptyAnalyses(onStart: () => context.push(ThixIARoutes.analysisPath(projectCode))),
+              EmptyAnalyses(
+                onStart: () =>
+                    context.push(ThixIARoutes.analysisPath(projectCode)),
+              ),
             ],
           );
         }
@@ -550,28 +705,35 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
     }
 
     final validated = analyses.where((a) => a.isCompleted).toList();
-
     if (validated.isEmpty && memory.facts.isEmpty) {
-      _showSnack('Lance d\'abord au moins une analyse (marché, réglementation…)', isError: true);
+      _showSnack(
+        'Lance d\'abord au moins une analyse (marché, réglementation…)',
+        isError: true,
+      );
       return;
     }
+
+    // Pre-Flight → Supabase (thix_bp_config + seed execution)
+    final config = await showBusinessPlanPreflightSheet(
+      context,
+      projectCode: widget.projectCode,
+    );
+    if (config == null || !mounted) return;
 
     setState(() => _isGenerating = true);
 
     try {
-      final service = ref.read(documentGenerationServiceProvider);
-
-      final pdfBytes = await service.generate(
-        type: DocumentType.businessPlan,
-        project: project,
-        memory: memory,
-        validatedAnalyses: validated,
-      );
+      await ref.read(analysesProvider.notifier).startBusinessPlanAnalysis(
+            ideaDescription: [
+              project.name,
+              if (project.summary != null) project.summary!,
+            ].join('\n'),
+          );
 
       if (!mounted) return;
-
-      await _showPdfPreview(pdfBytes, project.projectCode);
-      _showSnack('Business Plan généré avec succès');
+      _showSnack(
+        'Business Plan lancé — config fondateur sauvée dans Supabase',
+      );
     } catch (e) {
       _showSnack('Erreur génération : $e', isError: true);
     } finally {
@@ -579,52 +741,14 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
     }
   }
 
-  Future<void> _showPdfPreview(Uint8List bytes, String projectCode) async {
-    if (!mounted) return;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2))),
-              const SizedBox(height: 16),
-              const Icon(Icons.check_circle_rounded, color: ThixPolicy.success, size: 48),
-              const SizedBox(height: 12),
-              Text('Dossier final prêt', style: ThixPolicy.h3Style),
-              const SizedBox(height: 8),
-              Text('Business Plan généré à partir de ${ref.read(analysesProvider).value?.where((a) => a.isCompleted).length ?? 0} analyses + mémoire projet.', textAlign: TextAlign.center, style: ThixPolicy.bodySmallStyle),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _showSnack('Fonction téléchargement à brancher (share_plus / printing)');
-                  },
-                  icon: const Icon(Icons.download_rounded, size: 20),
-                  label: const Text('Télécharger le PDF'),
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   void _showSnack(String msg, {bool isError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: isError ? Colors.red : null, behavior: SnackBarBehavior.floating),
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: isError ? Colors.red : null,
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 
@@ -635,7 +759,15 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
     final completedCount = analyses.where((a) => a.isCompleted).length;
 
     return async.when(
-      loading: () => const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 2.5))),
+      loading: () => const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: CircularProgressIndicator(
+            color: ThixPolicy.primary,
+            strokeWidth: 2.5,
+          ),
+        ),
+      ),
       error: (e, _) => ListView(
         padding: const EdgeInsets.all(24),
         children: [
@@ -645,7 +777,11 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
           const SizedBox(height: 6),
           Text('$e', style: ThixPolicy.bodySmallStyle),
           const SizedBox(height: 14),
-          FilledButton(onPressed: () => ref.read(projectMemoryProvider.notifier).refresh(), child: const Text('Réessayer')),
+          FilledButton(
+            onPressed: () =>
+                ref.read(projectMemoryProvider.notifier).refresh(),
+            child: const Text('Réessayer'),
+          ),
         ],
       ),
       data: (memory) {
@@ -657,7 +793,10 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [ThixPolicy.primary.withOpacity(0.08), ThixPolicy.primary.withOpacity(0.03)]),
+                gradient: LinearGradient(colors: [
+                  ThixPolicy.primary.withOpacity(0.08),
+                  ThixPolicy.primary.withOpacity(0.03),
+                ]),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: ThixPolicy.primary.withOpacity(0.2)),
               ),
@@ -668,17 +807,28 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
                     children: [
                       Container(
                         padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(color: ThixPolicy.primary.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
-                        child: const Icon(Icons.auto_awesome, color: ThixPolicy.primary, size: 20),
+                        decoration: BoxDecoration(
+                          color: ThixPolicy.primary.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.auto_awesome,
+                            color: ThixPolicy.primary, size: 20),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Dossier final investisseur', style: ThixPolicy.bodyStyle.copyWith(fontWeight: FontWeight.w700)),
+                            Text(
+                              'Dossier final investisseur',
+                              style: ThixPolicy.bodyStyle
+                                  .copyWith(fontWeight: FontWeight.w700),
+                            ),
                             const SizedBox(height: 2),
-                            Text('$completedCount analyses • ${facts.length} faits validés', style: ThixPolicy.captionStyle),
+                            Text(
+                              '$completedCount analyses • ${facts.length} faits validés',
+                              style: ThixPolicy.captionStyle,
+                            ),
                           ],
                         ),
                       ),
@@ -689,15 +839,32 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
                     width: double.infinity,
                     height: 48,
                     child: FilledButton.icon(
-                      onPressed: _isGenerating ? null : _generateFinalDossier,
+                      onPressed:
+                          _isGenerating ? null : _generateFinalDossier,
                       icon: _isGenerating
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
                           : const Icon(Icons.rocket_launch_rounded, size: 20),
-                      label: Text(_isGenerating ? 'Génération en cours…' : 'Générer le Business Plan final', style: const TextStyle(fontWeight: FontWeight.w600)),
+                      label: Text(
+                        _isGenerating
+                            ? 'Génération en cours…'
+                            : 'Générer le Business Plan final',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text('Collecte automatique de toutes les analyses + mémoire pour produire le vrai dossier final.', style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted)),
+                  Text(
+                    'Pre-Flight fondateur → Supabase → BP personnalisé + seed Exécution.',
+                    style: ThixPolicy.microStyle
+                        .copyWith(color: ThixPolicy.textMuted),
+                  ),
                 ],
               ),
             ),
@@ -705,7 +872,10 @@ class _MemoryTabState extends ConsumerState<_MemoryTab> {
             if (facts.isEmpty)
               const EmptyFacts()
             else ...[
-              Text('Faits en mémoire (${facts.length})', style: ThixPolicy.labelStyle.copyWith(fontSize: 13)),
+              Text(
+                'Faits en mémoire (${facts.length})',
+                style: ThixPolicy.labelStyle.copyWith(fontSize: 13),
+              ),
               const SizedBox(height: 8),
               ...facts.map((f) => FactCard(fact: f)),
             ],
@@ -725,17 +895,28 @@ class _DocsTab extends ConsumerWidget {
     final docsAsync = ref.watch(documentsProvider);
 
     return docsAsync.when(
-      loading: () => const Center(child: CircularProgressIndicator(color: ThixPolicy.primary)),
-      error: (e, _) => Center(child: Text('Erreur : $e', style: const TextStyle(color: Colors.red))),
+      loading: () => const Center(
+        child: CircularProgressIndicator(color: ThixPolicy.primary),
+      ),
+      error: (e, _) => Center(
+        child: Text('Erreur : $e', style: const TextStyle(color: Colors.red)),
+      ),
       data: (docs) {
-        if (docs.isEmpty) return const Center(child: Text('Aucun document pour le moment.'));
+        if (docs.isEmpty) {
+          return const Center(child: Text('Aucun document pour le moment.'));
+        }
 
         return ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: docs.length,
           itemBuilder: (context, index) {
             final doc = docs[index];
-            return Card(child: ListTile(leading: const Icon(Icons.description_outlined), title: Text('Document ${index + 1}')));
+            return Card(
+              child: ListTile(
+                leading: const Icon(Icons.description_outlined),
+                title: Text('Document ${index + 1}'),
+              ),
+            );
           },
         );
       },
