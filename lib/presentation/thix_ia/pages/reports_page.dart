@@ -373,8 +373,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
       // ── 6. Insert Supabase ─────────────────────────────────
       final periodLabel = period == 'monthly' ? 'Mensuel' : 'Hebdomadaire';
       final title =
-          'Rapport $periodLabel \( {now.day.toString().padLeft(2, '0')}/ \){now.month.toString().padLeft(2, '0')}/${now.year}';
-
+    'Rapport $periodLabel \( {now.day.toString().padLeft(2, '0')}/ \){now.month.toString().padLeft(2, '0')}/${now.year}';
       await client.from('thix_execution_reports').insert({
         'project_code': code,
         'period': period,
