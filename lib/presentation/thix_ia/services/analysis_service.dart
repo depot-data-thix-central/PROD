@@ -435,7 +435,6 @@ Ne jamais inventer une loi. Cite les institutions officielles.
   }) async {
     final idea = financialInputs['idea_context'] as String?;
 
-    // ✅ FIX DE LA SYNTAXE ICI (Concaténation propre au lieu d'une interpolation cassée)
     final titleString = (idea != null && idea.isNotEmpty)
         ? 'Modèle financier – ' + (idea.length > 40 ? '${idea.substring(0, 37)}...' : idea)
         : 'Modèle financier prévisionnel';
@@ -513,92 +512,6 @@ Inclus :
       }
     } catch (e, st) {
       debugPrint('❌ Finance analysis failed: $e\n$st');
-      await analysisRepo.failAnalysis(analysisId: analysisId, error: e.toString());
-    }
-  }
-
-  // ============================================================
-  // BUSINESS PLAN
-  // ============================================================
-  Future<ProjectAnalysis> startBusinessPlanAnalysis({
-    required String projectCode,
-    required String ideaDescription,
-    ThixAiProvider provider = ThixAiProvider.openai,
-  }) async {
-    final shortIdea = ideaDescription.length > 50
-        ? '${ideaDescription.substring(0, 47)}...'
-        : ideaDescription;
-
-    final analysis = await analysisRepo.startAnalysis(
-      projectCode: projectCode,
-      type: 'business_plan',
-      title: 'Business plan – $shortIdea',
-      payload: {
-        'idea': ideaDescription,
-        'require_full_plan': true,
-      },
-    );
-
-    _runBusinessPlanInBackground(
-      analysisId: analysis.id,
-      projectCode: projectCode,
-      idea: ideaDescription,
-      provider: provider,
-    );
-
-    return analysis;
-  }
-
-  Future<void> _runBusinessPlanInBackground({
-    required String analysisId,
-    required String projectCode,
-    required String idea,
-    required ThixAiProvider provider,
-  }) async {
-    try {
-      final query = '''
-Tu es le directeur stratégique de THIX IA.
-
-**IDÉE DE PROJET EXACTE :**
-"$idea"
-
-DIRECTIVE CRITIQUE : Génère un Business Plan complet, ultra-personnalisé et actionnable pour CE projet précis.
-Structure obligatoire :
-1. Résumé exécutif
-2. Présentation du projet et Proposition de valeur unique
-3. Analyse de marché (ciblée)
-4. Stratégie commerciale et Marketing
-5. Organisation, Logistique et Équipe
-6. Plan financier sommaire
-7. Risques et mesures d'atténuation
-8. Feuille de route (12 à 24 mois)
-''';
-
-      final response = await aiService.call(
-        action: ThixAiAction.businessPlan,
-        message: query,
-        projectCode: projectCode,
-        provider: provider,
-      );
-
-      if (response.success && response.content != null) {
-        await analysisRepo.completeAnalysis(
-          analysisId: analysisId,
-          result: {
-            'content': response.content,
-            'provider': response.provider,
-            'model': response.model,
-            'generated_at': DateTime.now().toIso8601String(),
-          },
-        );
-      } else {
-        await analysisRepo.failAnalysis(
-          analysisId: analysisId,
-          error: response.error ?? 'Erreur génération business plan',
-        );
-      }
-    } catch (e, st) {
-      debugPrint('❌ Business plan failed: $e\n$st');
       await analysisRepo.failAnalysis(analysisId: analysisId, error: e.toString());
     }
   }
