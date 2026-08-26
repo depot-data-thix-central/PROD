@@ -9,7 +9,7 @@ import 'pages/analysis_page.dart';
 import 'pages/research_page.dart';
 import 'pages/market_page.dart';
 import 'pages/legal_page.dart';
-import 'pages/finance_page.dart';
+import 'pages/finance_page.dart'; // Ton ancienne finance (analyse)
 import 'pages/business_page.dart';
 import 'pages/strategy_page.dart';
 import 'pages/design_page.dart';
@@ -17,7 +17,7 @@ import 'pages/documents_page.dart';
 import 'pages/reports_page.dart';
 import 'pages/chat_page.dart';
 
-// EXECUTION MODULE - IMPORTS
+// ===== EXECUTION MODULE V1 - NOUVEAU DASHBOARD SAAS =====
 import 'pages/execution/execution_dashboard_final.dart';
 import 'pages/execution/finance_page.dart' as exec_finance;
 import 'pages/execution/tasks_page.dart' as exec_tasks;
@@ -33,34 +33,26 @@ import 'pages/execution/opportunity_page.dart' as exec_opportunity;
 
 class ThixIaRouter {
   static List<RouteBase> get routes => [
-        // Home
         GoRoute(
           path: ThixIARoutes.home,
           name: 'thix-ia-home',
           builder: (context, state) => const ThixIaHomePage(),
         ),
-        // Alias racine /thix-ia → home
         GoRoute(
           path: ThixIARoutes.root,
           name: 'thix-ia-root',
           builder: (context, state) => const ThixIaHomePage(),
         ),
-
-        // Liste projets
         GoRoute(
           path: ThixIARoutes.projects,
           name: 'thix-ia-projects',
           builder: (context, state) => const ProjectsPage(),
         ),
-
-        // Création (AVANT le :projectCode)
         GoRoute(
           path: ThixIARoutes.createProject,
           name: 'thix-ia-create-project',
           builder: (context, state) => const CreateProjectPage(),
         ),
-
-        // Détail + sous-routes
         GoRoute(
           path: ThixIARoutes.projectDetail,
           name: 'thix-ia-project-detail',
@@ -69,210 +61,53 @@ class ThixIaRouter {
             return ProjectDetailPage(projectCode: code);
           },
           routes: [
+            // CHAT
             GoRoute(
               path: 'chat',
               name: 'thix-ia-chat',
               builder: (context, state) {
                 final code = state.pathParameters['projectCode']!;
                 final extraMessage = state.extra as String?;
-                return ChatPage(
-                  projectCode: code,
-                  initialMessage: extraMessage,
-                );
+                return ChatPage(projectCode: code, initialMessage: extraMessage);
               },
             ),
-            GoRoute(
-              path: 'analysis',
-              name: 'thix-ia-analysis',
-              builder: (context, state) {
-                final code = state.pathParameters['projectCode']!;
-                return AnalysisPage(projectCode: code);
-              },
-            ),
-            GoRoute(
-              path: 'research',
-              name: 'thix-ia-research',
-              builder: (context, state) {
-                final code = state.pathParameters['projectCode']!;
-                return ResearchPage(projectCode: code);
-              },
-            ),
-            GoRoute(
-              path: 'market',
-              name: 'thix-ia-market',
-              builder: (context, state) {
-                final code = state.pathParameters['projectCode']!;
-                return MarketPage(projectCode: code);
-              },
-            ),
-            GoRoute(
-              path: 'legal',
-              name: 'thix-ia-legal',
-              builder: (context, state) {
-                final code = state.pathParameters['projectCode']!;
-                return LegalPage(projectCode: code);
-              },
-            ),
-            GoRoute(
-              path: 'finance',
-              name: 'thix-ia-finance',
-              builder: (context, state) {
-                final code = state.pathParameters['projectCode']!;
-                return FinancePage(projectCode: code);
-              },
-            ),
-            GoRoute(
-              path: 'business',
-              name: 'thix-ia-business',
-              builder: (context, state) {
-                final code = state.pathParameters['projectCode']!;
-                return BusinessPage(projectCode: code);
-              },
-            ),
-            GoRoute(
-              path: 'strategy',
-              name: 'thix-ia-strategy',
-              builder: (context, state) {
-                final code = state.pathParameters['projectCode']!;
-                return StrategyPage(projectCode: code);
-              },
-            ),
-            GoRoute(
-              path: 'design',
-              name: 'thix-ia-design',
-              builder: (context, state) {
-                final code = state.pathParameters['projectCode']!;
-                return DesignPage(projectCode: code);
-              },
-            ),
-            GoRoute(
-              path: 'documents',
-              name: 'thix-ia-documents',
-              builder: (context, state) {
-                final code = state.pathParameters['projectCode']!;
-                return DocumentsPage(projectCode: code);
-              },
-            ),
-            GoRoute(
-              path: 'reports',
-              name: 'thix-ia-reports',
-              builder: (context, state) {
-                final code = state.pathParameters['projectCode']!;
-                return ReportsPage(projectCode: code);
-              },
-            ),
+            // ANALYSE MODULE (ton ancien)
+            GoRoute(path: 'analysis', name: 'thix-ia-analysis', builder: (c, s) => AnalysisPage(projectCode: s.pathParameters['projectCode']!)),
+            GoRoute(path: 'research', name: 'thix-ia-research', builder: (c, s) => ResearchPage(projectCode: s.pathParameters['projectCode']!)),
+            GoRoute(path: 'market', name: 'thix-ia-market', builder: (c, s) => MarketPage(projectCode: s.pathParameters['projectCode']!)),
+            GoRoute(path: 'legal', name: 'thix-ia-legal', builder: (c, s) => LegalPage(projectCode: s.pathParameters['projectCode']!)),
+            GoRoute(path: 'finance', name: 'thix-ia-finance', builder: (c, s) => FinancePage(projectCode: s.pathParameters['projectCode']!)), // ANCIEN - on le garde
+            GoRoute(path: 'business', name: 'thix-ia-business', builder: (c, s) => BusinessPage(projectCode: s.pathParameters['projectCode']!)),
+            GoRoute(path: 'strategy', name: 'thix-ia-strategy', builder: (c, s) => StrategyPage(projectCode: s.pathParameters['projectCode']!)),
+            GoRoute(path: 'design', name: 'thix-ia-design', builder: (c, s) => DesignPage(projectCode: s.pathParameters['projectCode']!)),
+            GoRoute(path: 'documents', name: 'thix-ia-documents', builder: (c, s) => DocumentsPage(projectCode: s.pathParameters['projectCode']!)),
+            GoRoute(path: 'reports', name: 'thix-ia-reports', builder: (c, s) => ReportsPage(projectCode: s.pathParameters['projectCode']!)),
 
-            // ===== EXECUTION MODULE - NOUVELLES ROUTES =====
-            // Dashboard principal Execution (ton screenshot)
+            // ===== EXECUTION MODULE - DASHBOARD FINAL SCREENSHOT =====
             GoRoute(
               path: 'execution',
               name: 'thix-ia-execution',
               builder: (context, state) {
                 final code = state.pathParameters['projectCode']!;
-                final name = state.uri.queryParameters['name'] ?? 'EcoPlastic Pro';
+                // Récupère le nom depuis query param ?name=EcoPlastic Pro
+                final name = state.uri.queryParameters['name'] ?? code;
                 return ExecutionDashboardFinal(projectCode: code, projectName: name);
               },
               routes: [
-                GoRoute(
-                  path: 'finance-engine',
-                  name: 'thix-ia-execution-finance',
-                  builder: (context, state) {
-                    final code = state.pathParameters['projectCode']!;
-                    return exec_finance.FinancePage(projectCode: code);
-                  },
-                ),
-                GoRoute(
-                  path: 'tasks',
-                  name: 'thix-ia-execution-tasks',
-                  builder: (context, state) {
-                    final code = state.pathParameters['projectCode']!;
-                    return exec_tasks.TasksPage(projectCode: code);
-                  },
-                ),
-                GoRoute(
-                  path: 'roadmap',
-                  name: 'thix-ia-execution-roadmap',
-                  builder: (context, state) {
-                    final code = state.pathParameters['projectCode']!;
-                    return exec_roadmap.RoadmapPage(projectCode: code);
-                  },
-                ),
-                GoRoute(
-                  path: 'suppliers',
-                  name: 'thix-ia-execution-suppliers',
-                  builder: (context, state) {
-                    final code = state.pathParameters['projectCode']!;
-                    return exec_suppliers.SuppliersPage(projectCode: code);
-                  },
-                ),
-                GoRoute(
-                  path: 'risks',
-                  name: 'thix-ia-execution-risks',
-                  builder: (context, state) {
-                    final code = state.pathParameters['projectCode']!;
-                    return exec_risk.RiskPage(projectCode: code);
-                  },
-                ),
-                GoRoute(
-                  path: 'experiments',
-                  name: 'thix-ia-execution-experiments',
-                  builder: (context, state) {
-                    final code = state.pathParameters['projectCode']!;
-                    return exec_experiment.ExperimentPage(projectCode: code);
-                  },
-                ),
-                GoRoute(
-                  path: 'team',
-                  name: 'thix-ia-execution-team',
-                  builder: (context, state) {
-                    final code = state.pathParameters['projectCode']!;
-                    return exec_team.TeamPage(projectCode: code);
-                  },
-                ),
-                GoRoute(
-                  path: 'reports-auto',
-                  name: 'thix-ia-execution-reports-auto',
-                  builder: (context, state) {
-                    final code = state.pathParameters['projectCode']!;
-                    return exec_reports.ReportsPage(projectCode: code);
-                  },
-                ),
-                GoRoute(
-                  path: 'coaching',
-                  name: 'thix-ia-execution-coaching',
-                  builder: (context, state) {
-                    final code = state.pathParameters['projectCode']!;
-                    return exec_coaching.CoachingPage(projectCode: code);
-                  },
-                ),
-                GoRoute(
-                  path: 'market-radar',
-                  name: 'thix-ia-execution-market-radar',
-                  builder: (context, state) {
-                    final code = state.pathParameters['projectCode']!;
-                    return exec_market_radar.MarketRadarPage(projectCode: code);
-                  },
-                ),
-                GoRoute(
-                  path: 'opportunities',
-                  name: 'thix-ia-execution-opportunities',
-                  builder: (context, state) {
-                    final code = state.pathParameters['projectCode']!;
-                    return exec_opportunity.OpportunityPage(projectCode: code);
-                  },
-                ),
+                GoRoute(path: 'finance-engine', name: 'thix-ia-exec-finance', builder: (c, s) => exec_finance.FinancePage(projectCode: s.pathParameters['projectCode']!)),
+                GoRoute(path: 'tasks', name: 'thix-ia-exec-tasks', builder: (c, s) => exec_tasks.TasksPage(projectCode: s.pathParameters['projectCode']!)),
+                GoRoute(path: 'roadmap', name: 'thix-ia-exec-roadmap', builder: (c, s) => exec_roadmap.RoadmapPage(projectCode: s.pathParameters['projectCode']!)),
+                GoRoute(path: 'suppliers', name: 'thix-ia-exec-suppliers', builder: (c, s) => exec_suppliers.SuppliersPage(projectCode: s.pathParameters['projectCode']!)),
+                GoRoute(path: 'risks', name: 'thix-ia-exec-risks', builder: (c, s) => exec_risk.RiskPage(projectCode: s.pathParameters['projectCode']!)),
+                GoRoute(path: 'experiments', name: 'thix-ia-exec-experiments', builder: (c, s) => exec_experiment.ExperimentPage(projectCode: s.pathParameters['projectCode']!)),
+                GoRoute(path: 'team', name: 'thix-ia-exec-team', builder: (c, s) => exec_team.TeamPage(projectCode: s.pathParameters['projectCode']!)),
+                GoRoute(path: 'reports-auto', name: 'thix-ia-exec-reports', builder: (c, s) => exec_reports.ReportsPage(projectCode: s.pathParameters['projectCode']!)),
+                GoRoute(path: 'coaching', name: 'thix-ia-exec-coaching', builder: (c, s) => exec_coaching.CoachingPage(projectCode: s.pathParameters['projectCode']!)),
+                GoRoute(path: 'market-radar', name: 'thix-ia-exec-market-radar', builder: (c, s) => exec_market_radar.MarketRadarPage(projectCode: s.pathParameters['projectCode']!)),
+                GoRoute(path: 'opportunities', name: 'thix-ia-exec-opportunities', builder: (c, s) => exec_opportunity.OpportunityPage(projectCode: s.pathParameters['projectCode']!)),
               ],
             ),
           ],
         ),
       ];
-}
-
-// Extensions navigation - Utilise les dans tes pages
-extension ThixExecutionNavigation on GoRouter {
-  void goToExecution(String code, {String? name}) => go('/thix-ia/projects/$code/execution?name=${name ?? code}');
-}
-
-extension ThixExecutionBuildContext on dynamic {
-  void goToExecution(String code) {}
 }
