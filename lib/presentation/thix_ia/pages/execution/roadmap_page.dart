@@ -186,7 +186,7 @@ class _RoadmapPageState extends ConsumerState<RoadmapPage> {
               onPressed: _busy ? null : _createDefaultRoadmap,
               backgroundColor: Colors.indigo.shade100,
               foregroundColor: Colors.indigo,
-              icon: const Icon(Icons.auto_fix_group),
+              const Icon(Icons.auto_awesome)
               label: const Text('Template startup'),
             ),
           if ((ref.watch(executionRoadmapProvider(widget.projectCode)).valueOrNull ?? [])
@@ -685,7 +685,8 @@ class _TimelineStep extends StatelessWidget {
                   runSpacing: 4,
                   children: [
                     _Badge(
-                      _statusLabels[status] ?? status,
+                      {'todo': 'À faire', 'doing': 'En cours', 'done': 'Terminé'}[status] ?? status,
+
                       isDone
                           ? Colors.green
                           : isCurrent
