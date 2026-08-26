@@ -103,7 +103,7 @@ class _InvestorsCrmPageState extends ConsumerState<InvestorsCrmPage> {
                 Expanded(
                     child: _Kpi(
                         'Pipeline',
-                        '\ \]{(pipelineValue / 1000).toStringAsFixed(0)}k',
+                        '\$${(pipelineValue / 1000).toStringAsFixed(0)}k',
                         Colors.orange)),
                 const SizedBox(width: 8),
                 Expanded(
@@ -433,7 +433,7 @@ class _InvestorsCrmPageState extends ConsumerState<InvestorsCrmPage> {
   }
 
   String _fmt(DateTime d) =>
-    '\( {d.day.toString().padLeft(2, '0')}/ \){d.month.toString().padLeft(2, '0')}';
+    '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -532,7 +532,7 @@ class _InvestorCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    '\( {inv.nextFollowUpAt!.day}/ \){inv.nextFollowUpAt!.month}',
+                    '${inv.nextFollowUpAt!.day}/${inv.nextFollowUpAt!.month}',
                     style: TextStyle(
                         fontSize: 11,
                         color: inv.isOverdue ? Colors.red : Colors.grey),
@@ -711,7 +711,7 @@ class InvestorDetailPage extends ConsumerWidget {
                               ),
                               if (a.createdAt != null)
                                 Text(
-                                  '\( {a.createdAt!.day}/ \){a.createdAt!.month}',
+                                  '${a.createdAt!.day}/${a.createdAt!.month}',
                                   style: const TextStyle(
                                       fontSize: 10, color: Colors.grey),
                                 ),
