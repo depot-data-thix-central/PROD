@@ -1,69 +1,67 @@
-// lib/presentation/thix_ia/repositories/execution_repository.dart
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../datasources/execution_remote_datasource.dart';
 import '../models/execution_project.dart';
-
-/// Provider pour injecter le repository partout dans l'app
-final executionRepositoryProvider = Provider<ExecutionRepository>((ref) {
-  return ExecutionRepository();
-});
+import '../models/execution_task.dart';
+import '../models/execution_goal.dart';
+import '../models/execution_finance.dart';
+import '../models/execution_support.dart';
+import '../core/utils/execution_utils.dart';
 
 class ExecutionRepository {
-  /// Récupère le projet d'exécution complet depuis la base de données
-  Future<ExecutionProject> getExecutionProject(String projectCode) async {
-    // ⏳ SIMULATION D'UN APPEL RÉSEAU SUPABASE (1.2 secondes)
-    await Future.delayed(const Duration(milliseconds: 1200));
+  ExecutionRepository(this._ds);
+  final ExecutionRemoteDatasource _ds;
 
-    // Données initiales calquées exactement sur ta maquette "EcoPlastic Pro"
-    return ExecutionProject(
-      id: 'exec_001',
-      projectCode: projectCode,
-      initialCapital: 48230.50, // Capital de départ
-      lastUpdated: DateTime.now(),
-      transactions: [
-        // On simule une dépense pour avoir un Burn Rate à 2340$
-        ExecutionTransaction(id: 'tx1', amount: 2340.0, isExpense: true, category: 'Opérations', date: DateTime.now()),
-        // On simule un revenu pour avoir un MRR à 5670$
-        ExecutionTransaction(id: 'tx2', amount: 5670.0, isExpense: false, category: 'Ventes', date: DateTime.now()),
-      ],
-      tasks: [
-        ExecutionTask(id: 't1', title: 'Valider les statuts juridiques', category: 'Légal', isAiGenerated: true, isDone: false, createdAt: DateTime.now()),
-        ExecutionTask(id: 't2', title: 'Payer l\'acompte des machines', category: 'Finance', isAiGenerated: true, isDone: true, createdAt: DateTime.now()),
-        ExecutionTask(id: 't3', title: 'Lancer le recrutement équipe', category: 'RH', isAiGenerated: false, isDone: false, createdAt: DateTime.now()),
-      ],
-      objectives: const [
-        ExecutionObjective(id: 'o1', title: 'Acquisition Clients', current: 120, target: 500, unit: 'utilisateurs'),
-        ExecutionObjective(id: 'o2', title: 'Production Initiale', current: 2500, target: 10000, unit: 'unités'),
-      ],
-      suppliers: const [
-        ExecutionSupplier(id: 's1', name: 'TechMachinery GmbH', category: 'Équipement', status: 'Validé'),
-        ExecutionSupplier(id: 's2', name: 'EcoPack Africa', category: 'Emballages', status: 'Négociation'),
-        ExecutionSupplier(id: 's3', name: 'Global Logistics', category: 'Transport', status: 'Recherche'),
-      ],
-      roadmap: const [
-        ExecutionMilestone(id: 'm1', title: 'Business Plan Validé', dateLabel: 'Mois 1', isCompleted: true),
-        ExecutionMilestone(id: 'm2', title: 'Création Juridique & RCCM', dateLabel: 'Mois 2', isCompleted: true),
-        ExecutionMilestone(id: 'm3', title: 'Achat & Importation', dateLabel: 'Mois 3', isCompleted: false, isCurrent: true),
-        ExecutionMilestone(id: 'm4', title: 'Lancement Production', dateLabel: 'Mois 4', isCompleted: false),
-      ],
+  Future<ExecutionProject> getOrCreateHealth(String projectCode) async {
+    var existing = await _ds.getExecutionProject(projectCode);
+    if(existing != null) return existing;
+    final init = ExecutionProject(
+      id: projectCode, projectCode: projectCode, healthScore: 0,
+      healthDimensions: {'market':0,'product':0,'finance':0,'legal':0,'commercial':0,'execution':0},
+      treasury: 0, burnRate: 0, runwayMonths: 0, mrr: 0,
     );
+    return _ds.upsertExecutionProject(init);
   }
 
-  /// Ajoute une transaction financière
-  Future<void> addTransaction(String projectCode, ExecutionTransaction transaction) async {
-    await Future.delayed(const Duration(milliseconds: 500)); // Simule l'écriture en DB
-    // TODO: Implémenter Supabase -> await supabase.from('transactions').insert(transaction.toJson());
-  }
+  Future<List<ExecutionTask>> getTasks(String code, {int limit=100, int offset=0, String? status}) => _ds.getTasks(code, limit: limit, offset: offset, status: status);
+  Future<ExecutionTask> createTask(ExecutionTask t) => _ds.createTask(t);
+  Future<ExecutionTask> completeTask(String id) => _ds.updateTask(id, {'status':'done','progress':100,'completed_at':DateTime.now().toIso8601String()});
+  Future<ExecutionTask> updateTaskStatus(String id, String status) => _ds.updateTask(id, {'status':status});
 
-  /// Met à jour le statut d'une tâche (Cochée/Décochée)
-  Future<void> updateTaskStatus(String projectCode, String taskId, bool isDone) async {
-    await Future.delayed(const Duration(milliseconds: 300));
-    // TODO: Implémenter Supabase -> await supabase.from('tasks').update({'is_done': isDone}).eq('id', taskId);
-  }
+  Future<List<ExecutionGoal>> getGoals(String code) => _ds.getGoals(code);
+  Future<ExecutionGoal> upsertGoal(ExecutionGoal g) => _ds.upsertGoal(g);
 
-  /// Ajoute une nouvelle tâche au Kanban
-  Future<void> addTask(String projectCode, ExecutionTask task) async {
-    await Future.delayed(const Duration(milliseconds: 500));
-    // TODO: Implémenter Supabase -> await supabase.from('tasks').insert(task.toJson());
+  Future<List<FinanceTransaction>> getTransactions(String code) => _ds.getTransactions(code);
+  Future<FinanceTransaction> addTransaction(FinanceTransaction tx) => _ds.addTransaction(tx);
+
+  Future<FinancialSnapshot> getFinanceSnapshot(String code) => _ds.getFinancialSnapshot(code);
+  Future<List<Supplier>> getSuppliers(String code) => _ds.getSuppliers(code);
+  Future<List<RiskItem>> getRisks(String code) => _ds.getRisks(code);
+  Future<List<ComplianceItem>> getCompliance(String code) => _ds.getCompliance(code);
+  Future<List<Map<String,dynamic>>> getRoadmap(String code) => _ds.getRoadmap(code);
+
+  Stream<List<ExecutionTask>> watchTasks(String code) => _ds.watchTasks(code);
+
+  // AUTO-KANBAN IA
+  Future<List<ExecutionTask>> generateAutoTasks({required String projectCode, required String objective}) async {
+    final templates = [
+      {'title':'Finaliser le produit','category':'Tech','priority':'high'},
+      {'title':'Vérifier la conformité $objective','category':'Légal','priority':'high'},
+      {'title':'Préparer les contrats','category':'Légal','priority':'medium'},
+      {'title':'Identifier 50 prospects','category':'Marketing','priority':'high'},
+      {'title':'Préparer la campagne','category':'Marketing','priority':'medium'},
+      {'title':'Tester l\'offre','category':'Ops','priority':'high'},
+      {'title':'Collecter les retours','category':'Ops','priority':'medium'},
+      {'title':'Corriger le produit','category':'Tech','priority':'medium'},
+      {'title':'Lancer','category':'Marketing','priority':'critical'},
+    ];
+    List<ExecutionTask> created = [];
+    for(var t in templates) {
+      final task = ExecutionTask(
+        id: ExecutionUtils.generateTaskId(projectCode), projectCode: projectCode,
+        title: t['title']!, category: t['category']!, priority: t['priority']!,
+        status: 'todo', isAiSuggested: true, origin: 'ai', progress: 0,
+      );
+      created.add(await _ds.createTask(task));
+    }
+    return created;
   }
 }
