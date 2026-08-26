@@ -7,57 +7,101 @@ import '../models/booking_model.dart';
 class BusAgencyService {
   final SupabaseClient _db = Supabase.instance.client;
 
-  String get _uid => _db.auth.currentUser!.id;
+  static const String table = 'agencies';
 
-  // ---------- Mon Agence (via owner_id = THIX ID) ----------
+  String get _uid {
+    final user = _db.auth.currentUser;
+    if (user == null) {
+      throw StateError('Utilisateur non connecté');
+    }
+    return user.id;
+  }
+
   Future<AgencyModel?> getMyAgency() async {
-    final res = await _db.from('agencies').select().eq('owner_id', _uid).maybeSingle();
-    if (res == null) return null;
-    return AgencyModel.fromJson(res);
+    final user = _db.auth.currentUser;
+    if (user == null) return null;
+
+    final byOwner = await _db
+        .from(table)
+        .select()
+        .eq('owner_id', user.id)
+        .maybeSingle();
+    if (byOwner != null) return AgencyModel.fromJson(byOwner);
+
+    try {
+      final byUser = await _db
+          .from(table)
+          .select()
+          .eq('user_id', user.id)
+          .maybeSingle();
+      if (byUser != null) return AgencyModel.fromJson(byUser);
+    } catch (_) {}
+
+    return null;
   }
 
   Future<AgencyModel> createAgency({
     required String name,
     required String countryCode,
     String? description,
+    bool autoApprove = true,
   }) async {
-    final slug = '${name.toLowerCase().replaceAll(' ', '-')}-${DateTime.now().millisecondsSinceEpoch.toString().substring(9)}';
-    final res = await _db
-        .from('agencies')
-        .insert({
-          'owner_id': _uid,
-          'name': name,
-          'slug': slug,
-          'country_code': countryCode,
-          'description': description,
-          'status': 'pending', // En attente validation Super Admin
-        })
-        .select()
-        .single();
-    return AgencyModel.fromJson(res);
+    final existing = await getMyAgency();
+    if (existing != null) return existing;
+
+    final cleanName = name.trim();
+    final slug =
+        '\( {cleanName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-')}- \){DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
+
+    final payload = <String, dynamic>{
+      'owner_id': _uid,
+      'name': cleanName,
+      'slug': slug,
+      'country_code': countryCode,
+      'description': description?.trim(),
+      'status': autoApprove ? 'active' : 'pending',
+      'is_verified': autoApprove,
+    };
+
+    try {
+      final res = await _db.from(table).insert(payload).select().single();
+      return AgencyModel.fromJson(res);
+    } catch (e) {
+      payload['user_id'] = _uid;
+      final res = await _db.from(table).insert(payload).select().single();
+      return AgencyModel.fromJson(res);
+    }
   }
 
-  // ---------- Dashboard Stats isolées ----------
   Future<Map<String, dynamic>> getDashboardStats(String agencyId) async {
     final todayStart = DateTime.now();
-    final start = DateTime(todayStart.year, todayStart.month, todayStart.day).toIso8601String();
+    final start = DateTime(todayStart.year, todayStart.month, todayStart.day)
+        .toIso8601String();
 
-    final bookingsToday = await _db
-        .from('bus_bookings')
-        .select()
-        .eq('agency_id', agencyId)
-        .gte('created_at', start)
-        .count(CountOption.exact);
+    try {
+      final bookingsToday = await _db
+          .from('bus_bookings')
+          .select()
+          .eq('agency_id', agencyId)
+          .gte('created_at', start)
+          .count(CountOption.exact);
 
-    final revenueRes = await _db.rpc('agency_revenue_today', params: {'p_agency_id': agencyId});
+      dynamic revenueRes;
+      try {
+        revenueRes = await _db.rpc('agency_revenue_today', params: {'p_agency_id': agencyId});
+      } catch (_) {
+        revenueRes = 0;
+      }
 
-    return {
-      'bookings_today': bookingsToday.count,
-      'revenue_today': revenueRes ?? 0,
-    };
+      return {
+        'bookings_today': bookingsToday.count,
+        'revenue_today': revenueRes ?? 0,
+      };
+    } catch (_) {
+      return {'bookings_today': 0, 'revenue_today': 0};
+    }
   }
 
-  // ---------- Mes trajets (seulement mon agence) ----------
   Future<List<BusTripModel>> getMyTrips(String agencyId) async {
     final res = await _db
         .from('bus_trips')
@@ -100,7 +144,6 @@ class BusAgencyService {
     return BusTripModel.fromJson(res);
   }
 
-  // ---------- Réservations de mon agence uniquement ----------
   Future<List<BookingModel>> getAgencyBookings(String agencyId) async {
     final res = await _db
         .from('bus_bookings')
@@ -110,7 +153,6 @@ class BusAgencyService {
     return (res as List).map((e) => BookingModel.fromJson(e)).toList();
   }
 
-  // ---------- Scan QR / Check-in ----------
   Future<BookingModel> validateTicketByQr(String agencyId, String qrCode) async {
     final res = await _db
         .from('bus_bookings')
