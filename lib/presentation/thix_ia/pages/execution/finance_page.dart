@@ -47,7 +47,6 @@ class _FinancePageState extends ConsumerState<FinancePage> {
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // KPI TRÉSORERIE & SECTEUR
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -192,7 +191,6 @@ class _FinancePageState extends ConsumerState<FinancePage> {
           right: 20,
           top: 20,
         ),
-        Spacer(),
         child: StatefulBuilder(
           builder: (context, setModalState) => Column(
             mainAxisSize: MainAxisSize.min,
@@ -254,12 +252,10 @@ class _FinancePageState extends ConsumerState<FinancePage> {
                         date: DateTime.now(),
                       );
 
-                      // Enregistrement direct dans Supabase via le repository
                       await ref.read(executionRepositoryProvider).addTransaction(tx);
 
                       if (mounted) Navigator.pop(context);
 
-                      // Invalidation des providers pour rafraîchir l'UI instantanément
                       ref.invalidate(executionTransactionsProvider(widget.projectCode));
                       ref.invalidate(executionFinanceProvider(widget.projectCode));
                       ref.invalidate(executionDashboardProvider(widget.projectCode));
