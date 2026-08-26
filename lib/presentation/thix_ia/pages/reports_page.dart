@@ -594,7 +594,7 @@ class _ReportCard extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 '\( {r.createdAt!.day}/ \){r.createdAt!.month}/${r.createdAt!.year} \( {r.createdAt!.hour.toString().padLeft(2, '0')}: \){r.createdAt!.minute.toString().padLeft(2, '0')}',
-                style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                  style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
               ),
             ],
           ],
