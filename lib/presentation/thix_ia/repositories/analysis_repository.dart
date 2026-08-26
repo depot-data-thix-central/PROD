@@ -8,6 +8,60 @@ class AnalysisRepository {
 
   final SupabaseClient _client;
 
+  /// Assure que le projet existe dans la table parentée par la FK
+  /// (thix_analyses.project_code → projects.project_code)
+  /// + thix_projects pour le reste de l'app
+  Future<void> ensureProjectExists(String projectCode, {String? name}) async {
+    final now = DateTime.now().toIso8601String();
+    final payload = {
+      'project_code': projectCode,
+      'name': name ?? 'Projet $projectCode',
+      'sector': 'General',
+      'country': 'RDC',
+      'status': 'active',
+      'progress': 0.1,
+      'analyses_count': 0,
+      'documents_count': 0,
+      'updated_at': now,
+    };
+
+    // 1) Table "projects" (celle de la contrainte FK de thix_analyses)
+    try {
+      final exists = await _client
+          .from('projects')
+          .select('project_code')
+          .eq('project_code', projectCode)
+          .maybeSingle();
+
+      if (exists == null) {
+        await _client.from('projects').upsert(
+          payload,
+          onConflict: 'project_code',
+        );
+      }
+    } catch (_) {
+      // Si la table "projects" n'existe pas, on ignore et on continue
+    }
+
+    // 2) Table "thix_projects" (utilisée par le reste de THIX)
+    try {
+      final existsThix = await _client
+          .from('thix_projects')
+          .select('project_code')
+          .eq('project_code', projectCode)
+          .maybeSingle();
+
+      if (existsThix == null) {
+        await _client.from('thix_projects').upsert(
+          payload,
+          onConflict: 'project_code',
+        );
+      }
+    } catch (_) {
+      // ignore
+    }
+  }
+
   // ============================================================
   // CRÉATION
   // ============================================================
@@ -17,6 +71,9 @@ class AnalysisRepository {
     required String title,
     Map<String, dynamic>? payload,
   }) async {
+    // ★ CORRECTION FK : créer le projet parent AVANT l'insert
+    await ensureProjectExists(projectCode);
+
     final row = await _client
         .from('thix_analyses')
         .insert({
