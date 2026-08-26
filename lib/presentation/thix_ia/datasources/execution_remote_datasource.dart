@@ -12,17 +12,15 @@ class ExecutionRemoteDatasource {
   ExecutionRemoteDatasource(this._supabase);
   final SupabaseClient _supabase;
 
-  // ============================================================
-  // ENSURE PROJECT EXISTS (logique automatique après analyse)
-  // ============================================================
-  /// Crée le projet dans thix_projects + thix_execution_projects si absent.
-  /// Appelé automatiquement avant toute écriture (finance, task, etc.)
+  // ═══════════════════════════════════════════════════════════════
+  // ENSURE PROJECT EXISTS
+  // ═══════════════════════════════════════════════════════════════
+
   Future<void> ensureProjectExists(
     String projectCode, {
     String? name,
     String? sector,
   }) async {
-    // 1. Vérifier / créer dans thix_projects (table parente de la FK)
     final existing = await _supabase
         .from('thix_projects')
         .select('project_code')
@@ -43,7 +41,6 @@ class ExecutionRemoteDatasource {
       }, onConflict: 'project_code');
     }
 
-    // 2. S'assurer aussi que le projet d'exécution existe
     final execExists = await _supabase
         .from('thix_execution_projects')
         .select('project_code')
@@ -63,7 +60,10 @@ class ExecutionRemoteDatasource {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════
   // PROJECT HEALTH
+  // ═══════════════════════════════════════════════════════════════
+
   Future<ExecutionProject?> getExecutionProject(String projectCode) async {
     try {
       final row = await _supabase
@@ -74,12 +74,12 @@ class ExecutionRemoteDatasource {
       if (row == null) return null;
       return ExecutionProject.fromJson(row);
     } catch (e) {
-      throw ExecutionDataSourceException('getExecutionProject failed', cause: e);
+      throw ExecutionDataSourceException('getExecutionProject failed',
+          cause: e);
     }
   }
 
   Future<ExecutionProject> upsertExecutionProject(ExecutionProject p) async {
-    // On s'assure d'abord que le parent existe
     await ensureProjectExists(p.projectCode);
     final res = await _supabase
         .from('thix_execution_projects')
@@ -89,43 +89,52 @@ class ExecutionRemoteDatasource {
     return ExecutionProject.fromJson(res);
   }
 
+  // ═══════════════════════════════════════════════════════════════
   // TASKS
-  Future<List<ExecutionTask>> getTasks(String projectCode,
-      {int limit = 100, int offset = 0, String? status}) async {
-    var q = _supabase
+  // ═══════════════════════════════════════════════════════════════
+
+  Future<List<ExecutionTask>> getTasks(
+    String projectCode, {
+    int limit = 100,
+    int offset = 0,
+    String? status,
+  }) async {
+    var query = _supabase
         .from(ThixExecutionTables.tasks)
         .select()
-        .eq('project_code', projectCode)
+        .eq('project_code', projectCode);
+
+    if (status != null) {
+      query = query.eq('status', status);
+    }
+
+    final rows = await query
         .order('created_at', ascending: false)
         .range(offset, offset + limit - 1);
 
-    if (status != null) {
-      q = _supabase
-          .from(ThixExecutionTables.tasks)
-          .select()
-          .eq('project_code', projectCode)
-          .eq('status', status)
-          .order('created_at', ascending: false)
-          .range(offset, offset + limit - 1);
-    }
-    final rows = await q;
     return (rows as List).map((e) => ExecutionTask.fromJson(e)).toList();
   }
 
   Future<ExecutionTask> createTask(ExecutionTask task) async {
-    await ensureProjectExists(task.projectCode); // ← auto
+    await ensureProjectExists(task.projectCode);
     final res = await _supabase
         .from(ThixExecutionTables.tasks)
         .insert(task.toJson())
         .select()
         .single();
-    await _supabase.from('audit_logs').insert({
-      'action': 'create_task',
-      'entity_type': 'task',
-      'entity_id': res['id'],
-      'project_code': task.projectCode,
-      'payload': task.toJson(),
-    });
+
+    try {
+      await _supabase.from('audit_logs').insert({
+        'action': 'create_task',
+        'entity_type': 'task',
+        'entity_id': res['id'],
+        'project_code': task.projectCode,
+        'payload': task.toJson(),
+      });
+    } catch (_) {
+      // audit optionnel
+    }
+
     return ExecutionTask.fromJson(res);
   }
 
@@ -139,7 +148,45 @@ class ExecutionRemoteDatasource {
     return ExecutionTask.fromJson(res);
   }
 
+  Future<ExecutionTask> updateTaskStatus(String id, String status) async {
+    final patch = <String, dynamic>{
+      'status': status,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+    if (status == 'done') {
+      patch['progress'] = 100;
+      patch['completed_at'] = DateTime.now().toIso8601String();
+    } else if (status == 'doing') {
+      patch['progress'] = 50;
+      patch['completed_at'] = null;
+    } else {
+      patch['progress'] = 0;
+      patch['completed_at'] = null;
+    }
+    return updateTask(id, patch);
+  }
+
+  Future<ExecutionTask> completeTask(String id) async {
+    return updateTaskStatus(id, 'done');
+  }
+
+  Future<void> deleteTask(String id) async {
+    await _supabase.from(ThixExecutionTables.tasks).delete().eq('id', id);
+  }
+
+  Stream<List<ExecutionTask>> watchTasks(String projectCode) {
+    return _supabase
+        .from(ThixExecutionTables.tasks)
+        .stream(primaryKey: ['id'])
+        .eq('project_code', projectCode)
+        .order('created_at')
+        .map((rows) => rows.map((e) => ExecutionTask.fromJson(e)).toList());
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   // GOALS / OKR
+  // ═══════════════════════════════════════════════════════════════
+
   Future<List<ExecutionGoal>> getGoals(String projectCode) async {
     final rows = await _supabase
         .from(ThixExecutionTables.goals)
@@ -150,31 +197,50 @@ class ExecutionRemoteDatasource {
   }
 
   Future<ExecutionGoal> upsertGoal(ExecutionGoal g) async {
-    await ensureProjectExists(g.projectCode); // ← auto
+    await ensureProjectExists(g.projectCode);
+    final payload = g.toJson();
+    if (g.id.isNotEmpty) {
+      final res = await _supabase
+          .from(ThixExecutionTables.goals)
+          .update(payload)
+          .eq('id', g.id)
+          .select()
+          .single();
+      return ExecutionGoal.fromJson(res);
+    }
     final res = await _supabase
         .from(ThixExecutionTables.goals)
-        .upsert(g.toJson(), onConflict: 'id')
+        .insert(payload)
         .select()
         .single();
     return ExecutionGoal.fromJson(res);
   }
 
+  Future<void> deleteGoal(String id) async {
+    await _supabase.from(ThixExecutionTables.goals).delete().eq('id', id);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   // FINANCE
-  Future<List<FinanceTransaction>> getTransactions(String projectCode,
-      {int limit = 200}) async {
+  // ═══════════════════════════════════════════════════════════════
+
+  Future<List<FinanceTransaction>> getTransactions(
+    String projectCode, {
+    int limit = 200,
+  }) async {
     final rows = await _supabase
         .from(ThixExecutionTables.finances)
         .select()
         .eq('project_code', projectCode)
         .order('date', ascending: false)
         .limit(limit);
-    return (rows as List).map((e) => FinanceTransaction.fromJson(e)).toList();
+    return (rows as List)
+        .map((e) => FinanceTransaction.fromJson(e))
+        .toList();
   }
 
   Future<FinanceTransaction> addTransaction(FinanceTransaction tx) async {
-    // ★★★ SOLUTION PRINCIPALE DE L'ERREUR FK ★★★
     await ensureProjectExists(tx.projectCode);
-
     final res = await _supabase
         .from(ThixExecutionTables.finances)
         .insert(tx.toJson())
@@ -183,35 +249,203 @@ class ExecutionRemoteDatasource {
     return FinanceTransaction.fromJson(res);
   }
 
-  Future<FinancialSnapshot> getFinancialSnapshot(String projectCode) async {
+  Future<void> deleteTransaction(String id) async {
+    await _supabase.from(ThixExecutionTables.finances).delete().eq('id', id);
+  }
+
+  Future<FinancialSnapshot?> getFinancialSnapshot(String projectCode) async {
     final row = await _supabase
         .from('thix_execution_snapshots')
         .select()
         .eq('project_code', projectCode)
-        .order('created_at', ascending: false)
+        .order('updated_at', ascending: false)
         .limit(1)
         .maybeSingle();
-    if (row == null) throw ProjectNotFoundFailure(projectCode);
+    if (row == null) return null;
     return FinancialSnapshot.fromJson(row);
   }
 
-  // SUPPLIERS, RISKS, COMPLIANCE
+  /// Snapshot calculé depuis transactions + projet (fallback si pas de row)
+  Future<FinancialSnapshot> getFinanceSnapshotComputed(
+      String projectCode) async {
+    final project = await getExecutionProject(projectCode);
+    final txs = await getTransactions(projectCode);
+
+    double treasury = project?.treasury ?? 0;
+    double burn = project?.burnRate ?? 0;
+    double runway = project?.runwayMonths ?? 0;
+    double mrr = project?.mrr ?? 0;
+
+    double income = 0, expense = 0, capital = 0;
+    for (final t in txs) {
+      switch (t.type) {
+        case FinanceTransactionType.income:
+          income += t.amount;
+          break;
+        case FinanceTransactionType.expense:
+          expense += t.amount;
+          break;
+        case FinanceTransactionType.capital:
+          capital += t.amount;
+          break;
+      }
+    }
+
+    if (txs.isNotEmpty && treasury == 0) {
+      treasury = capital + income - expense;
+    }
+
+    final now = DateTime.now();
+    final last30Exp = txs.where((t) {
+      if (t.type != FinanceTransactionType.expense || t.date == null) {
+        return false;
+      }
+      return now.difference(t.date!).inDays <= 30;
+    }).fold<double>(0, (s, t) => s + t.amount);
+
+    final last30Inc = txs.where((t) {
+      if (t.type != FinanceTransactionType.income || t.date == null) {
+        return false;
+      }
+      return now.difference(t.date!).inDays <= 30;
+    }).fold<double>(0, (s, t) => s + t.amount);
+
+    if (burn == 0 && last30Exp > 0) burn = last30Exp;
+    if (mrr == 0 && last30Inc > 0) mrr = last30Inc;
+    if (burn > 0 && runway == 0) runway = treasury / burn;
+
+    // Snapshot DB si existe
+    final snap = await getFinancialSnapshot(projectCode);
+    if (snap != null) {
+      return FinancialSnapshot(
+        projectCode: projectCode,
+        treasury: treasury != 0 ? treasury : snap.treasury,
+        burnRate: burn != 0 ? burn : snap.burnRate,
+        runwayMonths: runway != 0 ? runway : snap.runwayMonths,
+        mrr: mrr != 0 ? mrr : snap.mrr,
+        arr: (mrr != 0 ? mrr : snap.mrr) * 12,
+        revenueMonthly:
+            last30Inc > 0 ? last30Inc : snap.revenueMonthly,
+        expensesMonthly:
+            last30Exp > 0 ? last30Exp : snap.expensesMonthly,
+        sector: snap.sector,
+        cac: snap.cac,
+        ltv: snap.ltv,
+        churnRate: snap.churnRate,
+        grossMargin: snap.grossMargin,
+        stockValue: snap.stockValue,
+        averageBasket: snap.averageBasket,
+      );
+    }
+
+    return FinancialSnapshot(
+      projectCode: projectCode,
+      treasury: treasury,
+      burnRate: burn,
+      runwayMonths: runway,
+      mrr: mrr,
+      arr: mrr * 12,
+      revenueMonthly: last30Inc,
+      expensesMonthly: last30Exp,
+      sector: FinanceSector.service,
+    );
+  }
+
+  Future<void> upsertFinancialSnapshot(Map<String, dynamic> data) async {
+    await ensureProjectExists(data['project_code'] as String);
+    await _supabase.from('thix_execution_snapshots').upsert({
+      ...data,
+      'updated_at': DateTime.now().toIso8601String(),
+    }, onConflict: 'project_code');
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // SUPPLIERS
+  // ═══════════════════════════════════════════════════════════════
+
   Future<List<Supplier>> getSuppliers(String projectCode) async {
     final rows = await _supabase
         .from(ThixExecutionTables.suppliers)
         .select()
-        .eq('project_code', projectCode);
+        .eq('project_code', projectCode)
+        .order('created_at', ascending: false);
     return (rows as List).map((e) => Supplier.fromJson(e)).toList();
   }
+
+  Future<Supplier> upsertSupplier(Supplier s) async {
+    await ensureProjectExists(s.projectCode);
+    final payload = s.toJson();
+    if (s.id.isNotEmpty) {
+      final res = await _supabase
+          .from(ThixExecutionTables.suppliers)
+          .update(payload)
+          .eq('id', s.id)
+          .select()
+          .single();
+      return Supplier.fromJson(res);
+    }
+    final res = await _supabase
+        .from(ThixExecutionTables.suppliers)
+        .insert(payload)
+        .select()
+        .single();
+    return Supplier.fromJson(res);
+  }
+
+  Future<Supplier> updateSupplier(String id, Map<String, dynamic> patch) async {
+    final res = await _supabase
+        .from(ThixExecutionTables.suppliers)
+        .update({...patch, 'updated_at': DateTime.now().toIso8601String()})
+        .eq('id', id)
+        .select()
+        .single();
+    return Supplier.fromJson(res);
+  }
+
+  Future<void> deleteSupplier(String id) async {
+    await _supabase.from(ThixExecutionTables.suppliers).delete().eq('id', id);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // RISKS
+  // ═══════════════════════════════════════════════════════════════
 
   Future<List<RiskItem>> getRisks(String projectCode) async {
     final rows = await _supabase
         .from(ThixExecutionTables.risks)
         .select()
         .eq('project_code', projectCode)
-        .order('created_at');
+        .order('created_at', ascending: false);
     return (rows as List).map((e) => RiskItem.fromJson(e)).toList();
   }
+
+  Future<RiskItem> upsertRisk(RiskItem r) async {
+    await ensureProjectExists(r.projectCode);
+    final payload = r.toJson();
+    if (r.id.isNotEmpty) {
+      final res = await _supabase
+          .from(ThixExecutionTables.risks)
+          .update(payload)
+          .eq('id', r.id)
+          .select()
+          .single();
+      return RiskItem.fromJson(res);
+    }
+    final res = await _supabase
+        .from(ThixExecutionTables.risks)
+        .insert(payload)
+        .select()
+        .single();
+    return RiskItem.fromJson(res);
+  }
+
+  Future<void> deleteRisk(String id) async {
+    await _supabase.from(ThixExecutionTables.risks).delete().eq('id', id);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // COMPLIANCE
+  // ═══════════════════════════════════════════════════════════════
 
   Future<List<ComplianceItem>> getCompliance(String projectCode) async {
     final rows = await _supabase
@@ -221,7 +455,30 @@ class ExecutionRemoteDatasource {
     return (rows as List).map((e) => ComplianceItem.fromJson(e)).toList();
   }
 
+  Future<ComplianceItem> upsertCompliance(ComplianceItem c) async {
+    await ensureProjectExists(c.projectCode);
+    final payload = c.toJson();
+    if (c.id.isNotEmpty) {
+      final res = await _supabase
+          .from('thix_execution_compliance')
+          .update(payload)
+          .eq('id', c.id)
+          .select()
+          .single();
+      return ComplianceItem.fromJson(res);
+    }
+    final res = await _supabase
+        .from('thix_execution_compliance')
+        .insert(payload)
+        .select()
+        .single();
+    return ComplianceItem.fromJson(res);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
   // ROADMAP
+  // ═══════════════════════════════════════════════════════════════
+
   Future<List<Map<String, dynamic>>> getRoadmap(String projectCode) async {
     final rows = await _supabase
         .from(ThixExecutionTables.roadmap)
@@ -231,13 +488,53 @@ class ExecutionRemoteDatasource {
     return List<Map<String, dynamic>>.from(rows as List);
   }
 
-  // REALTIME STREAM
-  Stream<List<ExecutionTask>> watchTasks(String projectCode) {
-    return _supabase
-        .from(ThixExecutionTables.tasks)
-        .stream(primaryKey: ['id'])
-        .eq('project_code', projectCode)
-        .order('created_at')
-        .map((rows) => rows.map((e) => ExecutionTask.fromJson(e)).toList());
+  Future<Map<String, dynamic>> upsertRoadmapStep(
+      Map<String, dynamic> step) async {
+    await ensureProjectExists(step['project_code'] as String);
+    final id = step['id']?.toString();
+    if (id != null && id.isNotEmpty) {
+      final res = await _supabase
+          .from(ThixExecutionTables.roadmap)
+          .update({
+            ...step,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', id)
+          .select()
+          .single();
+      return Map<String, dynamic>.from(res);
+    }
+    final payload = Map<String, dynamic>.from(step)..remove('id');
+    final res = await _supabase
+        .from(ThixExecutionTables.roadmap)
+        .insert(payload)
+        .select()
+        .single();
+    return Map<String, dynamic>.from(res);
+  }
+
+  Future<void> updateRoadmapStatus(String id, String status) async {
+    final patch = <String, dynamic>{
+      'status': status,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+    if (status == 'done') {
+      patch['progress'] = 100;
+      patch['completed_at'] = DateTime.now().toIso8601String();
+    } else if (status == 'doing') {
+      patch['progress'] = 50;
+      patch['completed_at'] = null;
+    } else {
+      patch['progress'] = 0;
+      patch['completed_at'] = null;
+    }
+    await _supabase
+        .from(ThixExecutionTables.roadmap)
+        .update(patch)
+        .eq('id', id);
+  }
+
+  Future<void> deleteRoadmapStep(String id) async {
+    await _supabase.from(ThixExecutionTables.roadmap).delete().eq('id', id);
   }
 }
