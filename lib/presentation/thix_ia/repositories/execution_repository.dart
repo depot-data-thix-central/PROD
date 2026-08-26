@@ -21,6 +21,9 @@ class ExecutionRepository {
     return _ds.upsertExecutionProject(init);
   }
 
+  // 👇 LA CORRECTION EST ICI : On expose la méthode proprement pour le Service !
+  Future<ExecutionProject> upsertExecutionProject(ExecutionProject project) => _ds.upsertExecutionProject(project);
+
   Future<List<ExecutionTask>> getTasks(String code, {int limit=100, int offset=0, String? status}) => _ds.getTasks(code, limit: limit, offset: offset, status: status);
   Future<ExecutionTask> createTask(ExecutionTask t) => _ds.createTask(t);
   Future<ExecutionTask> completeTask(String id) => _ds.updateTask(id, {'status':'done','progress':100,'completed_at':DateTime.now().toIso8601String()});
