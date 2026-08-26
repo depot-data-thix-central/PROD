@@ -13,6 +13,7 @@ import '../models/project_items.dart';
 
 /// ============================================================================
 /// REMOTE DATASOURCE - SUPABASE ONLY
+/// Table unifiée : thix_projects (plus de "projects")
 /// ============================================================================
 
 abstract class ThixIaRemoteDatasource {
@@ -52,7 +53,7 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
   final SupabaseClient _supabase;
 
   // ────────────────────────────────────────────────────────────────────────
-  // PROJECTS
+  // PROJECTS  →  table unifiée : thix_projects
   // ────────────────────────────────────────────────────────────────────────
   @override
   Future<List<ThixProject>> getProjects(
@@ -61,7 +62,7 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
       final from = (page - 1) * limit;
       final to = from + limit - 1;
 
-      var query = _supabase.from('projects').select();
+      var query = _supabase.from('thix_projects').select();
 
       if (status != null && status.isNotEmpty) {
         query = query.eq('status', status);
@@ -84,7 +85,7 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
   Future<ThixProject> getProjectByCode(String projectCode) async {
     try {
       final res = await _supabase
-          .from('projects')
+          .from('thix_projects')
           .select()
           .eq('project_code', projectCode)
           .single();
@@ -100,8 +101,12 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
   @override
   Future<ThixProject> createProject(Map<String, dynamic> data) async {
     try {
-      final res =
-          await _supabase.from('projects').insert(data).select().single();
+      final res = await _supabase
+          .from('thix_projects')
+          .insert(data)
+          .select()
+          .single();
+
       await _supabase.from('audit_logs').insert({
         'action': 'create_project',
         'entity_type': 'project',
@@ -120,7 +125,7 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
       String projectCode, Map<String, dynamic> data) async {
     try {
       final res = await _supabase
-          .from('projects')
+          .from('thix_projects')
           .update(data)
           .eq('project_code', projectCode)
           .select()
@@ -135,7 +140,7 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
   Future<void> archiveProject(String projectCode) async {
     try {
       await _supabase
-          .from('projects')
+          .from('thix_projects')
           .update({'status': 'archived'}).eq('project_code', projectCode);
     } catch (e, s) {
       throw ThixIAErrorMapper.map(e, s);
@@ -145,7 +150,10 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
   @override
   Future<void> deleteProject(String projectCode) async {
     try {
-      await _supabase.from('projects').delete().eq('project_code', projectCode);
+      await _supabase
+          .from('thix_projects')
+          .delete()
+          .eq('project_code', projectCode);
 
       await _supabase.from('audit_logs').insert({
         'action': 'delete_project',
@@ -159,19 +167,19 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
   }
 
   // ────────────────────────────────────────────────────────────────────────
-  // MEMORY — lecture robuste + insert sans colonnes fantômes
+  // MEMORY
   // ────────────────────────────────────────────────────────────────────────
   @override
   Future<ProjectMemory> getProjectMemory(String projectCode) async {
     try {
-      // Projet (obligatoire)
+      // Projet (obligatoire) → thix_projects
       final projData = await _supabase
-          .from('projects')
+          .from('thix_projects')
           .select('name,sector,country,city')
           .eq('project_code', projectCode)
           .single();
 
-      // Facts isolés — PAS de .order('created_at') (colonne souvent absente)
+      // Facts isolés
       List factsData = [];
       try {
         final res = await _supabase
@@ -219,7 +227,6 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
   @override
   Future<void> upsertProjectFact(Map<String, dynamic> fact) async {
     try {
-      // insert simple (évite les échecs d'upsert sans contrainte unique)
       await _supabase.from('project_facts').insert(fact);
     } catch (e, s) {
       throw ThixIAErrorMapper.map(e, s);
@@ -268,14 +275,14 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
   Future<ProjectAnalysis> updateAnalysisStatus(String id, String status,
       {int? progress}) async {
     try {
-      final update = {
+      final payload = <String, dynamic>{
         'status': status,
         if (progress != null) 'progress': progress,
         'updated_at': DateTime.now().toIso8601String(),
       };
       final res = await _supabase
           .from('project_analyses')
-          .update(update)
+          .update(payload)
           .eq('id', id)
           .select()
           .single();
@@ -316,7 +323,7 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
     }
   }
 
-@override
+  @override
   Future<String> uploadFile(
     String projectCode,
     String fileName,
@@ -345,6 +352,7 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
       throw ThixIAErrorMapper.map(e, s);
     }
   }
+
   // ────────────────────────────────────────────────────────────────────────
   // REPORTS
   // ────────────────────────────────────────────────────────────────────────
