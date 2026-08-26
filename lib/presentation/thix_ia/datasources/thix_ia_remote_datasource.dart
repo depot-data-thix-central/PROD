@@ -69,7 +69,7 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
       }
       if (search != null && search.isNotEmpty) {
         query = query.or(
-            'name.ilike.%$search%,project_code.ilike.%$search%,sector.ilike.%$search%');
+            'name.ilike.%$search%,code.ilike.%$search%,sector.ilike.%$search%');
       }
 
       final res =
@@ -87,7 +87,7 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
       final res = await _supabase
           .from('thix_projects')
           .select()
-          .eq('project_code', projectCode)
+          .eq('code', projectCode) // CORRIGÉ : 'code' au lieu de 'project_code'
           .single();
       return ThixProject.fromJson(res);
     } catch (e, s) {
@@ -111,7 +111,7 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
         'action': 'create_project',
         'entity_type': 'project',
         'entity_id': res['id'],
-        'project_code': res['project_code'],
+        'project_code': res['code'],
         'metadata': {'name': res['name']},
       });
       return ThixProject.fromJson(res);
@@ -127,7 +127,7 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
       final res = await _supabase
           .from('thix_projects')
           .update(data)
-          .eq('project_code', projectCode)
+          .eq('code', projectCode) // CORRIGÉ : 'code' au lieu de 'project_code'
           .select()
           .single();
       return ThixProject.fromJson(res);
@@ -141,7 +141,8 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
     try {
       await _supabase
           .from('thix_projects')
-          .update({'status': 'archived'}).eq('project_code', projectCode);
+          .update({'status': 'archived'})
+          .eq('code', projectCode); // CORRIGÉ : 'code'
     } catch (e, s) {
       throw ThixIAErrorMapper.map(e, s);
     }
@@ -153,7 +154,7 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
       await _supabase
           .from('thix_projects')
           .delete()
-          .eq('project_code', projectCode);
+          .eq('code', projectCode); // CORRIGÉ : 'code'
 
       await _supabase.from('audit_logs').insert({
         'action': 'delete_project',
@@ -172,14 +173,12 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
   @override
   Future<ProjectMemory> getProjectMemory(String projectCode) async {
     try {
-      // Projet (obligatoire) → thix_projects
       final projData = await _supabase
           .from('thix_projects')
           .select('name,sector,country,city')
-          .eq('project_code', projectCode)
+          .eq('code', projectCode) // CORRIGÉ : 'code'
           .single();
 
-      // Facts isolés
       List factsData = [];
       try {
         final res = await _supabase
@@ -336,7 +335,7 @@ class ThixIaRemoteDatasourceImpl implements ThixIaRemoteDatasource {
           .replaceAll(RegExp(r'_+'), '_');
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final path = '\( projectCode/ \){timestamp}_$safeName';
+      final path = '$projectCode/${timestamp}_$safeName';
 
       await _supabase.storage.from('thix-documents').uploadBinary(
             path,
