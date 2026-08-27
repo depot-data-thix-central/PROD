@@ -30,8 +30,8 @@ class _BusSeatSelectionPageState extends ConsumerState<BusSeatSelectionPage> {
   }
 
   String lockLabel(int seconds) {
-    final m = seconds \~/ 60;
-    final s = seconds % 60;
+    final m = (seconds / 60).floor();
+    final s = seconds - (m * 60);
     return two(m) + ':' + two(s);
   }
 
