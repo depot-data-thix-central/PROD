@@ -6,34 +6,110 @@ class SeatMapWidget extends StatelessWidget {
   final List<SeatModel> seats;
   final Set<String> selected;
   final Function(SeatModel) onTap;
-  const SeatMapWidget({super.key, required this.seats, required this.selected, required this.onTap});
+
+  const SeatMapWidget({
+    super.key,
+    required this.seats,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    // On suppose bus 4 sièges par rangée: A B | couloir | C D
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 5, mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 1),
-      itemCount: seats.length,
-      itemBuilder: (_, i) {
-        if ((i+1)%3==0) return const Icon(Icons.confirmation_number, color: Colors.transparent); // couloir
-        final seatIndex = i - (i/3).floor() - (i>=3?1:0);
-        if (seatIndex >= seats.length) return const SizedBox();
-        final seat = seats[seatIndex];
-        final isSelected = selected.contains(seat.seatNumber);
-        Color color;
-        if (!seat.isAvailable) color = Colors.grey.shade300;
-        else if (isSelected) color = const Color(0xFF0D47A1);
-        else if (seat.isVip) color = Colors.amber.shade100;
-        else color = Colors.white;
+    final rows = <List<SeatModel>>[];
+    for (var i = 0; i < seats.length; i += 4) {
+      final end = i + 4 > seats.length ? seats.length : i + 4;
+      rows.add(seats.sublist(i, end));
+    }
 
-        return InkWell(
-          onTap: seat.isAvailable? () => onTap(seat): null,
-          borderRadius: BorderRadius.circular(8),
-          child: Container(decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(8), border: Border.all(color: isSelected? const Color(0xFF0D47A1): Colors.grey.shade300)), child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.airline_seat_recline_normal, size: 18, color: isSelected? Colors.white: seat.isAvailable? Colors.black87: Colors.grey), Text(seat.seatNumber, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: isSelected? Colors.white: Colors.black87))]))),
+    return Column(
+      children: rows.map((row) {
+        final left = row.length >= 2 ? row.sublist(0, 2) : row;
+        final right = row.length > 2 ? row.sublist(2) : <SeatModel>[];
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ...left.map((s) => _SeatCell(
+                    seat: s,
+                    selected: selected.contains(s.seatNumber),
+                    onTap: onTap,
+                  )),
+              const SizedBox(
+                width: 28,
+                child: Icon(Icons.more_vert, size: 12, color: Colors.white24),
+              ),
+              ...right.map((s) => _SeatCell(
+                    seat: s,
+                    selected: selected.contains(s.seatNumber),
+                    onTap: onTap,
+                  )),
+            ],
+          ),
         );
-      },
+      }).toList(),
+    );
+  }
+}
+
+class _SeatCell extends StatelessWidget {
+  final SeatModel seat;
+  final bool selected;
+  final Function(SeatModel) onTap;
+
+  const _SeatCell({
+    required this.seat,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Color bg = Colors.white;
+    Color fg = const Color(0xFF111827);
+    Color border = const Color(0xFFD1D5DB);
+
+    if (!seat.isAvailable) {
+      bg = const Color(0xFF64748B);
+      fg = Colors.white70;
+      border = const Color(0xFF475569);
+    } else if (selected) {
+      bg = const Color(0xFF2563EB);
+      fg = Colors.white;
+      border = const Color(0xFF1D4ED8);
+    } else if (seat.isVip) {
+      bg = const Color(0xFFFEF3C7);
+      fg = const Color(0xFF92400E);
+      border = const Color(0xFFF59E0B);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: InkWell(
+        onTap: seat.isAvailable ? () => onTap(seat) : null,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: 44,
+          height: 48,
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: border),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.airline_seat_recline_normal, size: 16, color: fg),
+              Text(
+                seat.seatNumber,
+                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: fg),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
