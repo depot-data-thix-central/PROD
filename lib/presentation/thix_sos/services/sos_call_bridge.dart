@@ -2,11 +2,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:thix_id/models/chat/call_status.dart';
 import 'package:thix_id/services/chat/call_signaling_service.dart';
+import 'package:thix_id/supabase/supabase_config.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/sos_models.dart';
 import 'sos_crisis_media_service.dart';
 import 'sos_service.dart';
+import 'sos_victim_capture_daemon.dart';
 
 class SosCallBridge {
   SosCallBridge({
@@ -66,6 +68,24 @@ class SosCallBridge {
         'error': e.toString(),
       });
     }
+
+    // ✅ NOUVEAU : annonce publique pour l'ouverture auto côté secours
+    try {
+      await _sos.logEventPublic(incident.id, 'SOS_STARTED', {
+        'circle1_user_ids': userIds,
+        'victim_id': SupabaseConfig.currentUser?.id,
+        'public_id': incident.publicId,
+        'conversation_id': conversationId,
+      });
+    } catch (e) {
+      debugPrint('SosCallBridge SOS_STARTED: $e');
+    }
+
+    // ✅ NOUVEAU : écoute des commandes secours dès maintenant (arrière-plan)
+    await SosVictimCaptureDaemon.instance.start(
+      incidentId: incident.id,
+      conversationId: conversationId,
+    );
 
     return SosActivationResult(
       incident: incident,
