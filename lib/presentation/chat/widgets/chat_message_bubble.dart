@@ -10,6 +10,7 @@ import 'package:thix_id/presentation/chat/widgets/audio_player.dart';
 import 'package:thix_id/presentation/chat/widgets/chat_code_snippet.dart';
 import 'package:thix_id/presentation/chat/widgets/chat_ephemeral_timer.dart';
 import 'package:thix_id/presentation/chat/widgets/sentiment_indicator.dart';
+import 'package:thix_id/presentation/chat/chat_screen.dart'; // ✅ Import pour showFullscreenImageViewer
 
 class _C {
   static const primary = Color(0xFF2D6CDF);
@@ -30,16 +31,11 @@ class ChatMessageBubble extends ConsumerStatefulWidget {
   final VoidCallback? onReply;
   final void Function(String reaction)? onReaction;
   final VoidCallback? onDelete;
-  final void Function(String newContent)? onEdit; 
+  final void Function(String newContent)? onEdit;
   final ChatMessage? replyToMessage;
   final bool isEphemeralActive;
   final bool isInternalNote;
   final bool isAgentView;
-  // Groupement "cascade" — à calculer dans la liste parente en comparant
-  // le senderId du message avec celui du message précédent/suivant.
-  // Exemple dans ton ListView.builder :
-  //   final isFirst = i == 0 || messages[i - 1].senderId != m.senderId;
-  //   final isLast = i == messages.length - 1 || messages[i + 1].senderId != m.senderId;
   final bool isFirstInGroup;
   final bool isLastInGroup;
 
@@ -50,7 +46,7 @@ class ChatMessageBubble extends ConsumerStatefulWidget {
     this.onReply,
     this.onReaction,
     this.onDelete,
-    this.onEdit, 
+    this.onEdit,
     this.replyToMessage,
     this.isEphemeralActive = false,
     this.isInternalNote = false,
@@ -69,6 +65,12 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
   String? _decrypted;
 
   static const _quickReactions = ['❤️', '😂', '🔥', '👍', '😮', '😢'];
+
+  // ✅ CORRECTION : RegExp statique (créée une seule fois)
+  static final _imageExtRegex = RegExp(
+    r'\.(jpg|jpeg|png|gif|webp|heic|heif|svg)(\?|$)',
+    caseSensitive: false,
+  );
 
   ChatMessage get m => widget.message;
   bool get _isNote => widget.isInternalNote || m.isInternalNote;
@@ -94,13 +96,8 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
       return _DeletedBubble(isOwn: widget.isOwn);
     }
 
-    // Cascade : bulles resserrées entre messages consécutifs du même
-    // expéditeur, espace normal seulement avant un changement d'expéditeur.
     final topSpacing = widget.isFirstInGroup ? 6.0 : 1.5;
     final bottomSpacing = widget.isLastInGroup ? 6.0 : 1.5;
-
-    // La "pointe" du coin (moins arrondi) n'apparaît que sur le dernier
-    // message du groupe — comme WhatsApp.
     final tailRadius = widget.isLastInGroup ? 4.0 : 16.0;
 
     return Padding(
@@ -154,7 +151,7 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
                   widget.isOwn ? Alignment.centerRight : Alignment.centerLeft,
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.85, 
+                  maxWidth: MediaQuery.of(context).size.width * 0.85,
                 ),
                 child: Stack(
                   clipBehavior: Clip.none,
@@ -205,17 +202,19 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
                                 Builder(
                                   builder: (context) {
                                     int remainingSeconds = m.ephemeralDuration ?? 0;
-                                    
-                                    // 🌟 CORRECTION DU DÉCALAGE UTC+3 !
+
                                     if (m.deleteAt != null) {
-                                      remainingSeconds = m.deleteAt!.toUtc().difference(DateTime.now().toUtc()).inSeconds;
+                                      remainingSeconds = m.deleteAt!
+                                          .toUtc()
+                                          .difference(DateTime.now().toUtc())
+                                          .inSeconds;
                                     }
-                                    
+
                                     if (remainingSeconds <= 0) {
                                       WidgetsBinding.instance.addPostFrameCallback((_) {
                                         widget.onDelete?.call();
                                       });
-                                      return const SizedBox.shrink(); 
+                                      return const SizedBox.shrink();
                                     }
 
                                     return ChatEphemeralTimer(
@@ -294,9 +293,7 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
     }
 
     final isImage = m.mediaType == 'image' ||
-        (m.mediaUrl != null &&
-            RegExp(r'\.(jpg|jpeg|png|gif|webp)(\?|$)', caseSensitive: false)
-                .hasMatch(m.mediaUrl!));
+        (m.mediaUrl != null && _imageExtRegex.hasMatch(m.mediaUrl!));
 
     if (isImage && m.mediaUrl != null) {
       return _ImageBody(url: m.mediaUrl!, messageId: m.id);
@@ -307,6 +304,7 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
       return _FileBody(
         type: m.mediaType ?? 'file',
         name: m.mediaName ?? m.content,
+        url: m.mediaUrl!, // ✅ Ajout de l'URL pour le téléchargement
         isOwn: widget.isOwn,
       );
     }
@@ -386,7 +384,7 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
 
   void _showEditDialog() async {
     final ctrl = TextEditingController(text: _isDecrypted ? _decrypted : m.content);
-    
+
     final newContent = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -484,7 +482,7 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
                 );
               },
             ),
-            
+
             if (widget.isOwn && m.mediaUrl == null && !m.isDeleted)
               ListTile(
                 leading: const Icon(Icons.edit_rounded, color: _C.textMain),
@@ -620,6 +618,7 @@ class _EncryptedBody extends StatelessWidget {
   }
 }
 
+// ✅ CORRECTION : Utilise showFullscreenImageViewer (avec téléchargement)
 class _ImageBody extends StatelessWidget {
   final String url;
   final String messageId;
@@ -630,11 +629,12 @@ class _ImageBody extends StatelessWidget {
     final tag = 'img_$messageId';
     return GestureDetector(
       onTap: () {
-        Navigator.push(
+        // ✅ Utilise le viewer avec téléchargement + partage
+        showFullscreenImageViewer(
           context,
-          MaterialPageRoute(
-            builder: (_) => FullScreenImagePage(imageUrl: url, tag: tag),
-          ),
+          url: url,
+          heroTag: tag,
+          fileName: 'thix_${messageId}.jpg',
         );
       },
       child: ClipRRect(
@@ -677,49 +677,71 @@ class _ImageBody extends StatelessWidget {
   }
 }
 
+// ✅ CORRECTION : Ajout du téléchargement pour les fichiers
 class _FileBody extends StatelessWidget {
   final String type;
   final String name;
+  final String url; // ✅ Nouveau : URL pour le téléchargement
   final bool isOwn;
   const _FileBody({
     required this.type,
     required this.name,
+    required this.url,
     required this.isOwn,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: isOwn ? Colors.white30 : _C.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            type == 'video'
-                ? Icons.videocam_rounded
-                : Icons.insert_drive_file_rounded,
-            size: 18,
-            color: isOwn ? Colors.white : _C.primary,
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              name.isNotEmpty ? name : type,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: isOwn ? Colors.white : _C.textMain,
+    return GestureDetector(
+      onTap: () async {
+        // ✅ Téléchargement du fichier au tap
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.showSnackBar(const SnackBar(content: Text('Téléchargement...')));
+        final path = await MediaSaver.download(url: url, fileName: name);
+        if (path != null) {
+          messenger.showSnackBar(SnackBar(content: Text('Téléchargé : $path')));
+        } else {
+          messenger.showSnackBar(const SnackBar(content: Text('Échec du téléchargement')));
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: isOwn ? Colors.white30 : _C.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              type == 'video'
+                  ? Icons.videocam_rounded
+                  : Icons.insert_drive_file_rounded,
+              size: 18,
+              color: isOwn ? Colors.white : _C.primary,
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                name.isNotEmpty ? name : type,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isOwn ? Colors.white : _C.textMain,
+                ),
               ),
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            Icon(
+              Icons.download_rounded,
+              size: 16,
+              color: isOwn ? Colors.white70 : _C.primary,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -803,14 +825,15 @@ class _QuickReactions extends StatelessWidget {
   }
 }
 
+// ✅ CORRECTION : Cohérence des paramètres (les deux required)
 class MessageStatusTicks extends StatelessWidget {
   final bool isDelivered;
   final bool isRead;
-  final Color color; // conservé pour compatibilité, non utilisé désormais
+  final Color color;
 
   const MessageStatusTicks({
     super.key,
-    this.isDelivered = false,
+    required this.isDelivered, // ✅ Maintenant required
     required this.isRead,
     this.color = _C.primary,
   });
@@ -821,7 +844,6 @@ class MessageStatusTicks extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // vert = envoyé · jaune = livré · rouge = lu
     final activeColor = isRead ? _red : (isDelivered ? _yellow : _green);
 
     return Container(
@@ -854,33 +876,5 @@ class MessageStatusTicks extends StatelessWidget {
     );
   }
 }
-class FullScreenImagePage extends StatelessWidget {
-  final String imageUrl;
-  final String tag;
-  const FullScreenImagePage({
-    super.key,
-    required this.imageUrl,
-    required this.tag,
-  });
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: Center(
-        child: InteractiveViewer(
-          minScale: 0.5,
-          maxScale: 4,
-          child: Hero(
-            tag: tag,
-            child: Image.network(imageUrl, fit: BoxFit.contain),
-          ),
-        ),
-      ),
-    );
-  }
-}
+// ❌ SUPPRIMÉ : FullScreenImagePage (dupliqué, remplacé par showFullscreenImageViewer)
