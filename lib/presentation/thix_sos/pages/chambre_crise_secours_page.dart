@@ -18,7 +18,7 @@ import '../services/sos_crisis_media_service.dart';
 import '../services/sos_remote_capture_service.dart';
 
 /// SALLE DE PILOTAGE SECOURS — niveau entreprise.
-/// Live caméra victime + télémétrie + pilotage capture + preuves + journal.
+/// Flux visuel : Live Agora (optionnel) OU Mode Surveillance 100% Supabase.
 class ChambreCriseSecoursPage extends ConsumerStatefulWidget {
   const ChambreCriseSecoursPage({
     super.key,
@@ -52,6 +52,7 @@ class _ChambreCriseSecoursPageState
   bool _muted = false;
   bool _busy = false;
   bool _audioArmed = false;
+  bool _surveillance = false;
   String? _conversationId;
   Duration _elapsed = Duration.zero;
 
@@ -63,7 +64,8 @@ class _ChambreCriseSecoursPageState
     });
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      final inc = ref.read(sosIncidentProvider(widget.incidentId)).valueOrNull;
+      final inc =
+          ref.read(sosIncidentProvider(widget.incidentId)).valueOrNull;
       if (inc != null) {
         var d = DateTime.now().difference(inc.startedAt.toLocal());
         if (d.isNegative) d = Duration.zero;
@@ -84,7 +86,7 @@ class _ChambreCriseSecoursPageState
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Journal + preuves en temps réel (thix_sos_events)
+  // Journal + preuves en temps réel (thix_sos_events) — 100% Supabase
   // ─────────────────────────────────────────────────────────────
   void _subscribeEvents() {
     _eventsCh = Supabase.instance.client
@@ -102,7 +104,8 @@ class _ChambreCriseSecoursPageState
             if (!mounted) return;
             final rec = payload.newRecord;
             final type = (rec['type'] ?? '').toString();
-            final meta = Map<String, dynamic>.from((rec['payload'] as Map?) ?? {});
+            final meta =
+                Map<String, dynamic>.from((rec['payload'] as Map?) ?? {});
             setState(() {
               _journal.insert(0, _JournalRow(type: type, at: DateTime.now()));
               if (type.startsWith('EVIDENCE_')) {
@@ -121,7 +124,8 @@ class _ChambreCriseSecoursPageState
             if (type == 'EVIDENCE_PHOTO') _toast('📥 Photo victime reçue');
             if (type == 'EVIDENCE_VIDEO') _toast('📥 Vidéo victime reçue');
             if (type == 'EVIDENCE_AUDIO') _toast('📥 Audio victime reçu');
-            if (type == 'EVIDENCE_FAILED') _toast('⚠️ Échec capture côté victime');
+            if (type == 'EVIDENCE_FAILED')
+              _toast('⚠️ Échec capture côté victime');
           },
         )
         .subscribe();
@@ -133,7 +137,12 @@ class _ChambreCriseSecoursPageState
       _error = null;
     });
     try {
-      await _media.joinAsResponder(widget.incidentId);
+      // ✅ Live Agora OPTIONNEL : si indisponible, tout le reste fonctionne
+      try {
+        await _media.joinAsResponder(widget.incidentId);
+      } catch (e) {
+        debugPrint('Live Agora optionnel indisponible: $e');
+      }
       final incident = await ref
           .read(sosServiceProvider)
           .getIncidentForRescue(widget.incidentId);
@@ -192,6 +201,23 @@ class _ChambreCriseSecoursPageState
     if (mounted) setState(() => _busy = false);
   }
 
+  Future<void> _toggleSurveillance() async {
+    try {
+      if (_surveillance) {
+        await _remote.requestSurveillanceOff(widget.incidentId);
+        _surveillance = false;
+        _toast('⏹ Surveillance arrêtée');
+      } else {
+        await _remote.requestSurveillanceOn(widget.incidentId);
+        _surveillance = true;
+        _toast('🛰️ Surveillance activée : photo toutes les 10 s');
+      }
+    } catch (e) {
+      _toast('$e');
+    }
+    if (mounted) setState(() {});
+  }
+
   Future<void> _callVictim() async {
     final victimId = widget.victimUserId;
     if (victimId == null || victimId.isEmpty) {
@@ -230,16 +256,21 @@ class _ChambreCriseSecoursPageState
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: ['Restez calme, les secours arrivent',
+              children: [
+                        'Restez calme, les secours arrivent',
                         'Parlez-moi, décrivez votre situation',
                         'Montrez la pièce avec la caméra',
-                        'Ne raccrochez pas']
+                        'Ne raccrochez pas'
+                      ]
                   .map((t) => ActionChip(
-                        label: Text(t, style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                        label: Text(t,
+                            style: const TextStyle(
+                                fontSize: 12, color: Colors.white70)),
                         backgroundColor: const Color(0xFF1E293B),
                         onPressed: () async {
                           Navigator.pop(ctx);
-                          await _remote.requestInstruct(widget.incidentId, t);
+                          await _remote
+                              .requestInstruct(widget.incidentId, t);
                           _toast('📢 Instruction envoyée');
                         },
                       ))
@@ -254,12 +285,14 @@ class _ChambreCriseSecoursPageState
                 hintStyle: const TextStyle(color: Colors.white38),
                 filled: true,
                 fillColor: const Color(0xFF1E293B),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
             ),
             const SizedBox(height: 12),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.danger),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: ThixPolicy.danger),
               onPressed: () async {
                 final t = ctrl.text.trim();
                 if (t.isEmpty) return;
@@ -291,6 +324,13 @@ class _ChambreCriseSecoursPageState
     return '$h:$m:$s';
   }
 
+  String? get _latestPhotoUrl {
+    for (final e in _evidence) {
+      if (e.type == 'EVIDENCE_PHOTO' && e.url != null) return e.url;
+    }
+    return null;
+  }
+
   // ─────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -299,6 +339,11 @@ class _ChambreCriseSecoursPageState
     final engine = _media.engine;
     final channel = _media.channel;
     final remoteUid = _remotes.isEmpty ? null : _remotes.first;
+    final hasLive = !_joining &&
+        _error == null &&
+        engine != null &&
+        channel != null &&
+        remoteUid != null;
 
     return DefaultTabController(
       length: 2,
@@ -310,7 +355,8 @@ class _ChambreCriseSecoursPageState
             children: [
               Text(
                 incident?.publicId ?? 'CHAMBRE SECOURS',
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w800),
               ),
               Text(
                 '⏱ ${_fmtDuration(_elapsed)}  •  CERCLE ${incident?.activeCircle ?? 1}',
@@ -331,7 +377,7 @@ class _ChambreCriseSecoursPageState
         ),
         body: Column(
           children: [
-            // ── LIVE CAMÉRA VICTIME ──
+            // ── FLUX VISUEL : Live Agora OU dernière image surveillance ──
             SizedBox(
               height: MediaQuery.of(context).size.height * 0.32,
               child: Container(
@@ -339,56 +385,91 @@ class _ChambreCriseSecoursPageState
                 decoration: BoxDecoration(
                   color: Colors.black,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
+                  border:
+                      Border.all(color: Colors.red.withValues(alpha: 0.4)),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    if (!_joining &&
-                        _error == null &&
-                        engine != null &&
-                        channel != null &&
-                        remoteUid != null)
+                    if (hasLive)
                       AgoraVideoView(
                         controller: VideoViewController.remote(
-                          rtcEngine: engine,
-                          canvas: VideoCanvas(uid: remoteUid),
-                          connection: RtcConnection(channelId: channel),
+                          rtcEngine: engine!,
+                          canvas: VideoCanvas(uid: remoteUid!),
+                          connection: RtcConnection(channelId: channel!),
                         ),
+                      )
+                    else if (_latestPhotoUrl != null)
+                      Image.network(
+                        _latestPhotoUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Center(
+                            child: Icon(Icons.broken_image,
+                                color: Colors.white24, size: 40)),
                       )
                     else
                       Center(
                         child: _joining
-                            ? const CircularProgressIndicator(color: Colors.red)
+                            ? const CircularProgressIndicator(
+                                color: Colors.red)
                             : const Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.videocam_off, color: Colors.white24, size: 44),
+                                  Icon(Icons.satellite_alt,
+                                      color: Colors.white24, size: 44),
                                   SizedBox(height: 8),
-                                  Text('En attente de la caméra victime…',
-                                      style: TextStyle(color: Colors.white54)),
+                                  Text(
+                                    'Activez « Surveillance 10s »\nou attendez la caméra victime…',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: Colors.white54),
+                                  ),
                                 ],
                               ),
                       ),
-                    if (remoteUid != null)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: hasLive
+                              ? Colors.red
+                              : _latestPhotoUrl != null
+                                  ? Colors.orange
+                                  : Colors.grey.shade700,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          hasLive
+                              ? '● LIVE'
+                              : _latestPhotoUrl != null
+                                  ? '● DERNIÈRE IMAGE'
+                                  : '○ EN ATTENTE',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ),
+                    if (_surveillance)
                       Positioned(
                         top: 8,
-                        left: 8,
+                        right: 8,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: Colors.red,
+                            color: Colors.green.shade700,
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.circle, color: Colors.white, size: 8),
-                              SizedBox(width: 4),
-                              Text('LIVE', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
-                            ],
-                          ),
+                          child: const Text('🛰 10s',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800)),
                         ),
                       ),
                   ],
@@ -416,11 +497,10 @@ class _ChambreCriseSecoursPageState
                       },
                     ),
                     const SizedBox(width: 8),
-                    _StatusChip(
-                      icon: Icons.favorite,
-                      label: 'Heartbeat',
-                      color: Colors.green,
-                    ),
+                    const _StatusChip(
+                        icon: Icons.favorite,
+                        label: 'Heartbeat',
+                        color: Colors.green),
                     const SizedBox(width: 8),
                     _StatusChip(
                       icon: Icons.battery_std,
@@ -442,16 +522,38 @@ class _ChambreCriseSecoursPageState
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _ControlChip(icon: Icons.photo_camera, label: 'Photo', onTap: _busy ? null : _photo),
-                  _ControlChip(icon: Icons.videocam, label: 'Vidéo 30s', onTap: _busy ? null : _video),
+                  _ControlChip(
+                      icon: Icons.photo_camera,
+                      label: 'Photo',
+                      onTap: _busy ? null : _photo),
+                  _ControlChip(
+                      icon: Icons.videocam,
+                      label: 'Vidéo 30s',
+                      onTap: _busy ? null : _video),
                   _ControlChip(
                     icon: _audioArmed ? Icons.stop_circle : Icons.mic_none,
                     label: _audioArmed ? 'STOP AUDIO' : 'Enreg. audio',
                     danger: _audioArmed,
                     onTap: _busy ? null : _toggleAudio,
                   ),
-                  _ControlChip(icon: Icons.campaign, label: 'Instruction', onTap: _openInstructions),
-                  _ControlChip(icon: Icons.call, label: 'Appel audio', onTap: _callVictim),
+                  _ControlChip(
+                    icon: _surveillance
+                        ? Icons.visibility_off
+                        : Icons.visibility,
+                    label: _surveillance
+                        ? 'Stop surveillance'
+                        : 'Surveillance 10s',
+                    danger: _surveillance,
+                    onTap: _toggleSurveillance,
+                  ),
+                  _ControlChip(
+                      icon: Icons.campaign,
+                      label: 'Instruction',
+                      onTap: _openInstructions),
+                  _ControlChip(
+                      icon: Icons.call,
+                      label: 'Appel audio',
+                      onTap: _callVictim),
                 ],
               ),
             ),
@@ -465,10 +567,7 @@ class _ChambreCriseSecoursPageState
             ),
             Expanded(
               child: TabBarView(
-                children: [
-                  _buildEvidenceTab(),
-                  _buildJournalTab(),
-                ],
+                children: [_buildEvidenceTab(), _buildJournalTab()],
               ),
             ),
           ],
@@ -546,10 +645,14 @@ class _ChambreCriseSecoursPageState
                     children: [
                       Text(
                         e.type.replaceFirst('EVIDENCE_', ''),
-                        style: const TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700),
                       ),
                       if (e.posted)
-                        const Icon(Icons.check_circle, color: Colors.green, size: 11),
+                        const Icon(Icons.check_circle,
+                            color: Colors.green, size: 11),
                     ],
                   ),
                 ),
@@ -564,7 +667,8 @@ class _ChambreCriseSecoursPageState
   Widget _buildJournalTab() {
     if (_journal.isEmpty) {
       return const Center(
-        child: Text('Journal vide', style: TextStyle(color: Colors.white38)),
+        child: Text('Journal vide',
+            style: TextStyle(color: Colors.white38)),
       );
     }
     return ListView.separated(
@@ -580,12 +684,19 @@ class _ChambreCriseSecoursPageState
               style: const TextStyle(color: Colors.white38, fontSize: 11),
             ),
             const SizedBox(width: 8),
-            Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle)),
+            const Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                    color: Colors.redAccent, shape: BoxShape.circle)),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 j.type,
-                style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600),
               ),
             ),
           ],
@@ -602,8 +713,13 @@ class _EvidenceItem {
   final bool posted;
   final String? error;
   final DateTime at;
-  const _EvidenceItem(
-      {required this.type, this.url, this.posted = false, this.error, required this.at});
+  const _EvidenceItem({
+    required this.type,
+    this.url,
+    this.posted = false,
+    this.error,
+    required this.at,
+  });
 }
 
 class _JournalRow {
@@ -617,7 +733,12 @@ class _StatusChip extends StatelessWidget {
   final String label;
   final Color color;
   final VoidCallback? onTap;
-  const _StatusChip({required this.icon, required this.label, required this.color, this.onTap});
+  const _StatusChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -636,10 +757,15 @@ class _StatusChip extends StatelessWidget {
               Icon(icon, size: 14, color: color),
               const SizedBox(width: 4),
               Flexible(
-                child: Text(label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w700)),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700),
+                ),
               ),
             ],
           ),
@@ -654,7 +780,12 @@ class _ControlChip extends StatelessWidget {
   final String label;
   final bool danger;
   final VoidCallback? onTap;
-  const _ControlChip({required this.icon, required this.label, this.onTap, this.danger = false});
+  const _ControlChip({
+    required this.icon,
+    required this.label,
+    this.onTap,
+    this.danger = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -669,10 +800,17 @@ class _ControlChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 18, color: danger ? Colors.redAccent : Colors.white),
+              Icon(icon,
+                  size: 18,
+                  color: danger ? Colors.redAccent : Colors.white),
               const SizedBox(width: 6),
-              Text(label,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
+              Text(
+                label,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12),
+              ),
             ],
           ),
         ),
