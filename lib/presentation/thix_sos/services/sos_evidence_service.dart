@@ -2,6 +2,7 @@
 /// Chaque fichier est poussé dans le groupe SOS auto-créé.
 import 'dart:io';
 
+import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
@@ -38,44 +39,104 @@ class SosEvidenceService {
   bool _recordingAudio = false;
   String? _audioPath;
   DateTime? _audioStartedAt;
+  
+  CameraController? _camCtrl;
 
   bool get isRecordingAudio => _recordingAudio;
 
+  Future<void> _ensureCamera() async {
+    if (kIsWeb) throw Exception('Caméra silencieuse non supportée sur web');
+    if (_camCtrl != null && _camCtrl!.value.isInitialized) return;
+    final cams = await availableCameras();
+    if (cams.isEmpty) throw Exception('Aucune caméra');
+    final rear = cams.firstWhere(
+      (c) => c.lensDirection == CameraLensDirection.back,
+      orElse: () => cams.first,
+    );
+    _camCtrl = CameraController(
+      rear,
+      ResolutionPreset.medium,
+      enableAudio: true,
+    );
+    await _camCtrl!.initialize();
+  }
+
+  /// ✅ PHOTO SILENCIEUSE : prise par le téléphone VICTIME sans ouvrir d'UI.
   Future<SosEvidence?> takePhoto(
     String incidentId, {
     String? conversationId,
   }) async {
-    final x = await _picker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 72,
-      maxWidth: 1600,
-    );
-    if (x == null) return null;
+    String? path;
+    try {
+      await _ensureCamera();
+      final x = await _camCtrl!.takePicture();
+      path = x.path;
+    } catch (e) {
+      debugPrint('SosEvidence photo silencieuse échec, fallback: $e');
+    }
+
+    // Fallback : picker classique (si caméra occupée par Agora par ex.)
+    if (path == null) {
+      final x = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 72,
+        maxWidth: 1600,
+      );
+      if (x == null) return null;
+      path = x.path;
+    }
+
     return _persist(
       incidentId,
       type: 'photo',
-      path: x.path,
+      path: path,
       mime: 'image/jpeg',
       conversationId: conversationId,
     );
   }
 
+  /// ✅ VIDÉO SILENCIEUSE 30s sur le téléphone VICTIME.
   Future<SosEvidence?> recordVideo(
     String incidentId, {
     String? conversationId,
   }) async {
-    final x = await _picker.pickVideo(
-      source: ImageSource.camera,
-      maxDuration: const Duration(seconds: 30),
-    );
-    if (x == null) return null;
+    String? path;
+    try {
+      await _ensureCamera();
+      await _camCtrl!.startVideoRecording(
+        maxDuration: const Duration(seconds: 30),
+      );
+      await Future.delayed(const Duration(seconds: 30));
+      final x = await _camCtrl!.stopVideoRecording();
+      path = x.path;
+    } catch (e) {
+      debugPrint('SosEvidence vidéo silencieuse échec, fallback: $e');
+    }
+
+    if (path == null) {
+      final x = await _picker.pickVideo(
+        source: ImageSource.camera,
+        maxDuration: const Duration(seconds: 30),
+      );
+      if (x == null) return null;
+      path = x.path;
+    }
+
     return _persist(
       incidentId,
       type: 'video',
-      path: x.path,
+      path: path,
       mime: 'video/mp4',
       conversationId: conversationId,
     );
+  }
+
+  /// À appeler quand le SOS se termine.
+  Future<void> disposeCamera() async {
+    try {
+      await _camCtrl?.dispose();
+    } catch (_) {}
+    _camCtrl = null;
   }
 
   Future<void> startAudio() async {
