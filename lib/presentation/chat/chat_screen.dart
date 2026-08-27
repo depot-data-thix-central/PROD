@@ -17,11 +17,13 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:share_plus/share_plus.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
 import 'package:thix_id/services/chat/audio_service.dart';
-import 'package:thix_id/services/chat/connection_service.dart'; 
+import 'package:thix_id/services/chat/connection_service.dart';
+import 'package:thix_id/services/chat/media_saver.dart';
 import 'package:thix_id/models/chat/chat_message.dart';
 import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/models/chat/user_status.dart';
@@ -114,50 +116,6 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
 }
 
 // ─────────────────────────────────────────────────────────────
-// GROUPEMENT D'IMAGES CONSÉCUTIVES
-// ─────────────────────────────────────────────────────────────
-class _ChatListItem {
-  final List<ChatMessage> messages; 
-  _ChatListItem.single(ChatMessage m) : messages = [m];
-  _ChatListItem.group(this.messages);
-}
-
-List<_ChatListItem> _buildChatDisplayItems(List<ChatMessage> messages) {
-  final items = <_ChatListItem>[];
-  int i = 0;
-  while (i < messages.length) {
-    final m = messages[i];
-    final isImg = m.mediaType == 'image' && (m.mediaUrl?.isNotEmpty ?? false);
-
-    if (isImg) {
-      final group = <ChatMessage>[m];
-      int j = i + 1;
-      while (j < messages.length && group.length < 9) {
-        final next = messages[j];
-        final sameSender = next.senderId == m.senderId;
-        final alsoImg = next.mediaType == 'image' && (next.mediaUrl?.isNotEmpty ?? false);
-        final closeInTime = m.createdAt.difference(next.createdAt).inSeconds.abs() < 120;
-        if (sameSender && alsoImg && closeInTime) {
-          group.add(next);
-          j++;
-        } else {
-          break;
-        }
-      }
-      if (group.length > 1) {
-        items.add(_ChatListItem.group(group));
-        i = j;
-        continue;
-      }
-    }
-
-    items.add(_ChatListItem.single(m));
-    i++;
-  }
-  return items;
-}
-
-// ─────────────────────────────────────────────────────────────
 // SCREEN
 // ─────────────────────────────────────────────────────────────
 class ChatScreen extends ConsumerStatefulWidget {
@@ -175,8 +133,8 @@ class ChatScreen extends ConsumerStatefulWidget {
 }
 
 class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObserver {
-  late final ChatService _chatService; 
-  late final ConnectionService _connectionService; 
+  late final ChatService _chatService;
+  late final ConnectionService _connectionService;
   final _scrollController = ScrollController();
   final _inputController = TextEditingController();
   final _inputFocus = FocusNode();
@@ -190,7 +148,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   bool _isTyping = false;
   bool _otherUserTyping = false;
   bool _isSending = false;
-  bool _isConnectionValid = true; 
+  bool _isConnectionValid = true;
 
   final AudioRecorder _audioRecorder = AudioRecorder();
   Timer? _recordTimer;
@@ -202,6 +160,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   List<PlatformFile> _selectedFiles = [];
 
   Timer? _typingTimer;
+  Timer? _markReadTimer; // ✅ Debounce markAsRead
+  DateTime? _lastConnCheck; // ✅ Cache vérification connexion
   RealtimeChannel? _typingChannel;
   bool _isAgent = false;
   bool _isInternalNoteMode = false;
@@ -210,65 +170,65 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   bool _showStickers = false;
   static const List<String> _emojis = [
-    '😀','😃','😄','😁','😆','😅','😂','🤣','🥲','🥹',
-    '😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗',
-    '😙','😚','🤩','🥳','🤗','🤔','🤭','🤫','🤥','😏',
-    '😒','🙄','😬','😮‍💨','😔','😪','🤤','😴','😷','🤒',
-    '🤕','🤢','🤮','🥵','🥶','😵','🤯','🤠','🥸','😎',
-    '🤓','🧐','😕','😟','🙁','☹️','😮','😯','😲','😳',
-    '🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖',
+    '😀','😃','😄','😁','😆','😅','😂','🤣','','🥹',
+    '😊','😇','🙂','🙃','😉','😌','😍','🥰','','😗',
+    '😙','😚','🤩','🥳','🤗','🤔','','🤫','','😏',
+    '😒','🙄','😬','😮‍💨','😔','😪','','😴','😷','🤒',
+    '🤕','🤢','🤮','🥵','🥶','😵','','🤠','','😎',
+    '🤓','🧐','😕','😟','🙁','️','😮','😯','😲','😳',
+    '🥺','','😧','😨','😰','😥','😢','😭','😱','😖',
     '😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬',
   ];
 
   static const List<String> _reactions = [
-    '👍','👎','👌','🤌','🤏','✌️','🤞','🫰','🤟','🤘',
-    '🤙','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖',
-    '👋','👏','🙌','🫶','💪','🦾','🙏','✍️',
-    '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔',
-    '❣️','💕','💞','💓','💗','💖','💘','💝','💟','❤️‍🔥',
-    '🔥','⭐','🌟','✨','💫','💥','💯','🎉','🎊','🏆',
-    '🥇','🥈','🥉','🎯','✅','❌','⚡','💡','📌','🔔',
+    '👍','👎','👌','🤌','','✌️','','🫰','','🤘',
+    '🤙','👈','👉','👆','👇','☝️','✋','🤚','️','🖖',
+    '👋','','🙌','','💪','','🙏','️',
+    '❤️','🧡','💛','💚','💙','','🖤','🤍','🤎','💔',
+    '❣️','💕','','💓','💗','💖','','💝','','❤️‍🔥',
+    '🔥','⭐','🌟','✨','💫','','💯','','🎊','',
+    '','🥈','','🎯','✅','❌','⚡','💡','📌','🔔',
   ];
 
   static const List<String> _flags = [
-    '🏁','🚩','🎌','🏴','🏳️','🏳️‍⚧️','🏴‍☠️',
-    '🇦🇫','🇿🇦','🇦🇱','🇩🇿','🇩🇪','🇦🇩','🇦🇴','🇦🇬',
-    '🇸🇦','🇦🇷','🇦🇲','🇦🇺','🇦🇹','🇦🇿','🇧🇸','🇧🇭',
-    '🇧🇩','🇧🇧','🇧🇪','🇧🇿','🇧🇯','🇧🇹','🇧🇾','🇲🇲',
-    '🇧🇴','🇧🇦','🇧🇼','🇧🇷','🇧🇳','🇧🇬','🇧🇫','🇧🇮',
-    '🇰🇭','🇨🇲','🇨🇦','🇨🇻','🇨🇱','🇨🇳','🇨🇾','🇨🇴',
-    '🇰🇲','🇨🇬','🇨🇩','🇰🇵','🇰🇷','🇨🇷','🇨🇮','🇭🇷',
-    '🇨🇺','🇩🇰','🇩🇯','🇩🇲','🇪🇬','🇸🇻','🇦🇪','🇪🇨',
-    '🇪🇷','🇪🇸','🇪🇪','🇺🇸','🇪🇹','🇫🇯','🇫🇮','🇫🇷',
-    '🇬🇦','🇬🇲','🇬🇪','🇬🇭','🇬🇷','🇬🇩','🇬🇹','🇬🇳',
-    '🇬🇶','🇬🇾','🇭🇹','🇭🇳','🇭🇰','🇭🇺','🇮🇳','🇮🇩',
-    '🇮🇷','🇮🇶','🇮🇪','🇮🇸','🇮🇱','🇮🇹','🇯🇲','🇯🇵',
-    '🇯🇴','🇰🇿','🇰🇪','🇰🇬','🇰🇼','🇱🇦','🇱🇻','🇱🇧',
-    '🇱🇷','🇱🇾','🇱🇮','🇱🇹','🇱🇺','🇲🇬','🇲🇾','🇲🇼',
-    '🇲🇻','🇲🇱','🇲🇹','🇲🇦','🇲🇺','🇲🇽','🇲🇩','🇲🇨',
-    '🇲🇳','🇲🇪','🇲🇿','🇳🇦','🇳🇵','🇳🇮','🇳🇪','🇳🇬',
-    '🇳🇴','🇳🇿','🇴🇲','🇺🇬','🇺🇿','🇵🇰','🇵🇸','🇵🇦',
-    '🇵🇬','🇵🇾','🇳🇱','🇵🇪','🇵🇭','🇵🇱','🇵🇹','🇶🇦',
-    '🇨🇫','🇩🇴','🇷🇴','🇬🇧','🇷🇺','🇷🇼','🇸🇳','🇷🇸',
-    '🇸🇨','🇸🇱','🇸🇬','🇸🇰','🇸🇮','🇸🇴','🇸🇩','🇱🇰',
-    '🇸🇪','🇨🇭','🇸🇾','🇹🇯','🇹🇼','🇹🇿','🇹🇩','🇨🇿',
-    '🇹🇭','🇹🇬','🇹🇴','🇹🇹','🇹🇳','🇹🇷','🇺🇦','🇺🇾',
-    '🇻🇪','🇻🇳','🇾🇪','🇿🇲','🇿🇼',
+    '🏁','','🎌','','🏳️','️‍️','‍☠️',
+    '🇦🇫','🇿🇦','🇱','🇿','🇪','🇦🇩','🇴','🇦🇬',
+    '🇸🇦','🇦🇷','🇲','🇺','🇹','🇿','🇧🇸','🇭',
+    '🇧','🇧','🇧🇪','🇧🇿','🇯','🇧🇹','🇾','🇲',
+    '🇧🇴','🇧🇦','🇼','🇷','🇧🇳','🇬','🇧🇫','🇮',
+    '🇰🇭','🇨🇲','🇦','🇨🇻','🇱','🇨🇳','🇾','🇨🇴',
+    '🇰🇲','🇬','🇨🇩','🇵','🇰🇷','🇷','🇨🇮','🇷',
+    '🇨🇺','🇰','🇯','🇲','🇪🇬','🇻','🇪','🇪🇨',
+    '🇪🇷','🇸','🇪','🇸','🇪🇹','🇯','🇫🇮','🇷',
+    '🇬🇦','🇲','🇬🇪','🇭','🇬🇷','🇩','🇬🇹','🇬🇳',
+    '🇬🇶','🇾','🇭🇹','🇳','🇰','🇭🇺','🇮🇳','🇩',
+    '🇮🇷','🇶','🇮🇪','🇸','🇱','🇮🇹','🇯🇲','🇵',
+    '🇯🇴','🇰🇿','🇪','🇬','🇰🇼','🇦','🇱🇻','🇧',
+    '🇱🇷','🇾','🇱🇮','🇹','🇱🇺','🇬','🇾','🇲🇼',
+    '🇲','🇲🇱','🇹','🇦','🇺','🇽','🇩','🇨',
+    '🇲🇳','🇪','🇲🇿','🇦','🇳🇵','🇮','🇪','🇳🇬',
+    '🇳🇴','🇿','🇴🇲','🇬','🇺🇿','🇰','🇵🇸','🇦',
+    '🇵🇬','🇾','🇳🇱','🇪','🇭','🇱','🇵🇹','🇶🇦',
+    '🇨🇫','🇴','🇴','🇬🇧','🇷🇺','🇼','🇸🇳','🇸',
+    '🇸🇨','🇸🇱','🇬','🇰','🇮','🇴','🇩','🇱🇰',
+    '🇸🇪','🇭','🇸🇾','🇯','🇼','🇿','🇹🇩','🇿',
+    '🇹','🇹🇬','🇹🇴','🇹🇹','🇹🇳','🇷','🇦','🇺🇾',
+    '🇻🇪','🇳','🇪','🇿🇲','🇼',
   ];
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    
-    _chatService = ref.read(chatServiceProvider); 
-    _connectionService = ConnectionService(); 
+
+    _chatService = ref.read(chatServiceProvider);
+    _connectionService = ConnectionService();
     _chatService.startPresenceHeartbeat();
-    
+
     _inputController.addListener(() {
-      setState(() {}); 
-      _onTypingChanged(_inputController.text); 
-    }); 
+      setState(() {});
+      _onTypingChanged(_inputController.text);
+    });
 
     _checkConnectionSecurity();
     _loadUserRole();
@@ -281,12 +241,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _scrollController.addListener(_onScroll);
   }
 
+  // ✅ CORRECTION : cache 30s pour éviter les requêtes inutiles
   Future<void> _checkConnectionSecurity() async {
     if (widget.conversation.isGroup || _isAgent) return;
 
+    final now = DateTime.now();
+    if (_lastConnCheck != null && now.difference(_lastConnCheck!).inSeconds < 30) {
+      return;
+    }
+    _lastConnCheck = now;
+
     final myId = _chatService.currentUserId;
     final otherId = widget.conversation.participantIds.firstWhere((id) => id != myId, orElse: () => '');
-    
+
     if (otherId.isEmpty) return;
 
     final isConnected = await _connectionService.checkConnection(myId, otherId);
@@ -302,7 +269,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     switch (state) {
       case AppLifecycleState.resumed:
         _chatService.startPresenceHeartbeat();
-        _checkConnectionSecurity(); 
+        _checkConnectionSecurity();
         break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
@@ -334,14 +301,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
           _isAgent = role == 'agent' || role == 'admin' || role == 'support' || role == 'enterprise';
         });
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('_loadUserRole: $e');
+    }
   }
 
   Future<void> _loadGroupMembers() async {
     if (!widget.conversation.isGroup) return;
     try {
       final members = await _chatService.getGroupMembers(widget.conversationId);
-      if (mounted) setState(() => _groupMembers = members);
+      if (mounted) setState(() => _groupMembers = members ?? []);
     } catch (e) {
       debugPrint('Error loading group members: $e');
     }
@@ -355,6 +324,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _inputController.dispose();
     _inputFocus.dispose();
     _typingTimer?.cancel();
+    _markReadTimer?.cancel();
     _messageSub?.cancel();
     _presenceSub?.cancel();
     _typingChannel?.unsubscribe();
@@ -369,6 +339,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     } catch (e) {
       debugPrint('Erreur _markAsRead UI: $e');
     }
+  }
+
+  // ✅ CORRECTION : debounce pour éviter le spam DB
+  void _scheduleMarkAsRead() {
+    _markReadTimer?.cancel();
+    _markReadTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) _markAsRead();
+    });
   }
 
   void _scrollToBottom() {
@@ -401,19 +379,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
       final me = _chatService.currentUserId;
 
-      for (final m in updated) {
-        if (m.senderId != me && !m.isDelivered && !m.isDeleted) {
-          unawaited(
-            Supabase.instance.client.from('messages').update({
-              'is_delivered': true,
-            }).eq('id', m.id).eq('is_delivered', false),
-          );
-        }
+      // ✅ CORRECTION P0 : UNE seule requête batch au lieu de N updates
+      final idsToDeliver = updated
+          .where((m) => m.senderId != me && !m.isDelivered && !m.isDeleted)
+          .map((m) => m.id)
+          .toList();
+      if (idsToDeliver.isNotEmpty) {
+        unawaited(
+          Supabase.instance.client
+              .from('messages')
+              .update({'is_delivered': true})
+              .inFilter('id', idsToDeliver)
+              .then((_) => null, onError: (e) {
+            debugPrint('delivered batch: $e');
+            return null;
+          }),
+        );
       }
 
-      Future.delayed(const Duration(milliseconds: 800), () {
-        if (mounted) _markAsRead();
-      });
+      _scheduleMarkAsRead();
     });
   }
 
@@ -432,7 +416,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   void _sendTypingStatus(bool t) {
-    if (!_isConnectionValid) return; 
+    if (!_isConnectionValid) return;
     final cur = _chatService.currentUserId;
     if (cur.isEmpty || _typingChannel == null) return;
     _typingChannel!.sendBroadcastMessage(event: 'typing', payload: {'senderId': cur, 'isTyping': t});
@@ -537,7 +521,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   Future<void> _startRecording() async {
-    if (!_isConnectionValid) return; 
+    if (!_isConnectionValid) return;
+    // ✅ CORRECTION : anti double-enregistrement
+    if (_isRecording) return;
 
     final hasPerm = await _checkPermissionWithDisclosure(Permission.microphone, context.trMicDisclosure);
     if (!hasPerm) return;
@@ -565,6 +551,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         _showStickers = false;
       });
 
+      _recordTimer?.cancel();
       _recordTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
         if (mounted) setState(() => _recordDuration++);
       });
@@ -589,7 +576,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
           final response = await http.get(Uri.parse(path));
           bytes = response.bodyBytes;
         } else {
-          final file = File(path); 
+          final file = File(path);
           bytes = await file.readAsBytes();
         }
         if (mounted) {
@@ -641,8 +628,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
           replyToId: _replyToId.isEmpty ? null : _replyToId,
         );
         ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([msg]);
-      } 
-      else if (_selectedFiles.isNotEmpty) {
+      } else if (_selectedFiles.isNotEmpty) {
         final filesToSend = List<PlatformFile>.from(_selectedFiles);
         setState(() => _selectedFiles.clear());
 
@@ -716,8 +702,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
             ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([msg]);
           }
         }
-      } 
-      else if (text.isNotEmpty) {
+      } else if (text.isNotEmpty) {
         final msg = await _chatService.sendMessage(
           conversationId: widget.conversationId,
           content: text,
@@ -735,6 +720,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
           _audioBytes = null;
           _localAudioPath = null;
           if (_isInternalNoteMode) _isInternalNoteMode = false;
+          // ✅ CORRECTION : reset éphémère après envoi (comme WhatsApp)
+          _isEphemeral = false;
+          _ephemeralDuration = null;
         });
       }
       _scrollToBottom();
@@ -781,7 +769,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                     const SizedBox(height: 16),
                     Text(context.trEphemeralMessage, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
                     const SizedBox(height: 12),
-                    
+
                     if (!showCustomInput) ...[
                       ...[
                         (context.trDisabled, null),
@@ -895,7 +883,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     try {
       final result = await FilePicker.platform.pickFiles(allowMultiple: true, withData: true);
       if (result != null && result.files.isNotEmpty) {
-        setState(() => _selectedFiles.addAll(result.files));
+        // ✅ CORRECTION : limite 25 Mo par fichier
+        final accepted = <PlatformFile>[];
+        for (final f in result.files) {
+          if (f.size > 25 * 1024 * 1024) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('${context.trFileTooBig} ${f.name}'), backgroundColor: ThixPolicy.warning),
+              );
+            }
+          } else {
+            accepted.add(f);
+          }
+        }
+        if (accepted.isNotEmpty) setState(() => _selectedFiles.addAll(accepted));
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${context.trError} $e'), backgroundColor: ThixPolicy.danger));
@@ -905,9 +906,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   void _removeFile(int index) => setState(() => _selectedFiles.removeAt(index));
 
   String _getMediaType(String ext) {
-    const img = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
-    const vid = {'mp4', 'mov', 'avi', 'mkv'};
-    const aud = {'mp3', 'wav', 'm4a'};
+    const img = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'svg'};
+    const vid = {'mp4', 'mov', 'avi', 'mkv', 'webm'};
+    const aud = {'mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac'};
     final e = ext.toLowerCase();
     if (img.contains(e)) return 'image';
     if (vid.contains(e)) return 'video';
@@ -944,7 +945,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final day = DateTime(localDate.year, localDate.month, localDate.day);
-    
+
     if (day == today) return '${context.trAt} ${DateFormat('HH:mm').format(localDate)}';
     if (day == today.subtract(const Duration(days: 1))) return '${context.trYesterdayAt} ${DateFormat('HH:mm').format(localDate)}';
     return '${context.trOn} ${DateFormat('dd/MM/yyyy').format(localDate)}';
@@ -970,43 +971,42 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   Widget build(BuildContext context) {
     final messages = ref.watch(chatMessagesProvider(widget.conversationId));
     final msgNotifier = ref.watch(chatMessagesProvider(widget.conversationId).notifier);
-    final displayItems = _buildChatDisplayItems(messages);
     final currentUid = _chatService.currentUserId;
 
     return Scaffold(
-      backgroundColor: ThixPolicy.surfaceSoft, // Fond propre et clair
-      extendBodyBehindAppBar: true, // Laisse passer le contenu sous la Glass AppBar
+      backgroundColor: ThixPolicy.surfaceSoft,
+      extendBodyBehindAppBar: true,
       appBar: _buildAppBar(),
       body: Stack(
         children: [
-          // Orbes Glassmorphism ultra-légers pour la décoration Premium
           Positioned(top: -50, right: -50, child: _buildBlurOrb(ThixPolicy.primary.withValues(alpha: 0.06), 300)),
           Positioned(bottom: 100, left: -100, child: _buildBlurOrb(ThixPolicy.primaryDeep.withValues(alpha: 0.04), 350)),
-          
+
           Positioned.fill(child: CustomPaint(painter: _ThixChatBackgroundPainter())),
-          
+
           Column(
             children: [
-              // L'espace derrière la AppBar doit être libre pour commencer après
               Expanded(
                 child: Stack(
                   children: [
+                    // ✅ CORRECTION ESPACE BLANC : padding top = appbar, bottom = 12
+                    // (avant : le grand padding était en BAS → trou blanc au-dessus de l'input bar)
                     ListView.builder(
                       controller: _scrollController,
                       reverse: true,
-                      padding: EdgeInsets.fromLTRB(12, 12, 12, MediaQuery.of(context).padding.top + kToolbarHeight + 8),
-                      itemCount: displayItems.length + (msgNotifier.loadingMore ? 1 : 0),
+                      padding: EdgeInsets.fromLTRB(
+                        12,
+                        MediaQuery.of(context).padding.top + kToolbarHeight + 8,
+                        12,
+                        12,
+                      ),
+                      itemCount: messages.length + (msgNotifier.loadingMore ? 1 : 0),
                       itemBuilder: (ctx, i) {
-                        if (i == displayItems.length) return const Center(child: Padding(padding: EdgeInsets.all(16), child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))));
-
-                        final item = displayItems[i];
-
-                        if (item.messages.length > 1) {
-                          final isOwn = item.messages.first.senderId == currentUid;
-                          return _ImageGroupBubble(images: item.messages, isOwn: isOwn);
+                        if (i == messages.length) {
+                          return const Center(child: Padding(padding: EdgeInsets.all(16), child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))));
                         }
 
-                        final msg = item.messages.first;
+                        final msg = messages[i];
                         final isOwn = msg.senderId == currentUid;
 
                         if (msg.mediaType == 'call_audio' || msg.mediaType == 'call_video') {
@@ -1017,6 +1017,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                           );
                         }
 
+                        // ✅ CORRECTION PHOTOS : chaque message (image incluse) a sa
+                        // propre bulle, lisible séparément + téléchargeable
                         return ChatMessageBubble(
                           message: msg,
                           isOwn: isOwn,
@@ -1058,10 +1060,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 onClose: () => setState(() => _replyToId = ''),
               ),
 
-              if (_isConnectionValid) 
+              if (_isConnectionValid)
                 _buildInputBar()
-              else 
-                _buildBlockedBanner(), 
+              else
+                _buildBlockedBanner(),
 
               if (_showStickers) _buildStickerPicker(),
             ],
@@ -1107,7 +1109,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
       backgroundColor: Colors.transparent,
-      elevation: 0, 
+      elevation: 0,
       flexibleSpace: ClipRRect(
         child: BackdropFilter(
           filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
@@ -1171,9 +1173,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                       children: [
                         Flexible(
                           child: Text(
-                            widget.conversation.displayName, 
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: ThixPolicy.textMain), 
-                            maxLines: 1, 
+                            widget.conversation.displayName,
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: ThixPolicy.textMain),
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis
                           ),
                         ),
@@ -1278,7 +1280,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                       ? Container(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           decoration: BoxDecoration(
-                            color: ThixPolicy.danger.withValues(alpha: 0.1), 
+                            color: ThixPolicy.danger.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(24),
                             border: Border.all(color: ThixPolicy.danger.withValues(alpha: 0.2))
                           ),
@@ -1287,7 +1289,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                               const Icon(Icons.mic, color: ThixPolicy.danger), const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  '${context.trRecording} ${(_recordDuration ~/ 60).toString().padLeft(2, '0')}:${(_recordDuration % 60).toString().padLeft(2, '0')}', 
+                                  '${context.trRecording} ${(_recordDuration ~/ 60).toString().padLeft(2, '0')}:${(_recordDuration % 60).toString().padLeft(2, '0')}',
                                   style: const TextStyle(color: ThixPolicy.danger, fontWeight: FontWeight.w800)
                                 )
                               ),
@@ -1301,7 +1303,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                             Expanded(
                               child: Container(
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.5), 
+                                  color: Colors.white.withValues(alpha: 0.5),
                                   borderRadius: BorderRadius.circular(24),
                                   border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1)
                                 ),
@@ -1313,7 +1315,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                               ),
                             ),
                             const SizedBox(width: 10),
-                            
+
                             GestureDetector(
                               onTap: () {
                                 if (_isSending) return;
@@ -1322,7 +1324,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                               },
                               child: CircleAvatar(
                                 radius: 22, backgroundColor: hasTextOrImage ? ThixPolicy.primary : ThixPolicy.gold,
-                                child: _isSending 
+                                child: _isSending
                                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                                   : Icon(hasTextOrImage ? Icons.send_rounded : Icons.mic_rounded, color: hasTextOrImage ? Colors.white : ThixPolicy.inkDeep, size: 22),
                               ),
@@ -1366,7 +1368,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     return SizedBox(
       height: 250,
       child: DefaultTabController(
-        length: 3, 
+        length: 3,
         child: Column(
           children: [
             TabBar(
@@ -1383,7 +1385,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 children: [
                   _buildStickerGrid(_emojis),
                   _buildStickerGrid(_reactions),
-                  _buildStickerGrid(_flags), 
+                  _buildStickerGrid(_flags),
                 ]
               )
             )
@@ -1400,6 +1402,138 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         _inputController.text += items[index];
         _inputController.selection = TextSelection.fromPosition(TextPosition(offset: _inputController.text.length));
       }, child: Center(child: Text(items[index], style: const TextStyle(fontSize: 24)))),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// ✅ NOUVEAU : VISIONNEUSE PLEIN ÉCRAN (lecture séparée + téléchargement)
+// ─────────────────────────────────────────────────────────────
+void showFullscreenImageViewer(
+  BuildContext context, {
+  required String url,
+  String? heroTag,
+  String? fileName,
+}) {
+  Navigator.of(context).push(
+    PageRouteBuilder(
+      opaque: false,
+      barrierColor: Colors.black87,
+      pageBuilder: (_, __, ___) => _ImageViewerPage(
+        url: url,
+        heroTag: heroTag,
+        fileName: fileName,
+      ),
+    ),
+  );
+}
+
+class _ImageViewerPage extends StatefulWidget {
+  final String url;
+  final String? heroTag;
+  final String? fileName;
+
+  const _ImageViewerPage({
+    required this.url,
+    this.heroTag,
+    this.fileName,
+  });
+
+  @override
+  State<_ImageViewerPage> createState() => _ImageViewerPageState();
+}
+
+class _ImageViewerPageState extends State<_ImageViewerPage> {
+  bool _downloading = false;
+
+  String get _fileName {
+    if (widget.fileName != null && widget.fileName!.isNotEmpty) return widget.fileName!;
+    final uri = Uri.tryParse(widget.url);
+    final last = uri?.pathSegments.isNotEmpty == true ? uri!.pathSegments.last : '';
+    return last.isEmpty
+        ? 'thix_${DateTime.now().millisecondsSinceEpoch}.jpg'
+        : last;
+  }
+
+  Future<void> _download() async {
+    if (_downloading) return;
+    setState(() => _downloading = true);
+
+    final messenger = ScaffoldMessenger.of(context);
+    final path = await MediaSaver.download(url: widget.url, fileName: _fileName);
+
+    if (!mounted) return;
+    setState(() => _downloading = false);
+
+    if (path != null) {
+      messenger.showSnackBar(SnackBar(content: Text('${context.trDownloadOk} $path'), backgroundColor: ThixPolicy.success));
+    } else {
+      messenger.showSnackBar(SnackBar(content: Text(context.trDownloadFail), backgroundColor: ThixPolicy.danger));
+    }
+  }
+
+  Future<void> _share() async {
+    try {
+      final path = await MediaSaver.download(url: widget.url, fileName: _fileName);
+      if (path != null && !kIsWeb) {
+        await Share.shareXFiles([XFile(path)]);
+      } else {
+        await Share.share(widget.url);
+      }
+    } catch (e) {
+      debugPrint('share image: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final image = Image.network(
+      widget.url,
+      fit: BoxFit.contain,
+      loadingBuilder: (_, child, progress) {
+        if (progress == null) return child;
+        return const Center(child: CircularProgressIndicator(color: Colors.white));
+      },
+      errorBuilder: (_, __, ___) => const Center(
+        child: Icon(Icons.broken_image_outlined, color: Colors.white54, size: 64),
+      ),
+    );
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black54,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(
+          _fileName,
+          style: const TextStyle(color: Colors.white70, fontSize: 14),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.share_rounded, color: Colors.white),
+            onPressed: _share,
+            tooltip: context.trShare,
+          ),
+          IconButton(
+            icon: _downloading
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.download_rounded, color: Colors.white),
+            onPressed: _download,
+            tooltip: context.trDownload,
+          ),
+        ],
+      ),
+      body: InteractiveViewer(
+        minScale: 0.8,
+        maxScale: 6.0,
+        child: Center(
+          child: widget.heroTag != null
+              ? Hero(tag: widget.heroTag!, child: image)
+              : image,
+        ),
+      ),
     );
   }
 }
@@ -1425,439 +1559,4 @@ class _CallBubble extends StatelessWidget {
       child: Align(
         alignment: isOwn ? Alignment.centerRight : Alignment.centerLeft,
         child: Container(
-          margin: EdgeInsets.only(left: isOwn ? 50 : 0, right: isOwn ? 0 : 50),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.7),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: isMissed ? ThixPolicy.danger.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.8)),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 4, offset: const Offset(0, 2)),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: isMissed ? ThixPolicy.danger.withValues(alpha: 0.1) : ThixPolicy.tint.withValues(alpha: 0.6),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  isVideo ? Icons.videocam_rounded : Icons.call_rounded,
-                  color: isMissed ? ThixPolicy.danger : ThixPolicy.primary,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    message.content,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                      color: isMissed ? ThixPolicy.danger : ThixPolicy.textMain,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Icon(isOwn ? Icons.call_made_rounded : Icons.call_received_rounded, size: 12, color: ThixPolicy.textSecondary),
-                      const SizedBox(width: 4),
-                      Text(
-                        DateFormat('HH:mm').format(message.createdAt.toLocal()),
-                        style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w500),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(width: 16),
-              GestureDetector(
-                onTap: onCallback,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.6),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.refresh_rounded, size: 20, color: ThixPolicy.primary),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ImageGroupBubble extends StatelessWidget {
-  final List<ChatMessage> images;
-  final bool isOwn;
-  const _ImageGroupBubble({required this.images, required this.isOwn});
-
-  @override
-  Widget build(BuildContext context) {
-    final last = images.first; 
-    final crossAxisCount = images.length == 2 ? 2 : (images.length <= 4 ? 2 : 3);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Align(
-        alignment: isOwn ? Alignment.centerRight : Alignment.centerLeft,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
-          child: Container(
-            margin: EdgeInsets.only(left: isOwn ? 40 : 4, right: isOwn ? 4 : 40),
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: isOwn ? ThixPolicy.primary.withValues(alpha: 0.85) : Colors.white.withValues(alpha: 0.75),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.5)),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 2)),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: images.length,
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: crossAxisCount,
-                      mainAxisSpacing: 3,
-                      crossAxisSpacing: 3,
-                    ),
-                    itemBuilder: (context, i) {
-                      final msg = images[i];
-                      final url = msg.mediaUrl!;
-                      final tag = 'img_${msg.id}';
-                      return GestureDetector(
-                        onTap: () {},
-                        child: Hero(
-                          tag: tag,
-                          child: Image.network(
-                            url,
-                            fit: BoxFit.cover,
-                            loadingBuilder: (_, child, progress) {
-                              if (progress == null) return child;
-                              return Container(
-                                color: ThixPolicy.tint,
-                                child: const Center(
-                                  child: SizedBox(
-                                    width: 18, height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary),
-                                  ),
-                                ),
-                              );
-                            },
-                            errorBuilder: (_, __, ___) => Container(
-                              color: ThixPolicy.tint,
-                              child: const Icon(Icons.broken_image_outlined, color: ThixPolicy.textSecondary),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 4, right: 4),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        DateFormat('HH:mm').format(last.createdAt.toLocal()),
-                        style: TextStyle(fontSize: 10, color: isOwn ? Colors.white70 : ThixPolicy.textSecondary),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _TypingPill extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.65), 
-            borderRadius: BorderRadius.circular(20), 
-            border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8, offset: const Offset(0, 2))]
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const _Dot(), const SizedBox(width: 3), const _Dot(delay: 120), const SizedBox(width: 3), const _Dot(delay: 240), const SizedBox(width: 8),
-              Text(context.trTyping, style: const TextStyle(fontSize: 12, color: ThixPolicy.primary, fontStyle: FontStyle.italic, fontWeight: FontWeight.w500)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Dot extends StatefulWidget {
-  final int delay;
-  const _Dot({this.delay = 0});
-  @override State<_Dot> createState() => _DotState();
-}
-
-class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
-  late AnimationController _c;
-  @override void initState() {
-    super.initState();
-    _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 600))..repeat(reverse: true);
-    if (widget.delay > 0) Future.delayed(Duration(milliseconds: widget.delay), () { if (mounted) _c.forward(); });
-    else _c.forward();
-  }
-  @override void dispose() { _c.dispose(); super.dispose(); }
-  @override Widget build(BuildContext context) => FadeTransition(opacity: _c, child: Container(width: 5, height: 5, decoration: const BoxDecoration(color: ThixPolicy.primary, shape: BoxShape.circle)));
-}
-
-class _ReplyBanner extends StatelessWidget {
-  final String text;
-  final VoidCallback onClose;
-  const _ReplyBanner({required this.text, required this.onClose});
-  @override Widget build(BuildContext context) {
-    return ClipRRect(
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10), 
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.6), 
-            border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.8)))
-          ),
-          child: Row(
-            children: [
-              Container(width: 4, height: 36, decoration: BoxDecoration(color: ThixPolicy.primary, borderRadius: BorderRadius.circular(4))), const SizedBox(width: 12),
-              Expanded(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: ThixPolicy.textSecondary, fontSize: 13))),
-              IconButton(icon: const Icon(Icons.close_rounded, size: 20, color: ThixPolicy.textSecondary), onPressed: onClose),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FilesPreview extends StatelessWidget {
-  final List<PlatformFile> files;
-  final void Function(int) onRemove;
-  const _FilesPreview({required this.files, required this.onRemove});
-  @override Widget build(BuildContext context) {
-    return Container(
-      height: 70, width: double.infinity, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal, itemCount: files.length,
-        itemBuilder: (ctx, i) {
-          final f = files[i];
-          final isImg = ['jpg', 'jpeg', 'png', 'webp'].contains(f.extension?.toLowerCase() ?? '');
-          return Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                width: 60, margin: const EdgeInsets.only(right: 12), 
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.5), 
-                  borderRadius: BorderRadius.circular(10), 
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.8))
-                ), 
-                clipBehavior: Clip.hardEdge,
-                child: isImg && f.bytes != null ? Image.memory(f.bytes!, fit: BoxFit.cover) : const Center(child: Icon(Icons.insert_drive_file_rounded, color: ThixPolicy.primary, size: 24)),
-              ),
-              Positioned(top: -4, right: 4, child: GestureDetector(onTap: () => onRemove(i), child: const CircleAvatar(radius: 10, backgroundColor: Colors.black87, child: Icon(Icons.close, size: 12, color: Colors.white)))),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _ChatWaveformAudioPlayer extends StatefulWidget {
-  final String audioUrl;
-  final bool isLocal;
-  const _ChatWaveformAudioPlayer({required this.audioUrl, this.isLocal = false});
-  @override State<_ChatWaveformAudioPlayer> createState() => _ChatWaveformAudioPlayerState();
-}
-
-class _ChatWaveformAudioPlayerState extends State<_ChatWaveformAudioPlayer> {
-  final AudioPlayer _audioPlayer = AudioPlayer();
-  bool _isPlaying = false;
-  Duration _duration = Duration.zero;
-  Duration _position = Duration.zero;
-  final List<double> _wavePattern = [0.4, 0.7, 0.5, 0.9, 0.6, 0.4, 0.8, 1.0, 0.5, 0.3, 0.7, 0.8, 0.4, 0.6];
-
-  @override void initState() {
-    super.initState();
-    if (widget.isLocal) {
-      if (kIsWeb) _audioPlayer.setSourceUrl(widget.audioUrl); else _audioPlayer.setSourceDeviceFile(widget.audioUrl);
-    } else {
-      _audioPlayer.setSourceUrl(widget.audioUrl);
-    }
-    _audioPlayer.onPlayerStateChanged.listen((state) { if (mounted) setState(() => _isPlaying = state == PlayerState.playing); });
-    _audioPlayer.onDurationChanged.listen((d) { if (mounted) setState(() => _duration = d); });
-    _audioPlayer.onPositionChanged.listen((p) { if (mounted) setState(() => _position = p); });
-  }
-
-  @override void dispose() { 
-    _audioPlayer.stop();
-    _audioPlayer.dispose(); 
-    super.dispose(); 
-  }
-  
-  String _formatDuration(Duration d) { final m = d.inMinutes.remainder(60).toString().padLeft(2, '0'); final s = d.inSeconds.remainder(60).toString().padLeft(2, '0'); return "$m:$s"; }
-
-  @override Widget build(BuildContext context) {
-    final progress = _duration.inMilliseconds > 0 ? _position.inMilliseconds / _duration.inMilliseconds : 0.0;
-    return Row(
-      children: [
-        GestureDetector(
-          onTap: () { if (_isPlaying) _audioPlayer.pause(); else _audioPlayer.resume(); },
-          child: Container(width: 32, height: 32, decoration: const BoxDecoration(color: ThixPolicy.gold, shape: BoxShape.circle), child: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: ThixPolicy.inkDeep, size: 20)),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              const barWidth = 3.0; const spacing = 2.0;
-              final barCount = (constraints.maxWidth / (barWidth + spacing)).floor();
-              return GestureDetector(
-                onTapDown: (details) { if (_duration.inMilliseconds > 0) _audioPlayer.seek(Duration(milliseconds: (_duration.inMilliseconds * (details.localPosition.dx / constraints.maxWidth).clamp(0.0, 1.0)).round())); },
-                child: Container(
-                  height: 24, color: Colors.transparent,
-                  child: Row(children: List.generate(barCount, (index) {
-                    final isPlayed = (index / barCount) <= progress;
-                    return Container(width: barWidth, height: 24 * _wavePattern[index % _wavePattern.length], margin: const EdgeInsets.only(right: spacing), decoration: BoxDecoration(color: isPlayed ? ThixPolicy.gold : Colors.white30, borderRadius: BorderRadius.circular(2)));
-                  })),
-                ),
-              );
-            },
-          ),
-        ),
-        const SizedBox(width: 10),
-        Text(_formatDuration(_duration.inSeconds > 0 && !_isPlaying && _position.inSeconds == 0 ? _duration : _position), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
-      ],
-    );
-  }
-}
-
-class _ThixChatBackgroundPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final textStyle = TextStyle(
-      color: const Color(0xFFD3C7B5).withValues(alpha: 0.10), // Ultra subtil
-      fontSize: 18,
-      fontWeight: FontWeight.w900,
-      letterSpacing: 2.0,
-    );
-    final textPainter = TextPainter(text: TextSpan(text: 'THIX CHAT', style: textStyle), textDirection: ui.TextDirection.ltr); 
-    textPainter.layout();
-
-    final double stepX = 180.0;
-    final double stepY = 140.0;
-
-    for (double y = -stepY; y < size.height + stepY; y += stepY) {
-      for (double x = -stepX; x < size.width + stepX; x += stepX) {
-        canvas.save();
-        final offsetX = x + ((y / stepY).floor() % 2 == 0 ? 0 : stepX / 2);
-        canvas.translate(offsetX, y);
-        canvas.rotate(-math.pi / 6);
-        textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height / 2));
-        canvas.restore();
-      }
-    }
-  }
-  @override bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-// ============================================================================
-// EXTENSION DE LOCALISATION (i18n PROXY)
-// Maintien intégral sans ajouter de textes en dur supplémentaires
-// ============================================================================
-extension ChatL10n on BuildContext {
-  String get trWriteMessage => 'Écrire un message...';
-  String get trRecording => 'Enregistrement...';
-  String get trCancel => 'Annuler';
-  String get trUnderstood => 'Compris';
-  String get trAuthRequired => 'Autorisation requise';
-  String get trMicDisclosure => 'Pour vous permettre d\'enregistrer et d\'envoyer des notes vocales, THIX ID a besoin d\'accéder à votre microphone.';
-  String get trMicCallDisclosure => 'Pour passer un appel, THIX ID a besoin d\'accéder à votre microphone.';
-  String get trCamCallDisclosure => 'Pour passer un appel vidéo, THIX ID a besoin d\'accéder à votre caméra.';
-  String get trCallInactive => 'Impossible d\'appeler : connexion inactive.';
-  String get trSendInactive => 'Connexion inactive — impossible d\'envoyer.';
-  String get trRecordingError => 'Impossible de démarrer l\'enregistrement.';
-  String get trError => 'Erreur:';
-  String get trSendError => 'Envoi impossible:';
-  String get trDeleteImpossible => 'Suppression impossible:';
-  String get trTyping => 'écrit...';
-  
-  // AppBar & Banner
-  String get trCannotReply => 'Vous ne pouvez plus répondre à cette conversation';
-  String get trConnectionInterrupted => 'La connexion a été interrompue ou cet utilisateur n\'est plus dans votre réseau.';
-  String get trMembers => 'membres';
-  String get trOnline => 'En ligne';
-  String get trSeenAt => 'Vu';
-  String get trAt => 'à';
-  String get trYesterdayAt => 'hier à';
-  String get trOn => 'le';
-  
-  // Menu 
-  String get trEscalate => 'Escalader';
-  String get trHistory => 'Historique';
-  String get trGroupInfo => 'Infos groupe';
-  
-  // Input bar options
-  String get trFile => 'Fichier';
-  String get trSticker => 'Sticker';
-  String get trEphemeral => 'Éphémère';
-  String get trProtected => 'Protégé';
-  String get trInternalNote => 'Note Int.';
-  
-  // Ephemeral Dialog
-  String get trEphemeralMessage => 'Message éphémère';
-  String get trDisabled => 'Désactivé';
-  String get trSeconds10 => '10 secondes';
-  String get trMinute1 => '1 minute';
-  String get trHour1 => '1 heure';
-  String get trHours24 => '24 heures';
-  String get trCustomTime => 'Personnalisé...';
-  String get trDurationSeconds => 'Durée en secondes';
-  String get trValidate => 'Valider';
-  String get trInvalidNumber => 'Nombre invalide.';
-  String get trBack => 'Retour';
-  
-  // Secure Dialog
-  String get trSecureMessage => 'Message sécurisé';
-  String get trMessage => 'Message';
-  String get trPassword => 'Mot de passe';
-  String get trSend => 'Envoyer';
-
-  // Sticker tabs
-  String get trEmojis => 'Émojis';
-  String get trReactions => 'Réactions';
-  String get trFlags => 'Drapeaux';
-}
+          margin: EdgeInsets.only(left: isOwn ? 50 : 0, right: isOwn ? 0
