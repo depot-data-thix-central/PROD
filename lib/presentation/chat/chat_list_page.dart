@@ -14,6 +14,7 @@ import '../../models/chat/chat_message.dart';
 import '../../models/chat/chat_conversation.dart';
 import 'providers/chat_list_provider.dart';
 import 'providers/presence_provider.dart';
+import 'providers/notification_counters_provider.dart'; // ✅ NOUVEAU
 import 'chat_screen.dart';
 import 'new_conversation_page.dart';
 import 'package:thix_id/presentation/chat/screens/group_create_page.dart';
@@ -35,20 +36,20 @@ class ChatListPage extends ConsumerStatefulWidget {
   ConsumerState<ChatListPage> createState() => _ChatListPageState();
 }
 
-class _ChatListPageState extends ConsumerState<ChatListPage> {
+class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBindingObserver {
   final _searchCtrl = TextEditingController();
   final _scroll = ScrollController();
 
   int _selectedNav = 1;
 
-  // Préparation pour l'i18n (Internationalisation) : Pas de textes en dur dispersés.
-  // Vous pourrez facilement remplacer ces chaînes par votre fournisseur de langue.
   List<String> _getFilters(BuildContext context) => ['Toutes', 'Non lues', 'Équipes', 'Personnelles'];
-  String _getTranslated(String key) => key; // Fonction mock pour les futures traductions
+  String _getTranslated(String key) => key;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    
     _scroll.addListener(() {
       if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 300) {
         ref.read(chatListProvider.notifier).loadMore();
@@ -58,9 +59,18 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchCtrl.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  // ✅ NOUVEAU : Rafraîchir les compteurs au retour dans l'app
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(notificationCountersProvider.notifier).refresh();
+    }
   }
 
   Future<void> _openConversation(ChatConversation conv) async {
@@ -79,7 +89,34 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     ref.read(chatListProvider.notifier).refresh(silent: true);
   }
 
-  // Modale Glassmorphism
+  // ✅ NOUVEAU : Navigation avec nettoyage des compteurs
+  void _navigateTo(int idx) {
+    HapticFeedback.lightImpact();
+    
+    if (idx == 0) {
+      ref.read(notificationCountersProvider.notifier).clearNewConnections();
+      context.pushNamed('connections');
+    } else if (idx == 1) {
+      setState(() => _selectedNav = idx);
+    } else if (idx == 2) {
+      ref.read(notificationCountersProvider.notifier).clearMissedCalls();
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const CallHistoryPage()));
+    } else if (idx == 3) {
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatSettingsPage()));
+    }
+  }
+
+  // ✅ NOUVEAU : Gestion du retour Android
+  Future<bool> _onWillPop() async {
+    if (_selectedNav != 1) {
+      setState(() => _selectedNav = 1);
+      return false;
+    }
+    // Retourne à la homepage au lieu de quitter
+    context.go('/');
+    return false;
+  }
+
   void _openNotifications(int pending) {
     showModalBottomSheet(
       context: context,
@@ -147,7 +184,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     );
   }
 
-  // Modale Glassmorphism
   void _showCreateMenu() {
     showModalBottomSheet(
       context: context,
@@ -268,6 +304,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(chatListProvider);
+    final counters = ref.watch(notificationCountersProvider); // ✅ NOUVEAU
     final notifier = ref.read(chatListProvider.notifier);
 
     final currentUser = ref.watch(authControllerProvider).value;
@@ -293,160 +330,155 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
       }
     }
 
-    return Scaffold(
-      backgroundColor: ThixPolicy.surfaceSoft,
-      body: Stack(
-        children: [
-          // Background subtil pour accentuer l'effet de verre
-          Positioned(
-            top: -100, right: -50,
-            child: _buildBlurOrb(ThixPolicy.primary.withValues(alpha: 0.08), 250),
-          ),
-          Positioned(
-            bottom: 100, left: -100,
-            child: _buildBlurOrb(ThixPolicy.primaryDeep.withValues(alpha: 0.05), 300),
-          ),
-          
-          state.isLoading
-              ? const Center(child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 3))
-              : RefreshIndicator(
-                  color: ThixPolicy.primary,
-                  backgroundColor: ThixPolicy.card,
-                  onRefresh: () async {
-                    await notifier.refresh(silent: true);
-                    try {
-                      ref.read(statusProvider.notifier).refresh();
-                    } catch (_) {}
-                  },
-                  child: CustomScrollView(
-                    controller: _scroll,
-                    physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-                    slivers: [
-                      // SliverAppBar Glassmorphism collant
-                      SliverAppBar(
-                        pinned: true,
-                        expandedHeight: kToolbarHeight + 20,
-                        backgroundColor: Colors.transparent,
-                        elevation: 0,
-                        flexibleSpace: ClipRRect(
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                            child: Container(
-                              color: ThixPolicy.surfaceSoft.withValues(alpha: 0.7),
-                              padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
-                              alignment: Alignment.bottomCenter,
-                              child: Padding(
-                                padding: const EdgeInsets.only(bottom: 12.0),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text('THIX Chat', style: ThixPolicy.h1Style.copyWith(fontSize: 24, fontWeight: ThixPolicy.bold, letterSpacing: -0.5)),
-                                    Row(
-                                      children: [
-                                        _iconButtonGlass(icon: Icons.swap_vert_rounded, badge: state.pendingEscalations > 0, onTap: () => context.pushNamed('chatEscalationReceived')),
-                                        const SizedBox(width: ThixPolicy.s12),
-                                        _iconButtonGlass(icon: Icons.notifications_none_rounded, badge: state.pendingEscalations > 0, onTap: () => _openNotifications(state.pendingEscalations)),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      // Statuts / Stories et Contacts en ligne
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(ThixPolicy.s20, ThixPolicy.s8, ThixPolicy.s20, ThixPolicy.s12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              StatusStoryRow(currentUserId: currentUserId, currentUserAvatar: currentUserPhoto, currentUserName: currentUserName),
-                              if (onlineContacts.isNotEmpty) ...[
-                                const SizedBox(height: ThixPolicy.s16),
-                                SizedBox(
-                                  height: 64,
-                                  child: ListView.separated(
-                                    scrollDirection: Axis.horizontal,
-                                    itemCount: onlineContacts.length,
-                                    separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s16),
-                                    itemBuilder: (c, i) {
-                                      final conv = onlineContacts[i];
-                                      return _onlineAvatarNode(
-                                        label: conv.displayName.split(' ').first,
-                                        avatarUrl: conv.displayAvatar,
-                                        isOnline: true,
-                                        onTap: () => _openConversation(conv),
-                                      );
-                                    },
+    return WillPopScope( // ✅ NOUVEAU : Gestion du retour Android
+      onWillPop: _onWillPop,
+      child: Scaffold(
+        backgroundColor: ThixPolicy.surfaceSoft,
+        body: Stack(
+          children: [
+            Positioned(
+              top: -100, right: -50,
+              child: _buildBlurOrb(ThixPolicy.primary.withValues(alpha: 0.08), 250),
+            ),
+            Positioned(
+              bottom: 100, left: -100,
+              child: _buildBlurOrb(ThixPolicy.primaryDeep.withValues(alpha: 0.05), 300),
+            ),
+            
+            state.isLoading
+                ? const Center(child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 3))
+                : RefreshIndicator(
+                    color: ThixPolicy.primary,
+                    backgroundColor: ThixPolicy.card,
+                    onRefresh: () async {
+                      await notifier.refresh(silent: true);
+                      await ref.read(notificationCountersProvider.notifier).refresh(); // ✅ NOUVEAU
+                      try {
+                        ref.read(statusProvider.notifier).refresh();
+                      } catch (_) {}
+                    },
+                    child: CustomScrollView(
+                      controller: _scroll,
+                      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                      slivers: [
+                        SliverAppBar(
+                          pinned: true,
+                          expandedHeight: kToolbarHeight + 20,
+                          backgroundColor: Colors.transparent,
+                          elevation: 0,
+                          flexibleSpace: ClipRRect(
+                            child: BackdropFilter(
+                              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                              child: Container(
+                                color: ThixPolicy.surfaceSoft.withValues(alpha: 0.7),
+                                padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
+                                alignment: Alignment.bottomCenter,
+                                child: Padding(
+                                  padding: const EdgeInsets.only(bottom: 12.0),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text('THIX Chat', style: ThixPolicy.h1Style.copyWith(fontSize: 24, fontWeight: ThixPolicy.bold, letterSpacing: -0.5)),
+                                      Row(
+                                        children: [
+                                          _iconButtonGlass(icon: Icons.swap_vert_rounded, badge: state.pendingEscalations > 0, onTap: () => context.pushNamed('chatEscalationReceived')),
+                                          const SizedBox(width: ThixPolicy.s12),
+                                          _iconButtonGlass(icon: Icons.notifications_none_rounded, badge: state.pendingEscalations > 0, onTap: () => _openNotifications(state.pendingEscalations)),
+                                        ],
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      // Recherche avec effet de verre léger
-                      SliverToBoxAdapter(child: _buildSearchBarGlass()),
-
-                      // Escalades
-                      if (state.pendingEscalations > 0)
-                        SliverToBoxAdapter(child: _buildEscalationBanner(state.pendingEscalations)),
-
-                      // Filtres
-                      SliverToBoxAdapter(child: _buildFilters(state.filterIndex)),
-
-                      const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
-
-                      // Liste des conversations (Fonds très propres et légers)
-                      SliverToBoxAdapter(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: ThixPolicy.card.withValues(alpha: 0.6), // Légèrement translucide
-                            borderRadius: const BorderRadius.vertical(top: Radius.circular(ThixPolicy.rXl)),
-                            border: Border(
-                              top: BorderSide(color: Colors.white.withValues(alpha: 0.6), width: 1),
-                              left: BorderSide(color: Colors.white.withValues(alpha: 0.3), width: 1),
-                              right: BorderSide(color: Colors.white.withValues(alpha: 0.3), width: 1),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.02),
-                                blurRadius: 10,
-                                spreadRadius: 0,
-                                offset: const Offset(0, -5),
                               ),
-                            ]
+                            ),
                           ),
-                          child: _chatList(state.filtered, currentUserId, currentUserName, onlineUserIds),
                         ),
-                      ),
 
-                      // Chargement
-                      if (state.isLoadingMore)
-                        const SliverToBoxAdapter(
+                        SliverToBoxAdapter(
                           child: Padding(
-                            padding: EdgeInsets.symmetric(vertical: 28),
-                            child: Center(child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 3)),
+                            padding: const EdgeInsets.fromLTRB(ThixPolicy.s20, ThixPolicy.s8, ThixPolicy.s20, ThixPolicy.s12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                StatusStoryRow(currentUserId: currentUserId, currentUserAvatar: currentUserPhoto, currentUserName: currentUserName),
+                                if (onlineContacts.isNotEmpty) ...[
+                                  const SizedBox(height: ThixPolicy.s16),
+                                  SizedBox(
+                                    height: 64,
+                                    child: ListView.separated(
+                                      scrollDirection: Axis.horizontal,
+                                      itemCount: onlineContacts.length,
+                                      separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s16),
+                                      itemBuilder: (c, i) {
+                                        final conv = onlineContacts[i];
+                                        return _onlineAvatarNode(
+                                          label: conv.displayName.split(' ').first,
+                                          avatarUrl: conv.displayAvatar,
+                                          isOnline: true,
+                                          onTap: () => _openConversation(conv),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
                           ),
                         ),
 
-                      const SliverToBoxAdapter(child: SizedBox(height: 140)),
-                    ],
-                  ),
-                ),
+                        SliverToBoxAdapter(child: _buildSearchBarGlass()),
 
-          // Navigation flottante "Glassmorphism"
-          _buildGlassBottomNav(state.totalUnread),
-        ],
+                        if (state.pendingEscalations > 0)
+                          SliverToBoxAdapter(child: _buildEscalationBanner(state.pendingEscalations)),
+
+                        SliverToBoxAdapter(child: _buildFilters(state.filterIndex)),
+
+                        const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
+
+                        SliverToBoxAdapter(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: ThixPolicy.card.withValues(alpha: 0.6),
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(ThixPolicy.rXl)),
+                              border: Border(
+                                top: BorderSide(color: Colors.white.withValues(alpha: 0.6), width: 1),
+                                left: BorderSide(color: Colors.white.withValues(alpha: 0.3), width: 1),
+                                right: BorderSide(color: Colors.white.withValues(alpha: 0.3), width: 1),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.02),
+                                  blurRadius: 10,
+                                  spreadRadius: 0,
+                                  offset: const Offset(0, -5),
+                                ),
+                              ]
+                            ),
+                            child: _chatList(state.filtered, currentUserId, currentUserName, onlineUserIds),
+                          ),
+                        ),
+
+                        if (state.isLoadingMore)
+                          const SliverToBoxAdapter(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 28),
+                              child: Center(child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 3)),
+                            ),
+                          ),
+
+                        const SliverToBoxAdapter(child: SizedBox(height: 140)),
+                      ],
+                    ),
+                  ),
+
+            // ✅ MODIFIÉ : Passe les compteurs à la bottom nav
+            _buildGlassBottomNav(state.totalUnread, counters),
+          ],
+        ),
       ),
     );
   }
 
-  // Orb décoratif pour le fond
   Widget _buildBlurOrb(Color color, double size) {
     return Container(
       width: size,
@@ -629,7 +661,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     );
   }
 
-  // ─────────────────────── LISTE DES CONVERSATIONS ───────────────────────
   Widget _chatList(List<ChatConversation> list, String currentUserId, String currentUserName, Set<String> onlineUserIds) {
     if (list.isEmpty) {
       return Padding(
@@ -926,8 +957,8 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     );
   }
 
-  // ─────────────────────── GLASS BOTTOM NAV ───────────────────────
-  Widget _buildGlassBottomNav(int unread) {
+  // ✅ MODIFIÉ : Accepte les compteurs et les affiche sur chaque icône
+  Widget _buildGlassBottomNav(int unread, NotificationCounters counters) {
     return Positioned(
       bottom: 24, left: 0, right: 0,
       child: Center(
@@ -939,7 +970,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
               height: 64,
               width: MediaQuery.of(context).size.width * 0.90, 
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.65), // Très clair et translucide
+                color: Colors.white.withValues(alpha: 0.65),
                 borderRadius: BorderRadius.circular(32),
                 border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
                 boxShadow: [
@@ -949,7 +980,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _navItem(Icons.people_alt_outlined, Icons.people_alt, _getTranslated('Réseau'), 0, unread),
+                  _navItem(Icons.people_alt_outlined, Icons.people_alt, _getTranslated('Réseau'), 0, counters.newConnections),
                   _navItem(Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, _getTranslated('Discussions'), 1, unread),
                   GestureDetector(
                     onTap: () { _showCreateMenu(); },
@@ -963,8 +994,8 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
                       child: const Icon(Icons.add_rounded, color: Colors.white, size: 24),
                     ),
                   ),
-                  _navItem(Icons.call_outlined, Icons.call, _getTranslated('Appels'), 2, unread),
-                  _navItem(Icons.settings_outlined, Icons.settings, _getTranslated('Réglages'), 3, unread),
+                  _navItem(Icons.call_outlined, Icons.call, _getTranslated('Appels'), 2, counters.missedCalls),
+                  _navItem(Icons.settings_outlined, Icons.settings, _getTranslated('Réglages'), 3, 0),
                 ],
               ),
             ),
@@ -974,18 +1005,11 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
     );
   }
 
-  Widget _navItem(IconData iconOutlined, IconData iconFilled, String label, int idx, int unread) {
+  // ✅ MODIFIÉ : Utilise _navigateTo et affiche le compteur sur chaque icône
+  Widget _navItem(IconData iconOutlined, IconData iconFilled, String label, int idx, int badge) {
     final isSelected = _selectedNav == idx;
     return InkWell(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        if (idx == 0) context.pushNamed('connections');
-        else if (idx == 2) {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => CallHistoryPage()));
-        }
-        else if (idx == 3) Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatSettingsPage()));
-        else setState(() => _selectedNav = idx);
-      },
+      onTap: () => _navigateTo(idx), // ✅ Utilise la nouvelle méthode
       splashColor: Colors.transparent,
       highlightColor: Colors.transparent,
       child: Container(
@@ -994,10 +1018,24 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
           clipBehavior: Clip.none,
           children: [
             Icon(isSelected ? iconFilled : iconOutlined, color: isSelected ? ThixPolicy.primary : ThixPolicy.textSecondary.withValues(alpha: 0.8), size: 24),
-            if (idx == 1 && unread > 0)
+            // ✅ Badge compteur pour toutes les sections
+            if (badge > 0)
               Positioned(
                 right: -2, top: -2, 
-                child: Container(width: 10, height: 10, decoration: BoxDecoration(color: ThixPolicy.danger, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)))
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: ThixPolicy.danger, 
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: Text(
+                    badge > 99 ? '99+' : '$badge',
+                    style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
               ),
           ],
         ),
@@ -1024,7 +1062,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> {
   }
 }
 
-/// 3 lights — même logique
 class ListMessageStatusLights extends StatelessWidget {
   final bool isDelivered;
   final bool isRead;
@@ -1071,7 +1108,6 @@ class ListMessageStatusLights extends StatelessWidget {
   }
 }
 
-/// Double avatar client + agent pour les escalades
 class _EscalationAvatars extends StatelessWidget {
   final String clientName;
   final String? clientAvatar;
