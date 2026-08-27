@@ -41,21 +41,27 @@ class LocalNotificationService {
     final android = _plugin.resolvePlatformSpecificImplementation<
         AndroidFlutterLocalNotificationsPlugin>();
 
+    // ✅ CORRIGÉ : Augmenter l'importance à max pour garantir l'affichage en arrière-plan
     await android?.createNotificationChannel(
       const AndroidNotificationChannel(
         channelDefault,
         'THIX ID',
         description: 'Notifications générales THIX',
-        importance: Importance.high,
+        importance: Importance.max, // ✅ Changé de high à max
+        playSound: true,
+        enableVibration: true,
       ),
     );
 
+    // ✅ CORRIGÉ : Augmenter l'importance à max pour les messages chat
     await android?.createNotificationChannel(
       const AndroidNotificationChannel(
         channelChat,
         'Messages THIX Chat',
         description: 'Nouveaux messages',
-        importance: Importance.high,
+        importance: Importance.max, // ✅ Changé de high à max
+        playSound: true,
+        enableVibration: true,
       ),
     );
 
@@ -102,23 +108,28 @@ class LocalNotificationService {
 
     final channel = channelId ?? channelDefault;
     final isCall = channel == channelCalls;
+    final isChat = channel == channelChat;
 
     final androidDetails = AndroidNotificationDetails(
       channel,
       isCall
           ? 'Appels THIX'
-          : channel == channelChat
+          : isChat
               ? 'Messages THIX Chat'
               : 'THIX ID',
       channelDescription: isCall
           ? 'Appels entrants'
-          : 'Notifications THIX',
-      importance: isCall ? Importance.max : Importance.high,
-      priority: isCall ? Priority.max : Priority.high,
+          : isChat
+              ? 'Nouveaux messages'
+              : 'Notifications THIX',
+      importance: (isCall || isChat) ? Importance.max : Importance.max, // ✅ Tous en max
+      priority: (isCall || isChat) ? Priority.max : Priority.max, // ✅ Tous en max
       icon: '@mipmap/ic_launcher',
       category: isCall
           ? AndroidNotificationCategory.call
-          : AndroidNotificationCategory.message,
+          : isChat
+              ? AndroidNotificationCategory.message
+              : AndroidNotificationCategory.status,
       fullScreenIntent: isCall,
       visibility: NotificationVisibility.public,
       playSound: true,
