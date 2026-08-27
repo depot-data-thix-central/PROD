@@ -10,7 +10,6 @@ class BusFilterBottomSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 🌟 Écoute moderne de l'état
     final state = ref.watch(busSearchProvider);
     final notifier = ref.read(busSearchProvider.notifier);
 
@@ -41,37 +40,48 @@ class BusFilterBottomSheet extends ConsumerWidget {
               ),
               TextButton(
                 onPressed: () => notifier.clearFilters(),
-                child: const Text('Tout effacer', style: TextStyle(color: ThixPolicy.primary, fontWeight: FontWeight.w800, fontSize: 12)),
+                child: const Text(
+                  'Tout effacer',
+                  style: TextStyle(color: ThixPolicy.primary, fontWeight: FontWeight.w800, fontSize: 12),
+                ),
               ),
             ],
           ),
           const Divider(height: 24, color: ThixPolicy.border),
-          
-          // Section Prix
           const Text(
-            'Fourchette de prix (FCFA)',
+            'Prix maximum (CDF)',
             style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: ThixPolicy.textMain),
           ),
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('${state.minPrice.toInt()} FCFA', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: ThixPolicy.textSecondary)),
-              Text('${state.maxPrice.toInt()} FCFA', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: ThixPolicy.textSecondary)),
+              Text(
+                state.minPrice.toInt().toString() + ' CDF',
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: ThixPolicy.textSecondary),
+              ),
+              Text(
+                state.maxPrice.toInt().toString() + ' CDF',
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: ThixPolicy.textSecondary),
+              ),
             ],
           ),
           Slider(
-            value: state.maxPrice,
-            min: 5000,
-            max: 50000,
-            divisions: 9,
+            value: state.maxPrice.clamp(1000, 100000),
+            min: 1000,
+            max: 100000,
+            divisions: 99,
             activeColor: ThixPolicy.primary,
             inactiveColor: ThixPolicy.border,
+            label: state.maxPrice.toInt().toString() + ' CDF',
             onChanged: (val) => notifier.updatePriceFilter(state.minPrice, val),
           ),
-          const SizedBox(height: 24),
-
-          // Bouton Appliquer
+          const SizedBox(height: 8),
+          const Text(
+            'Les prix sont en Franc Congolais. 1 USD ≈ 2850 CDF.',
+            style: TextStyle(fontSize: 11, color: ThixPolicy.textSecondary),
+          ),
+          const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
             height: 48,
