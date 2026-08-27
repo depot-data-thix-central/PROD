@@ -102,12 +102,11 @@ class SosEvidenceService {
   }) async {
     String? path;
     try {
-      await _ensureCamera();
-      await _camCtrl!.startVideoRecording(
-        maxDuration: const Duration(seconds: 30),
-      );
+            await _ensureCamera();
+      await _camCtrl!.startVideoRecording(); // Plus de paramètre ici
       await Future.delayed(const Duration(seconds: 30));
       final x = await _camCtrl!.stopVideoRecording();
+
       path = x.path;
     } catch (e) {
       debugPrint('SosEvidence vidéo silencieuse échec, fallback: $e');
