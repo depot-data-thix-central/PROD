@@ -5,32 +5,168 @@ import '../../data/models/bus_trip_model.dart';
 class AgencyTripCard extends StatelessWidget {
   final BusTripModel trip;
   final VoidCallback onTap;
-  const AgencyTripCard({super.key, required this.trip, required this.onTap});
+
+  const AgencyTripCard({
+    super.key,
+    required this.trip,
+    required this.onTap,
+  });
+
+  String two(int n) {
+    final s = n.toString();
+    if (s.length == 1) return '0' + s;
+    return s;
+  }
+
+  String hhmm(DateTime d) {
+    return two(d.hour) + ':' + two(d.minute);
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Container(margin: const EdgeInsets.only(bottom: 12), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200)), child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(16), child: Padding(padding: const EdgeInsets.all(14), child: Column(children: [
-      Row(children: [
-        CircleAvatar(radius: 18, backgroundColor: Colors.blue.shade50, backgroundImage: trip.agency?.logoUrl!= null? NetworkImage(trip.agency!.logoUrl!): null, child: trip.agency?.logoUrl== null? Text(trip.agency?.name.substring(0,1)?? 'A', style: const TextStyle(fontWeight: FontWeight.bold)): null),
-        const SizedBox(width: 10),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Text(trip.agency?.name?? 'Agence', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)), if (trip.agency?.isVerified== true) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.verified, size: 14, color: Colors.blue))]), Text('${trip.busType.toUpperCase()} • ${trip.durationLabel}', style: TextStyle(fontSize: 11, color: Colors.grey.shade600))])),
-        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [Text('${trip.priceFcfa} FCFA', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: Color(0xFF0D47A1))), if (trip.isAlmostFull) Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(6)), child: Text('Plus que ${trip.availableSeats}!', style: TextStyle(fontSize: 10, color: Colors.red.shade700, fontWeight: FontWeight.bold))) else Text('${trip.availableSeats} places', style: TextStyle(fontSize: 11, color: Colors.grey.shade600))])
-      ]),
-      const Divider(height: 20),
-      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        _TimeBox(time: '${trip.departureTime.hour.toString().padLeft(2,'0')}:${trip.departureTime.minute.toString().padLeft(2,'0')}', city: trip.departureCity),
-        Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Stack(alignment: Alignment.center, children: [Divider(color: Colors.grey.shade300), Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(10)), child: Icon(Icons.directions_bus, size: 14, color: Colors.grey.shade600))]))),
-        _TimeBox(time: '${trip.arrivalTime.hour.toString().padLeft(2,'0')}:${trip.arrivalTime.minute.toString().padLeft(2,'0')}', city: trip.arrivalCity, alignEnd: true),
-      ])
-    ]))));
+    final agencyName = trip.agency?.name ?? 'Agence';
+    final initial = agencyName.isNotEmpty ? agencyName.substring(0, 1) : 'A';
+    final logo = trip.agency?.logoUrl;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        boxShadow: const [
+          BoxShadow(color: Color(0x14000000), blurRadius: 10, offset: Offset(0, 4)),
+        ],
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: const Color(0xFFEFF6FF),
+                    backgroundImage: logo != null ? NetworkImage(logo) : null,
+                    child: logo == null
+                        ? Text(initial, style: const TextStyle(fontWeight: FontWeight.w900, color: Color(0xFF1D4ED8)))
+                        : null,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                agencyName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                              ),
+                            ),
+                            if (trip.agency?.isVerified == true)
+                              const Padding(
+                                padding: EdgeInsets.only(left: 4),
+                                child: Icon(Icons.verified, size: 14, color: Color(0xFF2563EB)),
+                              ),
+                          ],
+                        ),
+                        Text(
+                          trip.busType.toUpperCase() + ' • ' + trip.durationLabel,
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        trip.priceFcfa.toString() + ' CDF',
+                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: Color(0xFF0D47A1)),
+                      ),
+                      if (trip.isAlmostFull)
+                        Container(
+                          margin: const EdgeInsets.only(top: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEE2E2),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'Plus que ' + trip.availableSeats.toString(),
+                            style: const TextStyle(fontSize: 10, color: Color(0xFFB91C1C), fontWeight: FontWeight.w800),
+                          ),
+                        )
+                      else
+                        Text(
+                          trip.availableSeats.toString() + ' places',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+              const Divider(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _TimeBox(time: hhmm(trip.departureTime), city: trip.departureCity),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          const Divider(color: Color(0xFFD1D5DB)),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF3F4F6),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.directions_bus, size: 14, color: Color(0xFF6B7280)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  _TimeBox(time: hhmm(trip.arrivalTime), city: trip.arrivalCity, alignEnd: true),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
 class _TimeBox extends StatelessWidget {
-  final String time; final String city; final bool alignEnd;
-  const _TimeBox({required this.time, required this.city, this.alignEnd = false});
+  final String time;
+  final String city;
+  final bool alignEnd;
+
+  const _TimeBox({
+    required this.time,
+    required this.city,
+    this.alignEnd = false,
+  });
+
   @override
   Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: alignEnd? CrossAxisAlignment.end: CrossAxisAlignment.start, children: [Text(time, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)), Text(city, style: TextStyle(fontSize: 12, color: Colors.grey.shade600))]);
+    return Column(
+      crossAxisAlignment: alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        Text(time, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+        Text(city, style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+      ],
+    );
   }
 }
