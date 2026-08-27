@@ -165,7 +165,7 @@ import 'package:thix_id/presentation/thix_reservation/bus/pages/agency/agency_cr
 import 'package:thix_id/presentation/thix_reservation/bus/pages/agency/agency_qr_scan_page.dart';
 import 'package:thix_id/presentation/thix_reservation/bus/data/models/bus_trip_model.dart';
 import 'package:thix_id/presentation/thix_reservation/bus/data/models/booking_model.dart';
-
+import 'package:thix_id/presentation/thix_reservation/bus/pages/agency/agency_seats_page.dart';
 // === THIX RESERVATION (DELIVERY) ===
 import 'package:thix_id/presentation/thix_reservation/delivery/pages/client/delivery_home_page.dart';
 import 'package:thix_id/presentation/thix_reservation/delivery/pages/client/delivery_checkout_page.dart';
@@ -551,6 +551,16 @@ class AppRouter {
             }
             final tripId = state.pathParameters['tripId'] ?? '';
             return NoTransitionPage(child: BusTripDetailPage(tripId: tripId));
+          },
+        ),
+        GoRoute(
+          path: '/agency/seats',
+          name: 'agency-seats',
+          pageBuilder: (context, state) {
+            final tripId = state.uri.queryParameters['tripId'] ?? '';
+            return NoTransitionPage(
+              child: AgencySeatsPage(tripId: tripId),
+            );
           },
         ),
         GoRoute(
