@@ -12,6 +12,7 @@ import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../services/sos_crisis_media_service.dart';
+import '../services/sos_remote_capture_service.dart';
 import '../models/sos_models.dart';
 import '../providers/sos_providers.dart';
 import 'sos_pin_page.dart';
@@ -38,6 +39,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
   final Set<String> _sentQuick = {};
   bool _camOn = false;
   bool _camBusy = false;
+  final _remoteCapture = SosRemoteCaptureService();
 
   @override
   void initState() {
@@ -106,17 +108,41 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
   }
 
   Future<void> _loadConversationId() async {
-    if (_resolvedConversationId != null) return;
     try {
-      final incident =
-          await ref.read(sosServiceProvider).getIncidentById(widget.incidentId);
-      _resolvedConversationId = incident?.chatConversationId;
+      if (_resolvedConversationId == null) {
+        final incident =
+            await ref.read(sosServiceProvider).getIncidentById(widget.incidentId);
+        _resolvedConversationId = incident?.chatConversationId;
+      }
     } catch (_) {}
+    _remoteCapture.listenAsVictim(
+      incidentId: widget.incidentId,
+      conversationId: _resolvedConversationId,
+      onInfo: (m) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              m,
+              style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand),
+            ),
+            backgroundColor: ThixPolicy.inkDeep,
+          ),
+        );
+      },
+      onError: (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Capture: $e')),
+        );
+      },
+    );
   }
 
   @override
   void dispose() {
     _uiTimer?.cancel();
+    _remoteCapture.stop();
     super.dispose();
   }
 
@@ -157,10 +183,6 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
   Future<void> _callContact(SosContact contact) async {
     final userId =
         await ref.read(sosServiceProvider).resolveContactUserId(contact);
-        
-    // CORRECTION : On vérifie si la page est toujours montée après l'appel asynchrone
-    if (!mounted) return; 
-
     if (userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
