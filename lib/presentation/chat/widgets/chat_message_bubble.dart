@@ -10,8 +10,8 @@ import 'package:thix_id/presentation/chat/widgets/audio_player.dart';
 import 'package:thix_id/presentation/chat/widgets/chat_code_snippet.dart';
 import 'package:thix_id/presentation/chat/widgets/chat_ephemeral_timer.dart';
 import 'package:thix_id/presentation/chat/widgets/sentiment_indicator.dart';
-import 'package:thix_id/presentation/chat/chat_screen.dart'; 
-import 'package:thix_id/services/chat/media_saver.dart'; 
+import 'package:thix_id/presentation/chat/widgets/image_viewer.dart';
+import 'package:thix_id/services/chat/media_saver.dart';
 
 class _C {
   static const primary = Color(0xFF2D6CDF);
