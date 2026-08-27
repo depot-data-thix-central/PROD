@@ -157,6 +157,10 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
   Future<void> _callContact(SosContact contact) async {
     final userId =
         await ref.read(sosServiceProvider).resolveContactUserId(contact);
+        
+    // CORRECTION : On vérifie si la page est toujours montée après l'appel asynchrone
+    if (!mounted) return; 
+
     if (userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
