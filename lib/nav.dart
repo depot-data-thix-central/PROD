@@ -245,6 +245,7 @@ static const String thixRetrouveAiMatch = '/thix-retrouve/ai-match';
 // SOS sous-routes
 static const String thixSosActif = '/thix-sos/actif';
 static const String thixSosChambre = '/thix-sos/chambre';
+static const String thixSosChambreSecours = '/thix-sos/chambre-secours';
 static const String thixSosPin = '/thix-sos/pin';
 static const String thixSosSecours = '/thix-sos/secours';
 static const String thixSosAjouterSecours = '/thix-sos/secours/ajouter';
