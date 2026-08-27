@@ -21,7 +21,7 @@ class ChatListState {
   final bool hasMore;
   final int totalUnread;
   final int pendingEscalations;
-  final int filterIndex; // 0:Toutes  1:Non lues  2:Équipes  3:Personnelles
+  final int filterIndex;
   final String searchQuery;
 
   const ChatListState({
@@ -74,6 +74,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   static const int _limit = 20;
 
   Timer? _debounce;
+  Timer? _refreshDebounce; // ✅ NOUVEAU : Debounce pour les refresh temps réel
   RealtimeChannel? _channel;
   bool _isDisposed = false;
 
@@ -97,7 +98,6 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
           callback: (payload) async {
             if (_isDisposed) return;
 
-            // ── Marquer LIVRÉ dès la liste (pour l'orange) ──
             try {
               final raw = payload.newRecord;
               if (raw != null) {
@@ -122,7 +122,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
               debugPrint('⚠️ mark delivered from list: $e');
             }
 
-            loadInitial(silent: true);
+            // ✅ OPTIMISATION : Debounce le refresh pour éviter les refreshs multiples
+            _scheduleRefresh();
           },
         )
         .onPostgresChanges(
@@ -132,12 +133,21 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
           callback: (_) {
             if (!_isDisposed) {
               _refreshCounts();
-              // Refresh léger pour mettre à jour is_delivered / is_read sur le lastMessage
-              loadInitial(silent: true);
+              _scheduleRefresh();
             }
           },
         )
         .subscribe();
+  }
+
+  // ✅ NOUVEAU : Debounce pour éviter les refreshs multiples en cascade
+  void _scheduleRefresh() {
+    _refreshDebounce?.cancel();
+    _refreshDebounce = Timer(const Duration(milliseconds: 500), () {
+      if (!_isDisposed) {
+        loadInitial(silent: true);
+      }
+    });
   }
 
   Future<void> loadInitial({bool silent = false}) async {
@@ -296,6 +306,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   void dispose() {
     _isDisposed = true;
     _debounce?.cancel();
+    _refreshDebounce?.cancel();
     _channel?.unsubscribe();
     super.dispose();
   }
