@@ -684,7 +684,8 @@ class _ChambreCriseSecoursPageState
               style: const TextStyle(color: Colors.white38, fontSize: 11),
             ),
             const SizedBox(width: 8),
-            const Container(
+            // ✅ ENLEVER LE "const" ICI
+            Container(
                 width: 8,
                 height: 8,
                 decoration: BoxDecoration(
@@ -704,8 +705,6 @@ class _ChambreCriseSecoursPageState
       },
     );
   }
-}
-
 // ─────────────────────────────────────────────────────────────
 class _EvidenceItem {
   final String type;
