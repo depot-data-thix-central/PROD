@@ -1,0 +1,132 @@
+// lib/presentation/chat/providers/notification_counters_provider.dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+class NotificationCounters {
+  final int unreadMessages;
+  final int missedCalls;
+  final int newConnections;
+  final int pendingEscalations;
+
+  const NotificationCounters({
+    this.unreadMessages = 0,
+    this.missedCalls = 0,
+    this.newConnections = 0,
+    this.pendingEscalations = 0,
+  });
+
+  NotificationCounters copyWith({
+    int? unreadMessages,
+    int? missedCalls,
+    int? newConnections,
+    int? pendingEscalations,
+  }) {
+    return NotificationCounters(
+      unreadMessages: unreadMessages ?? this.unreadMessages,
+      missedCalls: missedCalls ?? this.missedCalls,
+      newConnections: newConnections ?? this.newConnections,
+      pendingEscalations: pendingEscalations ?? this.pendingEscalations,
+    );
+  }
+
+  int get total => unreadMessages + missedCalls + newConnections + pendingEscalations;
+}
+
+class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
+  final SupabaseClient _client;
+  String? _userId;
+
+  NotificationCountersNotifier(this._client) : super(const NotificationCounters()) {
+    _init();
+  }
+
+  Future<void> _init() async {
+    final user = _client.auth.currentUser;
+    if (user == null) return;
+    _userId = user.id;
+    await refresh();
+    _subscribeToChanges();
+  }
+
+  Future<void> refresh() async {
+    if (_userId == null) return;
+
+    try {
+      // Appels manqués
+      final missedCallsRes = await _client
+          .from('call_history')
+          .select()
+          .eq('user_id', _userId!)
+          .eq('status', 'missed')
+          .eq('is_read', false);
+
+      // Nouvelles connexions (demandes en attente)
+      final newConnectionsRes = await _client
+          .from('connections')
+          .select()
+          .eq('status', 'pending')
+          .or('requester_id.eq.$_userId,responder_id.eq.$_userId');
+
+      state = state.copyWith(
+        missedCalls: (missedCallsRes as List).length,
+        newConnections: (newConnectionsRes as List).length,
+      );
+    } catch (e) {
+      // Silent fail
+    }
+  }
+
+  void _subscribeToChanges() {
+    if (_userId == null) return;
+
+    // Appels manqués en temps réel
+    _client
+        .channel('missed_calls_$_userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'call_history',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: _userId!,
+          ),
+          callback: (payload) {
+            final status = payload.newRecord['status'] as String?;
+            if (status == 'missed') {
+              state = state.copyWith(missedCalls: state.missedCalls + 1);
+            }
+          },
+        )
+        .subscribe();
+
+    // Nouvelles connexions en temps réel
+    _client
+        .channel('new_connections_$_userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'connections',
+          callback: (payload) {
+            final requesterId = payload.newRecord['requester_id'] as String?;
+            final responderId = payload.newRecord['responder_id'] as String?;
+            if (requesterId == _userId || responderId == _userId) {
+              state = state.copyWith(newConnections: state.newConnections + 1);
+            }
+          },
+        )
+        .subscribe();
+  }
+
+  void clearMissedCalls() {
+    state = state.copyWith(missedCalls: 0);
+  }
+
+  void clearNewConnections() {
+    state = state.copyWith(newConnections: 0);
+  }
+}
+
+final notificationCountersProvider = StateNotifierProvider<NotificationCountersNotifier, NotificationCounters>((ref) {
+  return NotificationCountersNotifier(Supabase.instance.client);
+});
