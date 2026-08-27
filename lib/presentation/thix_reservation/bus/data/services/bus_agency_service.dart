@@ -17,24 +17,60 @@ class BusAgencyService {
     return user.id;
   }
 
-  Future<AgencyModel?> getMyAgency() async {
-    final user = _db.auth.currentUser;
-    if (user == null) return null;
-
-    final row = await _db
-        .from(table)
-        .select()
-        .eq('owner_id', user.id)
-        .maybeSingle();
-    if (row == null) return null;
-    return AgencyModel.fromJson(row);
-  }
-
   String _makeSlug(String name) {
     final cleaned = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
     final stamp = DateTime.now().millisecondsSinceEpoch.toString();
     final tail = stamp.length > 8 ? stamp.substring(stamp.length - 8) : stamp;
     return '$cleaned-$tail';
+  }
+
+  Future<AgencyModel?> getMyAgency() async {
+    final user = _db.auth.currentUser;
+    if (user == null) return null;
+
+    try {
+      final res = await _db
+          .from(table)
+          .select()
+          .eq('owner_id', user.id)
+          .order('created_at', ascending: false)
+          .limit(1);
+
+      final list = res as List;
+      if (list.isEmpty) return null;
+      return AgencyModel.fromJson(Map<String, dynamic>.from(list.first));
+    } catch (_) {
+      final res = await _db
+          .from(table)
+          .select()
+          .eq('owner_id', user.id)
+          .limit(1);
+
+      final list = res as List;
+      if (list.isEmpty) return null;
+      return AgencyModel.fromJson(Map<String, dynamic>.from(list.first));
+    }
+  }
+
+  Future<List<AgencyModel>> getMyAgencies() async {
+    final user = _db.auth.currentUser;
+    if (user == null) return [];
+
+    try {
+      final res = await _db
+          .from(table)
+          .select()
+          .eq('owner_id', user.id)
+          .order('created_at', ascending: false);
+      return (res as List)
+          .map((e) => AgencyModel.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (_) {
+      final res = await _db.from(table).select().eq('owner_id', user.id);
+      return (res as List)
+          .map((e) => AgencyModel.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    }
   }
 
   Future<AgencyModel> createAgency({
@@ -56,12 +92,17 @@ class BusAgencyService {
     };
 
     try {
-      payload['slug'] = _makeSlug(cleanName);
-      payload['country_code'] = countryCode;
-    } catch (_) {}
-
-    final res = await _db.from(table).insert(payload).select().single();
-    return AgencyModel.fromJson(res);
+      final res = await _db.from(table).insert(payload).select();
+      final list = res as List;
+      if (list.isEmpty) {
+        throw StateError('Agence créée mais non relue');
+      }
+      return AgencyModel.fromJson(Map<String, dynamic>.from(list.first));
+    } catch (e) {
+      final again = await getMyAgency();
+      if (again != null) return again;
+      rethrow;
+    }
   }
 
   Future<Map<String, dynamic>> getDashboardStats(String agencyId) async {
@@ -74,6 +115,7 @@ class BusAgencyService {
           .eq('agency_id', agencyId)
           .gte('created_at', start)
           .count(CountOption.exact);
+
       return {
         'bookings_today': bookingsToday.count,
         'revenue_today': 0,
@@ -125,8 +167,10 @@ class BusAgencyService {
           'status': 'scheduled',
         })
         .select()
-        .single();
-    return BusTripModel.fromJson(res);
+        .limit(1);
+
+    final list = res as List;
+    return BusTripModel.fromJson(list.first);
   }
 
   Future<List<BookingModel>> getAgencyBookings(String agencyId) async {
@@ -148,11 +192,19 @@ class BusAgencyService {
         .select('*, bus_trips(*)')
         .eq('agency_id', agencyId)
         .eq('qr_code', qrCode)
-        .single();
+        .limit(1);
 
-    final booking = BookingModel.fromJson(res);
+    final list = res as List;
+    if (list.isEmpty) {
+      throw StateError('Ticket introuvable');
+    }
+
+    final booking = BookingModel.fromJson(list.first);
     if (booking.status == 'confirmed') {
-      await _db.from('bus_bookings').update({'status': 'completed'}).eq('id', booking.id);
+      await _db
+          .from('bus_bookings')
+          .update({'status': 'completed'})
+          .eq('id', booking.id);
     }
     return booking;
   }
