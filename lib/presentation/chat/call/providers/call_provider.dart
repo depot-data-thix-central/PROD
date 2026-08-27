@@ -181,6 +181,12 @@ class CallNotifier extends StateNotifier<CallState> {
     required CallType type,
     String? conversationId,
   }) async {
+    // ✅ CORRECTION : Empêcher les appels multiples
+    if (state.isActive) {
+      debugPrint('⚠️ start ignoré: appel déjà en cours');
+      return;
+    }
+
     try {
       final convId = conversationId ??
           await _getOrCreateConversationId(myUserId, calleeId);
@@ -258,9 +264,15 @@ class CallNotifier extends StateNotifier<CallState> {
     String? callerName,
     String? callerAvatar,
   }) async {
+    // ✅ CORRECTION : Empêcher les appels multiples
+    if (state.isActive) {
+      debugPrint('⚠️ acceptIncoming ignoré: appel déjà en cours');
+      return;
+    }
+
     try {
       debugPrint(
-        '📞 acceptIncoming id=\( {invite.id} channel= \){invite.channelName}',
+        '📞 acceptIncoming id=${invite.id} channel=${invite.channelName}',
       );
 
       if (invite.channelName.trim().isEmpty) {
@@ -307,7 +319,7 @@ class CallNotifier extends StateNotifier<CallState> {
     final inviteId = state.inviteId;
 
     debugPrint(
-      '📞 _joinAgora channel=\( channel uid= \){_uidFrom(myUserId)} type=${state.type}',
+      '📞 _joinAgora channel=$channel uid=${_uidFrom(myUserId)} type=${state.type}',
     );
 
     if (channel == null || channel.isEmpty) {
@@ -406,7 +418,10 @@ class CallNotifier extends StateNotifier<CallState> {
     _ringTimeout?.cancel();
     _statusSub?.cancel();
 
-    await _media.disposeEngine();
+    // ✅ CORRECTION PRINCIPALE : Utiliser leave() au lieu de disposeEngine()
+    // leave() quitte juste le channel sans détruire le moteur Agora
+    // disposeEngine() est réservé à la fermeture de l'app (dispose())
+    await _media.leave();
 
     if (!skipSignal && inviteId != null) {
       try {
@@ -451,6 +466,7 @@ class CallNotifier extends StateNotifier<CallState> {
     _timer?.cancel();
     _ringTimeout?.cancel();
     _statusSub?.cancel();
+    // ✅ Correct : disposeEngine() ici pour fermer le moteur à la fin de l'app
     _media.disposeEngine();
     _signal.dispose();
     super.dispose();
