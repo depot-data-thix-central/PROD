@@ -115,7 +115,21 @@ class CallNotifier extends StateNotifier<CallState> {
       debugPrint('Erreur sonnerie: $e');
     }
   }
-
+/// : préview caméra côté appelant pendant la sonnerie
+  Future<void> prepareLocalPreview(String myUserId) async {
+    final channel = state.channelName?.trim();
+    if (channel == null || channel.isEmpty) return;
+    try {
+      await _media.prepareLocalPreview(
+        channel: channel,
+        uid: _uidFrom(myUserId),
+      );
+      // déclenche un rebuild pour afficher la préview dans CallPage
+      state = state.copyWith();
+    } catch (e) {
+      debugPrint('⚠️ préview locale: $e');
+    }
+  }
   Future<void> _playOfflineTone() async {
     try {
       await _ringPlayer.setReleaseMode(ReleaseMode.release);
