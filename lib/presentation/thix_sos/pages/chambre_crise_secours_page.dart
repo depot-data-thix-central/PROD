@@ -42,6 +42,7 @@ class _ChambreCriseSecoursPageState
   String? _error;
   bool _muted = false;
   bool _busy = false;
+  String? _conversationId;
 
   @override
   void initState() {
@@ -59,10 +60,14 @@ class _ChambreCriseSecoursPageState
     });
     try {
       await _media.joinAsResponder(widget.incidentId);
+      final incident = await ref
+          .read(sosServiceProvider)
+          .getIncidentForRescue(widget.incidentId);
+      _conversationId = incident?.chatConversationId;
       await ref.read(sosServiceProvider).logEventPublic(
         widget.incidentId,
         'RESCUE_JOINED_CRISIS_ROOM',
-        {'role': 'secours'},
+        {'role': 'secours', 'conversation_id': _conversationId},
       );
     } catch (e) {
       _error = '$e';
@@ -80,8 +85,13 @@ class _ChambreCriseSecoursPageState
   Future<void> _photo() async {
     setState(() => _busy = true);
     try {
-      final e = await _evidence.takePhoto(widget.incidentId);
-      if (e != null && mounted) setState(() => _items.insert(0, e));
+      final e = await _evidence.takePhoto(widget.incidentId, conversationId: _conversationId);
+      if (e != null && mounted) {
+        setState(() => _items.insert(0, e));
+        _toast(e.postedToChat
+            ? 'Photo envoyée dans le groupe SOS'
+            : 'Photo prise (groupe indisponible)');
+      }
     } catch (err) {
       _toast('$err');
     }
@@ -91,8 +101,13 @@ class _ChambreCriseSecoursPageState
   Future<void> _video() async {
     setState(() => _busy = true);
     try {
-      final e = await _evidence.recordVideo(widget.incidentId);
-      if (e != null && mounted) setState(() => _items.insert(0, e));
+      final e = await _evidence.recordVideo(widget.incidentId, conversationId: _conversationId);
+      if (e != null && mounted) {
+        setState(() => _items.insert(0, e));
+        _toast(e.postedToChat
+            ? 'Vidéo envoyée dans le groupe SOS'
+            : 'Vidéo prise (groupe indisponible)');
+      }
     } catch (err) {
       _toast('$err');
     }
@@ -103,9 +118,9 @@ class _ChambreCriseSecoursPageState
     setState(() => _busy = true);
     try {
       if (_evidence.isRecordingAudio) {
-        final e = await _evidence.stopAudio(widget.incidentId);
+        final e = await _evidence.stopAudio(widget.incidentId, conversationId: _conversationId);
         if (e != null && mounted) setState(() => _items.insert(0, e));
-        _toast('Enregistrement audio enregistré');
+        _toast(e.postedToChat ? 'Audio envoyé dans le groupe SOS' : 'Audio enregistré');
       } else {
         await _evidence.startAudio();
         _toast('Enregistrement audio démarré');
