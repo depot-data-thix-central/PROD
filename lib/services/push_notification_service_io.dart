@@ -18,10 +18,20 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // Isolate séparé : ré-init minimal
   try {
     await Firebase.initializeApp();
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('FCM background: Firebase init error: $e');
+    return; // Arrêter si Firebase échoue
+  }
 
   try {
-    await LocalNotificationService.instance.initialize();
+    // Initialiser avec timeout pour éviter les blocages
+    await LocalNotificationService.instance.initialize().timeout(
+      const Duration(seconds: 5),
+      onTimeout: () {
+        throw Exception('LocalNotificationService init timeout');
+      },
+    );
+    
     await _showFromRemoteMessage(message);
   } catch (e) {
     debugPrint('FCM background handler error: $e');
@@ -43,20 +53,26 @@ Future<void> _showFromRemoteMessage(RemoteMessage message) async {
 
   final payload = _buildPayload(data);
 
-  // Appels → channel prioritaire si le service local le supporte
-  final isCall = type == PushTypes.incomingCall;
+  // ✅ CORRECTION : Utiliser le bon channel selon le type
+  String? channelId;
+  if (type == PushTypes.incomingCall) {
+    channelId = 'thix_calls';
+  } else if (type == PushTypes.chatMessage) {
+    channelId = 'thix_chat';
+  } else {
+    channelId = 'thix_id_default';
+  }
 
   await LocalNotificationService.instance.show(
     id: _notifId(message),
     title: title,
     body: body.isEmpty ? 'Nouvelle notification' : body,
     payload: payload,
-    // si tu ajoutes le param optionnel dans LocalNotificationService :
-    // channelId: isCall ? 'thix_calls' : null,
+    channelId: channelId, // ✅ AJOUTÉ : utiliser le channel approprié
   );
 
   debugPrint(
-    'FCM show type=$type title=$title payload=\( payload id= \){message.messageId}',
+    'FCM show type=$type title=$title payload=$payload id=${message.messageId}',
   );
 }
 
