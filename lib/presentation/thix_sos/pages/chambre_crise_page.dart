@@ -12,7 +12,6 @@ import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../services/sos_crisis_media_service.dart';
-import '../services/sos_evidence_service.dart';
 import '../models/sos_models.dart';
 import '../providers/sos_providers.dart';
 import 'sos_pin_page.dart';
@@ -37,7 +36,6 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
   String? _resolvedConversationId;
 
   final Set<String> _sentQuick = {};
-  final _evidence = SosEvidenceService();
   bool _camOn = false;
   bool _camBusy = false;
 
@@ -340,128 +338,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                                 },
                               ),
                             ),
-                            const SizedBox(width: ThixPolicy.s10),
-                            Expanded(
-                              child: _ComButton(
-                                icon: _camOn
-                                    ? Icons.videocam
-                                    : Icons.videocam_outlined,
-                                label: _camBusy
-                                    ? '…'
-                                    : (_camOn ? 'Cam ON' : 'Caméra'),
-                                color: _camOn
-                                    ? ThixPolicy.danger
-                                    : const Color(0xFF60A5FA),
-                                onTap: _toggleCamera,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: ThixPolicy.s20),
-                        _section('PREUVES'),
-                        const SizedBox(height: ThixPolicy.s8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _ComButton(
-                                icon: Icons.photo_camera,
-                                label: 'Photo',
-                                color: const Color(0xFFF59E0B),
-                                onTap: () async {
-                                  try {
-                                    await _evidence
-                                        .takePhoto(widget.incidentId);
-                                    if (!mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Photo enregistrée',
-                                          style: ThixPolicy.bodyStyle.copyWith(
-                                              color: ThixPolicy.onBrand),
-                                        ),
-                                        backgroundColor: ThixPolicy.inkDeep,
-                                      ),
-                                    );
-                                  } catch (e) {
-                                    if (!mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Photo: $e')),
-                                    );
-                                  }
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: ThixPolicy.s10),
-                            Expanded(
-                              child: _ComButton(
-                                icon: Icons.videocam,
-                                label: 'Clip 30s',
-                                color: const Color(0xFF38BDF8),
-                                onTap: () async {
-                                  try {
-                                    await _evidence
-                                        .recordVideo(widget.incidentId);
-                                    if (!mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Vidéo enregistrée',
-                                          style: ThixPolicy.bodyStyle.copyWith(
-                                              color: ThixPolicy.onBrand),
-                                        ),
-                                        backgroundColor: ThixPolicy.inkDeep,
-                                      ),
-                                    );
-                                  } catch (e) {
-                                    if (!mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Vidéo: $e')),
-                                    );
-                                  }
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: ThixPolicy.s10),
-                            Expanded(
-                              child: _ComButton(
-                                icon: _evidence.isRecordingAudio
-                                    ? Icons.stop
-                                    : Icons.mic,
-                                label: _evidence.isRecordingAudio
-                                    ? 'Stop'
-                                    : 'Audio',
-                                color: ThixPolicy.danger,
-                                onTap: () async {
-                                  try {
-                                    if (_evidence.isRecordingAudio) {
-                                      await _evidence
-                                          .stopAudio(widget.incidentId);
-                                      if (!mounted) return;
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            'Audio enregistré',
-                                            style:
-                                                ThixPolicy.bodyStyle.copyWith(
-                                                    color: ThixPolicy.onBrand),
-                                          ),
-                                          backgroundColor: ThixPolicy.inkDeep,
-                                        ),
-                                      );
-                                    } else {
-                                      await _evidence.startAudio();
-                                    }
-                                    setState(() {});
-                                  } catch (e) {
-                                    if (!mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Audio: $e')),
-                                    );
-                                  }
-                                },
-                              ),
-                            ),
+
                           ],
                         ),
                         const SizedBox(height: ThixPolicy.s20),
