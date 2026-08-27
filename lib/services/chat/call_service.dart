@@ -7,6 +7,12 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../models/chat/call_status.dart';
 import 'call_token_service.dart';
 
+/// Service de gestion des appels audio/vidéo avec Agora RTC
+/// 
+/// Architecture :
+/// - Singleton pour réutiliser le moteur RTC entre les appels (évite le bug "Null check operator")
+/// - Cycle de vie : create() une fois → join()/leave() multiples → release() à la fermeture
+/// - Supporte les préviews caméra locales avant l'acceptation
 class CallMediaService {
   static final CallMediaService _i = CallMediaService._();
   factory CallMediaService() => _i;
@@ -26,6 +32,7 @@ class CallMediaService {
   RtcEngine? get engine => _engine;
   bool get isJoined => _joined;
 
+  /// Demande les permissions micro/caméra selon le type d'appel
   Future<void> _ensurePermissions(CallType type) async {
     try {
       final mic = await Permission.microphone.request();
@@ -50,10 +57,12 @@ class CallMediaService {
     }
   }
 
-  /// ✅ CORRECTION : crée le moteur UNE SEULE FOIS et le réutilise.
-  /// Ne JAMAIS faire release() + create() entre deux appels
-  /// (déclenche le bug "Null check operator" du SDK, issue #2202).
+  /// Crée le moteur RTC UNE SEULE FOIS et le réutilise entre les appels
+  /// 
+  /// ⚠️ IMPORTANT : Ne JAMAIS faire release() + create() entre deux appels
+  /// (déclenche le bug "Null check operator" du SDK Agora, issue #2202)
   Future<RtcEngine> _ensureEngine(String appId) async {
+    // Réutiliser si déjà initialisé avec le même appId
     if (_engine != null && _initializedAppId == appId) {
       return _engine!;
     }
@@ -92,7 +101,7 @@ class CallMediaService {
           _onUserJoined?.call(remoteUid);
         },
         onUserOffline: (conn, remoteUid, reason) {
-          debugPrint('👤 Remote left $remoteUid');
+          debugPrint('👤 Remote left $remoteUid (reason: $reason)');
           _onUserLeft?.call(remoteUid);
         },
         onLeaveChannel: (conn, stats) {
@@ -116,10 +125,45 @@ class CallMediaService {
 
     _engine = engine;
     _initializedAppId = appId;
-    debugPrint('✅ Engine initialisé (appId=${appId.substring(0, 6)}…)');
+    debugPrint('✅ Engine initialisé (appId=${appId.length > 6 ? appId.substring(0, 6) : appId}…)');
     return engine;
   }
 
+  /// ✅ NOUVEAU : Démarre la préview caméra locale AVANT l'acceptation
+  /// 
+  /// Utilisé par l'appelant pendant la sonnerie pour voir sa propre caméra
+  /// en plein écran avant que l'appelé ne décroche.
+  Future<void> prepareLocalPreview({
+    required String channel,
+    required int uid,
+  }) async {
+    await _ensurePermissions(CallType.video);
+
+    late final CallTokenResult cred;
+    try {
+      cred = await CallTokenService().getToken(channel: channel, uid: uid);
+    } catch (e) {
+      debugPrint('❌ prepareLocalPreview getToken: $e');
+      rethrow;
+    }
+
+    if (cred.appId.trim().isEmpty || cred.appId.trim().length < 10) {
+      throw Exception('appId invalide pour la préview');
+    }
+
+    try {
+      final engine = await _ensureEngine(cred.appId.trim());
+      await engine.enableVideo();
+      await engine.enableLocalVideo(true);
+      await engine.startPreview();
+      debugPrint('✅ Préview locale démarrée channel=$channel');
+    } catch (e, st) {
+      debugPrint('❌ prepareLocalPreview: $e\n$st');
+      rethrow;
+    }
+  }
+
+  /// Rejoint un canal Agora pour un appel audio ou vidéo
   Future<void> join({
     required String channel,
     required CallType type,
@@ -128,7 +172,7 @@ class CallMediaService {
     required void Function(int remoteUid) onUserLeft,
     required void Function(String error) onError,
   }) async {
-    // ✅ Anti double-join (arrivée d'appel + accept simultanés)
+    // Anti double-join (arrivée d'appel + accept simultanés)
     if (_joining) {
       debugPrint('⚠️ join ignoré: déjà en cours');
       return;
@@ -188,24 +232,25 @@ class CallMediaService {
       _channel = channel;
       _joined = false;
 
+      // ✅ CORRECTION : publishCameraTrack pour publier la vidéo
       await engine.joinChannel(
         token: cred.token.trim(),
         channelId: channel,
         uid: uid,
-        options: const ChannelMediaOptions(
+        options: ChannelMediaOptions(
           clientRoleType: ClientRoleType.clientRoleBroadcaster,
           channelProfile: ChannelProfileType.channelProfileCommunication,
           publishMicrophoneTrack: true,
+          publishCameraTrack: type == CallType.video, // ✅ Publier la caméra si vidéo
           autoSubscribeAudio: true,
           autoSubscribeVideo: true,
         ),
       );
-      debugPrint('✅ joinChannel OK channel=$channel uid=$uid');
+      debugPrint('✅ joinChannel OK channel=$channel uid=$uid video=${type == CallType.video}');
     } catch (e, st) {
-      // ✅ Stack trace complète pour diagnostic si ça échoue encore
       debugPrint('❌ Agora init/join: $e\n$st');
       onError('agora: $e');
-      await leave(); // ✅ leave() au lieu de disposeEngine()
+      await leave(); // leave() au lieu de disposeEngine()
       _joining = false;
       rethrow;
     }
@@ -213,10 +258,12 @@ class CallMediaService {
     _joining = false;
   }
 
+  /// Active/désactive le micro
   Future<void> setMuted(bool muted) async {
     await _engine?.muteLocalAudioStream(muted);
   }
 
+  /// Active/désactive la caméra
   Future<void> setVideoOff(bool off) async {
     await _engine?.muteLocalVideoStream(off);
     if (!off) {
@@ -225,17 +272,22 @@ class CallMediaService {
     }
   }
 
+  /// Bascule entre caméra avant/arrière
   Future<void> switchCamera() async {
     await _engine?.switchCamera();
   }
 
+  /// Active/désactive le haut-parleur
   Future<void> setSpeaker(bool on) async {
     try {
       await _engine?.setEnableSpeakerphone(on);
     } catch (_) {}
   }
 
-  /// ✅ Quitte le channel SANS détruire le moteur (à utiliser entre les appels)
+  /// Quitte le canal SANS détruire le moteur (à utiliser entre les appels)
+  /// 
+  /// Cette méthode doit être appelée dans hangUp() pour quitter proprement
+  /// le canal sans libérer le moteur RTC (qui sera réutilisé au prochain appel).
   Future<void> leave() async {
     try {
       await _engine?.stopPreview();
@@ -247,7 +299,10 @@ class CallMediaService {
     _channel = null;
   }
 
-  /// ✅ À appeler UNIQUEMENT à la fermeture de l'app (jamais entre 2 appels)
+  /// Libère complètement le moteur RTC
+  /// 
+  /// ⚠️ À appeler UNIQUEMENT à la fermeture de l'app (dispose())
+  /// Ne jamais appeler entre deux appels (déclenche le bug "Null check operator")
   Future<void> disposeEngine() async {
     await leave();
     try {
