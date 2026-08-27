@@ -94,7 +94,6 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
   void _subscribeToChanges() {
     if (_userId == null || _isDisposed) return;
 
-    // Appels manqués en temps réel
     _missedCallsChannel = _client
         .channel('missed_calls_$_userId')
         .onPostgresChanges(
@@ -125,7 +124,6 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
           ),
           callback: (payload) {
             if (_isDisposed) return;
-            // Si un appel manqué est marqué comme lu
             final isRead = payload.newRecord['is_read'] as bool?;
             if (isRead == true) {
               final newCount = (state.missedCalls - 1).clamp(0, 999);
@@ -135,7 +133,6 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
         )
         .subscribe();
 
-    // Nouvelles connexions en temps réel
     _connectionsChannel = _client
         .channel('new_connections_$_userId')
         .onPostgresChanges(
@@ -161,7 +158,6 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
             if (_isDisposed) return;
             final status = payload.newRecord['status'] as String?;
             if (status != 'pending') {
-              // Connexion acceptée ou rejetée → décrémenter
               final newCount = (state.newConnections - 1).clamp(0, 999);
               state = state.copyWith(newConnections: newCount);
             }
@@ -172,7 +168,6 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
 
   void clearMissedCalls() {
     state = state.copyWith(missedCalls: 0);
-    // Marquer tous les appels manqués comme lus en background
     _markAllMissedCallsAsRead();
   }
 
