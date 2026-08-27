@@ -9,11 +9,18 @@ import 'sos_evidence_service.dart';
 import 'sos_service.dart';
 
 class SosRemoteCaptureService {
-  SosRemoteCaptureService({
+  // ✅ Constructeur privé
+  SosRemoteCaptureService._({
     SosService? sos,
     SosEvidenceService? evidence,
   })  : _sos = sos ?? SosService(),
         _evidence = evidence ?? SosEvidenceService();
+
+  // ✅ Instance unique (Singleton)
+  static final SosRemoteCaptureService instance = SosRemoteCaptureService._();
+
+  // ✅ Factory pour compatibilité avec l'ancien code
+  factory SosRemoteCaptureService() => instance;
 
   final SosService _sos;
   final SosEvidenceService _evidence;
