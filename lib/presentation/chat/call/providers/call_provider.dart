@@ -11,6 +11,7 @@ import '../../../../services/chat/call_service.dart';
 import '../../../../services/chat/call_signaling_service.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
 
+/// État global d'un appel (en cours, en sonnerie, terminé, etc.)
 class CallState {
   final CallStatus status;
   final CallType type;
@@ -94,6 +95,13 @@ class CallState {
       status == CallStatus.ongoing;
 }
 
+/// Contrôleur global de l'appel (Riverpod StateNotifier)
+///
+/// Gère :
+/// - L'initialisation / acceptation / rejet des appels
+/// - La préview caméra locale pendant la sonnerie
+/// - La signalisation Supabase Realtime
+/// - L'historique des appels dans la conversation
 class CallNotifier extends StateNotifier<CallState> {
   final _media = CallMediaService();
   final _signal = CallSignalingService();
@@ -107,6 +115,10 @@ class CallNotifier extends StateNotifier<CallState> {
 
   CallNotifier(this.ref) : super(const CallState());
 
+  // ==================================================================
+  // Sons
+  // ==================================================================
+
   Future<void> _playRingtone() async {
     try {
       await _ringPlayer.setReleaseMode(ReleaseMode.loop);
@@ -115,21 +127,7 @@ class CallNotifier extends StateNotifier<CallState> {
       debugPrint('Erreur sonnerie: $e');
     }
   }
-/// : préview caméra côté appelant pendant la sonnerie
-  Future<void> prepareLocalPreview(String myUserId) async {
-    final channel = state.channelName?.trim();
-    if (channel == null || channel.isEmpty) return;
-    try {
-      await _media.prepareLocalPreview(
-        channel: channel,
-        uid: _uidFrom(myUserId),
-      );
-      // déclenche un rebuild pour afficher la préview dans CallPage
-      state = state.copyWith();
-    } catch (e) {
-      debugPrint('⚠️ préview locale: $e');
-    }
-  }
+
   Future<void> _playOfflineTone() async {
     try {
       await _ringPlayer.setReleaseMode(ReleaseMode.release);
@@ -145,6 +143,11 @@ class CallNotifier extends StateNotifier<CallState> {
     } catch (_) {}
   }
 
+  // ==================================================================
+  // Helpers
+  // ==================================================================
+
+  /// Détermine un UID numérique stable à partir de l'UUID de l'utilisateur
   int _uidFrom(String userId) {
     var hash = 0x811c9dc5;
     for (final c in userId.codeUnits) {
@@ -155,6 +158,7 @@ class CallNotifier extends StateNotifier<CallState> {
     return uid == 0 ? 1 : uid;
   }
 
+  /// Récupère ou crée une conversation 1-to-1 entre deux utilisateurs
   Future<String?> _getOrCreateConversationId(
     String currentUserId,
     String otherUserId,
@@ -187,6 +191,33 @@ class CallNotifier extends StateNotifier<CallState> {
     state = state.copyWith(status: CallStatus.failed, error: msg);
   }
 
+  // ==================================================================
+  // Préview caméra locale (pendant la sonnerie côté appelant)
+  // ==================================================================
+
+  /// Démarre la préview caméra locale avant l'acceptation (appels vidéo).
+  ///
+  /// Utilise le même moteur RTC qui sera réutilisé au joinChannel.
+  /// Lancé sans await pour ne pas bloquer le flux de sonnerie.
+  Future<void> prepareLocalPreview(String myUserId) async {
+    final channel = state.channelName?.trim();
+    if (channel == null || channel.isEmpty) return;
+    try {
+      await _media.prepareLocalPreview(
+        channel: channel,
+        uid: _uidFrom(myUserId),
+      );
+      // Déclenche un rebuild pour afficher la préview dans CallPage
+      state = state.copyWith();
+    } catch (e) {
+      debugPrint('⚠️ préview locale: $e');
+    }
+  }
+
+  // ==================================================================
+  // Start call (appelant)
+  // ==================================================================
+
   Future<void> start({
     required String myUserId,
     required String calleeId,
@@ -195,7 +226,7 @@ class CallNotifier extends StateNotifier<CallState> {
     required CallType type,
     String? conversationId,
   }) async {
-    // ✅ CORRECTION : Empêcher les appels multiples
+    // Protection contre les appels multiples
     if (state.isActive) {
       debugPrint('⚠️ start ignoré: appel déjà en cours');
       return;
@@ -241,6 +272,11 @@ class CallNotifier extends StateNotifier<CallState> {
 
       _playRingtone();
 
+      // ✅ Préview caméra locale côté appelant (appels vidéo uniquement)
+      if (type == CallType.video) {
+        unawaited(prepareLocalPreview(myUserId));
+      }
+
       _ringTimeout?.cancel();
       _ringTimeout = Timer(const Duration(seconds: 45), () async {
         if (state.status == CallStatus.ringing && state.inviteId != null) {
@@ -272,13 +308,17 @@ class CallNotifier extends StateNotifier<CallState> {
     }
   }
 
+  // ==================================================================
+  // Accept call (appelé)
+  // ==================================================================
+
   Future<void> acceptIncoming({
     required CallInvite invite,
     required String myUserId,
     String? callerName,
     String? callerAvatar,
   }) async {
-    // ✅ CORRECTION : Empêcher les appels multiples
+    // Protection contre les appels multiples
     if (state.isActive) {
       debugPrint('⚠️ acceptIncoming ignoré: appel déjà en cours');
       return;
@@ -327,6 +367,10 @@ class CallNotifier extends StateNotifier<CallState> {
     }
     state = const CallState();
   }
+
+  // ==================================================================
+  // Join Agora
+  // ==================================================================
 
   Future<void> _joinAgora(String myUserId) async {
     final channel = state.channelName?.trim();
@@ -386,6 +430,10 @@ class CallNotifier extends StateNotifier<CallState> {
     }
   }
 
+  // ==================================================================
+  // Timer d'appel
+  // ==================================================================
+
   void _startTimer() {
     _timer?.cancel();
     final start = DateTime.now();
@@ -393,6 +441,10 @@ class CallNotifier extends StateNotifier<CallState> {
       state = state.copyWith(duration: DateTime.now().difference(start));
     });
   }
+
+  // ==================================================================
+  // Contrôles média
+  // ==================================================================
 
   Future<void> toggleMute() async {
     final next = !state.muted;
@@ -417,6 +469,10 @@ class CallNotifier extends StateNotifier<CallState> {
     state = state.copyWith(speakerOn: next);
   }
 
+  // ==================================================================
+  // Raccrocher
+  // ==================================================================
+
   Future<void> hangUp({bool skipSignal = false}) async {
     _stopRingtone();
 
@@ -432,9 +488,7 @@ class CallNotifier extends StateNotifier<CallState> {
     _ringTimeout?.cancel();
     _statusSub?.cancel();
 
-    // ✅ CORRECTION PRINCIPALE : Utiliser leave() au lieu de disposeEngine()
-    // leave() quitte juste le channel sans détruire le moteur Agora
-    // disposeEngine() est réservé à la fermeture de l'app (dispose())
+    // leave() quitte le channel et stoppe la préview sans détruire le moteur
     await _media.leave();
 
     if (!skipSignal && inviteId != null) {
@@ -447,6 +501,7 @@ class CallNotifier extends StateNotifier<CallState> {
       } catch (_) {}
     }
 
+    // Historique dans la conversation (uniquement côté appelant)
     if (convId != null && convId.isNotEmpty && wasCaller) {
       try {
         final chatSvc = ref.read(chatServiceProvider);
@@ -473,6 +528,10 @@ class CallNotifier extends StateNotifier<CallState> {
     state = const CallState();
   }
 
+  // ==================================================================
+  // Dispose
+  // ==================================================================
+
   @override
   void dispose() {
     _stopRingtone();
@@ -480,7 +539,7 @@ class CallNotifier extends StateNotifier<CallState> {
     _timer?.cancel();
     _ringTimeout?.cancel();
     _statusSub?.cancel();
-    // ✅ Correct : disposeEngine() ici pour fermer le moteur à la fin de l'app
+    // disposeEngine() libère le moteur RTC (uniquement à la fermeture de l'app)
     _media.disposeEngine();
     _signal.dispose();
     super.dispose();
