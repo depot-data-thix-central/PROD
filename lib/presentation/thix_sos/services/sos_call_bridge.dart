@@ -5,6 +5,7 @@ import 'package:thix_id/services/chat/call_signaling_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/sos_models.dart';
+import 'sos_crisis_media_service.dart';
 import 'sos_service.dart';
 
 class SosCallBridge {
@@ -51,6 +52,20 @@ class SosCallBridge {
       circle: circle,
       contacts: contacts,
     );
+
+    // Caméra crise (indépendante de l'appel audio 1-1)
+    try {
+      await SosCrisisMediaService.instance.startVictimBroadcast(incident.id);
+      await _sos.logEventPublic(incident.id, 'CAMERA_CHANNEL_READY', {
+        'channel': SosCrisisMediaService.channelFor(incident.id),
+        'mode': 'victim_broadcast',
+      });
+    } catch (e) {
+      debugPrint('SosCallBridge: camera crise échouée: $e');
+      await _sos.logEventPublic(incident.id, 'CAMERA_CHANNEL_FAILED', {
+        'error': e.toString(),
+      });
+    }
 
     return SosActivationResult(
       incident: incident,
@@ -107,7 +122,7 @@ class SosCallBridge {
   }) async {
     final calleeId = await _sos.resolveContactUserId(contact);
 
-    // 1) Appel in-app THIX (Agora) si compte lié
+    // 1) Appel in-app THIX (Agora) si compte lié — AUDIO UNIQUEMENT
     if (calleeId != null && calleeId.isNotEmpty) {
       try {
         final invite = await _signaling.startCall(
