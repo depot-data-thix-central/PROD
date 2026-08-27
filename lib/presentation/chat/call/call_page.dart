@@ -31,7 +31,7 @@ class _CallPageState extends ConsumerState<CallPage> {
     final notifier = ref.read(callProvider.notifier);
     final media = CallMediaService();
 
-    // Affiche l'erreur BRUTE pour debug (token / agora / permission)
+    // Affiche l'erreur et ferme la page après 4 secondes
     ref.listen(callProvider, (previous, next) {
       if (next.status == CallStatus.failed && !_errorHandled) {
         _errorHandled = true;
@@ -39,10 +39,7 @@ class _CallPageState extends ConsumerState<CallPage> {
         debugPrint('❌ CALL UI error: $message');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              message,
-              style: const TextStyle(fontSize: 12),
-            ),
+            content: Text(message, style: const TextStyle(fontSize: 12)),
             backgroundColor: const Color(0xFFEF4444),
             duration: const Duration(seconds: 10),
           ),
@@ -63,23 +60,43 @@ class _CallPageState extends ConsumerState<CallPage> {
     };
 
     final channelId = state.channelName;
+    final engineReady = media.engine != null;
+
+    // ── États d'affichage vidéo ──────────────────────────────
+    // 1. Vidéo distante plein écran : appel connecté + remote uid
+    final showRemote = state.isVideo &&
+        state.remoteUid != null &&
+        engineReady &&
+        channelId != null &&
+        channelId.isNotEmpty;
+
+    // 2. Préview locale plein écran : pendant sonnerie / connexion
+    final showLocalFull =
+        state.isVideo && !state.videoOff && engineReady && !showRemote;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A1F44),
       body: SafeArea(
         child: Stack(
           children: [
-            if (state.isVideo &&
-                state.remoteUid != null &&
-                media.engine != null &&
-                channelId != null &&
-                channelId.isNotEmpty)
+            // ── FOND ─────────────────────────────────────────
+            // Priorité : distant plein écran > préview locale > avatar
+            if (showRemote)
               Positioned.fill(
                 child: AgoraVideoView(
                   controller: VideoViewController.remote(
                     rtcEngine: media.engine!,
                     canvas: VideoCanvas(uid: state.remoteUid),
                     connection: RtcConnection(channelId: channelId),
+                  ),
+                ),
+              )
+            else if (showLocalFull)
+              Positioned.fill(
+                child: AgoraVideoView(
+                  controller: VideoViewController(
+                    rtcEngine: media.engine!,
+                    canvas: const VideoCanvas(uid: 0),
                   ),
                 ),
               )
@@ -133,7 +150,7 @@ class _CallPageState extends ConsumerState<CallPage> {
                     ],
                     if (state.isVideo &&
                         state.status == CallStatus.ongoing &&
-                        media.engine == null) ...[
+                        !engineReady) ...[
                       const SizedBox(height: 16),
                       const SizedBox(
                         width: 20,
@@ -153,10 +170,50 @@ class _CallPageState extends ConsumerState<CallPage> {
                 ),
               ),
 
-            if (state.isVideo && !state.videoOff && media.engine != null)
+            // ── Voile sombre sur la préview locale (lisibilité) ──
+            if (showLocalFull)
+              Positioned.fill(
+                child: Container(color: Colors.black26),
+              ),
+
+            // ── En-tête nom + statut (par-dessus la vidéo) ──────
+            if (showRemote || showLocalFull)
+              Positioned(
+                top: 12,
+                left: 0,
+                right: 0,
+                child: Column(
+                  children: [
+                    Text(
+                      state.remoteName ?? '',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 18,
+                        shadows: [
+                          Shadow(blurRadius: 8, color: Colors.black54),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      statusLabel,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        shadows: [
+                          Shadow(blurRadius: 8, color: Colors.black54),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // ── PiP locale (coin haut droit quand le distant est connecté) ──
+            if (showRemote && !state.videoOff)
               Positioned(
                 right: 16,
-                top: 16,
+                top: 56,
                 width: 110,
                 height: 160,
                 child: ClipRRect(
@@ -170,29 +227,7 @@ class _CallPageState extends ConsumerState<CallPage> {
                 ),
               ),
 
-            if (state.isVideo)
-              Positioned(
-                top: 12,
-                left: 0,
-                right: 0,
-                child: Column(
-                  children: [
-                    Text(
-                      state.remoteName ?? '',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 18,
-                      ),
-                    ),
-                    Text(
-                      statusLabel,
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                  ],
-                ),
-              ),
-
+            // ── Boutons de contrôle ─────────────────────────────
             Positioned(
               left: 0,
               right: 0,
@@ -233,31 +268,6 @@ class _CallPageState extends ConsumerState<CallPage> {
                     icon: Icons.call_end,
                     label: 'Raccrocher',
                     onTap: () async {
-                      try {
-                        final isMissed = state.duration.inSeconds == 0;
-                        final type =
-                            state.isVideo ? 'call_video' : 'call_audio';
-                        final textType =
-                            state.isVideo ? 'Appel vidéo' : 'Appel audio';
-                        final textDuration = isMissed
-                            ? 'manqué'
-                            : '(${_fmt(state.duration)})';
-                        final content = '$textType $textDuration';
-
-                        final chatSvc = ref.read(chatServiceProvider);
-                        final convId = state.conversationId;
-
-                        if (convId != null && convId.isNotEmpty) {
-                          await chatSvc.sendMessage(
-                            conversationId: convId,
-                            content: content,
-                            mediaType: type,
-                          );
-                        }
-                      } catch (e) {
-                        debugPrint('Erreur bulle historique: $e');
-                      }
-
                       await notifier.hangUp();
                       if (context.mounted) Navigator.pop(context);
                     },
