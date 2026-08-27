@@ -10,7 +10,8 @@ import 'package:thix_id/presentation/chat/widgets/audio_player.dart';
 import 'package:thix_id/presentation/chat/widgets/chat_code_snippet.dart';
 import 'package:thix_id/presentation/chat/widgets/chat_ephemeral_timer.dart';
 import 'package:thix_id/presentation/chat/widgets/sentiment_indicator.dart';
-import 'package:thix_id/presentation/chat/chat_screen.dart'; // ✅ Import pour showFullscreenImageViewer
+import 'package:thix_id/presentation/chat/chat_screen.dart'; 
+import 'package:thix_id/services/chat/media_saver.dart'; 
 
 class _C {
   static const primary = Color(0xFF2D6CDF);
@@ -66,7 +67,6 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
 
   static const _quickReactions = ['❤️', '😂', '🔥', '👍', '😮', '😢'];
 
-  // ✅ CORRECTION : RegExp statique (créée une seule fois)
   static final _imageExtRegex = RegExp(
     r'\.(jpg|jpeg|png|gif|webp|heic|heif|svg)(\?|$)',
     caseSensitive: false,
@@ -304,7 +304,7 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
       return _FileBody(
         type: m.mediaType ?? 'file',
         name: m.mediaName ?? m.content,
-        url: m.mediaUrl!, // ✅ Ajout de l'URL pour le téléchargement
+        url: m.mediaUrl!, 
         isOwn: widget.isOwn,
       );
     }
@@ -618,7 +618,6 @@ class _EncryptedBody extends StatelessWidget {
   }
 }
 
-// ✅ CORRECTION : Utilise showFullscreenImageViewer (avec téléchargement)
 class _ImageBody extends StatelessWidget {
   final String url;
   final String messageId;
@@ -629,7 +628,6 @@ class _ImageBody extends StatelessWidget {
     final tag = 'img_$messageId';
     return GestureDetector(
       onTap: () {
-        // ✅ Utilise le viewer avec téléchargement + partage
         showFullscreenImageViewer(
           context,
           url: url,
@@ -677,11 +675,10 @@ class _ImageBody extends StatelessWidget {
   }
 }
 
-// ✅ CORRECTION : Ajout du téléchargement pour les fichiers
 class _FileBody extends StatelessWidget {
   final String type;
   final String name;
-  final String url; // ✅ Nouveau : URL pour le téléchargement
+  final String url; 
   final bool isOwn;
   const _FileBody({
     required this.type,
@@ -694,7 +691,6 @@ class _FileBody extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () async {
-        // ✅ Téléchargement du fichier au tap
         final messenger = ScaffoldMessenger.of(context);
         messenger.showSnackBar(const SnackBar(content: Text('Téléchargement...')));
         final path = await MediaSaver.download(url: url, fileName: name);
@@ -825,7 +821,6 @@ class _QuickReactions extends StatelessWidget {
   }
 }
 
-// ✅ CORRECTION : Cohérence des paramètres (les deux required)
 class MessageStatusTicks extends StatelessWidget {
   final bool isDelivered;
   final bool isRead;
@@ -833,7 +828,7 @@ class MessageStatusTicks extends StatelessWidget {
 
   const MessageStatusTicks({
     super.key,
-    required this.isDelivered, // ✅ Maintenant required
+    required this.isDelivered, 
     required this.isRead,
     this.color = _C.primary,
   });
@@ -876,5 +871,3 @@ class MessageStatusTicks extends StatelessWidget {
     );
   }
 }
-
-// ❌ SUPPRIMÉ : FullScreenImagePage (dupliqué, remplacé par showFullscreenImageViewer)
