@@ -95,7 +95,7 @@ class _GlobalSosListenerState extends State<GlobalSosListener> {
                 title: '🚨 SOS — $publicId',
                 body: 'Ouvrir la chambre de crise pour piloter les secours',
                 payload: 'sos_crisis:$incidentId:$victimId',
-                channelId: 'thix_calls',
+                
               );
             }
           },
