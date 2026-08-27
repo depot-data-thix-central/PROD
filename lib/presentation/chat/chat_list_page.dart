@@ -14,7 +14,7 @@ import '../../models/chat/chat_message.dart';
 import '../../models/chat/chat_conversation.dart';
 import 'providers/chat_list_provider.dart';
 import 'providers/presence_provider.dart';
-import 'providers/notification_counters_provider.dart'; // ✅ NOUVEAU
+import 'package:thix_id/presentation/chat/providers/notification_counters_provider.dart';
 import 'chat_screen.dart';
 import 'new_conversation_page.dart';
 import 'package:thix_id/presentation/chat/screens/group_create_page.dart';
@@ -24,7 +24,7 @@ import 'package:thix_id/presentation/chat/call/call_history_page.dart';
 import 'package:thix_id/presentation/chat/widgets/status_story_row.dart';
 import 'package:thix_id/presentation/chat/providers/status_provider.dart';
 
-// ✅ Imports pour la certification
+// Imports pour la certification
 import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
 import 'package:thix_id/features/network/presentation/providers/user_profile_providers.dart';
