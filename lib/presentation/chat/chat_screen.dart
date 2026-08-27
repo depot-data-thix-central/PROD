@@ -1433,7 +1433,6 @@ class _ImageGroupBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final urls = images.map((m) => m.mediaUrl!).toList();
     final shown = images.take(4).toList();
     final extra = images.length - shown.length;
 
@@ -1473,28 +1472,33 @@ class _ImageGroupBubble extends StatelessWidget {
                     itemBuilder: (context, idx) {
                       final msg = shown[idx];
                       final showMore = extra > 0 && idx == shown.length - 1;
+                      final tag = 'img_group_${msg.id}'; // ✅ Création d'un Hero Tag unique
+                      
                       return GestureDetector(
                         onTap: () => showFullscreenImageViewer(
                           context,
                           url: msg.mediaUrl!,
-                          gallery: urls,
-                          initialIndex: idx,
+                          heroTag: tag, // ✅ Ajout du paramètre requis
+                          // Les paramètres 'gallery' et 'initialIndex' ont été supprimés
                           fileName: msg.mediaName ?? 'thix_${msg.id}.jpg',
                         ),
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            Image.network(
-                              msg.mediaUrl!,
-                              fit: BoxFit.cover,
-                              loadingBuilder: (_, child, progress) {
-                                if (progress == null) return child;
-                                return Container(
-                                  color: ThixPolicy.tint,
-                                  child: const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))),
-                                );
-                              },
-                              errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image_outlined, color: ThixPolicy.textSecondary)),
+                            Hero( // ✅ Ajout du widget Hero pour l'animation
+                              tag: tag,
+                              child: Image.network(
+                                msg.mediaUrl!,
+                                fit: BoxFit.cover,
+                                loadingBuilder: (_, child, progress) {
+                                  if (progress == null) return child;
+                                  return Container(
+                                    color: ThixPolicy.tint,
+                                    child: const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))),
+                                  );
+                                },
+                                errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image_outlined, color: ThixPolicy.textSecondary)),
+                              ),
                             ),
                             if (showMore)
                               Container(
@@ -1526,6 +1530,7 @@ class _ImageGroupBubble extends StatelessWidget {
     );
   }
 }
+
 
 class _CallBubble extends StatelessWidget {
   final ChatMessage message;
