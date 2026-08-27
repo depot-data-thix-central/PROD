@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../models/chat/call_invite.dart';
+import '../../thix_sos/pages/chambre_crise_secours_page.dart';
+import '../../thix_sos/services/sos_service.dart';
 import 'call_page.dart';
 import 'providers/call_provider.dart';
 
@@ -68,6 +70,35 @@ class IncomingCallPage extends ConsumerWidget {
                           .read(callProvider.notifier)
                           .rejectIncoming(invite.id);
                       if (context.mounted) Navigator.pop(context);
+                    },
+                  ),
+                  _CircleAction(
+                    color: const Color(0xFF7C3AED),
+                    icon: Icons.shield,
+                    label: 'Chambre',
+                    onTap: () async {
+                      final incident = await SosService()
+                          .findActiveByVictim(invite.callerId);
+                      if (!context.mounted) return;
+                      if (incident == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Pas de SOS actif lié à cet appel',
+                            ),
+                          ),
+                        );
+                        return;
+                      }
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChambreCriseSecoursPage(
+                            incidentId: incident.id,
+                            victimUserId: invite.callerId,
+                          ),
+                        ),
+                      );
                     },
                   ),
                   _CircleAction(
