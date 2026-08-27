@@ -61,9 +61,17 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
     super.dispose();
   }
 
+  String _two(int n) {
+    if (n < 10) return '0$n';
+    return '$n';
+  }
+
   String _fmt(DateTime d) {
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '\( {two(d.day)}/ \){two(d.month)}/${d.year}   \( {two(d.hour)}: \){two(d.minute)}';
+    final day = _two(d.day);
+    final month = _two(d.month);
+    final hour = _two(d.hour);
+    final minute = _two(d.minute);
+    return '$day/\( month/ \){d.year}   $hour:$minute';
   }
 
   Future<void> _pickDateTime({required bool isDeparture}) async {
@@ -73,24 +81,28 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
       initialDate: initial,
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.light(primary: ThixPolicy.primary),
-        ),
-        child: child!,
-      ),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(primary: ThixPolicy.primary),
+          ),
+          child: child!,
+        );
+      },
     );
     if (date == null || !mounted) return;
 
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(initial),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.light(primary: ThixPolicy.primary),
-        ),
-        child: child!,
-      ),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(primary: ThixPolicy.primary),
+          ),
+          child: child!,
+        );
+      },
     );
     if (time == null || !mounted) return;
 
@@ -119,19 +131,19 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
     if (!_formKey.currentState!.validate()) return;
     if (_from == null || _to == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Choisis les villes de départ et d\'arrivée')),
+        const SnackBar(content: Text('Choisis les villes de départ et d arrivée')),
       );
       return;
     }
     if (_from == _to) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Le départ et l\'arrivée doivent être différents')),
+        const SnackBar(content: Text('Le départ et l arrivée doivent être différents')),
       );
       return;
     }
     if (!_arrDate.isAfter(_depDate)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('L\'arrivée doit être après le départ')),
+        const SnackBar(content: Text('L arrivée doit être après le départ')),
       );
       return;
     }
@@ -153,7 +165,7 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Trajet créé avec succès !'),
+          content: Text('Trajet créé avec succès'),
           backgroundColor: ThixPolicy.success,
         ),
       );
@@ -172,12 +184,15 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(agencyDashboardProvider);
-    final previewCdf = int.tryParse(_priceCtrl.text.trim());
-    final preview = previewCdf == null
-        ? ''
-        : (_currency == 'USD'
-            ? '≈ ${(previewCdf * _usdToCdf).toStringAsFixed(0)} CDF'
-            : '≈ ${(previewCdf / _usdToCdf).toStringAsFixed(2)} USD');
+    final raw = int.tryParse(_priceCtrl.text.trim());
+    String preview = '';
+    if (raw != null) {
+      if (_currency == 'USD') {
+        preview = '≈ ${(raw * _usdToCdf).round()} CDF';
+      } else {
+        preview = '≈ ${(raw / _usdToCdf).toStringAsFixed(2)} USD';
+      }
+    }
 
     return Scaffold(
       backgroundColor: ThixPolicy.surface,
@@ -225,7 +240,7 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
                 ),
                 const SizedBox(height: 14),
                 _buildCityField(
-                  label: 'Ville d\'arrivée',
+                  label: 'Ville d arrivée',
                   value: _to,
                   icon: Icons.location_on_rounded,
                   onChanged: (v) {
@@ -245,7 +260,7 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
                 ),
                 const SizedBox(height: 14),
                 _buildTextField(
-                  label: 'Gare / Station d\'arrivée',
+                  label: 'Gare / Station d arrivée',
                   controller: _arrStationCtrl,
                   icon: Icons.place_rounded,
                 ),
@@ -257,7 +272,7 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
                   onTap: () => _pickDateTime(isDeparture: true),
                 ),
                 _buildDateTile(
-                  label: 'Date et heure d\'arrivée',
+                  label: 'Date et heure d arrivée',
                   value: _fmt(_arrDate),
                   icon: Icons.flag_rounded,
                   onTap: () => _pickDateTime(isDeparture: false),
@@ -292,7 +307,11 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
                   const SizedBox(height: 6),
                   Text(
                     preview,
-                    style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: ThixPolicy.textSecondary,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ],
                 const SizedBox(height: 14),
@@ -331,7 +350,9 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
                       backgroundColor: ThixPolicy.primary,
                       disabledBackgroundColor: Colors.grey.shade300,
                       elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+                      ),
                     ),
                     child: state.isCreating
                         ? const SizedBox(
@@ -386,7 +407,12 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: ThixPolicy.primary, width: 1.5)),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
-      items: _cities.map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)))).toList(),
+      items: _cities
+          .map((c) => DropdownMenuItem(
+                value: c,
+                child: Text(c, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+              ))
+          .toList(),
       onChanged: onChanged,
     );
   }
@@ -417,9 +443,15 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label, style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600)),
+                  Text(
+                    label,
+                    style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 2),
-                  Text(value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: ThixPolicy.textMain)),
+                  Text(
+                    value,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: ThixPolicy.textMain),
+                  ),
                 ],
               ),
             ),
