@@ -163,9 +163,9 @@ import 'package:thix_id/presentation/thix_reservation/bus/pages/agency/agency_on
 import 'package:thix_id/presentation/thix_reservation/bus/pages/agency/agency_dashboard_page.dart';
 import 'package:thix_id/presentation/thix_reservation/bus/pages/agency/agency_create_trip_page.dart';
 import 'package:thix_id/presentation/thix_reservation/bus/pages/agency/agency_qr_scan_page.dart';
+import 'package:thix_id/presentation/thix_reservation/bus/pages/agency/agency_seats_page.dart';
 import 'package:thix_id/presentation/thix_reservation/bus/data/models/bus_trip_model.dart';
 import 'package:thix_id/presentation/thix_reservation/bus/data/models/booking_model.dart';
-import 'package:thix_id/presentation/thix_reservation/bus/pages/agency/agency_seats_page.dart';
 // === THIX RESERVATION (DELIVERY) ===
 import 'package:thix_id/presentation/thix_reservation/delivery/pages/client/delivery_home_page.dart';
 import 'package:thix_id/presentation/thix_reservation/delivery/pages/client/delivery_checkout_page.dart';
@@ -530,37 +530,114 @@ class AppRouter {
         GoRoute(path: '/thix-event/ticket/:id', builder: (context, state) => EventTicketPage(bookingId: state.pathParameters['id']!)),
 
         // === THIX RESERVATION (BUS & GENERAL) ===
-        GoRoute(path: AppRoutes.reservation, name: 'thixreservation', pageBuilder: (_, __) => const NoTransitionPage(child: ThixReservationHomePage())),
-        GoRoute(path: '/thix-reservation/bus', name: 'bus-home', pageBuilder: (_, __) => const NoTransitionPage(child: BusHomePage())),
-        GoRoute(path: '/thix-reservation/bus/search', name: 'bus-search', pageBuilder: (_, __) => const NoTransitionPage(child: BusSearchResultPage())),
-        GoRoute(path: '/thix-reservation/bus/detail', name: 'bus-detail', pageBuilder: (_, state) => NoTransitionPage(child: BusTripDetailPage(trip: state.extra as BusTripModel))),
-        GoRoute(path: '/thix-reservation/bus/seats', name: 'bus-seats', pageBuilder: (_, state) => NoTransitionPage(child: BusSeatSelectionPage(trip: state.extra as BusTripModel))),
-        GoRoute(path: '/thix-reservation/bus/payment', name: 'bus-payment', pageBuilder: (_, state) => NoTransitionPage(child: BusPaymentPage(trip: (state.extra as Map<String, dynamic>)['trip'] as BusTripModel, seats: ((state.extra as Map<String, dynamic>)['seats'] as List).cast<String>()))),
-        GoRoute(path: '/thix-reservation/bus/ticket/:id', name: 'bus-ticket', pageBuilder: (_, state) => NoTransitionPage(child: BusTicketPage(booking: state.extra as BookingModel))),
-        GoRoute(path: '/agency/onboarding', name: 'agency-onboarding', pageBuilder: (_, __) => const NoTransitionPage(child: AgencyOnboardingPage())),
-        GoRoute(path: '/agency/dashboard', name: 'agency-dashboard', pageBuilder: (_, __) => const NoTransitionPage(child: AgencyDashboardPage())),
-        GoRoute(path: '/agency/trip/create', name: 'agency-create-trip', pageBuilder: (_, __) => const NoTransitionPage(child: AgencyCreateTripPage())),
-        GoRoute(path: '/agency/scan', name: 'agency-scan', pageBuilder: (_, __) => const NoTransitionPage(child: AgencyQrScanPage())),
-       GoRoute(
-          path: '/thix-reservation/bus/trip/:tripId',
-          name: 'bus-trip-by-id',
-          pageBuilder: (context, state) {
+        GoRoute(
+          path: AppRoutes.reservation,
+          name: 'thixreservation',
+          pageBuilder: (_, __) => const NoTransitionPage(child: ThixReservationHomePage()),
+        ),
+        GoRoute(
+          path: '/thix-reservation/bus',
+          name: 'bus-home',
+          pageBuilder: (_, __) => const NoTransitionPage(child: BusHomePage()),
+        ),
+        GoRoute(
+          path: '/thix-reservation/bus/search',
+          name: 'bus-search',
+          pageBuilder: (_, __) => const NoTransitionPage(child: BusSearchResultPage()),
+        ),
+        GoRoute(
+          path: '/thix-reservation/bus/detail',
+          name: 'bus-detail',
+          pageBuilder: (_, state) {
             final extra = state.extra;
             if (extra is BusTripModel) {
               return NoTransitionPage(child: BusTripDetailPage(trip: extra));
             }
-            final tripId = state.pathParameters['tripId'] ?? '';
-            return NoTransitionPage(child: BusTripDetailPage(tripId: tripId));
+            return const NoTransitionPage(child: BusTripDetailPage());
           },
+        ),
+        GoRoute(
+          path: '/thix-reservation/bus/trip/:tripId',
+          name: 'bus-trip-by-id',
+          pageBuilder: (_, state) {
+            final extra = state.extra;
+            if (extra is BusTripModel) {
+              return NoTransitionPage(child: BusTripDetailPage(trip: extra));
+            }
+            return NoTransitionPage(
+              child: BusTripDetailPage(tripId: state.pathParameters['tripId']),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/thix-reservation/bus/seats',
+          name: 'bus-seats',
+          pageBuilder: (_, state) {
+            final extra = state.extra;
+            if (extra is BusTripModel) {
+              return NoTransitionPage(child: BusSeatSelectionPage(trip: extra));
+            }
+            return const NoTransitionPage(child: BusSeatSelectionPage());
+          },
+        ),
+        GoRoute(
+          path: '/thix-reservation/bus/payment',
+          name: 'bus-payment',
+          pageBuilder: (_, state) {
+            final extra = state.extra;
+            if (extra is Map) {
+              return NoTransitionPage(
+                child: BusPaymentPage(
+                  trip: extra['trip'] as BusTripModel,
+                  seats: (extra['seats'] as List).cast<String>(),
+                ),
+              );
+            }
+            if (extra is BusTripModel) {
+              return NoTransitionPage(child: BusPaymentPage(trip: extra, seats: const []));
+            }
+            return const NoTransitionPage(child: BusHomePage());
+          },
+        ),
+        GoRoute(
+          path: '/thix-reservation/bus/ticket/:id',
+          name: 'bus-ticket',
+          pageBuilder: (_, state) {
+            final extra = state.extra;
+            if (extra is BookingModel) {
+              return NoTransitionPage(child: BusTicketPage(booking: extra));
+            }
+            return NoTransitionPage(
+              child: BusTicketPage(bookingId: state.pathParameters['id']),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/agency/onboarding',
+          name: 'agency-onboarding',
+          pageBuilder: (_, __) => const NoTransitionPage(child: AgencyOnboardingPage()),
+        ),
+        GoRoute(
+          path: '/agency/dashboard',
+          name: 'agency-dashboard',
+          pageBuilder: (_, __) => const NoTransitionPage(child: AgencyDashboardPage()),
+        ),
+        GoRoute(
+          path: '/agency/trip/create',
+          name: 'agency-create-trip',
+          pageBuilder: (_, __) => const NoTransitionPage(child: AgencyCreateTripPage()),
+        ),
+        GoRoute(
+          path: '/agency/scan',
+          name: 'agency-scan',
+          pageBuilder: (_, __) => const NoTransitionPage(child: AgencyQrScanPage()),
         ),
         GoRoute(
           path: '/agency/seats',
           name: 'agency-seats',
           pageBuilder: (context, state) {
             final tripId = state.uri.queryParameters['tripId'] ?? '';
-            return NoTransitionPage(
-              child: AgencySeatsPage(tripId: tripId),
-            );
+            return NoTransitionPage(child: AgencySeatsPage(tripId: tripId));
           },
         ),
         GoRoute(
