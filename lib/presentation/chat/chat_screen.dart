@@ -132,7 +132,7 @@ class ChatScreen extends ConsumerStatefulWidget {
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
 }
 
-class // ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 // GROUPEMENT STYLE WHATSAPP : photos consécutives du même expéditeur
 // ─────────────────────────────────────────────────────────────
 class _ChatListItem {
@@ -174,7 +174,10 @@ List<_ChatListItem> _buildChatDisplayItems(List<ChatMessage> messages) {
     i++;
   }
   return items;
-} extends ConsumerState<ChatScreen> with WidgetsBindingObserver {
+}
+
+// ✅ CORRECTION ICI : Réparation de la déclaration de la classe
+class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObserver {
   late final ChatService _chatService;
   late final ConnectionService _connectionService;
   final _scrollController = ScrollController();
@@ -417,7 +420,6 @@ List<_ChatListItem> _buildChatDisplayItems(List<ChatMessage> messages) {
 
       final me = _chatService.currentUserId;
 
-      // ✅ CORRECTION P0 : batch update au lieu de N requêtes
       final idsToDeliver = updated
           .where((m) => m.senderId != me && !m.isDelivered && !m.isDeleted)
           .map((m) => m.id)
@@ -988,7 +990,7 @@ List<_ChatListItem> _buildChatDisplayItems(List<ChatMessage> messages) {
   Widget build(BuildContext context) {
     final messages = ref.watch(chatMessagesProvider(widget.conversationId));
     final msgNotifier = ref.watch(chatMessagesProvider(widget.conversationId).notifier);
-    final displayItems = _buildChatDisplayItems(messages); // ✅ groupement style WhatsApp
+    final displayItems = _buildChatDisplayItems(messages);
     final currentUid = _chatService.currentUserId;
 
     return Scaffold(
@@ -1006,7 +1008,6 @@ List<_ChatListItem> _buildChatDisplayItems(List<ChatMessage> messages) {
               Expanded(
                 child: Stack(
                   children: [
-                    // ✅ Padding réduit : plus de bande vide en haut, plus de trou en bas
                     ListView.builder(
                       controller: _scrollController,
                       reverse: true,
@@ -1019,7 +1020,6 @@ List<_ChatListItem> _buildChatDisplayItems(List<ChatMessage> messages) {
 
                         final item = displayItems[i];
 
-                        // ✅ 2+ photos consécutives → grille 2×2 avec « + N »
                         if (item.messages.length > 1) {
                           return _ImageGroupBubble(
                             images: item.messages,
@@ -1091,6 +1091,7 @@ List<_ChatListItem> _buildChatDisplayItems(List<ChatMessage> messages) {
       ),
     );
   }
+
   Widget _buildBlockedBanner() {
     return ClipRRect(
       child: BackdropFilter(
@@ -1423,6 +1424,7 @@ List<_ChatListItem> _buildChatDisplayItems(List<ChatMessage> messages) {
     );
   }
 }
+
 class _ImageGroupBubble extends StatelessWidget {
   final List<ChatMessage> images;
   final bool isOwn;
@@ -1524,6 +1526,7 @@ class _ImageGroupBubble extends StatelessWidget {
     );
   }
 }
+
 class _CallBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isOwn;
@@ -1879,7 +1882,6 @@ extension ChatL10n on BuildContext {
   String get trReactions => 'Réactions';
   String get trFlags => 'Drapeaux';
 
-  // ✅ NOUVEAU : pour le visualiseur plein écran
   String get trDownload => 'Télécharger';
   String get trShare => 'Partager';
   String get trDownloadOk => 'Téléchargé :';
