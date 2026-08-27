@@ -268,7 +268,7 @@ import 'package:thix_id/presentation/thix_recherche/pages/detail_personne_page.d
 import 'package:thix_id/presentation/thix_recherche/pages/signaler_page.dart';
 import 'package:thix_id/presentation/thix_recherche/pages/creer_alerte_page.dart';
 import 'package:thix_id/presentation/thix_recherche/pages/mes_alertes_page.dart';
-
+import 'package:thix_id/presentation/thix_sos/pages/chambre_crise_secours_page.dart';
 // === ADMIN SYSTEM GLOBAL ===
 import 'package:thix_id/presentation/admin/admin_page.dart';
 import 'package:thix_id/presentation/admin/admin_routes.dart';
@@ -449,6 +449,15 @@ class AppRouter {
           ]),
           GoRoute(path: 'incidents', name: 'thixSosIncidents', builder: (context, state) => const MesIncidentsPage()),
         ]),
+
+        GoRoute(
+  path: 'chambre-secours/:id',
+  name: 'thixSosChambreSecours',
+  builder: (context, state) => ChambreCriseSecoursPage(
+    incidentId: state.pathParameters['id']!,
+    victimUserId: state.uri.queryParameters['victim'],
+  ),
+),
         GoRoute(path: '/thix-retrouve', name: 'thixRetrouve', builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 1), routes: [
           GoRoute(path: 'detail', name: 'thixRetrouveDetail', pageBuilder: (_, __) => const NoTransitionPage(child: ObjectDetailPage())),
           GoRoute(path: 'ai-match', name: 'thixRetrouveAiMatch', pageBuilder: (_, __) => const NoTransitionPage(child: AiMatchPage())),
