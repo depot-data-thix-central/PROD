@@ -18,7 +18,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
-
+import 'package:thix_id/presentation/chat/widgets/image_viewer.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
 import 'package:thix_id/services/chat/audio_service.dart';
@@ -132,7 +132,49 @@ class ChatScreen extends ConsumerStatefulWidget {
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObserver {
+class // ─────────────────────────────────────────────────────────────
+// GROUPEMENT STYLE WHATSAPP : photos consécutives du même expéditeur
+// ─────────────────────────────────────────────────────────────
+class _ChatListItem {
+  final List<ChatMessage> messages;
+  _ChatListItem.single(ChatMessage m) : messages = [m];
+  _ChatListItem.group(this.messages);
+}
+
+List<_ChatListItem> _buildChatDisplayItems(List<ChatMessage> messages) {
+  final items = <_ChatListItem>[];
+  int i = 0;
+  while (i < messages.length) {
+    final m = messages[i];
+    final isImg = m.mediaType == 'image' && (m.mediaUrl?.isNotEmpty ?? false);
+
+    if (isImg) {
+      final group = <ChatMessage>[m];
+      int j = i + 1;
+      while (j < messages.length) {
+        final next = messages[j];
+        final sameSender = next.senderId == m.senderId;
+        final alsoImg = next.mediaType == 'image' && (next.mediaUrl?.isNotEmpty ?? false);
+        final closeInTime = m.createdAt.difference(next.createdAt).inSeconds.abs() < 120;
+        if (sameSender && alsoImg && closeInTime) {
+          group.add(next);
+          j++;
+        } else {
+          break;
+        }
+      }
+      if (group.length > 1) {
+        items.add(_ChatListItem.group(group));
+        i = j;
+        continue;
+      }
+    }
+
+    items.add(_ChatListItem.single(m));
+    i++;
+  }
+  return items;
+} extends ConsumerState<ChatScreen> with WidgetsBindingObserver {
   late final ChatService _chatService;
   late final ConnectionService _connectionService;
   final _scrollController = ScrollController();
@@ -946,6 +988,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   Widget build(BuildContext context) {
     final messages = ref.watch(chatMessagesProvider(widget.conversationId));
     final msgNotifier = ref.watch(chatMessagesProvider(widget.conversationId).notifier);
+    final displayItems = _buildChatDisplayItems(messages); // ✅ groupement style WhatsApp
     final currentUid = _chatService.currentUserId;
 
     return Scaffold(
@@ -963,15 +1006,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
               Expanded(
                 child: Stack(
                   children: [
+                    // ✅ Padding réduit : plus de bande vide en haut, plus de trou en bas
                     ListView.builder(
                       controller: _scrollController,
                       reverse: true,
-                      padding: EdgeInsets.fromLTRB(12, MediaQuery.of(context).padding.top + kToolbarHeight + 8, 12, 12),
-                      itemCount: messages.length + (msgNotifier.loadingMore ? 1 : 0),
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                      itemCount: displayItems.length + (msgNotifier.loadingMore ? 1 : 0),
                       itemBuilder: (ctx, i) {
-                        if (i == messages.length) return const Center(child: Padding(padding: EdgeInsets.all(16), child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))));
+                        if (i == displayItems.length) {
+                          return const Center(child: Padding(padding: EdgeInsets.all(16), child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))));
+                        }
 
-                        final msg = messages[i];
+                        final item = displayItems[i];
+
+                        // ✅ 2+ photos consécutives → grille 2×2 avec « + N »
+                        if (item.messages.length > 1) {
+                          return _ImageGroupBubble(
+                            images: item.messages,
+                            isOwn: item.messages.first.senderId == currentUid,
+                          );
+                        }
+
+                        final msg = item.messages.first;
                         final isOwn = msg.senderId == currentUid;
 
                         if (msg.mediaType == 'call_audio' || msg.mediaType == 'call_video') {
@@ -1035,7 +1091,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       ),
     );
   }
-
   Widget _buildBlockedBanner() {
     return ClipRRect(
       child: BackdropFilter(
@@ -1368,7 +1423,107 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     );
   }
 }
+class _ImageGroupBubble extends StatelessWidget {
+  final List<ChatMessage> images;
+  final bool isOwn;
 
+  const _ImageGroupBubble({required this.images, required this.isOwn});
+
+  @override
+  Widget build(BuildContext context) {
+    final urls = images.map((m) => m.mediaUrl!).toList();
+    final shown = images.take(4).toList();
+    final extra = images.length - shown.length;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Align(
+        alignment: isOwn ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          margin: EdgeInsets.only(left: isOwn ? 40 : 4, right: isOwn ? 4 : 40),
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: isOwn ? ThixPolicy.primary : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: ThixPolicy.border.withValues(alpha: 0.6)),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 2)),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(11),
+                  child: GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: shown.length,
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 3,
+                      crossAxisSpacing: 3,
+                      childAspectRatio: 1,
+                    ),
+                    itemBuilder: (context, idx) {
+                      final msg = shown[idx];
+                      final showMore = extra > 0 && idx == shown.length - 1;
+                      return GestureDetector(
+                        onTap: () => showFullscreenImageViewer(
+                          context,
+                          url: msg.mediaUrl!,
+                          gallery: urls,
+                          initialIndex: idx,
+                          fileName: msg.mediaName ?? 'thix_${msg.id}.jpg',
+                        ),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Image.network(
+                              msg.mediaUrl!,
+                              fit: BoxFit.cover,
+                              loadingBuilder: (_, child, progress) {
+                                if (progress == null) return child;
+                                return Container(
+                                  color: ThixPolicy.tint,
+                                  child: const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))),
+                                );
+                              },
+                              errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image_outlined, color: ThixPolicy.textSecondary)),
+                            ),
+                            if (showMore)
+                              Container(
+                                color: Colors.black.withValues(alpha: 0.55),
+                                alignment: Alignment.center,
+                                child: Text(
+                                  '+ $extra',
+                                  style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800),
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: 2, right: 6, bottom: 1),
+                child: Text(
+                  DateFormat('HH:mm').format(images.first.createdAt.toLocal()),
+                  style: TextStyle(fontSize: 10, color: isOwn ? Colors.white70 : ThixPolicy.textSecondary),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 class _CallBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isOwn;
