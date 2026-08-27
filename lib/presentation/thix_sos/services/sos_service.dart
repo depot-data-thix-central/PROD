@@ -347,7 +347,41 @@ class SosService {
       return null;
     }
   }
+/// Lecture secours : sans filtre victim_id (soumis au RLS).
+  Future<SosIncident?> getIncidentForRescue(String id) async {
+    _ensureAuth();
+    try {
+      final res = await _client
+          .from(_tableIncidents)
+          .select()
+          .eq('id', id)
+          .maybeSingle();
+      if (res == null) return null;
+      return SosIncident.fromJson(Map<String, dynamic>.from(res));
+    } catch (e) {
+      debugPrint('getIncidentForRescue: $e');
+      return null;
+    }
+  }
 
+  Future<SosIncident?> findActiveByVictim(String victimId) async {
+    _ensureAuth();
+    try {
+      final res = await _client
+          .from(_tableIncidents)
+          .select()
+          .eq('victim_id', victimId)
+          .not('status', 'in', '(cancelled,resolved,archived)')
+          .order('started_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      if (res == null) return null;
+      return SosIncident.fromJson(Map<String, dynamic>.from(res));
+    } catch (e) {
+      debugPrint('findActiveByVictim: $e');
+      return null;
+    }
+  }
   Future<List<SosIncident>> getHistory({int limit = 30}) async {
     _ensureAuth();
     try {
