@@ -950,7 +950,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
     return Scaffold(
       backgroundColor: ThixPolicy.surfaceSoft,
-      extendBodyBehindAppBar: true,
       appBar: _buildAppBar(),
       body: Stack(
         children: [
