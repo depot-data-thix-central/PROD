@@ -7,7 +7,7 @@ import '../models/booking_model.dart';
 class BusAgencyService {
   final SupabaseClient _db = Supabase.instance.client;
 
-  static const String table = 'agencies';
+  static const String table = 'bus_agencies';
 
   String get _uid {
     final user = _db.auth.currentUser;
@@ -21,14 +21,13 @@ class BusAgencyService {
     final user = _db.auth.currentUser;
     if (user == null) return null;
 
-    final byOwner = await _db
+    final row = await _db
         .from(table)
         .select()
         .eq('owner_id', user.id)
         .maybeSingle();
-    if (byOwner != null) return AgencyModel.fromJson(byOwner);
-
-    return null;
+    if (row == null) return null;
+    return AgencyModel.fromJson(row);
   }
 
   String _makeSlug(String name) {
@@ -51,43 +50,33 @@ class BusAgencyService {
     final payload = <String, dynamic>{
       'owner_id': _uid,
       'name': cleanName,
-      'slug': _makeSlug(cleanName),
-      'country_code': countryCode,
       'description': description?.trim(),
-      'status': autoApprove ? 'active' : 'pending',
-      'is_verified': autoApprove,
+      'status': autoApprove ? 'approved' : 'pending',
+      'country': countryCode == 'CD' ? 'RDC' : countryCode,
     };
+
+    try {
+      payload['slug'] = _makeSlug(cleanName);
+      payload['country_code'] = countryCode;
+    } catch (_) {}
 
     final res = await _db.from(table).insert(payload).select().single();
     return AgencyModel.fromJson(res);
   }
 
   Future<Map<String, dynamic>> getDashboardStats(String agencyId) async {
-    final todayStart = DateTime.now();
-    final start = DateTime(todayStart.year, todayStart.month, todayStart.day)
-        .toIso8601String();
-
     try {
+      final today = DateTime.now();
+      final start = DateTime(today.year, today.month, today.day).toIso8601String();
       final bookingsToday = await _db
           .from('bus_bookings')
           .select()
           .eq('agency_id', agencyId)
           .gte('created_at', start)
           .count(CountOption.exact);
-
-      dynamic revenueRes;
-      try {
-        revenueRes = await _db.rpc(
-          'agency_revenue_today',
-          params: {'p_agency_id': agencyId},
-        );
-      } catch (_) {
-        revenueRes = 0;
-      }
-
       return {
         'bookings_today': bookingsToday.count,
-        'revenue_today': revenueRes ?? 0,
+        'revenue_today': 0,
       };
     } catch (_) {
       return {'bookings_today': 0, 'revenue_today': 0};
@@ -95,12 +84,16 @@ class BusAgencyService {
   }
 
   Future<List<BusTripModel>> getMyTrips(String agencyId) async {
-    final res = await _db
-        .from('bus_trips')
-        .select('*, agencies(*)')
-        .eq('agency_id', agencyId)
-        .order('departure_time', ascending: false);
-    return (res as List).map((e) => BusTripModel.fromJson(e)).toList();
+    try {
+      final res = await _db
+          .from('bus_trips')
+          .select()
+          .eq('agency_id', agencyId)
+          .order('departure_time', ascending: false);
+      return (res as List).map((e) => BusTripModel.fromJson(e)).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<BusTripModel> createTrip({
@@ -131,18 +124,22 @@ class BusAgencyService {
           'bus_type': busType,
           'status': 'scheduled',
         })
-        .select('*, agencies(*)')
+        .select()
         .single();
     return BusTripModel.fromJson(res);
   }
 
   Future<List<BookingModel>> getAgencyBookings(String agencyId) async {
-    final res = await _db
-        .from('bus_bookings')
-        .select('*, bus_trips(*)')
-        .eq('agency_id', agencyId)
-        .order('created_at', ascending: false);
-    return (res as List).map((e) => BookingModel.fromJson(e)).toList();
+    try {
+      final res = await _db
+          .from('bus_bookings')
+          .select('*, bus_trips(*)')
+          .eq('agency_id', agencyId)
+          .order('created_at', ascending: false);
+      return (res as List).map((e) => BookingModel.fromJson(e)).toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   Future<BookingModel> validateTicketByQr(String agencyId, String qrCode) async {
@@ -155,10 +152,7 @@ class BusAgencyService {
 
     final booking = BookingModel.fromJson(res);
     if (booking.status == 'confirmed') {
-      await _db
-          .from('bus_bookings')
-          .update({'status': 'completed'})
-          .eq('id', booking.id);
+      await _db.from('bus_bookings').update({'status': 'completed'}).eq('id', booking.id);
     }
     return booking;
   }
