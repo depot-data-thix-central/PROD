@@ -3,159 +3,244 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-// ✅ Import de la Policy de Design
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-
 import '../../data/models/bus_trip_model.dart';
 import '../../providers/seat_selection_provider.dart';
 import '../../widgets/client/seat_map_widget.dart';
 
 class BusSeatSelectionPage extends ConsumerStatefulWidget {
-  final BusTripModel trip;
-  const BusSeatSelectionPage({super.key, required this.trip});
+  final BusTripModel? trip;
+  final String? tripId;
+
+  const BusSeatSelectionPage({
+    super.key,
+    this.trip,
+    this.tripId,
+  });
 
   @override
   ConsumerState<BusSeatSelectionPage> createState() => _BusSeatSelectionPageState();
 }
 
 class _BusSeatSelectionPageState extends ConsumerState<BusSeatSelectionPage> {
+  String two(int n) {
+    final s = n.toString();
+    if (s.length == 1) return '0' + s;
+    return s;
+  }
+
+  String lockLabel(int seconds) {
+    final m = seconds \~/ 60;
+    final s = seconds % 60;
+    return two(m) + ':' + two(s);
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(seatSelectionProvider.notifier).init(widget.trip.id, 1);
+      final id = widget.trip?.id ?? widget.tripId ?? '';
+      if (id.isNotEmpty) {
+        ref.read(seatSelectionProvider.notifier).init(id, 1);
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // 🌟 Écoute moderne de l'état Riverpod
     final state = ref.watch(seatSelectionProvider);
     final notifier = ref.read(seatSelectionProvider.notifier);
+    final trip = widget.trip;
+
+    final base = trip?.priceFcfa ?? 0;
+    final count = state.selectedSeats.length;
+    final vip = state.totalVipSupplement;
+    final total = (base * count) + vip;
 
     return Scaffold(
-      backgroundColor: ThixPolicy.surface,
+      backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFF0F172A),
+        foregroundColor: Colors.white,
         elevation: 0,
-        scrolledUnderElevation: 0,
-        toolbarHeight: 56,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded, color: ThixPolicy.textMain),
+          icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
           onPressed: () => context.pop(),
         ),
-        title: const Text(
-          'Choix des sièges',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: ThixPolicy.textMain),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Choix des sieges',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white),
+            ),
+            if (trip != null)
+              Text(
+                trip.departureCity + ' → ' + trip.arrivalCity,
+                style: const TextStyle(fontSize: 11, color: Colors.white70),
+              ),
+          ],
         ),
         actions: [
           if (state.lockRemainingSeconds > 0)
             Center(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: ThixPolicy.danger.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '⏳ ${state.lockRemainingSeconds ~/ 60}:${(state.lockRemainingSeconds % 60).toString().padLeft(2, '0')}',
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: ThixPolicy.danger),
-                  ),
+              child: Container(
+                margin: const EdgeInsets.only(right: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF7F1D1D),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'Lock ' + lockLabel(state.lockRemainingSeconds),
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: Colors.white),
                 ),
               ),
             ),
         ],
       ),
       body: state.isLoading
-          ? const Center(child: CircularProgressIndicator(color: ThixPolicy.primary))
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  // 🌟 Légende modernisée
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          ? const Center(child: CircularProgressIndicator(color: Colors.white))
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _Legend(color: Colors.white, label: 'Libre'),
+                      _Legend(color: Color(0xFF64748B), label: 'Pris'),
+                      _Legend(color: Color(0xFF2563EB), label: 'Choisi'),
+                      _Legend(color: Color(0xFFFBBF24), label: 'VIP'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Center(
+                  child: Container(
+                    width: 320,
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
                     decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                      border: Border.all(color: ThixPolicy.border),
-                      boxShadow: ThixPolicy.shadowSoft(),
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(36),
+                      border: Border.all(color: const Color(0xFF334155), width: 3),
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black54, blurRadius: 18, offset: Offset(0, 8)),
+                      ],
                     ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    child: Column(
                       children: [
-                        _Legend(color: Colors.white, label: 'Libre'),
-                        _Legend(color: Color(0xFFE2E8F0), label: 'Occupé'),
-                        _Legend(color: ThixPolicy.primary, label: 'Sélectionné'),
-                        _Legend(color: Color(0xFFFEF3C7), label: 'VIP +1000'),
+                        Container(
+                          width: 90,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF94A3B8),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.sports_esports, color: Colors.white70, size: 16),
+                                  SizedBox(width: 6),
+                                  Text('Conducteur', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w700)),
+                                ],
+                              ),
+                            ),
+                            const Spacer(),
+                            const Icon(Icons.door_front_door_outlined, color: Colors.white54),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A),
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          child: SeatMapWidget(
+                            seats: state.seats,
+                            selected: state.selectedSeats,
+                            onTap: (seat) => notifier.toggleSeat(seat),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'Couloir central',
+                          style: TextStyle(color: Colors.white38, fontSize: 10, fontWeight: FontWeight.w600),
+                        ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  
-                  // Plan des sièges
-                  SeatMapWidget(
-                    seats: state.seats,
-                    selected: state.selectedSeats,
-                    onTap: (seat) => notifier.toggleSeat(seat),
-                  ),
-                  
-                  const SizedBox(height: 20),
-                  
-                  // Récapitulatif sélection
-                  if (state.selectedSeats.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: ThixPolicy.tint,
-                        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                        border: Border.all(color: ThixPolicy.border),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.event_seat_rounded, color: ThixPolicy.primary),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Sièges : ${state.selectedSeats.join(', ')}',
-                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: ThixPolicy.textMain),
-                            ),
-                          ),
-                          if (state.totalVipSupplement > 0)
-                            Text(
-                              '+${state.totalVipSupplement} FCFA VIP',
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: ThixPolicy.warning),
-                            ),
-                        ],
-                      ),
+                ),
+                const SizedBox(height: 18),
+                if (state.selectedSeats.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                ],
-              ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Sieges : ' + state.selectedSeats.join(', '),
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          count.toString() + ' x ' + base.toString() + ' CDF',
+                          style: const TextStyle(color: ThixPolicy.textSecondary, fontSize: 12),
+                        ),
+                        if (vip > 0)
+                          Text(
+                            'Supplement VIP +' + vip.toString() + ' CDF',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: ThixPolicy.warning),
+                          ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Total ' + total.toString() + ' CDF',
+                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: ThixPolicy.success),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
       bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: const Border(top: BorderSide(color: ThixPolicy.border)),
-          boxShadow: ThixPolicy.shadowCard(),
-        ),
+        color: Colors.white,
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: SizedBox(
-              height: 48,
+              height: 50,
               child: ElevatedButton(
-                onPressed: state.selectedSeats.isEmpty
+                onPressed: state.selectedSeats.isEmpty || trip == null
                     ? null
                     : () async {
                         await notifier.confirmAndUnlockForPayment();
-                        if (context.mounted) {
-                          context.push(
-                            '/thix-reservation/bus/passenger',
-                            extra: {'trip': widget.trip, 'seats': state.selectedSeats.toList()},
-                          );
-                        }
+                        if (!context.mounted) return;
+                        context.push(
+                          '/thix-reservation/bus/payment',
+                          extra: {
+                            'trip': trip,
+                            'seats': state.selectedSeats.toList(),
+                          },
+                        );
                       },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: ThixPolicy.primary,
@@ -164,7 +249,9 @@ class _BusSeatSelectionPageState extends ConsumerState<BusSeatSelectionPage> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
                 ),
                 child: Text(
-                  'Continuer (${state.selectedSeats.length})',
+                  state.selectedSeats.isEmpty
+                      ? 'Choisissez un siege'
+                      : 'Continuer  •  ' + total.toString() + ' CDF',
                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
                 ),
               ),
@@ -186,18 +273,18 @@ class _Legend extends StatelessWidget {
     return Row(
       children: [
         Container(
-          width: 14,
-          height: 14,
+          width: 12,
+          height: 12,
           decoration: BoxDecoration(
             color: color,
-            border: Border.all(color: ThixPolicy.border),
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(3),
+            border: Border.all(color: Colors.white24),
           ),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 5),
         Text(
           label,
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: ThixPolicy.textMain),
+          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white),
         ),
       ],
     );
