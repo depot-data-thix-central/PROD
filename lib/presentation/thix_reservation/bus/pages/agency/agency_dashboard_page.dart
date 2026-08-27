@@ -2,18 +2,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../../providers/agency_dashboard_provider.dart';
 
 class AgencyDashboardPage extends ConsumerStatefulWidget {
   const AgencyDashboardPage({super.key});
-
   @override
   ConsumerState<AgencyDashboardPage> createState() => _AgencyDashboardPageState();
 }
 
 class _AgencyDashboardPageState extends ConsumerState<AgencyDashboardPage> {
+  String _fx = 'CDF';
+  static const double usdToCdf = 2850;
+
   @override
   void initState() {
     super.initState();
@@ -22,38 +23,29 @@ class _AgencyDashboardPageState extends ConsumerState<AgencyDashboardPage> {
     });
   }
 
+  String _money(num amountCdf) {
+    if (_fx == 'USD') {
+      final usd = amountCdf / usdToCdf;
+      return '${usd.toStringAsFixed(2)} USD';
+    }
+    return '${amountCdf.toStringAsFixed(0)} CDF';
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(agencyDashboardProvider);
-    final notifier = ref.read(agencyDashboardProvider.notifier);
+    final agency = state.myAgency;
 
-    if (!state.isLoading && !state.hasAgency) {
+    if (state.isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (!state.hasAgency) {
       return Scaffold(
-        backgroundColor: ThixPolicy.surface,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          title: const Text('Mon Agence', style: TextStyle(fontWeight: FontWeight.w900)),
-        ),
+        appBar: AppBar(title: const Text('Mon Agence')),
         body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.storefront_outlined, size: 56, color: ThixPolicy.textSecondary),
-                const SizedBox(height: 12),
-                const Text(
-                  'Aucune agence liée à ce compte',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => context.go('/agency/onboarding'),
-                  child: const Text('Créer mon agence'),
-                ),
-              ],
-            ),
+          child: ElevatedButton(
+            onPressed: () => context.go('/agency/onboarding'),
+            child: const Text('Créer mon agence'),
           ),
         ),
       );
@@ -63,185 +55,165 @@ class _AgencyDashboardPageState extends ConsumerState<AgencyDashboardPage> {
       backgroundColor: ThixPolicy.surface,
       appBar: AppBar(
         backgroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        toolbarHeight: 56,
-        title: Text(
-          state.myAgency?.name ?? 'Mon Agence',
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: ThixPolicy.textMain),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(agency!.name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+            Text(
+              '${agency.countryCode} • ${agency.status}',
+              style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary),
+            ),
+          ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.qr_code_scanner_rounded, color: ThixPolicy.textMain),
-            onPressed: state.isAgencyActive ? () => context.push('/agency/scan') : null,
-          ),
-          IconButton(
-            icon: const Icon(Icons.add_rounded, color: ThixPolicy.primary),
-            onPressed: state.isAgencyActive ? () => context.push('/agency/trip/create') : null,
-          ),
-          const SizedBox(width: 4),
+          IconButton(onPressed: () => context.push('/agency/scan'), icon: const Icon(Icons.qr_code_scanner)),
+          IconButton(onPressed: () => context.push('/agency/trip/create'), icon: const Icon(Icons.add, color: ThixPolicy.primary)),
         ],
       ),
-      body: state.isLoading
-          ? const Center(child: CircularProgressIndicator(color: ThixPolicy.primary))
-          : RefreshIndicator(
-              color: ThixPolicy.primary,
-              backgroundColor: Colors.white,
-              onRefresh: () => notifier.init(),
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (state.isPending)
-                      Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 16),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFF7E6),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Text(
-                          'Agence en attente de validation. Le dashboard complet s’ouvre dès le statut active.',
-                          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-                        ),
-                      ),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _StatCard(
-                            label: 'Réservations du jour',
-                            value: '${state.todayBookingsCount}',
-                            icon: Icons.receipt_long_rounded,
-                            color: ThixPolicy.primary,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _StatCard(
-                            label: 'Revenu du jour',
-                            value: '${state.todayRevenue} FC',
-                            icon: Icons.payments_rounded,
-                            color: ThixPolicy.success,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Trajets à venir',
-                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: ThixPolicy.textMain),
-                    ),
-                    const SizedBox(height: 10),
-                    if (state.myTrips.isEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(30),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(ThixPolicy.rLg),
-                          border: Border.all(color: ThixPolicy.border),
-                        ),
-                        child: const Text(
-                          'Aucun trajet programmé',
-                          style: TextStyle(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600),
-                        ),
-                      )
-                    else
-                      ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: state.myTrips.length,
-                        itemBuilder: (_, i) {
-                          final trip = state.myTrips[i];
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                              border: Border.all(color: ThixPolicy.border),
-                              boxShadow: ThixPolicy.shadowSoft(),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.directions_bus_rounded, color: ThixPolicy.primary),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '${trip.departureCity} → ${trip.arrivalCity}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 13.5,
-                                          color: ThixPolicy.textMain,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '${trip.priceFcfa} FCFA • ${trip.availableSeats} places dispo',
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          color: ThixPolicy.textSecondary,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: ThixPolicy.primary,
+        onPressed: () => context.push('/agency/trip/create'),
+        icon: const Icon(Icons.add_road, color: Colors.white),
+        label: const Text('Nouveau trajet', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () => ref.read(agencyDashboardProvider.notifier).init(),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+          children: [
+            Row(
+              children: [
+                const Text('Devise', style: TextStyle(fontWeight: FontWeight.w800)),
+                const Spacer(),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'CDF', label: Text('CDF')),
+                    ButtonSegment(value: 'USD', label: Text('USD')),
                   ],
+                  selected: {_fx},
+                  onSelectionChanged: (s) => setState(() => _fx = s.first),
                 ),
-              ),
+              ],
             ),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(child: _Kpi('Réservations du jour', '${state.todayBookingsCount}', Icons.receipt_long, ThixPolicy.primary)),
+              const SizedBox(width: 10),
+              Expanded(child: _Kpi('Revenu du jour', _money(state.todayRevenue), Icons.payments, ThixPolicy.success)),
+            ]),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(child: _Kpi('Trajets', '${state.myTrips.length}', Icons.directions_bus, ThixPolicy.primaryDeep)),
+              const SizedBox(width: 10),
+              Expanded(child: _Kpi('À venir', '${state.pendingDepartures}', Icons.schedule, Colors.orange)),
+            ]),
+            const SizedBox(height: 18),
+            const Text('Actions', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              _Action('Nouveau trajet', Icons.add_road, () => context.push('/agency/trip/create')),
+              _Action('Scanner ticket', Icons.qr_code_scanner, () => context.push('/agency/scan')),
+              _Action('Mes sièges', Icons.event_seat, () {
+                if (state.myTrips.isNotEmpty) {
+                  context.push('/agency/seats?tripId=${state.myTrips.first.id}');
+                }
+              }),
+              _Action('Onboarding', Icons.storefront, () => context.push('/agency/onboarding')),
+            ]),
+            const SizedBox(height: 22),
+            const Text('Trajets à venir', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
+            const SizedBox(height: 8),
+            if (state.myTrips.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('Aucun trajet. Appuie sur + pour publier.', textAlign: TextAlign.center),
+              )
+            else
+              ...state.myTrips.map((t) {
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: ThixPolicy.border),
+                  ),
+                  child: InkWell(
+                    onTap: () => context.push('/agency/seats?tripId=${t.id}'),
+                    child: Row(children: [
+                      const Icon(Icons.directions_bus_rounded, color: ThixPolicy.primary),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('${t.departureCity} → ${t.arrivalCity}', style: const TextStyle(fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${t.priceFcfa} • ${t.availableSeats} places • ${t.status}',
+                            style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary),
+                          ),
+                        ]),
+                      ),
+                      const Icon(Icons.chevron_right),
+                    ]),
+                  ),
+                );
+              }),
+            const SizedBox(height: 22),
+            const Text('Dernières réservations', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
+            const SizedBox(height: 8),
+            if (state.agencyBookings.isEmpty)
+              const Text('Aucune réservation', style: TextStyle(color: ThixPolicy.textSecondary))
+            else
+              ...state.agencyBookings.take(10).map((b) {
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.confirmation_number_outlined),
+                  title: Text(b.id, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(b.status),
+                );
+              }),
+          ],
+        ),
+      ),
     );
   }
 }
 
-class _StatCard extends StatelessWidget {
+class _Kpi extends StatelessWidget {
   final String label, value;
   final IconData icon;
   final Color color;
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.color,
-  });
-
+  const _Kpi(this.label, this.value, this.icon, this.color);
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: ThixPolicy.border),
-        boxShadow: ThixPolicy.shadowSoft(),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
-            child: Icon(icon, size: 16, color: color),
-          ),
-          const SizedBox(height: 10),
-          Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: ThixPolicy.textMain)),
-          const SizedBox(height: 2),
-          Text(label, style: const TextStyle(fontSize: 10.5, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600)),
-        ],
-      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icon, color: color, size: 18),
+        const SizedBox(height: 8),
+        Text(value, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+        Text(label, style: const TextStyle(fontSize: 10.5, color: ThixPolicy.textSecondary)),
+      ]),
+    );
+  }
+}
+
+class _Action extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  const _Action(this.label, this.icon, this.onTap);
+  @override
+  Widget build(BuildContext context) {
+    return ActionChip(
+      avatar: Icon(icon, size: 16),
+      label: Text(label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+      onPressed: onTap,
     );
   }
 }
