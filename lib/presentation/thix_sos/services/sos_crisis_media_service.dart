@@ -1,3 +1,4 @@
+// lib/presentation/thix_sos/services/sos_crisis_media_service.dart
 /// Canal caméra de crise — indépendant de l'appel audio THIX.
 /// Channel Agora: soscam_{incidentId sans tirets}
 import 'dart:async';
@@ -129,6 +130,35 @@ class SosCrisisMediaService {
   Future<void> setLocalCamera(bool on) async {
     await _media.setVideoOff(!on);
     _publishing = on;
+  }
+
+  /// ✅ Libère temporairement la caméra Agora pour permettre
+  /// une capture silencieuse (package camera) côté VICTIME,
+  /// puis relance le flux live.
+  Future<T> withCameraReleased<T>(Future<T> Function() action) async {
+    final engine = _media.engine;
+    final wasJoined = _joined;
+    final wasPublishing = _publishing;
+    try {
+      if (wasJoined && engine != null) {
+        try {
+          await engine.enableLocalVideo(false);
+        } catch (_) {}
+        try {
+          await engine.stopPreview();
+        } catch (_) {}
+      }
+      return await action();
+    } finally {
+      if (wasJoined && engine != null && wasPublishing) {
+        try {
+          await engine.enableLocalVideo(true);
+        } catch (_) {}
+        try {
+          await engine.startPreview();
+        } catch (_) {}
+      }
+    }
   }
 
   Future<void> leave() async {
