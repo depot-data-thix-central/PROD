@@ -14,6 +14,7 @@ import '../models/sos_models.dart';
 import '../providers/sos_providers.dart';
 import '../services/sos_crisis_media_service.dart';
 import '../services/sos_evidence_service.dart';
+import '../services/sos_remote_capture_service.dart';
 import '../services/sos_service.dart';
 
 class ChambreCriseSecoursPage extends ConsumerStatefulWidget {
@@ -35,6 +36,7 @@ class _ChambreCriseSecoursPageState
     extends ConsumerState<ChambreCriseSecoursPage> {
   final _media = SosCrisisMediaService.instance;
   final _evidence = SosEvidenceService();
+  final _remote = SosRemoteCaptureService();
   StreamSubscription<Set<int>>? _uidsSub;
   Set<int> _remotes = {};
   final List<SosEvidence> _items = [];
@@ -85,13 +87,8 @@ class _ChambreCriseSecoursPageState
   Future<void> _photo() async {
     setState(() => _busy = true);
     try {
-      final e = await _evidence.takePhoto(widget.incidentId, conversationId: _conversationId);
-      if (e != null && mounted) {
-        setState(() => _items.insert(0, e));
-        _toast(e.postedToChat
-            ? 'Photo envoyée dans le groupe SOS'
-            : 'Photo prise (groupe indisponible)');
-      }
+      await _remote.requestPhoto(widget.incidentId);
+      _toast('Commande photo envoyée au téléphone victime');
     } catch (err) {
       _toast('$err');
     }
@@ -101,30 +98,27 @@ class _ChambreCriseSecoursPageState
   Future<void> _video() async {
     setState(() => _busy = true);
     try {
-      final e = await _evidence.recordVideo(widget.incidentId, conversationId: _conversationId);
-      if (e != null && mounted) {
-        setState(() => _items.insert(0, e));
-        _toast(e.postedToChat
-            ? 'Vidéo envoyée dans le groupe SOS'
-            : 'Vidéo prise (groupe indisponible)');
-      }
+      await _remote.requestVideo(widget.incidentId);
+      _toast('Commande vidéo envoyée au téléphone victime');
     } catch (err) {
       _toast('$err');
     }
     if (mounted) setState(() => _busy = false);
   }
 
+  bool _audioArmed = false;
+
   Future<void> _toggleAudioRec() async {
     setState(() => _busy = true);
     try {
-      if (_evidence.isRecordingAudio) {
-        final e = await _evidence.stopAudio(widget.incidentId, conversationId: _conversationId);
-        if (e != null && mounted) setState(() => _items.insert(0, e));
-        _toast(e?.postedToChat == true ? 'Audio envoyé dans le groupe SOS' : 'Audio enregistré');
-
+      if (_audioArmed) {
+        await _remote.requestAudioStop(widget.incidentId);
+        _audioArmed = false;
+        _toast('Stop audio envoyé au téléphone victime');
       } else {
-        await _evidence.startAudio();
-        _toast('Enregistrement audio démarré');
+        await _remote.requestAudioStart(widget.incidentId);
+        _audioArmed = true;
+        _toast('Start audio envoyé au téléphone victime');
       }
     } catch (err) {
       _toast('$err');
