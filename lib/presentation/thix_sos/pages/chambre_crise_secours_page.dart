@@ -120,7 +120,8 @@ class _ChambreCriseSecoursPageState
       if (_evidence.isRecordingAudio) {
         final e = await _evidence.stopAudio(widget.incidentId, conversationId: _conversationId);
         if (e != null && mounted) setState(() => _items.insert(0, e));
-        _toast(e.postedToChat ? 'Audio envoyé dans le groupe SOS' : 'Audio enregistré');
+        _toast(e?.postedToChat == true ? 'Audio envoyé dans le groupe SOS' : 'Audio enregistré');
+
       } else {
         await _evidence.startAudio();
         _toast('Enregistrement audio démarré');
