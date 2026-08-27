@@ -541,7 +541,18 @@ class AppRouter {
         GoRoute(path: '/agency/dashboard', name: 'agency-dashboard', pageBuilder: (_, __) => const NoTransitionPage(child: AgencyDashboardPage())),
         GoRoute(path: '/agency/trip/create', name: 'agency-create-trip', pageBuilder: (_, __) => const NoTransitionPage(child: AgencyCreateTripPage())),
         GoRoute(path: '/agency/scan', name: 'agency-scan', pageBuilder: (_, __) => const NoTransitionPage(child: AgencyQrScanPage())),
-
+       GoRoute(
+          path: '/thix-reservation/bus/trip/:tripId',
+          name: 'bus-trip-by-id',
+          pageBuilder: (context, state) {
+            final extra = state.extra;
+            if (extra is BusTripModel) {
+              return NoTransitionPage(child: BusTripDetailPage(trip: extra));
+            }
+            final tripId = state.pathParameters['tripId'] ?? '';
+            return NoTransitionPage(child: BusTripDetailPage(tripId: tripId));
+          },
+        ),
         GoRoute(
   path: '/thix-ia',
   name: 'thix-ia-home',
