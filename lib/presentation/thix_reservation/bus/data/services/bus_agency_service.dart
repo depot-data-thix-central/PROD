@@ -28,16 +28,14 @@ class BusAgencyService {
         .maybeSingle();
     if (byOwner != null) return AgencyModel.fromJson(byOwner);
 
-    try {
-      final byUser = await _db
-          .from(table)
-          .select()
-          .eq('user_id', user.id)
-          .maybeSingle();
-      if (byUser != null) return AgencyModel.fromJson(byUser);
-    } catch (_) {}
-
     return null;
+  }
+
+  String _makeSlug(String name) {
+    final cleaned = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+    final stamp = DateTime.now().millisecondsSinceEpoch.toString();
+    final tail = stamp.length > 8 ? stamp.substring(stamp.length - 8) : stamp;
+    return '$cleaned-$tail';
   }
 
   Future<AgencyModel> createAgency({
@@ -50,27 +48,18 @@ class BusAgencyService {
     if (existing != null) return existing;
 
     final cleanName = name.trim();
-    final slug =
-        '\( {cleanName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-')}- \){DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
-
     final payload = <String, dynamic>{
       'owner_id': _uid,
       'name': cleanName,
-      'slug': slug,
+      'slug': _makeSlug(cleanName),
       'country_code': countryCode,
       'description': description?.trim(),
       'status': autoApprove ? 'active' : 'pending',
       'is_verified': autoApprove,
     };
 
-    try {
-      final res = await _db.from(table).insert(payload).select().single();
-      return AgencyModel.fromJson(res);
-    } catch (e) {
-      payload['user_id'] = _uid;
-      final res = await _db.from(table).insert(payload).select().single();
-      return AgencyModel.fromJson(res);
-    }
+    final res = await _db.from(table).insert(payload).select().single();
+    return AgencyModel.fromJson(res);
   }
 
   Future<Map<String, dynamic>> getDashboardStats(String agencyId) async {
@@ -88,7 +77,10 @@ class BusAgencyService {
 
       dynamic revenueRes;
       try {
-        revenueRes = await _db.rpc('agency_revenue_today', params: {'p_agency_id': agencyId});
+        revenueRes = await _db.rpc(
+          'agency_revenue_today',
+          params: {'p_agency_id': agencyId},
+        );
       } catch (_) {
         revenueRes = 0;
       }
@@ -163,7 +155,10 @@ class BusAgencyService {
 
     final booking = BookingModel.fromJson(res);
     if (booking.status == 'confirmed') {
-      await _db.from('bus_bookings').update({'status': 'completed'}).eq('id', booking.id);
+      await _db
+          .from('bus_bookings')
+          .update({'status': 'completed'})
+          .eq('id', booking.id);
     }
     return booking;
   }
