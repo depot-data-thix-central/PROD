@@ -547,7 +547,8 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     if (!success || !mounted) return;
     setState(() => _otpSent = true);
     _startResendCooldown();
-    _snack('Un code à 6 chiffres a été envoyé à votre email.');
+    // CHANGEMENT ICI : Modification du texte de la snackbar pour refléter 8 chiffres
+    _snack('Un code à 8 chiffres a été envoyé à votre email.');
   } finally {
     if (mounted) setState(() => _busy = false);
   }
@@ -586,8 +587,9 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     return;
   }
   final code = _otpC.text.trim();
-  if (!RegExp(r'^\d{6}$').hasMatch(code)) {
-    _snack('Saisissez le code à 6 chiffres.', isError: true);
+  // CHANGEMENT ICI : RegExp mise à jour pour accepter 8 chiffres
+  if (!RegExp(r'^\d{8}$').hasMatch(code)) {
+    _snack('Saisissez le code à 8 chiffres.', isError: true);
     return;
   }
 
@@ -1209,13 +1211,14 @@ class _Step2Account extends StatelessWidget {
         ),
         if (isOtpSent) ...[
           const SizedBox(height: ThixPolicy.s24),
+          // CHANGEMENT ICI : Modification du hintText et du maxLength pour accepter 8 chiffres
           _PremiumField(
             label: 'Code reçu par email *',
-            hint: '000000',
+            hint: '00000000',
             icon: Icons.confirmation_number_outlined,
             controller: otpC,
             keyboardType: TextInputType.number,
-            maxLength: 6,
+            maxLength: 8,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           ),
         ],
