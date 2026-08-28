@@ -439,11 +439,12 @@ class SupabaseAuthManager implements AuthManager {
 
       // Si l'utilisateur doit valider son email (OTP), on s'arrête ici. 
       // ON NE CRÉE PAS DE PROFIL EN BASE DE DONNÉES.
-      if (session == null || user.emailConfirmedAt == null) {
+            if (session == null || user.emailConfirmedAt == null) {
         final tempUser = AppUser(
           id: user.id,
           thixId: 'THIX-PENDING',
           thixChat: '',
+          thixScore: null, 
           email: normalizedEmail,
           displayName: userMeta['display_name'] as String,
           accountType: accountType,
@@ -453,6 +454,7 @@ class SupabaseAuthManager implements AuthManager {
         _currentUser.value = tempUser;
         return tempUser;
       }
+
 
       // Si auto-confirmé
       final appUser = await _hydrateUser(user);
