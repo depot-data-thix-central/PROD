@@ -311,9 +311,14 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     );
   }
 
+  // ✅ CORRECTION OTP : ajout du cas "configuration serveur"
   String _userFacingError(Object e) {
     debugPrint('[PersonalRegistration] $e');
     final msg = e.toString().toLowerCase();
+
+    if (msg.contains('configuration serveur')) {
+      return 'Configuration Supabase : activez "Confirm email" (Auth → Providers → Email).';
+    }
 
     // 1. Gestion des doublons d'Authentification (Email)
     if (msg.contains('already registered') || msg.contains('already exists')) {
@@ -454,6 +459,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     });
   }
 
+  // ✅ CORRECTION OTP : interception du message 'otp_sent'
   Future<bool> _createAuthUser() async {
     final email = _emailC.text.trim().toLowerCase();
     final phone = _phoneC.text.trim().replaceAll(RegExp(r'[\s.-]'), '');
@@ -500,9 +506,16 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
               'account_status': 'pending',
             },
           );
+      // Compte déjà vérifié (reconnexion) : on peut continuer
       return true;
     } catch (e) {
       final message = e.toString().toLowerCase();
+      
+      // ✅ NOUVEAU : OTP envoyé (ou renvoyé) : succès, l'UI va afficher le champ OTP
+      if (message.contains('otp_sent') || message.contains('nouveau code')) {
+        return true;
+      }
+      
       if (message.contains('already registered') || message.contains('already exists')) {
         _snack(_userFacingError(e), isError: true);
         return false;
