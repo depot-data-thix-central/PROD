@@ -320,16 +320,66 @@ class AppRouter {
           ElevatedButton(onPressed: () => context.go(AppRoutes.home), child: const Text('Accueil')),
         ])),
       ),
-      redirect: (context, state) {
+      redirect: (context, state) async {
         try {
           final loc = state.matchedLocation;
           final isLoginPage = loc == AppRoutes.login;
           final isRegPage = loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
-          final isPublic = loc == AppRoutes.start || isLoginPage || isRegPage || loc == AppRoutes.publicProfile || loc == AppRoutes.jobs || loc == AppRoutes.opportunities || loc == AppRoutes.education || loc == AppRoutes.trainingHome || loc.startsWith('${AppRoutes.trainingDetailsBasePath}/') || loc == AppRoutes.monPays || loc.startsWith('${AppRoutes.monPays}/') || loc.startsWith('/thix-event') || loc.startsWith('/thix-retrouve') || loc.startsWith('/thix-weeding') || loc.startsWith('/thix-reservation/delivery');
+          final isPublic = loc == AppRoutes.start || 
+                          isLoginPage || 
+                          isRegPage || 
+                          loc == AppRoutes.publicProfile || 
+                          loc == AppRoutes.jobs || 
+                          loc == AppRoutes.opportunities || 
+                          loc == AppRoutes.education || 
+                          loc == AppRoutes.trainingHome || 
+                          loc.startsWith('${AppRoutes.trainingDetailsBasePath}/') || 
+                          loc == AppRoutes.monPays || 
+                          loc.startsWith('${AppRoutes.monPays}/') || 
+                          loc.startsWith('/thix-event') || 
+                          loc.startsWith('/thix-retrouve') || 
+                          loc.startsWith('/thix-weeding') || 
+                          loc.startsWith('/thix-reservation/delivery');
+          
           final logged = auth.isAuthenticated;
+          final currentUser = auth.currentUser;
 
-          if (!logged) return isPublic ? null : AppRoutes.login;
-          if (logged && isLoginPage) return AppRoutes.home;
+          // ✅ NOUVEAU : Vérifier si le compte est activé ou en cours d'inscription
+          final isAccountActive = currentUser != null && 
+                                  currentUser.registrationStatus != null &&
+                                  !currentUser.registrationStatus!.contains('draft') &&
+                                  !currentUser.registrationStatus!.contains('pending');
+
+          // Cas 1 : Non connecté
+          if (!logged) {
+            return isPublic ? null : AppRoutes.login;
+          }
+
+          // Cas 2 : Connecté sur la page de login → rediriger vers accueil
+          if (logged && isLoginPage) {
+            return AppRoutes.home;
+          }
+
+          // ✅ NOUVEAU Cas 3 : Connecté sur page d'inscription avec compte ACTIVÉ → dashboard
+          if (logged && isRegPage && isAccountActive) {
+            return AppRoutes.userDashboard;
+          }
+
+          // ✅ NOUVEAU Cas 4 : Connecté mais compte NON activé ET pas sur page d'inscription → inscription
+          if (logged && !isRegPage && !isAccountActive && currentUser?.registrationStatus != null) {
+            // L'utilisateur a un compte en draft/pending mais n'est pas sur la page d'inscription
+            // Rediriger vers l'étape appropriée
+            final status = currentUser!.registrationStatus!;
+            if (status.contains('draft_step1')) {
+              return '${AppRoutes.personalReg}?step=1';
+            } else if (status.contains('draft_step2')) {
+              return '${AppRoutes.personalReg}?step=2';
+            } else if (status.contains('draft_step3')) {
+              return '${AppRoutes.personalReg}?step=3';
+            }
+          }
+
+          // Cas par défaut : pas de redirection
           return null;
         } catch (e) {
           debugPrint('GoRouter redirect error: $e');
