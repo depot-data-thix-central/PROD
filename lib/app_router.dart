@@ -320,7 +320,7 @@ class AppRouter {
           ElevatedButton(onPressed: () => context.go(AppRoutes.home), child: const Text('Accueil')),
         ])),
       ),
-            redirect: (context, state) async {
+                  redirect: (context, state) async {
         try {
           final loc = state.matchedLocation;
           final isLoginPage = loc == AppRoutes.login;
@@ -344,7 +344,7 @@ class AppRouter {
           final logged = auth.isAuthenticated;
           final currentUser = auth.currentUser;
 
-          // ✅ NOUVEAU : Vérifier si le compte est activé ou en cours d'inscription
+          // Vérifier si le compte est activé ou en cours d'inscription
           final isAccountActive = currentUser != null && 
                                   currentUser.registrationStatus != null &&
                                   !currentUser.registrationStatus!.contains('draft') &&
@@ -360,24 +360,24 @@ class AppRouter {
             return AppRoutes.home;
           }
 
-          // ✅ NOUVEAU Cas 3 : Connecté sur page d'inscription avec compte ACTIVÉ → dashboard
+          // ✅ NOUVEAU Cas 3 : Connecté sur page d'inscription avec compte ACTIVÉ
           if (logged && isRegPage && isAccountActive) {
-            return AppRoutes.userDashboard;
+            // On NE retourne PAS AppRoutes.userDashboard ici !
+            // Sinon, l'utilisateur sera éjecté avant même d'avoir vu sa carte THIX ID (Étape 3 finale).
+            // On le laisse cliquer lui-même sur le bouton "Accéder au Tableau de Bord".
+            return null;
           }
 
-          // ✅ NOUVEAU Cas 4 : Connecté mais compte NON activé ET pas sur page d'inscription → inscription
+          // ✅ NOUVEAU Cas 4 : Connecté mais compte NON activé ET pas sur page d'inscription
           if (logged && !isRegPage && !isAccountActive && currentUser?.registrationStatus != null) {
-            // L'utilisateur a un compte en draft/pending mais n'est pas sur la page d'inscription
-            // Rediriger vers l'étape appropriée
             final status = currentUser!.registrationStatus!.toLowerCase();
             
             if (status.contains('draft_step1')) {
               return '${AppRoutes.personalReg}?step=1';
-            } else if (status.contains('draft_step2')) {
+            } else if (status.contains('draft_step2') || status.contains('draft_step3') || status.contains('pending')) {
+              // 🔴 CORRECTION MAJEURE : L'activation finale et le THIX CHAT se font maintenant à l'Étape 2 !
+              // Donc si l'utilisateur est coincé en 'pending', il doit revenir à l'étape 2 pour s'activer.
               return '${AppRoutes.personalReg}?step=2';
-            } else if (status.contains('draft_step3') || status.contains('pending')) {
-              // 🔴 CORRECTION ICI : Force le retour à l'étape 3 si le statut est "pending"
-              return '${AppRoutes.personalReg}?step=3';
             }
           }
 
@@ -388,6 +388,8 @@ class AppRouter {
           return null;
         }
       },
+
+          
 
       routes: [
         // === CORE, AUTH & MAIN ===
