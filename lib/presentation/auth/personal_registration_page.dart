@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
-import 'package:qr_flutter/qr_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:zxcvbn/zxcvbn.dart';
 
@@ -39,7 +38,6 @@ class PasswordPolicy {
         .toList();
     final result = zxcvbn.evaluate(password, userInputs: userInputs);
     
-    // Tolérance à 2 (Moyen) pour accepter les mots de passe plus courts mais robustes
     if ((result.score ?? 0) < 2) {
       final warning = result.feedback?.warning ?? '';
       final suggestions = result.feedback?.suggestions?.join(' ') ?? '';
@@ -53,8 +51,6 @@ class PasswordPolicy {
     return null;
   }
 
-  /// HIBP k-anonymity : seul le préfixe SHA-1 part.
-  /// Fail-open si le réseau est down (on n'bloque pas l'inscription).
   static Future<bool> _isPasswordPwned(String password) async {
     try {
       final hash = sha1.convert(utf8.encode(password)).toString().toUpperCase();
@@ -221,8 +217,7 @@ class _PremiumDropdown extends StatelessWidget {
 }
 
 // ============================================================================
-// PAGE
-// Étape 1 profil → 2 email/mdp/thixchat/OTP → 3 carte finale
+// PAGE PRINCIPALE
 // ============================================================================
 class PersonalRegistrationPage extends ConsumerStatefulWidget {
   final int? initialStep;
@@ -251,7 +246,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
   bool _otpSent = false;
   bool _emailVerified = false;
-  bool _sponsored = false;
   bool _busy = false;
   int _step = 1;
 
@@ -260,87 +254,31 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   static const int _resendCooldownDuration = 60;
   Timer? _passwordDebounce;
 
-  // ✅ Liste étendue des pays
   static const _countries = [
-  'Afrique du Sud',
-  'Algérie',
-  'Angola',
-  'Bénin',
-  'Botswana',
-  'Burkina Faso',
-  'Burundi',
-  'Cameroun',
-  'Cap-Vert',
-  'Comores',
-  'Congo-Brazzaville',
-  'Côte d\'Ivoire',
-  'Djibouti',
-  'Égypte',
-  'Érythrée',
-  'Eswatini',
-  'Éthiopie',
-  'Gabon',
-  'Gambie',
-  'Ghana',
-  'Guinée',
-  'Guinée-Bissau',
-  'Guinée équatoriale',
-  'Kenya',
-  'Lesotho',
-  'Liberia',
-  'Libye',
-  'Madagascar',
-  'Malawi',
-  'Mali',
-  'Maroc',
-  'Maurice',
-  'Mauritanie',
-  'Mozambique',
-  'Namibie',
-  'Niger',
-  'Nigeria',
-  'Ouganda',
-  'République centrafricaine',
-  'République démocratique du Congo',
-  'Rwanda',
-  'Sao Tomé-et-Principe',
-  'Sénégal',
-  'Seychelles',
-  'Sierra Leone',
-  'Somalie',
-  'Soudan',
-  'Soudan du Sud',
-  'Tanzanie',
-  'Tchad',
-  'Togo',
-  'Tunisie',
-  'Zambie',
-  'Zimbabwe',
-  'Autre',
-];
+    'Afrique du Sud', 'Algérie', 'Angola', 'Bénin', 'Botswana', 'Burkina Faso',
+    'Burundi', 'Cameroun', 'Cap-Vert', 'Comores', 'Congo-Brazzaville', 'Côte d\'Ivoire',
+    'Djibouti', 'Égypte', 'Érythrée', 'Eswatini', 'Éthiopie', 'Gabon', 'Gambie',
+    'Ghana', 'Guinée', 'Guinée-Bissau', 'Guinée équatoriale', 'Kenya', 'Lesotho',
+    'Liberia', 'Libye', 'Madagascar', 'Malawi', 'Mali', 'Maroc', 'Maurice',
+    'Mauritanie', 'Mozambique', 'Namibie', 'Niger', 'Nigeria', 'Ouganda',
+    'République centrafricaine', 'République démocratique du Congo', 'Rwanda',
+    'Sao Tomé-et-Principe', 'Sénégal', 'Seychelles', 'Sierra Leone', 'Somalie',
+    'Soudan', 'Soudan du Sud', 'Tanzanie', 'Tchad', 'Togo', 'Tunisie', 'Zambie', 'Zimbabwe', 'Autre',
+  ];
 
   @override
   void initState() {
     super.initState();
     _step = widget.initialStep ?? 1;
-    // Ajustement de sécurité: si on essaye d'aller à l'étape 3 manuellement, on passe à 2
-    // car l'étape 3 est désormais la carte finale générée après succès serveur.
     if (_step == 3) _step = 2; 
   }
 
   @override
   void dispose() {
-    _nameC.dispose();
-    _dobC.dispose();
-    _occupationC.dispose();
-    _emailC.dispose();
-    _phoneC.dispose();
-    _passwordC.dispose();
-    _confirmC.dispose();
-    _otpC.dispose();
-    _thixChatC.dispose();
-    _resendTimer?.cancel();
-    _passwordDebounce?.cancel();
+    _nameC.dispose(); _dobC.dispose(); _occupationC.dispose();
+    _emailC.dispose(); _phoneC.dispose(); _passwordC.dispose();
+    _confirmC.dispose(); _otpC.dispose(); _thixChatC.dispose();
+    _resendTimer?.cancel(); _passwordDebounce?.cancel();
     super.dispose();
   }
 
@@ -379,10 +317,8 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     if (msg.contains('invalid_chat') || msg.contains('reserved') || msg.contains('réservé')) {
       return 'Ce THIX CHAT est invalide ou réservé.';
     }
-    if (msg.contains('chat_taken')) {
-      return 'Ce THIX CHAT est déjà pris.';
-    }
-    if (msg.contains('expired')) return 'Le code ou le QR a expiré. Recommencez.';
+    if (msg.contains('chat_taken')) return 'Ce THIX CHAT est déjà pris.';
+    if (msg.contains('expired')) return 'Le code a expiré. Recommencez.';
     if (msg.contains('invalid') && msg.contains('token')) return 'Code invalide.';
     if (msg.contains('rate limit') || msg.contains('too many')) {
       return 'Trop de tentatives. Patientez quelques instants.';
@@ -403,90 +339,38 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
   bool _isValidThixChat(String chat) => RegExp(r'^@[a-z0-9._]{3,20}$').hasMatch(chat);
 
-  // ✅ Mapping dynamique étendu
   String _mapCountryToCode(String? name) {
     const map = {
-  'Afrique du Sud': 'ZA',
-  'Algérie': 'DZ',
-  'Angola': 'AO',
-  'Bénin': 'BJ',
-  'Botswana': 'BW',
-  'Burkina Faso': 'BF',
-  'Burundi': 'BI',
-  'Cameroun': 'CM',
-  'Cap-Vert': 'CV',
-  'Comores': 'KM',
-  'Congo-Brazzaville': 'CG',
-  'Côte d\'Ivoire': 'CI',
-  'Djibouti': 'DJ',
-  'Égypte': 'EG',
-  'Érythrée': 'ER',
-  'Eswatini': 'SZ',
-  'Éthiopie': 'ET',
-  'Gabon': 'GA',
-  'Gambie': 'GM',
-  'Ghana': 'GH',
-  'Guinée': 'GN',
-  'Guinée-Bissau': 'GW',
-  'Guinée équatoriale': 'GQ',
-  'Kenya': 'KE',
-  'Lesotho': 'LS',
-  'Liberia': 'LR',
-  'Libye': 'LY',
-  'Madagascar': 'MG',
-  'Malawi': 'MW',
-  'Mali': 'ML',
-  'Maroc': 'MA',
-  'Maurice': 'MU',
-  'Mauritanie': 'MR',
-  'Mozambique': 'MZ',
-  'Namibie': 'NA',
-  'Niger': 'NE',
-  'Nigeria': 'NG',
-  'Ouganda': 'UG',
-  'République centrafricaine': 'CF',
-  'République démocratique du Congo': 'CD',
-  'Rwanda': 'RW',
-  'Sao Tomé-et-Principe': 'ST',
-  'Sénégal': 'SN',
-  'Seychelles': 'SC',
-  'Sierra Leone': 'SL',
-  'Somalie': 'SO',
-  'Soudan': 'SD',
-  'Soudan du Sud': 'SS',
-  'Tanzanie': 'TZ',
-  'Tchad': 'TD',
-  'Togo': 'TG',
-  'Tunisie': 'TN',
-  'Zambie': 'ZM',
-  'Zimbabwe': 'ZW',
-};
+      'Afrique du Sud': 'ZA', 'Algérie': 'DZ', 'Angola': 'AO', 'Bénin': 'BJ',
+      'Botswana': 'BW', 'Burkina Faso': 'BF', 'Burundi': 'BI', 'Cameroun': 'CM',
+      'Cap-Vert': 'CV', 'Comores': 'KM', 'Congo-Brazzaville': 'CG', 'Côte d\'Ivoire': 'CI',
+      'Djibouti': 'DJ', 'Égypte': 'EG', 'Érythrée': 'ER', 'Eswatini': 'SZ',
+      'Éthiopie': 'ET', 'Gabon': 'GA', 'Gambie': 'GM', 'Ghana': 'GH', 'Guinée': 'GN',
+      'Guinée-Bissau': 'GW', 'Guinée équatoriale': 'GQ', 'Kenya': 'KE', 'Lesotho': 'LS',
+      'Liberia': 'LR', 'Libye': 'LY', 'Madagascar': 'MG', 'Malawi': 'MW', 'Mali': 'ML',
+      'Maroc': 'MA', 'Maurice': 'MU', 'Mauritanie': 'MR', 'Mozambique': 'MZ',
+      'Namibie': 'NA', 'Niger': 'NE', 'Nigeria': 'NG', 'Ouganda': 'UG',
+      'République centrafricaine': 'CF', 'République démocratique du Congo': 'CD',
+      'Rwanda': 'RW', 'Sao Tomé-et-Principe': 'ST', 'Sénégal': 'SN', 'Seychelles': 'SC',
+      'Sierra Leone': 'SL', 'Somalie': 'SO', 'Soudan': 'SD', 'Soudan du Sud': 'SS',
+      'Tanzanie': 'TZ', 'Tchad': 'TD', 'Togo': 'TG', 'Tunisie': 'TN', 'Zambie': 'ZM', 'Zimbabwe': 'ZW',
+    };
     return map[name] ?? 'XX';
   }
 
   Future<void> _onPasswordChanged(String value) async {
     _passwordDebounce?.cancel();
     if (value.isEmpty) {
-      setState(() {
-        _passwordError = null;
-        _passwordScore = -1;
-        _passwordValidating = false;
-      });
+      setState(() { _passwordError = null; _passwordScore = -1; _passwordValidating = false; });
       return;
     }
     setState(() => _passwordValidating = true);
     _passwordDebounce = Timer(const Duration(milliseconds: 400), () async {
       final error = await PasswordPolicy.validate(
-        value,
-        email: _emailC.text.trim().toLowerCase(),
-        fullName: _nameC.text.trim(),
-        phone: _phoneC.text.trim(),
+        value, email: _emailC.text.trim().toLowerCase(), fullName: _nameC.text.trim(), phone: _phoneC.text.trim(),
       );
       if (!mounted) return;
-      final result = Zxcvbn().evaluate(value, userInputs: [
-        _emailC.text.trim().toLowerCase(),
-        _nameC.text.trim().toLowerCase(),
-      ]);
+      final result = Zxcvbn().evaluate(value, userInputs: [_emailC.text.trim().toLowerCase(), _nameC.text.trim().toLowerCase()]);
       setState(() {
         _passwordError = error;
         _passwordScore = (result.score ?? 0).toInt();
@@ -499,9 +383,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     if (_busy) return;
     final name = _nameC.text.trim();
     final dob = _dobC.text.trim();
-    if (name.length < 3 || name.length > 100) {
-      return _snack('Nom invalide (3 à 100 caractères).', isError: true);
-    }
+    if (name.length < 3 || name.length > 100) return _snack('Nom invalide (3 à 100 caractères).', isError: true);
     if (dob.isEmpty) return _snack('Date de naissance requise.', isError: true);
     final parsed = DateTime.tryParse(dob);
     if (parsed == null) return _snack('Date de naissance invalide.', isError: true);
@@ -516,10 +398,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     _resendTimer?.cancel();
     setState(() => _resendCooldown = _resendCooldownDuration);
     _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
+      if (!mounted) { timer.cancel(); return; }
       if (_resendCooldown <= 1) {
         timer.cancel();
         setState(() => _resendCooldown = 0);
@@ -535,57 +414,31 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     final pass = _passwordC.text;
     final confirm = _confirmC.text;
 
-    if (!_isValidEmail(email)) {
-      _snack('Email invalide.', isError: true);
-      return false;
-    }
-    if (phone.isNotEmpty && !_isValidPhone(phone)) {
-      _snack('Format du numéro international invalide (ex. +243…).', isError: true);
-      return false;
-    }
-    final passIssue = await PasswordPolicy.validate(
-      pass,
-      email: email,
-      fullName: _nameC.text.trim(),
-      phone: phone,
-    );
-    if (passIssue != null) {
-      _snack(passIssue, isError: true);
-      return false;
-    }
-    if (pass != confirm) {
-      _snack('Les mots de passe ne correspondent pas.', isError: true);
-      return false;
-    }
+    if (!_isValidEmail(email)) { _snack('Email invalide.', isError: true); return false; }
+    if (phone.isNotEmpty && !_isValidPhone(phone)) { _snack('Format du numéro international invalide.', isError: true); return false; }
+    
+    final passIssue = await PasswordPolicy.validate(pass, email: email, fullName: _nameC.text.trim(), phone: phone);
+    if (passIssue != null) { _snack(passIssue, isError: true); return false; }
+    if (pass != confirm) { _snack('Les mots de passe ne correspondent pas.', isError: true); return false; }
 
     try {
       await ref.read(authControllerProvider.notifier).registerPersonal(
-            email: email,
-            password: pass,
-            displayName: _nameC.text.trim(),
-            rememberMe: true,
-            profileDraft: {
-              'full_name': _nameC.text.trim(),
-              'date_of_birth': _dobC.text.trim(),
-              'country_or_origin': _country,
-              'occupation': _occupationC.text.trim(),
-              'phone_number': phone,
-              'registration_status': 'draft_step2',
-              'account_status': 'pending',
-            },
-          );
+        email: email, password: pass, displayName: _nameC.text.trim(), rememberMe: true,
+        profileDraft: {
+          'full_name': _nameC.text.trim(), 'date_of_birth': _dobC.text.trim(),
+          'country_or_origin': _country, 'occupation': _occupationC.text.trim(),
+          'phone_number': phone, 'registration_status': 'draft_step2', 'account_status': 'pending',
+        },
+      );
       return true;
     } catch (e) {
       final message = e.toString().toLowerCase();
-      if (message.contains('otp_sent') || message.contains('nouveau code')) {
+      if (message.contains('otp_sent') || message.contains('nouveau code') || message.contains('confirm') || message.contains('inscription enregistrée')) {
         return true;
       }
       if (message.contains('already registered') || message.contains('already exists')) {
         _snack(_userFacingError(e), isError: true);
         return false;
-      }
-      if (message.contains('confirm') || message.contains('inscription enregistrée')) {
-        return true;
       }
       _snack(_userFacingError(e), isError: true);
       return false;
@@ -597,14 +450,10 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     setState(() => _busy = true);
     try {
       if (await _refreshEmailVerifiedFlag()) {
-        try {
-          await Supabase.instance.client.rpc('mark_email_verified');
-        } catch (_) {}
+        try { await Supabase.instance.client.rpc('mark_email_verified'); } catch (_) {}
         if (!mounted) return;
-        _snack('Votre email est déjà vérifié. Validez votre THIX CHAT pour activer.');
-        setState(() {
-          _otpSent = true;
-        });
+        _snack('Votre email est déjà vérifié. Vous pouvez activer votre compte.');
+        setState(() => _otpSent = true);
         return;
       }
 
@@ -618,13 +467,17 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     }
   }
 
+  // ✅ CORRECTION CRUCIALE APPLIQUÉE ICI
   Future<bool> _refreshEmailVerifiedFlag() async {
     try {
+      // Force le rafraîchissement de la session pour obtenir l'état à jour après OTP
+      await Supabase.instance.client.auth.refreshSession();
       final res = await Supabase.instance.client.auth.getUser();
       final ok = res.user?.emailConfirmedAt != null;
       _emailVerified = ok;
       return ok;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Erreur refresh email: $e');
       final ok = Supabase.instance.client.auth.currentUser?.emailConfirmedAt != null;
       _emailVerified = ok;
       return ok;
@@ -640,11 +493,10 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     return '@${base}${DateTime.now().millisecondsSinceEpoch % 10000}';
   }
 
-  // ✅ CORRECTION : Fusion de la vérification OTP et de l'Activation finale
+  // ✅ FUSION : Vérification OTP + Activation finale en une seule action
   Future<void> _verifyAndActivate() async {
     if (_busy) return;
     
-    // 1. Validation du THIX CHAT
     final chat = _desiredChat();
     if (!_isValidThixChat(chat)) {
       _snack('THIX CHAT invalide (@, 3–20 caractères a-z 0-9 . _).', isError: true);
@@ -656,7 +508,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       final notifier = ref.read(authControllerProvider.notifier);
       bool isVerified = await _refreshEmailVerifiedFlag();
       
-      // 2. Vérification OTP si non vérifié
       if (!isVerified) {
         if (!_otpSent) {
           _snack("Demandez d'abord le code email via le bouton 'Obtenir le code'.", isError: true);
@@ -670,23 +521,20 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
           return;
         }
 
-        await notifier.verifyOTP(
-          email: _emailC.text.trim().toLowerCase(),
-          token: code,
-        );
+        await notifier.verifyOTP(email: _emailC.text.trim().toLowerCase(), token: code);
         
         try { await Supabase.instance.client.rpc('mark_email_verified'); } catch (_) {}
         try { await notifier.refreshCurrentUser(); } catch (_) {}
 
         isVerified = await _refreshEmailVerifiedFlag();
         if (!isVerified) {
-          _snack('Email non confirmé. Vérifiez le code.', isError: true);
+          _snack('Email non confirmé. Vérifiez le code saisi.', isError: true);
           setState(() => _busy = false);
           return;
         }
       }
 
-      // 3. Activation finale via RPC (Génération du VRAI THIX ID avec code pays)
+      // Activation finale via RPC
       final result = await Supabase.instance.client.rpc(
         'finalize_registration',
         params: {
@@ -706,6 +554,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
       final officialThixId = (data['thix_id'] as String?)?.trim() ?? '';
       final claimedChat = (data['thix_chat'] as String?) ?? chat;
+      
       if (officialThixId.isEmpty || officialThixId.toUpperCase().startsWith('THIX-PENDING')) {
         throw Exception('thix_id_failed');
       }
@@ -716,36 +565,15 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       setState(() {
         _thixIdGenerated = officialThixId;
         _thixChatC.text = claimedChat;
-        _step = 3; // On passe à l'étape finale (Carte)
+        _step = 3; // Passage à l'étape finale (Carte)
       });
-      final viaParrain = data['parrainage'] == true || _sponsored;
-      _snack(viaParrain ? 'Compte activé avec parrainage.' : 'Compte activé avec succès.');
+      _snack('Compte activé avec succès.');
       
     } catch (e) {
       _snack(_userFacingError(e), isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
-  }
-
-  Future<void> _showQrParrainageDialog() async {
-    if (_busy) return;
-    if (!await _refreshEmailVerifiedFlag()) {
-      _snack("L'email doit être vérifié pour utiliser le QR de parrainage.", isError: true);
-      return;
-    }
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => SecureQrParrainageDialog(
-        onSponsored: () {
-          if (!mounted) return;
-          setState(() => _sponsored = true);
-          _snack('Parrainage reçu. Vous pouvez valider l\'activation.');
-        },
-      ),
-    );
   }
 
   Future<void> _pickDob() async {
@@ -765,8 +593,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     );
     if (picked != null) {
       setState(() {
-        _dobC.text =
-            '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+        _dobC.text = '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
       });
     }
   }
@@ -782,26 +609,15 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         child: Stack(
           children: [
             Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 260,
+              top: 0, left: 0, right: 0, height: 260,
               child: Container(
                 padding: const EdgeInsets.only(top: 60),
-                decoration: const BoxDecoration(
-                  gradient: ThixPolicy.brandGradient,
-                ),
+                decoration: const BoxDecoration(gradient: ThixPolicy.brandGradient),
                 child: Column(
                   children: [
-                    Text(
-                      'THIX ID',
-                      style: ThixPolicy.displayStyle.copyWith(
-                            color: ThixPolicy.gold,
-                            letterSpacing: 1.5,
-                          ),
-                    ),
+                    Text('THIX ID', style: ThixPolicy.displayStyle.copyWith(color: ThixPolicy.gold, letterSpacing: 1.5)),
                     const SizedBox(height: ThixPolicy.s16),
-                    _buildStepper(), // Stepper mis à jour pour 3 étapes
+                    _buildStepper(),
                   ],
                 ),
               ),
@@ -836,15 +652,13 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
                     const SizedBox(height: ThixPolicy.s16),
                     if (_step < 3)
                       TextButton(
-                        onPressed: isLoading
-                            ? null
-                            : () {
-                                if (_step > 1) {
-                                  setState(() => _step -= 1);
-                                } else {
-                                  context.go(AppRoutes.login);
-                                }
-                              },
+                        onPressed: isLoading ? null : () {
+                          if (_step > 1) {
+                            setState(() => _step -= 1);
+                          } else {
+                            context.go(AppRoutes.login);
+                          }
+                        },
                         style: TextButton.styleFrom(foregroundColor: ThixPolicy.textSecondary),
                         child: Text(
                           _step == 1 ? 'Déjà un compte ? Se connecter' : '← Étape précédente',
@@ -862,7 +676,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     );
   }
 
-  // ✅ Stepper à 3 étapes
   Widget _buildStepper() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -880,43 +693,24 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     switch (_step) {
       case 1:
         return _Step1Profile(
-          nameC: _nameC,
-          dobC: _dobC,
-          country: _country,
+          nameC: _nameC, dobC: _dobC, country: _country,
           onCountryChanged: (v) => setState(() => _country = v),
-          occupationC: _occupationC,
-          onPickDob: _pickDob,
-          countries: _countries,
+          occupationC: _occupationC, onPickDob: _pickDob, countries: _countries,
         );
       case 2:
         return _Step2Account(
-          emailC: _emailC,
-          phoneC: _phoneC,
-          passwordC: _passwordC,
-          confirmC: _confirmC,
-          otpC: _otpC,
-          thixChatC: _thixChatC, // Ajout du contrôleur THIX CHAT
-          onSendOtp: _sendOtp,
-          onPasswordChanged: _onPasswordChanged,
-          onShowQr: _showQrParrainageDialog, // Ajout fonction QR optionnel
-          isOtpSent: _otpSent,
-          isLoading: isLoading,
-          resendCountdown: _resendCooldown,
-          passwordError: _passwordError,
-          passwordScore: _passwordScore,
+          emailC: _emailC, phoneC: _phoneC, passwordC: _passwordC,
+          confirmC: _confirmC, otpC: _otpC, thixChatC: _thixChatC,
+          onSendOtp: _sendOtp, onPasswordChanged: _onPasswordChanged,
+          isOtpSent: _otpSent, isLoading: isLoading, resendCountdown: _resendCooldown,
+          passwordError: _passwordError, passwordScore: _passwordScore,
           passwordValidating: _passwordValidating,
-          sponsored: _sponsored,
         );
       case 3:
         return _Step3Final(
-          thixId: _thixIdGenerated,
-          thixChat: _thixChatC.text,
-          name: _nameC.text,
-          email: _emailC.text,
-          phone: _phoneC.text,
-          dob: _dobC.text,
-          country: _country ?? '',
-          occupation: _occupationC.text,
+          thixId: _thixIdGenerated, thixChat: _thixChatC.text, name: _nameC.text,
+          email: _emailC.text, phone: _phoneC.text, dob: _dobC.text,
+          country: _country ?? '', occupation: _occupationC.text,
         );
       default:
         return const SizedBox.shrink();
@@ -933,7 +727,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         break;
       case 2:
         label = isLoading ? 'Activation en cours…' : "Valider et Activer mon THIX ID";
-        onPressed = _verifyAndActivate; // ✅ Fusion Vérification OTP + Activation
+        onPressed = _verifyAndActivate;
         break;
       case 3:
         label = 'Accéder au Tableau de Bord';
@@ -960,22 +754,12 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             if (isLoading) ...const [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              ),
+              SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5, valueColor: AlwaysStoppedAnimation<Color>(Colors.white))),
               SizedBox(width: ThixPolicy.s12),
             ],
             Text(label, style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.onBrand, letterSpacing: 0.5)),
             if (!isLoading && _step < 3)
-              const Padding(
-                padding: EdgeInsets.only(left: ThixPolicy.s8),
-                child: Icon(Icons.arrow_forward_rounded, size: 20),
-              ),
+              const Padding(padding: EdgeInsets.only(left: ThixPolicy.s8), child: Icon(Icons.arrow_forward_rounded, size: 20)),
           ],
         ),
       ),
@@ -987,17 +771,14 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 // SOUS-WIDGETS
 // ============================================================================
 class _StepDot extends StatelessWidget {
-  final bool isActive;
-  final bool isDone;
-  final bool isFinal;
+  final bool isActive, isDone, isFinal;
   const _StepDot({required this.isActive, required this.isDone, this.isFinal = false});
 
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
-      width: 26,
-      height: 26,
+      width: 26, height: 26,
       decoration: BoxDecoration(
         color: isDone || isActive ? ThixPolicy.gold : Colors.white.withValues(alpha: 0.2),
         shape: BoxShape.circle,
@@ -1022,8 +803,7 @@ class _StepLine extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
-      width: 28,
-      height: 3,
+      width: 28, height: 3,
       color: isActive ? ThixPolicy.gold : Colors.white.withValues(alpha: 0.2),
     );
   }
@@ -1037,13 +817,9 @@ class _Step1Profile extends StatelessWidget {
   final List<String> countries;
 
   const _Step1Profile({
-    required this.nameC,
-    required this.dobC,
-    required this.occupationC,
-    required this.country,
-    required this.onCountryChanged,
-    required this.onPickDob,
-    required this.countries,
+    required this.nameC, required this.dobC, required this.occupationC,
+    required this.country, required this.onCountryChanged,
+    required this.onPickDob, required this.countries,
   });
 
   @override
@@ -1053,37 +829,19 @@ class _Step1Profile extends StatelessWidget {
       children: [
         Text('Informations personnelles', style: ThixPolicy.h2Style.copyWith(color: ThixPolicy.primary)),
         const SizedBox(height: ThixPolicy.s6),
-        Text(
-          'Ces informations serviront à votre identité numérique. Réservé aux 18 ans et plus.',
-          style: ThixPolicy.bodySmallStyle,
-        ),
+        Text('Ces informations serviront à votre identité numérique. Réservé aux 18 ans et plus.', style: ThixPolicy.bodySmallStyle),
         const SizedBox(height: ThixPolicy.s24),
         _PremiumField(label: 'Nom complet *', hint: 'Ex : Jean Mukendi', icon: Icons.person_outline_rounded, controller: nameC),
         const SizedBox(height: ThixPolicy.s16),
         _PremiumField(
-          label: 'Date de naissance *',
-          hint: 'AAAA-MM-JJ',
-          icon: Icons.calendar_today_rounded,
-          controller: dobC,
-          readOnly: true,
-          onTap: onPickDob,
+          label: 'Date de naissance *', hint: 'AAAA-MM-JJ', icon: Icons.calendar_today_rounded,
+          controller: dobC, readOnly: true, onTap: onPickDob,
           trailing: const Icon(Icons.expand_more_rounded, color: ThixPolicy.textSecondary),
         ),
         const SizedBox(height: ThixPolicy.s16),
-        _PremiumDropdown(
-          label: 'Pays *',
-          icon: Icons.public_rounded,
-          value: country,
-          items: countries,
-          onChanged: onCountryChanged,
-        ),
+        _PremiumDropdown(label: 'Pays *', icon: Icons.public_rounded, value: country, items: countries, onChanged: onCountryChanged),
         const SizedBox(height: ThixPolicy.s16),
-        _PremiumField(
-          label: 'Occupation (facultatif)',
-          hint: 'Ex : Entrepreneur, Ingénieur…',
-          icon: Icons.work_outline_rounded,
-          controller: occupationC,
-        ),
+        _PremiumField(label: 'Occupation (facultatif)', hint: 'Ex : Entrepreneur, Ingénieur…', icon: Icons.work_outline_rounded, controller: occupationC),
       ],
     );
   }
@@ -1092,36 +850,23 @@ class _Step1Profile extends StatelessWidget {
 class _Step2Account extends StatelessWidget {
   final TextEditingController emailC, phoneC, passwordC, confirmC, otpC, thixChatC;
   final VoidCallback onSendOtp;
-  final VoidCallback onShowQr;
   final ValueChanged<String> onPasswordChanged;
-  final bool isOtpSent, isLoading, passwordValidating, sponsored;
+  final bool isOtpSent, isLoading, passwordValidating;
   final int resendCountdown;
   final String? passwordError;
   final int passwordScore;
 
   const _Step2Account({
-    required this.emailC,
-    required this.phoneC,
-    required this.passwordC,
-    required this.confirmC,
-    required this.otpC,
-    required this.thixChatC,
-    required this.onSendOtp,
-    required this.onShowQr,
-    required this.onPasswordChanged,
-    required this.isOtpSent,
-    required this.isLoading,
-    required this.resendCountdown,
-    required this.passwordError,
-    required this.passwordScore,
-    required this.passwordValidating,
-    required this.sponsored,
+    required this.emailC, required this.phoneC, required this.passwordC,
+    required this.confirmC, required this.otpC, required this.thixChatC,
+    required this.onSendOtp, required this.onPasswordChanged,
+    required this.isOtpSent, required this.isLoading, required this.resendCountdown,
+    required this.passwordError, required this.passwordScore, required this.passwordValidating,
   });
 
   Color _scoreColor(int score) {
     switch (score) {
-      case 0:
-      case 1: return ThixPolicy.danger;
+      case 0: case 1: return ThixPolicy.danger;
       case 2: return ThixPolicy.warning;
       case 3: return Colors.amber.shade700;
       case 4: return ThixPolicy.success;
@@ -1131,12 +876,8 @@ class _Step2Account extends StatelessWidget {
 
   String _scoreLabel(int score) {
     switch (score) {
-      case 0: return 'Très faible';
-      case 1: return 'Faible';
-      case 2: return 'Moyen';
-      case 3: return 'Fort';
-      case 4: return 'Excellent';
-      default: return '';
+      case 0: return 'Très faible'; case 1: return 'Faible'; case 2: return 'Moyen';
+      case 3: return 'Fort'; case 4: return 'Excellent'; default: return '';
     }
   }
 
@@ -1152,22 +893,14 @@ class _Step2Account extends StatelessWidget {
         Text("Définissez vos accès et choisissez votre identifiant public.", style: ThixPolicy.bodySmallStyle),
         const SizedBox(height: ThixPolicy.s24),
         
-        // --- 1. Sécurité ---
         _PremiumField(label: 'Adresse email *', hint: 'votre@email.com', icon: Icons.email_outlined, controller: emailC, keyboardType: TextInputType.emailAddress),
         const SizedBox(height: ThixPolicy.s16),
         _PremiumField(label: 'Numéro mobile international (Optionnel)', hint: '+243 000 000 000', icon: Icons.phone_android_rounded, controller: phoneC, keyboardType: TextInputType.phone),
         const SizedBox(height: ThixPolicy.s16),
         _PremiumField(
-          label: 'Mot de passe *',
-          hint: 'Min. 6 caractères',
-          icon: Icons.lock_outline_rounded,
-          controller: passwordC,
-          isPassword: true,
-          onChanged: onPasswordChanged,
-          errorText: passwordError,
-          trailing: passwordValidating
-              ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)))
-              : null,
+          label: 'Mot de passe *', hint: 'Min. 8 caractères', icon: Icons.lock_outline_rounded,
+          controller: passwordC, isPassword: true, onChanged: onPasswordChanged, errorText: passwordError,
+          trailing: passwordValidating ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))) : null,
         ),
         if (passwordScore >= 0 && passwordC.text.isNotEmpty) ...[
           const SizedBox(height: ThixPolicy.s8),
@@ -1176,8 +909,7 @@ class _Step2Account extends StatelessWidget {
               final active = i < bars;
               return Expanded(
                 child: Container(
-                  height: 4,
-                  margin: EdgeInsets.only(right: i == 3 ? 0 : 4),
+                  height: 4, margin: EdgeInsets.only(right: i == 3 ? 0 : 4),
                   decoration: BoxDecoration(color: active ? _scoreColor(passwordScore) : ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
                 ),
               );
@@ -1192,20 +924,13 @@ class _Step2Account extends StatelessWidget {
         const Divider(color: ThixPolicy.border),
         const SizedBox(height: ThixPolicy.s16),
 
-        // --- 2. THIX CHAT (Identifiant Public) ---
         Text('Votre Identité', style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.textMain)),
         const SizedBox(height: ThixPolicy.s16),
-        _PremiumField(
-          label: 'THIX CHAT (pseudo public) *',
-          hint: '@pseudo_123',
-          icon: Icons.alternate_email_rounded,
-          controller: thixChatC,
-        ),
+        _PremiumField(label: 'THIX CHAT (pseudo public) *', hint: '@pseudo_123', icon: Icons.alternate_email_rounded, controller: thixChatC),
         const SizedBox(height: ThixPolicy.s24),
         const Divider(color: ThixPolicy.border),
         const SizedBox(height: ThixPolicy.s16),
 
-        // --- 3. Validation OTP ---
         Text('Vérification & Activation', style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.textMain)),
         const SizedBox(height: ThixPolicy.s16),
         SizedBox(
@@ -1214,9 +939,7 @@ class _Step2Account extends StatelessWidget {
             onPressed: canResend ? onSendOtp : null,
             icon: Icon(isOtpSent ? Icons.check_circle_outline_rounded : Icons.send_rounded, size: 20),
             label: Text(
-              !canResend && resendCountdown > 0
-                  ? 'Renvoyer dans ${resendCountdown}s'
-                  : (isOtpSent ? 'Code envoyé — Renvoyer' : 'Obtenir le code email OTP'),
+              !canResend && resendCountdown > 0 ? 'Renvoyer dans ${resendCountdown}s' : (isOtpSent ? 'Code envoyé — Renvoyer' : 'Obtenir le code email OTP'),
               style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.semiBold),
             ),
             style: OutlinedButton.styleFrom(
@@ -1229,27 +952,9 @@ class _Step2Account extends StatelessWidget {
         if (isOtpSent) ...[
           const SizedBox(height: ThixPolicy.s24),
           _PremiumField(
-            label: 'Code reçu par email *',
-            hint: '00000000',
-            icon: Icons.confirmation_number_outlined,
-            controller: otpC,
-            keyboardType: TextInputType.number,
-            maxLength: 8,
+            label: 'Code reçu par email *', hint: '00000000', icon: Icons.confirmation_number_outlined,
+            controller: otpC, keyboardType: TextInputType.number, maxLength: 8,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          ),
-          
-          // --- Optionnel: Parrainage intégré sous l'OTP ---
-          const SizedBox(height: ThixPolicy.s16),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: onShowQr,
-              icon: Icon(sponsored ? Icons.verified_rounded : Icons.qr_code_2_rounded, size: 18),
-              label: Text(sponsored ? 'Parrainage validé' : 'Activation via Parrainage (QR)'),
-              style: TextButton.styleFrom(
-                foregroundColor: sponsored ? ThixPolicy.success : ThixPolicy.textSecondary,
-              ),
-            ),
           ),
         ],
       ],
@@ -1260,14 +965,9 @@ class _Step2Account extends StatelessWidget {
 class _Step3Final extends StatelessWidget {
   final String thixId, thixChat, name, email, phone, dob, country, occupation;
   const _Step3Final({
-    required this.thixId,
-    required this.thixChat,
-    required this.name,
-    required this.email,
-    required this.phone,
-    required this.dob,
-    required this.country,
-    required this.occupation,
+    required this.thixId, required this.thixChat, required this.name,
+    required this.email, required this.phone, required this.dob,
+    required this.country, required this.occupation,
   });
 
   @override
@@ -1285,19 +985,11 @@ class _Step3Final extends StatelessWidget {
         const SizedBox(height: ThixPolicy.s20),
         Text('Félicitations !', textAlign: TextAlign.center, style: ThixPolicy.displayStyle.copyWith(color: ThixPolicy.primary)),
         const SizedBox(height: ThixPolicy.s8),
-        Text(
-          'Votre compte est actif. Bienvenue sur THIX ID, $name.',
-          textAlign: TextAlign.center,
-          style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary),
-        ),
+        Text('Votre compte est actif. Bienvenue sur THIX ID, $name.', textAlign: TextAlign.center, style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary)),
         const SizedBox(height: ThixPolicy.s32),
         Container(
           padding: const EdgeInsets.all(ThixPolicy.s24),
-          decoration: BoxDecoration(
-            gradient: ThixPolicy.brandGradient,
-            borderRadius: BorderRadius.circular(ThixPolicy.rLg),
-            boxShadow: ThixPolicy.shadowCard(),
-          ),
+          decoration: BoxDecoration(gradient: ThixPolicy.brandGradient, borderRadius: BorderRadius.circular(ThixPolicy.rLg), boxShadow: ThixPolicy.shadowCard()),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1311,17 +1003,14 @@ class _Step3Final extends StatelessWidget {
                     child: Text(
                       thixId.isEmpty ? 'Génération…' : thixId,
                       style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.onBrand, fontWeight: ThixPolicy.bold, letterSpacing: 1.5),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   if (thixId.isNotEmpty)
                     IconButton(
                       onPressed: () {
                         Clipboard.setData(ClipboardData(text: thixId));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('THIX ID copié !'), backgroundColor: ThixPolicy.success),
-                        );
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('THIX ID copié !'), backgroundColor: ThixPolicy.success));
                       },
                       icon: const Icon(Icons.copy_rounded, color: Colors.white, size: 18),
                     ),
@@ -1344,11 +1033,7 @@ class _Step3Final extends StatelessWidget {
         const SizedBox(height: ThixPolicy.s16),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s8),
-          decoration: BoxDecoration(
-            color: ThixPolicy.surfaceSoft,
-            borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-            border: Border.all(color: ThixPolicy.border),
-          ),
+          decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(ThixPolicy.rMd), border: Border.all(color: ThixPolicy.border)),
           child: Column(
             children: [
               _SummaryRow(label: 'Nom complet', value: name),
@@ -1373,8 +1058,7 @@ class _Step3Final extends StatelessWidget {
 }
 
 class _SummaryRow extends StatelessWidget {
-  final String label;
-  final String value;
+  final String label, value;
   const _SummaryRow({required this.label, required this.value});
 
   @override
@@ -1390,110 +1074,6 @@ class _SummaryRow extends StatelessWidget {
             child: Text(value, textAlign: TextAlign.right, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.semiBold)),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// QR — nonce serveur uniquement
-// ============================================================================
-class SecureQrParrainageDialog extends StatefulWidget {
-  final VoidCallback onSponsored;
-  const SecureQrParrainageDialog({super.key, required this.onSponsored});
-
-  @override
-  State<SecureQrParrainageDialog> createState() => _SecureQrParrainageDialogState();
-}
-
-class _SecureQrParrainageDialogState extends State<SecureQrParrainageDialog> {
-  late final Future<String> _tokenFuture;
-  StreamSubscription<List<Map<String, dynamic>>>? _sub;
-  bool _done = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _tokenFuture = _issue();
-  }
-
-  Future<String> _issue() async {
-    final raw = await Supabase.instance.client.rpc('generate_qr_activation_token');
-    final token = raw.toString();
-    final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid != null) {
-      _sub = Supabase.instance.client
-          .from('profiles')
-          .stream(primaryKey: ['id'])
-          .eq('id', uid)
-          .listen((rows) {
-        if (_done || rows.isEmpty) return;
-        if (rows.first['account_status'] == 'sponsored') {
-          _done = true;
-          widget.onSponsored();
-          if (mounted) Navigator.pop(context);
-        }
-      });
-    }
-    return token;
-  }
-
-  @override
-  void dispose() {
-    _sub?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
-      backgroundColor: ThixPolicy.card,
-      child: Padding(
-        padding: const EdgeInsets.all(ThixPolicy.s24),
-        child: FutureBuilder<String>(
-          future: _tokenFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const SizedBox(
-                height: 220,
-                child: Center(child: CircularProgressIndicator(color: ThixPolicy.primary)),
-              );
-            }
-            if (snapshot.hasError) {
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.error_outline_rounded, color: ThixPolicy.danger, size: 48),
-                  const SizedBox(height: ThixPolicy.s16),
-                  Text(
-                    'Impossible de générer le QR. Vérifiez que votre email est confirmé.',
-                    textAlign: TextAlign.center,
-                    style: ThixPolicy.bodySmallStyle,
-                  ),
-                  const SizedBox(height: ThixPolicy.s16),
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer')),
-                ],
-              );
-            }
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.qr_code_scanner_rounded, color: ThixPolicy.primary, size: 40),
-                const SizedBox(height: ThixPolicy.s16),
-                Text('QR de parrainage', style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.primary)),
-                const SizedBox(height: ThixPolicy.s8),
-                Text('À faire scanner uniquement par un pair accrédité.', textAlign: TextAlign.center, style: ThixPolicy.bodySmallStyle),
-                const SizedBox(height: ThixPolicy.s24),
-                QrImageView(data: snapshot.data!, version: QrVersions.auto, size: 200, backgroundColor: Colors.white),
-                const SizedBox(height: ThixPolicy.s16),
-                Text('Valide 15 minutes', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.warning)),
-                const SizedBox(height: ThixPolicy.s16),
-                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer')),
-              ],
-            );
-          },
-        ),
       ),
     );
   }
