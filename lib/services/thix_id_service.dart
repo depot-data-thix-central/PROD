@@ -127,6 +127,12 @@ class ThixIdService {
     return v;
   }
 
+  /// Valide et retourne le THIX ID normalisé, ou null s'il est invalide.
+  static String? canonicalizeOrNull(String input) {
+    if (!isValid(input)) return null;
+    return normalize(input);
+  }
+
   // ==========================================================================
   // EXTRACTION D'INFORMATIONS
   // ==========================================================================
