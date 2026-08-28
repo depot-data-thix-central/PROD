@@ -144,6 +144,21 @@ class UserService {
   // ==========================================================================
   // MÉTHODES DE PAIEMENT (inchangées)
   // ==========================================================================
+  Future<void> logSecurityEvent(String type, String label, {Map<String, dynamic>? metadata}) async {
+    try {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) return;
+      
+      await Supabase.instance.client.rpc('log_security_event', params: {
+        'p_user_id': userId,
+        'p_type': type,
+        'p_label': label,
+        'p_metadata': metadata ?? {},
+      });
+    } catch (e) {
+      debugPrint('Erreur logSecurityEvent: $e');
+    }
+  }
 
   Future<void> addPaymentTransaction({
     required String uid,
