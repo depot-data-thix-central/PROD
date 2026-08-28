@@ -1,7 +1,5 @@
 import 'dart:async';
-
 import 'package:flutter/foundation.dart';
-// Masquer AuthException de Supabase pour utiliser notre propre classe d'erreur
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthException;
 import 'package:supabase_flutter/supabase_flutter.dart' as sup show AuthException;
 
@@ -14,8 +12,6 @@ import 'package:thix_id/services/supabase_safe_write.dart';
 import 'package:thix_id/services/thix_id_service.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
 
-/// Implémentation Supabase de AuthManager.
-/// Optimisée pour la scalabilité : gestion stricte de la mémoire, des streams et des exceptions.
 class SupabaseAuthManager implements AuthManager {
   final SupabaseClient _client;
   final ProfileService _profiles;
@@ -34,15 +30,10 @@ class SupabaseAuthManager implements AuthManager {
   @override
   AppUser? get currentUser => _currentUser.value;
 
-  // ==========================================================================
-  // INITIALISATION ET GESTION DE SESSION
-  // ==========================================================================
-
   @override
   Future<void> init() async {
     await _sub?.cancel();
 
-    // Écoute des changements d'état d'authentification de Supabase
     _sub = _client.auth.onAuthStateChange.listen((state) async {
       try {
         final user = state.session?.user;
@@ -61,7 +52,6 @@ class SupabaseAuthManager implements AuthManager {
       }
     });
 
-    // Hydratation initiale si une session existe déjà au lancement
     final s = _client.auth.currentSession;
     final u = s?.user;
     if (u == null) {
@@ -84,10 +74,6 @@ class SupabaseAuthManager implements AuthManager {
     _currentUser.value = null;
     unawaited(PushNotificationService.instance.onSignedOut());
   }
-
-  // ==========================================================================
-  // MÉTHODES PRIVÉES DE SYNCHRONISATION
-  // ==========================================================================
 
   bool _isPendingThixId(String? id) {
     if (id == null) return true;
@@ -134,12 +120,9 @@ class SupabaseAuthManager implements AuthManager {
           address: p.address ?? cur.address,
           fatherName: p.fatherName ?? cur.fatherName,
           motherName: p.motherName ?? cur.motherName,
-          emergencyContactName:
-              p.emergencyContactName ?? cur.emergencyContactName,
-          emergencyContactPhone:
-              p.emergencyContactPhone ?? cur.emergencyContactPhone,
-          emergencyContactRelation:
-              p.emergencyContactRelation ?? cur.emergencyContactRelation,
+          emergencyContactName: p.emergencyContactName ?? cur.emergencyContactName,
+          emergencyContactPhone: p.emergencyContactPhone ?? cur.emergencyContactPhone,
+          emergencyContactRelation: p.emergencyContactRelation ?? cur.emergencyContactRelation,
           languages: p.languages,
           education: p.education,
           experience: p.experience,
@@ -166,9 +149,7 @@ class SupabaseAuthManager implements AuthManager {
         _currentUser.value = merged;
       },
       onError: (e, st) {
-        debugPrint(
-          'SupabaseAuthManager: profile sync stream failed uid=$uid err=$e\n$st',
-        );
+        debugPrint('SupabaseAuthManager: profile sync stream failed uid=$uid err=$e\n$st');
       },
     );
   }
@@ -190,26 +171,18 @@ class SupabaseAuthManager implements AuthManager {
       List<String> strList(String k) {
         final v = meta[k];
         if (v is List) {
-          return v
-              .whereType<String>()
-              .map((e) => e.trim())
-              .where((e) => e.isNotEmpty)
-              .toList(growable: false);
+          return v.whereType<String>().map((e) => e.trim()).where((e) => e.isNotEmpty).toList(growable: false);
         }
         return const <String>[];
       }
 
-      // Générer un vrai THIX ID dès la création
       final realThixId = ThixIdService.generate();
-      
-      // ✅ CORRECTION MAJEURE: Générer un THIX CHAT temporaire unique
-      // Cela empêche l'erreur PostgreSQL 23505 (Violation de contrainte d'unicité sur la chaîne vide '')
       final tempThixChat = '@user_${uid.substring(0, 5).toLowerCase()}${DateTime.now().millisecondsSinceEpoch % 1000}';
 
       final base = AppUser(
         id: uid,
         thixId: realThixId,
-        thixChat: tempThixChat, // Assigne le pseudo temporaire
+        thixChat: tempThixChat,
         thixScore: null,
         email: email,
         phone: user.phone,
@@ -229,12 +202,9 @@ class SupabaseAuthManager implements AuthManager {
         address: s('address'),
         fatherName: s('father_name') ?? s('fatherName'),
         motherName: s('mother_name') ?? s('motherName'),
-        emergencyContactName:
-            s('emergency_contact_name') ?? s('emergencyContactName'),
-        emergencyContactPhone:
-            s('emergency_contact_phone') ?? s('emergencyContactPhone'),
-        emergencyContactRelation:
-            s('emergency_contact_relation') ?? s('emergencyContactRelation'),
+        emergencyContactName: s('emergency_contact_name') ?? s('emergencyContactName'),
+        emergencyContactPhone: s('emergency_contact_phone') ?? s('emergencyContactPhone'),
+        emergencyContactRelation: s('emergency_contact_relation') ?? s('emergencyContactRelation'),
         education: const [],
         experience: const [],
         skills: const [],
@@ -251,12 +221,7 @@ class SupabaseAuthManager implements AuthManager {
       return base;
     }
 
-    var appUser = _appUserFromProfileRow(
-      uid: uid,
-      email: email,
-      row: row,
-      phone: user.phone,
-    );
+    var appUser = _appUserFromProfileRow(uid: uid, email: email, row: row, phone: user.phone);
 
     if (_isPendingThixId(appUser.thixId)) {
       try {
@@ -266,17 +231,10 @@ class SupabaseAuthManager implements AuthManager {
           'updated_at': DateTime.now().toUtc().toIso8601String(),
         }).eq('id', uid);
 
-        appUser = appUser.copyWith(
-          thixId: realId,
-          updatedAt: DateTime.now(),
-        );
-        debugPrint(
-          'SupabaseAuthManager: PENDING remplacé par $realId pour uid=$uid',
-        );
+        appUser = appUser.copyWith(thixId: realId, updatedAt: DateTime.now());
+        debugPrint('SupabaseAuthManager: PENDING remplacé par $realId pour uid=$uid');
       } catch (e) {
-        debugPrint(
-          'SupabaseAuthManager: échec remplacement PENDING uid=$uid err=$e',
-        );
+        debugPrint('SupabaseAuthManager: échec remplacement PENDING uid=$uid err=$e');
       }
     }
 
@@ -284,10 +242,7 @@ class SupabaseAuthManager implements AuthManager {
   }
 
   AccountType _accountTypeFromMeta(Map<String, dynamic>? meta) {
-    final raw = (meta?['account_type'] ?? meta?['accountType'] ?? '')
-        .toString()
-        .trim()
-        .toLowerCase();
+    final raw = (meta?['account_type'] ?? meta?['accountType'] ?? '').toString().trim().toLowerCase();
     if (raw == AccountType.enterprise.name) return AccountType.enterprise;
     return AccountType.personal;
   }
@@ -306,28 +261,13 @@ class SupabaseAuthManager implements AuthManager {
 
     final createdAt = dt(row['created_at'] ?? row['createdAt']);
     final updatedAt = dt(row['updated_at'] ?? row['updatedAt']);
-    final accountTypeRaw =
-        (row['account_type'] ?? row['accountType'] ?? AccountType.personal.name)
-            .toString();
-    final accountType = AccountType.values.firstWhere(
-      (e) => e.name == accountTypeRaw,
-      orElse: () => AccountType.personal,
-    );
+    final accountTypeRaw = (row['account_type'] ?? row['accountType'] ?? AccountType.personal.name).toString();
+    final accountType = AccountType.values.firstWhere((e) => e.name == accountTypeRaw, orElse: () => AccountType.personal);
 
-    List<String> strList(Object? v) => (v is List)
-        ? v.whereType<String>().toList(growable: false)
-        : const <String>[];
-    List<Map<String, dynamic>> mapList(Object? v) => (v is List)
-        ? v
-            .whereType<Map>()
-            .map((e) => e.cast<String, dynamic>())
-            .toList(growable: false)
-        : const <Map<String, dynamic>>[];
+    List<String> strList(Object? v) => (v is List) ? v.whereType<String>().toList(growable: false) : const <String>[];
+    List<Map<String, dynamic>> mapList(Object? v) => (v is List) ? v.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList(growable: false) : const <Map<String, dynamic>>[];
 
-    final rawThixId =
-        (row['thix_id'] ?? row['thixId'] ?? row['thix_uid'] ?? '')
-            .toString()
-            .trim();
+    final rawThixId = (row['thix_id'] ?? row['thixId'] ?? row['thix_uid'] ?? '').toString().trim();
 
     return AppUser(
       id: uid,
@@ -336,17 +276,13 @@ class SupabaseAuthManager implements AuthManager {
       thixScore: (row['thix_score'] as num?)?.toInt(),
       email: email,
       phone: phone,
-      displayName:
-          (row['display_name'] ?? row['displayName'] ?? 'Utilisateur THIX')
-              .toString(),
+      displayName: (row['display_name'] ?? row['displayName'] ?? 'Utilisateur THIX').toString(),
       accountType: accountType,
       photoUrl: (row['avatar_url'] ?? row['photo_url'])?.toString(),
       bio: row['bio']?.toString(),
-      countryOrOrigin:
-          (row['country_or_origin'] ?? row['countryOrOrigin'])?.toString(),
+      countryOrOrigin: (row['country_or_origin'] ?? row['countryOrOrigin'])?.toString(),
       contactPhone: (row['contact_phone'] ?? row['contactPhone'])?.toString(),
-      maritalStatus:
-          (row['marital_status'] ?? row['maritalStatus'])?.toString(),
+      maritalStatus: (row['marital_status'] ?? row['maritalStatus'])?.toString(),
       gender: row['gender']?.toString(),
       occupation: (row['occupation'] ?? row['occupation_title'])?.toString(),
       profession: (row['profession'] ?? row['job_title'])?.toString(),
@@ -356,17 +292,10 @@ class SupabaseAuthManager implements AuthManager {
       address: row['address']?.toString(),
       fatherName: (row['father_name'] ?? row['fatherName'])?.toString(),
       motherName: (row['mother_name'] ?? row['motherName'])?.toString(),
-      emergencyContactName: (row['emergency_contact_name'] ??
-              row['emergencyContactName'])
-          ?.toString(),
-      emergencyContactPhone: (row['emergency_contact_phone'] ??
-              row['emergencyContactPhone'])
-          ?.toString(),
-      emergencyContactRelation: (row['emergency_contact_relation'] ??
-              row['emergencyContactRelation'])
-          ?.toString(),
-      registrationStatus:
-          (row['registration_status'] ?? row['registrationStatus'])?.toString(),
+      emergencyContactName: (row['emergency_contact_name'] ?? row['emergencyContactName'])?.toString(),
+      emergencyContactPhone: (row['emergency_contact_phone'] ?? row['emergencyContactPhone'])?.toString(),
+      emergencyContactRelation: (row['emergency_contact_relation'] ?? row['emergencyContactRelation'])?.toString(),
+      registrationStatus: (row['registration_status'] ?? row['registrationStatus'])?.toString(),
       education: mapList(row['education']),
       experience: mapList(row['experience']),
       skills: mapList(row['skills']),
@@ -381,16 +310,10 @@ class SupabaseAuthManager implements AuthManager {
 
   Future<Map<String, dynamic>?> _selectProfileRow(String uid) async {
     try {
-      final row = await _client
-          .from('profiles')
-          .select('*')
-          .eq('id', uid)
-          .maybeSingle();
+      final row = await _client.from('profiles').select('*').eq('id', uid).maybeSingle();
       if (row != null) return (row as Map).cast<String, dynamic>();
     } catch (e) {
-      debugPrint(
-        'SupabaseAuthManager: profiles select by id failed uid=$uid err=$e',
-      );
+      debugPrint('SupabaseAuthManager: profiles select by id failed uid=$uid err=$e');
     }
     return null;
   }
@@ -432,31 +355,20 @@ class SupabaseAuthManager implements AuthManager {
         payload: payload,
         onUnknownColumn: () async {
           try {
-            await _client.functions
-                .invoke('pgrst_schema_reload', body: const {});
+            await _client.functions.invoke('pgrst_schema_reload', body: const {});
           } catch (e) {
-            debugPrint(
-              'SupabaseAuthManager: schema reload invoke failed err=$e',
-            );
+            debugPrint('SupabaseAuthManager: schema reload invoke failed err=$e');
             rethrow;
           }
         },
       );
     } catch (e) {
-      debugPrint(
-        'SupabaseAuthManager: profiles upsert failed uid=${user.id} err=$e',
-      );
+      debugPrint('SupabaseAuthManager: profiles upsert failed uid=${user.id} err=$e');
       rethrow;
     }
   }
 
-  bool _isValidEmail(String email) =>
-      RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
-
-
-  // ==========================================================================
-  // MÉTHODES D'AUTHENTIFICATION PUBLIQUES
-  // ==========================================================================
+  bool _isValidEmail(String email) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
 
   @override
   Future<AppUser> signInWithEmailOrThixId({
@@ -469,16 +381,11 @@ class SupabaseAuthManager implements AuthManager {
     if (password.isEmpty) throw AuthException('Mot de passe requis.');
 
     if (!id.contains('@')) {
-      throw AuthException(
-        'Connexion via THIX ID non disponible. Utilisez votre email.',
-      );
+      throw AuthException('Connexion via THIX ID non disponible. Utilisez votre email.');
     }
 
     try {
-      final res = await _client.auth.signInWithPassword(
-        email: id.toLowerCase(),
-        password: password,
-      );
+      final res = await _client.auth.signInWithPassword(email: id.toLowerCase(), password: password);
       final user = res.user;
       if (user == null) throw AuthException('Connexion échouée.');
 
@@ -490,9 +397,7 @@ class SupabaseAuthManager implements AuthManager {
       throw AuthException(e.message);
     } catch (e) {
       debugPrint('SupabaseAuthManager: signIn crash err=$e');
-      throw AuthException(
-        'Erreur technique (Base de données). Veuillez réessayer.',
-      );
+      throw AuthException('Erreur technique (Base de données). Veuillez réessayer.');
     }
   }
 
@@ -509,34 +414,25 @@ class SupabaseAuthManager implements AuthManager {
     if (!_isValidEmail(normalizedEmail)) {
       throw AuthException('Email invalide.');
     }
+    // ⚠️ Validation minimale ici. La validation NIST complète est dans PersonalRegistrationPage.
     if (password.trim().length < 8) {
-      throw AuthException(
-        'Le mot de passe doit contenir au moins 8 caractères.',
-      );
+      throw AuthException('Le mot de passe doit contenir au moins 8 caractères.');
     }
 
     try {
       final userMeta = <String, dynamic>{
-        'display_name': displayName.trim().isEmpty
-            ? 'Utilisateur THIX'
-            : displayName.trim(),
+        'display_name': displayName.trim().isEmpty ? 'Utilisateur THIX' : displayName.trim(),
         'account_type': accountType.name,
         ...?profileDraft,
       };
 
-      final res = await _client.auth.signUp(
-        email: normalizedEmail,
-        password: password,
-        data: userMeta,
-      );
+      final res = await _client.auth.signUp(email: normalizedEmail, password: password, data: userMeta);
 
       final session = res.session;
       final user = res.user;
 
       if (user == null || session == null) {
-        throw AuthException(
-          'Inscription enregistrée. Confirmez votre email pour continuer.',
-        );
+        throw AuthException('Inscription enregistrée. Confirmez votre email pour continuer.');
       }
 
       final appUser = await _hydrateUser(user);
@@ -570,49 +466,27 @@ class SupabaseAuthManager implements AuthManager {
   }
 
   @override
-  Future<void> verifyOTP({
-    required String email,
-    required String token,
-  }) async {
+  Future<void> verifyOTP({required String email, required String token}) async {
     try {
-      final session = _client.auth.currentSession;
-      final user = session?.user;
-      
-      bool needsVerification = true;
-      
-      // ✅ CORRECTION MAJEURE : On vérifie si l'utilisateur n'est pas DÉJÀ connecté !
-      // Cela évite l'erreur "Code expiré" s'il clique une 2ème fois après un faux échec de l'UI.
-      if (user != null && user.email == email.trim().toLowerCase()) {
-        needsVerification = false;
+      // ⭐ SUPPRIMÉ : Le contournement needsVerification = false
+      // L'OTP doit TOUJOURS être validé cryptographiquement par Supabase
+      final res = await _client.auth.verifyOTP(
+        email: email.trim().toLowerCase(),
+        token: token.trim(),
+        type: OtpType.signup,
+      );
+
+      if (res.session == null && res.user == null) {
+        throw AuthException('Le code saisi est invalide ou a expiré. Demandez un nouveau code.');
       }
 
-      if (needsVerification) {
-        final res = await _client.auth.verifyOTP(
-          email: email.trim().toLowerCase(),
-          token: token.trim(),
-          type: OtpType.signup,
-        );
-
-        if (res.session == null && res.user == null) {
-          throw AuthException(
-            'Le code saisi est invalide ou a expiré. Demandez un nouveau code.',
-          );
-        }
-      }
-
-      // Actualise le profil même si on était déjà vérifié (pour appliquer les modifs UI)
       await refreshCurrentUser();
     } on AuthException {
       rethrow;
     } on sup.AuthException catch (e) {
       final msg = e.message.toLowerCase();
-      if (msg.contains('expired') ||
-          msg.contains('invalid') ||
-          msg.contains('otp') ||
-          msg.contains('token')) {
-        throw AuthException(
-          'Le code saisi est invalide ou a expiré. Demandez un nouveau code.',
-        );
+      if (msg.contains('expired') || msg.contains('invalid') || msg.contains('otp') || msg.contains('token')) {
+        throw AuthException('Le code saisi est invalide ou a expiré. Demandez un nouveau code.');
       }
       throw AuthException(e.message);
     } catch (e) {
@@ -621,13 +495,73 @@ class SupabaseAuthManager implements AuthManager {
     }
   }
 
+  // ⭐ NOUVEAU : Appelle la RPC mark_email_verified
+  @override
+  Future<void> markEmailVerified() async {
+    try {
+      await _client.rpc('mark_email_verified');
+    } catch (e) {
+      debugPrint('SupabaseAuthManager: markEmailVerified failed err=$e');
+      throw AuthException('Impossible de marquer l\'email comme vérifié.');
+    }
+  }
+
+  // ⭐ NOUVEAU : Génère un token QR pour parrainage
+  @override
+  Future<String> generateQrToken() async {
+    try {
+      final result = await _client.rpc('generate_qr_activation_token');
+      return result.toString();
+    } catch (e) {
+      debugPrint('SupabaseAuthManager: generateQrToken failed err=$e');
+      throw AuthException('Impossible de générer le QR de parrainage.');
+    }
+  }
+
+  // ⭐ NOUVEAU : Finalise l'inscription (THIX ID + THIX CHAT + activation)
+  @override
+  Future<Map<String, dynamic>> finalizeRegistration({
+    required String desiredChat,
+    required String countryCode,
+  }) async {
+    try {
+      final result = await _client.rpc(
+        'finalize_registration',
+        params: {
+          'p_desired_chat': desiredChat,
+          'p_country_code': countryCode,
+        },
+      );
+
+      if (result is Map<String, dynamic>) {
+        return result;
+      } else if (result is Map) {
+        return Map<String, dynamic>.from(result);
+      } else {
+        throw Exception('Réponse serveur invalide.');
+      }
+    } catch (e) {
+      debugPrint('SupabaseAuthManager: finalizeRegistration failed err=$e');
+      throw AuthException('Impossible de finaliser l\'inscription.');
+    }
+  }
+
+  // ⭐ NOUVEAU : Consomme un token QR (côté parrain)
+  @override
+  Future<void> consumeQrToken({required String token}) async {
+    try {
+      await _client.rpc('consume_qr_activation_token', params: {'p_token': token});
+    } catch (e) {
+      debugPrint('SupabaseAuthManager: consumeQrToken failed err=$e');
+      throw AuthException('Impossible de valider le parrainage.');
+    }
+  }
+
   @override
   Future<AppUser> refreshCurrentUser() async {
     final session = _client.auth.currentSession;
     if (session == null) {
-      throw AuthException(
-        "La vérification a réussi mais aucune session n'a été créée.",
-      );
+      throw AuthException("La vérification a réussi mais aucune session n'a été créée.");
     }
 
     final hydrated = await _hydrateUser(session.user);
@@ -639,10 +573,7 @@ class SupabaseAuthManager implements AuthManager {
   @override
   Future<void> resendOTP({required String email}) async {
     try {
-      await _client.auth.resend(
-        type: OtpType.signup,
-        email: email.trim().toLowerCase(),
-      );
+      await _client.auth.resend(type: OtpType.signup, email: email.trim().toLowerCase());
     } on sup.AuthException catch (e) {
       throw AuthException(e.message);
     } catch (e) {
@@ -653,9 +584,7 @@ class SupabaseAuthManager implements AuthManager {
 
   @override
   Future<PhoneAuthSession> startPhoneAuth({required String phoneNumber}) {
-    throw AuthException(
-      'Connexion téléphone indisponible dans cette version.',
-    );
+    throw AuthException('Connexion téléphone indisponible dans cette version.');
   }
 
   @override
@@ -665,9 +594,7 @@ class SupabaseAuthManager implements AuthManager {
     String? displayName,
     AccountType accountType = AccountType.personal,
   }) {
-    throw AuthException(
-      'Connexion téléphone indisponible dans cette version.',
-    );
+    throw AuthException('Connexion téléphone indisponible dans cette version.');
   }
 
   @override
@@ -678,9 +605,8 @@ class SupabaseAuthManager implements AuthManager {
 
   @override
   Future<void> deleteAccount() async {
-    throw AuthException(
-      'Suppression du compte indisponible (nécessite une fonction serveur sécurisée).',
-    );
+    // TODO: Implémenter une RPC serveur pour supprimer le compte (RGPD)
+    throw AuthException('Suppression du compte indisponible (nécessite une fonction serveur sécurisée).');
   }
 
   @override
@@ -701,9 +627,7 @@ class SupabaseAuthManager implements AuthManager {
     try {
       await _client.auth.resetPasswordForEmail(normalized);
     } catch (e) {
-      throw AuthException(
-        'Impossible d\'envoyer la demande de réinitialisation.',
-      );
+      throw AuthException('Impossible d\'envoyer la demande de réinitialisation.');
     }
   }
 
@@ -715,21 +639,25 @@ class SupabaseAuthManager implements AuthManager {
       throw AuthException('Utilisateur courant différent.');
     }
 
+    // ⭐ FILTRAGE : Supprimer les colonnes sensibles avant l'upsert
+    final safeUser = user.copyWith(
+      registrationStatus: current.registrationStatus, // Ne pas permettre le changement
+      thixId: current.thixId, // Ne pas permettre le changement
+      thixScore: current.thixScore, // Ne pas permettre le changement
+    );
+
     try {
-      await _ensureProfileRow(user: user);
-      await _profiles.ensureProfileExists(user: user);
+      await _ensureProfileRow(user: safeUser);
+      await _profiles.ensureProfileExists(user: safeUser);
     } catch (e) {
-      debugPrint(
-        'SupabaseAuthManager: updateCurrentUser failed uid=${user.id} err=$e',
-      );
+      debugPrint('SupabaseAuthManager: updateCurrentUser failed uid=${user.id} err=$e');
       throw AuthException('Erreur lors de la mise à jour du profil.');
     }
-    _currentUser.value = user;
+    _currentUser.value = safeUser;
     _bindProfileSync(user.id);
   }
 }
 
-/// Classe métier pour encapsuler les erreurs d'authentification
 class AuthException implements Exception {
   final String message;
   AuthException(this.message);
