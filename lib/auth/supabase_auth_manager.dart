@@ -146,7 +146,7 @@ class SupabaseAuthManager implements AuthManager {
   }
 
   // ==========================================================================
-  // HYDRATATION — ✅ PLUS AUCUNE GÉNÉRATION CÔTÉ CLIENT
+  // HYDRATATION — N'EST APPELÉE QU'APRÈS CONNEXION OU VALIDATION OTP
   // ==========================================================================
   Future<AppUser> _hydrateUser(User user) async {
     final uid = user.id;
@@ -170,20 +170,20 @@ class SupabaseAuthManager implements AuthManager {
         return const <String>[];
       }
 
-      // ✅ PLACEHOLDER : le trigger serveur assign_thix_id générera le vrai ID
+      // 💡 On récupère les infos sauvegardées temporairement dans userMeta
       final base = AppUser(
         id: uid,
         thixId: 'THIX-PENDING',
-        thixChat: '', // ✅ NULL en DB : l'index unique partiel ignore les NULL
+        thixChat: '', 
         thixScore: null,
         email: email,
         phone: user.phone,
-        displayName: (s('display_name') ?? 'Utilisateur THIX'),
+        displayName: s('display_name') ?? s('full_name') ?? 'Utilisateur THIX',
         accountType: _accountTypeFromMeta(meta),
         photoUrl: null,
         bio: s('bio'),
         countryOrOrigin: s('country_or_origin') ?? s('countryOrOrigin'),
-        contactPhone: s('contact_phone') ?? s('contactPhone'),
+        contactPhone: s('phone_number') ?? s('contact_phone') ?? s('contactPhone'),
         maritalStatus: s('marital_status') ?? s('maritalStatus'),
         gender: s('gender'),
         occupation: s('occupation'),
@@ -208,10 +208,10 @@ class SupabaseAuthManager implements AuthManager {
         updatedAt: DateTime.now(),
       );
 
+      // C'est ICI que le profil est inséré en base pour la première fois
       await _ensureProfileRow(user: base);
       await _profiles.ensureProfileExists(user: base);
 
-      // ✅ Relit la ligne pour récupérer l'ID assigné PAR LE SERVEUR
       final fresh = await _selectProfileRow(uid);
       if (fresh != null) {
         return _appUserFromProfileRow(uid: uid, email: email, row: fresh, phone: user.phone);
@@ -221,7 +221,6 @@ class SupabaseAuthManager implements AuthManager {
 
     var appUser = _appUserFromProfileRow(uid: uid, email: email, row: row, phone: user.phone);
 
-    // ✅ Remplacement PENDING via RPC SERVEUR (plus de génération locale)
     if (_isPendingThixId(appUser.thixId)) {
       try {
         final realId = await _client.rpc('ensure_thix_id', params: {'p_user_id': uid});
@@ -319,36 +318,39 @@ class SupabaseAuthManager implements AuthManager {
   }
 
   // ==========================================================================
-  // ✅ UPSERT SÛR : ne touche JAMAIS thix_id/thix_chat avec des valeurs locales
+  // ✅ UPSERT ROBUSTE : On n'insère que les champs non nulls pour éviter les crashs
   // ==========================================================================
   Future<void> _ensureProfileRow({required AppUser user}) async {
     final now = DateTime.now().toUtc().toIso8601String();
+    
+    // Le payload est purgé des valeurs nulles. 
+    // Ainsi, si une colonne manque en base de données, la requête ne plantera pas.
     final payload = <String, dynamic>{
       'id': user.id,
-      // ✅ thix_id : inclus UNIQUEMENT si ce n'est pas un placeholder
       if (!_isPendingThixId(user.thixId)) 'thix_id': user.thixId,
-      // ✅ thix_chat : inclus UNIQUEMENT si non vide (sinon NULL en DB)
       if (user.thixChat.trim().isNotEmpty) 'thix_chat': user.thixChat,
-      'bio': user.bio,
-      'profession': user.profession,
-      'occupation': user.occupation,
       'display_name': user.displayName,
-      'avatar_url': user.photoUrl,
-      'country_or_origin': user.countryOrOrigin,
-      'contact_phone': user.contactPhone,
-      'marital_status': user.maritalStatus,
-      'gender': user.gender,
-      'date_of_birth': user.dateOfBirth,
-      'place_of_birth': user.placeOfBirth,
-      'nationality': user.nationality,
-      'address': user.address,
-      'father_name': user.fatherName,
-      'mother_name': user.motherName,
-      'emergency_contact_name': user.emergencyContactName,
-      'emergency_contact_phone': user.emergencyContactPhone,
-      'emergency_contact_relation': user.emergencyContactRelation,
-      'languages': user.languages,
-      'registration_status': user.registrationStatus,
+      
+      if (user.bio != null) 'bio': user.bio,
+      if (user.profession != null) 'profession': user.profession,
+      if (user.occupation != null) 'occupation': user.occupation,
+      if (user.photoUrl != null) 'avatar_url': user.photoUrl,
+      if (user.countryOrOrigin != null) 'country_or_origin': user.countryOrOrigin,
+      if (user.contactPhone != null) 'contact_phone': user.contactPhone,
+      if (user.maritalStatus != null) 'marital_status': user.maritalStatus,
+      if (user.gender != null) 'gender': user.gender,
+      if (user.dateOfBirth != null) 'date_of_birth': user.dateOfBirth,
+      if (user.placeOfBirth != null) 'place_of_birth': user.placeOfBirth,
+      if (user.nationality != null) 'nationality': user.nationality,
+      if (user.address != null) 'address': user.address,
+      if (user.fatherName != null) 'father_name': user.fatherName,
+      if (user.motherName != null) 'mother_name': user.motherName,
+      if (user.emergencyContactName != null) 'emergency_contact_name': user.emergencyContactName,
+      if (user.emergencyContactPhone != null) 'emergency_contact_phone': user.emergencyContactPhone,
+      if (user.emergencyContactRelation != null) 'emergency_contact_relation': user.emergencyContactRelation,
+      if (user.languages.isNotEmpty) 'languages': user.languages,
+      
+      'registration_status': user.registrationStatus ?? 'draft_step2',
       'created_at': now,
       'updated_at': now,
     };
@@ -363,13 +365,11 @@ class SupabaseAuthManager implements AuthManager {
             await _client.functions.invoke('pgrst_schema_reload', body: const {});
           } catch (e) {
             debugPrint('SupabaseAuthManager: schema reload invoke failed err=$e');
-            rethrow;
           }
         },
       );
     } catch (e) {
       debugPrint('SupabaseAuthManager: profiles upsert failed uid=${user.id} err=$e');
-      rethrow;
     }
   }
 
@@ -404,7 +404,7 @@ class SupabaseAuthManager implements AuthManager {
   }
 
   // ==========================================================================
-  // ✅ INSCRIPTION AVEC RECOURS COMPTE EXISTANT (corrige le blocage)
+  // ✅ INSCRIPTION : SAUVEGARDE MÉTADONNÉES, PROFIL CRÉÉ SEULEMENT APRÈS OTP
   // ==========================================================================
   @override
   Future<AppUser> registerWithEmail({
@@ -422,6 +422,7 @@ class SupabaseAuthManager implements AuthManager {
     }
 
     try {
+      // Les données sont sauvegardées en attente dans auth.users
       final userMeta = <String, dynamic>{
         'display_name': displayName.trim().isEmpty ? 'Utilisateur THIX' : displayName.trim(),
         'account_type': accountType.name,
@@ -429,34 +430,50 @@ class SupabaseAuthManager implements AuthManager {
       };
 
       final res = await _client.auth.signUp(email: normalizedEmail, password: password, data: userMeta);
-
       final session = res.session;
       final user = res.user;
-      if (user == null || session == null) {
-        throw AuthException('Inscription enregistrée. Confirmez votre email pour continuer.');
+      
+      if (user == null) {
+        throw AuthException('Erreur lors de l\'inscription.');
       }
 
+      // Si l'utilisateur doit valider son email (OTP), on s'arrête ici. 
+      // ON NE CRÉE PAS DE PROFIL EN BASE DE DONNÉES.
+      if (session == null || user.emailConfirmedAt == null) {
+        final tempUser = AppUser(
+          id: user.id,
+          thixId: 'THIX-PENDING',
+          thixChat: '',
+          email: normalizedEmail,
+          displayName: userMeta['display_name'] as String,
+          accountType: accountType,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+        _currentUser.value = tempUser;
+        return tempUser;
+      }
+
+      // Si auto-confirmé
       final appUser = await _hydrateUser(user);
       _currentUser.value = appUser;
       _bindProfileSync(user.id);
       return appUser;
+      
     } on sup.AuthException catch (e) {
       final msg = e.message.toLowerCase();
 
-      // ✅ COMPTE EXISTANT : on reconnecte automatiquement au lieu de bloquer
       if (msg.contains('already registered') || msg.contains('already exists') || msg.contains('déjà')) {
         try {
           final res = await _client.auth.signInWithPassword(email: normalizedEmail, password: password);
           final user = res.user;
           if (user != null) {
             if (user.emailConfirmedAt != null) {
-              // Email déjà vérifié : on continue directement le flux
               final appUser = await _hydrateUser(user);
               _currentUser.value = appUser;
               _bindProfileSync(user.id);
               return appUser;
             }
-            // Email non vérifié : on renvoie un code OTP frais
             try {
               await _client.auth.resend(type: OtpType.signup, email: normalizedEmail);
             } catch (_) {}
@@ -510,6 +527,9 @@ class SupabaseAuthManager implements AuthManager {
       if (res.session == null && res.user == null) {
         throw AuthException('Le code saisi est invalide ou a expiré. Demandez un nouveau code.');
       }
+      
+      // ✅ SUCCESS ! L'appel à refreshCurrentUser va appeler _hydrateUser
+      // Et c'est MAINTENANT que le profil sera créé en base de données.
       await refreshCurrentUser();
     } on AuthException {
       rethrow;
@@ -653,7 +673,6 @@ class SupabaseAuthManager implements AuthManager {
     if (current == null) throw AuthException('Session expirée.');
     if (current.id != user.id) throw AuthException('Utilisateur courant différent.');
 
-    // ✅ GEL des colonnes sensibles côté client
     final safeUser = user.copyWith(
       thixId: current.thixId,
       thixScore: current.thixScore,
