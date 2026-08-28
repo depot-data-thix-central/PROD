@@ -1,5 +1,5 @@
-/// Preuves chambre de crise — contrôlées par le SECOURS.
-/// Chaque fichier est poussé dans le groupe SOS auto-créé.
+/// Preuves chambre de crise — production.
+/// Capture téléphone victime → Storage → table evidence → groupe SOS.
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -15,11 +15,12 @@ import 'package:thix_id/supabase/supabase_config.dart';
 import 'sos_service.dart';
 
 class SosEvidence {
-  final String type; // photo | video | audio
+  final String type;
   final String? url;
   final String localPath;
   final DateTime at;
   final bool postedToChat;
+  final int? durationMs;
 
   const SosEvidence({
     required this.type,
@@ -27,6 +28,7 @@ class SosEvidence {
     this.url,
     required this.at,
     this.postedToChat = false,
+    this.durationMs,
   });
 }
 
@@ -38,14 +40,34 @@ class SosEvidenceService {
   final _recorder = AudioRecorder();
   bool _recordingAudio = false;
   String? _audioPath;
-  DateTime? _audioStartedAt;
-  
   CameraController? _camCtrl;
 
   bool get isRecordingAudio => _recordingAudio;
 
-  Future<void> _ensureCamera() async {
-    if (kIsWeb) throw Exception('Caméra silencieuse non supportée sur web');
+  Future<String?> _resolveConversationId(
+    String incidentId,
+    String? conversationId,
+  ) async {
+    if (conversationId != null && conversationId.isNotEmpty) {
+      return conversationId;
+    }
+    try {
+      final inc = await _sos.getIncidentById(incidentId);
+      return inc?.chatConversationId;
+    } catch (_) {
+      try {
+        final inc = await _sos.getIncidentForRescue(incidentId);
+        return inc?.chatConversationId;
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
+  Future<void> _ensureCamera({bool audio = false}) async {
+    if (kIsWeb) {
+      throw Exception('Capture silencieuse indisponible sur web — app native requise');
+    }
     if (_camCtrl != null && _camCtrl!.value.isInitialized) return;
     final cams = await availableCameras();
     if (cams.isEmpty) throw Exception('Aucune caméra');
@@ -56,27 +78,26 @@ class SosEvidenceService {
     _camCtrl = CameraController(
       rear,
       ResolutionPreset.medium,
-      enableAudio: true,
+      enableAudio: audio,
     );
     await _camCtrl!.initialize();
   }
 
-  /// ✅ PHOTO SILENCIEUSE : prise par le téléphone VICTIME sans ouvrir d'UI.
   Future<SosEvidence?> takePhoto(
     String incidentId, {
     String? conversationId,
+    String source = 'rescue',
   }) async {
     String? path;
     try {
-      await _ensureCamera();
+      await _ensureCamera(audio: false);
       final x = await _camCtrl!.takePicture();
       path = x.path;
     } catch (e) {
-      debugPrint('SosEvidence photo silencieuse échec, fallback: $e');
+      debugPrint('SosEvidence photo silencieuse: $e');
     }
 
-    // Fallback : picker classique (si caméra occupée par Agora par ex.)
-    if (path == null) {
+    if (path == null && !kIsWeb) {
       final x = await _picker.pickImage(
         source: ImageSource.camera,
         imageQuality: 72,
@@ -85,6 +106,7 @@ class SosEvidenceService {
       if (x == null) return null;
       path = x.path;
     }
+    if (path == null) return null;
 
     return _persist(
       incidentId,
@@ -92,34 +114,43 @@ class SosEvidenceService {
       path: path,
       mime: 'image/jpeg',
       conversationId: conversationId,
+      source: source,
     );
   }
 
-  /// ✅ VIDÉO SILENCIEUSE 30s sur le téléphone VICTIME.
+  /// Vidéo silencieuse. Défaut 10s (clip victime / commande secours).
   Future<SosEvidence?> recordVideo(
     String incidentId, {
     String? conversationId,
+    Duration duration = const Duration(seconds: 10),
+    String source = 'rescue',
   }) async {
     String? path;
     try {
-            await _ensureCamera();
-      await _camCtrl!.startVideoRecording(); // Plus de paramètre ici
-      await Future.delayed(const Duration(seconds: 30));
+      await _ensureCamera(audio: true);
+      await _camCtrl!.startVideoRecording();
+      await Future.delayed(duration);
       final x = await _camCtrl!.stopVideoRecording();
-
       path = x.path;
     } catch (e) {
-      debugPrint('SosEvidence vidéo silencieuse échec, fallback: $e');
+      debugPrint('SosEvidence vidéo silencieuse: $e');
+      try {
+        if (_camCtrl != null && _camCtrl!.value.isRecordingVideo) {
+          final x = await _camCtrl!.stopVideoRecording();
+          path = x.path;
+        }
+      } catch (_) {}
     }
 
-    if (path == null) {
+    if (path == null && !kIsWeb) {
       final x = await _picker.pickVideo(
         source: ImageSource.camera,
-        maxDuration: const Duration(seconds: 30),
+        maxDuration: duration,
       );
       if (x == null) return null;
       path = x.path;
     }
+    if (path == null) return null;
 
     return _persist(
       incidentId,
@@ -127,10 +158,11 @@ class SosEvidenceService {
       path: path,
       mime: 'video/mp4',
       conversationId: conversationId,
+      source: source,
+      durationMs: duration.inMilliseconds,
     );
   }
 
-  /// À appeler quand le SOS se termine.
   Future<void> disposeCamera() async {
     try {
       await _camCtrl?.dispose();
@@ -143,7 +175,6 @@ class SosEvidenceService {
     final dir = await getTemporaryDirectory();
     _audioPath =
         p.join(dir.path, 'sos_audio_${DateTime.now().millisecondsSinceEpoch}.m4a');
-    _audioStartedAt = DateTime.now();
     await _recorder.start(
       const RecordConfig(encoder: AudioEncoder.aacLc),
       path: _audioPath!,
@@ -154,6 +185,7 @@ class SosEvidenceService {
   Future<SosEvidence?> stopAudio(
     String incidentId, {
     String? conversationId,
+    String source = 'rescue',
   }) async {
     if (!_recordingAudio) return null;
     final path = await _recorder.stop() ?? _audioPath;
@@ -165,7 +197,42 @@ class SosEvidenceService {
       path: path,
       mime: 'audio/mp4',
       conversationId: conversationId,
+      source: source,
     );
+  }
+
+  Future<bool> postInstructionToGroup({
+    required String incidentId,
+    required String text,
+    String? conversationId,
+  }) async {
+    final conv = await _resolveConversationId(incidentId, conversationId);
+    var posted = false;
+    if (conv != null && conv.isNotEmpty) {
+      try {
+        await ChatService(Supabase.instance.client).sendMessage(
+          conversationId: conv,
+          content: '📢 SECOURS : $text',
+        );
+        posted = true;
+      } catch (e) {
+        debugPrint('instruct chat: $e');
+      }
+    }
+    try {
+      await Supabase.instance.client.from('thix_sos_evidence').insert({
+        'incident_id': incidentId,
+        'conversation_id': conv,
+        'type': 'instruct',
+        'source': 'rescue',
+        'posted_to_chat': posted,
+        'payload': {'text': text},
+        'created_by': SupabaseConfig.currentUser?.id,
+      });
+    } catch (e) {
+      debugPrint('instruct evidence row: $e');
+    }
+    return posted;
   }
 
   Future<SosEvidence> _persist(
@@ -174,37 +241,67 @@ class SosEvidenceService {
     required String path,
     required String mime,
     String? conversationId,
+    String source = 'victim',
+    int? durationMs,
   }) async {
     String? url;
+    String? storagePath;
+    int? bytes;
     try {
-      url = await _upload(incidentId, type: type, path: path, mime: mime);
+      final up = await _upload(incidentId, type: type, path: path, mime: mime);
+      url = up?.url;
+      storagePath = up?.path;
+      bytes = await File(path).length();
     } catch (e) {
       debugPrint('SosEvidence upload: $e');
     }
 
+    final conv = await _resolveConversationId(incidentId, conversationId);
+
     var posted = false;
-    if (conversationId != null &&
-        conversationId.isNotEmpty &&
-        url != null &&
-        url.isNotEmpty) {
-      try {
-        await _postToSosGroup(
-          conversationId: conversationId,
-          type: type,
-          url: url,
-          path: path,
-        );
-        posted = true;
-      } catch (e) {
-        debugPrint('SosEvidence chat: $e');
+    if (conv != null && conv.isNotEmpty && url != null && url.isNotEmpty) {
+      for (var i = 0; i < 3 && !posted; i++) {
+        try {
+          await _postToSosGroup(
+            conversationId: conv,
+            type: type,
+            url: url,
+            path: path,
+          );
+          posted = true;
+        } catch (e) {
+          debugPrint('SosEvidence chat retry $i: $e');
+          await Future.delayed(Duration(milliseconds: 400 * (i + 1)));
+        }
       }
+    }
+
+    try {
+      await Supabase.instance.client.from('thix_sos_evidence').insert({
+        'incident_id': incidentId,
+        'conversation_id': conv,
+        'type': type,
+        'url': url,
+        'storage_path': storagePath,
+        'mime': mime,
+        'bytes': bytes,
+        'duration_ms': durationMs,
+        'source': source,
+        'posted_to_chat': posted,
+        'payload': {'local_path': path},
+        'created_by': SupabaseConfig.currentUser?.id,
+      });
+    } catch (e) {
+      debugPrint('SosEvidence table: $e');
     }
 
     await _sos.logEventPublic(incidentId, 'EVIDENCE_${type.toUpperCase()}', {
       'local_path': path,
       if (url != null) 'url': url,
-      if (conversationId != null) 'conversation_id': conversationId,
+      if (conv != null) 'conversation_id': conv,
       'posted_to_chat': posted,
+      if (durationMs != null) 'duration_ms': durationMs,
+      'source': source,
     });
 
     return SosEvidence(
@@ -213,6 +310,7 @@ class SosEvidenceService {
       url: url,
       at: DateTime.now(),
       postedToChat: posted,
+      durationMs: durationMs,
     );
   }
 
@@ -241,7 +339,7 @@ class SosEvidenceService {
     );
   }
 
-  Future<String?> _upload(
+  Future<({String url, String path})?> _upload(
     String incidentId, {
     required String type,
     required String path,
@@ -250,23 +348,26 @@ class SosEvidenceService {
     final uid = SupabaseConfig.currentUser?.id ?? 'anon';
     final ext = p.extension(path).isEmpty ? '.bin' : p.extension(path);
     final storagePath =
-        'sos/$incidentId/${uid}_${type}_${DateTime.now().millisecondsSinceEpoch}$ext';
-    final bytes = await File(path).readAsBytes();
+        'sos/\( incidentId/ \){uid}_\( {type}_ \){DateTime.now().millisecondsSinceEpoch}$ext';
+    final fileBytes = await File(path).readAsBytes();
     final client = Supabase.instance.client;
 
     for (final bucket in const [
-      'chat-media',
       'sos-evidence',
+      'chat-media',
       'status-media',
-      'audio_uploads'
+      'audio_uploads',
     ]) {
       try {
         await client.storage.from(bucket).uploadBinary(
               storagePath,
-              bytes,
+              fileBytes,
               fileOptions: FileOptions(upsert: true, contentType: mime),
             );
-        return client.storage.from(bucket).getPublicUrl(storagePath);
+        return (
+          url: client.storage.from(bucket).getPublicUrl(storagePath),
+          path: storagePath,
+        );
       } catch (e) {
         debugPrint('upload $bucket failed: $e');
       }
