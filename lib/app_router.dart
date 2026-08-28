@@ -320,7 +320,7 @@ class AppRouter {
           ElevatedButton(onPressed: () => context.go(AppRoutes.home), child: const Text('Accueil')),
         ])),
       ),
-      redirect: (context, state) async {
+            redirect: (context, state) async {
         try {
           final loc = state.matchedLocation;
           final isLoginPage = loc == AppRoutes.login;
@@ -369,12 +369,14 @@ class AppRouter {
           if (logged && !isRegPage && !isAccountActive && currentUser?.registrationStatus != null) {
             // L'utilisateur a un compte en draft/pending mais n'est pas sur la page d'inscription
             // Rediriger vers l'étape appropriée
-            final status = currentUser!.registrationStatus!;
+            final status = currentUser!.registrationStatus!.toLowerCase();
+            
             if (status.contains('draft_step1')) {
               return '${AppRoutes.personalReg}?step=1';
             } else if (status.contains('draft_step2')) {
               return '${AppRoutes.personalReg}?step=2';
-            } else if (status.contains('draft_step3')) {
+            } else if (status.contains('draft_step3') || status.contains('pending')) {
+              // 🔴 CORRECTION ICI : Force le retour à l'étape 3 si le statut est "pending"
               return '${AppRoutes.personalReg}?step=3';
             }
           }
@@ -386,6 +388,7 @@ class AppRouter {
           return null;
         }
       },
+
       routes: [
         // === CORE, AUTH & MAIN ===
         GoRoute(path: AppRoutes.start, name: 'start', pageBuilder: (_, __) => const NoTransitionPage(child: ThixIdStartPage())),
