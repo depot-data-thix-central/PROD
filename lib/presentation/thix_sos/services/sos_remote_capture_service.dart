@@ -1,4 +1,3 @@
-// lib/presentation/thix_sos/services/sos_remote_capture_service.dart
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -8,8 +7,8 @@ import 'sos_crisis_media_service.dart';
 import 'sos_evidence_service.dart';
 import 'sos_service.dart';
 
-/// Pilotage distant : le SECOURS commande, le téléphone VICTIME capte.
-/// 100% Supabase (Storage + Realtime) — Agora NON requis pour les captures.
+/// Pilotage distant production.
+/// Commandes Realtime Supabase. Agora JAMAIS requis pour photo/vidéo/audio.
 class SosRemoteCaptureService {
   SosRemoteCaptureService._({SosService? sos, SosEvidenceService? evidence})
       : _sos = sos ?? SosService(),
@@ -29,6 +28,7 @@ class SosRemoteCaptureService {
 
   static const cmdPhoto = 'CMD_CAPTURE_PHOTO';
   static const cmdVideo = 'CMD_CAPTURE_VIDEO';
+  static const cmdClip10 = 'CMD_CAPTURE_CLIP_10';
   static const cmdAudioStart = 'CMD_CAPTURE_AUDIO_START';
   static const cmdAudioStop = 'CMD_CAPTURE_AUDIO_STOP';
   static const cmdInstruct = 'CMD_INSTRUCT';
@@ -39,14 +39,17 @@ class SosRemoteCaptureService {
   bool get isRecordingAudio => _evidence.isRecordingAudio;
   bool get isSurveillanceOn => _survTimer != null;
 
-  // ─────────────────────────────────────────────────────────────
-  // Côté SECOURS : publier une commande (n'ouvre rien en local)
-  // ─────────────────────────────────────────────────────────────
   Future<void> requestPhoto(String incidentId) =>
       _sos.logEventPublic(incidentId, cmdPhoto, {'by': 'secours'});
 
-  Future<void> requestVideo(String incidentId) =>
-      _sos.logEventPublic(incidentId, cmdVideo, {'by': 'secours'});
+  Future<void> requestVideo(String incidentId, {int seconds = 10}) =>
+      _sos.logEventPublic(incidentId, cmdVideo, {
+        'by': 'secours',
+        'seconds': seconds,
+      });
+
+  Future<void> requestClip10(String incidentId) =>
+      _sos.logEventPublic(incidentId, cmdClip10, {'by': 'secours', 'seconds': 10});
 
   Future<void> requestAudioStart(String incidentId) =>
       _sos.logEventPublic(incidentId, cmdAudioStart, {'by': 'secours'});
@@ -54,9 +57,18 @@ class SosRemoteCaptureService {
   Future<void> requestAudioStop(String incidentId) =>
       _sos.logEventPublic(incidentId, cmdAudioStop, {'by': 'secours'});
 
-  Future<void> requestInstruct(String incidentId, String text) =>
-      _sos.logEventPublic(
-          incidentId, cmdInstruct, {'by': 'secours', 'text': text});
+  Future<void> requestInstruct(String incidentId, String text) async {
+    await _sos.logEventPublic(
+      incidentId,
+      cmdInstruct,
+      {'by': 'secours', 'text': text},
+    );
+    await _evidence.postInstructionToGroup(
+      incidentId: incidentId,
+      text: text,
+      conversationId: _conversationId,
+    );
+  }
 
   Future<void> requestSurveillanceOn(String incidentId) =>
       _sos.logEventPublic(incidentId, cmdSurveillanceOn, {'by': 'secours'});
@@ -64,9 +76,6 @@ class SosRemoteCaptureService {
   Future<void> requestSurveillanceOff(String incidentId) =>
       _sos.logEventPublic(incidentId, cmdSurveillanceOff, {'by': 'secours'});
 
-  // ─────────────────────────────────────────────────────────────
-  // Côté VICTIME : écouter et exécuter sur CE téléphone
-  // ─────────────────────────────────────────────────────────────
   void listenAsVictim({
     required String incidentId,
     String? conversationId,
@@ -89,7 +98,6 @@ class SosRemoteCaptureService {
           ),
           callback: (payload) {
             final rec = payload.newRecord;
-            if (rec == null) return;
             final type = (rec['type'] ?? rec['event_type'] ?? '').toString();
             final meta =
                 Map<String, dynamic>.from((rec['payload'] as Map?) ?? {});
@@ -97,6 +105,21 @@ class SosRemoteCaptureService {
           },
         )
         .subscribe();
+  }
+
+  Future<SosEvidence?> runVictimClip10({
+    required String incidentId,
+    String? conversationId,
+  }) async {
+    _conversationId = conversationId ?? _conversationId;
+    return SosCrisisMediaService.instance.withCameraReleased(
+      () => _evidence.recordVideo(
+        incidentId,
+        conversationId: _conversationId,
+        duration: const Duration(seconds: 10),
+        source: 'victim',
+      ),
+    );
   }
 
   Future<void> _handle(
@@ -109,40 +132,38 @@ class SosRemoteCaptureService {
     if (id == null) return;
     if (_busy && type != cmdAudioStop && type != cmdInstruct) return;
 
+    final seconds = (meta['seconds'] is int)
+        ? meta['seconds'] as int
+        : int.tryParse('${meta['seconds'] ?? ''}') ?? 10;
+
     try {
       switch (type) {
         case cmdPhoto:
           _busy = true;
           onInfo?.call('📸 Photo demandée par le secours…');
           final e = await SosCrisisMediaService.instance.withCameraReleased(
-            () => _evidence.takePhoto(id, conversationId: _conversationId),
+            () => _evidence.takePhoto(
+              id,
+              conversationId: _conversationId,
+              source: 'rescue',
+            ),
           );
-          if (e == null) {
-            await _sos.logEventPublic(id, 'EVIDENCE_FAILED',
-                {'cmd': type, 'error': 'capture indisponible'});
-            onInfo?.call('⚠️ Photo impossible sur ce téléphone');
-          } else {
-            onInfo?.call(e.postedToChat
-                ? '📸 Photo envoyée dans le groupe SOS'
-                : '📸 Photo capturée');
-          }
+          await _reportCapture(id, type, e, onInfo, label: 'Photo');
           break;
 
         case cmdVideo:
+        case cmdClip10:
           _busy = true;
-          onInfo?.call('🎥 Vidéo 30s demandée…');
+          onInfo?.call('🎥 Clip ${seconds}s demandé…');
           final e = await SosCrisisMediaService.instance.withCameraReleased(
-            () => _evidence.recordVideo(id, conversationId: _conversationId),
+            () => _evidence.recordVideo(
+              id,
+              conversationId: _conversationId,
+              duration: Duration(seconds: seconds),
+              source: type == cmdClip10 ? 'victim' : 'rescue',
+            ),
           );
-          if (e == null) {
-            await _sos.logEventPublic(id, 'EVIDENCE_FAILED',
-                {'cmd': type, 'error': 'capture indisponible'});
-            onInfo?.call('⚠️ Vidéo impossible sur ce téléphone');
-          } else {
-            onInfo?.call(e.postedToChat
-                ? '🎥 Vidéo envoyée dans le groupe SOS'
-                : '🎥 Vidéo capturée');
-          }
+          await _reportCapture(id, type, e, onInfo, label: 'Vidéo ${seconds}s');
           break;
 
         case cmdAudioStart:
@@ -153,16 +174,12 @@ class SosRemoteCaptureService {
 
         case cmdAudioStop:
           if (!_evidence.isRecordingAudio) return;
-          final e =
-              await _evidence.stopAudio(id, conversationId: _conversationId);
-          if (e == null) {
-            await _sos.logEventPublic(
-                id, 'EVIDENCE_FAILED', {'cmd': type, 'error': 'aucun audio'});
-          } else {
-            onInfo?.call(e.postedToChat
-                ? '🎤 Audio envoyé dans le groupe SOS'
-                : '🎤 Audio enregistré');
-          }
+          final e = await _evidence.stopAudio(
+            id,
+            conversationId: _conversationId,
+            source: 'rescue',
+          );
+          await _reportCapture(id, type, e, onInfo, label: 'Audio');
           break;
 
         case cmdInstruct:
@@ -172,7 +189,7 @@ class SosRemoteCaptureService {
 
         case cmdSurveillanceOn:
           _startSurveillance(id);
-          onInfo?.call('🛰️ Mode surveillance activé (photo / 10 s)');
+          onInfo?.call('🛰️ Surveillance 10s activée');
           break;
 
         case cmdSurveillanceOff:
@@ -187,7 +204,7 @@ class SosRemoteCaptureService {
       debugPrint('SosRemoteCapture $type: $e');
       try {
         await _sos.logEventPublic(
-            id!, 'EVIDENCE_FAILED', {'cmd': type, 'error': '$e'});
+            id, 'EVIDENCE_FAILED', {'cmd': type, 'error': '$e'});
       } catch (_) {}
       onError?.call(e);
     } finally {
@@ -195,17 +212,53 @@ class SosRemoteCaptureService {
     }
   }
 
-  /// ✅ 100% SUPABASE : photo silencieuse toutes les 10 s
-  /// → Storage → Realtime → groupe SOS → salle de pilotage.
+  Future<void> _reportCapture(
+    String id,
+    String cmd,
+    SosEvidence? e,
+    void Function(String msg)? onInfo, {
+    required String label,
+  }) async {
+    if (e == null) {
+      await _sos.logEventPublic(
+          id, 'EVIDENCE_FAILED', {'cmd': cmd, 'error': 'capture indisponible'});
+      onInfo?.call('⚠️ $label impossible sur ce téléphone');
+      return;
+    }
+    onInfo?.call(e.postedToChat
+        ? '✅ $label envoyé dans le groupe SOS'
+        : '✅ $label capturé (envoi groupe en attente)');
+  }
+
   void _startSurveillance(String incidentId) {
     _survTimer?.cancel();
+    Future(() async {
+      if (_busy) return;
+      _busy = true;
+      try {
+        await SosCrisisMediaService.instance.withCameraReleased(
+          () => _evidence.takePhoto(
+            incidentId,
+            conversationId: _conversationId,
+            source: 'rescue',
+          ),
+        );
+      } catch (e) {
+        debugPrint('surveillance first: $e');
+      } finally {
+        _busy = false;
+      }
+    });
     _survTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       if (_busy) return;
       _busy = true;
       try {
         await SosCrisisMediaService.instance.withCameraReleased(
-          () => _evidence.takePhoto(incidentId,
-              conversationId: _conversationId),
+          () => _evidence.takePhoto(
+            incidentId,
+            conversationId: _conversationId,
+            source: 'rescue',
+          ),
         );
       } catch (e) {
         debugPrint('surveillance: $e');
