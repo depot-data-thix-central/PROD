@@ -13,6 +13,7 @@ import 'package:thix_id/services/chat/chat_service.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../services/sos_crisis_media_service.dart';
 import '../services/sos_remote_capture_service.dart';
+import '../services/sos_victim_capture_daemon.dart';
 import '../models/sos_models.dart';
 import '../providers/sos_providers.dart';
 import 'sos_pin_page.dart';
@@ -39,6 +40,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
   final Set<String> _sentQuick = {};
   bool _camOn = false;
   bool _camBusy = false;
+  bool _clipBusy = false;
   final _remoteCapture = SosRemoteCaptureService();
 
   @override
@@ -115,21 +117,11 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
         _resolvedConversationId = incident?.chatConversationId;
       }
     } catch (_) {}
+
     _remoteCapture.listenAsVictim(
       incidentId: widget.incidentId,
       conversationId: _resolvedConversationId,
-      onInfo: (m) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              m,
-              style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand),
-            ),
-            backgroundColor: ThixPolicy.inkDeep,
-          ),
-        );
-      },
+      onInfo: _snack,
       onError: (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -137,12 +129,62 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
         );
       },
     );
+
+    SosVictimCaptureDaemon.instance.start(
+      incidentId: widget.incidentId,
+      conversationId: _resolvedConversationId,
+      onInfo: _snack,
+    );
+  }
+
+  void _snack(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          m,
+          style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand),
+        ),
+        backgroundColor: ThixPolicy.inkDeep,
+      ),
+    );
+  }
+
+  Future<void> _launchClip10(SosIncident incident) async {
+    if (_clipBusy) return;
+    setState(() => _clipBusy = true);
+    try {
+      final conv = incident.chatConversationId ?? _resolvedConversationId;
+      final e = await SosRemoteCaptureService.instance.runVictimClip10(
+        incidentId: incident.id,
+        conversationId: conv,
+      );
+      if (!mounted) return;
+      _snack(
+        e == null
+            ? 'Clip 10s impossible sur cet appareil'
+            : e.postedToChat
+                ? '🎥 Clip 10s envoyé dans le groupe SOS'
+                : '🎥 Clip 10s enregistré — envoi groupe en cours',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Clip: $e'),
+          backgroundColor: ThixPolicy.danger,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _clipBusy = false);
+    }
   }
 
   @override
   void dispose() {
     _uiTimer?.cancel();
     _remoteCapture.stop();
+    SosVictimCaptureDaemon.instance.stop();
     super.dispose();
   }
 
@@ -302,6 +344,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                   onBack: () => Navigator.pop(context),
                   onEnd: _endSos,
                   camOn: _camOn,
+                  onToggleCam: _toggleCamera,
                 ),
                 Expanded(
                   child: RefreshIndicator(
@@ -354,6 +397,17 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                             const SizedBox(width: ThixPolicy.s10),
                             Expanded(
                               child: _ComButton(
+                                icon: Icons.videocam,
+                                label: _clipBusy ? 'Clip…' : 'Clip 10s',
+                                color: const Color(0xFFFB7185),
+                                onTap: _clipBusy
+                                    ? () {}
+                                    : () => _launchClip10(incident),
+                              ),
+                            ),
+                            const SizedBox(width: ThixPolicy.s10),
+                            Expanded(
+                              child: _ComButton(
                                 icon: Icons.phone_in_talk,
                                 label: 'Rappeler',
                                 color: ThixPolicy.success,
@@ -364,9 +418,15 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                                 },
                               ),
                             ),
-
                           ],
                         ),
+                        if (_clipBusy) ...[
+                          const SizedBox(height: ThixPolicy.s8),
+                          Text(
+                            'Enregistrement 10s puis envoi automatique dans le groupe SOS…',
+                            style: ThixPolicy.captionStyle,
+                          ),
+                        ],
                         const SizedBox(height: ThixPolicy.s20),
                         _section('MESSAGES RAPIDES'),
                         const SizedBox(height: ThixPolicy.s8),
@@ -505,6 +565,7 @@ class _Header extends StatelessWidget {
     required this.onBack,
     required this.onEnd,
     this.camOn = false,
+    this.onToggleCam,
   });
 
   final String publicId;
@@ -513,6 +574,7 @@ class _Header extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onEnd;
   final bool camOn;
+  final VoidCallback? onToggleCam;
 
   @override
   Widget build(BuildContext context) {
@@ -576,18 +638,27 @@ class _Header extends StatelessWidget {
                   color: ThixPolicy.onBrand,
                 ),
               ),
-              if (camOn) ...[
-                const SizedBox(width: ThixPolicy.s12),
-                const Icon(Icons.videocam, size: 16, color: Color(0xFFFECACA)),
-                const SizedBox(width: 4),
-                Text(
-                  'LIVE',
-                  style: ThixPolicy.captionStyle.copyWith(
-                    fontWeight: ThixPolicy.bold,
-                    color: const Color(0xFFFECACA),
-                  ),
+              const SizedBox(width: ThixPolicy.s12),
+              InkWell(
+                onTap: onToggleCam,
+                child: Row(
+                  children: [
+                    Icon(
+                      camOn ? Icons.videocam : Icons.videocam_off,
+                      size: 16,
+                      color: camOn ? const Color(0xFFFECACA) : Colors.white54,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      camOn ? 'LIVE' : 'CAM',
+                      style: ThixPolicy.captionStyle.copyWith(
+                        fontWeight: ThixPolicy.bold,
+                        color: camOn ? const Color(0xFFFECACA) : Colors.white54,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -751,7 +822,7 @@ class _LiveMapCard extends StatelessWidget {
 
   String _fmt(DateTime d) {
     final l = d.toLocal();
-    return '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}:${l.second.toString().padLeft(2, '0')}';
+    return '\( {l.hour.toString().padLeft(2, '0')}: \){l.minute.toString().padLeft(2, '0')}:${l.second.toString().padLeft(2, '0')}';
   }
 }
 
@@ -956,11 +1027,57 @@ class _EventTile extends StatelessWidget {
   const _EventTile({required this.event});
   final SosEvent event;
 
+  String get _label {
+    final p = event.payload;
+    switch (event.type) {
+      case 'CMD_INSTRUCT':
+        return '📢 Secours : ${p?['text'] ?? 'instruction'}';
+      case 'CMD_CAPTURE_PHOTO':
+        return '📸 Photo demandée par le secours';
+      case 'CMD_CAPTURE_VIDEO':
+        return '🎥 Vidéo ${p?['seconds'] ?? 10}s demandée';
+      case 'CMD_CAPTURE_CLIP_10':
+        return '🎥 Clip 10s demandé';
+      case 'CMD_CAPTURE_AUDIO_START':
+        return '🎤 Micro distant ON';
+      case 'CMD_CAPTURE_AUDIO_STOP':
+        return '🎤 Micro distant OFF';
+      case 'CMD_SURVEILLANCE_ON':
+        return '🛰️ Surveillance 10s ON';
+      case 'CMD_SURVEILLANCE_OFF':
+        return '🛰️ Surveillance OFF';
+      case 'EVIDENCE_PHOTO':
+        return p?['posted_to_chat'] == true
+            ? '📸 Photo envoyée dans le groupe'
+            : '📸 Photo capturée';
+      case 'EVIDENCE_VIDEO':
+        return p?['posted_to_chat'] == true
+            ? '🎥 Vidéo envoyée dans le groupe'
+            : '🎥 Vidéo capturée';
+      case 'EVIDENCE_AUDIO':
+        return p?['posted_to_chat'] == true
+            ? '🎤 Audio envoyé dans le groupe'
+            : '🎤 Audio capturé';
+      case 'EVIDENCE_FAILED':
+        return '⚠️ Échec capture : ${p?['error'] ?? ''}';
+      case 'QUICK_MESSAGE':
+        return '${p?['text'] ?? event.type}';
+      case 'RESCUE_JOINED_CRISIS_ROOM':
+        return '🛟 Un secours a rejoint la salle';
+      case 'SOS_CREATED':
+        return 'Incident créé';
+      case 'SOS_STARTED':
+        return 'SOS démarré';
+      default:
+        return event.type;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = event.createdAt.toLocal();
     final time =
-        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
+        '\( {t.hour.toString().padLeft(2, '0')}: \){t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -985,7 +1102,7 @@ class _EventTile extends StatelessWidget {
           ),
           Expanded(
             child: Text(
-              event.type,
+              _label,
               style: ThixPolicy.labelStyle
                   .copyWith(fontWeight: ThixPolicy.semiBold),
             ),
