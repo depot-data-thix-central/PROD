@@ -1,5 +1,3 @@
-// lib/services/user_service.dart
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/app_user.dart';
@@ -9,18 +7,19 @@ class UserService {
 
   UserService(this._supabase);
 
-  // ==================== MÉTHODE updateProfile AVEC thixId ====================
+  // ==========================================================================
+  // UPDATE PROFILE — Colonnes sensibles GELÉES
+  // ==========================================================================
 
   Future<void> updateProfile({
     required String uid,
-    String? thixId,
+    // ⭐ SUPPRIMÉ : thixId (géré par le serveur)
     String? displayName,
     String? fullName,
     String? photoUrl,
-    String? registrationStatus,
+    // ⭐ SUPPRIMÉ : registrationStatus (géré par le serveur)
     String? thixChat,
     String? bio,
-    String? chatId,
     String? competence,
     String? countryOrOrigin,
     String? contactPhone,
@@ -64,20 +63,18 @@ class UserService {
     String? idDocumentFrontDocId,
     String? idDocumentBackDocId,
     String? idDocumentSelfieDocId,
-    String? idVerificationStatus,
-    bool? biometricsEnabled,
-    bool? twoFaEnabled,
+    // ⭐ SUPPRIMÉ : idVerificationStatus (géré par le serveur)
+    // ⭐ SUPPRIMÉ : biometricsEnabled (géré par le serveur)
+    // ⭐ SUPPRIMÉ : twoFaEnabled (géré par le serveur)
     List<String>? languages,
     List<Map<String, dynamic>>? languagesDetailed,
   }) async {
     final Map<String, dynamic> updates = {};
 
-    // Informations personnelles
-    if (thixId != null) updates['thix_id'] = thixId;
+    // Informations personnelles (autorisées)
     if (displayName != null) updates['display_name'] = displayName;
     if (fullName != null) updates['full_name'] = fullName;
     if (photoUrl != null) updates['photo_url'] = photoUrl;
-    if (registrationStatus != null) updates['registration_status'] = registrationStatus;
     if (thixChat != null) updates['thix_chat'] = thixChat;
     if (bio != null) updates['bio'] = bio;
     if (competence != null) updates['competence'] = competence;
@@ -133,11 +130,6 @@ class UserService {
     if (idDocumentFrontDocId != null) updates['id_document_front_doc_id'] = idDocumentFrontDocId;
     if (idDocumentBackDocId != null) updates['id_document_back_doc_id'] = idDocumentBackDocId;
     if (idDocumentSelfieDocId != null) updates['id_document_selfie_doc_id'] = idDocumentSelfieDocId;
-    if (idVerificationStatus != null) updates['id_verification_status'] = idVerificationStatus;
-
-    // Sécurité
-    if (biometricsEnabled != null) updates['biometrics_enabled'] = biometricsEnabled;
-    if (twoFaEnabled != null) updates['two_fa_enabled'] = twoFaEnabled;
 
     // Langues
     if (languages != null) updates['languages'] = languages;
@@ -149,7 +141,9 @@ class UserService {
     }
   }
 
-  // ==================== MÉTHODES DE PAIEMENT ====================
+  // ==========================================================================
+  // MÉTHODES DE PAIEMENT (inchangées)
+  // ==========================================================================
 
   Future<void> addPaymentTransaction({
     required String uid,
@@ -181,21 +175,12 @@ class UserService {
         .map((list) => list.cast<Map<String, dynamic>>());
   }
 
-  // ==================== MÉTHODES DE SÉCURITÉ ====================
+  // ==========================================================================
+  // MÉTHODES DE SÉCURITÉ — Supprimées (gérées par RPCs serveur)
+  // ==========================================================================
 
-  Future<void> logSecurityEvent({
-    required String uid,
-    required String type,
-    required String label,
-  }) async {
-    final event = {
-      'user_id': uid,
-      'type': type,
-      'label': label,
-      'created_at': DateTime.now().toIso8601String(),
-    };
-    await _supabase.from('security_events').insert(event);
-  }
+  // ⭐ SUPPRIMÉ : logSecurityEvent() — Utiliser la RPC serveur à la place
+  // La table security_events est protégée et seuls les RPCs SECURITY DEFINER peuvent y écrire.
 
   Stream<List<Map<String, dynamic>>> streamSecurityEvents(String uid) {
     return _supabase
@@ -206,92 +191,70 @@ class UserService {
         .map((list) => list.cast<Map<String, dynamic>>());
   }
 
-  // ==================== MÉTHODES POUR THIX ID ====================
+  // ==========================================================================
+  // MÉTHODES POUR THIX ID — SUPPRIMÉES (gérées par finalize_registration)
+  // ==========================================================================
 
-  Future<String> ensureThixId({required String uid}) async {
-    try {
-      final result = await _supabase.rpc('ensure_thix_id', params: {'p_user_id': uid});
-      return result as String;
-    } catch (e) {
-      debugPrint('⚠️ RPC ensure_thix_id failed: $e');
+  // ⭐ SUPPRIMÉ : ensureThixId()
+  // La génération de THIX ID est UNIQUEMENT côté serveur via finalize_registration().
+  // Cette méthode est obsolète et dangereuse (fallback client-side).
 
-      final row = await _supabase.from('profiles').select('thix_id').eq('id', uid).maybeSingle();
-      final existing = (row?['thix_id'] ?? '').toString().trim();
-      if (existing.isNotEmpty && existing != 'THIX-PENDING') return existing;
+  // ⭐ SUPPRIMÉ : ensureThixChat()
+  // La réservation de THIX CHAT est UNIQUEMENT côté serveur via finalize_registration().
+  // Cette méthode est obsolète et dangereuse (fallback client-side).
 
-      String candidate;
-      int attempts = 0;
-      do {
-        final timestamp = DateTime.now().millisecondsSinceEpoch.toString();
-        candidate = 'THIX-${timestamp.substring(5)}';
-        attempts++;
-        if (attempts > 5) {
-          candidate = 'THIX-${timestamp.substring(5)}-${Random().nextInt(9999)}';
-        }
-        final existingRow = await _supabase
-            .from('profiles')
-            .select('id')
-            .eq('thix_id', candidate)
-            .maybeSingle();
-        if (existingRow == null) break;
-      } while (true);
-
-      await _supabase.from('profiles').update({'thix_id': candidate}).eq('id', uid);
-      return candidate;
-    }
-  }
-
-  Future<String> ensureThixChat({required String uid, required String desired}) async {
-    String normalized = desired.trim().toLowerCase();
-    if (normalized.startsWith('@')) {
-      normalized = normalized.substring(1);
-    }
-    if (normalized.length > 20) {
-      normalized = normalized.substring(0, 20);
-    }
-    normalized = normalized.replaceAll(RegExp(r'[^a-z0-9._]'), '');
-    if (normalized.isEmpty) {
-      normalized = 'user${Random().nextInt(9999)}';
-    }
-    final String finalChat = '@$normalized';
-
-    try {
-      final result = await _supabase.rpc('reserve_thix_chat', params: {
-        'p_user_id': uid,
-        'p_desired_chat': finalChat,
-      });
-      return result as String;
-    } catch (e) {
-      debugPrint('⚠️ RPC reserve_thix_chat failed, fallback: $e');
-      await _supabase.from('profiles').update({'thix_chat': finalChat}).eq('id', uid);
-      return finalChat;
-    }
-  }
-
-  // ==================== MÉTHODES POUR HOME PAGE ====================
+  // ==========================================================================
+  // MÉTHODES POUR HOME PAGE — Utilisent profiles_public
+  // ==========================================================================
 
   Future<AppUser?> getUserByThixId(String thixId) async {
-    final row = await _supabase
-        .from('profiles')
-        .select()
-        .eq('thix_id', thixId)
-        .maybeSingle();
-    if (row == null) return null;
-    // `.maybeSingle()` retourne déjà Map<String, dynamic>?, cast inutile.
-    return _mapToAppUser(row);
+    try {
+      // ⭐ CORRECTION : Utiliser profiles_public au lieu de profiles
+      final row = await _supabase
+          .from('profiles_public')
+          .select()
+          .eq('thix_id', thixId)
+          .maybeSingle();
+      if (row == null) return null;
+      return _mapToAppUserPublic(row);
+    } catch (e) {
+      debugPrint('getUserByThixId failed: $e');
+      return null;
+    }
   }
 
   Future<AppUser?> getUserById(String userId) async {
-    final row = await _supabase
-        .from('profiles')
-        .select()
-        .eq('id', userId)
-        .maybeSingle();
-    if (row == null) return null;
-    return _mapToAppUser(row);
+    try {
+      // Vérifier si c'est l'utilisateur courant
+      final currentUserId = _supabase.auth.currentUser?.id;
+      if (currentUserId == userId) {
+        // Lecture complète pour le propriétaire
+        final row = await _supabase
+            .from('profiles')
+            .select()
+            .eq('id', userId)
+            .maybeSingle();
+        if (row == null) return null;
+        return _mapToAppUser(row);
+      } else {
+        // Lecture publique pour les autres
+        final row = await _supabase
+            .from('profiles_public')
+            .select()
+            .eq('id', userId)
+            .maybeSingle();
+        if (row == null) return null;
+        return _mapToAppUserPublic(row);
+      }
+    } catch (e) {
+      debugPrint('getUserById failed: $e');
+      return null;
+    }
   }
 
-  // ==================== MÉTHODE DE MAPPING ====================
+  // ==========================================================================
+  // MÉTHODES DE MAPPING
+  // ==========================================================================
 
   AppUser _mapToAppUser(Map<String, dynamic> row) {
     DateTime parseDate(dynamic value) {
@@ -366,6 +329,47 @@ class UserService {
       twoFaEnabled: (row['two_fa_enabled'] as bool?) ?? false,
       createdAt: createdAt,
       updatedAt: updatedAt,
+    );
+  }
+
+  /// Mapping pour les profils publics (données limitées)
+  AppUser _mapToAppUserPublic(Map<String, dynamic> row) {
+    return AppUser(
+      id: row['id'] ?? '',
+      thixId: row['thix_id'] ?? 'THIX-PENDING',
+      thixChat: row['thix_chat'] ?? '',
+      thixScore: 0,
+      email: '', // ⭐ Masqué pour les profils publics
+      phone: '', // ⭐ Masqué pour les profils publics
+      displayName: row['display_name'] ?? 'Utilisateur',
+      accountType: AccountType.personal,
+      photoUrl: row['photo_url'],
+      bio: row['bio'],
+      occupation: row['occupation'],
+      countryOrOrigin: row['country_or_origin'],
+      contactPhone: '', // ⭐ Masqué pour les profils publics
+      maritalStatus: '', // ⭐ Masqué pour les profils publics
+      gender: '', // ⭐ Masqué pour les profils publics
+      profession: row['profession'],
+      dateOfBirth: '', // ⭐ Masqué pour les profils publics
+      placeOfBirth: '', // ⭐ Masqué pour les profils publics
+      nationality: '', // ⭐ Masqué pour les profils publics
+      address: '', // ⭐ Masqué pour les profils publics
+      fatherName: '', // ⭐ Masqué pour les profils publics
+      motherName: '', // ⭐ Masqué pour les profils publics
+      emergencyContactName: '', // ⭐ Masqué pour les profils publics
+      emergencyContactPhone: '', // ⭐ Masqué pour les profils publics
+      emergencyContactRelation: '', // ⭐ Masqué pour les profils publics
+      registrationStatus: row['registration_status'],
+      education: const [],
+      experience: const [],
+      skills: const [],
+      enrollments: const [],
+      languages: const [],
+      biometricsEnabled: false,
+      twoFaEnabled: false,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
     );
   }
 }
