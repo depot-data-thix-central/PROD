@@ -445,6 +445,7 @@ class SupabaseAuthManager implements AuthManager {
           thixId: 'THIX-PENDING',
           thixChat: '',
           thixScore: null, 
+          phone: user.phone,
           email: normalizedEmail,
           displayName: userMeta['display_name'] as String,
           accountType: accountType,
