@@ -20,7 +20,7 @@ import 'package:thix_id/nav.dart';
 // POLITIQUE MOT DE PASSE
 // ============================================================================
 class PasswordPolicy {
-  static const minLength = 6;
+  static const minLength = 8;  
 
   static Future<String?> validate(
     String password, {
@@ -516,18 +516,29 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   }
 
   Future<void> _sendOtp() async {
-    if (_busy || _resendCooldown > 0) return;
-    setState(() => _busy = true);
-    try {
-      final success = await _createAuthUser();
-      if (!success || !mounted) return;
-      setState(() => _otpSent = true);
-      _startResendCooldown();
-      _snack('Un code à 6 chiffres a été envoyé à votre email.');
-    } finally {
-      if (mounted) setState(() => _busy = false);
+  if (_busy || _resendCooldown > 0) return;
+  setState(() => _busy = true);
+  try {
+    
+    if (await _refreshEmailVerifiedFlag()) {
+      try {
+        await Supabase.instance.client.rpc('mark_email_verified');
+      } catch (_) {}
+      if (!mounted) return;
+      setState(() => _step = 3);
+      _snack('Email déjà vérifié. Choisissez votre identifiant public.');
+      return;
     }
+
+    final success = await _createAuthUser();
+    if (!success || !mounted) return;
+    setState(() => _otpSent = true);
+    _startResendCooldown();
+    _snack('Un code à 6 chiffres a été envoyé à votre email.');
+  } finally {
+    if (mounted) setState(() => _busy = false);
   }
+}
 
   Future<bool> _refreshEmailVerifiedFlag() async {
     try {
@@ -544,47 +555,59 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
   /// Étape 2 : vérifie l'OTP UNIQUEMENT. N'active pas le compte.
   Future<void> _verifyEmailOnly() async {
-    if (_busy) return;
-    if (!_otpSent) {
-      _snack("Demandez d'abord le code email.", isError: true);
-      return;
-    }
-    final code = _otpC.text.trim();
-    if (!RegExp(r'^\d{6}$').hasMatch(code)) {
-      _snack('Saisissez le code à 6 chiffres.', isError: true);
-      return;
-    }
+  if (_busy) return;
 
-    setState(() => _busy = true);
+  // ✅ Email déjà vérifié → étape 3 directe
+  if (await _refreshEmailVerifiedFlag()) {
     try {
-      final notifier = ref.read(authControllerProvider.notifier);
-      await notifier.verifyOTP(
-        email: _emailC.text.trim().toLowerCase(),
-        token: code,
-      );
-      try {
-        await Supabase.instance.client.rpc('mark_email_verified');
-      } catch (e) {
-        debugPrint('[mark_email_verified] $e');
-      }
-      try {
-        await notifier.refreshCurrentUser();
-      } catch (_) {}
-
-      final ok = await _refreshEmailVerifiedFlag();
-      if (!ok) {
-        _snack('Email non confirmé. Vérifiez le code.', isError: true);
-        return;
-      }
-      if (!mounted) return;
-      setState(() => _step = 3);
-      _snack('Email vérifié. Choisissez votre identifiant public.');
-    } catch (e) {
-      _snack(_userFacingError(e), isError: true);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+      await Supabase.instance.client.rpc('mark_email_verified');
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _step = 3);
+    _snack('Email déjà vérifié. Choisissez votre identifiant public.');
+    return;
   }
+
+  if (!_otpSent) {
+    _snack("Demandez d'abord le code email.", isError: true);
+    return;
+  }
+  final code = _otpC.text.trim();
+  if (!RegExp(r'^\d{6}$').hasMatch(code)) {
+    _snack('Saisissez le code à 6 chiffres.', isError: true);
+    return;
+  }
+
+  setState(() => _busy = true);
+  try {
+    final notifier = ref.read(authControllerProvider.notifier);
+    await notifier.verifyOTP(
+      email: _emailC.text.trim().toLowerCase(),
+      token: code,
+    );
+    try {
+      await Supabase.instance.client.rpc('mark_email_verified');
+    } catch (e) {
+      debugPrint('[mark_email_verified] $e');
+    }
+    try {
+      await notifier.refreshCurrentUser();
+    } catch (_) {}
+
+    final ok = await _refreshEmailVerifiedFlag();
+    if (!ok) {
+      _snack('Email non confirmé. Vérifiez le code.', isError: true);
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _step = 3);
+    _snack('Email vérifié. Choisissez votre identifiant public.');
+  } catch (e) {
+    _snack(_userFacingError(e), isError: true);
+  } finally {
+    if (mounted) setState(() => _busy = false);
+  }
+}
 
   Future<void> _showQrParrainageDialog() async {
     if (_busy) return;
