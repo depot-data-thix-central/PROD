@@ -20,7 +20,7 @@ import 'package:thix_id/nav.dart';
 // POLITIQUE MOT DE PASSE
 // ============================================================================
 class PasswordPolicy {
-  static const minLength = 12;
+  static const minLength = 6;
 
   static Future<String?> validate(
     String password, {
@@ -38,9 +38,10 @@ class PasswordPolicy {
         .map((s) => s.toLowerCase())
         .toList();
     final result = zxcvbn.evaluate(password, userInputs: userInputs);
-    if ((result.score ?? 0) < 3) {
+    
+    // Tolérance à 2 (Moyen) pour accepter les mots de passe plus courts mais robustes
+    if ((result.score ?? 0) < 2) {
       final warning = result.feedback?.warning ?? '';
-      // ✅ CORRECTION : Utilisation de ?.join()
       final suggestions = result.feedback?.suggestions?.join(' ') ?? '';
       return 'Mot de passe trop faible. $warning $suggestions'.trim();
     }
@@ -396,7 +397,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       ]);
       setState(() {
         _passwordError = error;
-        // ✅ CORRECTION : force la conversion en entier
         _passwordScore = (result.score ?? 0).toInt();
         _passwordValidating = false;
       });
@@ -1085,7 +1085,7 @@ class _Step2Account extends StatelessWidget {
         const SizedBox(height: ThixPolicy.s16),
         _PremiumField(
           label: 'Mot de passe *',
-          hint: 'Min. 12 caractères',
+          hint: 'Min. 6 caractères',
           icon: Icons.lock_outline_rounded,
           controller: passwordC,
           isPassword: true,
