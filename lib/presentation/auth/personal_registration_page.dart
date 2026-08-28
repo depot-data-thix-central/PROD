@@ -336,8 +336,10 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     if (msg.contains('invalid login') || msg.contains('invalid credentials')) {
       return 'Email ou mot de passe incorrect.';
     }
-    if (msg.contains('email_not_verified')) return 'Validez d'abord le code reçu par email.';
-    if (msg.contains('invalid_status')) return 'Cette étape n'est pas encore disponible.';
+    // ✅ CORRECTIONS DES APOSTROPHES
+    if (msg.contains('email_not_verified')) return "Validez d'abord le code reçu par email.";
+    if (msg.contains('invalid_status')) return "Cette étape n'est pas encore disponible.";
+    
     if (msg.contains('invalid_chat') || msg.contains('reserved') || msg.contains('réservé')) {
       return 'Ce THIX CHAT est invalide ou réservé.';
     }
@@ -543,7 +545,8 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   Future<void> _verifyEmailOnly() async {
     if (_busy) return;
     if (!_otpSent) {
-      _snack('Demandez d'abord le code email.', isError: true);
+      // ✅ CORRECTION
+      _snack("Demandez d'abord le code email.", isError: true);
       return;
     }
     final code = _otpC.text.trim();
@@ -586,7 +589,8 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   Future<void> _showQrParrainageDialog() async {
     if (_busy) return;
     if (!await _refreshEmailVerifiedFlag()) {
-      _snack('Validez d'abord le code email.', isError: true);
+      // ✅ CORRECTION
+      _snack("Validez d'abord le code email.", isError: true);
       return;
     }
     if (!mounted) return;
@@ -603,7 +607,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     );
   }
 
-  // ✅ CORRECTION 1 : Interpolation Dart standard (pas d'échappement Markdown)
+  // ✅ CORRECTION 1 : Interpolation Dart standard
   String _desiredChat() {
     final raw = _thixChatC.text.trim().toLowerCase();
     if (raw.isNotEmpty) return raw.startsWith('@') ? raw : '@$raw';
@@ -670,7 +674,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     }
   }
 
-  // ✅ CORRECTION 2 : Interpolation Dart standard (pas d'échappement Markdown)
+  // ✅ CORRECTION 2 : Interpolation Dart standard
   Future<void> _pickDob() async {
     final now = DateTime.now();
     final adult = DateTime(now.year - 18, now.month, now.day);
@@ -871,7 +875,8 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         onPressed = _goToStep2;
         break;
       case 2:
-        label = isLoading ? 'Vérification…' : 'Valider l'email';
+        // ✅ CORRECTION : Guilemets doubles
+        label = isLoading ? 'Vérification…' : "Valider l'email";
         onPressed = _verifyEmailOnly;
         break;
       case 3:
@@ -1099,7 +1104,8 @@ class _Step2Account extends StatelessWidget {
       children: [
         const Text('Sécurité du compte', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _AppColors.primary)),
         const SizedBox(height: 6),
-        const Text('L'activation du THIX ID n'est possible qu'après validation de cet email.', style: TextStyle(fontSize: 14, color: _AppColors.textMuted)),
+        // ✅ CORRECTION : Guillemets doubles
+        const Text("L'activation du THIX ID n'est possible qu'après validation de cet email.", style: TextStyle(fontSize: 14, color: _AppColors.textMuted)),
         const SizedBox(height: 24),
         _PremiumField(label: 'Adresse email *', hint: 'votre@email.com', icon: Icons.email_outlined, controller: emailC, keyboardType: TextInputType.emailAddress),
         const SizedBox(height: 16),
@@ -1217,8 +1223,9 @@ class _Step3Activate extends StatelessWidget {
       children: [
         const Text('Activation', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _AppColors.primary)),
         const SizedBox(height: 6),
+        // ✅ CORRECTION : Guillemets doubles
         const Text(
-          'Choisissez votre identifiant public. Le parrainage est optionnel et ne remplace pas l'email.',
+          "Choisissez votre identifiant public. Le parrainage est optionnel et ne remplace pas l'email.",
           style: TextStyle(fontSize: 14, color: _AppColors.textMuted),
         ),
         const SizedBox(height: 16),
@@ -1324,7 +1331,8 @@ class _Step4Final extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('CARTE D'IDENTITÉ THIX', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2)),
+              // ✅ CORRECTION : Guillemets doubles
+              const Text("CARTE D'IDENTITÉ THIX", style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2)),
               const SizedBox(height: 24),
               const Text('THIX ID OFFICIEL', style: TextStyle(color: _AppColors.accentLight, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
               const SizedBox(height: 4),
