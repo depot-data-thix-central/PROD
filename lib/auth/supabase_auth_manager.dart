@@ -283,7 +283,7 @@ class SupabaseAuthManager implements AuthManager {
     List<String> strList(Object? v) => (v is List) ? v.whereType<String>().toList(growable: false) : const <String>[];
     List<Map<String, dynamic>> mapList(Object? v) => (v is List)
         ? v.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList(growable: false)
-        : const <String, dynamic>[];
+        : const <Map<String, dynamic>>[];
 
     final rawThixId = (row['thix_id'] ?? row['thixId'] ?? row['thix_uid'] ?? '').toString().trim();
 
