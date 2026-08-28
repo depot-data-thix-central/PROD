@@ -314,9 +314,24 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   String _userFacingError(Object e) {
     debugPrint('[PersonalRegistration] $e');
     final msg = e.toString().toLowerCase();
+
+    // 1. Gestion des doublons d'Authentification (Email)
     if (msg.contains('already registered') || msg.contains('already exists')) {
       return 'Un compte existe déjà avec cet email.';
     }
+
+    // 2. Gestion des doublons PostgreSQL (Téléphone ou THIX CHAT)
+    if (msg.contains('23505') || msg.contains('unique constraint')) {
+      if (msg.contains('phone')) {
+        return 'Ce numéro de téléphone est déjà utilisé par un autre compte.';
+      }
+      if (msg.contains('thix_chat')) {
+        return 'Ce THIX CHAT est déjà pris.';
+      }
+      return 'Une information (email ou téléphone) est déjà utilisée.';
+    }
+
+    // 3. Reste des erreurs classiques
     if (msg.contains('invalid login') || msg.contains('invalid credentials')) {
       return 'Email ou mot de passe incorrect.';
     }
@@ -326,7 +341,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     if (msg.contains('invalid_chat') || msg.contains('reserved') || msg.contains('réservé')) {
       return 'Ce THIX CHAT est invalide ou réservé.';
     }
-    if (msg.contains('chat_taken') || msg.contains('23505')) {
+    if (msg.contains('chat_taken')) {
       return 'Ce THIX CHAT est déjà pris.';
     }
     if (msg.contains('expired')) return 'Le code ou le QR a expiré. Recommencez.';
@@ -340,6 +355,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     if (msg.contains('network') || msg.contains('timeout') || msg.contains('unavailable')) {
       return 'Erreur de connexion. Vérifiez votre réseau.';
     }
+    
     return 'Une erreur est survenue. Réessayez dans quelques instants.';
   }
 
@@ -347,6 +363,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$').hasMatch(email);
 
   bool _isValidPhone(String phone) {
+    if (phone.isEmpty) return true; // ✅ Le numéro est optionnel
     final compact = phone.replaceAll(RegExp(r'[\s.-]'), '');
     return RegExp(r'^\+[1-9]\d{7,14}$').hasMatch(compact);
   }
@@ -447,8 +464,9 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       _snack('Email invalide.', isError: true);
       return false;
     }
-    if (!_isValidPhone(phone)) {
-      _snack('Numéro international requis (ex. +243…).', isError: true);
+    // ✅ Vérification modifiée : Si le numéro est rempli, on vérifie son format
+    if (phone.isNotEmpty && !_isValidPhone(phone)) {
+      _snack('Format du numéro international invalide (ex. +243…).', isError: true);
       return false;
     }
     final passIssue = await PasswordPolicy.validate(
@@ -1075,8 +1093,9 @@ class _Step2Account extends StatelessWidget {
         const SizedBox(height: ThixPolicy.s24),
         _PremiumField(label: 'Adresse email *', hint: 'votre@email.com', icon: Icons.email_outlined, controller: emailC, keyboardType: TextInputType.emailAddress),
         const SizedBox(height: ThixPolicy.s16),
+        // ✅ LIGNE MODIFIÉE ICI : Le label indique désormais que c'est optionnel
         _PremiumField(
-          label: 'Numéro mobile international *',
+          label: 'Numéro mobile international (Optionnel)',
           hint: '+243 000 000 000',
           icon: Icons.phone_android_rounded,
           controller: phoneC,
@@ -1343,7 +1362,8 @@ class _Step4Final extends StatelessWidget {
               const Divider(height: 1, color: ThixPolicy.border),
               _SummaryRow(label: 'Email', value: email),
               const Divider(height: 1, color: ThixPolicy.border),
-              _SummaryRow(label: 'Mobile', value: phone),
+              // ✅ LIGNE MODIFIÉE ICI : Gère proprement l'affichage si le numéro est vide
+              _SummaryRow(label: 'Mobile', value: phone.isEmpty ? 'Non renseigné' : phone),
               const Divider(height: 1, color: ThixPolicy.border),
               _SummaryRow(label: 'Date de naissance', value: dob),
               const Divider(height: 1, color: ThixPolicy.border),
