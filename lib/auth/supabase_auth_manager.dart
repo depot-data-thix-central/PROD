@@ -316,31 +316,37 @@ class SupabaseAuthManager implements AuthManager {
     return null;
   }
 
+  
   Future<void> _ensureProfileRow({required AppUser user}) async {
     final now = DateTime.now().toUtc().toIso8601String();
+    
     final payload = <String, dynamic>{
       'id': user.id,
       if (!_isPendingThixId(user.thixId)) 'thix_id': user.thixId,
       if (user.thixChat.trim().isNotEmpty) 'thix_chat': user.thixChat,
       'display_name': user.displayName,
-      if (user.bio != null && user.bio.isNotEmpty) 'bio': user.bio,
-      if (user.profession != null) 'profession': user.profession,
-      if (user.occupation != null) 'occupation': user.occupation,
-      if (user.photoUrl != null) 'avatar_url': user.photoUrl,
-      if (user.countryOrOrigin != null) 'country_or_origin': user.countryOrOrigin,
-      if (user.contactPhone != null) 'contact_phone': user.contactPhone,
-      if (user.maritalStatus != null) 'marital_status': user.maritalStatus,
-      if (user.gender != null) 'gender': user.gender,
-      if (user.dateOfBirth != null) 'date_of_birth': user.dateOfBirth,
-      if (user.placeOfBirth != null) 'place_of_birth': user.placeOfBirth,
-      if (user.nationality != null) 'nationality': user.nationality,
-      if (user.address != null) 'address': user.address,
-      if (user.fatherName != null) 'father_name': user.fatherName,
-      if (user.motherName != null) 'mother_name': user.motherName,
-      if (user.emergencyContactName != null) 'emergency_contact_name': user.emergencyContactName,
-      if (user.emergencyContactPhone != null) 'emergency_contact_phone': user.emergencyContactPhone,
-      if (user.emergencyContactRelation != null) 'emergency_contact_relation': user.emergencyContactRelation,
+      
+    
+      if (user.bio?.isNotEmpty == true) 'bio': user.bio,
+      if (user.profession?.isNotEmpty == true) 'profession': user.profession,
+      if (user.occupation?.isNotEmpty == true) 'occupation': user.occupation,
+      if (user.photoUrl?.isNotEmpty == true) 'avatar_url': user.photoUrl,
+      if (user.countryOrOrigin?.isNotEmpty == true) 'country_or_origin': user.countryOrOrigin,
+      if (user.contactPhone?.isNotEmpty == true) 'contact_phone': user.contactPhone,
+      if (user.maritalStatus?.isNotEmpty == true) 'marital_status': user.maritalStatus,
+      if (user.gender?.isNotEmpty == true) 'gender': user.gender,
+      if (user.dateOfBirth?.isNotEmpty == true) 'date_of_birth': user.dateOfBirth,
+      if (user.placeOfBirth?.isNotEmpty == true) 'place_of_birth': user.placeOfBirth,
+      if (user.nationality?.isNotEmpty == true) 'nationality': user.nationality,
+      if (user.address?.isNotEmpty == true) 'address': user.address,
+      if (user.fatherName?.isNotEmpty == true) 'father_name': user.fatherName,
+      if (user.motherName?.isNotEmpty == true) 'mother_name': user.motherName,
+      if (user.emergencyContactName?.isNotEmpty == true) 'emergency_contact_name': user.emergencyContactName,
+      if (user.emergencyContactPhone?.isNotEmpty == true) 'emergency_contact_phone': user.emergencyContactPhone,
+      if (user.emergencyContactRelation?.isNotEmpty == true) 'emergency_contact_relation': user.emergencyContactRelation,
+      
       if (user.languages.isNotEmpty) 'languages': user.languages,
+      
       'registration_status': user.registrationStatus ?? 'draft_step2',
       'created_at': now,
       'updated_at': now,
