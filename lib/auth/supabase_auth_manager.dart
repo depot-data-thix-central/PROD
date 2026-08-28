@@ -32,7 +32,6 @@ class SupabaseAuthManager implements AuthManager {
   @override
   Future<void> init() async {
     await _sub?.cancel();
-
     _sub = _client.auth.onAuthStateChange.listen((state) async {
       try {
         final user = state.session?.user;
@@ -79,7 +78,8 @@ class SupabaseAuthManager implements AuthManager {
         v == 'THIX-PENDING' ||
         v == 'THIX-000000' ||
         v.startsWith('THIX-PENDING-') ||
-        v.startsWith('THIX-CD-FALLBACK');
+        v.startsWith('THIX-CD-FALLBACK') ||
+        v.startsWith('THIX-0');
   }
 
   void _bindProfileSync(String uid) {
@@ -146,7 +146,7 @@ class SupabaseAuthManager implements AuthManager {
   }
 
   // ==========================================================================
-  // HYDRATATION
+  // HYDRATATION — PAS de thix_chat temporaire (NULL = géré par l'index partiel)
   // ==========================================================================
   Future<AppUser> _hydrateUser(User user) async {
     final uid = user.id;
@@ -170,13 +170,11 @@ class SupabaseAuthManager implements AuthManager {
         return const <String>[];
       }
 
-      // 💡 ASTUCE REPRISE DE L'ANCIENNE VERSION : Pseudo temporaire unique pour éviter l'erreur PostgreSQL
-      final tempThixChat = '@user_${uid.substring(0, 5).toLowerCase()}${DateTime.now().millisecondsSinceEpoch % 1000}';
-
+      // ✅ thix_chat = '' (sera NULL en DB, l'index partiel gère)
       final base = AppUser(
         id: uid,
         thixId: 'THIX-PENDING',
-        thixChat: tempThixChat, // ✅ Pseudo temporaire
+        thixChat: '',
         thixScore: null,
         email: email,
         phone: user.phone,
@@ -222,7 +220,6 @@ class SupabaseAuthManager implements AuthManager {
 
     var appUser = _appUserFromProfileRow(uid: uid, email: email, row: row, phone: user.phone);
 
-    // Remplacement PENDING via RPC SERVEUR
     if (_isPendingThixId(appUser.thixId)) {
       try {
         final realId = await _client.rpc('ensure_thix_id', params: {'p_user_id': uid});
@@ -319,17 +316,14 @@ class SupabaseAuthManager implements AuthManager {
     return null;
   }
 
-  // ✅ UPSERT ROBUSTE : On n'insère que les champs non nulls pour éviter les crashs
   Future<void> _ensureProfileRow({required AppUser user}) async {
     final now = DateTime.now().toUtc().toIso8601String();
-    
     final payload = <String, dynamic>{
       'id': user.id,
       if (!_isPendingThixId(user.thixId)) 'thix_id': user.thixId,
       if (user.thixChat.trim().isNotEmpty) 'thix_chat': user.thixChat,
       'display_name': user.displayName,
-      
-      if (user.bio != null) 'bio': user.bio,
+      if (user.bio != null && user.bio.isNotEmpty) 'bio': user.bio,
       if (user.profession != null) 'profession': user.profession,
       if (user.occupation != null) 'occupation': user.occupation,
       if (user.photoUrl != null) 'avatar_url': user.photoUrl,
@@ -347,7 +341,6 @@ class SupabaseAuthManager implements AuthManager {
       if (user.emergencyContactPhone != null) 'emergency_contact_phone': user.emergencyContactPhone,
       if (user.emergencyContactRelation != null) 'emergency_contact_relation': user.emergencyContactRelation,
       if (user.languages.isNotEmpty) 'languages': user.languages,
-      
       'registration_status': user.registrationStatus ?? 'draft_step2',
       'created_at': now,
       'updated_at': now,
@@ -401,6 +394,9 @@ class SupabaseAuthManager implements AuthManager {
     }
   }
 
+  // ==========================================================================
+  // ✅ INSCRIPTION : TOUJOURS créer le profil en DB, même si email non confirmé
+  // ==========================================================================
   @override
   Future<AppUser> registerWithEmail({
     required String email,
@@ -426,92 +422,41 @@ class SupabaseAuthManager implements AuthManager {
       final res = await _client.auth.signUp(email: normalizedEmail, password: password, data: userMeta);
       final session = res.session;
       final user = res.user;
-      
+
       if (user == null) {
         throw AuthException('Erreur lors de l\'inscription.');
       }
 
-      // Si email non confirmé, on s'arrête ici sans créer de profil en BDD (évite les erreurs UI)
-            if (session == null || user.emailConfirmedAt == null) {
-        final tempUser = AppUser(
-          id: user.id,
-          thixId: 'THIX-PENDING',
-          thixChat: '',
-          thixScore: null, 
-          email: normalizedEmail,
-          phone: user.phone, 
-          photoUrl: null, 
-          displayName: userMeta['display_name'] as String,
-          accountType: accountType,
-          
-          // ✅ ADDING ALL LIKELY REQUIRED PARAMETERS AS NULL/EMPTY TO SATISFY COMPILER
-          bio: null,
-          countryOrOrigin: null,
-          contactPhone: null,
-          maritalStatus: null,
-          gender: null,
-          occupation: null,
-          profession: null,
-          dateOfBirth: null,
-          placeOfBirth: null,
-          nationality: null,
-          address: null,
-          fatherName: null,
-          motherName: null,
-          emergencyContactName: null,
-          emergencyContactPhone: null,
-          emergencyContactRelation: null,
-          registrationStatus: null,
-          education: const [],
-          experience: const [],
-          skills: const [],
-          enrollments: const [],
-          languages: const [],
-          biometricsEnabled: true,
-          twoFaEnabled: false,
-          // =========================================================================
-
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        );
-        _currentUser.value = tempUser;
-        return tempUser;
-      }
-
-
+      // ✅ TOUJOURS hydrater (crée le profil en DB si inexistant)
       final appUser = await _hydrateUser(user);
       _currentUser.value = appUser;
       _bindProfileSync(user.id);
       return appUser;
-      
+
     } on sup.AuthException catch (e) {
       final msg = e.message.toLowerCase();
 
+      // ✅ COMPTE EXISTANT : reconnexion automatique
       if (msg.contains('already registered') || msg.contains('already exists') || msg.contains('déjà')) {
         try {
           final res = await _client.auth.signInWithPassword(email: normalizedEmail, password: password);
           final user = res.user;
           if (user != null) {
-            if (user.emailConfirmedAt != null) {
-              final appUser = await _hydrateUser(user);
-              _currentUser.value = appUser;
-              _bindProfileSync(user.id);
-              return appUser;
-            }
-            try {
-              await _client.auth.resend(type: OtpType.signup, email: normalizedEmail);
-            } catch (_) {}
-            throw AuthException('Un compte existe déjà. Un nouveau code vient d\'être envoyé à votre email.');
+            final appUser = await _hydrateUser(user);
+            _currentUser.value = appUser;
+            _bindProfileSync(user.id);
+            return appUser;
           }
         } on sup.AuthException catch (loginErr) {
           final lm = loginErr.message.toLowerCase();
-          if (lm.contains('not confirmed') || lm.contains('confirm')) {
-            try {
-              await _client.auth.resend(type: OtpType.signup, email: normalizedEmail);
-            } catch (_) {}
-            throw AuthException('Un compte existe déjà. Un nouveau code vient d\'être envoyé à votre email.');
+          if (lm.contains('invalid login') || lm.contains('invalid credentials')) {
+            throw AuthException('Un compte existe déjà avec cet email. Mot de passe incorrect.');
           }
-          throw AuthException('Un compte existe déjà avec cet email. Utilisez « Se connecter » ou réinitialisez votre mot de passe.');
+          // Compte existe mais email non confirmé : renvoyer OTP
+          try {
+            await _client.auth.resend(type: OtpType.signup, email: normalizedEmail);
+          } catch (_) {}
+          throw AuthException('Un compte existe déjà. Un nouveau code vient d\'être envoyé à votre email.');
         }
       }
       throw AuthException(e.message);
@@ -540,29 +485,20 @@ class SupabaseAuthManager implements AuthManager {
     );
   }
 
+  // ==========================================================================
+  // ✅ VERIFY OTP — SANS bypass, vérification cryptographique systématique
+  // ==========================================================================
   @override
   Future<void> verifyOTP({required String email, required String token}) async {
     try {
-      final session = _client.auth.currentSession;
-      final user = session?.user;
-      
-      bool needsVerification = true;
-      
-      // 💡 ASTUCE REPRISE DE L'ANCIENNE VERSION : Empêche "Code expiré" si on est déjà connecté
-      if (user != null && user.email == email.trim().toLowerCase()) {
-        needsVerification = false;
-      }
+      final res = await _client.auth.verifyOTP(
+        email: email.trim().toLowerCase(),
+        token: token.trim(),
+        type: OtpType.signup,
+      );
 
-      if (needsVerification) {
-        final res = await _client.auth.verifyOTP(
-          email: email.trim().toLowerCase(),
-          token: token.trim(),
-          type: OtpType.signup,
-        );
-
-        if (res.session == null && res.user == null) {
-          throw AuthException('Le code saisi est invalide ou a expiré. Demandez un nouveau code.');
-        }
+      if (res.session == null && res.user == null) {
+        throw AuthException('Le code saisi est invalide ou a expiré. Demandez un nouveau code.');
       }
 
       await refreshCurrentUser();
