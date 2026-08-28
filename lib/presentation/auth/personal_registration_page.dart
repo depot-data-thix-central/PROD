@@ -295,7 +295,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     );
   }
 
-  String _userFacingError(Object e) {
+    String _userFacingError(Object e) {
     debugPrint('[PersonalRegistration] $e');
     final msg = e.toString().toLowerCase();
 
@@ -326,8 +326,11 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     if (msg.contains('network') || msg.contains('timeout') || msg.contains('unavailable')) {
       return 'Erreur de connexion. Vérifiez votre réseau.';
     }
-    return 'Une erreur est survenue. Réessayez dans quelques instants.';
+    
+    // 🔴 MODIFICATION ICI : On force l'affichage de l'erreur réelle renvoyée par Supabase
+    return 'DÉBOGAGE : ${e.toString()}'; 
   }
+
 
   bool _isValidEmail(String email) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$').hasMatch(email);
 
