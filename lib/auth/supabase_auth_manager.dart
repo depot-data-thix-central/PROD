@@ -9,7 +9,8 @@ import 'package:thix_id/models/thix_profile.dart';
 import 'package:thix_id/services/profile_service.dart';
 import 'package:thix_id/services/push_notification_service.dart';
 import 'package:thix_id/services/supabase_safe_write.dart';
-import 'package:thix_id/services/thix_id_service.dart';
+// ⭐ SUPPRIMÉ : import 'package:thix_id/services/thix_id_service.dart';
+// La génération de THIX ID est maintenant UNIQUEMENT côté serveur
 import 'package:thix_id/supabase/supabase_config.dart';
 
 class SupabaseAuthManager implements AuthManager {
@@ -176,12 +177,14 @@ class SupabaseAuthManager implements AuthManager {
         return const <String>[];
       }
 
-      final realThixId = ThixIdService.generate();
+      // ⭐ CORRECTION CRITIQUE : Ne PAS générer de THIX ID côté client
+      // Le serveur générera l'ID officiel via finalize_registration()
+      final pendingThixId = 'THIX-PENDING';
       final tempThixChat = '@user_${uid.substring(0, 5).toLowerCase()}${DateTime.now().millisecondsSinceEpoch % 1000}';
 
       final base = AppUser(
         id: uid,
-        thixId: realThixId,
+        thixId: pendingThixId, // ⭐ Placeholder, sera remplacé par le serveur
         thixChat: tempThixChat,
         thixScore: null,
         email: email,
@@ -223,19 +226,11 @@ class SupabaseAuthManager implements AuthManager {
 
     var appUser = _appUserFromProfileRow(uid: uid, email: email, row: row, phone: user.phone);
 
+    // ⭐ CORRECTION CRITIQUE : Ne PAS remplacer PENDING côté client
+    // Le serveur s'en chargera via finalize_registration()
     if (_isPendingThixId(appUser.thixId)) {
-      try {
-        final realId = ThixIdService.generate();
-        await _client.from('profiles').update({
-          'thix_id': realId,
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        }).eq('id', uid);
-
-        appUser = appUser.copyWith(thixId: realId, updatedAt: DateTime.now());
-        debugPrint('SupabaseAuthManager: PENDING remplacé par $realId pour uid=$uid');
-      } catch (e) {
-        debugPrint('SupabaseAuthManager: échec remplacement PENDING uid=$uid err=$e');
-      }
+      debugPrint('SupabaseAuthManager: THIX ID en attente de génération serveur pour uid=$uid');
+      // Ne rien faire — le serveur générera l'ID officiel lors de finalize_registration()
     }
 
     return appUser;
@@ -641,9 +636,9 @@ class SupabaseAuthManager implements AuthManager {
 
     // ⭐ FILTRAGE : Supprimer les colonnes sensibles avant l'upsert
     final safeUser = user.copyWith(
-      registrationStatus: current.registrationStatus, // Ne pas permettre le changement
-      thixId: current.thixId, // Ne pas permettre le changement
-      thixScore: current.thixScore, // Ne pas permettre le changement
+      registrationStatus: current.registrationStatus,
+      thixId: current.thixId,
+      thixScore: current.thixScore,
     );
 
     try {
