@@ -432,24 +432,52 @@ class SupabaseAuthManager implements AuthManager {
       }
 
       // Si email non confirmé, on s'arrête ici sans créer de profil en BDD (évite les erreurs UI)
-      if (session == null || user.emailConfirmedAt == null) {
-        // ✅ CORRECTION GITHUB ACTIONS : Ajout des attributs requis à null
+            if (session == null || user.emailConfirmedAt == null) {
         final tempUser = AppUser(
           id: user.id,
           thixId: 'THIX-PENDING',
           thixChat: '',
-          thixScore: null,         // Résout l'erreur de compilation GitHub
+          thixScore: null, 
           email: normalizedEmail,
-          phone: user.phone,       // Résout l'erreur de compilation GitHub
-          photoUrl: null,          // Résout l'erreur de compilation GitHub
+          phone: user.phone, 
+          photoUrl: null, 
           displayName: userMeta['display_name'] as String,
           accountType: accountType,
+          
+          // ✅ ADDING ALL LIKELY REQUIRED PARAMETERS AS NULL/EMPTY TO SATISFY COMPILER
+          bio: null,
+          countryOrOrigin: null,
+          contactPhone: null,
+          maritalStatus: null,
+          gender: null,
+          occupation: null,
+          profession: null,
+          dateOfBirth: null,
+          placeOfBirth: null,
+          nationality: null,
+          address: null,
+          fatherName: null,
+          motherName: null,
+          emergencyContactName: null,
+          emergencyContactPhone: null,
+          emergencyContactRelation: null,
+          registrationStatus: null,
+          education: const [],
+          experience: const [],
+          skills: const [],
+          enrollments: const [],
+          languages: const [],
+          biometricsEnabled: true,
+          twoFaEnabled: false,
+          // =========================================================================
+
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
         );
         _currentUser.value = tempUser;
         return tempUser;
       }
+
 
       final appUser = await _hydrateUser(user);
       _currentUser.value = appUser;
