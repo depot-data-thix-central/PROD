@@ -11,6 +11,14 @@ import 'package:thix_id/services/push_notification_service.dart';
 import 'package:thix_id/services/supabase_safe_write.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
 
+/// Implémentation Supabase de AuthManager.
+/// ✅ CORRECTIONS :
+///  - signUp sans session (Confirm email ON) → NE connecte PAS, NE hydrate PAS,
+///    lève AuthException('otp_sent') pour que l'UI affiche le champ OTP.
+///  - signUp avec session + email confirmé immédiat (Confirm email OFF) →
+///    signOut + erreur de configuration (l'OTP reste obligatoire).
+///  - verifyOTP : aucun bypass, hydratation SEULEMENT après vérification réussie.
+///  - THIX ID officiel jamais généré avant confirmation de l'email.
 class SupabaseAuthManager implements AuthManager {
   final SupabaseClient _client;
   final ProfileService _profiles;
@@ -29,13 +37,19 @@ class SupabaseAuthManager implements AuthManager {
   @override
   AppUser? get currentUser => _currentUser.value;
 
+  // ==========================================================================
+  // INITIALISATION ET GESTION DE SESSION
+  // ==========================================================================
+
   @override
   Future<void> init() async {
     await _sub?.cancel();
+
     _sub = _client.auth.onAuthStateChange.listen((state) async {
       try {
         final user = state.session?.user;
         if (user == null) {
+          // ✅ Pas de session (signUp en attente d'OTP, signOut, etc.)
           await _cleanupSession();
           return;
         }
@@ -71,6 +85,10 @@ class SupabaseAuthManager implements AuthManager {
     unawaited(PushNotificationService.instance.onSignedOut());
   }
 
+  // ==========================================================================
+  // SYNCHRONISATION PROFIL
+  // ==========================================================================
+
   bool _isPendingThixId(String? id) {
     if (id == null) return true;
     final v = id.trim().toUpperCase();
@@ -84,6 +102,7 @@ class SupabaseAuthManager implements AuthManager {
 
   void _bindProfileSync(String uid) {
     unawaited(_profileSub?.cancel());
+
     _profileSub = _profiles.streamMyProfile(uid).listen(
       (p) {
         if (p == null) return;
@@ -146,8 +165,9 @@ class SupabaseAuthManager implements AuthManager {
   }
 
   // ==========================================================================
-  // HYDRATATION — PAS de thix_chat temporaire (NULL = géré par l'index partiel)
+  // HYDRATATION — THIX-PENDING tant que non confirmé / non finalisé
   // ==========================================================================
+
   Future<AppUser> _hydrateUser(User user) async {
     final uid = user.id;
     final email = (user.email ?? '').toLowerCase();
@@ -170,7 +190,6 @@ class SupabaseAuthManager implements AuthManager {
         return const <String>[];
       }
 
-      // ✅ thix_chat = '' (sera NULL en DB, l'index partiel gère)
       final base = AppUser(
         id: uid,
         thixId: 'THIX-PENDING',
@@ -220,7 +239,8 @@ class SupabaseAuthManager implements AuthManager {
 
     var appUser = _appUserFromProfileRow(uid: uid, email: email, row: row, phone: user.phone);
 
-    if (_isPendingThixId(appUser.thixId)) {
+    // ✅ Le vrai THIX ID n'est résolu QUE si l'email est confirmé côté serveur.
+    if (_isPendingThixId(appUser.thixId) && user.emailConfirmedAt != null) {
       try {
         final realId = await _client.rpc('ensure_thix_id', params: {'p_user_id': uid});
         if (realId is String && realId.trim().isNotEmpty && !_isPendingThixId(realId)) {
@@ -263,7 +283,7 @@ class SupabaseAuthManager implements AuthManager {
     List<String> strList(Object? v) => (v is List) ? v.whereType<String>().toList(growable: false) : const <String>[];
     List<Map<String, dynamic>> mapList(Object? v) => (v is List)
         ? v.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList(growable: false)
-        : const <Map<String, dynamic>>[];
+        : const <String, dynamic>[];
 
     final rawThixId = (row['thix_id'] ?? row['thixId'] ?? row['thix_uid'] ?? '').toString().trim();
 
@@ -316,17 +336,14 @@ class SupabaseAuthManager implements AuthManager {
     return null;
   }
 
-  
   Future<void> _ensureProfileRow({required AppUser user}) async {
     final now = DateTime.now().toUtc().toIso8601String();
-    
+
     final payload = <String, dynamic>{
       'id': user.id,
       if (!_isPendingThixId(user.thixId)) 'thix_id': user.thixId,
       if (user.thixChat.trim().isNotEmpty) 'thix_chat': user.thixChat,
       'display_name': user.displayName,
-      
-    
       if (user.bio?.isNotEmpty == true) 'bio': user.bio,
       if (user.profession?.isNotEmpty == true) 'profession': user.profession,
       if (user.occupation?.isNotEmpty == true) 'occupation': user.occupation,
@@ -344,9 +361,7 @@ class SupabaseAuthManager implements AuthManager {
       if (user.emergencyContactName?.isNotEmpty == true) 'emergency_contact_name': user.emergencyContactName,
       if (user.emergencyContactPhone?.isNotEmpty == true) 'emergency_contact_phone': user.emergencyContactPhone,
       if (user.emergencyContactRelation?.isNotEmpty == true) 'emergency_contact_relation': user.emergencyContactRelation,
-      
       if (user.languages.isNotEmpty) 'languages': user.languages,
-      
       'registration_status': user.registrationStatus ?? 'draft_step2',
       'created_at': now,
       'updated_at': now,
@@ -372,6 +387,10 @@ class SupabaseAuthManager implements AuthManager {
 
   bool _isValidEmail(String email) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
 
+  // ==========================================================================
+  // CONNEXION
+  // ==========================================================================
+
   @override
   Future<AppUser> signInWithEmailOrThixId({
     required String identifier,
@@ -388,6 +407,16 @@ class SupabaseAuthManager implements AuthManager {
       final res = await _client.auth.signInWithPassword(email: id.toLowerCase(), password: password);
       final user = res.user;
       if (user == null) throw AuthException('Connexion échouée.');
+
+      // ✅ Compte non confirmé → bloquer la connexion et renvoyer un code
+      if (user.emailConfirmedAt == null) {
+        try {
+          await _client.auth.resend(type: OtpType.signup, email: id.toLowerCase());
+        } catch (_) {}
+        await _client.auth.signOut();
+        throw AuthException('Email non vérifié. Un code vient d\'être envoyé à votre adresse.');
+      }
+
       final hydrated = await _hydrateUser(user);
       _currentUser.value = hydrated;
       _bindProfileSync(user.id);
@@ -395,14 +424,16 @@ class SupabaseAuthManager implements AuthManager {
     } on sup.AuthException catch (e) {
       throw AuthException(e.message);
     } catch (e) {
+      if (e is AuthException) rethrow;
       debugPrint('SupabaseAuthManager: signIn crash err=$e');
       throw AuthException('Erreur technique. Veuillez réessayer.');
     }
   }
 
   // ==========================================================================
-  // ✅ INSCRIPTION : TOUJOURS créer le profil en DB, même si email non confirmé
+  // ✅ INSCRIPTION CORRIGÉE
   // ==========================================================================
+
   @override
   Future<AppUser> registerWithEmail({
     required String email,
@@ -433,32 +464,59 @@ class SupabaseAuthManager implements AuthManager {
         throw AuthException('Erreur lors de l\'inscription.');
       }
 
-      // ✅ TOUJOURS hydrater (crée le profil en DB si inexistant)
-      final appUser = await _hydrateUser(user);
-      _currentUser.value = appUser;
-      _bindProfileSync(user.id);
-      return appUser;
+      // ✅ CAS NOMINAL (Confirm email ON) : Supabase a envoyé le code 6 chiffres,
+      // aucune session n'est créée. On NE connecte PAS, on NE hydrate PAS.
+      // Le profil sera créé après verifyOTP réussi.
+      if (session == null) {
+        throw AuthException('otp_sent');
+      }
 
+      // ✅ MISCONFIGURATION (Confirm email OFF) : session + email confirmé
+      // immédiats → aucun email OTP parti. On refuse de rester connecté.
+      if (user.emailConfirmedAt != null) {
+        try {
+          await _client.auth.signOut();
+        } catch (_) {}
+        throw AuthException(
+            'Configuration serveur : la confirmation email est désactivée. Activez "Confirm email" dans Supabase (Auth → Providers → Email).');
+      }
+
+      // Cas rare : session ouverte mais email non confirmé → pas de connexion persistante.
+      try {
+        await _client.auth.signOut();
+      } catch (_) {}
+      throw AuthException('otp_sent');
     } on sup.AuthException catch (e) {
       final msg = e.message.toLowerCase();
 
-      // ✅ COMPTE EXISTANT : reconnexion automatique
+      // Compte déjà existant
       if (msg.contains('already registered') || msg.contains('already exists') || msg.contains('déjà')) {
         try {
           final res = await _client.auth.signInWithPassword(email: normalizedEmail, password: password);
           final user = res.user;
+
+          // Compte existant mais JAMAIS vérifié → renvoyer un OTP, pas de connexion
+          if (user != null && user.emailConfirmedAt == null) {
+            try {
+              await _client.auth.resend(type: OtpType.signup, email: normalizedEmail);
+            } catch (_) {}
+            await _client.auth.signOut();
+            throw AuthException('Un compte existe déjà. Un nouveau code vient d\'être envoyé à votre email.');
+          }
+
           if (user != null) {
             final appUser = await _hydrateUser(user);
             _currentUser.value = appUser;
             _bindProfileSync(user.id);
             return appUser;
           }
+          throw AuthException('Un compte existe déjà avec cet email.');
         } on sup.AuthException catch (loginErr) {
           final lm = loginErr.message.toLowerCase();
           if (lm.contains('invalid login') || lm.contains('invalid credentials')) {
             throw AuthException('Un compte existe déjà avec cet email. Mot de passe incorrect.');
           }
-          // Compte existe mais email non confirmé : renvoyer OTP
+          // "Email not confirmed" → renvoi du code
           try {
             await _client.auth.resend(type: OtpType.signup, email: normalizedEmail);
           } catch (_) {}
@@ -492,8 +550,9 @@ class SupabaseAuthManager implements AuthManager {
   }
 
   // ==========================================================================
-  // ✅ VERIFY OTP — SANS bypass, vérification cryptographique systématique
+  // ✅ VERIFY OTP — aucun bypass, connexion SEULEMENT après succès
   // ==========================================================================
+
   @override
   Future<void> verifyOTP({required String email, required String token}) async {
     try {
@@ -503,11 +562,15 @@ class SupabaseAuthManager implements AuthManager {
         type: OtpType.signup,
       );
 
-      if (res.session == null && res.user == null) {
+      if (res.session == null || res.user == null) {
         throw AuthException('Le code saisi est invalide ou a expiré. Demandez un nouveau code.');
       }
 
-      await refreshCurrentUser();
+      // ✅ Vérification réussie : maintenant on hydrate et on connecte.
+      final appUser = await _hydrateUser(res.user!);
+      _currentUser.value = appUser;
+      _bindProfileSync(res.user!.id);
+      unawaited(PushNotificationService.instance.onSignedIn(userId: res.user!.id));
     } on AuthException {
       rethrow;
     } on sup.AuthException catch (e) {
@@ -576,7 +639,9 @@ class SupabaseAuthManager implements AuthManager {
   Future<AppUser> refreshCurrentUser() async {
     final session = _client.auth.currentSession;
     if (session == null) {
-      throw AuthException("La vérification a réussi mais aucune session n'a été créée.");
+      final current = _currentUser.value;
+      if (current != null) return current;
+      throw AuthException('Aucune session active.');
     }
     final hydrated = await _hydrateUser(session.user);
     _currentUser.value = hydrated;
@@ -618,8 +683,8 @@ class SupabaseAuthManager implements AuthManager {
   }
 
   @override
-  Future<void> deleteAccount() async {
-    throw AuthException('Suppression du compte indisponible (nécessite une fonction serveur sécurisée).');
+  Future<void> deleteAccount() {
+    throw AuthException('Suppression de compte indisponible (nécessite une fonction serveur sécurisée).');
   }
 
   @override
