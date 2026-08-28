@@ -61,6 +61,30 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ⭐ NOUVEAU
+  Future<void> markEmailVerified() async {
+    await _auth.markEmailVerified();
+    notifyListeners();
+  }
+
+  // ⭐ NOUVEAU
+  Future<String> generateQrToken() async {
+    return await _auth.generateQrToken();
+  }
+
+  // ⭐ NOUVEAU
+  Future<Map<String, dynamic>> finalizeRegistration({required String desiredChat, required String countryCode}) async {
+    final result = await _auth.finalizeRegistration(desiredChat: desiredChat, countryCode: countryCode);
+    notifyListeners();
+    return result;
+  }
+
+  // ⭐ NOUVEAU
+  Future<void> consumeQrToken({required String token}) async {
+    await _auth.consumeQrToken(token: token);
+    notifyListeners();
+  }
+
   Future<AppUser> refreshCurrentUser() async {
     final user = await _auth.refreshCurrentUser();
     notifyListeners();
