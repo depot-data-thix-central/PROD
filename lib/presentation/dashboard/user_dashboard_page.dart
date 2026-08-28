@@ -63,9 +63,9 @@ class UserDashboardCtrl extends ChangeNotifier {
   Future<void> init(AppUser authUser) async {
     unawaited(userService
         .logSecurityEvent(
-          uid: authUser.id,
-          type: 'dashboard_open',
-          label: 'Ouverture dashboard',
+          'dashboard_open', // CORRECTION HERE: Passed as positional argument 1
+          'Ouverture dashboard', // CORRECTION HERE: Passed as positional argument 2
+          metadata: {'uid': authUser.id}, // Used named argument for optional data
         )
         .catchError((_) {}));
     unawaited(
