@@ -1,4 +1,3 @@
-// lib/presentation/thix_sos/pages/chambre_crise_secours_page.dart
 import 'dart:async';
 
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
@@ -9,6 +8,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/models/chat/call_status.dart';
+import 'package:thix_id/models/chat/chat_conversation.dart';
+import 'package:thix_id/nav.dart';
 import 'package:thix_id/presentation/chat/widgets/image_viewer.dart';
 import 'package:thix_id/services/chat/call_signaling_service.dart';
 
@@ -17,7 +18,6 @@ import '../providers/sos_providers.dart';
 import '../services/sos_crisis_media_service.dart';
 import '../services/sos_remote_capture_service.dart';
 
-/// SALLE DE PILOTAGE SECOURS — niveau entreprise.
 class ChambreCriseSecoursPage extends ConsumerStatefulWidget {
   const ChambreCriseSecoursPage({
     super.key,
@@ -31,6 +31,28 @@ class ChambreCriseSecoursPage extends ConsumerStatefulWidget {
   @override
   ConsumerState<ChambreCriseSecoursPage> createState() =>
       _ChambreCriseSecoursPageState();
+}
+
+class _JournalRow {
+  final String type;
+  final DateTime at;
+  final Map<String, dynamic> payload;
+  _JournalRow({required this.type, required this.at, this.payload = const {}});
+}
+
+class _EvidenceItem {
+  final String type;
+  final String? url;
+  final bool posted;
+  final String? error;
+  final DateTime at;
+  _EvidenceItem({
+    required this.type,
+    this.url,
+    this.posted = false,
+    this.error,
+    required this.at,
+  });
 }
 
 class _ChambreCriseSecoursPageState
@@ -71,17 +93,77 @@ class _ChambreCriseSecoursPageState
         setState(() => _elapsed = d);
       }
     });
-    _subscribeEvents();
-    _connect();
+    _bootstrap();
   }
 
-  @override
-  void dispose() {
-    _clock?.cancel();
-    _uidsSub?.cancel();
-    _eventsCh?.unsubscribe();
-    _media.leave();
-    super.dispose();
+  Future<void> _bootstrap() async {
+    await _loadHistory();
+    _subscribeEvents();
+    await _connect();
+  }
+
+  Future<void> _loadHistory() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('thix_sos_events')
+          .select()
+          .eq('incident_id', widget.incidentId)
+          .order('created_at', ascending: false)
+          .limit(200);
+      for (final rec in (rows as List).reversed) {
+        _ingest(Map<String, dynamic>.from(rec as Map), fromHistory: true);
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('history events: $e');
+    }
+    try {
+      final evs = await Supabase.instance.client
+          .from('thix_sos_evidence')
+          .select()
+          .eq('incident_id', widget.incidentId)
+          .order('created_at', ascending: false);
+      for (final rec in evs as List) {
+        final m = Map<String, dynamic>.from(rec as Map);
+        final type = 'EVIDENCE_${(m['type'] ?? '').toString().toUpperCase()}';
+        if (_evidence.any((e) => e.url != null && e.url == m['url'])) continue;
+        _evidence.add(_EvidenceItem(
+          type: type,
+          url: m['url']?.toString(),
+          posted: m['posted_to_chat'] == true,
+          at: DateTime.tryParse('${m['created_at']}') ?? DateTime.now(),
+        ));
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('history evidence: $e');
+    }
+  }
+
+  void _ingest(Map<String, dynamic> rec, {bool fromHistory = false}) {
+    final type = (rec['type'] ?? rec['event_type'] ?? '').toString();
+    if (type.isEmpty) return;
+    final meta = Map<String, dynamic>.from((rec['payload'] as Map?) ?? {});
+    final at = DateTime.tryParse('${rec['created_at']}') ?? DateTime.now();
+    _journal.insert(0, _JournalRow(type: type, at: at, payload: meta));
+    if (type.startsWith('EVIDENCE_')) {
+      _evidence.insert(
+        0,
+        _EvidenceItem(
+          type: type,
+          url: meta['url']?.toString(),
+          posted: meta['posted_to_chat'] == true,
+          error: meta['error']?.toString(),
+          at: at,
+        ),
+      );
+    }
+    if (!fromHistory && mounted) {
+      if (type == 'EVIDENCE_PHOTO') _toast('📥 Photo victime reçue');
+      if (type == 'EVIDENCE_VIDEO') _toast('📥 Vidéo victime reçue');
+      if (type == 'EVIDENCE_AUDIO') _toast('📥 Audio victime reçu');
+      if (type == 'EVIDENCE_FAILED') _toast('⚠️ Échec capture victime');
+    }
   }
 
   void _subscribeEvents() {
@@ -98,30 +180,7 @@ class _ChambreCriseSecoursPageState
           ),
           callback: (payload) {
             if (!mounted) return;
-            final rec = payload.newRecord;
-            final type = (rec['type'] ?? '').toString();
-            final meta =
-                Map<String, dynamic>.from((rec['payload'] as Map?) ?? {});
-            setState(() {
-              _journal.insert(0, _JournalRow(type: type, at: DateTime.now()));
-              if (type.startsWith('EVIDENCE_')) {
-                _evidence.insert(
-                  0,
-                  _EvidenceItem(
-                    type: type,
-                    url: meta['url']?.toString(),
-                    posted: meta['posted_to_chat'] == true,
-                    error: meta['error']?.toString(),
-                    at: DateTime.now(),
-                  ),
-                );
-              }
-            });
-            if (type == 'EVIDENCE_PHOTO') _toast('📥 Photo victime reçue');
-            if (type == 'EVIDENCE_VIDEO') _toast('📥 Vidéo victime reçue');
-            if (type == 'EVIDENCE_AUDIO') _toast('📥 Audio victime reçu');
-            if (type == 'EVIDENCE_FAILED')
-              _toast('⚠️ Échec capture côté victime');
+            setState(() => _ingest(Map<String, dynamic>.from(payload.newRecord)));
           },
         )
         .subscribe();
@@ -136,7 +195,7 @@ class _ChambreCriseSecoursPageState
       try {
         await _media.joinAsResponder(widget.incidentId);
       } catch (e) {
-        debugPrint('Live Agora optionnel indisponible: $e');
+        debugPrint('Live Agora optionnel: $e');
       }
       final incident = await ref
           .read(sosServiceProvider)
@@ -164,11 +223,11 @@ class _ChambreCriseSecoursPageState
     if (mounted) setState(() => _busy = false);
   }
 
-  Future<void> _video() async {
+  Future<void> _video(int seconds) async {
     setState(() => _busy = true);
     try {
-      await _remote.requestVideo(widget.incidentId);
-      _toast('🎥 Commande vidéo 30s → téléphone victime');
+      await _remote.requestVideo(widget.incidentId, seconds: seconds);
+      _toast('🎥 Commande vidéo ${seconds}s → téléphone victime');
     } catch (e) {
       _toast('$e');
     }
@@ -185,7 +244,7 @@ class _ChambreCriseSecoursPageState
       } else {
         await _remote.requestAudioStart(widget.incidentId);
         _audioArmed = true;
-        _toast('🎤 Enregistrement audio victime en cours…');
+        _toast('🎤 Audio victime en cours…');
       }
     } catch (e) {
       _toast('$e');
@@ -202,7 +261,7 @@ class _ChambreCriseSecoursPageState
       } else {
         await _remote.requestSurveillanceOn(widget.incidentId);
         _surveillance = true;
-        _toast('🛰️ Surveillance activée : photo toutes les 10 s');
+        _toast('🛰️ Surveillance : photo toutes les 10 s + envoi groupe');
       }
     } catch (e) {
       _toast('$e');
@@ -219,27 +278,62 @@ class _ChambreCriseSecoursPageState
     try {
       await CallSignalingService()
           .startCall(calleeId: victimId, type: CallType.audio);
-      _toast(' Appel audio lancé');
+      _toast('Appel audio lancé');
     } catch (e) {
       _toast('Appel: $e');
     }
   }
 
+  void _openChat(SosIncident? incident) {
+    final id = _conversationId ?? incident?.chatConversationId;
+    if (id == null || id.isEmpty) {
+      _toast('Groupe SOS pas encore créé');
+      return;
+    }
+    final conversation = ChatConversation(
+      id: id,
+      isGroup: true,
+      groupName: 'THIX CHAT ${incident?.publicId ?? ''}',
+      participantIds: const [],
+      updatedAt: DateTime.now(),
+    );
+    Navigator.of(context).maybePop();
+    try {
+      // ignore: use_build_context_synchronously
+    } catch (_) {}
+    // Navigation projet
+    // context.push(AppRoutes.chatDetail(id), extra: conversation);
+    _toast('Ouvrir le groupe $id');
+  }
+
   void _openInstructions() {
     final ctrl = TextEditingController();
+    const presets = [
+      'Restez calme, les secours arrivent',
+      'Parlez-moi, décrivez votre situation',
+      'Montrez la pièce avec la caméra',
+      'Lancez un clip 10 secondes',
+      'Ne raccrochez pas',
+    ];
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF121826),
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('📢 Instruction à la victime',
+            const Text('📢 Instruction réelle → victime + groupe SOS',
                 style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w800,
@@ -248,12 +342,7 @@ class _ChambreCriseSecoursPageState
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: [
-                        'Restez calme, les secours arrivent',
-                        'Parlez-moi, décrivez votre situation',
-                        'Montrez la pièce avec la caméra',
-                        'Ne raccrochez pas'
-                      ]
+              children: presets
                   .map((t) => ActionChip(
                         label: Text(t,
                             style: const TextStyle(
@@ -261,9 +350,8 @@ class _ChambreCriseSecoursPageState
                         backgroundColor: const Color(0xFF1E293B),
                         onPressed: () async {
                           Navigator.pop(ctx);
-                          await _remote
-                              .requestInstruct(widget.incidentId, t);
-                          _toast('📢 Instruction envoyée');
+                          await _remote.requestInstruct(widget.incidentId, t);
+                          _toast('📢 Instruction dans le groupe SOS');
                         },
                       ))
                   .toList(),
@@ -283,16 +371,15 @@ class _ChambreCriseSecoursPageState
             ),
             const SizedBox(height: 12),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: ThixPolicy.danger),
+              style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.danger),
               onPressed: () async {
                 final t = ctrl.text.trim();
                 if (t.isEmpty) return;
                 Navigator.pop(ctx);
                 await _remote.requestInstruct(widget.incidentId, t);
-                _toast('📢 Instruction envoyée');
+                _toast('📢 Instruction dans le groupe SOS');
               },
-              child: const Text('ENVOYER'),
+              child: const Text('ENVOYER AU GROUPE'),
             ),
           ],
         ),
@@ -316,11 +403,69 @@ class _ChambreCriseSecoursPageState
     return '$h:$m:$s';
   }
 
+  String _fmtClock(DateTime at) {
+    final l = at.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '\( {two(l.hour)}: \){two(l.minute)}:${two(l.second)}';
+  }
+
+  String _journalLabel(_JournalRow r) {
+    switch (r.type) {
+      case 'CMD_INSTRUCT':
+        return 'Instruction : ${r.payload['text'] ?? '—'}';
+      case 'CMD_CAPTURE_PHOTO':
+        return 'Commande photo → victime';
+      case 'CMD_CAPTURE_VIDEO':
+        return 'Commande vidéo ${r.payload['seconds'] ?? 10}s → victime';
+      case 'CMD_CAPTURE_CLIP_10':
+        return 'Commande clip 10s';
+      case 'CMD_CAPTURE_AUDIO_START':
+        return 'Micro victime ON';
+      case 'CMD_CAPTURE_AUDIO_STOP':
+        return 'Micro victime OFF';
+      case 'CMD_SURVEILLANCE_ON':
+        return 'Surveillance 10s ON';
+      case 'CMD_SURVEILLANCE_OFF':
+        return 'Surveillance OFF';
+      case 'EVIDENCE_PHOTO':
+        return r.payload['posted_to_chat'] == true
+            ? 'Photo reçue et poussée dans le groupe'
+            : 'Photo reçue';
+      case 'EVIDENCE_VIDEO':
+        return 'Vidéo reçue';
+      case 'EVIDENCE_AUDIO':
+        return 'Audio reçu';
+      case 'EVIDENCE_FAILED':
+        return 'Échec capture : ${r.payload['error'] ?? ''}';
+      case 'RESCUE_JOINED_CRISIS_ROOM':
+        return 'Secours a rejoint la salle';
+      case 'SOS_STARTED':
+        return 'SOS démarré';
+      case 'SOS_CREATED':
+        return 'Incident créé';
+      case 'QUICK_MESSAGE':
+        return 'Victime : ${r.payload['text'] ?? ''}';
+      default:
+        return r.type;
+    }
+  }
+
   String? get _latestPhotoUrl {
     for (final e in _evidence) {
-      if (e.type == 'EVIDENCE_PHOTO' && e.url != null) return e.url;
+      if (e.type == 'EVIDENCE_PHOTO' && e.url != null && e.url!.isNotEmpty) {
+        return e.url;
+      }
     }
     return null;
+  }
+
+  @override
+  void dispose() {
+    _clock?.cancel();
+    _uidsSub?.cancel();
+    _eventsCh?.unsubscribe();
+    _media.leave();
+    super.dispose();
   }
 
   @override
@@ -331,7 +476,6 @@ class _ChambreCriseSecoursPageState
     final channel = _media.channel;
     final remoteUid = _remotes.isEmpty ? null : _remotes.first;
     final hasLive = !_joining &&
-        _error == null &&
         engine != null &&
         channel != null &&
         remoteUid != null;
@@ -345,9 +489,8 @@ class _ChambreCriseSecoursPageState
           title: Column(
             children: [
               Text(
-                incident?.publicId ?? 'CHAMBRE SECOURS',
-                style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w800),
+                incident?.publicId ?? 'CENTRE DE PILOTAGE',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
               ),
               Text(
                 '⏱ ${_fmtDuration(_elapsed)}  •  CERCLE ${incident?.activeCircle ?? 1}',
@@ -356,6 +499,11 @@ class _ChambreCriseSecoursPageState
             ],
           ),
           actions: [
+            IconButton(
+              tooltip: 'Groupe SOS',
+              onPressed: () => _openChat(incident),
+              icon: const Icon(Icons.forum),
+            ),
             IconButton(
               tooltip: _muted ? 'Micro on' : 'Muet',
               onPressed: () async {
@@ -375,8 +523,7 @@ class _ChambreCriseSecoursPageState
                 decoration: BoxDecoration(
                   color: Colors.black,
                   borderRadius: BorderRadius.circular(16),
-                  border:
-                      Border.all(color: Colors.red.withValues(alpha: 0.4)),
+                  border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: Stack(
@@ -401,8 +548,7 @@ class _ChambreCriseSecoursPageState
                     else
                       Center(
                         child: _joining
-                            ? const CircularProgressIndicator(
-                                color: Colors.red)
+                            ? const CircularProgressIndicator(color: Colors.red)
                             : const Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
@@ -410,7 +556,7 @@ class _ChambreCriseSecoursPageState
                                       color: Colors.white24, size: 44),
                                   SizedBox(height: 8),
                                   Text(
-                                    'Activez « Surveillance 10s »\nou attendez la caméra victime…',
+                                    'Pas de live Agora.\nLancez Photo / Clip 10s / Surveillance.',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(color: Colors.white54),
                                   ),
@@ -435,8 +581,8 @@ class _ChambreCriseSecoursPageState
                           hasLive
                               ? '● LIVE'
                               : _latestPhotoUrl != null
-                                  ? '● DERNIÈRE IMAGE'
-                                  : '○ EN ATTENTE',
+                                  ? '● DERNIÈRE PREUVE'
+                                  : '○ HORS LIGNE — COMMANDES ACTIVES',
                           style: const TextStyle(
                               color: Colors.white,
                               fontSize: 10,
@@ -466,11 +612,12 @@ class _ChambreCriseSecoursPageState
                 ),
               ),
             ),
-
             if (incident != null)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Row(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
                     _StatusChip(
                       icon: Icons.location_on,
@@ -481,16 +628,14 @@ class _ChambreCriseSecoursPageState
                       onTap: () async {
                         if (incident.hasLocation) {
                           await launchUrl(Uri.parse(
-                              'https://www.google.com/maps?q=${incident.lastLat},${incident.lastLng}'));
+                              'https://www.google.com/maps?q=\( {incident.lastLat}, \){incident.lastLng}'));
                         }
                       },
                     ),
-                    const SizedBox(width: 8),
                     const _StatusChip(
                         icon: Icons.favorite,
                         label: 'Heartbeat',
                         color: Colors.green),
-                    const SizedBox(width: 8),
                     _StatusChip(
                       icon: Icons.battery_std,
                       label: incident.batteryPct != null
@@ -500,10 +645,15 @@ class _ChambreCriseSecoursPageState
                           ? Colors.red
                           : Colors.green,
                     ),
+                    _StatusChip(
+                      icon: Icons.forum,
+                      label: _conversationId != null ? 'Groupe OK' : 'Groupe ?',
+                      color: _conversationId != null ? Colors.green : Colors.orange,
+                      onTap: () => _openChat(incident),
+                    ),
                   ],
                 ),
               ),
-
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
               child: Wrap(
@@ -516,8 +666,12 @@ class _ChambreCriseSecoursPageState
                       onTap: _busy ? null : _photo),
                   _ControlChip(
                       icon: Icons.videocam,
+                      label: 'Clip 10s',
+                      onTap: _busy ? null : () => _video(10)),
+                  _ControlChip(
+                      icon: Icons.videocam_outlined,
                       label: 'Vidéo 30s',
-                      onTap: _busy ? null : _video),
+                      onTap: _busy ? null : () => _video(30)),
                   _ControlChip(
                     icon: _audioArmed ? Icons.stop_circle : Icons.mic_none,
                     label: _audioArmed ? 'STOP AUDIO' : 'Enreg. audio',
@@ -545,7 +699,6 @@ class _ChambreCriseSecoursPageState
                 ],
               ),
             ),
-
             const TabBar(
               labelColor: Colors.white,
               unselectedLabelColor: Colors.white38,
@@ -566,7 +719,8 @@ class _ChambreCriseSecoursPageState
   Widget _buildEvidenceTab() {
     if (_evidence.isEmpty) {
       return const Center(
-        child: Text('Aucune preuve reçue pour l\'instant',
+        child: Text('Aucune preuve — lancez Photo / Clip 10s / Surveillance',
+            textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white38, fontSize: 12)),
       );
     }
@@ -581,10 +735,11 @@ class _ChambreCriseSecoursPageState
       itemCount: _evidence.length,
       itemBuilder: (_, i) {
         final e = _evidence[i];
+        final isPhoto = e.type == 'EVIDENCE_PHOTO';
         return GestureDetector(
           onTap: () async {
             if (e.url == null) return;
-            if (e.type == 'EVIDENCE_PHOTO') {
+            if (isPhoto) {
               showFullscreenImageViewer(context, url: e.url!);
             } else {
               await launchUrl(Uri.parse(e.url!),
@@ -593,54 +748,40 @@ class _ChambreCriseSecoursPageState
           },
           child: Container(
             decoration: BoxDecoration(
-              color: const Color(0xFF121826),
+              color: const Color(0xFF111827),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: e.type == 'EVIDENCE_FAILED'
-                    ? Colors.red.withValues(alpha: 0.5)
-                    : Colors.white.withValues(alpha: 0.08),
-              ),
+              border: Border.all(color: Colors.white12),
             ),
             clipBehavior: Clip.antiAlias,
-            child: Stack(
-              fit: StackFit.expand,
+            child: Column(
               children: [
-                if (e.type == 'EVIDENCE_PHOTO' && e.url != null)
-                  Image.network(e.url!, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Icon(
-                          Icons.broken_image, color: Colors.white38))
-                else
-                  Center(
-                    child: Icon(
-                      e.type == 'EVIDENCE_VIDEO'
-                          ? Icons.videocam_rounded
-                          : e.type == 'EVIDENCE_AUDIO'
-                              ? Icons.mic_rounded
-                              : Icons.warning_amber_rounded,
-                      color: e.type == 'EVIDENCE_FAILED'
-                          ? Colors.redAccent
-                          : Colors.white70,
-                      size: 26,
+                Expanded(
+                  child: isPhoto && e.url != null
+                      ? Image.network(e.url!,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          errorBuilder: (_, __, ___) =>
+                              const Icon(Icons.image, color: Colors.white24))
+                      : Icon(
+                          e.type == 'EVIDENCE_VIDEO'
+                              ? Icons.videocam
+                              : e.type == 'EVIDENCE_AUDIO'
+                                  ? Icons.audiotrack
+                                  : Icons.insert_drive_file,
+                          color: Colors.white38,
+                          size: 28,
+                        ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Text(
+                    e.posted ? '✓ groupe' : e.error ?? e.type.replaceAll('EVIDENCE_', ''),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: e.posted ? Colors.greenAccent : Colors.white54,
+                      fontSize: 9,
                     ),
-                  ),
-                Positioned(
-                  bottom: 4,
-                  left: 4,
-                  right: 4,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        e.type.replaceFirst('EVIDENCE_', ''),
-                        style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w700),
-                      ),
-                      if (e.posted)
-                        const Icon(Icons.check_circle,
-                            color: Colors.green, size: 11),
-                    ],
                   ),
                 ),
               ],
@@ -655,110 +796,56 @@ class _ChambreCriseSecoursPageState
     if (_journal.isEmpty) {
       return const Center(
         child: Text('Journal vide',
-            style: TextStyle(color: Colors.white38)),
+            style: TextStyle(color: Colors.white38, fontSize: 12)),
       );
     }
     return ListView.separated(
       padding: const EdgeInsets.all(12),
       itemCount: _journal.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 6),
+      separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
       itemBuilder: (_, i) {
-        final j = _journal[i];
-        return Row(
-          children: [
-            Text(
-              '${j.at.hour.toString().padLeft(2, '0')}:${j.at.minute.toString().padLeft(2, '0')}:${j.at.second.toString().padLeft(2, '0')}',
-              style: const TextStyle(color: Colors.white38, fontSize: 11),
-            ),
-            const SizedBox(width: 8),
-            Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                    color: Colors.redAccent, shape: BoxShape.circle)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                j.type,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
+        final r = _journal[i];
+        return ListTile(
+          dense: true,
+          leading: Text(_fmtClock(r.at),
+              style: const TextStyle(color: Colors.white54, fontSize: 11)),
+          title: Text(_journalLabel(r),
+              style: const TextStyle(color: Colors.white, fontSize: 13)),
         );
       },
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// CLASSES HELPER (niveau supérieur du fichier — en dehors de State)
-// ─────────────────────────────────────────────────────────────
-
-class _EvidenceItem {
-  final String type;
-  final String? url;
-  final bool posted;
-  final String? error;
-  final DateTime at;
-  const _EvidenceItem({
-    required this.type,
-    this.url,
-    this.posted = false,
-    this.error,
-    required this.at,
-  });
-}
-
-class _JournalRow {
-  final String type;
-  final DateTime at;
-  const _JournalRow({required this.type, required this.at});
-}
-
 class _StatusChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback? onTap;
   const _StatusChip({
     required this.icon,
     required this.label,
     required this.color,
     this.onTap,
   });
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFF121826),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 14, color: color),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
-          ),
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(label, style: TextStyle(color: color, fontSize: 11)),
+          ],
         ),
       ),
     );
@@ -766,45 +853,24 @@ class _StatusChip extends StatelessWidget {
 }
 
 class _ControlChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool danger;
-  final VoidCallback? onTap;
   const _ControlChip({
     required this.icon,
     required this.label,
     this.onTap,
     this.danger = false,
   });
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final bool danger;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: danger ? const Color(0xFF7F1D1D) : const Color(0xFF1E293B),
-      borderRadius: BorderRadius.circular(22),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon,
-                  size: 18,
-                  color: danger ? Colors.redAccent : Colors.white),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return ActionChip(
+      onPressed: onTap,
+      avatar: Icon(icon, size: 16, color: Colors.white),
+      label: Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
+      backgroundColor: danger ? const Color(0xFF7F1D1D) : const Color(0xFF1E293B),
     );
   }
 }
