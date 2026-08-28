@@ -18,7 +18,6 @@ import '../services/sos_crisis_media_service.dart';
 import '../services/sos_remote_capture_service.dart';
 
 /// SALLE DE PILOTAGE SECOURS — niveau entreprise.
-/// Flux visuel : Live Agora (optionnel) OU Mode Surveillance 100% Supabase.
 class ChambreCriseSecoursPage extends ConsumerStatefulWidget {
   const ChambreCriseSecoursPage({
     super.key,
@@ -85,9 +84,6 @@ class _ChambreCriseSecoursPageState
     super.dispose();
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // Journal + preuves en temps réel (thix_sos_events) — 100% Supabase
-  // ─────────────────────────────────────────────────────────────
   void _subscribeEvents() {
     _eventsCh = Supabase.instance.client
         .channel('sos-room-${widget.incidentId}')
@@ -137,7 +133,6 @@ class _ChambreCriseSecoursPageState
       _error = null;
     });
     try {
-      // ✅ Live Agora OPTIONNEL : si indisponible, tout le reste fonctionne
       try {
         await _media.joinAsResponder(widget.incidentId);
       } catch (e) {
@@ -158,9 +153,6 @@ class _ChambreCriseSecoursPageState
     if (mounted) setState(() => _joining = false);
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // Pilotage
-  // ─────────────────────────────────────────────────────────────
   Future<void> _photo() async {
     setState(() => _busy = true);
     try {
@@ -331,7 +323,6 @@ class _ChambreCriseSecoursPageState
     return null;
   }
 
-  // ─────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final incident =
@@ -377,7 +368,6 @@ class _ChambreCriseSecoursPageState
         ),
         body: Column(
           children: [
-            // ── FLUX VISUEL : Live Agora OU dernière image surveillance ──
             SizedBox(
               height: MediaQuery.of(context).size.height * 0.32,
               child: Container(
@@ -477,7 +467,6 @@ class _ChambreCriseSecoursPageState
               ),
             ),
 
-            // ── TÉLÉMÉTRIE VICTIME ──
             if (incident != null)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -515,7 +504,6 @@ class _ChambreCriseSecoursPageState
                 ),
               ),
 
-            // ── PUPITRE DE COMMANDE ──
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
               child: Wrap(
@@ -558,7 +546,6 @@ class _ChambreCriseSecoursPageState
               ),
             ),
 
-            // ── ONGLETS : PREUVES / JOURNAL ──
             const TabBar(
               labelColor: Colors.white,
               unselectedLabelColor: Colors.white38,
@@ -684,7 +671,6 @@ class _ChambreCriseSecoursPageState
               style: const TextStyle(color: Colors.white38, fontSize: 11),
             ),
             const SizedBox(width: 8),
-            // ✅ ENLEVER LE "const" ICI
             Container(
                 width: 8,
                 height: 8,
@@ -705,7 +691,12 @@ class _ChambreCriseSecoursPageState
       },
     );
   }
+}
+
 // ─────────────────────────────────────────────────────────────
+// CLASSES HELPER (niveau supérieur du fichier — en dehors de State)
+// ─────────────────────────────────────────────────────────────
+
 class _EvidenceItem {
   final String type;
   final String? url;
