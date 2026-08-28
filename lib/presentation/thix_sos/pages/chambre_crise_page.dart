@@ -822,7 +822,7 @@ class _LiveMapCard extends StatelessWidget {
 
   String _fmt(DateTime d) {
     final l = d.toLocal();
-    return '\( {l.hour.toString().padLeft(2, '0')}: \){l.minute.toString().padLeft(2, '0')}:${l.second.toString().padLeft(2, '0')}';
+    return '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}:${l.second.toString().padLeft(2, '0')}';
   }
 }
 
@@ -1077,7 +1077,7 @@ class _EventTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = event.createdAt.toLocal();
     final time =
-        '\( {t.hour.toString().padLeft(2, '0')}: \){t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
