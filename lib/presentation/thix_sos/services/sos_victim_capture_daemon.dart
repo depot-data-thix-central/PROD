@@ -1,43 +1,35 @@
-// lib/presentation/thix_sos/services/sos_victim_capture_daemon.dart
 import 'package:flutter/foundation.dart';
 
 import 'sos_remote_capture_service.dart';
 
-/// Daemon côté VICTIME : exécute les commandes du secours en arrière-plan,
-/// même si la victime n'a ouvert aucune page.
+/// Daemon victime : écoute les CMD_* dès que le SOS est actif,
+/// même si la chambre de crise n'est pas au premier plan.
 class SosVictimCaptureDaemon {
   SosVictimCaptureDaemon._();
   static final SosVictimCaptureDaemon instance = SosVictimCaptureDaemon._();
 
-  final SosRemoteCaptureService _remote = SosRemoteCaptureService.instance;
   String? _incidentId;
-  bool _running = false;
 
-  bool get isRunning => _running;
-
-  Future<void> start({
+  void start({
     required String incidentId,
     String? conversationId,
-  }) async {
-    if (_running && _incidentId == incidentId) return;
+    void Function(String msg)? onInfo,
+    void Function(Object err)? onError,
+  }) {
+    if (_incidentId == incidentId) return;
+    stop();
     _incidentId = incidentId;
-    _running = true;
-
-    debugPrint('🛰️ SosVictimCaptureDaemon START incident=$incidentId');
-
-    _remote.listenAsVictim(
+    debugPrint('SosVictimCaptureDaemon start $incidentId');
+    SosRemoteCaptureService.instance.listenAsVictim(
       incidentId: incidentId,
       conversationId: conversationId,
-      onInfo: (m) => debugPrint('🛰️ capture: $m'),
-      onError: (e) => debugPrint('🛰️ capture error: $e'),
+      onInfo: onInfo,
+      onError: onError,
     );
   }
 
   void stop() {
-    if (!_running) return;
-    _remote.stop();
-    _running = false;
+    SosRemoteCaptureService.instance.stop();
     _incidentId = null;
-    debugPrint('🛰️ SosVictimCaptureDaemon STOP');
   }
 }
