@@ -146,7 +146,7 @@ class SupabaseAuthManager implements AuthManager {
   }
 
   // ==========================================================================
-  // HYDRATATION — N'EST APPELÉE QU'APRÈS CONNEXION OU VALIDATION OTP
+  // HYDRATATION
   // ==========================================================================
   Future<AppUser> _hydrateUser(User user) async {
     final uid = user.id;
@@ -170,17 +170,19 @@ class SupabaseAuthManager implements AuthManager {
         return const <String>[];
       }
 
-      // 💡 On récupère les infos sauvegardées temporairement dans userMeta
+      // 💡 ASTUCE REPRISE DE L'ANCIENNE VERSION : Pseudo temporaire unique pour éviter l'erreur PostgreSQL
+      final tempThixChat = '@user_${uid.substring(0, 5).toLowerCase()}${DateTime.now().millisecondsSinceEpoch % 1000}';
+
       final base = AppUser(
         id: uid,
         thixId: 'THIX-PENDING',
-        thixChat: '', 
+        thixChat: tempThixChat, // ✅ Pseudo temporaire
         thixScore: null,
         email: email,
         phone: user.phone,
+        photoUrl: null,
         displayName: s('display_name') ?? s('full_name') ?? 'Utilisateur THIX',
         accountType: _accountTypeFromMeta(meta),
-        photoUrl: null,
         bio: s('bio'),
         countryOrOrigin: s('country_or_origin') ?? s('countryOrOrigin'),
         contactPhone: s('phone_number') ?? s('contact_phone') ?? s('contactPhone'),
@@ -208,7 +210,6 @@ class SupabaseAuthManager implements AuthManager {
         updatedAt: DateTime.now(),
       );
 
-      // C'est ICI que le profil est inséré en base pour la première fois
       await _ensureProfileRow(user: base);
       await _profiles.ensureProfileExists(user: base);
 
@@ -221,6 +222,7 @@ class SupabaseAuthManager implements AuthManager {
 
     var appUser = _appUserFromProfileRow(uid: uid, email: email, row: row, phone: user.phone);
 
+    // Remplacement PENDING via RPC SERVEUR
     if (_isPendingThixId(appUser.thixId)) {
       try {
         final realId = await _client.rpc('ensure_thix_id', params: {'p_user_id': uid});
@@ -317,14 +319,10 @@ class SupabaseAuthManager implements AuthManager {
     return null;
   }
 
-  // ==========================================================================
   // ✅ UPSERT ROBUSTE : On n'insère que les champs non nulls pour éviter les crashs
-  // ==========================================================================
   Future<void> _ensureProfileRow({required AppUser user}) async {
     final now = DateTime.now().toUtc().toIso8601String();
     
-    // Le payload est purgé des valeurs nulles. 
-    // Ainsi, si une colonne manque en base de données, la requête ne plantera pas.
     final payload = <String, dynamic>{
       'id': user.id,
       if (!_isPendingThixId(user.thixId)) 'thix_id': user.thixId,
@@ -403,9 +401,6 @@ class SupabaseAuthManager implements AuthManager {
     }
   }
 
-  // ==========================================================================
-  // ✅ INSCRIPTION : SAUVEGARDE MÉTADONNÉES, PROFIL CRÉÉ SEULEMENT APRÈS OTP
-  // ==========================================================================
   @override
   Future<AppUser> registerWithEmail({
     required String email,
@@ -422,7 +417,6 @@ class SupabaseAuthManager implements AuthManager {
     }
 
     try {
-      // Les données sont sauvegardées en attente dans auth.users
       final userMeta = <String, dynamic>{
         'display_name': displayName.trim().isEmpty ? 'Utilisateur THIX' : displayName.trim(),
         'account_type': accountType.name,
@@ -437,16 +431,17 @@ class SupabaseAuthManager implements AuthManager {
         throw AuthException('Erreur lors de l\'inscription.');
       }
 
-      // Si l'utilisateur doit valider son email (OTP), on s'arrête ici. 
-      // ON NE CRÉE PAS DE PROFIL EN BASE DE DONNÉES.
-            if (session == null || user.emailConfirmedAt == null) {
+      // Si email non confirmé, on s'arrête ici sans créer de profil en BDD (évite les erreurs UI)
+      if (session == null || user.emailConfirmedAt == null) {
+        // ✅ CORRECTION GITHUB ACTIONS : Ajout des attributs requis à null
         final tempUser = AppUser(
           id: user.id,
           thixId: 'THIX-PENDING',
           thixChat: '',
-          thixScore: null, 
-          phone: user.phone,
+          thixScore: null,         // Résout l'erreur de compilation GitHub
           email: normalizedEmail,
+          phone: user.phone,       // Résout l'erreur de compilation GitHub
+          photoUrl: null,          // Résout l'erreur de compilation GitHub
           displayName: userMeta['display_name'] as String,
           accountType: accountType,
           createdAt: DateTime.now(),
@@ -456,8 +451,6 @@ class SupabaseAuthManager implements AuthManager {
         return tempUser;
       }
 
-
-      // Si auto-confirmé
       final appUser = await _hydrateUser(user);
       _currentUser.value = appUser;
       _bindProfileSync(user.id);
@@ -522,17 +515,28 @@ class SupabaseAuthManager implements AuthManager {
   @override
   Future<void> verifyOTP({required String email, required String token}) async {
     try {
-      final res = await _client.auth.verifyOTP(
-        email: email.trim().toLowerCase(),
-        token: token.trim(),
-        type: OtpType.signup,
-      );
-      if (res.session == null && res.user == null) {
-        throw AuthException('Le code saisi est invalide ou a expiré. Demandez un nouveau code.');
-      }
+      final session = _client.auth.currentSession;
+      final user = session?.user;
       
-      // ✅ SUCCESS ! L'appel à refreshCurrentUser va appeler _hydrateUser
-      // Et c'est MAINTENANT que le profil sera créé en base de données.
+      bool needsVerification = true;
+      
+      // 💡 ASTUCE REPRISE DE L'ANCIENNE VERSION : Empêche "Code expiré" si on est déjà connecté
+      if (user != null && user.email == email.trim().toLowerCase()) {
+        needsVerification = false;
+      }
+
+      if (needsVerification) {
+        final res = await _client.auth.verifyOTP(
+          email: email.trim().toLowerCase(),
+          token: token.trim(),
+          type: OtpType.signup,
+        );
+
+        if (res.session == null && res.user == null) {
+          throw AuthException('Le code saisi est invalide ou a expiré. Demandez un nouveau code.');
+        }
+      }
+
       await refreshCurrentUser();
     } on AuthException {
       rethrow;
