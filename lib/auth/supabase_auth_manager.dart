@@ -18,7 +18,7 @@ import 'package:thix_id/supabase/supabase_config.dart';
 ///  - signUp avec session + email confirmé immédiat (Confirm email OFF) →
 ///    signOut + erreur de configuration (l'OTP reste obligatoire).
 ///  - verifyOTP : aucun bypass, hydratation SEULEMENT après vérification réussie.
-///  - THIX ID officiel jamais généré avant confirmation de l'email.
+///  - THIX ID officiel jamais généré avant confirmation de l'email et choix du pays.
 class SupabaseAuthManager implements AuthManager {
   final SupabaseClient _client;
   final ProfileService _profiles;
@@ -239,17 +239,9 @@ class SupabaseAuthManager implements AuthManager {
 
     var appUser = _appUserFromProfileRow(uid: uid, email: email, row: row, phone: user.phone);
 
-    // ✅ Le vrai THIX ID n'est résolu QUE si l'email est confirmé côté serveur.
-    if (_isPendingThixId(appUser.thixId) && user.emailConfirmedAt != null) {
-      try {
-        final realId = await _client.rpc('ensure_thix_id', params: {'p_user_id': uid});
-        if (realId is String && realId.trim().isNotEmpty && !_isPendingThixId(realId)) {
-          appUser = appUser.copyWith(thixId: realId.trim(), updatedAt: DateTime.now());
-        }
-      } catch (e) {
-        debugPrint('SupabaseAuthManager: ensure_thix_id RPC failed uid=$uid err=$e');
-      }
-    }
+    // 🔴 SUPPRIMÉ : On ne génère plus automatiquement le THIX ID ici pour éviter le conflit 
+    // avec la sélection dynamique du pays.
+    // La génération se fera UNIQUEMENT via `finalize_registration` depuis l'interface.
 
     return appUser;
   }
