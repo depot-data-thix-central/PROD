@@ -19,9 +19,15 @@ import 'dart:math';
 /// ============================================================================
 class ThixIdService {
   // ==========================================================================
-  // CONSTANTES
+  // CONSTANTES ET EXEMPLES UI
   // ==========================================================================
   
+  /// Exemple d'un identifiant de format Legacy (v1)
+  static const String exampleV1 = 'THIX-CD-ABC-23-A1B2-3';
+  
+  /// Exemple d'un identifiant au format Actuel (v2)
+  static const String exampleV2 = 'THIX-CD-0826-84723-XYZ-4';
+
   static const String _fixedCountryCode = 'CD';
   static const String _letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   
