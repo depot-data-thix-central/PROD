@@ -15,7 +15,6 @@ import 'package:zxcvbn/zxcvbn.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 import 'package:thix_id/nav.dart';
-import 'package:thix_id/theme.dart';
 
 // ============================================================================
 // POLITIQUE MOT DE PASSE
@@ -41,7 +40,8 @@ class PasswordPolicy {
     final result = zxcvbn.evaluate(password, userInputs: userInputs);
     if ((result.score ?? 0) < 3) {
       final warning = result.feedback?.warning ?? '';
-      final suggestions = result.feedback?.suggestions.join(' ') ?? '';
+      // ✅ CORRECTION : Utilisation de ?.join()
+      final suggestions = result.feedback?.suggestions?.join(' ') ?? '';
       return 'Mot de passe trop faible. $warning $suggestions'.trim();
     }
 
@@ -85,22 +85,8 @@ class PasswordPolicy {
 }
 
 // ============================================================================
-// DESIGN
+// DESIGN COMPONENTS
 // ============================================================================
-class _AppColors {
-  static const Color primary = Color(0xFF0A3D62);
-  static const Color primaryLight = Color(0xFF1A5A8C);
-  static const Color accentLight = Color(0xFFF9C74F);
-  static const Color background = Color(0xFFF8FAFC);
-  static const Color surface = Colors.white;
-  static const Color textDark = Color(0xFF1E293B);
-  static const Color textMuted = Color(0xFF64748B);
-  static const Color border = Color(0xFFE2E8F0);
-  static const Color success = Color(0xFF10B981);
-  static const Color successBg = Color(0xFFD1FAE5);
-  static const Color danger = Color(0xFFDC2626);
-}
-
 class _PremiumField extends StatefulWidget {
   final String label;
   final String hint;
@@ -144,11 +130,8 @@ class _PremiumFieldState extends State<_PremiumField> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          widget.label,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _AppColors.textDark),
-        ),
-        const SizedBox(height: 8),
+        Text(widget.label, style: ThixPolicy.labelStyle),
+        const SizedBox(height: ThixPolicy.s8),
         TextFormField(
           controller: widget.controller,
           obscureText: _obscured,
@@ -158,13 +141,13 @@ class _PremiumFieldState extends State<_PremiumField> {
           onChanged: widget.onChanged,
           maxLength: widget.maxLength,
           inputFormatters: widget.inputFormatters,
-          style: const TextStyle(fontSize: 14, color: _AppColors.textDark, fontWeight: FontWeight.w500),
+          style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.medium),
           decoration: InputDecoration(
             counterText: '',
             hintText: widget.hint,
             errorText: widget.errorText,
-            hintStyle: const TextStyle(color: _AppColors.textMuted, fontWeight: FontWeight.w400),
-            prefixIcon: Icon(widget.icon, size: 20, color: _AppColors.textMuted),
+            hintStyle: ThixPolicy.bodySmallStyle,
+            prefixIcon: Icon(widget.icon, size: 20, color: ThixPolicy.textSecondary),
             suffixIcon: widget.trailing ??
                 (widget.isPassword
                     ? IconButton(
@@ -172,19 +155,19 @@ class _PremiumFieldState extends State<_PremiumField> {
                         icon: Icon(
                           _obscured ? Icons.visibility_off_rounded : Icons.visibility_rounded,
                           size: 20,
-                          color: _AppColors.textMuted,
+                          color: ThixPolicy.textSecondary,
                         ),
                         onPressed: () => setState(() => _obscured = !_obscured),
                       )
                     : null),
             filled: true,
-            fillColor: _AppColors.surface,
-            contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _AppColors.border)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _AppColors.border)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _AppColors.primary, width: 1.5)),
-            errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _AppColors.danger, width: 1.5)),
-            focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _AppColors.danger, width: 1.5)),
+            fillColor: ThixPolicy.card,
+            contentPadding: ThixPolicy.inputPadding,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.border)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.border)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.primary, width: 1.5)),
+            errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.danger, width: 1.5)),
+            focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.danger, width: 1.5)),
           ),
         ),
       ],
@@ -212,22 +195,22 @@ class _PremiumDropdown extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _AppColors.textDark)),
-        const SizedBox(height: 8),
+        Text(label, style: ThixPolicy.labelStyle),
+        const SizedBox(height: ThixPolicy.s8),
         DropdownButtonFormField<String>(
           value: value,
-          icon: const Icon(Icons.expand_more_rounded, size: 20, color: _AppColors.textMuted),
-          style: const TextStyle(fontSize: 14, color: _AppColors.textDark, fontWeight: FontWeight.w500),
+          icon: const Icon(Icons.expand_more_rounded, size: 20, color: ThixPolicy.textSecondary),
+          style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.medium),
           decoration: InputDecoration(
-            prefixIcon: Icon(icon, size: 20, color: _AppColors.textMuted),
+            prefixIcon: Icon(icon, size: 20, color: ThixPolicy.textSecondary),
             filled: true,
-            fillColor: _AppColors.surface,
-            contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _AppColors.border)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _AppColors.border)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _AppColors.primary, width: 1.5)),
+            fillColor: ThixPolicy.card,
+            contentPadding: ThixPolicy.inputPadding,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.border)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.border)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.primary, width: 1.5)),
           ),
-          hint: const Text('Sélectionner', style: TextStyle(color: _AppColors.textMuted, fontWeight: FontWeight.w400)),
+          hint: Text('Sélectionner', style: ThixPolicy.bodySmallStyle),
           items: items.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))).toList(),
           onChanged: onChanged,
         ),
@@ -318,8 +301,8 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w500)),
-        backgroundColor: isError ? _AppColors.danger : _AppColors.success,
+        content: Text(msg, style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand)),
+        backgroundColor: isError ? ThixPolicy.danger : ThixPolicy.success,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         duration: const Duration(seconds: 4),
@@ -336,7 +319,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     if (msg.contains('invalid login') || msg.contains('invalid credentials')) {
       return 'Email ou mot de passe incorrect.';
     }
-    // ✅ CORRECTIONS DES APOSTROPHES
     if (msg.contains('email_not_verified')) return "Validez d'abord le code reçu par email.";
     if (msg.contains('invalid_status')) return "Cette étape n'est pas encore disponible.";
     
@@ -414,7 +396,8 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       ]);
       setState(() {
         _passwordError = error;
-        _passwordScore = result.score ?? 0;
+        // ✅ CORRECTION : force la conversion en entier
+        _passwordScore = (result.score ?? 0).toInt();
         _passwordValidating = false;
       });
     });
@@ -545,7 +528,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   Future<void> _verifyEmailOnly() async {
     if (_busy) return;
     if (!_otpSent) {
-      // ✅ CORRECTION
       _snack("Demandez d'abord le code email.", isError: true);
       return;
     }
@@ -589,7 +571,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   Future<void> _showQrParrainageDialog() async {
     if (_busy) return;
     if (!await _refreshEmailVerifiedFlag()) {
-      // ✅ CORRECTION
       _snack("Validez d'abord le code email.", isError: true);
       return;
     }
@@ -607,7 +588,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     );
   }
 
-  // ✅ CORRECTION 1 : Interpolation Dart standard
   String _desiredChat() {
     final raw = _thixChatC.text.trim().toLowerCase();
     if (raw.isNotEmpty) return raw.startsWith('@') ? raw : '@$raw';
@@ -674,7 +654,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     }
   }
 
-  // ✅ CORRECTION 2 : Interpolation Dart standard
   Future<void> _pickDob() async {
     final now = DateTime.now();
     final adult = DateTime(now.year - 18, now.month, now.day);
@@ -685,7 +664,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       lastDate: adult,
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
-          colorScheme: Theme.of(context).colorScheme.copyWith(primary: _AppColors.primary),
+          colorScheme: Theme.of(context).colorScheme.copyWith(primary: ThixPolicy.primary),
         ),
         child: child!,
       ),
@@ -703,7 +682,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     final isLoading = ref.watch(authControllerProvider).isLoading || _busy;
 
     return Scaffold(
-      backgroundColor: _AppColors.background,
+      backgroundColor: ThixPolicy.surfaceSoft,
       body: SafeArea(
         top: false,
         child: Stack(
@@ -716,23 +695,18 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
               child: Container(
                 padding: const EdgeInsets.only(top: 60),
                 decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [_AppColors.primary, _AppColors.primaryLight],
-                  ),
+                  gradient: ThixPolicy.brandGradient,
                 ),
                 child: Column(
                   children: [
                     Text(
                       'THIX ID',
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                            color: _AppColors.accentLight,
-                            fontWeight: FontWeight.w900,
+                      style: ThixPolicy.displayStyle.copyWith(
+                            color: ThixPolicy.gold,
                             letterSpacing: 1.5,
                           ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: ThixPolicy.s16),
                     _buildStepper(),
                   ],
                 ),
@@ -741,23 +715,17 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
             Positioned.fill(
               top: 160,
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20, vertical: ThixPolicy.s20),
                 physics: const BouncingScrollPhysics(),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(28),
+                      padding: const EdgeInsets.all(ThixPolicy.s28),
                       decoration: BoxDecoration(
-                        color: _AppColors.surface,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            blurRadius: 24,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
+                        color: ThixPolicy.card,
+                        borderRadius: BorderRadius.circular(ThixPolicy.rXl),
+                        boxShadow: ThixPolicy.shadowSoft(),
                       ),
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 400),
@@ -769,9 +737,9 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
                         ),
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: ThixPolicy.s24),
                     _buildMainButton(isLoading),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: ThixPolicy.s16),
                     if (_step < 4)
                       TextButton(
                         onPressed: isLoading
@@ -783,13 +751,13 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
                                   context.go(AppRoutes.login);
                                 }
                               },
-                        style: TextButton.styleFrom(foregroundColor: _AppColors.textMuted),
+                        style: TextButton.styleFrom(foregroundColor: ThixPolicy.textSecondary),
                         child: Text(
                           _step == 1 ? 'Déjà un compte ? Se connecter' : '← Étape précédente',
-                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                          style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.semiBold),
                         ),
                       ),
-                    const SizedBox(height: 40),
+                    const SizedBox(height: ThixPolicy.s40),
                   ],
                 ),
               ),
@@ -875,7 +843,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         onPressed = _goToStep2;
         break;
       case 2:
-        // ✅ CORRECTION : Guilemets doubles
         label = isLoading ? 'Vérification…' : "Valider l'email";
         onPressed = _verifyEmailOnly;
         break;
@@ -893,16 +860,16 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
       child: ElevatedButton(
         onPressed: isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
-          backgroundColor: _AppColors.primary,
-          foregroundColor: Colors.white,
+          backgroundColor: ThixPolicy.primary,
+          foregroundColor: ThixPolicy.onBrand,
           padding: const EdgeInsets.symmetric(vertical: 18),
           elevation: 4,
-          shadowColor: _AppColors.primary.withValues(alpha: 0.4),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shadowColor: ThixPolicy.primary.withValues(alpha: 0.4),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -916,12 +883,12 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
                   valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                 ),
               ),
-              SizedBox(width: 12),
+              SizedBox(width: ThixPolicy.s12),
             ],
-            Text(label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: 0.5)),
+            Text(label, style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.onBrand, letterSpacing: 0.5)),
             if (!isLoading && _step < 4)
               const Padding(
-                padding: EdgeInsets.only(left: 8),
+                padding: EdgeInsets.only(left: ThixPolicy.s8),
                 child: Icon(Icons.arrow_forward_rounded, size: 20),
               ),
           ],
@@ -947,7 +914,7 @@ class _StepDot extends StatelessWidget {
       width: 26,
       height: 26,
       decoration: BoxDecoration(
-        color: isDone || isActive ? _AppColors.accentLight : Colors.white.withValues(alpha: 0.2),
+        color: isDone || isActive ? ThixPolicy.gold : Colors.white.withValues(alpha: 0.2),
         shape: BoxShape.circle,
         border: Border.all(color: isActive ? Colors.white : Colors.transparent, width: 2),
       ),
@@ -955,7 +922,7 @@ class _StepDot extends StatelessWidget {
         child: Icon(
           isFinal || isDone ? Icons.check_rounded : Icons.circle,
           size: 12,
-          color: isDone || isActive ? _AppColors.primary : Colors.white.withValues(alpha: 0.5),
+          color: isDone || isActive ? ThixPolicy.primaryDeep : Colors.white.withValues(alpha: 0.5),
         ),
       ),
     );
@@ -972,7 +939,7 @@ class _StepLine extends StatelessWidget {
       duration: const Duration(milliseconds: 300),
       width: 28,
       height: 3,
-      color: isActive ? _AppColors.accentLight : Colors.white.withValues(alpha: 0.2),
+      color: isActive ? ThixPolicy.gold : Colors.white.withValues(alpha: 0.2),
     );
   }
 }
@@ -999,15 +966,15 @@ class _Step1Profile extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('Informations personnelles', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _AppColors.primary)),
-        const SizedBox(height: 6),
-        const Text(
+        Text('Informations personnelles', style: ThixPolicy.h2Style.copyWith(color: ThixPolicy.primary)),
+        const SizedBox(height: ThixPolicy.s6),
+        Text(
           'Ces informations serviront à votre identité numérique. Réservé aux 18 ans et plus.',
-          style: TextStyle(fontSize: 14, color: _AppColors.textMuted),
+          style: ThixPolicy.bodySmallStyle,
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: ThixPolicy.s24),
         _PremiumField(label: 'Nom complet *', hint: 'Ex : Jean Mukendi', icon: Icons.person_outline_rounded, controller: nameC),
-        const SizedBox(height: 16),
+        const SizedBox(height: ThixPolicy.s16),
         _PremiumField(
           label: 'Date de naissance *',
           hint: 'AAAA-MM-JJ',
@@ -1015,9 +982,9 @@ class _Step1Profile extends StatelessWidget {
           controller: dobC,
           readOnly: true,
           onTap: onPickDob,
-          trailing: const Icon(Icons.expand_more_rounded, color: _AppColors.textMuted),
+          trailing: const Icon(Icons.expand_more_rounded, color: ThixPolicy.textSecondary),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: ThixPolicy.s16),
         _PremiumDropdown(
           label: 'Pays *',
           icon: Icons.public_rounded,
@@ -1025,7 +992,7 @@ class _Step1Profile extends StatelessWidget {
           items: countries,
           onChanged: onCountryChanged,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: ThixPolicy.s16),
         _PremiumField(
           label: 'Occupation (facultatif)',
           hint: 'Ex : Entrepreneur, Ingénieur…',
@@ -1066,15 +1033,15 @@ class _Step2Account extends StatelessWidget {
     switch (score) {
       case 0:
       case 1:
-        return _AppColors.danger;
+        return ThixPolicy.danger;
       case 2:
-        return Colors.orange;
+        return ThixPolicy.warning;
       case 3:
         return Colors.amber.shade700;
       case 4:
-        return _AppColors.success;
+        return ThixPolicy.success;
       default:
-        return _AppColors.border;
+        return ThixPolicy.border;
     }
   }
 
@@ -1102,13 +1069,12 @@ class _Step2Account extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('Sécurité du compte', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _AppColors.primary)),
-        const SizedBox(height: 6),
-        // ✅ CORRECTION : Guillemets doubles
-        const Text("L'activation du THIX ID n'est possible qu'après validation de cet email.", style: TextStyle(fontSize: 14, color: _AppColors.textMuted)),
-        const SizedBox(height: 24),
+        Text('Sécurité du compte', style: ThixPolicy.h2Style.copyWith(color: ThixPolicy.primary)),
+        const SizedBox(height: ThixPolicy.s6),
+        Text("L'activation du THIX ID n'est possible qu'après validation de cet email.", style: ThixPolicy.bodySmallStyle),
+        const SizedBox(height: ThixPolicy.s24),
         _PremiumField(label: 'Adresse email *', hint: 'votre@email.com', icon: Icons.email_outlined, controller: emailC, keyboardType: TextInputType.emailAddress),
-        const SizedBox(height: 16),
+        const SizedBox(height: ThixPolicy.s16),
         _PremiumField(
           label: 'Numéro mobile international *',
           hint: '+243 000 000 000',
@@ -1116,7 +1082,7 @@ class _Step2Account extends StatelessWidget {
           controller: phoneC,
           keyboardType: TextInputType.phone,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: ThixPolicy.s16),
         _PremiumField(
           label: 'Mot de passe *',
           hint: 'Min. 12 caractères',
@@ -1133,7 +1099,7 @@ class _Step2Account extends StatelessWidget {
               : null,
         ),
         if (passwordScore >= 0 && passwordC.text.isNotEmpty) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: ThixPolicy.s8),
           Row(
             children: List.generate(4, (i) {
               final active = i < bars;
@@ -1142,7 +1108,7 @@ class _Step2Account extends StatelessWidget {
                   height: 4,
                   margin: EdgeInsets.only(right: i == 3 ? 0 : 4),
                   decoration: BoxDecoration(
-                    color: active ? _scoreColor(passwordScore) : _AppColors.border,
+                    color: active ? _scoreColor(passwordScore) : ThixPolicy.border,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -1152,10 +1118,10 @@ class _Step2Account extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             'Force : ${_scoreLabel(passwordScore)}',
-            style: TextStyle(fontSize: 12, color: _scoreColor(passwordScore), fontWeight: FontWeight.w500),
+            style: ThixPolicy.captionStyle.copyWith(color: _scoreColor(passwordScore), fontWeight: ThixPolicy.medium),
           ),
         ],
-        const SizedBox(height: 16),
+        const SizedBox(height: ThixPolicy.s16),
         _PremiumField(
           label: 'Confirmer le mot de passe *',
           hint: 'Répétez le mot de passe',
@@ -1163,11 +1129,11 @@ class _Step2Account extends StatelessWidget {
           controller: confirmC,
           isPassword: true,
         ),
-        const SizedBox(height: 24),
-        const Divider(color: _AppColors.border),
-        const SizedBox(height: 16),
-        const Text('Vérification email', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _AppColors.textDark)),
-        const SizedBox(height: 16),
+        const SizedBox(height: ThixPolicy.s24),
+        const Divider(color: ThixPolicy.border),
+        const SizedBox(height: ThixPolicy.s16),
+        Text('Vérification email', style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.textMain)),
+        const SizedBox(height: ThixPolicy.s16),
         SizedBox(
           height: 50,
           child: OutlinedButton.icon(
@@ -1177,17 +1143,17 @@ class _Step2Account extends StatelessWidget {
               !canResend && resendCountdown > 0
                   ? 'Renvoyer dans ${resendCountdown}s'
                   : (isOtpSent ? 'Code envoyé — Renvoyer' : 'Obtenir le code OTP'),
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.semiBold),
             ),
             style: OutlinedButton.styleFrom(
-              foregroundColor: _AppColors.primary,
-              side: BorderSide(color: isOtpSent ? _AppColors.success : _AppColors.primary, width: 1.5),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              foregroundColor: ThixPolicy.primary,
+              side: BorderSide(color: isOtpSent ? ThixPolicy.success : ThixPolicy.primary, width: 1.5),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
             ),
           ),
         ),
         if (isOtpSent) ...[
-          const SizedBox(height: 24),
+          const SizedBox(height: ThixPolicy.s24),
           _PremiumField(
             label: 'Code reçu par email *',
             hint: '000000',
@@ -1221,45 +1187,43 @@ class _Step3Activate extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('Activation', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: _AppColors.primary)),
-        const SizedBox(height: 6),
-        // ✅ CORRECTION : Guillemets doubles
-        const Text(
+        Text('Activation', style: ThixPolicy.h2Style.copyWith(color: ThixPolicy.primary)),
+        const SizedBox(height: ThixPolicy.s6),
+        Text(
           "Choisissez votre identifiant public. Le parrainage est optionnel et ne remplace pas l'email.",
-          style: TextStyle(fontSize: 14, color: _AppColors.textMuted),
+          style: ThixPolicy.bodySmallStyle,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: ThixPolicy.s16),
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(ThixPolicy.s12),
           decoration: BoxDecoration(
-            color: emailVerified ? _AppColors.successBg : const Color(0xFFFEF3C7),
-            borderRadius: BorderRadius.circular(12),
+            color: emailVerified ? ThixPolicy.success.withValues(alpha: 0.15) : ThixPolicy.warning.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(ThixPolicy.rMd),
           ),
           child: Text(
             emailVerified ? 'Email vérifié' : 'Email non vérifié',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              color: emailVerified ? _AppColors.success : const Color(0xFF92400E),
+            style: ThixPolicy.labelStyle.copyWith(
+              color: emailVerified ? ThixPolicy.success : ThixPolicy.warning,
             ),
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: ThixPolicy.s24),
         _PremiumField(
           label: 'THIX CHAT (pseudo public) *',
           hint: '@pseudo_123',
           icon: Icons.alternate_email_rounded,
           controller: thixChatC,
         ),
-        const SizedBox(height: 24),
-        const Text('Parrainage (optionnel)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _AppColors.textDark)),
-        const SizedBox(height: 8),
+        const SizedBox(height: ThixPolicy.s24),
+        Text('Parrainage (optionnel)', style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain)),
+        const SizedBox(height: ThixPolicy.s8),
         Text(
           sponsored
               ? 'Un parrain accrédité a validé votre demande. Vous pouvez activer.'
               : 'Un pair accrédité peut scanner votre QR. Vous activez ensuite vous-même.',
-          style: const TextStyle(fontSize: 13, color: _AppColors.textMuted),
+          style: ThixPolicy.bodySmallStyle,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: ThixPolicy.s16),
         SizedBox(
           height: 50,
           child: OutlinedButton.icon(
@@ -1267,12 +1231,12 @@ class _Step3Activate extends StatelessWidget {
             icon: Icon(sponsored ? Icons.verified_rounded : Icons.qr_code_2_rounded, size: 22),
             label: Text(
               sponsored ? 'Parrainage reçu' : 'Afficher mon QR de parrainage',
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.bold),
             ),
             style: OutlinedButton.styleFrom(
-              foregroundColor: _AppColors.textDark,
-              side: BorderSide(color: sponsored ? _AppColors.success : _AppColors.border, width: 1.5),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              foregroundColor: ThixPolicy.textMain,
+              side: BorderSide(color: sponsored ? ThixPolicy.success : ThixPolicy.border, width: 1.5),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
             ),
           ),
         ),
@@ -1301,47 +1265,40 @@ class _Step4Final extends StatelessWidget {
       children: [
         Center(
           child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(color: _AppColors.successBg, shape: BoxShape.circle),
-            child: const Icon(Icons.verified_rounded, color: _AppColors.success, size: 48),
+            padding: const EdgeInsets.all(ThixPolicy.s16),
+            decoration: BoxDecoration(color: ThixPolicy.success.withValues(alpha: 0.15), shape: BoxShape.circle),
+            child: const Icon(Icons.verified_rounded, color: ThixPolicy.success, size: 48),
           ),
         ),
-        const SizedBox(height: 20),
-        const Text('Félicitations !', textAlign: TextAlign.center, style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: _AppColors.primary)),
-        const SizedBox(height: 8),
+        const SizedBox(height: ThixPolicy.s20),
+        Text('Félicitations !', textAlign: TextAlign.center, style: ThixPolicy.displayStyle.copyWith(color: ThixPolicy.primary)),
+        const SizedBox(height: ThixPolicy.s8),
         Text(
           'Votre compte est actif. Bienvenue sur THIX ID, $name.',
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 15, color: _AppColors.textMuted, height: 1.4),
+          style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary),
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: ThixPolicy.s32),
         Container(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(ThixPolicy.s24),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [_AppColors.primary, _AppColors.primaryLight],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(color: _AppColors.primary.withValues(alpha: 0.3), blurRadius: 20, offset: const Offset(0, 10)),
-            ],
+            gradient: ThixPolicy.brandGradient,
+            borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+            boxShadow: ThixPolicy.shadowCard(),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ✅ CORRECTION : Guillemets doubles
-              const Text("CARTE D'IDENTITÉ THIX", style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2)),
-              const SizedBox(height: 24),
-              const Text('THIX ID OFFICIEL', style: TextStyle(color: _AppColors.accentLight, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+              Text("CARTE D'IDENTITÉ THIX", style: ThixPolicy.microStyle.copyWith(color: Colors.white70, fontWeight: ThixPolicy.bold, letterSpacing: 1.2)),
+              const SizedBox(height: ThixPolicy.s24),
+              Text('THIX ID OFFICIEL', style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.gold, fontWeight: ThixPolicy.bold, letterSpacing: 1.5)),
               const SizedBox(height: 4),
               Row(
                 children: [
                   Expanded(
                     child: Text(
                       thixId.isEmpty ? 'Génération…' : thixId,
-                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 1.5),
+                      style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.onBrand, fontWeight: ThixPolicy.bold, letterSpacing: 1.5),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1351,48 +1308,48 @@ class _Step4Final extends StatelessWidget {
                       onPressed: () {
                         Clipboard.setData(ClipboardData(text: thixId));
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('THIX ID copié !'), backgroundColor: _AppColors.success),
+                          const SnackBar(content: Text('THIX ID copié !'), backgroundColor: ThixPolicy.success),
                         );
                       },
                       icon: const Icon(Icons.copy_rounded, color: Colors.white, size: 18),
                     ),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: ThixPolicy.s24),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('THIX CHAT', style: TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
+                  Text('THIX CHAT', style: ThixPolicy.microStyle.copyWith(color: Colors.white70, fontWeight: ThixPolicy.bold)),
                   const SizedBox(height: 4),
-                  Text(thixChat, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
+                  Text(thixChat, style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand, fontWeight: ThixPolicy.semiBold)),
                 ],
               ),
             ],
           ),
         ),
-        const SizedBox(height: 32),
-        const Text('Résumé', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: _AppColors.textDark)),
-        const SizedBox(height: 16),
+        const SizedBox(height: ThixPolicy.s32),
+        Text('Résumé', style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain)),
+        const SizedBox(height: ThixPolicy.s16),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s8),
           decoration: BoxDecoration(
-            color: _AppColors.background,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _AppColors.border),
+            color: ThixPolicy.surfaceSoft,
+            borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+            border: Border.all(color: ThixPolicy.border),
           ),
           child: Column(
             children: [
               _SummaryRow(label: 'Nom complet', value: name),
-              const Divider(height: 1, color: _AppColors.border),
+              const Divider(height: 1, color: ThixPolicy.border),
               _SummaryRow(label: 'Email', value: email),
-              const Divider(height: 1, color: _AppColors.border),
+              const Divider(height: 1, color: ThixPolicy.border),
               _SummaryRow(label: 'Mobile', value: phone),
-              const Divider(height: 1, color: _AppColors.border),
+              const Divider(height: 1, color: ThixPolicy.border),
               _SummaryRow(label: 'Date de naissance', value: dob),
-              const Divider(height: 1, color: _AppColors.border),
+              const Divider(height: 1, color: ThixPolicy.border),
               _SummaryRow(label: 'Pays', value: country),
               if (occupation.isNotEmpty) ...[
-                const Divider(height: 1, color: _AppColors.border),
+                const Divider(height: 1, color: ThixPolicy.border),
                 _SummaryRow(label: 'Occupation', value: occupation),
               ],
             ],
@@ -1411,14 +1368,14 @@ class _SummaryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: ThixPolicy.s12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(flex: 2, child: Text(label, style: const TextStyle(color: _AppColors.textMuted, fontSize: 13, fontWeight: FontWeight.w500))),
+          Expanded(flex: 2, child: Text(label, style: ThixPolicy.bodySmallStyle.copyWith(fontWeight: ThixPolicy.medium))),
           Expanded(
             flex: 3,
-            child: Text(value, textAlign: TextAlign.right, style: const TextStyle(color: _AppColors.textDark, fontSize: 13, fontWeight: FontWeight.w600)),
+            child: Text(value, textAlign: TextAlign.right, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.semiBold)),
           ),
         ],
       ),
@@ -1478,31 +1435,31 @@ class _SecureQrParrainageDialogState extends State<SecureQrParrainageDialog> {
   @override
   Widget build(BuildContext context) {
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
+      backgroundColor: ThixPolicy.card,
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(ThixPolicy.s24),
         child: FutureBuilder<String>(
           future: _tokenFuture,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const SizedBox(
                 height: 220,
-                child: Center(child: CircularProgressIndicator(color: _AppColors.primary)),
+                child: Center(child: CircularProgressIndicator(color: ThixPolicy.primary)),
               );
             }
             if (snapshot.hasError) {
               return Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.error_outline_rounded, color: _AppColors.danger, size: 48),
-                  const SizedBox(height: 16),
-                  const Text(
+                  const Icon(Icons.error_outline_rounded, color: ThixPolicy.danger, size: 48),
+                  const SizedBox(height: ThixPolicy.s16),
+                  Text(
                     'Impossible de générer le QR. Vérifiez que votre email est confirmé.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 13),
+                    style: ThixPolicy.bodySmallStyle,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: ThixPolicy.s16),
                   TextButton(onPressed: () => Navigator.pop(context), child: const Text('Fermer')),
                 ],
               );
@@ -1510,23 +1467,23 @@ class _SecureQrParrainageDialogState extends State<SecureQrParrainageDialog> {
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.qr_code_scanner_rounded, color: ThixPolicy.primary, size: 40),
-                const SizedBox(height: 16),
+                const Icon(Icons.qr_code_scanner_rounded, color: ThixPolicy.primary, size: 40),
+                const SizedBox(height: ThixPolicy.s16),
                 Text(
                   'QR de parrainage',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: ThixPolicy.primary),
+                  style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.primary),
                 ),
-                const SizedBox(height: 8),
-                const Text(
+                const SizedBox(height: ThixPolicy.s8),
+                Text(
                   'À faire scanner uniquement par un pair accrédité. Ne photographiez pas ce code.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: _AppColors.textMuted),
+                  style: ThixPolicy.bodySmallStyle,
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: ThixPolicy.s24),
                 QrImageView(data: snapshot.data!, version: QrVersions.auto, size: 200, backgroundColor: Colors.white),
-                const SizedBox(height: 16),
-                const Text('Valide 15 minutes', style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 16),
+                const SizedBox(height: ThixPolicy.s16),
+                Text('Valide 15 minutes', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.warning)),
+                const SizedBox(height: ThixPolicy.s16),
                 TextButton(
                   onPressed: () => Navigator.pop(context),
                   child: const Text('Fermer'),
