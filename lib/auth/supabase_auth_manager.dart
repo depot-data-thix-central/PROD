@@ -345,18 +345,19 @@ class SupabaseAuthManager implements AuthManager {
 
     try {
       await SupabaseSafeWrite.upsert(
-        client: _client,
-        table: 'profiles',
-        payload: payload,
-        onUnknownColumn: () async {
-          try {
-            await _client.functions.invoke('pgrst_schema_reload', body: const {});
-          } catch (e) {
-            debugPrint('SupabaseAuthManager: schema reload invoke failed err=$e');
-            rethrow;
-          }
-        },
-      );
+  client: _client,
+  table: 'profiles',
+  payload: payload,
+  criticalColumns: const ['thix_id', 'registration_status', 'account_status'], // ⭐ Colonnes critiques
+  onUnknownColumn: () async {
+    try {
+      await _client.functions.invoke('pgrst_schema_reload', body: const {});
+    } catch (e) {
+      debugPrint('SupabaseAuthManager: schema reload invoke failed err=$e');
+      rethrow;
+    }
+  },
+);
     } catch (e) {
       debugPrint('SupabaseAuthManager: profiles upsert failed uid=${user.id} err=$e');
       rethrow;
