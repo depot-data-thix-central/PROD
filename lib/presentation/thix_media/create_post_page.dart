@@ -1,37 +1,17 @@
-// lib/presentation/thix_media/create_post_page.dart
-import 'dart:io';
-import 'dart:ui';
-import 'package:flutter/foundation.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:video_player/video_player.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/media_service.dart';
 import '../../models/media_content.dart';
 import 'camera_capture_page.dart';
 import 'video_preview_editor_page.dart';
-
-// ============================================================================
-// PALETTE — Charte Premium THIX / TDIA
-// ============================================================================
-class _CreateColors {
-  static const navyDeep = Color(0xFF0A1F44);
-  static const navy = Color(0xFF123B7A);
-  static const primary = Color(0xFF2D6CDF);
-  static const whiteAccent = Colors.white;
-  static const whiteMuted = Color(0xFFE2E8F0);
-  static const cardLight = Color(0xFF16294D);
-  static const border = Color(0x1AFFFFFF);
-  static const textMuted = Color(0xFFAEB9D4);
-  static const danger = Color(0xFFE0453C);
-
-  static const gradientWhite = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Colors.white, whiteMuted],
-  );
-}
+import 'create_post/utils/validators.dart';
+import 'create_post/utils/create_post_constants.dart';
+import 'create_post/widgets/video_preview_widget.dart';
+import 'create_post/widgets/episode_list_widget.dart';
+import 'create_post/widgets/monetization_widget.dart';
+import 'create_post/widgets/filter_selector_widget.dart';
 
 class CreatePostPage extends StatefulWidget {
   const CreatePostPage({super.key});
@@ -43,88 +23,60 @@ class CreatePostPage extends StatefulWidget {
 class _CreatePostPageState extends State<CreatePostPage> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _subtitleController = TextEditingController();
-  final TextEditingController _priceController = TextEditingController();
 
   PlatformFile? _selectedVideo;
-  VideoPlayerController? _videoPlayerController;
-  bool _isVideoInitialized = false;
-
-  // ── Épisodes (uniquement pour le format "Série") ──
   final List<PlatformFile> _episodeFiles = [];
-  
-  // Contrôleurs de preview pour les épisodes de séries
-  final Map<int, VideoPlayerController> _episodeControllers = {};
-
   String _selectedContentType = 'Fil';
   bool _isPaid = false;
+  String _priceText = '';
   String _selectedFilter = 'Normal';
-  final List<String> _filters = ['Normal', 'Cinématique', 'Éclat', 'Vintage', 'Cyberpunk', 'Beauté Douce'];
-
-  bool get _isSeries => _selectedContentType == 'Série';
-
   bool _isUploading = false;
   double _progress = 0.0;
+
+  String? _titleError;
+  String? _subtitleError;
+
+  bool get _isSeries => _selectedContentType == 'Série';
 
   @override
   void dispose() {
     _titleController.dispose();
     _subtitleController.dispose();
-    _priceController.dispose();
-    _videoPlayerController?.dispose();
-    for (var controller in _episodeControllers.values) {
-      controller.dispose();
-    }
     super.dispose();
   }
 
-  // --- GESTION VIDÉO & PRÉVISUALISATION ---
-  Future<void> _initializeVideoPlayer() async {
-    if (_selectedVideo == null) return;
-
-    if (_videoPlayerController != null) {
-      await _videoPlayerController!.dispose();
-    }
-
-    if (kIsWeb) {
-      if (_selectedVideo!.bytes != null) {
-        _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(_selectedVideo!.path ?? ''));
-      }
-    } else {
-      if (_selectedVideo!.path != null) {
-        _videoPlayerController = VideoPlayerController.file(File(_selectedVideo!.path!));
-      }
-    }
-
-    if (_videoPlayerController != null) {
-      try {
-        await _videoPlayerController!.initialize();
-        _videoPlayerController!.setLooping(true);
-        _videoPlayerController!.play();
-        setState(() => _isVideoInitialized = true);
-      } catch (_) {
-        setState(() => _isVideoInitialized = false);
-      }
-    }
+  void _validateTitle(String value) {
+    final error = CreatePostValidators.validateTitle(value);
+    setState(() => _titleError = error);
   }
 
-  /// Applique un fichier vidéo déjà traité (trim + filtre + audio)
+  void _validateSubtitle(String value) {
+    final error = CreatePostValidators.validateSubtitle(value);
+    setState(() => _subtitleError = error);
+  }
+
   Future<void> _setProcessedVideo(String path) async {
-    // ✅ CORRECTION : On lit les données brutes (bytes) pour l'upload
     final file = File(path);
     final bytes = await file.readAsBytes();
 
-    setState(() {
-      _selectedVideo = PlatformFile(
-        name: path.split('/').last,
-        size: file.lengthSync(),
-        path: path,
-        bytes: bytes, // ✅ AJOUT DES BYTES
+    final platformFile = PlatformFile(
+      name: path.split('/').last,
+      size: file.lengthSync(),
+      path: path,
+      bytes: bytes,
+    );
+
+    final error = CreatePostValidators.validateVideoFile(platformFile);
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: CreatePostColors.danger),
       );
-    });
-    await _initializeVideoPlayer();
+      return;
+    }
+
+    setState(() => _selectedVideo = platformFile);
   }
 
-  /// Import depuis la galerie avec passage par l'éditeur de preview
   Future<void> _pickVideo() async {
     final result = await FilePicker.platform.pickFiles(type: FileType.video, withData: false);
     if (result != null && result.files.isNotEmpty && result.files.first.path != null) {
@@ -139,41 +91,42 @@ class _CreatePostPageState extends State<CreatePostPage> {
     }
   }
 
-  // ── Ajouter un ou plusieurs fichiers d'épisode avec initialisation du player ──
   Future<void> _pickEpisodes() async {
-    // ✅ CORRECTION : withData passe à true
+    final validationError = CreatePostValidators.validateEpisodeCount(_episodeFiles.length);
+    if (validationError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(validationError), backgroundColor: CreatePostColors.danger),
+      );
+      return;
+    }
+
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.video, 
-      withData: true, 
-      allowMultiple: true
+      type: FileType.video,
+      withData: true,
+      allowMultiple: true,
     );
-    
+
     if (result != null && result.files.isNotEmpty) {
-      setState(() {
-        for (var file in result.files) {
-          _episodeFiles.add(file);
-          _initEpisodeController(_episodeFiles.length - 1, file);
+      final validFiles = <PlatformFile>[];
+      for (var file in result.files) {
+        final error = CreatePostValidators.validateVideoFile(file);
+        if (error != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${file.name}: $error'), backgroundColor: CreatePostColors.danger),
+          );
+          continue;
         }
-      });
+        validFiles.add(file);
+      }
+
+      if (validFiles.isNotEmpty) {
+        setState(() => _episodeFiles.addAll(validFiles));
+      }
     }
   }
 
-  Future<void> _initEpisodeController(int index, PlatformFile file) async {
-    if (file.path == null) return;
-    final controller = VideoPlayerController.file(File(file.path!));
-    _episodeControllers[index] = controller;
-    try {
-      await controller.initialize();
-      setState(() {});
-    } catch (_) {}
-  }
-
   void _removeEpisode(int index) {
-    setState(() {
-      _episodeControllers[index]?.dispose();
-      _episodeControllers.remove(index);
-      _episodeFiles.removeAt(index);
-    });
+    setState(() => _episodeFiles.removeAt(index));
   }
 
   Future<void> _openCameraWithBeautyFilters() async {
@@ -186,24 +139,24 @@ class _CreatePostPageState extends State<CreatePostPage> {
     }
   }
 
-  // --- PUBLICATION ---
   Future<void> _publishPost() async {
-    if (_titleController.text.trim().isEmpty || _selectedVideo == null) {
+    // Validation globale
+    final titleError = CreatePostValidators.validateTitle(_titleController.text);
+    final subtitleError = CreatePostValidators.validateSubtitle(_subtitleController.text);
+    final videoError = CreatePostValidators.validateVideoFile(_selectedVideo);
+    final priceError = CreatePostValidators.validatePrice(_priceText, _isPaid);
+
+    setState(() {
+      _titleError = titleError;
+      _subtitleError = subtitleError;
+    });
+
+    if (titleError != null || subtitleError != null || videoError != null || priceError != null) {
+      final errorMessage = titleError ?? subtitleError ?? videoError ?? priceError ?? 'Erreur de validation';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Veuillez ajouter un titre et une vidéo.'), backgroundColor: _CreateColors.danger),
+        SnackBar(content: Text(errorMessage), backgroundColor: CreatePostColors.danger),
       );
       return;
-    }
-
-    double price = 0.0;
-    if (_isPaid) {
-      price = double.tryParse(_priceController.text.trim()) ?? 0.0;
-      if (price <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Veuillez indiquer un prix valide pour le contenu payant.'), backgroundColor: _CreateColors.danger),
-        );
-        return;
-      }
     }
 
     setState(() {
@@ -212,13 +165,19 @@ class _CreatePostPageState extends State<CreatePostPage> {
     });
 
     try {
+      final sanitizedTitle = CreatePostValidators.sanitize(_titleController.text);
+      final sanitizedSubtitle = CreatePostValidators.sanitize(_subtitleController.text);
+
       final newContent = MediaContent(
         id: '',
-        title: _titleController.text.trim(),
-        subtitle: _subtitleController.text.trim().isEmpty ? null : _subtitleController.text.trim(),
+        title: sanitizedTitle,
+        subtitle: sanitizedSubtitle.isEmpty ? null : sanitizedSubtitle,
         videoUrl: '',
         coverUrl: '',
         type: _selectedContentType,
+        isPaid: _isPaid,
+        price: _isPaid ? double.parse(_priceText) : 0.0,
+        filterApplied: _selectedFilter,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
@@ -235,22 +194,29 @@ class _CreatePostPageState extends State<CreatePostPage> {
       HapticFeedback.heavyImpact();
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Publication réussie !'), backgroundColor: Colors.green),
+        const SnackBar(
+          content: Text('Publication réussie !'),
+          backgroundColor: CreatePostColors.success,
+        ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur : $e'), backgroundColor: _CreateColors.danger),
+        SnackBar(
+          content: Text('Erreur : $e'),
+          backgroundColor: CreatePostColors.danger,
+        ),
       );
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
   }
 
-  InputDecoration _inputDecoration(String label) {
+  InputDecoration _inputDecoration(String label, String? errorText) {
     return InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(color: _CreateColors.textMuted, fontSize: 14),
+      labelStyle: const TextStyle(color: CreatePostColors.textMuted, fontSize: 14),
+      errorText: errorText,
       filled: true,
       fillColor: Colors.white.withValues(alpha: 0.05),
       border: OutlineInputBorder(
@@ -261,6 +227,10 @@ class _CreatePostPageState extends State<CreatePostPage> {
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
       ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: CreatePostColors.danger),
+      ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
     );
   }
@@ -268,9 +238,9 @@ class _CreatePostPageState extends State<CreatePostPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _CreateColors.navyDeep,
+      backgroundColor: CreatePostColors.navyDeep,
       appBar: AppBar(
-        backgroundColor: _CreateColors.navyDeep,
+        backgroundColor: CreatePostColors.navyDeep,
         elevation: 0,
         title: const Text('Publier', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 17)),
         centerTitle: true,
@@ -282,177 +252,44 @@ class _CreatePostPageState extends State<CreatePostPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // 1. SECTION PREVIEW & CAMERA (Vidéo principale)
-            Container(
-              height: 240,
-              decoration: BoxDecoration(
-                color: _CreateColors.cardLight.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-              ),
-              child: _isVideoInitialized && _videoPlayerController != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          FittedBox(
-                            fit: BoxFit.cover,
-                            child: SizedBox(
-                              width: _videoPlayerController!.value.size.width,
-                              height: _videoPlayerController!.value.size.height,
-                              child: VideoPlayer(_videoPlayerController!),
-                            ),
-                          ),
-                          Center(
-                            child: GestureDetector(
-                              onTap: () => setState(() {
-                                _videoPlayerController!.value.isPlaying
-                                    ? _videoPlayerController!.pause()
-                                    : _videoPlayerController!.play();
-                              }),
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.4),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  _videoPlayerController!.value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                  color: Colors.white,
-                                  size: 32,
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (_isSeries)
-                            Positioned(
-                              top: 12, left: 12,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                decoration: BoxDecoration(color: _CreateColors.primary, borderRadius: BorderRadius.circular(8)),
-                                child: const Text('Partie 1', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
-                              ),
-                            ),
-                        ],
-                      ),
-                    )
-                  : Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white.withValues(alpha: 0.05),
-                          ),
-                          child: const Icon(Icons.movie_creation_outlined, color: Colors.white54, size: 36),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          _isSeries ? 'Aucune vidéo pour la Partie 1' : 'Sélectionnez une vidéo',
-                          style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
-                        ),
-                        const SizedBox(height: 20),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            ElevatedButton.icon(
-                              onPressed: _pickVideo,
-                              icon: const Icon(Icons.folder_outlined, size: 18),
-                              label: const Text('Importer', style: TextStyle(fontWeight: FontWeight.w700)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white.withValues(alpha: 0.1),
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            ElevatedButton.icon(
-                              onPressed: _openCameraWithBeautyFilters,
-                              icon: const Icon(Icons.camera_alt_outlined, size: 18),
-                              label: const Text('Caméra', style: TextStyle(fontWeight: FontWeight.w700)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: _CreateColors.navyDeep,
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                              ),
-                            ),
-                          ],
-                        )
-                      ],
-                    ),
+            VideoPreviewWidget(
+              selectedVideo: _selectedVideo,
+              isSeries: _isSeries,
+              onPickVideo: _pickVideo,
+              onOpenCamera: _openCameraWithBeautyFilters,
             ),
-
             const SizedBox(height: 24),
 
-            // 2. FILTRES ESTHÉTIQUES
             if (_selectedVideo != null) ...[
-              const Text('Filtre appliqué', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 38,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _filters.length,
-                  itemBuilder: (context, index) {
-                    final filter = _filters[index];
-                    final isSelected = _selectedFilter == filter;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: GestureDetector(
-                        onTap: () {
-                          HapticFeedback.selectionClick();
-                          setState(() => _selectedFilter = filter);
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: isSelected ? Colors.white : Colors.white.withValues(alpha: 0.05),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: isSelected ? Colors.transparent : Colors.white.withValues(alpha: 0.1)),
-                          ),
-                          child: Text(
-                            filter,
-                            style: TextStyle(
-                              color: isSelected ? _CreateColors.navyDeep : Colors.white70,
-                              fontSize: 12.5,
-                              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+              FilterSelectorWidget(
+                selectedFilter: _selectedFilter,
+                onFilterChanged: (filter) => setState(() => _selectedFilter = filter),
               ),
               const SizedBox(height: 24),
             ],
 
-            // 3. INFORMATIONS PRINCIPALES
             TextField(
               controller: _titleController,
               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-              decoration: _inputDecoration('Titre de la publication'),
+              onChanged: _validateTitle,
+              maxLength: CreatePostValidators.maxTitleLength,
+              decoration: _inputDecoration('Titre de la publication', _titleError),
             ),
             const SizedBox(height: 16),
             TextField(
               controller: _subtitleController,
               style: const TextStyle(color: Colors.white),
               maxLines: 3,
-              decoration: _inputDecoration('Description / Synopsis'),
+              onChanged: _validateSubtitle,
+              maxLength: CreatePostValidators.maxSubtitleLength,
+              decoration: _inputDecoration('Description / Synopsis', _subtitleError),
             ),
-
             const SizedBox(height: 24),
 
-            // 4. CHOIX DU TYPE
-            const Text('Format de diffusion', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800)),
+            const Text(
+              'Format de diffusion',
+              style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800),
+            ),
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -464,11 +301,11 @@ class _CreatePostPageState extends State<CreatePostPage> {
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: _selectedContentType,
-                  dropdownColor: _CreateColors.cardLight,
+                  dropdownColor: CreatePostColors.cardLight,
                   icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white54),
                   style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
                   isExpanded: true,
-                  items: ['Fil', 'Série', 'NOVA Originals', 'Musique', 'Gaming', 'Formation']
+                  items: CreatePostConstants.contentTypes
                       .map((type) => DropdownMenuItem(value: type, child: Text(type)))
                       .toList(),
                   onChanged: (val) {
@@ -476,10 +313,6 @@ class _CreatePostPageState extends State<CreatePostPage> {
                       _selectedContentType = val ?? 'Fil';
                       if (!_isSeries) {
                         _episodeFiles.clear();
-                        for (var c in _episodeControllers.values) {
-                          c.dispose();
-                        }
-                        _episodeControllers.clear();
                       }
                     });
                   },
@@ -487,220 +320,33 @@ class _CreatePostPageState extends State<CreatePostPage> {
               ),
             ),
 
-            // 4bis. GESTION DES ÉPISODES (Série) AVEC PREVIEW VIDÉO INTÉGRÉE
             if (_isSeries) ...[
               const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.03),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Épisodes additionnels', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14)),
-                        Text(
-                          '${_episodeFiles.length + (_selectedVideo != null ? 1 : 0)} partie(s)',
-                          style: const TextStyle(color: _CreateColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'La vidéo importée ci-dessus est la Partie 1. Ajoutez les autres épisodes ci-dessous.',
-                      style: TextStyle(color: Colors.white54, fontSize: 12, height: 1.4),
-                    ),
-                    const SizedBox(height: 16),
-
-                    if (_episodeFiles.isNotEmpty)
-                      Column(
-                        children: List.generate(_episodeFiles.length, (i) {
-                          final ep = _episodeFiles[i];
-                          final controller = _episodeControllers[i];
-                          final isInitialized = controller?.value.isInitialized ?? false;
-
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.05),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      width: 30, height: 30,
-                                      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
-                                      alignment: Alignment.center,
-                                      child: Text('${i + 2}', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900)),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text('Partie ${i + 2}', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
-                                          const SizedBox(height: 2),
-                                          Text(ep.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 11)),
-                                        ],
-                                      ),
-                                    ),
-                                    GestureDetector(
-                                      onTap: () => _removeEpisode(i),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.2), shape: BoxShape.circle),
-                                        child: const Icon(Icons.close_rounded, color: Colors.white, size: 14),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                // Aperçu mini de la vidéo de l'épisode
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(10),
-                                  child: Container(
-                                    height: 140,
-                                    width: double.infinity,
-                                    color: Colors.black,
-                                    child: isInitialized && controller != null
-                                        ? Stack(
-                                            fit: StackFit.expand,
-                                            children: [
-                                              FittedBox(
-                                                fit: BoxFit.cover,
-                                                child: SizedBox(
-                                                  width: controller.value.size.width,
-                                                  height: controller.value.size.height,
-                                                  child: VideoPlayer(controller),
-                                                ),
-                                              ),
-                                              Center(
-                                                child: GestureDetector(
-                                                  onTap: () => setState(() {
-                                                    controller.value.isPlaying
-                                                        ? controller.pause()
-                                                        : controller.play();
-                                                  }),
-                                                  child: Container(
-                                                    padding: const EdgeInsets.all(8),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.black.withValues(alpha: 0.5),
-                                                      shape: BoxShape.circle,
-                                                    ),
-                                                    child: Icon(
-                                                      controller.value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                                      color: Colors.white,
-                                                      size: 24,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          )
-                                        : const Center(
-                                            child: SizedBox(
-                                              width: 24, height: 24,
-                                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                            ),
-                                          ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                      ),
-
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _pickEpisodes,
-                        icon: const Icon(Icons.add_rounded, size: 20),
-                        label: const Text('Ajouter une partie', style: TextStyle(fontWeight: FontWeight.w700)),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              EpisodeListWidget(
+                episodes: _episodeFiles,
+                mainVideo: _selectedVideo,
+                onPickEpisodes: _pickEpisodes,
+                onRemoveEpisode: _removeEpisode,
               ),
             ],
 
             const SizedBox(height: 24),
 
-            // 5. MONÉTISATION
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.03),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), shape: BoxShape.circle),
-                            child: const Icon(Icons.lock_rounded, color: Colors.white, size: 14),
-                          ),
-                          const SizedBox(width: 10),
-                          const Text('Contenu Premium', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14)),
-                        ],
-                      ),
-                      Switch(
-                        value: _isPaid,
-                        activeColor: Colors.white,
-                        activeTrackColor: _CreateColors.primary,
-                        inactiveTrackColor: Colors.white.withValues(alpha: 0.1),
-                        inactiveThumbColor: Colors.white54,
-                        onChanged: (val) => setState(() => _isPaid = val),
-                      ),
-                    ],
-                  ),
-                  if (_isPaid) ...[
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _priceController,
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-                      decoration: _inputDecoration('Prix en USD').copyWith(
-                        prefixIcon: const Icon(Icons.attach_money_rounded, color: Colors.white54, size: 18),
-                      ),
-                    ),
-                  ]
-                ],
-              ),
+            MonetizationWidget(
+              isPaid: _isPaid,
+              priceText: _priceText,
+              onPaidChanged: (val) => setState(() => _isPaid = val),
+              onPriceChanged: (val) => setState(() => _priceText = val),
             ),
 
             const SizedBox(height: 36),
 
-            // 6. BOUTON PUBLIER
             if (_isUploading) ...[
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: LinearProgressIndicator(
-                  value: _progress, 
-                  color: Colors.white, 
+                  value: _progress,
+                  color: Colors.white,
                   backgroundColor: Colors.white.withValues(alpha: 0.1),
                   minHeight: 6,
                 ),
@@ -715,14 +361,18 @@ class _CreatePostPageState extends State<CreatePostPage> {
               Container(
                 decoration: BoxDecoration(
                   boxShadow: [
-                    BoxShadow(color: Colors.white.withValues(alpha: 0.1), blurRadius: 20, offset: const Offset(0, 8)),
-                  ]
+                    BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
                 child: ElevatedButton(
-                  onPressed: _publishPost,
+                  onPressed: _isUploading ? null : _publishPost,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
-                    foregroundColor: _CreateColors.navyDeep,
+                    foregroundColor: CreatePostColors.navyDeep,
                     padding: const EdgeInsets.symmetric(vertical: 18),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     elevation: 0,
