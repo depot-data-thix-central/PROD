@@ -95,6 +95,8 @@ class _PremiumField extends StatefulWidget {
   final VoidCallback? onTap;
   final Widget? trailing;
   final String? errorText;
+  final String? helperText;
+  final TextStyle? helperStyle;
   final ValueChanged<String>? onChanged;
   final List<TextInputFormatter>? inputFormatters;
   final int? maxLength;
@@ -110,6 +112,8 @@ class _PremiumField extends StatefulWidget {
     this.onTap,
     this.trailing,
     this.errorText,
+    this.helperText,
+    this.helperStyle,
     this.onChanged,
     this.inputFormatters,
     this.maxLength,
@@ -143,6 +147,8 @@ class _PremiumFieldState extends State<_PremiumField> {
             counterText: '',
             hintText: widget.hint,
             errorText: widget.errorText,
+            helperText: widget.helperText,
+            helperStyle: widget.helperStyle,
             hintStyle: ThixPolicy.bodySmallStyle,
             prefixIcon: Icon(widget.icon, size: 20, color: ThixPolicy.textSecondary),
             suffixIcon: widget.trailing ??
@@ -240,9 +246,18 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   final _thixChatC = TextEditingController();
 
   String _thixIdGenerated = '';
+  
+  // Variables Validation Mot de passe
   String? _passwordError;
   bool _passwordValidating = false;
   int _passwordScore = -1;
+  Timer? _passwordDebounce;
+
+  // Variables Validation THIX CHAT (Temps réel)
+  String? _chatError;
+  String? _chatSuccess;
+  bool _chatValidating = false;
+  Timer? _chatDebounce;
 
   bool _otpSent = false;
   bool _emailVerified = false;
@@ -252,7 +267,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   Timer? _resendTimer;
   int _resendCooldown = 0;
   static const int _resendCooldownDuration = 60;
-  Timer? _passwordDebounce;
 
   static const _countries = [
     'Afrique du Sud', 'Algérie', 'Angola', 'Bénin', 'Botswana', 'Burkina Faso',
@@ -278,7 +292,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     _nameC.dispose(); _dobC.dispose(); _occupationC.dispose();
     _emailC.dispose(); _phoneC.dispose(); _passwordC.dispose();
     _confirmC.dispose(); _otpC.dispose(); _thixChatC.dispose();
-    _resendTimer?.cancel(); _passwordDebounce?.cancel();
+    _resendTimer?.cancel(); _passwordDebounce?.cancel(); _chatDebounce?.cancel();
     super.dispose();
   }
 
@@ -303,29 +317,29 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       return 'Configuration Supabase : activez "Confirm email" (Auth → Providers → Email).';
     }
     if (msg.contains('already registered') || msg.contains('already exists')) {
-      return 'Un compte existe déjà avec cet email.';
+      return 'Cette adresse email est déjà liée à un autre compte. Veuillez vous connecter.';
     }
     if (msg.contains('23505') || msg.contains('unique constraint')) {
-      if (msg.contains('phone')) return 'Ce numéro de téléphone est déjà utilisé.';
-      if (msg.contains('thix_chat')) return 'Ce THIX CHAT est déjà pris.';
-      if (msg.contains('thix_id')) return 'Erreur d\'identifiant. Réessayez.';
-      return 'Une information est déjà utilisée.';
+      if (msg.contains('phone')) return 'Ce numéro de téléphone est déjà utilisé par un autre utilisateur.';
+      if (msg.contains('thix_chat')) return 'Ce THIX CHAT est déjà pris par un autre utilisateur.';
+      if (msg.contains('thix_id')) return 'Erreur d\'identifiant lors de la création.';
+      return 'Une de vos informations (email ou téléphone) est déjà utilisée.';
     }
     if (msg.contains('invalid login') || msg.contains('invalid credentials')) {
       return 'Email ou mot de passe incorrect.';
     }
     if (msg.contains('email_not_verified')) return "Validez d'abord le code reçu par email.";
     if (msg.contains('invalid_chat') || msg.contains('reserved') || msg.contains('réservé')) {
-      return 'Ce THIX CHAT est invalide ou réservé.';
+      return 'Ce THIX CHAT est invalide ou réservé par le système.';
     }
-    if (msg.contains('chat_taken')) return 'Ce THIX CHAT est déjà pris.';
-    if (msg.contains('expired')) return 'Le code a expiré. Recommencez.';
-    if (msg.contains('invalid') && msg.contains('token')) return 'Code invalide.';
+    if (msg.contains('chat_taken')) return 'Ce THIX CHAT est déjà pris. Veuillez en choisir un autre.';
+    if (msg.contains('expired')) return 'Le code a expiré. Veuillez recommencer.';
+    if (msg.contains('invalid') && msg.contains('token')) return 'Le code saisi est incorrect.';
     if (msg.contains('rate limit') || msg.contains('too many')) {
-      return 'Trop de tentatives. Patientez quelques instants.';
+      return 'Trop de tentatives. Veuillez patienter quelques instants.';
     }
     if (msg.contains('network') || msg.contains('timeout') || msg.contains('unavailable')) {
-      return 'Erreur de connexion. Vérifiez votre réseau.';
+      return 'Erreur de connexion. Vérifiez votre accès internet.';
     }
 
     return 'Une erreur est survenue. Veuillez réessayer dans quelques instants.';
@@ -358,6 +372,82 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       'Tanzanie': 'TZ', 'Tchad': 'TD', 'Togo': 'TG', 'Tunisie': 'TN', 'Zambie': 'ZM', 'Zimbabwe': 'ZW',
     };
     return map[name] ?? 'XX';
+  }
+
+  // ==========================================================================
+  // VALIDATION TEMPS RÉEL DU THIX CHAT
+  // ==========================================================================
+  Future<void> _onChatChanged(String value) async {
+    _chatDebounce?.cancel();
+    final raw = value.trim().toLowerCase();
+
+    if (raw.isEmpty) {
+      setState(() { _chatError = null; _chatSuccess = null; _chatValidating = false; });
+      return;
+    }
+
+    final chat = raw.startsWith('@') ? raw : '@$raw';
+
+    // 1. Validation de Format
+    if (!RegExp(r'^@[a-z0-9._]{3,20}$').hasMatch(chat)) {
+      setState(() {
+        _chatError = '3 à 20 caractères (lettres, chiffres, . et _)';
+        _chatSuccess = null;
+        _chatValidating = false;
+      });
+      return;
+    }
+
+    // 2. Validation des mots réservés (anti-usurpation)
+    const reservedWords = [
+      '@admin', '@thix', '@support', '@root', '@system', 
+      '@officiel', '@help', '@moderator', '@central'
+    ];
+    if (reservedWords.contains(chat)) {
+      setState(() {
+        _chatError = 'Cet identifiant est réservé par le système.';
+        _chatSuccess = null;
+        _chatValidating = false;
+      });
+      return;
+    }
+
+    // 3. Début de la validation en base de données
+    setState(() {
+      _chatValidating = true;
+      _chatError = null;
+      _chatSuccess = null;
+    });
+
+    // On attend 600ms après la dernière touche tapée pour ne pas spammer la BDD
+    _chatDebounce = Timer(const Duration(milliseconds: 600), () async {
+      try {
+        final res = await Supabase.instance.client
+            .from('profiles')
+            .select('id')
+            .ilike('thix_chat', chat)
+            .maybeSingle();
+
+        if (!mounted) return;
+
+        if (res != null) {
+          setState(() {
+            _chatError = 'Ce THIX CHAT est déjà pris.';
+            _chatValidating = false;
+          });
+        } else {
+          setState(() {
+            _chatSuccess = 'Identifiant disponible !';
+            _chatValidating = false;
+          });
+        }
+      } catch (e) {
+        if (!mounted) return;
+        // Si l'erreur RLS bloque, on assume juste qu'on ne peut pas valider en live
+        // La validation finale rattrapera le coup de toute façon
+        setState(() => _chatValidating = false);
+      }
+    });
   }
 
   Future<void> _onPasswordChanged(String value) async {
@@ -503,6 +593,11 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
   Future<void> _verifyAndActivate() async {
     if (_busy) return;
+
+    if (_chatError != null) {
+      _snack('Veuillez corriger votre THIX CHAT avant de continuer.', isError: true);
+      return;
+    }
     
     final chat = _desiredChat();
     if (!_isValidThixChat(chat)) {
@@ -715,9 +810,11 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
           emailC: _emailC, phoneC: _phoneC, passwordC: _passwordC,
           confirmC: _confirmC, otpC: _otpC, thixChatC: _thixChatC,
           onSendOtp: _sendOtp, onPasswordChanged: _onPasswordChanged,
+          onChatChanged: _onChatChanged, // Appel Validation temps réel
           isOtpSent: _otpSent, isLoading: isLoading, resendCountdown: _resendCooldown,
           passwordError: _passwordError, passwordScore: _passwordScore,
           passwordValidating: _passwordValidating,
+          chatError: _chatError, chatSuccess: _chatSuccess, chatValidating: _chatValidating,
         );
       case 3:
         return _Step3Final(
@@ -867,17 +964,24 @@ class _Step2Account extends StatelessWidget {
   final TextEditingController emailC, phoneC, passwordC, confirmC, otpC, thixChatC;
   final VoidCallback onSendOtp;
   final ValueChanged<String> onPasswordChanged;
+  final ValueChanged<String> onChatChanged; // NOUVEAU
   final bool isOtpSent, isLoading, passwordValidating;
   final int resendCountdown;
   final String? passwordError;
   final int passwordScore;
+  
+  // Variables Chat Live
+  final String? chatError;
+  final String? chatSuccess;
+  final bool chatValidating;
 
   const _Step2Account({
     required this.emailC, required this.phoneC, required this.passwordC,
     required this.confirmC, required this.otpC, required this.thixChatC,
-    required this.onSendOtp, required this.onPasswordChanged,
+    required this.onSendOtp, required this.onPasswordChanged, required this.onChatChanged,
     required this.isOtpSent, required this.isLoading, required this.resendCountdown,
     required this.passwordError, required this.passwordScore, required this.passwordValidating,
+    required this.chatError, required this.chatSuccess, required this.chatValidating,
   });
 
   Color _scoreColor(int score) {
@@ -942,7 +1046,22 @@ class _Step2Account extends StatelessWidget {
 
         Text('Votre Identité', style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.textMain)),
         const SizedBox(height: ThixPolicy.s16),
-        _PremiumField(label: 'THIX CHAT (pseudo public) *', hint: '@pseudo_123', icon: Icons.alternate_email_rounded, controller: thixChatC),
+        
+        // CHAMP THIX CHAT AVEC VALIDATION LIVE
+        _PremiumField(
+          label: 'THIX CHAT (pseudo public) *', 
+          hint: '@pseudo_123', 
+          icon: Icons.alternate_email_rounded, 
+          controller: thixChatC,
+          onChanged: onChatChanged,
+          errorText: chatError,
+          helperText: chatSuccess,
+          helperStyle: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.success, fontWeight: ThixPolicy.semiBold),
+          trailing: chatValidating 
+            ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))) 
+            : (chatSuccess != null ? const Icon(Icons.check_circle_rounded, color: ThixPolicy.success, size: 20) : null),
+        ),
+        
         const SizedBox(height: ThixPolicy.s24),
         const Divider(color: ThixPolicy.border),
         const SizedBox(height: ThixPolicy.s16),
