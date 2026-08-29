@@ -1,4 +1,3 @@
-// lib/features/auth/presentation/pages/login_page.dart
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -8,13 +7,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/nav.dart';
 import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
-
-// ✅ Intégration du Design System THIX v1
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/presentation/auth/personal_registration_page.dart'; // Pour PasswordPolicy
 
-// ---------------------------------------------------------------------------
-// Page de connexion principale
-// ---------------------------------------------------------------------------
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
 
@@ -27,14 +22,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   final _passwordC = TextEditingController();
   bool _rememberMe = true;
 
-  // ---------- Anti brute-force (soft lockout) ----------
   int _failedAttempts = 0;
   int _lockoutSecondsLeft = 0;
   Timer? _lockoutTimer;
   static const int _lockoutThreshold = 5;
   static const int _lockoutDuration = 30;
 
-  // ---------- Réinitialisation de mot de passe ----------
   int _resetCooldown = 0;
   Timer? _resetCooldownTimer;
   static const int _resetCooldownDuration = 45;
@@ -65,8 +58,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     if (kDebugMode) debugPrint('[Login] erreur brute: $e');
     final msg = e.toString().toLowerCase();
     
+    if (msg.contains('account_suspended') || msg.contains('suspended')) {
+      return 'Votre compte a été suspendu. Contactez le support.';
+    }
+    if (msg.contains('account_not_active') || msg.contains('not active')) {
+      return 'Votre compte n\'est pas encore actif. Finalisez votre inscription.';
+    }
     if (msg.contains('aucun compte trouvé')) {
       return 'Aucun compte trouvé avec ce numéro de téléphone.';
+    }
+    if (msg.contains('mfa_required') || msg.contains('two_fa')) {
+      return 'Authentification à deux facteurs requise.';
     }
     if (e is AuthException) {
       if (msg.contains('rate limit') || msg.contains('too many')) {
@@ -100,6 +102,32 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     });
   }
 
+  // ✅ NOUVEAU : Logger les tentatives de connexion
+  Future<void> _logLoginAttempt({
+    required String identifier,
+    required bool success,
+    String? failureReason,
+  }) async {
+    try {
+      final uid = Supabase.instance.client.auth.currentUser?.id;
+      if (uid == null) return;
+
+      await Supabase.instance.client.from('security_events').insert({
+        'user_id': uid,
+        'type': success ? 'login_success' : 'login_failed',
+        'label': success ? 'Connexion réussie' : 'Échec de connexion',
+        'metadata': {
+          'identifier': identifier,
+          'failure_reason': failureReason,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      debugPrint('[Login] Failed to log attempt: $e');
+    }
+  }
+
   Future<void> _signIn() async {
     if (_lockoutSecondsLeft > 0) return;
 
@@ -116,22 +144,29 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     try {
       String finalIdentifier = identifier;
 
-      // 🌟 NOUVEAU : Si ça ressemble à un numéro de mobile, on cherche l'email associé
+      // ✅ CORRECTION : Utiliser RPC serveur pour résolution téléphone→email
       if (_looksLikePhone(identifier) && !identifier.contains('@')) {
-        final response = await Supabase.instance.client
-            .from('profiles')
-            .select('email')
-            .eq('phone_number', identifier)
-            .maybeSingle();
-            
-        if (response != null && response['email'] != null) {
-          finalIdentifier = response['email'] as String;
-        } else {
-          throw Exception('Aucun compte trouvé avec ce numéro de téléphone.');
+        try {
+          final response = await Supabase.instance.client.rpc(
+            'resolve_phone_to_email',
+            params: {'p_phone': identifier},
+          );
+          if (response is String && response.isNotEmpty) {
+            finalIdentifier = response;
+          } else {
+            throw Exception('Aucun compte trouvé avec ce numéro de téléphone.');
+          }
+        } catch (e) {
+          await _logLoginAttempt(
+            identifier: identifier,
+            success: false,
+            failureReason: 'phone_resolution_failed',
+          );
+          rethrow;
         }
       }
 
-      // Connexion standard (Email résolu ou THIX ID + Mot de passe)
+      // Connexion standard
       await authNotifier.signIn(
         identifier: finalIdentifier,
         password: password,
@@ -141,17 +176,69 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       if (!mounted) return;
       
       final user = ref.read(authControllerProvider).value;
-      if (user != null) {
-        _failedAttempts = 0;
-        final target = user.accountType == AccountType.enterprise
-            ? AppRoutes.enterpriseDashboard
-            : AppRoutes.userDashboard;
-        context.go(target);
+      if (user == null) {
+        throw Exception('Utilisateur non trouvé après connexion.');
       }
+
+      // ✅ CORRECTION CRITIQUE : Vérifier le statut du compte
+      final accountStatus = user.registrationStatus?.toLowerCase() ?? '';
+      final statusField = user.accountStatus?.toLowerCase() ?? '';
+      
+      if (statusField == 'suspended' || accountStatus == 'suspended') {
+        await _logLoginAttempt(
+          identifier: finalIdentifier,
+          success: false,
+          failureReason: 'account_suspended',
+        );
+        throw Exception('Votre compte a été suspendu.');
+      }
+
+      if (accountStatus != 'active' && statusField != 'active') {
+        await _logLoginAttempt(
+          identifier: finalIdentifier,
+          success: false,
+          failureReason: 'account_not_active',
+        );
+        // Rediriger vers l'inscription pour finaliser
+        context.go('${AppRoutes.personalReg}?step=3');
+        _snack('Finalisez votre inscription pour accéder à votre compte.', isError: true);
+        return;
+      }
+
+      // ✅ CORRECTION : Vérifier MFA si activé
+      if (user.twoFaEnabled == true) {
+        await _logLoginAttempt(
+          identifier: finalIdentifier,
+          success: false,
+          failureReason: 'mfa_required',
+        );
+        _snack('L\'authentification à deux facteurs n\'est pas encore supportée.', isError: true);
+        // TODO: Implémenter le flux MFA
+        return;
+      }
+
+      // ✅ Logger le succès
+      await _logLoginAttempt(
+        identifier: finalIdentifier,
+        success: true,
+      );
+
+      _failedAttempts = 0;
+      final target = user.accountType == AccountType.enterprise
+          ? AppRoutes.enterpriseDashboard
+          : AppRoutes.userDashboard;
+      context.go(target);
       
     } catch (e) {
       debugPrint('Login failed: $e');
       if (!mounted) return;
+      
+      await _logLoginAttempt(
+        identifier: _identifierC.text.trim(),
+        success: false,
+        failureReason: e.toString(),
+      );
+      
       _failedAttempts += 1;
       if (_failedAttempts >= _lockoutThreshold) {
         _startLockoutTimer();
@@ -165,8 +252,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   bool _looksLikePhone(String s) => RegExp(r'^\+?[0-9][0-9\s\-]{7,}$').hasMatch(s.trim());
   bool _looksLikeEmail(String s) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(s.trim());
 
-  // ---------- Réinitialisation de mot de passe ----------
-  
   void _startResetCooldown() {
     _resetCooldownTimer?.cancel();
     setState(() => _resetCooldown = _resetCooldownDuration);
@@ -178,7 +263,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 
   Future<bool> _sendPasswordReset(String email) async {
-    try { await Supabase.instance.client.auth.resetPasswordForEmail(email); } catch (e) { /* Ignore */ }
+    try { 
+      await Supabase.instance.client.auth.resetPasswordForEmail(email); 
+      // ✅ Logger la demande de reset
+      await _logLoginAttempt(
+        identifier: email,
+        success: true,
+        failureReason: 'password_reset_requested',
+      );
+    } catch (e) { 
+      debugPrint('Password reset failed: $e');
+    }
     _startResetCooldown();
     return true;
   }
@@ -192,6 +287,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     bool isSending = false;
     bool isOtpSent = false;
     bool isObscured = true;
+    String? passwordError;
 
     showDialog(
       context: context,
@@ -211,7 +307,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // --- EN-TÊTE ---
                     Row(
                       children: [
                         Container(
@@ -233,7 +328,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     ),
                     const SizedBox(height: ThixPolicy.s16),
                     
-                    // --- TEXTE DESCRIPTIF ---
                     Text(
                       isOtpSent 
                           ? 'Un code à 6 chiffres a été envoyé à ${emailC.text}. Saisissez-le ci-dessous avec votre nouveau mot de passe.'
@@ -242,7 +336,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     ),
                     const SizedBox(height: ThixPolicy.s24),
                     
-                    // --- ÉTAPE 1 : SAISIE DE L'EMAIL ---
                     if (!isOtpSent) ...[
                       TextFormField(
                         controller: emailC, keyboardType: TextInputType.emailAddress,
@@ -258,8 +351,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         ),
                       ),
                     ] 
-                    
-                    // --- ÉTAPE 2 : SAISIE OTP + NOUVEAU MOT DE PASSE ---
                     else ...[
                       TextFormField(
                         controller: otpC, keyboardType: TextInputType.number,
@@ -281,11 +372,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         decoration: InputDecoration(
                           labelText: 'Nouveau mot de passe',
                           hintText: 'Min. 8 caractères',
+                          errorText: passwordError,
                           filled: true, fillColor: ThixPolicy.surface,
                           contentPadding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s16),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.border)),
                           enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.border)),
                           focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.primary, width: 1.5)),
+                          errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.danger, width: 1.5)),
                           suffixIcon: IconButton(
                             splashRadius: 20,
                             icon: Icon(isObscured ? Icons.visibility_off_rounded : Icons.visibility_rounded, color: ThixPolicy.textSecondary, size: 20),
@@ -297,7 +390,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
                     const SizedBox(height: ThixPolicy.s28),
                     
-                    // --- BOUTONS D'ACTION ---
                     Row(
                       children: [
                         Expanded(
@@ -329,7 +421,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                 final newPass = newPasswordC.text;
                                 
                                 if (otp.isEmpty) { _snack('Saisissez le code OTP reçu.', isError: true); return; }
-                                if (newPass.length < 8) { _snack('Le mot de passe est trop court.', isError: true); return; }
+                                
+                                // ✅ CORRECTION : Valider avec politique NIST
+                                final passError = await PasswordPolicy.validate(
+                                  newPass,
+                                  email: emailC.text.trim(),
+                                  fullName: '',
+                                  phone: '',
+                                );
+                                
+                                if (passError != null) {
+                                  setDialogState(() => passwordError = passError);
+                                  return;
+                                }
                                 
                                 setDialogState(() => isSending = true);
                                 
@@ -345,9 +449,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                       UserAttributes(password: newPass),
                                     );
                                     
+                                    // ✅ Logger le succès
+                                    await _logLoginAttempt(
+                                      identifier: emailC.text.trim(),
+                                      success: true,
+                                      failureReason: 'password_reset_success',
+                                    );
+                                    
                                     if (dialogContext.mounted) {
                                       Navigator.of(dialogContext).pop();
-                                      _snack('Mot de passe mis à jour ! Vous allez être connecté.');
+                                      _snack('Mot de passe mis à jour ! Vous pouvez vous connecter.');
                                     }
                                   }
                                 } catch (e) {
@@ -395,7 +506,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         top: false,
         child: Stack(
           children: [
-            // Header Gradient Design épuré
             Positioned(
               top: 0, left: 0, right: 0, height: 260,
               child: Container(
@@ -427,7 +537,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               ),
             ),
             
-            // Scrollable Form Content
             Positioned.fill(
               top: 200,
               child: SingleChildScrollView(
@@ -435,7 +544,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 physics: const BouncingScrollPhysics(),
                 child: Column(
                   children: [
-                    // Main Login Card
                     Container(
                       decoration: BoxDecoration(
                         color: ThixPolicy.card,
@@ -501,7 +609,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           
                           const SizedBox(height: ThixPolicy.s32),
                           
-                          // Primary Action Button
                           ElevatedButton(
                             onPressed: (isLoading || _lockoutSecondsLeft > 0) ? null : _signIn,
                             style: ElevatedButton.styleFrom(
@@ -533,7 +640,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           
                           const SizedBox(height: ThixPolicy.s24),
                           
-                          // Biometrics Divider
                           Row(
                             children: [
                               const Expanded(child: Divider(color: ThixPolicy.border)),
@@ -543,7 +649,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           ),
                           const SizedBox(height: 20),
                           
-                          // Social/Biometrics Row
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: const [
@@ -558,7 +663,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     
                     const SizedBox(height: ThixPolicy.s24),
                     
-                    // Security Badge
                     Container(
                       padding: const EdgeInsets.all(ThixPolicy.s16),
                       decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(ThixPolicy.rMd), border: Border.all(color: ThixPolicy.success.withValues(alpha: 0.3)), boxShadow: [BoxShadow(color: ThixPolicy.success.withValues(alpha: 0.05), blurRadius: 10)]),
@@ -582,7 +686,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     
                     const SizedBox(height: ThixPolicy.s28),
                     
-                    // Registration Link
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -597,7 +700,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     
                     const SizedBox(height: ThixPolicy.s24),
                     
-                    // Language Selector
                     Container(
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(24), border: Border.all(color: ThixPolicy.border)),
@@ -623,9 +725,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Composants internes UI
-// ---------------------------------------------------------------------------
 class _SecureInput extends StatefulWidget {
   final String label;
   final String hint;
