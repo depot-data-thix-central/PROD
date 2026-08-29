@@ -189,32 +189,95 @@ class _PremiumDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: ThixPolicy.labelStyle),
-        const SizedBox(height: ThixPolicy.s8),
-        DropdownButtonFormField<String>(
-          value: value,
-          icon: const Icon(Icons.expand_more_rounded, size: 20, color: ThixPolicy.textSecondary),
-          style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.medium),
-          decoration: InputDecoration(
-            prefixIcon: Icon(icon, size: 20, color: ThixPolicy.textSecondary),
-            filled: true,
-            fillColor: ThixPolicy.card,
-            contentPadding: ThixPolicy.inputPadding,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.border)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.border)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.primary, width: 1.5)),
-          ),
-          hint: Text('Sélectionner', style: ThixPolicy.bodySmallStyle),
-          items: items.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))).toList(),
-          onChanged: onChanged,
+    final isLoading = ref.watch(authControllerProvider).isLoading || _busy;
+
+    return Scaffold(
+      backgroundColor: ThixPolicy.surfaceSoft,
+      body: SafeArea(
+        top: false,
+        child: Stack(
+          children: [
+            Positioned(
+              top: 0, left: 0, right: 0, height: 260,
+              child: Container(
+                padding: const EdgeInsets.only(top: 60),
+                decoration: const BoxDecoration(gradient: ThixPolicy.brandGradient),
+                child: Column(
+                  children: [
+                    Text('THIX ID', style: ThixPolicy.displayStyle.copyWith(color: ThixPolicy.gold, letterSpacing: 1.5)),
+                    const SizedBox(height: ThixPolicy.s16),
+                    _buildStepper(),
+                  ],
+                ),
+              ),
+            ),
+            Positioned.fill(
+              top: 160,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20, vertical: ThixPolicy.s20),
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(ThixPolicy.s28),
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.card,
+                        borderRadius: BorderRadius.circular(ThixPolicy.rXl),
+                        boxShadow: ThixPolicy.shadowSoft(),
+                      ),
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 400),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        child: KeyedSubtree(
+                          key: ValueKey(_step),
+                          child: _buildStepContent(isLoading),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: ThixPolicy.s24),
+                    
+                    // 1. Le bouton d'action principal (Suivant / Activer / Dashboard)
+                    _buildMainButton(isLoading),
+                    
+                    const SizedBox(height: ThixPolicy.s16),
+                    
+                    // 2. 👇 C'EST ICI QUE SE PLACE VOTRE CODE 👇
+                    if (_step < 3)
+                      TextButton(
+                        // 🔴 1. Ajout de 'async'
+                        onPressed: isLoading ? null : () async { 
+                          if (_step > 1) {
+                            setState(() => _step -= 1);
+                          } else {
+                            // 🔴 2. Destruction de la session fantôme avant de partir
+                            await ref.read(authControllerProvider.notifier).signOut();
+                            if (context.mounted) {
+                              context.go(AppRoutes.login);
+                            }
+                          }
+                        },
+                        style: TextButton.styleFrom(foregroundColor: ThixPolicy.textSecondary),
+                        child: Text(
+                          // 🔴 3. Texte plus clair
+                          _step == 1 ? 'Changer de compte / Se connecter' : '← Étape précédente',
+                          style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.semiBold),
+                        ),
+                      ),
+                    // 👆 FIN DU CODE 👆
+
+                    const SizedBox(height: ThixPolicy.s40),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
-}
+
 
 // ============================================================================
 // PAGE PRINCIPALE
