@@ -17,7 +17,6 @@ import 'package:thix_id/data/models/live/live_model.dart';
 import 'package:thix_id/features/network/data/network_service_provider.dart';
 import 'package:thix_id/features/network/presentation/providers/feed_provider.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
-import 'package:thix_id/nav.dart'; // ✅ Routes centralisées
 import 'widgets/create_post_dialog.dart';
 import 'widgets/create_story_dialog.dart';
 import 'widgets/post_card.dart';
@@ -113,16 +112,14 @@ class NetworkProHome extends ConsumerStatefulWidget {
 class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticKeepAliveClientMixin {
   final ScrollController _scrollController = ScrollController();
 
-  // ✅ CORRIGÉ : Variables d'instance au lieu de static
   DateTime? _lastRefreshTime;
   static const _refreshCooldown = Duration(seconds: 60);
 
   bool _isLoadingMore = false;
-  Timer? _scrollDebounce; // ✅ Debounce scroll
+  Timer? _scrollDebounce;
   Timer? _suggestionTimer;
-  int _suggestionRefreshCount = 0; // ✅ Limite refreshes
+  int _suggestionRefreshCount = 0;
 
-  // ✅ CORRIGÉ : Limites mémoire
   static const int _maxSuggestions = 100;
   static const int _maxSuggestionRefreshes = 10;
 
@@ -140,7 +137,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
 
-    // ✅ DEBOUNCE : Évite appels multiples
     _scrollDebounce?.cancel();
     _scrollDebounce = Timer(const Duration(milliseconds: 200), () {
       if (pos.pixels >= pos.maxScrollExtent - 700 && !_isLoadingMore) {
@@ -153,7 +149,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
         }
       }
 
-      // Hide/show nav
       final dir = pos.userScrollDirection;
       final navVisible = ref.read(_navVisibleProvider.notifier);
       if (dir == ScrollDirection.reverse && ref.read(_navVisibleProvider)) {
@@ -190,14 +185,12 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     try {
       final data = await ref.read(networkServiceProvider).getSuggestedConnections(limit: 30);
 
-      // ✅ LIMITE MÉMOIRE : Max 100 suggestions
       final currentSuggestions = ref.read(_suggestionsProvider);
       final merged = [...currentSuggestions, ...data].take(_maxSuggestions).toList();
       ref.read(_suggestionsProvider.notifier).state = merged;
 
       _shuffleSuggestions();
 
-      // ✅ LIMITE REFRESHES : Max 10 fois
       _suggestionTimer?.cancel();
       if (_suggestionRefreshCount < _maxSuggestionRefreshes) {
         _suggestionTimer = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -251,7 +244,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
   }
 
   Future<void> _openComments(String postId) async {
-    _safePush(AppRoutes.networkComments.replaceFirst(':postId', postId));
+    _safePush('/network/comments/$postId');
   }
 
   @override
@@ -262,7 +255,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     super.dispose();
   }
 
-  // ✅ OPTIMISÉ : Gradient au lieu de BackdropFilter
   Widget _buildGradientOrb(Color color, double size) {
     return Container(
       width: size,
@@ -303,13 +295,12 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       canPop: false,
       onPopInvoked: (didPop) {
         if (didPop) return;
-        context.go(AppRoutes.home);
+        context.go('/');
       },
       child: Scaffold(
         backgroundColor: ThixPolicy.surfaceSoft,
         body: Stack(
           children: [
-            // ✅ OPTIMISÉ : Gradients au lieu de BackdropFilter
             Positioned(top: -100, right: -50, child: _buildGradientOrb(ThixPolicy.primary, 250)),
             Positioned(bottom: 200, left: -100, child: _buildGradientOrb(ThixPolicy.primaryDeep, 300)),
 
@@ -392,6 +383,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
   }
 
   Widget _buildSliverAppBar({required String? avatarUrl}) {
+    final currentUser = ref.watch(authControllerProvider).value;
+    
     return SliverAppBar(
       backgroundColor: Colors.transparent,
       elevation: 0,
@@ -430,14 +423,14 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
           ),
         ),
         const SizedBox(width: 8),
-        _appBarIcon(icon: Icons.search_rounded, onTap: () => _safePush(AppRoutes.networkSearch)),
+        _appBarIcon(icon: Icons.search_rounded, onTap: () => _safePush('/network/search')),
         const SizedBox(width: 8),
-        _appBarIcon(icon: Icons.notifications_none_rounded, onTap: () => _safePush(AppRoutes.networkNotifications)),
+        _appBarIcon(icon: Icons.notifications_none_rounded, onTap: () => _safePush('/network/notifications')),
         const SizedBox(width: 12),
         Padding(
           padding: const EdgeInsets.only(right: 16),
           child: GestureDetector(
-            onTap: () => _safePush(AppRoutes.networkProfile),
+            onTap: () => _safePush('/network/profile/${currentUser?.id ?? ''}'),
             child: RoundAvatar(size: 34, imageUrl: avatarUrl),
           ),
         ),
@@ -484,7 +477,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       );
     }
 
-    // ✅ OPTIMISÉ : Calcul en dehors de build
     final myStories = stories.where((s) => s.userId == currentUserId).toList();
     final Map<String, List<NetworkStory>> groupedOtherStories = {};
     for (final s in stories) {
@@ -635,7 +627,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                 if (i < suggestions.length) {
                   final u = suggestions[i];
                   return GestureDetector(
-                    onTap: () => context.push(AppRoutes.networkProfileUser.replaceFirst(':userId', u.id.toString())),
+                    onTap: () => context.push('/network/profile/${u.id}'),
                     child: SizedBox(
                       width: 62,
                       child: Column(
@@ -855,10 +847,10 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
                       _navBtn(Icons.home_rounded, 'Accueil', true, () => _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut)),
-                      _navBtn(Icons.explore_outlined, 'Découvrir', false, () => _safePush(AppRoutes.networkDiscover)),
+                      _navBtn(Icons.explore_outlined, 'Découvrir', false, () => _safePush('/network/discover')),
                       _navBtn(Icons.add_circle_outline_rounded, 'Publier', false, () => showDialog(context: context, builder: (_) => const CreatePostDialog())),
-                      _navBtn(Icons.mail_outline_rounded, 'Messages', false, () => _safePush(AppRoutes.networkMessages)),
-                      _navBtn(Icons.diversity_3_outlined, 'Communauté', false, () => _safePush(AppRoutes.networkCommunities)),
+                      _navBtn(Icons.mail_outline_rounded, 'Messages', false, () => _safePush('/network/messages')),
+                      _navBtn(Icons.diversity_3_outlined, 'Communauté', false, () => _safePush('/network/communities')),
                     ],
                   ),
                 ),
