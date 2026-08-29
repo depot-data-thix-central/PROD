@@ -348,7 +348,7 @@ class AppRouter {
           final status = currentUser?.registrationStatus?.toLowerCase() ?? '';
 
           // ✅ 1. RÈGLE STRICTE : Le compte est actif UNIQUEMENT si le statut exact est 'active'
-          final isAccountActive = currentUser != null && (status == 'active' || status == 'completed');
+          final isAccountActive = currentUser != null && status == 'active';
 
           // Cas 1 : Non connecté
           if (!logged) {
