@@ -827,7 +827,7 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
         content: sanitizedContent,
         bgColor: payload['bg_color'] as String?,
         mediaUrls: uploadedUrls,
-        postType: payload['post_type'] as String? ?? 'standard',
+        postType: PostType.values.asNameMap()[payload['post_type'] as String?] ?? PostType.standard,
         pollData: payload['poll_data'] as Map<String, dynamic>?,
         challengeData: payload['challenge_data'] as Map<String, dynamic>?,
         isFactChecked: false, // Fact-check fait côté serveur
