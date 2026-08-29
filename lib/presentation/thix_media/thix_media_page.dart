@@ -1,12 +1,14 @@
+import 'dart:async'; 
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/models/media_content.dart';
 import 'package:thix_id/nav.dart' show AppRoutes;
-import 'package:thix_id/presentation/thix_media/providers/thix_media_providers.dart';
+import 'package:thix_id/presentation/thix_media/providers/thix_media_providers.dart'; 
 import 'utils/media_constants.dart';
 import 'widgets/media_poster_card.dart';
 import 'widgets/media_detail_page.dart';
@@ -61,6 +63,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   void _onSearchChanged(String v) {
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+      // ✅ UTILISATION CORRECTE DU PROVIDER ICI
       ref.read(searchQueryProvider.notifier).state = v;
     });
   }
@@ -84,8 +87,8 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     super.build(context);
     final asyncMedia = ref.watch(thixMediaListProvider);
     final isAdmin = ref.watch(isMediaAdminProvider).valueOrNull ?? false;
-    final hasQuery = _searchController.text.trim().isNotEmpty;
-    final showSearchOverlay = _searchFocusNode.hasFocus && hasQuery;
+    final hasQueryText = _searchController.text.trim().isNotEmpty;
+    final showSearchOverlay = _searchFocusNode.hasFocus && hasQueryText;
 
     return Scaffold(
       backgroundColor: MediaColors.navyDeep,
@@ -116,7 +119,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
         data: (catalog) {
           return Stack(
             children: [
-              _buildMainContent(catalog),
+              _buildMainContent(catalog, isAdmin),
               if (showSearchOverlay) _buildSearchOverlay(catalog),
             ],
           );
@@ -125,9 +128,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
-  Widget _buildMainContent(List<MediaContent> catalog) {
-    final isAdmin = ref.watch(isMediaAdminProvider).valueOrNull ?? false;
-
+  Widget _buildMainContent(List<MediaContent> catalog, bool isAdmin) {
     if (_selectedCategory == 'Fil') {
       return Stack(
         children: [
@@ -202,6 +203,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   }
 
   Widget _buildSliverHeader(bool isAdmin) {
+    final hasQueryText = _searchController.text.trim().isNotEmpty;
     return SliverAppBar(
       pinned: true,
       floating: true,
@@ -288,11 +290,12 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                         ),
                       ),
                     ),
-                    if (hasQuery)
+                    if (hasQueryText)
                       GestureDetector(
                         onTap: () {
                           _searchFocusNode.unfocus();
                           _searchController.clear();
+                          // ✅ CORRECTION ICI AUSSI
                           ref.read(searchQueryProvider.notifier).state = "";
                         },
                         child: const Icon(Icons.close_rounded, color: Colors.white70, size: 16),
@@ -533,8 +536,8 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   }
 
   Widget _buildSearchOverlay(List<MediaContent> catalog) {
-    final hasQuery = _searchController.text.trim().isNotEmpty;
-    final searchResults = hasQuery
+    final hasQueryText = _searchController.text.trim().isNotEmpty;
+    final searchResults = hasQueryText
         ? catalog.where((e) => e.title.toLowerCase().contains(_searchController.text.toLowerCase())).toList()
         : <MediaContent>[];
 
@@ -574,6 +577,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                         onTap: () {
                           _searchFocusNode.unfocus();
                           _searchController.clear();
+                          // ✅ ET ENCORE UNE CORRECTION ICI
                           ref.read(searchQueryProvider.notifier).state = "";
                           _openDetail(item);
                         },
@@ -614,6 +618,4 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
       ),
     );
   }
-
-  bool get hasQuery => _searchController.text.trim().isNotEmpty;
 }
