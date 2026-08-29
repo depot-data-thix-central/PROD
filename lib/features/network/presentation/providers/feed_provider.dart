@@ -1,3 +1,4 @@
+import 'dart:math'; 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:thix_id/models/network_post.dart';
@@ -12,8 +13,10 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
   bool _isFetchingMore = false;
   Set<String> _connectionIds = {};
   DateTime? _lastPostDate;
+  
+  int _feedSeed = 0; // ✅ AJOUT : seed du mélange pour la DB
 
-  // ✅ NOUVEAU : Limite mémoire (max 500 posts en mémoire)
+  // ✅ Limite mémoire (max 500 posts en mémoire)
   static const int _maxPostsInMemory = 500;
 
   bool get hasMore => _hasMore;
@@ -39,7 +42,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
     );
   }
 
-  /// ✅ NOUVEAU : Trim la liste si elle dépasse la limite
+  // ✅ Trim la liste si elle dépasse la limite
   List<NetworkPost> _enforceMemoryLimit(List<NetworkPost> posts) {
     if (posts.length <= _maxPostsInMemory) return posts;
     debugPrint('[Feed] Trimming from ${posts.length} to $_maxPostsInMemory posts');
@@ -51,24 +54,10 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
     _hasMore = true;
     _lastPostDate = null;
     _isFetchingMore = false;
+    _feedSeed = Random().nextInt(1000000000); // ✅ Mélange initial
     
     try {
-      await _ensureConnections();
-      final service = ref.read(networkServiceProvider);
-      final limit = _currentType == 'all' ? 50 : 20;
-      
-      final posts = await service.getFeedPosts(
-        feedType: _currentType,
-        limit: limit,
-        lastCreatedAt: _lastPostDate,
-      );
-      
-      _hasMore = posts.length >= limit;
-      if (posts.isNotEmpty) {
-        _lastPostDate = posts.last.createdAt;
-      }
-      
-      return _enforceMemoryLimit(_rank(posts));
+      return await _fetch(offset: 0);
     } catch (e) {
       debugPrint('[Feed] build error: $e');
       return [];
@@ -80,35 +69,20 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
     state = const AsyncLoading();
 
     try {
-      if (force) {
-        _connectionIds = {};
-      }
-      await _ensureConnections();
-
+      if (force) _connectionIds = {};
+      
       _lastPostDate = null;
+      _feedSeed = Random().nextInt(1000000000); // ✅ NOUVEAU mélange à chaque refresh (pull-to-refresh)
 
-      final service = ref.read(networkServiceProvider);
-      final limit = _currentType == 'all' ? 50 : 30;
-      
-      final posts = await service.getFeedPosts(
-        feedType: _currentType,
-        limit: limit,
-        lastCreatedAt: _lastPostDate,
-      );
-      
-      _hasMore = posts.length >= limit;
-      if (posts.isNotEmpty) {
-        _lastPostDate = posts.last.createdAt;
-      }
-      
-      state = AsyncData(_enforceMemoryLimit(_rank(posts)));
+      final posts = await _fetch(offset: 0);
+      state = AsyncData(posts);
     } catch (e, stack) {
       debugPrint('[Feed] loadFeed error: $e');
       state = AsyncError(e, stack);
     }
   }
 
-  /// ✅ CORRIGÉ : Vérifie les doublons avant d'ajouter
+  // ✅ CORRIGÉ : Vérifie les doublons avant d'ajouter un nouveau post publié
   void addPostOnTop(NetworkPost post) {
     final current = state.valueOrNull ?? [];
     
@@ -128,7 +102,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
     final current = state.valueOrNull ?? [];
     if (current.isEmpty) return;
 
-    // ✅ NOUVEAU : Stop si on a atteint la limite mémoire
+    // ✅ Stop si on a atteint la limite mémoire
     if (current.length >= _maxPostsInMemory) {
       debugPrint('[Feed] Memory limit reached, stopping pagination');
       _hasMore = false;
@@ -138,31 +112,56 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
     _isFetchingMore = true;
 
     try {
-      await _ensureConnections();
-      final service = ref.read(networkServiceProvider);
-      final limit = _currentType == 'all' ? 30 : 20;
+      // ✅ MÊME seed que le refresh initial → pagination cohérente
+      final more = await _fetch(offset: current.length);
       
-      _lastPostDate = current.last.createdAt;
-      
-      final more = await service.getFeedPosts(
-        feedType: _currentType,
-        limit: limit,
-        lastCreatedAt: _lastPostDate,
-      );
-      
-      _hasMore = more.length >= limit;
-      if (more.isNotEmpty) {
-        _lastPostDate = more.last.createdAt;
-      }
+      // ✅ Sécurité anti-doublon lors du fetch
+      final ids = current.map((p) => p.id).toSet();
+      final unique = more.where((p) => !ids.contains(p.id)).toList();
 
-      final rankedMore = _rank(more);
-      final updated = [...current, ...rankedMore];
+      final updated = [...current, ...unique];
       state = AsyncData(_enforceMemoryLimit(updated));
     } catch (e) {
       debugPrint('[Feed] loadMore error: $e');
     } finally {
       _isFetchingMore = false;
     }
+  }
+
+  // ✅ NOUVEAU : Méthode centralisée pour récupérer et formater les données
+  Future<List<NetworkPost>> _fetch({required int offset}) async {
+    await _ensureConnections();
+    final service = ref.read(networkServiceProvider);
+    
+    // Limites dynamiques
+    final limit = _currentType == 'all' ? (offset == 0 ? 50 : 30) : 20;
+
+    if (_currentType == 'all') {
+      // ✅ SMART FEED : La DB s'occupe déjà de calculer et trier.
+      final posts = await service.getFeedPosts(
+        feedType: 'all',
+        limit: limit,
+        offset: offset,
+        seed: _feedSeed, // Paramètre de mélange
+      );
+      
+      _hasMore = posts.length >= limit;
+      return _enforceMemoryLimit(posts); // ❌ Pas de FeedRanker client-side ici pour ne pas écraser l'algorithme DB
+    }
+
+    // ── Autres onglets (Abonnements, Tendances) ──
+    final posts = await service.getFeedPosts(
+      feedType: _currentType,
+      limit: limit,
+      offset: offset,
+      lastCreatedAt: _lastPostDate,
+    );
+    
+    _hasMore = posts.length >= limit;
+    if (posts.isNotEmpty) _lastPostDate = posts.last.createdAt;
+    
+    // On applique le FeedRanker localement pour les onglets classiques
+    return _enforceMemoryLimit(_rank(posts)); 
   }
 
   Future<void> deletePost(String postId) async {
