@@ -115,7 +115,7 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => _CommentsSheet(mediaId: item.id, mediaTitle: item.title),
+      builder: (_) => CommentsSheet(mediaId: item.id, mediaTitle: item.title),
     ).then((_) => ref.invalidate(commentCountProvider(item.id)));
   }
 
