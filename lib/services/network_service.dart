@@ -983,28 +983,30 @@ Future<List<NetworkPost>> getFeedPosts({
   }
 
   Future<void> createStory(
-    String? mediaUrl, {
-    String? text,
-    String mediaType = 'image',
-    int duration = 24,
-  }) async {
-    if (currentUserId.isEmpty) throw Exception('Non authentifié');
+  String? mediaUrl, {
+  String? text,
+  String mediaType = 'image',
+  int duration = 24,
+  String? bgColor,                    
+}) async {
+  if (currentUserId.isEmpty) throw Exception('Non authentifié');
 
-    final sanitizedMediaUrl = _NetworkValidators.sanitizeUrl(mediaUrl);
-    final sanitizedText = text != null ? _NetworkValidators.sanitizeText(text, maxLength: 1000) : null;
+  await _supabase.from('stories').insert({
+    'user_id': currentUserId,
+    'media_url': mediaUrl,
+    'image_url': mediaUrl,
+    'text_content': text,
+    'content': text,
+    'text': text,                     
+    'media_type': mediaType,
+    'bg_color': bgColor,              
+    'is_active': true,
+    'expires_at': DateTime.now().toUtc()
+        .add(Duration(hours: duration.clamp(6, 48))).toIso8601String(),
+  }).timeout(_requestTimeout);
 
-    await _supabase.from('stories').insert({
-      'user_id': currentUserId,
-      'media_url': sanitizedMediaUrl,
-      'image_url': sanitizedMediaUrl,
-      'text_content': sanitizedText,
-      'content': sanitizedText,
-      'media_type': mediaType,
-      'is_active': true,
-      'expires_at': DateTime.now().toUtc().add(Duration(hours: duration.clamp(6, 48))).toIso8601String(),
-    }).timeout(_requestTimeout);
-    notifyListeners();
-  }
+  notifyListeners();
+}
 
   Future<void> deleteStory(String storyId) async {
     if (currentUserId.isEmpty) return;
