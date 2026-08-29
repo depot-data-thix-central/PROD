@@ -1,7 +1,5 @@
-// lib/features/network/presentation/providers/feed_provider.dart
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:thix_id/models/network_post.dart';
 import 'package:thix_id/features/network/data/network_service_provider.dart';
 import 'package:thix_id/features/network/presentation/providers/feed_ranker.dart';
@@ -11,11 +9,12 @@ final feedProvider = AsyncNotifierProvider<Feed, List<NetworkPost>>(Feed.new);
 class Feed extends AsyncNotifier<List<NetworkPost>> {
   String _currentType = 'all';
   bool _hasMore = true;
-  bool _isFetchingMore = false; // Verrou anti-spam pour le scroll
+  bool _isFetchingMore = false;
   Set<String> _connectionIds = {};
-  
-  // Le Curseur ! Il remplacera l'offset.
   DateTime? _lastPostDate;
+
+  // ✅ NOUVEAU : Limite mémoire (max 500 posts en mémoire)
+  static const int _maxPostsInMemory = 500;
 
   bool get hasMore => _hasMore;
   String get currentType => _currentType;
@@ -27,7 +26,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
       final service = ref.read(networkServiceProvider);
       _connectionIds = await service.getMyConnectionIds();
     } catch (e) {
-      debugPrint('🔥 connections for rank: $e');
+      debugPrint('[Feed] connections error: $e');
       _connectionIds = {};
     }
   }
@@ -38,6 +37,13 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
       connectionIds: _connectionIds,
       feedType: _currentType,
     );
+  }
+
+  /// ✅ NOUVEAU : Trim la liste si elle dépasse la limite
+  List<NetworkPost> _enforceMemoryLimit(List<NetworkPost> posts) {
+    if (posts.length <= _maxPostsInMemory) return posts;
+    debugPrint('[Feed] Trimming from ${posts.length} to $_maxPostsInMemory posts');
+    return posts.take(_maxPostsInMemory).toList();
   }
 
   @override
@@ -51,21 +57,20 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
       final service = ref.read(networkServiceProvider);
       final limit = _currentType == 'all' ? 50 : 20;
       
-      // Appel avec le curseur (initialement null)
       final posts = await service.getFeedPosts(
         feedType: _currentType,
         limit: limit,
-        lastCreatedAt: _lastPostDate, 
+        lastCreatedAt: _lastPostDate,
       );
       
       _hasMore = posts.length >= limit;
       if (posts.isNotEmpty) {
-        _lastPostDate = posts.last.createdAt; // Mise à jour du curseur
+        _lastPostDate = posts.last.createdAt;
       }
       
-      return _rank(posts);
+      return _enforceMemoryLimit(_rank(posts));
     } catch (e) {
-      debugPrint('🔥 Erreur dans Feed.build: $e');
+      debugPrint('[Feed] build error: $e');
       return [];
     }
   }
@@ -80,7 +85,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
       }
       await _ensureConnections();
 
-      _lastPostDate = null; // Réinitialisation du curseur
+      _lastPostDate = null;
 
       final service = ref.read(networkServiceProvider);
       final limit = _currentType == 'all' ? 50 : 30;
@@ -96,24 +101,39 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
         _lastPostDate = posts.last.createdAt;
       }
       
-      state = AsyncData(_rank(posts));
+      state = AsyncData(_enforceMemoryLimit(_rank(posts)));
     } catch (e, stack) {
-      debugPrint('🔥 Erreur dans Feed.loadFeed: $e');
+      debugPrint('[Feed] loadFeed error: $e');
       state = AsyncError(e, stack);
     }
   }
 
+  /// ✅ CORRIGÉ : Vérifie les doublons avant d'ajouter
   void addPostOnTop(NetworkPost post) {
     final current = state.valueOrNull ?? [];
-    state = AsyncData([post, ...current]);
+    
+    // Vérifier si le post existe déjà
+    if (current.any((p) => p.id == post.id)) {
+      debugPrint('[Feed] Post ${post.id} already exists, skipping');
+      return;
+    }
+    
+    final updated = [post, ...current];
+    state = AsyncData(_enforceMemoryLimit(updated));
   }
 
   Future<void> loadMore() async {
-    // Bloque si on est déjà en train de charger, ou s'il n'y a plus rien
     if (!_hasMore || _isFetchingMore) return;
     
     final current = state.valueOrNull ?? [];
     if (current.isEmpty) return;
+
+    // ✅ NOUVEAU : Stop si on a atteint la limite mémoire
+    if (current.length >= _maxPostsInMemory) {
+      debugPrint('[Feed] Memory limit reached, stopping pagination');
+      _hasMore = false;
+      return;
+    }
 
     _isFetchingMore = true;
 
@@ -122,7 +142,6 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
       final service = ref.read(networkServiceProvider);
       final limit = _currentType == 'all' ? 30 : 20;
       
-      // On s'assure d'avoir le curseur du dernier post actuellement affiché
       _lastPostDate = current.last.createdAt;
       
       final more = await service.getFeedPosts(
@@ -137,20 +156,23 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
       }
 
       final rankedMore = _rank(more);
-      state = AsyncData([...current, ...rankedMore]);
+      final updated = [...current, ...rankedMore];
+      state = AsyncData(_enforceMemoryLimit(updated));
     } catch (e) {
-      debugPrint('🔥 Erreur dans Feed.loadMore: $e');
+      debugPrint('[Feed] loadMore error: $e');
     } finally {
-      _isFetchingMore = false; // Libère le verrou
+      _isFetchingMore = false;
     }
   }
 
   Future<void> deletePost(String postId) async {
     final current = state.valueOrNull ?? [];
     state = AsyncData(current.where((p) => p.id != postId).toList());
+    
     try {
       await ref.read(networkServiceProvider).deletePost(postId);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[Feed] deletePost error, rollback: $e');
       state = AsyncData(current); // Rollback
     }
   }
@@ -171,7 +193,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
 
     final list = [...current];
     list[idx] = optimistic;
-    state = AsyncData(list); // Mise à jour optimiste instantanée
+    state = AsyncData(list);
 
     try {
       final service = ref.read(networkServiceProvider);
@@ -181,8 +203,8 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
         await service.likePost(postId);
       }
     } catch (e) {
-      debugPrint('🔥 toggleLike rollback: $e');
-      state = AsyncData(current); // Rollback en cas d'erreur réseau
+      debugPrint('[Feed] toggleLike error, rollback: $e');
+      state = AsyncData(current);
     }
   }
 }
