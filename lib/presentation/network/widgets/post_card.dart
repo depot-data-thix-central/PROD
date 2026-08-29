@@ -186,15 +186,6 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
   void updateContent(String c) => state = state.copyWith(content: _PostCardValidators.sanitize(c));
 
   void incRepost() => state = state.copyWith(repostsCount: state.repostsCount + 1, isReposted: true);
-
-  void updateFactCheck({required bool isMisinformation, String? message, String? severity}) {
-    state = state.copyWith(
-      isFactChecked: true,
-      isMisinformation: isMisinformation,
-      factCheckMessage: message,
-      factCheckSeverity: severity,
-    );
-  }
 }
 
 // ============================================================================
@@ -250,9 +241,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
   bool _impressionRegistered = false;
   Timer? _impressionDebounce;
 
-  // Stream pour fact-check realtime
-  StreamSubscription? _factCheckSubscription;
-
   static const _maxContentChars = 250;
   static const _maxParseDepth = 6;
 
@@ -275,29 +263,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     super.initState();
     _isFollowingLocal = widget.isFollowingAuthor;
     _cacheParsedContent();
-    _subscribeToFactCheck();
-  }
-
-  void _subscribeToFactCheck() {
-    // Écouter les changements de fact-check en temps réel
-    if (!widget.post.isFactChecked) {
-      _factCheckSubscription = Supabase.instance.client
-          .from('posts')
-          .stream(primaryKey: ['id'])
-          .eq('id', widget.post.id)
-          .listen((data) {
-            if (data.isNotEmpty && mounted) {
-              final updated = data.first;
-              if (updated['is_fact_checked'] == true) {
-                ref.read(postItemProvider.notifier).updateFactCheck(
-                  isMisinformation: updated['is_misinformation'] == true,
-                  message: updated['fact_check_message']?.toString(),
-                  severity: updated['fact_check_severity']?.toString(),
-                );
-              }
-            }
-          });
-    }
   }
 
   @override
@@ -316,7 +281,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     _disposeRecognizers();
     _quoteController.dispose();
     _impressionDebounce?.cancel();
-    _factCheckSubscription?.cancel();
     super.dispose();
   }
 
@@ -757,121 +721,190 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     );
   }
 
-  /// ✅ Bannière fact-check améliorée avec 3 états visuels
-  Widget _buildFactCheckBanner(NetworkPost post) {
-    if (!post.isFactChecked) {
-      // État "En cours de vérification"
-      return Container(
-        width: double.infinity,
-        margin: const EdgeInsets.only(top: ThixPolicy.s12),
-        padding: const EdgeInsets.all(ThixPolicy.s12),
-        decoration: BoxDecoration(
-          color: ThixPolicy.primary.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border(left: BorderSide(color: ThixPolicy.primary, width: 4)),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(
-              width: 17,
-              height: 17,
-              child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary),
-            ),
-            const SizedBox(width: ThixPolicy.s10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Vérification en cours', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.bold, fontSize: 11.5)),
-                  const SizedBox(height: 4),
-                  Text('Notre IA analyse cette publication pour détecter la désinformation...', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontSize: 12, height: 1.4)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+  /// ✅ SIGNALLEMENT COMMUNAUTAIRE (remplace fact-check)
+  Future<void> _showReportDialog(NetworkPost post) async {
+    const reasons = [
+      'Désinformation',
+      'Spam ou publicité abusive',
+      'Contenu inapproprié',
+      'Harcèlement ou discours haineux',
+      'Nudité ou contenu sexuel',
+      'Violence ou contenu choquant',
+      'Usurpation d\'identité',
+      'Autre',
+    ];
 
-    if (post.isFactChecked && !post.isMisinformation) {
-      // État "Vérifié - Safe"
-      return Container(
-        width: double.infinity,
-        margin: const EdgeInsets.only(top: ThixPolicy.s12),
-        padding: const EdgeInsets.all(ThixPolicy.s12),
-        decoration: BoxDecoration(
-          color: ThixPolicy.success.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border(left: BorderSide(color: ThixPolicy.success, width: 4)),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Icon(Icons.verified_rounded, color: ThixPolicy.success, size: 17),
-            const SizedBox(width: ThixPolicy.s10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Contenu vérifié', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.success, fontWeight: ThixPolicy.bold, fontSize: 11.5)),
-                  const SizedBox(height: 4),
-                  Text('Cette publication a été analysée et ne contient pas de désinformation avérée.', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontSize: 12, height: 1.4)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
+    String? selectedReason;
+    final detailsController = TextEditingController();
+    bool isSubmitting = false;
 
-    if (post.isMisinformation && post.factCheckMessage != null && post.factCheckMessage!.isNotEmpty) {
-      // État "Désinformation détectée"
-      return Container(
-        width: double.infinity,
-        margin: const EdgeInsets.only(top: ThixPolicy.s12),
-        padding: const EdgeInsets.all(ThixPolicy.s12),
-        decoration: BoxDecoration(
-          color: ThixPolicy.danger.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border(left: BorderSide(color: ThixPolicy.danger, width: 4)),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Icon(Icons.warning_amber_rounded, color: ThixPolicy.danger, size: 17),
-            const SizedBox(width: ThixPolicy.s10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text('⚠️ Désinformation détectée', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold, fontSize: 11.5)),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: ThixPolicy.danger,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text('FAKE', style: ThixPolicy.captionStyle.copyWith(color: Colors.white, fontSize: 9, fontWeight: ThixPolicy.bold)),
-                      ),
-                    ],
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: AlertDialog(
+            backgroundColor: Colors.white.withOpacity(0.95),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                const Icon(Icons.flag_outlined, color: ThixPolicy.danger, size: 22),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Signaler cette publication',
+                    style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain, fontSize: 16, fontWeight: ThixPolicy.bold),
                   ),
-                  const SizedBox(height: 4),
-                  Text(post.factCheckMessage!, style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontSize: 12, height: 1.4)),
+                ),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Pourquoi souhaitez-vous signaler cette publication ?',
+                    style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 13, height: 1.4),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Motif du signalement *',
+                    style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain, fontSize: 12),
+                  ),
                   const SizedBox(height: 8),
-                  Text('Source : Vérification IA THIX', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 10, fontStyle: FontStyle.italic)),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white.withOpacity(0.8)),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: selectedReason,
+                        isExpanded: true,
+                        hint: Text('Choisir un motif', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 13)),
+                        items: reasons
+                            .map((r) => DropdownMenuItem(value: r, child: Text(r, style: ThixPolicy.bodyStyle.copyWith(fontSize: 13))))
+                            .toList(),
+                        onChanged: isSubmitting ? null : (v) => setDialogState(() => selectedReason = v),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Détails supplémentaires (optionnel)',
+                    style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain, fontSize: 12),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: detailsController,
+                    maxLines: 3,
+                    maxLength: 500,
+                    enabled: !isSubmitting,
+                    decoration: InputDecoration(
+                      hintText: 'Expliquez le problème en quelques mots...',
+                      hintStyle: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 13),
+                      filled: true,
+                      fillColor: Colors.white.withOpacity(0.5),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: ThixPolicy.primary, width: 1.5),
+                      ),
+                      counterText: '',
+                    ),
+                  ),
                 ],
               ),
             ),
-          ],
+            actions: [
+              TextButton(
+                onPressed: isSubmitting ? null : () => Navigator.pop(ctx, false),
+                child: Text('Annuler', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary)),
+              ),
+              ElevatedButton(
+                onPressed: (selectedReason == null || isSubmitting)
+                    ? null
+                    : () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ThixPolicy.danger,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: ThixPolicy.danger.withOpacity(0.3),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: isSubmitting
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Signaler'),
+              ),
+            ],
+          ),
         ),
-      );
+      ),
+    );
+
+    if (confirmed != true || selectedReason == null) return;
+
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Vous devez être connecté pour signaler'), backgroundColor: ThixPolicy.danger),
+        );
+      }
+      return;
     }
 
-    return const SizedBox.shrink();
+    try {
+      await Supabase.instance.client.from('post_reports').insert({
+        'post_id': post.id,
+        'reporter_id': uid,
+        'reason': selectedReason,
+        'details': _PostCardValidators.sanitize(detailsController.text.trim(), maxLength: 500),
+        'status': 'pending',
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_outline_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Signalement envoyé. Notre équipe l\'examinera.',
+                    style: ThixPolicy.labelStyle.copyWith(color: Colors.white, fontSize: 13),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: ThixPolicy.success,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[Report] Error: $e');
+      final errorMsg = e.toString().contains('duplicate key') ||
+              e.toString().contains('unique constraint')
+          ? 'Vous avez déjà signalé cette publication.'
+          : 'Erreur lors du signalement. Réessayez.';
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMsg),
+            backgroundColor: ThixPolicy.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _editPost(NetworkPost post, WidgetRef ref) async {
@@ -1143,8 +1176,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                               _buildChallengeWidget(post),
                             ],
 
-                            _buildFactCheckBanner(post),
-
                             const SizedBox(height: ThixPolicy.s16),
 
                             if (likesCount > 0) _LikersStack(count: likesCount, postId: post.id, isLikedByMe: isLiked),
@@ -1241,6 +1272,13 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                 await ref.read(networkServiceProvider).hidePost(post.id);
                 if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Publication masquée')));
               },
+            ),
+            const SizedBox(width: 20),
+            _ActionBtn(
+              icon: Icons.flag_outlined,
+              label: '',
+              color: ThixPolicy.danger.withOpacity(0.8),
+              onTap: () => _showReportDialog(post),
             ),
           ]
         ],
@@ -1410,7 +1448,6 @@ class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header avec titre
           Row(
             children: [
               Container(
@@ -1430,7 +1467,6 @@ class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
           ),
           const SizedBox(height: 12),
 
-          // Waveform visual
           Row(
             children: [
               GestureDetector(
@@ -1455,7 +1491,6 @@ class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
               ),
               const SizedBox(width: 14),
 
-              // Waveform bars
               Expanded(
                 child: GestureDetector(
                   onTapDown: (details) {
@@ -1475,7 +1510,6 @@ class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
               ),
               const SizedBox(width: 10),
 
-              // Speed button
               GestureDetector(
                 onTap: _cycleSpeed,
                 child: Container(
@@ -1494,7 +1528,6 @@ class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
             ],
           ),
 
-          // Progress bar + time
           const SizedBox(height: 8),
           Row(
             children: [
@@ -1512,7 +1545,6 @@ class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
   }
 }
 
-/// Peintre custom pour waveform
 class _WaveformPainter extends CustomPainter {
   final double progress;
   final Color color;
@@ -1552,7 +1584,6 @@ class _WaveformPainter extends CustomPainter {
   }
 }
 
-/// ✅ Link preview premium avec cache
 class _PremiumLinkPreview extends StatefulWidget {
   final String url;
   const _PremiumLinkPreview({required this.url});
@@ -1573,7 +1604,6 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
   }
 
   Future<void> _loadPreview() async {
-    // Cache check
     final cached = _PostCardCache().getLinkPreview(widget.url);
     if (cached != null) {
       if (mounted) {
@@ -1586,7 +1616,6 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
     }
 
     try {
-      // Appel à Edge Function pour récupérer les metadata
       final response = await Supabase.instance.client.functions.invoke(
         'link-preview',
         body: {'url': widget.url},
@@ -1732,7 +1761,6 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
   }
 }
 
-/// ✅ Video thumb avec CachedNetworkImage (pas de VideoPlayer)
 class _VideoThumbTile extends StatefulWidget {
   final String videoUrl;
   final double? width;
@@ -1755,7 +1783,6 @@ class _VideoThumbTileState extends State<_VideoThumbTile> {
   }
 
   Future<void> _generateThumbnail() async {
-    // Essayer de récupérer un thumbnail via Edge Function
     try {
       final response = await Supabase.instance.client.functions.invoke(
         'video-thumbnail',
@@ -1800,7 +1827,6 @@ class _VideoThumbTileState extends State<_VideoThumbTile> {
   }
 }
 
-/// ✅ Likers avec cache
 class _LikersStack extends StatefulWidget {
   final int count;
   final String postId;
@@ -1836,7 +1862,6 @@ class _LikersStackState extends State<_LikersStack> {
       return;
     }
 
-    // Cache check
     final cached = _PostCardCache().getLikers(widget.postId);
     if (cached != null) {
       if (mounted) {
@@ -1945,7 +1970,7 @@ class _LikersStackState extends State<_LikersStack> {
 }
 
 // ============================================================================
-// AUTRES WIDGETS (inchangés mais nettoyés)
+// AUTRES WIDGETS
 // ============================================================================
 
 class _OriginalPostEmbed extends ConsumerWidget {
