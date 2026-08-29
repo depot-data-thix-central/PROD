@@ -182,7 +182,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
       // ✅ CORRECTION CRITIQUE : Vérifier le statut du compte
       final accountStatus = user.registrationStatus?.toLowerCase() ?? '';
-      final statusField = user.accountStatus?.toLowerCase() ?? '';
+      final statusField = user.registrationStatus?.toLowerCase() ?? '';
+
       
       if (statusField == 'suspended' || accountStatus == 'suspended') {
         await _logLoginAttempt(
