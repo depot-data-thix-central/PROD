@@ -15,6 +15,7 @@ class NetworkStory {
   final DateTime expiresAt;
   final bool isViewed;
   final bool? isCurrentUserOverride;
+  final String? bgColor;                          // ✅ AJOUT
 
   NetworkStory({
     required this.id,
@@ -30,6 +31,7 @@ class NetworkStory {
     required this.expiresAt,
     this.isViewed = false,
     this.isCurrentUserOverride,
+    this.bgColor,                                 // ✅ AJOUT
   });
 
   factory NetworkStory.fromCreation({
@@ -41,6 +43,7 @@ class NetworkStory {
     String? userAvatar,
     String? userTitle,
     int durationHours = 24,
+    String? bgColor,                              // ✅ AJOUT
   }) {
     final now = DateTime.now().toUtc(); // ✅ UTC
     return NetworkStory(
@@ -55,6 +58,7 @@ class NetworkStory {
       duration: durationHours,
       createdAt: now,
       expiresAt: now.add(Duration(hours: durationHours)),
+      bgColor: bgColor,                           // ✅ AJOUT
     );
   }
 
@@ -122,11 +126,6 @@ class NetworkStory {
       }
     }
 
-    // ✅ SUPPRIMÉ : Mode détective (fuite de données)
-    // if (media.isEmpty && text.isEmpty) {
-    //   text = "🔧 LIGNE VIDE DANS SUPABASE\n\nVoici ce que la base a renvoyé :\n\n$json";
-    // }
-
     final name = (profiles?['display_name'] ?? profiles?['full_name'] ?? json['user_name'] ?? json['author_name'] ?? 'Utilisateur').toString();
     final avatar = validateUrl(profiles?['avatar_url']?.toString() ?? profiles?['photo_url']?.toString() ?? json['user_avatar']?.toString() ?? json['author_avatar']?.toString());
     final title = (profiles?['profession'] ?? json['user_title'] ?? 'Membre THIX').toString();
@@ -144,6 +143,7 @@ class NetworkStory {
       createdAt: parseDate(json['created_at'] ?? json['createdAt']),
       expiresAt: parseDate(json['expires_at'] ?? json['expiresAt'], fallbackAdd: const Duration(hours: 24)),
       isViewed: json['is_viewed'] == true || json['isViewed'] == true,
+      bgColor: json['bg_color'] as String?,                       // ✅ AJOUT
     );
   }
 
@@ -155,6 +155,7 @@ class NetworkStory {
     'text_content': textContent,
     'media_type': mediaType,
     'duration': duration,
+    'bg_color': bgColor,                                          // ✅ AJOUT
   };
 
   /// ✅ OPTIMISÉ : Cache le résultat pour éviter les appels répétés
@@ -200,6 +201,7 @@ class NetworkStory {
     DateTime? createdAt,
     DateTime? expiresAt,
     bool? isViewed,
+    String? bgColor,                              // ✅ AJOUT
   }) {
     return NetworkStory(
       id: id ?? this.id,
@@ -214,6 +216,7 @@ class NetworkStory {
       createdAt: createdAt ?? this.createdAt,
       expiresAt: expiresAt ?? this.expiresAt,
       isViewed: isViewed ?? this.isViewed,
+      bgColor: bgColor ?? this.bgColor,           // ✅ AJOUT
     );
   }
 }
