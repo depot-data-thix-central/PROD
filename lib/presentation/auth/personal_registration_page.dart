@@ -189,92 +189,29 @@ class _PremiumDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isLoading = ref.watch(authControllerProvider).isLoading || _busy;
-
-    return Scaffold(
-      backgroundColor: ThixPolicy.surfaceSoft,
-      body: SafeArea(
-        top: false,
-        child: Stack(
-          children: [
-            Positioned(
-              top: 0, left: 0, right: 0, height: 260,
-              child: Container(
-                padding: const EdgeInsets.only(top: 60),
-                decoration: const BoxDecoration(gradient: ThixPolicy.brandGradient),
-                child: Column(
-                  children: [
-                    Text('THIX ID', style: ThixPolicy.displayStyle.copyWith(color: ThixPolicy.gold, letterSpacing: 1.5)),
-                    const SizedBox(height: ThixPolicy.s16),
-                    _buildStepper(),
-                  ],
-                ),
-              ),
-            ),
-            Positioned.fill(
-              top: 160,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20, vertical: ThixPolicy.s20),
-                physics: const BouncingScrollPhysics(),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(ThixPolicy.s28),
-                      decoration: BoxDecoration(
-                        color: ThixPolicy.card,
-                        borderRadius: BorderRadius.circular(ThixPolicy.rXl),
-                        boxShadow: ThixPolicy.shadowSoft(),
-                      ),
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 400),
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        child: KeyedSubtree(
-                          key: ValueKey(_step),
-                          child: _buildStepContent(isLoading),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: ThixPolicy.s24),
-                    
-                    // 1. Le bouton d'action principal (Suivant / Activer / Dashboard)
-                    _buildMainButton(isLoading),
-                    
-                    const SizedBox(height: ThixPolicy.s16),
-                    
-                    // 2. 👇 C'EST ICI QUE SE PLACE VOTRE CODE 👇
-                    if (_step < 3)
-                      TextButton(
-                        // 🔴 1. Ajout de 'async'
-                        onPressed: isLoading ? null : () async { 
-                          if (_step > 1) {
-                            setState(() => _step -= 1);
-                          } else {
-                            // 🔴 2. Destruction de la session fantôme avant de partir
-                            await ref.read(authControllerProvider.notifier).signOut();
-                            if (context.mounted) {
-                              context.go(AppRoutes.login);
-                            }
-                          }
-                        },
-                        style: TextButton.styleFrom(foregroundColor: ThixPolicy.textSecondary),
-                        child: Text(
-                          // 🔴 3. Texte plus clair
-                          _step == 1 ? 'Changer de compte / Se connecter' : '← Étape précédente',
-                          style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.semiBold),
-                        ),
-                      ),
-                    // 👆 FIN DU CODE 👆
-
-                    const SizedBox(height: ThixPolicy.s40),
-                  ],
-                ),
-              ),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: ThixPolicy.labelStyle),
+        const SizedBox(height: ThixPolicy.s8),
+        DropdownButtonFormField<String>(
+          value: value,
+          icon: const Icon(Icons.expand_more_rounded, size: 20, color: ThixPolicy.textSecondary),
+          style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.medium),
+          decoration: InputDecoration(
+            prefixIcon: Icon(icon, size: 20, color: ThixPolicy.textSecondary),
+            filled: true,
+            fillColor: ThixPolicy.card,
+            contentPadding: ThixPolicy.inputPadding,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.border)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.border)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.inputRadius), borderSide: const BorderSide(color: ThixPolicy.primary, width: 1.5)),
+          ),
+          hint: Text('Sélectionner', style: ThixPolicy.bodySmallStyle),
+          items: items.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))).toList(),
+          onChanged: onChanged,
         ),
-      ),
+      ],
     );
   }
 }
@@ -391,7 +328,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       return 'Erreur de connexion. Vérifiez votre réseau.';
     }
 
-    // Message générique pour toute erreur non reconnue (plus de dump brut en prod).
     return 'Une erreur est survenue. Veuillez réessayer dans quelques instants.';
   }
 
@@ -487,7 +423,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     if (passIssue != null) { _snack(passIssue, isError: true); return false; }
     if (pass != confirm) { _snack('Les mots de passe ne correspondent pas.', isError: true); return false; }
 
-        try {
+    try {
       await ref.read(authControllerProvider.notifier).registerPersonal(
             email: email,
             password: pass,
@@ -497,7 +433,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
               'full_name': _nameC.text.trim(),
               'date_of_birth': _dobC.text.trim(),
               'country_or_origin': _country,
-              // ✅ CORRECTION : Envoyer null si le champ est vide au lieu d'une chaîne ""
               'occupation': _occupationC.text.trim().isEmpty ? null : _occupationC.text.trim(),
               'phone_number': phone.isEmpty ? null : phone,
               'registration_status': 'draft_step2',
@@ -542,10 +477,8 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     }
   }
 
-  // ✅ CORRECTION CRUCIALE APPLIQUÉE ICI
   Future<bool> _refreshEmailVerifiedFlag() async {
     try {
-      // Force le rafraîchissement de la session pour obtenir l'état à jour après OTP
       await Supabase.instance.client.auth.refreshSession();
       final res = await Supabase.instance.client.auth.getUser();
       final ok = res.user?.emailConfirmedAt != null;
@@ -568,7 +501,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     return '@${base}${DateTime.now().millisecondsSinceEpoch % 10000}';
   }
 
-  // ✅ FUSION : Vérification OTP + Activation finale en une seule action
   Future<void> _verifyAndActivate() async {
     if (_busy) return;
     
@@ -609,7 +541,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         }
       }
 
-      // Activation finale via RPC
       final result = await Supabase.instance.client.rpc(
         'finalize_registration',
         params: {
@@ -640,7 +571,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       setState(() {
         _thixIdGenerated = officialThixId;
         _thixChatC.text = claimedChat;
-        _step = 3; // Passage à l'étape finale (Carte)
+        _step = 3;
       });
       _snack('Compte activé avec succès.');
       
@@ -723,23 +654,31 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
                       ),
                     ),
                     const SizedBox(height: ThixPolicy.s24),
+                    
                     _buildMainButton(isLoading),
+                    
                     const SizedBox(height: ThixPolicy.s16),
+                    
+                    // ✅ LE BOUTON EST PLACÉ EXACTEMENT ICI ET CORRECTEMENT FORMÉ
                     if (_step < 3)
                       TextButton(
-                        onPressed: isLoading ? null : () {
+                        onPressed: isLoading ? null : () async {
                           if (_step > 1) {
                             setState(() => _step -= 1);
                           } else {
-                            context.go(AppRoutes.login);
+                            await ref.read(authControllerProvider.notifier).signOut();
+                            if (context.mounted) {
+                              context.go(AppRoutes.login);
+                            }
                           }
                         },
                         style: TextButton.styleFrom(foregroundColor: ThixPolicy.textSecondary),
                         child: Text(
-                          _step == 1 ? 'Déjà un compte ? Se connecter' : '← Étape précédente',
+                          _step == 1 ? 'Changer de compte / Se connecter' : '← Étape précédente',
                           style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.semiBold),
                         ),
                       ),
+                      
                     const SizedBox(height: ThixPolicy.s40),
                   ],
                 ),
