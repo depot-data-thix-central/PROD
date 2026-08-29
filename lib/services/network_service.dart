@@ -143,42 +143,71 @@ class NetworkService extends ChangeNotifier {
   }
 
   Future<List<NetworkPost>> getFeedPosts({
-  int limit = 20,
-  int? offset,
-  DateTime? lastCreatedAt,
-  String feedType = 'all',
-}) async {
-  final uid = currentUserId;
-  if (uid.isEmpty) return [];
+    int limit = 20,
+    int? offset,
+    DateTime? lastCreatedAt,
+    String feedType = 'all',
+  }) async {
+    final uid = currentUserId;
+    if (uid.isEmpty) return [];
 
-  limit = limit.clamp(1, 100);
-  final safeOffset = (offset ?? 0) < 0 ? 0 : (offset ?? 0);
-  final type = _normalizeFeedType(feedType);
+    limit = limit.clamp(1, 100);
+    final safeOffset = (offset ?? 0) < 0 ? 0 : (offset ?? 0);
+    final type = _normalizeFeedType(feedType);
 
-  try {
-    // ✅ SMART FEED — mix intelligent calculé côté DB
-    if (type == 'all') {
-      final res = await _supabase.rpc('get_smart_feed', params: {
-        'p_user_id': uid,
-        'p_limit': limit,
-        'p_offset': safeOffset,
-      }).timeout(_requestTimeout);
+    try {
+      // ✅ SMART FEED — mix intelligent calculé côté DB
+      if (type == 'all') {
+        final res = await _supabase.rpc('get_smart_feed', params: {
+          'p_user_id': uid,
+          'p_limit': limit,
+          'p_offset': safeOffset,
+        }).timeout(_requestTimeout);
 
-      return (res as List)
-          .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-    }
+        return (res as List)
+            .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      }
 
-    // ── Abonnements : uniquement les personnes suivies ──
-    if (type == 'network') {
-      final connIds = await getMyConnectionIds();
-      connIds.add(uid);
-      if (connIds.isEmpty) return [];
+      // ── Abonnements : uniquement les personnes suivies ──
+      if (type == 'network') {
+        final connIds = await getMyConnectionIds();
+        connIds.add(uid);
+        if (connIds.isEmpty) return [];
 
+        final res = await _supabase
+            .from('posts_view')
+            .select()
+            .inFilter('user_id', connIds.toList())
+            .order('created_at', ascending: false)
+            .range(safeOffset, safeOffset + limit - 1)
+            .timeout(_requestTimeout);
+
+        return (res as List)
+            .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      }
+
+      // ── Tendances : tri par engagement ──
+      if (type == 'popular') {
+        final res = await _supabase
+            .from('posts_view')
+            .select()
+            .eq('is_public', true)
+            .order('likes_count', ascending: false)
+            .range(safeOffset, safeOffset + limit - 1)
+            .timeout(_requestTimeout);
+
+        return (res as List)
+            .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      }
+
+      // ── Récents : tri chronologique ──
       final res = await _supabase
           .from('posts_view')
           .select()
-          .inFilter('user_id', connIds.toList())
+          .eq('is_public', true)
           .order('created_at', ascending: false)
           .range(safeOffset, safeOffset + limit - 1)
           .timeout(_requestTimeout);
@@ -186,43 +215,14 @@ class NetworkService extends ChangeNotifier {
       return (res as List)
           .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
+    } on TimeoutException {
+      debugPrint('[FeedService] Timeout getFeedPosts');
+      return [];
+    } catch (e) {
+      debugPrint('[FeedService] Error getFeedPosts: $e');
+      return [];
     }
-
-    // ── Tendances : tri par engagement ──
-    if (type == 'popular') {
-      final res = await _supabase
-          .from('posts_view')
-          .select()
-          .eq('is_public', true)
-          .order('likes_count', ascending: false)
-          .range(safeOffset, safeOffset + limit - 1)
-          .timeout(_requestTimeout);
-
-      return (res as List)
-          .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-    }
-
-    // ── Récents : tri chronologique ──
-    final res = await _supabase
-        .from('posts_view')
-        .select()
-        .eq('is_public', true)
-        .order('created_at', ascending: false)
-        .range(safeOffset, safeOffset + limit - 1)
-        .timeout(_requestTimeout);
-
-    return (res as List)
-        .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-  } on TimeoutException {
-    debugPrint('[FeedService] Timeout getFeedPosts');
-    return [];
-  } catch (e) {
-    debugPrint('[FeedService] Error getFeedPosts: $e');
-    return [];
   }
-}
 
   // ─────────────────────────────────────────────────────────────
   // COMMUNITIES
@@ -268,6 +268,24 @@ class NetworkService extends ChangeNotifier {
   // ─────────────────────────────────────────────────────────────
   // POSTS CRUD (avec validation XSS + ownership)
   // ─────────────────────────────────────────────────────────────
+
+  // ✅ La fonction manquante est ici !
+  Future<NetworkPost?> getPostById(String postId) async {
+    try {
+      final response = await _supabase
+          .from('posts_view')
+          .select()
+          .eq('id', postId)
+          .maybeSingle()
+          .timeout(_requestTimeout);
+
+      if (response == null) return null;
+      return NetworkPost.fromJson(response);
+    } catch (e) {
+      debugPrint('[NetworkService] Erreur getPostById: $e');
+      return null;
+    }
+  }
 
   Future<String> createPost(String content, List<String> images, {String postType = 'standard'}) async {
     if (currentUserId.isEmpty) throw Exception('Non authentifié');
@@ -630,6 +648,7 @@ class NetworkService extends ChangeNotifier {
       final feedPostId = row['feed_post_id']?.toString();
       if (feedPostId == null || feedPostId.isEmpty) return null;
 
+      // Cette fonction est désormais disponible !
       return await getPostById(feedPostId);
     } catch (e) {
       debugPrint('[PostService] Fallback repostPost: $e');
