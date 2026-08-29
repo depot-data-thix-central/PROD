@@ -14,25 +14,25 @@ class FeedRanker {
 
   /// Rank les posts selon le type de feed
   static List<NetworkPost> rank({
-    required List<NetworkPost> posts,
-    required Set<String> connectionIds,
-    required String feedType,
-  }) {
-    if (posts.isEmpty) return posts;
+  required List<NetworkPost> posts,
+  required Set<String> connectionIds,
+  required String feedType,
+}) {
+  if (posts.isEmpty) return posts;
 
-    switch (feedType) {
-      case 'popular':
-        return _rankByPopularity(posts);
-      case 'recent':
-        return _rankByRecency(posts);
-      case 'network':
-        return _rankByNetwork(posts, connectionIds);
-      case 'all':
-      default:
-        return _rankBySmartAlgorithm(posts, connectionIds);
-    }
+  switch (feedType) {
+    case 'popular':
+      return _rankByPopularity(posts);
+    case 'recent':
+      return _rankByRecency(posts);
+    case 'network':
+      return _rankByNetwork(posts, connectionIds);
+    case 'all':
+    default:
+      // ✅ Ordre déjà calculé par get_smart_feed (DB) — on ne re-trie PAS
+      return posts;
   }
-
+}
   /// Algorithme intelligent (Facebook-like)
   static List<NetworkPost> _rankBySmartAlgorithm(
     List<NetworkPost> posts,
