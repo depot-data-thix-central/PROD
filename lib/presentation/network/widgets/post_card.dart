@@ -1,6 +1,8 @@
 // lib/presentation/network/widgets/post_card.dart
+import 'dart:async';
+import 'dart:collection';
 import 'dart:math';
-import 'dart:ui'; 
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -11,46 +13,121 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:video_player/video_player.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'package:url_launcher/url_launcher.dart';
-import 'package:any_link_preview/any_link_preview.dart';
+import 'package:html/parser.dart' as html_parser;
 
 import 'package:thix_id/features/network/presentation/providers/feed_provider.dart';
 import 'package:thix_id/models/network_post.dart';
 import 'package:thix_id/features/network/data/network_service_provider.dart';
-
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-
 import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
 import 'package:thix_id/features/network/presentation/providers/user_profile_providers.dart';
 
-// ─── HELPER POUR FORMATER LES COMPTEURS ───
+// ============================================================================
+// HELPERS
+// ============================================================================
 String _formatCountHelper(int count) {
   if (count == 0) return '';
-  if (count >= 1000000) {
-    return '${(count / 1000000).toStringAsFixed(1)}M';
-  }
+  if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
   if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}k';
   return '$count';
 }
 
-// ─── HELPER : DÉTECTION VIDÉO ───
 bool _isVideoUrl(String url) {
   final lower = url.toLowerCase();
-  return lower.contains('.mp4') ||
-      lower.contains('.mov') ||
-      lower.contains('.m4v') ||
-      lower.contains('.webm') ||
-      lower.contains('.avi') ||
-      lower.contains('.mkv') ||
-      lower.contains('/videos/') ||
-      lower.contains('/video/');
+  return lower.contains('.mp4') || lower.contains('.mov') ||
+      lower.contains('.m4v') || lower.contains('.webm') ||
+      lower.contains('.avi') || lower.contains('.mkv') ||
+      lower.contains('/videos/') || lower.contains('/video/');
 }
 
-// ─────────────────────────────────────────────────────────────
-// STATE NOTIFIER DU POST
-// ─────────────────────────────────────────────────────────────
+// ============================================================================
+// VALIDATEURS
+// ============================================================================
+class _PostCardValidators {
+  _PostCardValidators._();
+
+  static String sanitize(String? input) {
+    if (input == null || input.trim().isEmpty) return '';
+    final doc = html_parser.parse(input);
+    return (doc.body?.text ?? input)
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+  }
+
+  static bool isValidUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      return (uri.scheme == 'http' || uri.scheme == 'https') &&
+          uri.host.isNotEmpty &&
+          !uri.host.contains('..');
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+// ============================================================================
+// CACHE LRU POUR LIKERS & LINK PREVIEWS
+// ============================================================================
+class _PostCardCache {
+  _PostCardCache._();
+  static final _PostCardCache _instance = _PostCardCache._();
+  factory _PostCardCache() => _instance;
+
+  static const int _maxSize = 50;
+  static const Duration _ttl = Duration(minutes: 5);
+
+  final LinkedHashMap<String, _CacheEntry<List<String>>> _likersCache = LinkedHashMap();
+  final LinkedHashMap<String, _CacheEntry<Map<String, dynamic>>> _linkPreviewCache = LinkedHashMap();
+
+  List<String>? getLikers(String postId) {
+    final entry = _likersCache[postId];
+    if (entry == null) return null;
+    if (DateTime.now().difference(entry.timestamp) > _ttl) {
+      _likersCache.remove(postId);
+      return null;
+    }
+    _likersCache.remove(postId);
+    _likersCache[postId] = entry;
+    return entry.value;
+  }
+
+  void setLikers(String postId, List<String> avatars) {
+    if (_likersCache.length >= _maxSize) _likersCache.remove(_likersCache.keys.first);
+    _likersCache[postId] = _CacheEntry(avatars);
+  }
+
+  Map<String, dynamic>? getLinkPreview(String url) {
+    final entry = _linkPreviewCache[url];
+    if (entry == null) return null;
+    if (DateTime.now().difference(entry.timestamp) > _ttl) {
+      _linkPreviewCache.remove(url);
+      return null;
+    }
+    _linkPreviewCache.remove(url);
+    _linkPreviewCache[url] = entry;
+    return entry.value;
+  }
+
+  void setLinkPreview(String url, Map<String, dynamic> data) {
+    if (_linkPreviewCache.length >= _maxSize) _linkPreviewCache.remove(_linkPreviewCache.keys.first);
+    _linkPreviewCache[url] = _CacheEntry(data);
+  }
+}
+
+class _CacheEntry<T> {
+  final T value;
+  final DateTime timestamp;
+  _CacheEntry(this.value) : timestamp = DateTime.now();
+}
+
+// ============================================================================
+// STATE NOTIFIER
+// ============================================================================
 final postItemProvider = StateNotifierProvider.autoDispose<PostItemNotifier, NetworkPost>(
   (ref) => throw UnimplementedError('must override'),
 );
@@ -75,7 +152,7 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
     try {
       final s = ref.read(networkServiceProvider);
       try {
-        final r = await s.togglePostLike(state.id);
+        final r = await s.togglePostLike(state.id).timeout(const Duration(seconds: 10));
         state = state.copyWith(isLiked: r.liked, likesCount: r.likesCount);
       } catch (_) {
         if (wasLiked) {
@@ -106,17 +183,23 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
     }
   }
 
-  void updateContent(String c) => state = state.copyWith(content: c);
+  void updateContent(String c) => state = state.copyWith(content: _PostCardValidators.sanitize(c));
 
-  void incRepost() => state = state.copyWith(
-        repostsCount: state.repostsCount + 1,
-        isReposted: true,
-      );
+  void incRepost() => state = state.copyWith(repostsCount: state.repostsCount + 1, isReposted: true);
+
+  void updateFactCheck({required bool isMisinformation, String? message, String? severity}) {
+    state = state.copyWith(
+      isFactChecked: true,
+      isMisinformation: isMisinformation,
+      factCheckMessage: message,
+      factCheckSeverity: severity,
+    );
+  }
 }
 
-// ─────────────────────────────────────────────────────────────
+// ============================================================================
 // COMPOSANT PRINCIPAL — POST CARD
-// ─────────────────────────────────────────────────────────────
+// ============================================================================
 class PostCard extends ConsumerStatefulWidget {
   final NetworkPost post;
   final String currentProfileId;
@@ -163,8 +246,12 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
 
   bool _isFollowingLocal = false;
   bool _followBusy = false;
-  
+
   bool _impressionRegistered = false;
+  Timer? _impressionDebounce;
+
+  // Stream pour fact-check realtime
+  StreamSubscription? _factCheckSubscription;
 
   static const _maxContentChars = 250;
   static const _maxParseDepth = 6;
@@ -175,7 +262,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     r'\*([\s\S]+?)\*|'
     r'@(\w+)|'
     r'#(\w+)|'
-    r'(https?:\/\/[^\s]+)', 
+    r'(https?:\/\/[^\s]+)',
   );
 
   List<InlineSpan>? _cachedFullSpans;
@@ -188,6 +275,29 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     super.initState();
     _isFollowingLocal = widget.isFollowingAuthor;
     _cacheParsedContent();
+    _subscribeToFactCheck();
+  }
+
+  void _subscribeToFactCheck() {
+    // Écouter les changements de fact-check en temps réel
+    if (!widget.post.isFactChecked) {
+      _factCheckSubscription = Supabase.instance.client
+          .from('posts')
+          .stream(primaryKey: ['id'])
+          .eq('id', widget.post.id)
+          .listen((data) {
+            if (data.isNotEmpty && mounted) {
+              final updated = data.first;
+              if (updated['is_fact_checked'] == true) {
+                ref.read(postItemProvider.notifier).updateFactCheck(
+                  isMisinformation: updated['is_misinformation'] == true,
+                  message: updated['fact_check_message']?.toString(),
+                  severity: updated['fact_check_severity']?.toString(),
+                );
+              }
+            }
+          });
+    }
   }
 
   @override
@@ -196,12 +306,17 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     if (oldWidget.isFollowingAuthor != widget.isFollowingAuthor) {
       _isFollowingLocal = widget.isFollowingAuthor;
     }
+    if (oldWidget.post.content != widget.post.content) {
+      _cacheParsedContent();
+    }
   }
 
   @override
   void dispose() {
     _disposeRecognizers();
     _quoteController.dispose();
+    _impressionDebounce?.cancel();
+    _factCheckSubscription?.cancel();
     super.dispose();
   }
 
@@ -213,10 +328,10 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
   }
 
   void _cacheParsedContent() {
-    final content = widget.post.content;
+    final content = _PostCardValidators.sanitize(widget.post.content);
     final baseStyle = ThixPolicy.bodyStyle.copyWith(
-      color: ThixPolicy.textMain, 
-      fontSize: 14.5, 
+      color: ThixPolicy.textMain,
+      fontSize: 14.5,
       height: 1.5,
     );
 
@@ -263,22 +378,43 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         spans.addAll(_parseContent(match.group(4)!, baseStyle.copyWith(fontStyle: FontStyle.italic), depth + 1));
       } else if (match.group(5) != null) {
         final value = match.group(5)!;
-        final r = TapGestureRecognizer()..onTap = () { if (mounted) context.push('/network/profile/$value'); };
+        final r = TapGestureRecognizer()
+          ..onTap = () {
+            if (mounted) context.push('/network/profile/$value');
+          };
         _recognizers.add(r);
-        spans.add(TextSpan(text: '@$value', style: baseStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.bold), recognizer: r));
+        spans.add(TextSpan(
+          text: '@$value',
+          style: baseStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.bold),
+          recognizer: r,
+        ));
       } else if (match.group(6) != null) {
         final value = match.group(6)!;
-        final r = TapGestureRecognizer()..onTap = () { if (mounted) context.push('/hashtag/$value'); };
+        final r = TapGestureRecognizer()
+          ..onTap = () {
+            if (mounted) context.push('/hashtag/$value');
+          };
         _recognizers.add(r);
-        spans.add(TextSpan(text: '#$value', style: baseStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.bold), recognizer: r));
-      } else if (match.group(7) != null) { 
+        spans.add(TextSpan(
+          text: '#$value',
+          style: baseStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.bold),
+          recognizer: r,
+        ));
+      } else if (match.group(7) != null) {
         final url = match.group(7)!;
-        final r = TapGestureRecognizer()..onTap = () async {
-          final uri = Uri.parse(url);
-          if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
-        };
-        _recognizers.add(r);
-        spans.add(TextSpan(text: url, style: baseStyle.copyWith(color: ThixPolicy.primary, decoration: TextDecoration.underline), recognizer: r));
+        if (_PostCardValidators.isValidUrl(url)) {
+          final r = TapGestureRecognizer()
+            ..onTap = () async {
+              final uri = Uri.parse(url);
+              if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+            };
+          _recognizers.add(r);
+          spans.add(TextSpan(
+            text: url,
+            style: baseStyle.copyWith(color: ThixPolicy.primary, decoration: TextDecoration.underline),
+            recognizer: r,
+          ));
+        }
       }
       lastIndex = match.end;
     }
@@ -293,19 +429,23 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     if (hexColor == null || hexColor.isEmpty) return null;
     final hexCode = hexColor.replaceAll('#', '');
     if (hexCode.length == 6 || hexCode.length == 8) {
-      try { return Color(int.parse(hexCode.length == 6 ? 'FF$hexCode' : hexCode, radix: 16)); } catch (_) {}
+      try {
+        return Color(int.parse(hexCode.length == 6 ? 'FF$hexCode' : hexCode, radix: 16));
+      } catch (_) {}
     }
     return null;
   }
 
   String? _extractFirstUrl(String content) {
     final match = RegExp(r'(https?:\/\/[^\s]+)').firstMatch(content);
-    return match?.group(0);
+    final url = match?.group(0);
+    if (url != null && _PostCardValidators.isValidUrl(url)) return url;
+    return null;
   }
 
   Widget _buildPostContent(NetworkPost post) {
     if (post.content.isEmpty) return const SizedBox.shrink();
-    
+
     final bgColor = _parseColor(post.bgColor);
     if (bgColor != null) {
       return Container(
@@ -313,16 +453,22 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         margin: const EdgeInsets.symmetric(vertical: ThixPolicy.s8),
         padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20, vertical: ThixPolicy.s40),
         decoration: BoxDecoration(
-          color: bgColor.withValues(alpha: 0.85), 
-          borderRadius: BorderRadius.circular(0), // Full largeur
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [bgColor.withOpacity(0.9), bgColor.withOpacity(0.7)],
+          ),
         ),
         alignment: Alignment.center,
         child: Text(
           post.content,
           textAlign: TextAlign.center,
-          style: ThixPolicy.h2Style.copyWith(color: Colors.white, fontSize: 22, height: 1.3, shadows: [
-            Shadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 4, offset: const Offset(0, 2))
-          ]),
+          style: ThixPolicy.h2Style.copyWith(
+            color: Colors.white,
+            fontSize: 22,
+            height: 1.3,
+            shadows: [Shadow(color: Colors.black.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))],
+          ),
         ),
       );
     }
@@ -344,53 +490,10 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
               ),
             ),
           ),
-        
         if (firstUrl != null)
           Padding(
             padding: const EdgeInsets.only(top: ThixPolicy.s12),
-            child: AnyLinkPreview(
-              link: firstUrl,
-              displayDirection: UIDirection.uiDirectionVertical, 
-              showMultimedia: true,
-              bodyMaxLines: 2,
-              bodyTextOverflow: TextOverflow.ellipsis,
-              titleStyle: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold, fontSize: 14, height: 1.2),
-              bodyStyle: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 12),
-              proxyUrl: "https://corsproxy.io/?",
-              errorWidget: GestureDetector(
-                onTap: () => launchUrl(Uri.parse(firstUrl), mode: LaunchMode.externalApplication),
-                child: Container(
-                  padding: const EdgeInsets.all(ThixPolicy.s12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.5), 
-                    borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.8))
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(ThixPolicy.s8),
-                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.8), borderRadius: BorderRadius.circular(ThixPolicy.rXs)),
-                        child: const Icon(Icons.link_rounded, color: ThixPolicy.primary),
-                      ),
-                      const SizedBox(width: ThixPolicy.s12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Lien externe', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain, fontSize: 13)),
-                            Text(firstUrl, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              backgroundColor: Colors.white.withValues(alpha: 0.5),
-              borderRadius: 16,
-              removeElevation: true, 
-            ),
+            child: _PremiumLinkPreview(url: firstUrl),
           ),
       ],
     );
@@ -414,7 +517,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
   Widget _buildMediaGrid(List<String> urls) {
     if (urls.isEmpty) return const SizedBox.shrink();
     const spacing = 4.0;
-    final radius = BorderRadius.circular(16); 
+    final radius = BorderRadius.circular(16);
     final imageOnlyUrls = urls.where((u) => !_isVideoUrl(u)).toList();
 
     Widget mediaTile(String url, {double? width, double? height, Alignment alignment = Alignment.center}) {
@@ -424,13 +527,20 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       return GestureDetector(
         onTap: () => _openGallery(imageOnlyUrls.indexOf(url), imageOnlyUrls),
         child: CachedNetworkImage(
-          imageUrl: url, 
-          width: width, 
-          height: height, 
+          imageUrl: url,
+          width: width,
+          height: height,
           fit: BoxFit.cover,
           alignment: alignment,
-          placeholder: (context, url) => Container(color: Colors.white.withValues(alpha: 0.5), child: const Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary)))),
-          errorWidget: (context, url, error) => Container(color: Colors.white.withValues(alpha: 0.5), child: const Icon(Icons.broken_image_outlined, color: ThixPolicy.textMuted)),
+          memCacheWidth: 600,
+          placeholder: (context, url) => Container(
+            color: Colors.white.withOpacity(0.5),
+            child: const Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))),
+          ),
+          errorWidget: (context, url, error) => Container(
+            color: Colors.white.withOpacity(0.5),
+            child: const Icon(Icons.broken_image_outlined, color: ThixPolicy.textMuted),
+          ),
         ),
       );
     }
@@ -471,7 +581,11 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                       children: [
                         mediaTile(urls[2]),
                         if (urls.length > 3)
-                          Container(color: Colors.black54, alignment: Alignment.center, child: Text('+${urls.length - 3}', style: ThixPolicy.h2Style.copyWith(color: Colors.white, fontSize: 22, fontWeight: ThixPolicy.bold))),
+                          Container(
+                            color: Colors.black54,
+                            alignment: Alignment.center,
+                            child: Text('+${urls.length - 3}', style: ThixPolicy.h2Style.copyWith(color: Colors.white, fontSize: 22, fontWeight: ThixPolicy.bold)),
+                          ),
                       ],
                     ),
                   ),
@@ -490,25 +604,33 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     if (options.isEmpty) return const SizedBox.shrink();
 
     var totalVotes = 0;
-    for (final opt in options) { totalVotes += ((opt['votes'] as List?)?.length ?? 0); }
+    for (final opt in options) {
+      totalVotes += ((opt['votes'] as List?)?.length ?? 0);
+    }
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(ThixPolicy.s16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.5), 
-        borderRadius: BorderRadius.circular(20), 
-        border: Border.all(color: Colors.white.withValues(alpha: 0.7))
+        color: Colors.white.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.7)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(children: [const Icon(Icons.poll_rounded, size: 18, color: ThixPolicy.primary), const SizedBox(width: ThixPolicy.s8), Text('Sondage', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 13, color: ThixPolicy.textMain))]),
+          Row(
+            children: [
+              const Icon(Icons.poll_rounded, size: 18, color: ThixPolicy.primary),
+              const SizedBox(width: ThixPolicy.s8),
+              Text('Sondage', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 13, color: ThixPolicy.textMain)),
+            ],
+          ),
           const SizedBox(height: ThixPolicy.s12),
           ...options.asMap().entries.map((entry) {
             final index = entry.key;
             final opt = entry.value;
-            final text = '${opt['text'] ?? ''}';
+            final text = _PostCardValidators.sanitize('${opt['text'] ?? ''}');
             final voters = (opt['votes'] as List?) ?? [];
             final pct = totalVotes > 0 ? voters.length / totalVotes : 0.0;
 
@@ -519,27 +641,49 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                 child: InkWell(
                   borderRadius: BorderRadius.circular(16),
                   onTap: () async {
-                    try { await ref.read(networkServiceProvider).votePoll(post.id, index); } catch (e) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur vote: $e'), backgroundColor: ThixPolicy.danger)); }
+                    try {
+                      await ref.read(networkServiceProvider).votePoll(post.id, index);
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur vote: $e'), backgroundColor: ThixPolicy.danger));
+                      }
+                    }
                   },
                   child: Container(
                     padding: const EdgeInsets.all(ThixPolicy.s12),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.7), 
-                      borderRadius: BorderRadius.circular(16), 
-                      border: Border.all(color: Colors.white)
+                      color: Colors.white.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white),
                     ),
                     child: Stack(
                       children: [
                         Positioned.fill(
                           child: FractionallySizedBox(
-                            alignment: Alignment.centerLeft, widthFactor: pct.clamp(0.0, 1.0),
-                            child: Container(decoration: BoxDecoration(color: ThixPolicy.primary.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12))),
+                            alignment: Alignment.centerLeft,
+                            widthFactor: pct.clamp(0.0, 1.0),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [ThixPolicy.primary.withOpacity(0.2), ThixPolicy.primary.withOpacity(0.1)],
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
                           ),
                         ),
                         Row(
                           children: [
-                            Expanded(child: Text(text, style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.textMain))),
-                            Text('${(pct * 100).toStringAsFixed(0)}%', style: ThixPolicy.labelStyle.copyWith(fontSize: 12, fontWeight: ThixPolicy.bold, color: ThixPolicy.primary)),
+                            Expanded(
+                              child: Text(
+                                text,
+                                style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.textMain),
+                              ),
+                            ),
+                            Text(
+                              '${(pct * 100).toStringAsFixed(0)}%',
+                              style: ThixPolicy.labelStyle.copyWith(fontSize: 12, fontWeight: ThixPolicy.bold, color: ThixPolicy.primary),
+                            ),
                           ],
                         ),
                       ],
@@ -556,23 +700,34 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
 
   Widget _buildChallengeWidget(NetworkPost post) {
     final data = post.challengeData ?? {};
-    final description = '${data['description'] ?? ''}';
+    final description = _PostCardValidators.sanitize('${data['description'] ?? ''}');
     final participantsCount = data['participants_count'] ?? 0;
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(ThixPolicy.s16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.5), 
-        borderRadius: BorderRadius.circular(20), 
-        border: Border.all(color: Colors.white.withValues(alpha: 0.7))
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [ThixPolicy.gold.withOpacity(0.1), ThixPolicy.primary.withOpacity(0.05)],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: ThixPolicy.gold.withOpacity(0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              Container(padding: const EdgeInsets.all(ThixPolicy.s8), decoration: const BoxDecoration(color: ThixPolicy.textMain, shape: BoxShape.circle), child: const Icon(Icons.emoji_events_rounded, color: Colors.white, size: 18)),
+              Container(
+                padding: const EdgeInsets.all(ThixPolicy.s8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [ThixPolicy.gold, Color(0xFFFFA500)]),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.emoji_events_rounded, color: Colors.white, size: 18),
+              ),
               const SizedBox(width: ThixPolicy.s10),
               Expanded(child: Text('Challenge THIX', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14, color: ThixPolicy.textMain))),
               Text('$participantsCount participants', style: ThixPolicy.captionStyle.copyWith(fontSize: 11, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.textMuted)),
@@ -585,13 +740,13 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           const SizedBox(height: ThixPolicy.s14),
           SizedBox(
             height: 44,
-            child: OutlinedButton.icon(
+            child: ElevatedButton.icon(
               onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Participation enregistrée'), backgroundColor: ThixPolicy.success)),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: ThixPolicy.textMain, 
-                backgroundColor: Colors.white.withValues(alpha: 0.5),
-                side: const BorderSide(color: ThixPolicy.textMain), 
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))
+              style: ElevatedButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: ThixPolicy.primary,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 0,
               ),
               icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
               label: Text('RELEVER LE DÉFI', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 12, letterSpacing: 0.3)),
@@ -602,33 +757,121 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     );
   }
 
-  Widget _buildFactCheckBanner(bool isMisinformation, String? message) {
-    if (!isMisinformation || message == null || message.isEmpty) return const SizedBox.shrink();
-    return Container(
-      width: double.infinity, margin: const EdgeInsets.only(top: ThixPolicy.s12), padding: const EdgeInsets.all(ThixPolicy.s12),
-      decoration: BoxDecoration(
-        color: ThixPolicy.danger.withValues(alpha: 0.08), 
-        borderRadius: BorderRadius.circular(12), 
-        border: const Border(left: BorderSide(color: ThixPolicy.danger, width: 4))
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.shield_outlined, color: ThixPolicy.danger, size: 17),
-          const SizedBox(width: ThixPolicy.s10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Fact-Check THIX IA', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold, fontSize: 11.5)),
-                const SizedBox(height: 4),
-                Text(message, style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontSize: 12, height: 1.4)),
-              ],
+  /// ✅ Bannière fact-check améliorée avec 3 états visuels
+  Widget _buildFactCheckBanner(NetworkPost post) {
+    if (!post.isFactChecked) {
+      // État "En cours de vérification"
+      return Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(top: ThixPolicy.s12),
+        padding: const EdgeInsets.all(ThixPolicy.s12),
+        decoration: BoxDecoration(
+          color: ThixPolicy.primary.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border(left: BorderSide(color: ThixPolicy.primary, width: 4)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(
+              width: 17,
+              height: 17,
+              child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary),
             ),
-          ),
-        ],
-      ),
-    );
+            const SizedBox(width: ThixPolicy.s10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Vérification en cours', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.bold, fontSize: 11.5)),
+                  const SizedBox(height: 4),
+                  Text('Notre IA analyse cette publication pour détecter la désinformation...', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontSize: 12, height: 1.4)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (post.isFactChecked && !post.isMisinformation) {
+      // État "Vérifié - Safe"
+      return Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(top: ThixPolicy.s12),
+        padding: const EdgeInsets.all(ThixPolicy.s12),
+        decoration: BoxDecoration(
+          color: ThixPolicy.success.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border(left: BorderSide(color: ThixPolicy.success, width: 4)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.verified_rounded, color: ThixPolicy.success, size: 17),
+            const SizedBox(width: ThixPolicy.s10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Contenu vérifié', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.success, fontWeight: ThixPolicy.bold, fontSize: 11.5)),
+                  const SizedBox(height: 4),
+                  Text('Cette publication a été analysée et ne contient pas de désinformation avérée.', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontSize: 12, height: 1.4)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (post.isMisinformation && post.factCheckMessage != null && post.factCheckMessage!.isNotEmpty) {
+      // État "Désinformation détectée"
+      return Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(top: ThixPolicy.s12),
+        padding: const EdgeInsets.all(ThixPolicy.s12),
+        decoration: BoxDecoration(
+          color: ThixPolicy.danger.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border(left: BorderSide(color: ThixPolicy.danger, width: 4)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: ThixPolicy.danger, size: 17),
+            const SizedBox(width: ThixPolicy.s10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text('⚠️ Désinformation détectée', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold, fontSize: 11.5)),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: ThixPolicy.danger,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text('FAKE', style: ThixPolicy.captionStyle.copyWith(color: Colors.white, fontSize: 9, fontWeight: ThixPolicy.bold)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(post.factCheckMessage!, style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontSize: 12, height: 1.4)),
+                  const SizedBox(height: 8),
+                  Text('Source : Vérification IA THIX', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 10, fontStyle: FontStyle.italic)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 
   Future<void> _editPost(NetworkPost post, WidgetRef ref) async {
@@ -638,15 +881,18 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       builder: (dialogContext) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: AlertDialog(
-          backgroundColor: Colors.white.withValues(alpha: 0.9),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.white.withValues(alpha: 0.8))),
+          backgroundColor: Colors.white.withOpacity(0.9),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.white.withOpacity(0.8))),
           title: Row(children: [const Icon(Icons.edit_rounded, color: ThixPolicy.textMain), const SizedBox(width: 8), Text('Modifier', style: ThixPolicy.titleStyle.copyWith(fontSize: 16))]),
           content: TextField(
-            controller: controller, maxLines: 6, autofocus: true,
+            controller: controller,
+            maxLines: 6,
+            autofocus: true,
+            maxLength: 5000,
             decoration: InputDecoration(
               hintText: 'Modifier votre texte...',
               filled: true,
-              fillColor: Colors.white.withValues(alpha: 0.5),
+              fillColor: Colors.white.withOpacity(0.5),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: ThixPolicy.primary, width: 1.5)),
             ),
@@ -654,7 +900,10 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text('Annuler', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textMuted))),
             ElevatedButton(
-              onPressed: () { final text = controller.text.trim(); if (text.isNotEmpty) Navigator.pop(dialogContext, text); },
+              onPressed: () {
+                final text = controller.text.trim();
+                if (text.isNotEmpty) Navigator.pop(dialogContext, text);
+              },
               style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.textMain, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               child: const Text('Enregistrer'),
             ),
@@ -664,7 +913,11 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     );
     if (newContent != null && newContent.isNotEmpty && mounted) {
       try {
-        if (widget.onEdit != null) widget.onEdit!(); else await ref.read(networkServiceProvider).updatePost(post.id, newContent);
+        if (widget.onEdit != null) {
+          widget.onEdit!();
+        } else {
+          await ref.read(networkServiceProvider).updatePost(post.id, newContent);
+        }
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Publication modifiée')));
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erreur'), backgroundColor: ThixPolicy.danger));
@@ -678,8 +931,8 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       builder: (ctx) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: AlertDialog(
-          backgroundColor: Colors.white.withValues(alpha: 0.9),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.white.withValues(alpha: 0.8))),
+          backgroundColor: Colors.white.withOpacity(0.9),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.white.withOpacity(0.8))),
           title: Row(children: [const Icon(Icons.warning_amber_rounded, color: ThixPolicy.danger), const SizedBox(width: 8), Text('Supprimer', style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.danger))]),
           content: Text('Êtes-vous sûr de vouloir supprimer définitivement cette publication ?', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain)),
           actions: [
@@ -691,7 +944,11 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     );
     if (ok == true && mounted) {
       try {
-        if (widget.onDelete != null) widget.onDelete!(); else await ref.read(networkServiceProvider).deletePost(post.id);
+        if (widget.onDelete != null) {
+          widget.onDelete!();
+        } else {
+          await ref.read(networkServiceProvider).deletePost(post.id);
+        }
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erreur'), backgroundColor: ThixPolicy.danger));
       }
@@ -701,13 +958,16 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
   void _registerImpression(String postId) {
     if (_impressionRegistered) return;
     final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid != null) {
+    if (uid == null) return;
+
+    _impressionDebounce?.cancel();
+    _impressionDebounce = Timer(const Duration(milliseconds: 500), () {
+      if (_impressionRegistered) return;
       _impressionRegistered = true;
-      Supabase.instance.client.rpc('increment_post_impression', params: {
-        'p_post_id': postId,
-        'p_user_id': uid
-      }).catchError((_) { _impressionRegistered = false; }); 
-    }
+      Supabase.instance.client.rpc('increment_post_impression', params: {'p_post_id': postId, 'p_user_id': uid}).catchError((_) {
+        _impressionRegistered = false;
+      });
+    });
   }
 
   @override
@@ -751,19 +1011,15 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           });
 
           return Container(
-            // 🔴 FULL LARGEUR : Zéro marge sur les côtés, zéro ombre !
             margin: EdgeInsets.zero,
             decoration: const BoxDecoration(
-              // 🔴 LIGNE JAUNE DE SÉPARATION (Fine et élégante)
               border: Border(bottom: BorderSide(color: ThixPolicy.gold, width: 1.5)),
             ),
-            child: ClipRect( // 🔴 Zéro Radius, prend tout l'espace disponible
+            child: ClipRect(
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                 child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.65), // Translucide
-                  ),
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.65)),
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
@@ -783,22 +1039,19 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                                       Container(
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
-                                          border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.5),
+                                          border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.5),
                                         ),
                                         child: CircleAvatar(
                                           radius: 20,
-                                          backgroundColor: Colors.white.withValues(alpha: 0.5),
-                                          backgroundImage: post.authorAvatar != null && post.authorAvatar!.isNotEmpty
-                                              ? CachedNetworkImageProvider(post.authorAvatar!)
-                                              : null,
-                                          child: post.authorAvatar == null || post.authorAvatar!.isEmpty
-                                              ? const Icon(Icons.person_rounded, size: 18, color: ThixPolicy.textMuted)
-                                              : null,
+                                          backgroundColor: Colors.white.withOpacity(0.5),
+                                          backgroundImage: post.authorAvatar != null && post.authorAvatar!.isNotEmpty ? CachedNetworkImageProvider(post.authorAvatar!) : null,
+                                          child: post.authorAvatar == null || post.authorAvatar!.isEmpty ? const Icon(Icons.person_rounded, size: 18, color: ThixPolicy.textMuted) : null,
                                         ),
                                       ),
                                       if (!isOwner && !isFollowing)
                                         Positioned(
-                                          bottom: -2, right: -2,
+                                          bottom: -2,
+                                          right: -2,
                                           child: GestureDetector(
                                             onTap: () async {
                                               if (_followBusy) return;
@@ -810,11 +1063,15 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                                                 ref.invalidate(followStatusProvider(post.userId));
                                                 ref.invalidate(userProfileProvider(post.userId));
                                                 widget.onFollow?.call();
-                                              } catch (_) { if (mounted) setState(() => _isFollowingLocal = false); } 
-                                              finally { if (mounted) setState(() => _followBusy = false); }
+                                              } catch (_) {
+                                                if (mounted) setState(() => _isFollowingLocal = false);
+                                              } finally {
+                                                if (mounted) setState(() => _followBusy = false);
+                                              }
                                             },
                                             child: Container(
-                                              width: 18, height: 18,
+                                              width: 18,
+                                              height: 18,
                                               decoration: BoxDecoration(shape: BoxShape.circle, color: ThixPolicy.primary, border: Border.all(color: Colors.white, width: 2)),
                                               child: const Icon(Icons.add_rounded, size: 12, color: Colors.white),
                                             ),
@@ -834,9 +1091,10 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                                           children: [
                                             Flexible(
                                               child: Text(
-                                                post.authorName,
+                                                _PostCardValidators.sanitize(post.authorName),
                                                 style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14.5, color: ThixPolicy.textMain, letterSpacing: -0.2),
-                                                maxLines: 1, overflow: TextOverflow.ellipsis
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
                                               ),
                                             ),
                                             if (isCertified)
@@ -862,8 +1120,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
 
                             const SizedBox(height: ThixPolicy.s12),
 
-                            if (post.content.isNotEmpty)
-                              _buildPostContent(post),
+                            if (post.content.isNotEmpty) _buildPostContent(post),
 
                             if (post.isRepostCard && post.repostOfId != null && post.repostOfId!.isNotEmpty) ...[
                               const SizedBox(height: ThixPolicy.s12),
@@ -876,7 +1133,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                             ],
                             if (post.hasAudio && post.audioUrls.isNotEmpty) ...[
                               const SizedBox(height: ThixPolicy.s12),
-                              _ThixWaveformAudioPlayer(audioUrl: post.audioUrls.first),
+                              _PremiumAudioPlayer(audioUrl: post.audioUrls.first, duration: post.audioDurationSeconds),
                             ],
                             if (post.postType == 'poll') ...[
                               const SizedBox(height: ThixPolicy.s12),
@@ -886,14 +1143,12 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                               _buildChallengeWidget(post),
                             ],
 
-                            _buildFactCheckBanner(post.isMisinformation, post.factCheckMessage),
+                            _buildFactCheckBanner(post),
 
                             const SizedBox(height: ThixPolicy.s16),
-                            
-                            if (likesCount > 0)
-                              _LikersStack(count: likesCount, postId: post.id, isLikedByMe: isLiked),
 
-                            // Espacement avant la barre d'action
+                            if (likesCount > 0) _LikersStack(count: likesCount, postId: post.id, isLikedByMe: isLiked),
+
                             const SizedBox(height: 8),
 
                             _buildActionRow(post, isLiked, isOwner, isCurrentUserFree, ref),
@@ -921,8 +1176,8 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         children: [
           _ActionBtn(
             icon: isLiked ? Icons.bolt_rounded : Icons.bolt_outlined,
-            label: '', 
-            color: isLiked ? ThixPolicy.gold : ThixPolicy.textSecondary.withValues(alpha: 0.8),
+            label: '',
+            color: isLiked ? ThixPolicy.gold : ThixPolicy.textSecondary.withOpacity(0.8),
             onTap: () async {
               HapticFeedback.selectionClick();
               await ref.read(postItemProvider.notifier).toggleLike();
@@ -932,40 +1187,37 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           _ActionBtn(
             icon: Icons.chat_bubble_outline_rounded,
             label: _formatCountHelper(post.commentsCount),
-            color: ThixPolicy.textSecondary.withValues(alpha: 0.8),
+            color: ThixPolicy.textSecondary.withOpacity(0.8),
             onTap: widget.onComment ?? () => _openPostDetails(post.id),
           ),
           const SizedBox(width: 20),
           _ActionBtn(
             icon: Icons.repeat_rounded,
             label: _formatCountHelper(post.repostsCount),
-            color: post.isReposted ? ThixPolicy.success : ThixPolicy.textSecondary.withValues(alpha: 0.8),
+            color: post.isReposted ? ThixPolicy.success : ThixPolicy.textSecondary.withOpacity(0.8),
             onTap: () => _repost(post, ref),
           ),
           const SizedBox(width: 20),
           _ActionBtn(
-            icon: Icons.bar_chart_rounded, 
+            icon: Icons.bar_chart_rounded,
             label: _formatCountHelper(impressions),
-            color: ThixPolicy.textSecondary.withValues(alpha: 0.8),
+            color: ThixPolicy.textSecondary.withOpacity(0.8),
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('$impressions personne${impressions > 1 ? 's' : ''} touchée${impressions > 1 ? 's' : ''}'), 
-                behavior: SnackBarBehavior.floating
-              ));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$impressions personne${impressions > 1 ? 's' : ''} touchée${impressions > 1 ? 's' : ''}'), behavior: SnackBarBehavior.floating));
             },
           ),
           const SizedBox(width: 20),
           _ActionBtn(
             icon: Icons.send_outlined,
             label: '',
-            color: ThixPolicy.textSecondary.withValues(alpha: 0.8),
+            color: ThixPolicy.textSecondary.withOpacity(0.8),
             onTap: widget.onShare,
           ),
           const SizedBox(width: 20),
           _ActionBtn(
             icon: post.isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
             label: '',
-            color: post.isSaved ? ThixPolicy.textMain : ThixPolicy.textSecondary.withValues(alpha: 0.8),
+            color: post.isSaved ? ThixPolicy.textMain : ThixPolicy.textSecondary.withOpacity(0.8),
             onTap: () {
               ref.read(postItemProvider.notifier).toggleSave();
               widget.onSave?.call();
@@ -973,28 +1225,18 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           ),
           if (isOwner && !isFree) ...[
             const SizedBox(width: 20),
-            _ActionBtn(
-              icon: Icons.edit_outlined,
-              label: '',
-              color: ThixPolicy.textMain,
-              onTap: () => _editPost(post, ref),
-            ),
+            _ActionBtn(icon: Icons.edit_outlined, label: '', color: ThixPolicy.textMain, onTap: () => _editPost(post, ref)),
           ],
           if (isOwner) ...[
             const SizedBox(width: 20),
-            _ActionBtn(
-              icon: Icons.delete_outline_rounded,
-              label: '',
-              color: ThixPolicy.danger,
-              onTap: () => _deletePost(post, ref),
-            ),
+            _ActionBtn(icon: Icons.delete_outline_rounded, label: '', color: ThixPolicy.danger, onTap: () => _deletePost(post, ref)),
           ],
           if (!isOwner) ...[
             const SizedBox(width: 20),
             _ActionBtn(
               icon: Icons.visibility_off_outlined,
               label: '',
-              color: ThixPolicy.textSecondary.withValues(alpha: 0.8),
+              color: ThixPolicy.textSecondary.withOpacity(0.8),
               onTap: () async {
                 await ref.read(networkServiceProvider).hidePost(post.id);
                 if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Publication masquée')));
@@ -1013,15 +1255,17 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       builder: (ctx) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: AlertDialog(
-          backgroundColor: Colors.white.withValues(alpha: 0.9),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.white.withValues(alpha: 0.8))),
+          backgroundColor: Colors.white.withOpacity(0.9),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.white.withOpacity(0.8))),
           title: Text('Reposter', style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain)),
           content: TextField(
-            controller: _quoteController, maxLines: 3,
+            controller: _quoteController,
+            maxLines: 3,
+            maxLength: 500,
             decoration: InputDecoration(
-              hintText: 'Commentaire optionnel', 
+              hintText: 'Commentaire optionnel',
               filled: true,
-              fillColor: Colors.white.withValues(alpha: 0.5),
+              fillColor: Colors.white.withOpacity(0.5),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
             ),
           ),
@@ -1052,9 +1296,10 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// WIDGET BOUTON D'ACTION
-// ─────────────────────────────────────────────────────────────
+// ============================================================================
+// WIDGETS AUXILIAIRES
+// ============================================================================
+
 class _ActionBtn extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1073,7 +1318,7 @@ class _ActionBtn extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 22, color: color), 
+            Icon(icon, size: 22, color: color),
             if (label.isNotEmpty) ...[
               const SizedBox(width: 4),
               Text(label, style: ThixPolicy.labelStyle.copyWith(fontSize: 12.5, fontWeight: ThixPolicy.semiBold, color: color)),
@@ -1085,19 +1330,483 @@ class _ActionBtn extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// COMPOSANT : PILE DES AVATARS DES UTILISATEURS (Likers réels)
-// ─────────────────────────────────────────────────────────────
+/// ✅ Player audio premium avec waveform, seek et vitesse
+class _PremiumAudioPlayer extends StatefulWidget {
+  final String audioUrl;
+  final int? duration;
+
+  const _PremiumAudioPlayer({required this.audioUrl, this.duration});
+
+  @override
+  State<_PremiumAudioPlayer> createState() => _PremiumAudioPlayerState();
+}
+
+class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  bool _isPlaying = false;
+  Duration _duration = Duration.zero;
+  Duration _position = Duration.zero;
+  double _playbackSpeed = 1.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _audioPlayer.setSourceUrl(widget.audioUrl);
+    _audioPlayer.onPlayerStateChanged.listen((state) {
+      if (mounted) setState(() => _isPlaying = state == PlayerState.playing);
+    });
+    _audioPlayer.onDurationChanged.listen((d) {
+      if (mounted) setState(() => _duration = d);
+    });
+    _audioPlayer.onPositionChanged.listen((p) {
+      if (mounted) setState(() => _position = p);
+    });
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  void _cycleSpeed() {
+    setState(() {
+      if (_playbackSpeed == 1.0) {
+        _playbackSpeed = 1.5;
+      } else if (_playbackSpeed == 1.5) {
+        _playbackSpeed = 2.0;
+      } else {
+        _playbackSpeed = 1.0;
+      }
+      _audioPlayer.setPlaybackRate(_playbackSpeed);
+    });
+    HapticFeedback.selectionClick();
+  }
+
+  String _formatDuration(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return "$m:$s";
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = _duration.inMilliseconds > 0 ? _position.inMilliseconds / _duration.inMilliseconds : 0.0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            ThixPolicy.primary.withOpacity(0.15),
+            ThixPolicy.gold.withOpacity(0.1),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: ThixPolicy.primary.withOpacity(0.3), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header avec titre
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [ThixPolicy.primary, Color(0xFF6366F1)]),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Text('Note vocale', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain, fontSize: 12)),
+              const Spacer(),
+              if (_duration.inSeconds > 0)
+                Text(_formatDuration(_duration), style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontWeight: ThixPolicy.bold)),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Waveform visual
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () {
+                  if (_isPlaying) {
+                    _audioPlayer.pause();
+                  } else {
+                    _audioPlayer.play(UrlSource(widget.audioUrl));
+                  }
+                  HapticFeedback.lightImpact();
+                },
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(colors: [ThixPolicy.primary, Color(0xFF6366F1)]),
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: ThixPolicy.primary.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 2))],
+                  ),
+                  child: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white, size: 24),
+                ),
+              ),
+              const SizedBox(width: 14),
+
+              // Waveform bars
+              Expanded(
+                child: GestureDetector(
+                  onTapDown: (details) {
+                    final box = context.findRenderObject() as RenderBox;
+                    final localPos = box.globalToLocal(details.globalPosition);
+                    final percentage = (localPos.dx - 72) / (box.size.width - 140);
+                    if (percentage >= 0 && percentage <= 1 && _duration.inMilliseconds > 0) {
+                      final newPosition = Duration(milliseconds: (_duration.inMilliseconds * percentage).round());
+                      _audioPlayer.seek(newPosition);
+                    }
+                  },
+                  child: CustomPaint(
+                    size: const Size(double.infinity, 32),
+                    painter: _WaveformPainter(progress: progress, color: ThixPolicy.primary),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+
+              // Speed button
+              GestureDetector(
+                onTap: _cycleSpeed,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: ThixPolicy.primary.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: ThixPolicy.primary.withOpacity(0.3)),
+                  ),
+                  child: Text(
+                    '${_playbackSpeed}x',
+                    style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.bold, fontSize: 11),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          // Progress bar + time
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(_formatDuration(_position), style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 10)),
+              const Spacer(),
+              Text(
+                '-${_formatDuration(_duration - _position)}',
+                style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 10),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Peintre custom pour waveform
+class _WaveformPainter extends CustomPainter {
+  final double progress;
+  final Color color;
+
+  _WaveformPainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final barCount = 40;
+    final barWidth = size.width / (barCount * 1.5);
+    final spacing = barWidth * 0.5;
+
+    for (int i = 0; i < barCount; i++) {
+      final x = i * (barWidth + spacing);
+      final heightPercentage = (sin(i * 0.5) * 0.3 + 0.5 + (i % 3) * 0.1).clamp(0.2, 0.9);
+      final barHeight = size.height * heightPercentage;
+      final y = (size.height - barHeight) / 2;
+
+      final barProgress = i / barCount;
+      final isActive = barProgress <= progress;
+
+      final paint = Paint()
+        ..color = isActive ? color : color.withOpacity(0.3)
+        ..style = PaintingStyle.fill;
+
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(x, y, barWidth, barHeight),
+        Radius.circular(barWidth / 2),
+      );
+      canvas.drawRRect(rect, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _WaveformPainter oldDelegate) {
+    return oldDelegate.progress != progress;
+  }
+}
+
+/// ✅ Link preview premium avec cache
+class _PremiumLinkPreview extends StatefulWidget {
+  final String url;
+  const _PremiumLinkPreview({required this.url});
+
+  @override
+  State<_PremiumLinkPreview> createState() => _PremiumLinkPreviewState();
+}
+
+class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
+  Map<String, dynamic>? _previewData;
+  bool _isLoading = true;
+  bool _hasError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPreview();
+  }
+
+  Future<void> _loadPreview() async {
+    // Cache check
+    final cached = _PostCardCache().getLinkPreview(widget.url);
+    if (cached != null) {
+      if (mounted) {
+        setState(() {
+          _previewData = cached;
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
+    try {
+      // Appel à Edge Function pour récupérer les metadata
+      final response = await Supabase.instance.client.functions.invoke(
+        'link-preview',
+        body: {'url': widget.url},
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.data != null && response.data is Map) {
+        final data = response.data as Map<String, dynamic>;
+        _PostCardCache().setLinkPreview(widget.url, data);
+        if (mounted) {
+          setState(() {
+            _previewData = data;
+            _isLoading = false;
+          });
+        }
+      } else {
+        throw Exception('Invalid response');
+      }
+    } catch (e) {
+      debugPrint('[LinkPreview] Error: $e');
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      return _buildSkeleton();
+    }
+
+    if (_hasError || _previewData == null) {
+      return _buildFallback();
+    }
+
+    final title = _PostCardValidators.sanitize(_previewData!['title']?.toString() ?? '');
+    final description = _PostCardValidators.sanitize(_previewData!['description']?.toString() ?? '');
+    final image = _previewData!['image']?.toString();
+    final domain = Uri.tryParse(widget.url)?.host.replaceFirst('www.', '') ?? 'Lien externe';
+
+    return GestureDetector(
+      onTap: () async {
+        final uri = Uri.parse(widget.url);
+        if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.7),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.9)),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (image != null && image.isNotEmpty)
+              CachedNetworkImage(
+                imageUrl: image,
+                height: 160,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorWidget: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.link_rounded, size: 12, color: ThixPolicy.primary),
+                      const SizedBox(width: 4),
+                      Text(domain.toUpperCase(), style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.bold, fontSize: 10, letterSpacing: 0.5)),
+                    ],
+                  ),
+                  if (title.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold, fontSize: 14, height: 1.2)),
+                  ],
+                  if (description.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(description, maxLines: 2, overflow: TextOverflow.ellipsis, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 12, height: 1.3)),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSkeleton() {
+    return Container(
+      height: 200,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.8)),
+      ),
+      child: const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))),
+    );
+  }
+
+  Widget _buildFallback() {
+    return GestureDetector(
+      onTap: () async {
+        final uri = Uri.parse(widget.url);
+        if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+      },
+      child: Container(
+        padding: const EdgeInsets.all(ThixPolicy.s12),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+          border: Border.all(color: Colors.white.withOpacity(0.8)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(ThixPolicy.s8),
+              decoration: BoxDecoration(color: Colors.white.withOpacity(0.8), borderRadius: BorderRadius.circular(ThixPolicy.rXs)),
+              child: const Icon(Icons.link_rounded, color: ThixPolicy.primary),
+            ),
+            const SizedBox(width: ThixPolicy.s12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Lien externe', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain, fontSize: 13)),
+                  Text(widget.url, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ✅ Video thumb avec CachedNetworkImage (pas de VideoPlayer)
+class _VideoThumbTile extends StatefulWidget {
+  final String videoUrl;
+  final double? width;
+  final double? height;
+  final VoidCallback onTap;
+
+  const _VideoThumbTile({required this.videoUrl, this.width, this.height, required this.onTap});
+
+  @override
+  State<_VideoThumbTile> createState() => _VideoThumbTileState();
+}
+
+class _VideoThumbTileState extends State<_VideoThumbTile> {
+  String? _thumbnailUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _generateThumbnail();
+  }
+
+  Future<void> _generateThumbnail() async {
+    // Essayer de récupérer un thumbnail via Edge Function
+    try {
+      final response = await Supabase.instance.client.functions.invoke(
+        'video-thumbnail',
+        body: {'video_url': widget.videoUrl},
+      ).timeout(const Duration(seconds: 5));
+
+      if (response.data != null && response.data['thumbnail_url'] != null) {
+        if (mounted) {
+          setState(() => _thumbnailUrl = response.data['thumbnail_url']);
+        }
+      }
+    } catch (e) {
+      debugPrint('[VideoThumb] Thumbnail error: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: Container(
+        width: widget.width,
+        height: widget.height,
+        color: Colors.black87,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (_thumbnailUrl != null)
+              CachedNetworkImage(imageUrl: _thumbnailUrl!, fit: BoxFit.cover)
+            else
+              const Center(child: Icon(Icons.videocam_rounded, color: Colors.white24, size: 40)),
+            Container(color: Colors.black.withOpacity(0.2)),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.black.withOpacity(0.5), shape: BoxShape.circle),
+              child: const Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 40),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ✅ Likers avec cache
 class _LikersStack extends StatefulWidget {
   final int count;
   final String postId;
   final bool isLikedByMe;
 
-  const _LikersStack({
-    required this.count, 
-    required this.postId,
-    required this.isLikedByMe,
-  });
+  const _LikersStack({required this.count, required this.postId, required this.isLikedByMe});
 
   @override
   State<_LikersStack> createState() => _LikersStackState();
@@ -1126,7 +1835,19 @@ class _LikersStackState extends State<_LikersStack> {
       if (mounted) setState(() { _isLoading = false; _likerAvatars = []; });
       return;
     }
-    
+
+    // Cache check
+    final cached = _PostCardCache().getLikers(widget.postId);
+    if (cached != null) {
+      if (mounted) {
+        setState(() {
+          _likerAvatars = cached;
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
     try {
       final response = await Supabase.instance.client
           .from('post_likes')
@@ -1143,10 +1864,12 @@ class _LikersStackState extends State<_LikersStack> {
             final url = profile['avatar_url'].toString().trim();
             if (url.isNotEmpty) avatars.add(url);
           } else {
-            avatars.add(''); 
+            avatars.add('');
           }
         }
       }
+
+      _PostCardCache().setLikers(widget.postId, avatars);
 
       if (mounted) {
         setState(() {
@@ -1155,7 +1878,7 @@ class _LikersStackState extends State<_LikersStack> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() { _isLoading = false; });
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -1164,15 +1887,15 @@ class _LikersStackState extends State<_LikersStack> {
     final displayCount = min(5, widget.count);
     final extra = widget.count - displayCount;
 
-    final colors = [
-      ThixPolicy.primary, ThixPolicy.danger, ThixPolicy.gold,
-      ThixPolicy.info, ThixPolicy.domainMedia
-    ];
+    final colors = [ThixPolicy.primary, ThixPolicy.danger, ThixPolicy.gold, ThixPolicy.info, ThixPolicy.domainMedia];
 
     String text;
     if (widget.isLikedByMe) {
-      if (widget.count == 1) text = "Vous avez envoyé une impulsion";
-      else text = "Vous et ${widget.count - 1} autre${widget.count - 1 > 1 ? 's' : ''}";
+      if (widget.count == 1) {
+        text = "Vous avez envoyé une impulsion";
+      } else {
+        text = "Vous et ${widget.count - 1} autre${widget.count - 1 > 1 ? 's' : ''}";
+      }
     } else {
       text = "${widget.count} personne${widget.count > 1 ? 's' : ''}";
     }
@@ -1189,21 +1912,15 @@ class _LikersStackState extends State<_LikersStack> {
               return Align(
                 widthFactor: 0.7,
                 child: Container(
-                  width: 22, height: 22,
+                  width: 22,
+                  height: 22,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: colors[(widget.postId.hashCode + i) % colors.length],
                     border: Border.all(color: Colors.white, width: 1.5),
-                    image: hasRealAvatar
-                        ? DecorationImage(
-                            image: CachedNetworkImageProvider(avatarUrl),
-                            fit: BoxFit.cover,
-                          )
-                        : null,
+                    image: hasRealAvatar ? DecorationImage(image: CachedNetworkImageProvider(avatarUrl), fit: BoxFit.cover) : null,
                   ),
-                  child: !hasRealAvatar
-                      ? const Icon(Icons.person, size: 12, color: Colors.white)
-                      : null,
+                  child: !hasRealAvatar ? const Icon(Icons.person, size: 12, color: Colors.white) : null,
                 ),
               );
             }),
@@ -1211,15 +1928,15 @@ class _LikersStackState extends State<_LikersStack> {
           if (extra > 0)
             Padding(
               padding: const EdgeInsets.only(left: 6),
-              child: Text('+$extra', style: ThixPolicy.captionStyle.copyWith(fontSize: 11, fontWeight: ThixPolicy.bold, color: ThixPolicy.textSecondary))
+              child: Text('+$extra', style: ThixPolicy.captionStyle.copyWith(fontSize: 11, fontWeight: ThixPolicy.bold, color: ThixPolicy.textSecondary)),
             ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              text, 
-              style: ThixPolicy.captionStyle.copyWith(fontSize: 11.5, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.textSecondary), 
-              overflow: TextOverflow.ellipsis
-            )
+              text,
+              style: ThixPolicy.captionStyle.copyWith(fontSize: 11.5, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.textSecondary),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
       ),
@@ -1227,9 +1944,10 @@ class _LikersStackState extends State<_LikersStack> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// EMBED ORIGINAL POST
-// ─────────────────────────────────────────────────────────────
+// ============================================================================
+// AUTRES WIDGETS (inchangés mais nettoyés)
+// ============================================================================
+
 class _OriginalPostEmbed extends ConsumerWidget {
   final String postId;
   const _OriginalPostEmbed({required this.postId});
@@ -1241,12 +1959,9 @@ class _OriginalPostEmbed extends ConsumerWidget {
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return Container(
-            height: 80, alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.5), 
-              borderRadius: BorderRadius.circular(16), 
-              border: Border.all(color: Colors.white.withValues(alpha: 0.8))
-            ),
+            height: 80,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: Colors.white.withOpacity(0.5), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(0.8))),
             child: const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary)),
           );
         }
@@ -1256,11 +1971,7 @@ class _OriginalPostEmbed extends ConsumerWidget {
         final originalMedia = [...original.imageUrls, ...original.videoUrls];
 
         return Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.5), // Glass
-            borderRadius: BorderRadius.circular(16), 
-            border: Border.all(color: Colors.white.withValues(alpha: 0.8))
-          ),
+          decoration: BoxDecoration(color: Colors.white.withOpacity(0.5), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(0.8))),
           clipBehavior: Clip.antiAlias,
           child: Material(
             color: Colors.transparent,
@@ -1274,27 +1985,26 @@ class _OriginalPostEmbed extends ConsumerWidget {
                     Row(
                       children: [
                         CircleAvatar(
-                          radius: 12, backgroundColor: Colors.white.withValues(alpha: 0.5),
+                          radius: 12,
+                          backgroundColor: Colors.white.withOpacity(0.5),
                           backgroundImage: original.authorAvatar != null && original.authorAvatar!.isNotEmpty ? CachedNetworkImageProvider(original.authorAvatar!) : null,
                           child: original.authorAvatar == null || original.authorAvatar!.isEmpty ? const Icon(Icons.person, size: 14, color: ThixPolicy.textMuted) : null,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(original.authorName, style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 12, color: ThixPolicy.textMain), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          child: Text(_PostCardValidators.sanitize(original.authorName), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 12, color: ThixPolicy.textMain), maxLines: 1, overflow: TextOverflow.ellipsis),
                         ),
                       ],
                     ),
                     if (original.content.isNotEmpty) ...[
                       const SizedBox(height: 8),
-                      Text(original.content, maxLines: 3, overflow: TextOverflow.ellipsis, style: ThixPolicy.bodyStyle.copyWith(fontSize: 12.5, height: 1.35, color: ThixPolicy.textMain)),
+                      Text(_PostCardValidators.sanitize(original.content), maxLines: 3, overflow: TextOverflow.ellipsis, style: ThixPolicy.bodyStyle.copyWith(fontSize: 12.5, height: 1.35, color: ThixPolicy.textMain)),
                     ],
                     if (originalMedia.isNotEmpty) ...[
                       const SizedBox(height: 10),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: _isVideoUrl(originalMedia.first)
-                            ? _VideoThumbTile(videoUrl: originalMedia.first, height: 120, onTap: () {})
-                            : CachedNetworkImage(imageUrl: originalMedia.first, height: 120, width: double.infinity, fit: BoxFit.cover),
+                        child: _isVideoUrl(originalMedia.first) ? _VideoThumbTile(videoUrl: originalMedia.first, height: 120, onTap: () {}) : CachedNetworkImage(imageUrl: originalMedia.first, height: 120, width: double.infinity, fit: BoxFit.cover),
                       ),
                     ],
                   ],
@@ -1308,14 +2018,12 @@ class _OriginalPostEmbed extends ConsumerWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// GALERIE & VIDEO & AUDIO PLAYERS
-// ─────────────────────────────────────────────────────────────
 class _FullScreenGallery extends StatefulWidget {
   final List<String> imageUrls;
   final int initialIndex;
   const _FullScreenGallery({required this.imageUrls, required this.initialIndex});
-  @override State<_FullScreenGallery> createState() => _FullScreenGalleryState();
+  @override
+  State<_FullScreenGallery> createState() => _FullScreenGalleryState();
 }
 
 class _FullScreenGalleryState extends State<_FullScreenGallery> {
@@ -1330,7 +2038,10 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
   }
 
   @override
-  void dispose() { _pageController.dispose(); super.dispose(); }
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1344,57 +2055,14 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
             onPageChanged: (i) => setState(() => _currentIndex = i),
             itemBuilder: (_, index) => Center(
               child: InteractiveViewer(
-                minScale: 1, maxScale: 4,
+                minScale: 1,
+                maxScale: 4,
                 child: CachedNetworkImage(imageUrl: widget.imageUrls[index], fit: BoxFit.contain),
               ),
             ),
           ),
           Positioned(top: 12, right: 12, child: SafeArea(child: IconButton(onPressed: () => Navigator.of(context).maybePop(), icon: const Icon(Icons.close, color: Colors.white)))),
         ],
-      ),
-    );
-  }
-}
-
-class _VideoThumbTile extends StatefulWidget {
-  final String videoUrl;
-  final double? width;
-  final double? height;
-  final VoidCallback onTap;
-  const _VideoThumbTile({required this.videoUrl, this.width, this.height, required this.onTap});
-
-  @override
-  State<_VideoThumbTile> createState() => _VideoThumbTileState();
-}
-
-class _VideoThumbTileState extends State<_VideoThumbTile> {
-  VideoPlayerController? _controller;
-  bool _ready = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))..initialize().then((_) { if (mounted) setState(() => _ready = true); });
-  }
-
-  @override
-  void dispose() { _controller?.dispose(); super.dispose(); }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: widget.onTap,
-      child: Container(
-        width: widget.width, height: widget.height, color: Colors.black,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (_ready && _controller != null) FittedBox(fit: BoxFit.cover, child: SizedBox(width: _controller!.value.size.width, height: _controller!.value.size.height, child: VideoPlayer(_controller!)))
-            else const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white54))),
-            Container(color: Colors.black.withValues(alpha: 0.2)),
-            const Center(child: Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 46)),
-          ],
-        ),
       ),
     );
   }
@@ -1415,11 +2083,20 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))..initialize().then((_) { if (mounted) { setState(() => _ready = true); _controller.play(); } });
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
+      ..initialize().then((_) {
+        if (mounted) {
+          setState(() => _ready = true);
+          _controller.play();
+        }
+      });
   }
 
   @override
-  void dispose() { _controller.dispose(); super.dispose(); }
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1432,61 +2109,14 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
             Positioned.fill(
               child: GestureDetector(
                 onTap: () => setState(() => _controller.value.isPlaying ? _controller.pause() : _controller.play()),
-                child: AnimatedOpacity(opacity: _controller.value.isPlaying ? 0 : 1, duration: const Duration(milliseconds: 200), child: const Center(child: Icon(Icons.play_arrow_rounded, color: Colors.white70, size: 72))),
+                child: AnimatedOpacity(
+                  opacity: _controller.value.isPlaying ? 0 : 1,
+                  duration: const Duration(milliseconds: 200),
+                  child: const Center(child: Icon(Icons.play_arrow_rounded, color: Colors.white70, size: 72)),
+                ),
               ),
             ),
           Positioned(top: 12, right: 12, child: SafeArea(child: IconButton(onPressed: () => Navigator.of(context).maybePop(), icon: const Icon(Icons.close, color: Colors.white)))),
-        ],
-      ),
-    );
-  }
-}
-
-class _ThixWaveformAudioPlayer extends StatefulWidget {
-  final String audioUrl;
-  const _ThixWaveformAudioPlayer({required this.audioUrl});
-  @override State<_ThixWaveformAudioPlayer> createState() => _ThixWaveformAudioPlayerState();
-}
-
-class _ThixWaveformAudioPlayerState extends State<_ThixWaveformAudioPlayer> {
-  final AudioPlayer _audioPlayer = AudioPlayer();
-  bool _isPlaying = false;
-  Duration _duration = Duration.zero;
-  Duration _position = Duration.zero;
-
-  @override
-  void initState() {
-    super.initState();
-    _audioPlayer.setSourceUrl(widget.audioUrl);
-    _audioPlayer.onPlayerStateChanged.listen((state) { if (mounted) setState(() => _isPlaying = state == PlayerState.playing); });
-    _audioPlayer.onDurationChanged.listen((d) { if (mounted) setState(() => _duration = d); });
-    _audioPlayer.onPositionChanged.listen((p) { if (mounted) setState(() => _position = p); });
-  }
-
-  @override
-  void dispose() { _audioPlayer.dispose(); super.dispose(); }
-
-  @override
-  Widget build(BuildContext context) {
-    final progress = _duration.inMilliseconds > 0 ? _position.inMilliseconds / _duration.inMilliseconds : 0.0;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.5), // Glass
-        borderRadius: BorderRadius.circular(16), 
-        border: Border.all(color: Colors.white.withValues(alpha: 0.8))
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () { if (_isPlaying) _audioPlayer.pause(); else _audioPlayer.play(UrlSource(widget.audioUrl)); },
-            child: Container(width: 44, height: 44, decoration: const BoxDecoration(color: ThixPolicy.primary, shape: BoxShape.circle), child: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white, size: 24)),
-          ),
-          const SizedBox(width: 16),
-          Expanded(child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(value: progress, color: ThixPolicy.primary, backgroundColor: Colors.white.withValues(alpha: 0.6))
-          )),
         ],
       ),
     );
