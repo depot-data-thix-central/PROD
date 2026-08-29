@@ -320,7 +320,7 @@ class AppRouter {
           ElevatedButton(onPressed: () => context.go(AppRoutes.home), child: const Text('Accueil')),
         ])),
       ),
-                        redirect: (context, state) async {
+                              redirect: (context, state) async {
         try {
           final loc = state.matchedLocation;
           final isLoginPage = loc == AppRoutes.login;
@@ -359,7 +359,8 @@ class AppRouter {
           if (logged && (isLoginPage || isStartPage)) {
             // S'il est actif, direction Dashboard
             if (isAccountActive) return AppRoutes.userDashboard;
-            // S'il n'est PAS actif, on le laisse aller sur Login pour qu'il puisse changer de compte / se déconnecter
+            // S'il n'est PAS actif, on le laisse tranquille sur Login ou Start.
+            // Cela lui permet de cliquer sur un bouton pour se déconnecter et vider le cache !
             return null; 
           }
 
@@ -370,7 +371,7 @@ class AppRouter {
             return AppRoutes.userDashboard;
           }
 
-          // ✅ NOUVEAU Cas 4 : Connecté mais compte NON ACTIVÉ (bloqué à une étape)
+          // Cas 4 : Connecté mais compte NON ACTIVÉ (bloqué à une étape) et tente d'aller sur une page privée (ex: Dashboard)
           if (logged && !isRegPage && !isLoginPage && !isStartPage && !isAccountActive && currentUser?.registrationStatus != null) {
             if (status == 'draft_step1') {
               return '${AppRoutes.personalReg}?step=1';
@@ -388,6 +389,7 @@ class AppRouter {
           return null;
         }
       },
+
 
 
           
