@@ -742,10 +742,13 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         label = isLoading ? 'Activation en cours…' : "Valider et Activer mon THIX ID";
         onPressed = _verifyAndActivate;
         break;
-      case 3:
+            case 3:
         label = 'Accéder au Tableau de Bord';
-        onPressed = () => context.go(AppRoutes.userDashboard);
+        onPressed = () {
+          context.go(AppRoutes.userDashboard); 
+        };
         break;
+
       default:
         label = '';
         onPressed = null;
