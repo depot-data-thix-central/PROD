@@ -19,6 +19,9 @@ import 'package:thix_id/supabase/supabase_config.dart';
 ///    signOut + erreur de configuration (l'OTP reste obligatoire).
 ///  - verifyOTP : aucun bypass, hydratation SEULEMENT après vérification réussie.
 ///  - THIX ID officiel jamais généré avant confirmation de l'email et choix du pays.
+///  - ✅ NOUVEAU : backfill du profil (nom, date de naissance, pays...) si la ligne
+///    `profiles` existait déjà (créée par le trigger handle_new_user) mais que les
+///    données d'inscription n'ont jamais été copiées depuis les métadonnées auth.
 class SupabaseAuthManager implements AuthManager {
   final SupabaseClient _client;
   final ProfileService _profiles;
@@ -173,23 +176,23 @@ class SupabaseAuthManager implements AuthManager {
     final email = (user.email ?? '').toLowerCase();
     final meta = (user.userMetadata ?? const <String, dynamic>{});
 
+    String? s(String k) {
+      final v = meta[k];
+      if (v == null) return null;
+      final t = v.toString().trim();
+      return t.isEmpty ? null : t;
+    }
+
+    List<String> strList(String k) {
+      final v = meta[k];
+      if (v is List) {
+        return v.whereType<String>().map((e) => e.trim()).where((e) => e.isNotEmpty).toList(growable: false);
+      }
+      return const <String>[];
+    }
+
     final row = await _selectProfileRow(uid);
     if (row == null) {
-      String? s(String k) {
-        final v = meta[k];
-        if (v == null) return null;
-        final t = v.toString().trim();
-        return t.isEmpty ? null : t;
-      }
-
-      List<String> strList(String k) {
-        final v = meta[k];
-        if (v is List) {
-          return v.whereType<String>().map((e) => e.trim()).where((e) => e.isNotEmpty).toList(growable: false);
-        }
-        return const <String>[];
-      }
-
       final base = AppUser(
         id: uid,
         thixId: 'THIX-PENDING',
@@ -238,6 +241,49 @@ class SupabaseAuthManager implements AuthManager {
     }
 
     var appUser = _appUserFromProfileRow(uid: uid, email: email, row: row, phone: user.phone);
+
+    // ✅ NOUVEAU : backfill si la ligne profiles existait déjà (créée par le trigger
+    // handle_new_user, qui ne remplit que id/account_status/registration_status)
+    // mais que les données d'inscription (nom, date de naissance, pays...) n'ont
+    // jamais été copiées depuis les métadonnées auth vers la table profiles.
+    final metaFullName = s('display_name') ?? s('full_name');
+    final needsBackfill = appUser.displayName.trim().isEmpty ||
+        (appUser.displayName == 'Utilisateur THIX' && metaFullName != null && metaFullName.isNotEmpty);
+
+    if (needsBackfill) {
+      final backfillUser = appUser.copyWith(
+        displayName: metaFullName ?? appUser.displayName,
+        countryOrOrigin: appUser.countryOrOrigin ?? s('country_or_origin') ?? s('countryOrOrigin'),
+        contactPhone: appUser.contactPhone ?? s('phone_number') ?? s('contact_phone') ?? s('contactPhone'),
+        maritalStatus: appUser.maritalStatus ?? s('marital_status') ?? s('maritalStatus'),
+        gender: appUser.gender ?? s('gender'),
+        occupation: appUser.occupation ?? s('occupation'),
+        profession: appUser.profession ?? s('profession'),
+        dateOfBirth: appUser.dateOfBirth ?? s('date_of_birth') ?? s('dateOfBirth'),
+        placeOfBirth: appUser.placeOfBirth ?? s('place_of_birth') ?? s('placeOfBirth'),
+        nationality: appUser.nationality ?? s('nationality'),
+        address: appUser.address ?? s('address'),
+        fatherName: appUser.fatherName ?? s('father_name') ?? s('fatherName'),
+        motherName: appUser.motherName ?? s('mother_name') ?? s('motherName'),
+        emergencyContactName: appUser.emergencyContactName ?? s('emergency_contact_name') ?? s('emergencyContactName'),
+        emergencyContactPhone: appUser.emergencyContactPhone ?? s('emergency_contact_phone') ?? s('emergencyContactPhone'),
+        emergencyContactRelation: appUser.emergencyContactRelation ?? s('emergency_contact_relation') ?? s('emergencyContactRelation'),
+        languages: appUser.languages.isNotEmpty ? appUser.languages : strList('languages'),
+      );
+
+      try {
+        await _ensureProfileRow(user: backfillUser);
+        final fresh = await _selectProfileRow(uid);
+        if (fresh != null) {
+          appUser = _appUserFromProfileRow(uid: uid, email: email, row: fresh, phone: user.phone);
+        } else {
+          appUser = backfillUser;
+        }
+      } catch (e) {
+        debugPrint('SupabaseAuthManager: backfill profile failed uid=$uid err=$e');
+        appUser = backfillUser;
+      }
+    }
 
     // 🔴 SUPPRIMÉ : On ne génère plus automatiquement le THIX ID ici pour éviter le conflit 
     // avec la sélection dynamique du pays.
@@ -355,7 +401,6 @@ class SupabaseAuthManager implements AuthManager {
       if (user.emergencyContactRelation?.isNotEmpty == true) 'emergency_contact_relation': user.emergencyContactRelation,
       if (user.languages.isNotEmpty) 'languages': user.languages,
       'registration_status': user.registrationStatus ?? 'draft_step2',
-      'created_at': now,
       'updated_at': now,
     };
 
