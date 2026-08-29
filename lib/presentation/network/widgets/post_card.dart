@@ -1585,6 +1585,8 @@ class _WaveformPainter extends CustomPainter {
   }
 }
 
+/// ✅ Aperçu de lien externe — affiche toujours une image :
+/// la photo Open Graph du site si disponible, sinon le favicon du domaine en secours.
 class _PremiumLinkPreview extends StatefulWidget {
   final String url;
   const _PremiumLinkPreview({required this.url});
@@ -1596,7 +1598,16 @@ class _PremiumLinkPreview extends StatefulWidget {
 class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
   Map<String, dynamic>? _previewData;
   bool _isLoading = true;
-  bool _hasError = false;
+  bool _networkFailed = false;
+
+  String get _domain => Uri.tryParse(widget.url)?.host.replaceFirst('www.', '') ?? 'Lien externe';
+
+  /// Favicon haute résolution du domaine, utilisé comme image de secours
+  /// quand aucune image Open Graph n'a pu être récupérée.
+  String get _faviconUrl {
+    final host = Uri.tryParse(widget.url)?.host ?? '';
+    return 'https://www.google.com/s2/favicons?domain=$host&sz=256';
+  }
 
   @override
   void initState() {
@@ -1623,7 +1634,9 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
       ).timeout(const Duration(seconds: 8));
 
       if (response.data != null && response.data is Map) {
-        final data = response.data as Map<String, dynamic>;
+        // ✅ On accepte toute réponse partielle (même sans titre/description) :
+        // dès qu'on a un minimum d'info, on affiche la carte avec image (photo ou favicon).
+        final data = Map<String, dynamic>.from(response.data as Map);
         _PostCardCache().setLinkPreview(widget.url, data);
         if (mounted) {
           setState(() {
@@ -1636,9 +1649,11 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
       }
     } catch (e) {
       debugPrint('[LinkPreview] Error: $e');
+      // ✅ Même en cas d'échec réseau, on affiche une carte avec le favicon du domaine
+      // plutôt qu'un simple bloc texte sans photo.
       if (mounted) {
         setState(() {
-          _hasError = true;
+          _networkFailed = true;
           _isLoading = false;
         });
       }
@@ -1651,14 +1666,13 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
       return _buildSkeleton();
     }
 
-    if (_hasError || _previewData == null) {
-      return _buildFallback();
-    }
+    final title = _PostCardValidators.sanitize(_previewData?['title']?.toString() ?? '');
+    final description = _PostCardValidators.sanitize(_previewData?['description']?.toString() ?? '');
+    final ogImage = _previewData?['image']?.toString();
+    final hasOgImage = ogImage != null && ogImage.isNotEmpty;
 
-    final title = _PostCardValidators.sanitize(_previewData!['title']?.toString() ?? '');
-    final description = _PostCardValidators.sanitize(_previewData!['description']?.toString() ?? '');
-    final image = _previewData!['image']?.toString();
-    final domain = Uri.tryParse(widget.url)?.host.replaceFirst('www.', '') ?? 'Lien externe';
+    // ✅ Toujours une image : photo Open Graph si dispo, sinon favicon du domaine.
+    final displayImage = hasOgImage ? ogImage : _faviconUrl;
 
     return GestureDetector(
       onTap: () async {
@@ -1676,14 +1690,21 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (image != null && image.isNotEmpty)
-              CachedNetworkImage(
-                imageUrl: image,
-                height: 160,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => const SizedBox.shrink(),
-              ),
+            // ✅ Grande photo Open Graph si disponible (cover), sinon bandeau avec favicon centré.
+            hasOgImage
+                ? CachedNetworkImage(
+                    imageUrl: displayImage,
+                    height: 160,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(
+                      height: 160,
+                      color: Colors.white.withOpacity(0.4),
+                      child: const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))),
+                    ),
+                    errorWidget: (_, __, ___) => _buildFaviconBanner(),
+                  )
+                : _buildFaviconBanner(),
             Padding(
               padding: const EdgeInsets.all(14),
               child: Column(
@@ -1693,21 +1714,57 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
                     children: [
                       Icon(Icons.link_rounded, size: 12, color: ThixPolicy.primary),
                       const SizedBox(width: 4),
-                      Text(domain.toUpperCase(), style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.bold, fontSize: 10, letterSpacing: 0.5)),
+                      Text(_domain.toUpperCase(), style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.bold, fontSize: 10, letterSpacing: 0.5)),
                     ],
                   ),
                   if (title.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold, fontSize: 14, height: 1.2)),
+                  ] else if (_networkFailed || (_previewData == null)) ...[
+                    const SizedBox(height: 6),
+                    Text('Lien externe', style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold, fontSize: 14, height: 1.2)),
                   ],
                   if (description.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text(description, maxLines: 2, overflow: TextOverflow.ellipsis, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 12, height: 1.3)),
+                  ] else ...[
+                    const SizedBox(height: 6),
+                    Text(widget.url, maxLines: 1, overflow: TextOverflow.ellipsis, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 12, height: 1.3)),
                   ],
                 ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Bandeau de secours avec favicon centré sur fond doux — utilisé quand
+  /// aucune photo Open Graph n'est disponible ou n'a pu être chargée.
+  Widget _buildFaviconBanner() {
+    return Container(
+      height: 100,
+      width: double.infinity,
+      color: ThixPolicy.primary.withOpacity(0.06),
+      alignment: Alignment.center,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(color: Colors.white.withOpacity(0.8), borderRadius: BorderRadius.circular(12)),
+          child: CachedNetworkImage(
+            imageUrl: _faviconUrl,
+            width: 40,
+            height: 40,
+            fit: BoxFit.contain,
+            placeholder: (_, __) => const SizedBox(
+              width: 40,
+              height: 40,
+              child: Icon(Icons.link_rounded, color: ThixPolicy.primary, size: 24),
+            ),
+            errorWidget: (_, __, ___) => const Icon(Icons.link_rounded, color: ThixPolicy.primary, size: 28),
+          ),
         ),
       ),
     );
@@ -1722,42 +1779,6 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
         border: Border.all(color: Colors.white.withOpacity(0.8)),
       ),
       child: const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))),
-    );
-  }
-
-  Widget _buildFallback() {
-    return GestureDetector(
-      onTap: () async {
-        final uri = Uri.parse(widget.url);
-        if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
-      },
-      child: Container(
-        padding: const EdgeInsets.all(ThixPolicy.s12),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.5),
-          borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-          border: Border.all(color: Colors.white.withOpacity(0.8)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(ThixPolicy.s8),
-              decoration: BoxDecoration(color: Colors.white.withOpacity(0.8), borderRadius: BorderRadius.circular(ThixPolicy.rXs)),
-              child: const Icon(Icons.link_rounded, color: ThixPolicy.primary),
-            ),
-            const SizedBox(width: ThixPolicy.s12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Lien externe', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain, fontSize: 13)),
-                  Text(widget.url, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -1974,6 +1995,9 @@ class _LikersStackState extends State<_LikersStack> {
 // AUTRES WIDGETS
 // ============================================================================
 
+/// ✅ Repost original — désormais entièrement visible :
+/// texte complet (plus de troncature à 3 lignes) et image affichée
+/// intégralement (BoxFit.contain, sans recadrage), avec hauteur adaptative.
 class _OriginalPostEmbed extends ConsumerWidget {
   final String postId;
   const _OriginalPostEmbed({required this.postId});
@@ -1997,6 +2021,7 @@ class _OriginalPostEmbed extends ConsumerWidget {
         final originalMedia = [...original.imageUrls, ...original.videoUrls];
 
         return Container(
+          width: double.infinity,
           decoration: BoxDecoration(color: Colors.white.withOpacity(0.5), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white.withOpacity(0.8))),
           clipBehavior: Clip.antiAlias,
           child: Material(
@@ -2024,13 +2049,42 @@ class _OriginalPostEmbed extends ConsumerWidget {
                     ),
                     if (original.content.isNotEmpty) ...[
                       const SizedBox(height: 8),
-                      Text(_PostCardValidators.sanitize(original.content), maxLines: 3, overflow: TextOverflow.ellipsis, style: ThixPolicy.bodyStyle.copyWith(fontSize: 12.5, height: 1.35, color: ThixPolicy.textMain)),
+                      // ✅ Texte complet, sans limite de lignes ni ellipsis.
+                      Text(
+                        _PostCardValidators.sanitize(original.content),
+                        style: ThixPolicy.bodyStyle.copyWith(fontSize: 12.5, height: 1.4, color: ThixPolicy.textMain),
+                      ),
                     ],
                     if (originalMedia.isNotEmpty) ...[
                       const SizedBox(height: 10),
+                      // ✅ Image/vidéo affichée en entier, sans recadrage forcé.
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: _isVideoUrl(originalMedia.first) ? _VideoThumbTile(videoUrl: originalMedia.first, height: 120, onTap: () {}) : CachedNetworkImage(imageUrl: originalMedia.first, height: 120, width: double.infinity, fit: BoxFit.cover),
+                        child: _isVideoUrl(originalMedia.first)
+                            ? SizedBox(
+                                width: double.infinity,
+                                height: 220,
+                                child: _VideoThumbTile(videoUrl: originalMedia.first, height: 220, onTap: () {}),
+                              )
+                            : ConstrainedBox(
+                                constraints: const BoxConstraints(maxHeight: 400, minHeight: 120),
+                                child: Container(
+                                  width: double.infinity,
+                                  color: Colors.black.withOpacity(0.03),
+                                  child: CachedNetworkImage(
+                                    imageUrl: originalMedia.first,
+                                    fit: BoxFit.contain,
+                                    placeholder: (_, __) => const SizedBox(
+                                      height: 200,
+                                      child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))),
+                                    ),
+                                    errorWidget: (_, __, ___) => const SizedBox(
+                                      height: 120,
+                                      child: Center(child: Icon(Icons.broken_image_outlined, color: ThixPolicy.textMuted)),
+                                    ),
+                                  ),
+                                ),
+                              ),
                       ),
                     ],
                   ],
