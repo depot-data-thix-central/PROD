@@ -1,15 +1,18 @@
-// lib/features/network/presentation/providers/feed_ranker.dart
 import 'dart:math';
-
 import 'package:thix_id/models/network_post.dart';
 
-/// Ranking type Facebook (affinité + fraîcheur + engagement + diversité).
-/// Pas de shuffle aléatoire.
+/// Algorithme de ranking intelligent type Facebook EdgeRank
+/// 
+/// Score = (Affinité × Poids × Décroissance) + Boost
+/// 
+/// - Affinité : Connexion avec l'auteur (0.0 à 1.0)
+/// - Poids : Type d'interaction (like=1, comment=2, share=3)
+/// - Décroissance : Âge du post (plus ancien = score plus bas)
+/// - Boost : Posts épinglés, tendances, etc.
 class FeedRanker {
   FeedRanker._();
 
-  /// [connectionIds] = utilisateurs connectés avec le viewer.
-  /// [feedType] = all | network | popular | recent
+  /// Rank les posts selon le type de feed
   static List<NetworkPost> rank({
     required List<NetworkPost> posts,
     required Set<String> connectionIds,
@@ -17,102 +20,101 @@ class FeedRanker {
   }) {
     if (posts.isEmpty) return posts;
 
-    final scored = <({NetworkPost post, double score})>[];
-
-    for (final p in posts) {
-      final affinity = connectionIds.contains(p.userId) ? 1.0 : 0.0;
-
-      final engagement = (p.likesCount * 1.0) +
-          (p.commentsCount * 2.5) +
-          (p.repostsCount * 3.0) +
-          ((p.views ?? 0) * 0.02);
-
-      final ageSec =
-          DateTime.now().difference(p.createdAt).inSeconds.clamp(0, 1 << 30);
-      // Demi-vie \~18h
-      final freshness = exp(-ageSec / 64800.0);
-
-      // Boost pin
-      final pinBoost = p.isPinned ? 0.35 : 0.0;
-
-      double score;
-      switch (feedType) {
-        case 'popular':
-          score = engagement * 0.70 + freshness * 0.30 + pinBoost;
-          break;
-        case 'recent':
-          score = freshness * 0.85 + engagement * 0.15 + pinBoost;
-          break;
-        case 'network':
-          score = affinity * 0.45 +
-              freshness * 0.35 +
-              engagement * 0.20 +
-              pinBoost;
-          break;
-        case 'all':
-        default:
-          score = affinity * 0.40 +
-              freshness * 0.35 +
-              engagement * 0.25 +
-              pinBoost;
-      }
-
-      // Bruit faible + stable par jour (évite un feed identique sans tout mélanger)
-      final day = DateTime.now().toUtc().day;
-      score += _stableNoise(p.id, day) * 0.03;
-
-      scored.add((post: p, score: score));
+    switch (feedType) {
+      case 'popular':
+        return _rankByPopularity(posts);
+      case 'recent':
+        return _rankByRecency(posts);
+      case 'network':
+        return _rankByNetwork(posts, connectionIds);
+      case 'all':
+      default:
+        return _rankBySmartAlgorithm(posts, connectionIds);
     }
+  }
 
-    scored.sort((a, b) {
-      final c = b.score.compareTo(a.score);
-      if (c != 0) return c;
-      return b.post.createdAt.compareTo(a.post.createdAt);
+  /// Algorithme intelligent (Facebook-like)
+  static List<NetworkPost> _rankBySmartAlgorithm(
+    List<NetworkPost> posts,
+    Set<String> connectionIds,
+  ) {
+    final now = DateTime.now().toUtc();
+    
+    final scored = posts.map((post) {
+      final score = _calculateScore(post, connectionIds, now);
+      return (post: post, score: score);
+    }).toList();
+
+    // Tri décroissant par score
+    scored.sort((a, b) => b.score.compareTo(a.score));
+    
+    return scored.map((e) => e.post).toList();
+  }
+
+  /// Calcule le score d'un post
+  static double _calculateScore(
+    NetworkPost post,
+    Set<String> connectionIds,
+    DateTime now,
+  ) {
+    // 1. Affinité (0.0 à 1.0)
+    final affinity = connectionIds.contains(post.userId) ? 1.0 : 0.3;
+
+    // 2. Poids des interactions
+    final engagementScore = _calculateEngagementScore(post);
+
+    // 3. Décroissance temporelle (demi-vie de 24h)
+    final ageInHours = now.difference(post.createdAt).inHours.toDouble();
+    final decay = exp(-ageInHours / 24.0); // e^(-t/24)
+
+    // 4. Boost pour posts épinglés
+    final pinBoost = post.isPinned ? 10.0 : 1.0;
+
+    // 5. Boost pour posts avec médias
+    final mediaBoost = post.hasMedia ? 1.2 : 1.0;
+
+    // Score final
+    return affinity * engagementScore * decay * pinBoost * mediaBoost;
+  }
+
+  /// Score d'engagement (likes + comments × 2 + shares × 3)
+  static double _calculateEngagementScore(NetworkPost post) {
+    final likes = post.likesCount.toDouble();
+    final comments = post.commentsCount.toDouble();
+    final shares = post.sharesCount.toDouble();
+    
+    return likes + (comments * 2.0) + (shares * 3.0);
+  }
+
+  /// Tri par popularité (likes décroissants)
+  static List<NetworkPost> _rankByPopularity(List<NetworkPost> posts) {
+    final sorted = List<NetworkPost>.from(posts);
+    sorted.sort((a, b) => b.likesCount.compareTo(a.likesCount));
+    return sorted;
+  }
+
+  /// Tri par récence (date décroissante)
+  static List<NetworkPost> _rankByRecency(List<NetworkPost> posts) {
+    final sorted = List<NetworkPost>.from(posts);
+    sorted.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return sorted;
+  }
+
+  /// Tri par réseau (connexions d'abord, puis récence)
+  static List<NetworkPost> _rankByNetwork(
+    List<NetworkPost> posts,
+    Set<String> connectionIds,
+  ) {
+    final sorted = List<NetworkPost>.from(posts);
+    sorted.sort((a, b) {
+      final aIsConnection = connectionIds.contains(a.userId) ? 1 : 0;
+      final bIsConnection = connectionIds.contains(b.userId) ? 1 : 0;
+      
+      if (aIsConnection != bIsConnection) {
+        return bIsConnection.compareTo(aIsConnection);
+      }
+      return b.createdAt.compareTo(a.createdAt);
     });
-
-    return _diversify(scored.map((e) => e.post).toList());
-  }
-
-  static double _stableNoise(String id, int day) {
-    var h = day * 31;
-    for (final c in id.codeUnits) {
-      h = (h * 31 + c) & 0x7fffffff;
-    }
-    return (h % 1000) / 1000.0;
-  }
-
-  /// Évite plus de 2 posts d'affilée du même auteur.
-  static List<NetworkPost> _diversify(List<NetworkPost> input) {
-    if (input.length < 3) return input;
-
-    final out = <NetworkPost>[];
-    final deferred = <NetworkPost>[];
-
-    for (final p in input) {
-      if (out.length >= 2 &&
-          out[out.length - 1].userId == p.userId &&
-          out[out.length - 2].userId == p.userId) {
-        deferred.add(p);
-      } else {
-        out.add(p);
-      }
-    }
-
-    // Réinsère les différés en respectant un peu la diversité
-    for (final p in deferred) {
-      var inserted = false;
-      for (var i = 0; i < out.length; i++) {
-        final prev = i > 0 ? out[i - 1].userId : null;
-        final next = out[i].userId;
-        if (p.userId != prev && p.userId != next) {
-          out.insert(i, p);
-          inserted = true;
-          break;
-        }
-      }
-      if (!inserted) out.add(p);
-    }
-
-    return out;
+    return sorted;
   }
 }
