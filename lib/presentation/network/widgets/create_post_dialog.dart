@@ -830,10 +830,6 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
         postType: PostType.values.asNameMap()[payload['post_type'] as String?] ?? PostType.standard,
         pollData: payload['poll_data'] as Map<String, dynamic>?,
         challengeData: payload['challenge_data'] as Map<String, dynamic>?,
-        isFactChecked: false, // Fact-check fait côté serveur
-        isMisinformation: false,
-        factCheckMessage: null,
-        factCheckSeverity: null,
         createdAt: DateTime.now(),
         likesCount: 0,
         commentsCount: 0,
