@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:thix_id/models/media_content.dart';
 import 'package:thix_id/presentation/thix_media/media_routes.dart';
-import 'package:thix_id/presentation/thix_media/providers/thix_media_providers.dart';
+import 'package:thix_id/presentation/thix_media/providers/thix_media_provider.dart';
 
 /// Carte vidéo individuelle pour la grille de profil.
 /// 
