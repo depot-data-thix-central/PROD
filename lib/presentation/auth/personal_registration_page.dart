@@ -424,16 +424,25 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     if (passIssue != null) { _snack(passIssue, isError: true); return false; }
     if (pass != confirm) { _snack('Les mots de passe ne correspondent pas.', isError: true); return false; }
 
-    try {
+        try {
       await ref.read(authControllerProvider.notifier).registerPersonal(
-        email: email, password: pass, displayName: _nameC.text.trim(), rememberMe: true,
-        profileDraft: {
-          'full_name': _nameC.text.trim(), 'date_of_birth': _dobC.text.trim(),
-          'country_or_origin': _country, 'occupation': _occupationC.text.trim(),
-          'phone_number': phone, 'registration_status': 'draft_step2', 'account_status': 'pending',
-        },
-      );
+            email: email,
+            password: pass,
+            displayName: _nameC.text.trim(),
+            rememberMe: true,
+            profileDraft: {
+              'full_name': _nameC.text.trim(),
+              'date_of_birth': _dobC.text.trim(),
+              'country_or_origin': _country,
+              // ✅ CORRECTION : Envoyer null si le champ est vide au lieu d'une chaîne ""
+              'occupation': _occupationC.text.trim().isEmpty ? null : _occupationC.text.trim(),
+              'phone_number': phone.isEmpty ? null : phone,
+              'registration_status': 'draft_step2',
+              'account_status': 'pending',
+            },
+          );
       return true;
+
     } catch (e) {
       final message = e.toString().toLowerCase();
       if (message.contains('otp_sent') || message.contains('nouveau code') || message.contains('confirm') || message.contains('inscription enregistrée')) {
