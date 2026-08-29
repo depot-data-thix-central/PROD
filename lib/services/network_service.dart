@@ -141,33 +141,34 @@ class NetworkService extends ChangeNotifier {
     if (t == 'tendance' || t == 'trending') return 'popular';
     return t;
   }
+Future<List<NetworkPost>> getFeedPosts({
+  int limit = 20,
+  int? offset,
+  DateTime? lastCreatedAt,
+  String feedType = 'all',
+  int seed = 0,                      
+}) async {
+  final uid = currentUserId;
+  if (uid.isEmpty) return [];
 
-  Future<List<NetworkPost>> getFeedPosts({
-    int limit = 20,
-    int? offset,
-    DateTime? lastCreatedAt,
-    String feedType = 'all',
-  }) async {
-    final uid = currentUserId;
-    if (uid.isEmpty) return [];
+  limit = limit.clamp(1, 100);
+  final safeOffset = (offset ?? 0) < 0 ? 0 : (offset ?? 0);
+  final type = _normalizeFeedType(feedType);
 
-    limit = limit.clamp(1, 100);
-    final safeOffset = (offset ?? 0) < 0 ? 0 : (offset ?? 0);
-    final type = _normalizeFeedType(feedType);
+  try {
+    if (type == 'all') {
+      final res = await _supabase.rpc('get_smart_feed', params: {
+        'p_user_id': uid,
+        'p_limit': limit,
+        'p_offset': safeOffset,
+        'p_seed': seed,             
+      }).timeout(_requestTimeout);
 
-    try {
-      // ✅ SMART FEED — mix intelligent calculé côté DB
-      if (type == 'all') {
-        final res = await _supabase.rpc('get_smart_feed', params: {
-          'p_user_id': uid,
-          'p_limit': limit,
-          'p_offset': safeOffset,
-        }).timeout(_requestTimeout);
-
-        return (res as List)
-            .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
-      }
+      return (res as List)
+          .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    }
+    
 
       // ── Abonnements : uniquement les personnes suivies ──
       if (type == 'network') {
