@@ -6,9 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/models/media_content.dart';
 import 'package:thix_id/services/media_service.dart';
-import '../providers/thix_media_providers.dart';
+import 'package:thix_id/presentation/thix_media/providers/thix_media_provider.dart';
 import '../utils/media_constants.dart';
 import 'feed_video_player.dart';
+
+import 'comments_sheet.dart';
 
 class FilFeedView extends ConsumerStatefulWidget {
   final List<MediaContent> catalog;
