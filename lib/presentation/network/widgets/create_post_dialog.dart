@@ -9,28 +9,79 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:record/record.dart'; 
-import 'package:image_picker/image_picker.dart'; 
-import 'package:audioplayers/audioplayers.dart'; 
+import 'package:record/record.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
-import 'package:permission_handler/permission_handler.dart'; 
+import 'package:permission_handler/permission_handler.dart';
+import 'package:html/parser.dart' as html_parser;
 
 import 'package:thix_id/models/network_post.dart';
 import 'package:thix_id/features/network/data/network_service_provider.dart';
 import 'package:thix_id/features/network/presentation/providers/feed_provider.dart';
-import 'package:thix_id/services/ai/ai_service.dart';
-import 'package:thix_id/presentation/certification/certification_tiers_page.dart'; 
-
-// ✅ IMPORT DE LA THIX POLICY
+import 'package:thix_id/presentation/certification/certification_tiers_page.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
-Future<Uint8List> compressImageBytes(Uint8List bytes) async {
+// ============================================================================
+// VALIDATIONS CENTRALISÉES
+// ============================================================================
+class _PostValidators {
+  _PostValidators._();
+
+  static String sanitizeText(String? input, {int maxLength = 5000}) {
+    if (input == null || input.trim().isEmpty) return '';
+    final document = html_parser.parse(input);
+    var sanitized = document.body?.text ?? input;
+    sanitized = sanitized
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
+        .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+    return sanitized.length > maxLength ? sanitized.substring(0, maxLength) : sanitized;
+  }
+
+  static bool validateFileSize(int bytes, {int maxSizeMB = 50}) {
+    return bytes <= maxSizeMB * 1024 * 1024;
+  }
+
+  static bool validateFileExtension(String filename, Set<String> allowed) {
+    final ext = filename.split('.').last.toLowerCase();
+    return allowed.contains(ext);
+  }
+
+  static String? validateMime(Uint8List bytes) {
+    if (bytes.length < 12) return 'Fichier trop petit';
+    
+    // JPEG
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return null;
+    // PNG
+    if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47) return null;
+    // WebP
+    if (bytes.length >= 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46) return null;
+    // MP4/MOV
+    if (bytes.length >= 8 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70) return null;
+    // Audio (M4A/MP3)
+    if (bytes[0] == 0xFF && bytes[1] == 0xFB) return null; // MP3
+    if (bytes.length >= 8 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70) return null; // M4A
+    
+    return 'Format de fichier non reconnu';
+  }
+}
+
+// ============================================================================
+// COMPRESSION ASYNCHRONE
+// ============================================================================
+Future<Uint8List> _compressImageBytes(Uint8List bytes) async {
   if (kIsWeb) return bytes;
   try {
-    return await FlutterImageCompress.compressWithList(bytes, minHeight: 1080, minWidth: 1080, quality: 85);
+    return await compute((Uint8List input) async {
+      return await FlutterImageCompress.compressWithList(input, minHeight: 1080, minWidth: 1080, quality: 85);
+    }, bytes);
   } catch (e) {
-    return bytes; 
+    debugPrint('[Compression] Error: $e');
+    return bytes;
   }
 }
 
@@ -60,16 +111,16 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
   final _challengeRewardController = TextEditingController();
   DateTime? _challengeEndDate;
 
-  int _postTypeMode = 0; // 0 standard · 1 sondage · 2 challenge
+  int _postTypeMode = 0;
 
   Color _selectedBgColor = Colors.transparent;
   final List<Color> _bgColors = const [
-    Colors.transparent, 
-    Color(0xFF00A4FF), 
-    ThixPolicy.danger, 
-    ThixPolicy.success, 
-    ThixPolicy.gold, 
-    Color(0xFF8B5CF6), 
+    Colors.transparent,
+    Color(0xFF00A4FF),
+    ThixPolicy.danger,
+    ThixPolicy.success,
+    ThixPolicy.gold,
+    Color(0xFF8B5CF6),
     ThixPolicy.textMain
   ];
 
@@ -77,14 +128,13 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
   final List<_MediaItem> _videos = [];
   bool _isUploading = false;
   String? _errorMessage;
-  String? _factCheckStatusLabel;
 
   final AudioRecorder _audioRecorder = AudioRecorder();
   Timer? _recordTimer;
   int _recordDuration = 0;
   bool _isRecording = false;
   Uint8List? _audioBytes;
-  String? _localAudioPath; 
+  String? _localAudioPath;
 
   List<Map<String, dynamic>> _mentionSuggestions = [];
   bool _showMentions = false;
@@ -93,10 +143,10 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
   late Animation<double> _fadeAnimation;
 
   final List<Color> _textColors = const [
-    ThixPolicy.textMain, 
-    ThixPolicy.primary, 
-    ThixPolicy.gold, 
-    ThixPolicy.danger, 
+    ThixPolicy.textMain,
+    ThixPolicy.primary,
+    ThixPolicy.gold,
+    ThixPolicy.danger,
     ThixPolicy.success
   ];
 
@@ -105,7 +155,7 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
 
   // ─── LOGIQUE DE COMPTE (SÉCURITÉ & LIMITES) ───
   bool _isLoadingLimits = true;
-  String _userTier = 'gratuit'; 
+  String _userTier = 'gratuit';
   int _audioPostsToday = 0;
 
   bool get _isFree => _userTier == 'gratuit' || _userTier == 'none';
@@ -118,14 +168,23 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
   bool get _canPostVideo => !_isFree;
   bool get _canCreatePoll => _isPremium || _isEnterprise || _isOfficial;
   bool get _canCreateChallenge => _isPremium || _isEnterprise || _isOfficial;
-  bool get _skipAICheck => _isEnterprise || _isOfficial;
-  bool get _hasWidePollOptions => _isEnterprise || _isOfficial; 
+  bool get _hasWidePollOptions => _isEnterprise || _isOfficial;
 
   int get _maxTextLength => _isFree ? 280 : 5000;
   int get _maxPhotos => _isFree ? 1 : (_isStandard ? 4 : 10);
   int get _maxAudioDuration => _isFree ? 30 : (_isStandard ? 60 : 120);
-  bool get _hasAudioDailyQuota => _isFree; 
+  bool get _hasAudioDailyQuota => _isFree;
   static const int _freeAudioDailyLimit = 3;
+
+  // Constantes de validation
+  static const int _maxImageSizeMB = 10;
+  static const int _maxVideoSizeMB = 100;
+  static const int _maxAudioSizeMB = 20;
+  static const Set<String> _allowedImageExts = {'jpg', 'jpeg', 'png', 'webp', 'heic'};
+  static const Set<String> _allowedVideoExts = {'mp4', 'mov', 'avi', 'mkv', 'webm'};
+  static const Set<String> _allowedAudioExts = {'m4a', 'mp3', 'wav', 'aac'};
+  static const int _maxPollOptionLength = 100;
+  static const Duration _uploadTimeout = Duration(seconds: 30);
 
   @override
   void initState() {
@@ -147,9 +206,9 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
           .select('certification_tier')
           .eq('id', uid)
           .maybeSingle();
-      
+
       final tier = (profile?['certification_tier']?.toString().toLowerCase()) ?? 'gratuit';
-      
+
       final startOfDay = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day).toIso8601String();
       final audioCountRes = await Supabase.instance.client
           .from('posts')
@@ -166,6 +225,7 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
         });
       }
     } catch (e) {
+      debugPrint('[LoadLimits] Error: $e');
       if (mounted) setState(() => _isLoadingLimits = false);
     }
   }
@@ -179,7 +239,9 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
     _contentFocusNode.dispose();
     _challengeDescController.dispose();
     _challengeRewardController.dispose();
-    for (final c in _pollOptionControllers) { c.dispose(); }
+    for (final c in _pollOptionControllers) {
+      c.dispose();
+    }
     _animationController.dispose();
     super.dispose();
   }
@@ -230,7 +292,7 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
       final users = await ref.read(networkServiceProvider).searchUsers(query);
       if (mounted) setState(() => _mentionSuggestions = users);
     } catch (e) {
-      debugPrint('search: $e');
+      debugPrint('[Search] Error: $e');
     }
   }
 
@@ -292,8 +354,8 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
           TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Compris', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm))),
-            onPressed: () { 
-              Navigator.pop(ctx); 
+            onPressed: () {
+              Navigator.pop(ctx);
               Navigator.push(context, MaterialPageRoute(builder: (_) => const CertificationTiersPage()));
             },
             child: Text('Mettre à niveau', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold)),
@@ -307,6 +369,33 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
     if (kIsWeb) return true;
     var status = await permission.status;
     if (status.isGranted) return true;
+    
+    // Gérer le cas "permanently denied"
+    if (status.isPermanentlyDenied) {
+      if (!mounted) return false;
+      final openSettings = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: ThixPolicy.card,
+          title: Text('Permission requise', style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
+          content: Text(
+            'Vous avez précédemment refusé cette permission. Veuillez l\'activer dans les paramètres de l\'application.',
+            style: ThixPolicy.bodyStyle.copyWith(height: 1.4),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Annuler')),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Ouvrir les paramètres'),
+            ),
+          ],
+        ),
+      );
+      if (openSettings == true) {
+        await openAppSettings();
+      }
+      return false;
+    }
 
     if (!mounted) return false;
 
@@ -355,8 +444,11 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
   }
 
   void _wrapSelection(String prefix, String suffix) {
-    if (!_canFormatText) { _showUpgradeDialog('Le formatage du texte', 'Standard'); return; }
-    
+    if (!_canFormatText) {
+      _showUpgradeDialog('Le formatage du texte', 'Standard');
+      return;
+    }
+
     final text = _contentController.text;
     final sel = _contentController.selection;
     if (!sel.isValid) {
@@ -373,7 +465,10 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
   void _applyBold() => _wrapSelection('**', '**');
   void _applyItalic() => _wrapSelection('*', '*');
   void _applyColor(Color color) {
-    if (!_canFormatText) { _showUpgradeDialog('Les couleurs de texte', 'Standard'); return; }
+    if (!_canFormatText) {
+      _showUpgradeDialog('Les couleurs de texte', 'Standard');
+      return;
+    }
     _wrapSelection('{c:${_colorToHex(color)}}', '{c}');
   }
 
@@ -382,6 +477,8 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
   }
 
   Future<void> _startRecording() async {
+    if (_isUploading || _isRecording) return; // Protection race condition
+
     if (_hasAudioDailyQuota && _audioPostsToday >= _freeAudioDailyLimit) {
       _showAudioLimitDialog();
       return;
@@ -389,7 +486,7 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
 
     final hasPerm = await _checkPermissionWithDisclosure(
       Permission.microphone,
-      "Pour vous permettre d'enregistrer et de partager un message vocal dans votre publication, THIX ID a besoin d'accéder à votre microphone."
+      "Pour vous permettre d'enregistrer et de partager un message vocal dans votre publication, THIX ID a besoin d'accéder à votre microphone.",
     );
     if (!hasPerm) {
       if (mounted) setState(() => _errorMessage = 'Permission microphone refusée.');
@@ -401,10 +498,19 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
       await _audioRecorder.start(const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000), path: recordPath);
 
       if (!mounted) return;
-      setState(() { _isRecording = true; _recordDuration = 0; _audioBytes = null; _localAudioPath = null; _resetBgColorIfMediaAdded(); });
+      setState(() {
+        _isRecording = true;
+        _recordDuration = 0;
+        _audioBytes = null;
+        _localAudioPath = null;
+        _resetBgColorIfMediaAdded();
+      });
 
       _recordTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (!mounted) return;
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
         setState(() => _recordDuration++);
         if (_recordDuration >= _maxAudioDuration) {
           _stopRecording();
@@ -412,6 +518,7 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
         }
       });
     } catch (e) {
+      debugPrint('[Record] Start error: $e');
       if (mounted) setState(() => _errorMessage = 'Impossible de démarrer l\'enregistrement.');
     }
   }
@@ -423,14 +530,27 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
       if (mounted) setState(() => _isRecording = false);
       if (path != null) {
         final bytes = await XFile(path).readAsBytes();
-        if (mounted) setState(() { _audioBytes = bytes; _localAudioPath = path; });
+        
+        // Validation taille
+        if (!_PostValidators.validateFileSize(bytes.length, maxSizeMB: _maxAudioSizeMB)) {
+          if (mounted) setState(() => _errorMessage = 'Audio trop volumineux (max ${_maxAudioSizeMB}MB)');
+          return;
+        }
+        
+        if (mounted) setState(() {
+          _audioBytes = bytes;
+          _localAudioPath = path;
+        });
       }
     } catch (e) {
+      debugPrint('[Record] Stop error: $e');
       if (mounted) setState(() => _errorMessage = 'Erreur lors de l\'enregistrement.');
     }
   }
 
   Future<void> _pickImages() async {
+    if (_isUploading) return;
+    
     if (_images.length >= _maxPhotos) {
       _showUpgradeDialog('Ajouter plus de photos', _isFree ? 'Standard' : 'Premium');
       return;
@@ -441,14 +561,43 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
       setState(() {
         _resetBgColorIfMediaAdded();
         for (final f in result.files) {
-          if (_images.length >= _maxPhotos) break; 
-          if (f.bytes != null) _images.add(_MediaItem(f.bytes!, f.name));
+          if (_images.length >= _maxPhotos) break;
+          if (f.bytes == null) continue;
+          
+          // Validation taille
+          if (!_PostValidators.validateFileSize(f.bytes!.length, maxSizeMB: _maxImageSizeMB)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('${f.name}: trop volumineux (max ${_maxImageSizeMB}MB)'), backgroundColor: ThixPolicy.danger),
+            );
+            continue;
+          }
+          
+          // Validation extension
+          if (!_PostValidators.validateFileExtension(f.name, _allowedImageExts)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('${f.name}: format non supporté'), backgroundColor: ThixPolicy.danger),
+            );
+            continue;
+          }
+          
+          // Validation MIME
+          final mimeError = _PostValidators.validateMime(f.bytes!);
+          if (mimeError != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('${f.name}: $mimeError'), backgroundColor: ThixPolicy.danger),
+            );
+            continue;
+          }
+          
+          _images.add(_MediaItem(f.bytes!, f.name));
         }
       });
     }
   }
 
   Future<void> _pickVideos() async {
+    if (_isUploading) return;
+    
     if (!_canPostVideo) {
       _showUpgradeDialog('La publication de vidéos', 'Standard');
       return;
@@ -457,12 +606,34 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
     if (result != null && mounted) {
       setState(() {
         _resetBgColorIfMediaAdded();
-        for (final f in result.files) { if (f.bytes != null) _videos.add(_MediaItem(f.bytes!, f.name, isVideo: true)); }
+        for (final f in result.files) {
+          if (f.bytes == null) continue;
+          
+          // Validation taille
+          if (!_PostValidators.validateFileSize(f.bytes!.length, maxSizeMB: _maxVideoSizeMB)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('${f.name}: trop volumineux (max ${_maxVideoSizeMB}MB)'), backgroundColor: ThixPolicy.danger),
+            );
+            continue;
+          }
+          
+          // Validation extension
+          if (!_PostValidators.validateFileExtension(f.name, _allowedVideoExts)) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('${f.name}: format vidéo non supporté'), backgroundColor: ThixPolicy.danger),
+            );
+            continue;
+          }
+          
+          _videos.add(_MediaItem(f.bytes!, f.name, isVideo: true));
+        }
       });
     }
   }
 
   Future<void> _pickCamera() async {
+    if (_isUploading) return;
+    
     if (_images.length >= _maxPhotos) {
       _showUpgradeDialog('Ajouter plus de photos', _isFree ? 'Standard' : 'Premium');
       return;
@@ -470,63 +641,56 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
 
     final hasPerm = await _checkPermissionWithDisclosure(
       Permission.camera,
-      "Pour vous permettre de prendre une photo directement depuis l'application et l'ajouter à votre publication, THIX ID a besoin d'accéder à votre caméra."
+      "Pour vous permettre de prendre une photo directement depuis l'application et l'ajouter à votre publication, THIX ID a besoin d'accéder à votre caméra.",
     );
     if (!hasPerm) return;
 
     try {
       final ImagePicker picker = ImagePicker();
       final XFile? photo = await picker.pickImage(source: ImageSource.camera);
-      
+
       if (photo != null) {
         final bytes = await photo.readAsBytes();
+        
+        // Validation taille
+        if (!_PostValidators.validateFileSize(bytes.length, maxSizeMB: _maxImageSizeMB)) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Photo trop volumineuse (max ${_maxImageSizeMB}MB)'), backgroundColor: ThixPolicy.danger),
+            );
+          }
+          return;
+        }
+        
         if (mounted) {
-          setState(() { 
-            _resetBgColorIfMediaAdded(); 
-            _images.add(_MediaItem(bytes, photo.name)); 
+          setState(() {
+            _resetBgColorIfMediaAdded();
+            _images.add(_MediaItem(bytes, photo.name));
           });
         }
       }
     } catch (e) {
-      debugPrint("Camera error: $e");
+      debugPrint("[Camera] Error: $e");
     }
   }
 
   void _removeMedia(int index, bool isVideo) {
-    setState(() { if (isVideo) _videos.removeAt(index); else _images.removeAt(index); });
-  }
-
-  Future<Map<String, String?>> _runFactCheck(String textContent) async {
-    if (_skipAICheck || textContent.isEmpty) {
-      return {'isMisinformation': 'false', 'message': null, 'severity': null};
-    }
-
-    final webSources = <String>[];
-    try {
-      final response = await Supabase.instance.client.rpc('search_tavily', params: {'search_query': textContent});
-      if (response != null && response['results'] != null) {
-        for (final r in response['results'] as List) { webSources.add('- [${r['title'] ?? ''}](${r['url'] ?? ''}) : ${r['content'] ?? ''}'); }
+    setState(() {
+      if (isVideo) {
+        _videos.removeAt(index);
+      } else {
+        _images.removeAt(index);
       }
-    } catch (e) { debugPrint('Tavily: $e'); }
-
-    if (webSources.isEmpty) return {'isMisinformation': 'false', 'message': null, 'severity': null};
-
-    try {
-      final ai = AiService(Supabase.instance.client);
-      final prompt = '''Date actuelle : ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}\nSOURCES WEB :\n${webSources.join('\n')}\nRÈGLES : 1. Vérifie UNIQUEMENT Gouvernements, Visas, Lois, Élections. 2. Histoires perso / entreprises privées → SAFE. 3. FAKE seulement si fausse info officielle avérée.\nPUBLICATION : "$textContent"\nRéponds : SAFE ou FAKE: [raison]''';
-      final aiResponse = await ai.askAi(prompt: prompt, provider: AiProvider.mistral, systemPrompt: 'Fact-checker gouvernemental. SAFE pour le privé. Réponds SAFE ou FAKE: raison.');
-      if (aiResponse.trim().toUpperCase().startsWith('FAKE:')) {
-        return {'isMisinformation': 'true', 'message': aiResponse.substring(aiResponse.toUpperCase().indexOf('FAKE:') + 5).trim(), 'severity': 'fake'};
-      }
-    } catch (e) { debugPrint('Fact-check AI: $e'); }
-
-    return {'isMisinformation': 'false', 'message': null, 'severity': null};
+    });
   }
 
   Future<void> _publishPost() async {
+    if (_isUploading || _isRecording) return; // Protection race condition
+
     final textContent = _contentController.text.trim();
     setState(() => _errorMessage = null);
 
+    // Validations
     if (_postTypeMode == 0 && textContent.isEmpty && _images.isEmpty && _videos.isEmpty && _audioBytes == null) {
       setState(() => _errorMessage = 'Ajoutez du texte, un média ou un audio');
       return;
@@ -540,61 +704,93 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
       return;
     }
 
-    setState(() {
-      _isUploading = true;
-      _factCheckStatusLabel = (textContent.isNotEmpty && !_skipAICheck) ? 'Vérification en cours…' : null;
-    });
+    // Validation options sondage
+    if (_postTypeMode == 1) {
+      final options = _pollOptionControllers.map((c) => c.text.trim()).where((t) => t.isNotEmpty).toList();
+      if (options.length < 2) {
+        setState(() => _errorMessage = 'Au moins 2 options requises');
+        return;
+      }
+      for (final opt in options) {
+        if (opt.length > _maxPollOptionLength) {
+          setState(() => _errorMessage = 'Options trop longues (max $_maxPollOptionLength caractères)');
+          return;
+        }
+      }
+    }
+
+    setState(() => _isUploading = true);
+
+    final uploadedUrls = <String>[];
+    final ns = ref.read(networkServiceProvider);
 
     try {
-      final ns = ref.read(networkServiceProvider);
-      
-      Map<String, dynamic>? factCheckResult;
-      try {
-        factCheckResult = await _runFactCheck(textContent).timeout(const Duration(seconds: 10));
-      } catch (e) {
-        factCheckResult = {'isMisinformation': 'false', 'message': null, 'severity': null};
-      }
-
-      final isMisinfo = factCheckResult['isMisinformation'] == 'true';
-      final fcMessage = factCheckResult['message'];
-      final fcSeverity = factCheckResult['severity'];
-
-      if (mounted) setState(() => _factCheckStatusLabel = 'Envoi des médias…');
-
-      final allMedia = <String>[];
-      final uploadedImages = <String>[];
-      final uploadedVideos = <String>[];
-
+      // Upload audio
       if (_audioBytes != null) {
-        final url = await ns.uploadAudioBytes(_audioBytes!);
-        if (url != null && url.isNotEmpty) allMedia.add(url);
+        try {
+          final url = await ns.uploadAudioBytes(_audioBytes!).timeout(_uploadTimeout);
+          if (url != null && url.isNotEmpty) uploadedUrls.add(url);
+        } catch (e) {
+          debugPrint('[Upload] Audio error: $e');
+          throw Exception('Échec upload audio: $e');
+        }
       }
 
+      // Upload images
       for (final item in _images) {
-        final compressed = await compressImageBytes(item.bytes);
-        final url = await ns.uploadImageBytes(compressed, fileExtension: item.name.split('.').last, bucket: 'post_images');
-        if (url != null && url.isNotEmpty) { allMedia.add(url); uploadedImages.add(url); }
+        try {
+          final compressed = await _compressImageBytes(item.bytes);
+          final url = await ns.uploadImageBytes(compressed, fileExtension: item.name.split('.').last, bucket: 'post_images').timeout(_uploadTimeout);
+          if (url != null && url.isNotEmpty) uploadedUrls.add(url);
+        } catch (e) {
+          debugPrint('[Upload] Image error: $e');
+          throw Exception('Échec upload image: $e');
+        }
       }
 
+      // Upload videos
       for (final item in _videos) {
-        final url = await ns.uploadImageBytes(item.bytes, fileExtension: item.name.split('.').last, bucket: 'videos');
-        if (url != null && url.isNotEmpty) { allMedia.add(url); uploadedVideos.add(url); }
+        try {
+          final url = await ns.uploadImageBytes(item.bytes, fileExtension: item.name.split('.').last, bucket: 'videos').timeout(_uploadTimeout);
+          if (url != null && url.isNotEmpty) uploadedUrls.add(url);
+        } catch (e) {
+          debugPrint('[Upload] Video error: $e');
+          throw Exception('Échec upload vidéo: $e');
+        }
       }
 
       final user = Supabase.instance.client.auth.currentUser;
       if (user == null) throw Exception('Non authentifié');
 
-      String authorName = 'Moi'; String? authorAvatar; String? authorTitle;
+      String authorName = 'Moi';
+      String? authorAvatar;
+      String? authorTitle;
       try {
         final pr = await Supabase.instance.client.from('profiles').select('display_name, avatar_url, profession').eq('id', user.id).maybeSingle();
-        if (pr != null) { authorName = pr['display_name']?.toString() ?? authorName; authorAvatar = pr['avatar_url']?.toString(); authorTitle = pr['profession']?.toString(); }
-      } catch (_) {}
+        if (pr != null) {
+          authorName = pr['display_name']?.toString() ?? authorName;
+          authorAvatar = pr['avatar_url']?.toString();
+          authorTitle = pr['profession']?.toString();
+        }
+      } catch (e) {
+        debugPrint('[Profile] Fetch error: $e');
+      }
+
+      // Sanitize tous les inputs texte
+      final sanitizedContent = _PostValidators.sanitizeText(textContent, maxLength: _maxTextLength);
+      final sanitizedChallengeDesc = _PostValidators.sanitizeText(_challengeDescController.text, maxLength: 2000);
+      final sanitizedReward = _PostValidators.sanitizeText(_challengeRewardController.text, maxLength: 500);
 
       final payload = <String, dynamic>{
-        'user_id': user.id, 'content': textContent, 'is_public': true, 'is_fact_checked': true,
-        'is_misinformation': isMisinfo, 'fact_check_message': fcMessage, 'fact_check_severity': fcSeverity,
-        'image_urls': uploadedImages, 'video_urls': uploadedVideos, 'media_urls': allMedia,
-        'media_url': allMedia.isNotEmpty ? allMedia.first : null, 'community_id': widget.communityId, 'post_type': 'standard',
+        'user_id': user.id,
+        'content': sanitizedContent,
+        'is_public': true,
+        'image_urls': uploadedUrls.where((u) => u.contains('post_images')).toList(),
+        'video_urls': uploadedUrls.where((u) => u.contains('videos')).toList(),
+        'media_urls': uploadedUrls,
+        'media_url': uploadedUrls.isNotEmpty ? uploadedUrls.first : null,
+        'community_id': widget.communityId,
+        'post_type': 'standard',
         if (_audioBytes != null) 'audio_duration_seconds': _recordDuration,
       };
 
@@ -602,35 +798,94 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
       if (_canHaveBgColor && _hasBgColor) payload['bg_color'] = _colorToHex(_selectedBgColor);
 
       if (_postTypeMode == 1) {
-        final options = _pollOptionControllers.map((c) => c.text.trim()).where((t) => t.isNotEmpty).toList();
-        if (options.length < 2) { setState(() { _errorMessage = 'Au moins 2 options'; _isUploading = false; _factCheckStatusLabel = null; }); return; }
+        final options = _pollOptionControllers.map((c) => _PostValidators.sanitizeText(c.text.trim(), maxLength: _maxPollOptionLength)).where((t) => t.isNotEmpty).toList();
         payload['post_type'] = 'poll';
-        payload['poll_data'] = {'options': options.map((o) => {'text': o, 'votes': []}).toList(), 'end_date': DateTime.now().add(Duration(days: _pollDurationDays)).toIso8601String()};
+        payload['poll_data'] = {
+          'options': options.map((o) => {'text': o, 'votes': []}).toList(),
+          'end_date': DateTime.now().add(Duration(days: _pollDurationDays)).toIso8601String(),
+        };
       } else if (_postTypeMode == 2) {
         payload['post_type'] = 'challenge';
-        payload['challenge_data'] = {'description': _challengeDescController.text.trim(), 'reward': _challengeRewardController.text.trim(), 'end_date': _challengeEndDate?.toIso8601String(), 'participants_count': 0, 'participants': []};
+        payload['challenge_data'] = {
+          'description': sanitizedChallengeDesc,
+          'reward': sanitizedReward,
+          'end_date': _challengeEndDate?.toIso8601String(),
+          'participants_count': 0,
+          'participants': [],
+        };
       }
 
       final inserted = await Supabase.instance.client.from('posts').insert(payload).select().single();
       final postId = inserted['id']?.toString() ?? '';
-      
+
       final newPost = NetworkPost(
-        id: postId, userId: user.id, authorName: authorName, authorAvatar: authorAvatar, authorTitle: authorTitle,
-        content: textContent, bgColor: payload['bg_color'] as String?, mediaUrls: allMedia,
-        postType: payload['post_type'] as String? ?? 'standard', pollData: payload['poll_data'] as Map<String, dynamic>?,
-        challengeData: payload['challenge_data'] as Map<String, dynamic>?, isFactChecked: true, isMisinformation: isMisinfo,
-        factCheckMessage: fcMessage, factCheckSeverity: fcSeverity, createdAt: DateTime.now(), likesCount: 0, commentsCount: 0,
-        repostsCount: 0, isLiked: false, isSaved: false, isReposted: false, isPublic: true,
+        id: postId,
+        userId: user.id,
+        authorName: authorName,
+        authorAvatar: authorAvatar,
+        authorTitle: authorTitle,
+        content: sanitizedContent,
+        bgColor: payload['bg_color'] as String?,
+        mediaUrls: uploadedUrls,
+        postType: payload['post_type'] as String? ?? 'standard',
+        pollData: payload['poll_data'] as Map<String, dynamic>?,
+        challengeData: payload['challenge_data'] as Map<String, dynamic>?,
+        isFactChecked: false, // Fact-check fait côté serveur
+        isMisinformation: false,
+        factCheckMessage: null,
+        factCheckSeverity: null,
+        createdAt: DateTime.now(),
+        likesCount: 0,
+        commentsCount: 0,
+        repostsCount: 0,
+        isLiked: false,
+        isSaved: false,
+        isReposted: false,
+        isPublic: true,
       );
 
-      try { ref.read(feedProvider.notifier).addPostOnTop(newPost); } catch (_) { ref.invalidate(feedProvider); }
+      try {
+        ref.read(feedProvider.notifier).addPostOnTop(newPost);
+      } catch (e) {
+        debugPrint('[Feed] Add post error: $e');
+        ref.invalidate(feedProvider);
+      }
       widget.onPostCreated?.call();
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isMisinfo ? 'Publié avec avertissement Fact-Check' : 'Publication réussie'), backgroundColor: isMisinfo ? ThixPolicy.warning : ThixPolicy.success));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Publication réussie'), backgroundColor: ThixPolicy.success),
+      );
       Navigator.pop(context, newPost);
     } catch (e) {
-      if (mounted) setState(() { _errorMessage = 'Erreur: $e'; _isUploading = false; _factCheckStatusLabel = null; });
+      debugPrint('[Publish] Error: $e');
+      
+      // Rollback : supprimer les fichiers uploadés si l'insertion DB a échoué
+      if (uploadedUrls.isNotEmpty) {
+        try {
+          // Extraire les paths des URLs et supprimer
+          for (final url in uploadedUrls) {
+            try {
+              final uri = Uri.parse(url);
+              final path = uri.path.replaceFirst('/storage/v1/object/public/', '');
+              final bucket = path.split('/').first;
+              final filePath = path.replaceFirst('$bucket/', '');
+              await Supabase.instance.client.storage.from(bucket).remove([filePath]);
+            } catch (cleanupError) {
+              debugPrint('[Cleanup] Error: $cleanupError');
+            }
+          }
+        } catch (cleanupError) {
+          debugPrint('[Cleanup] Global error: $cleanupError');
+        }
+      }
+      
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Erreur: ${e.toString().split('\n').first}';
+          _isUploading = false;
+        });
+      }
     }
   }
 
@@ -641,8 +896,14 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
     return Expanded(
       child: InkWell(
         onTap: () {
-          if (mode == 1 && !_canCreatePoll) { _showUpgradeDialog('Les sondages', 'Premium'); return; }
-          if (mode == 2 && !_canCreateChallenge) { _showUpgradeDialog('Les challenges', 'Premium'); return; }
+          if (mode == 1 && !_canCreatePoll) {
+            _showUpgradeDialog('Les sondages', 'Premium');
+            return;
+          }
+          if (mode == 2 && !_canCreateChallenge) {
+            _showUpgradeDialog('Les challenges', 'Premium');
+            return;
+          }
           setState(() => _postTypeMode = mode);
         },
         borderRadius: BorderRadius.circular(ThixPolicy.rSm),
@@ -674,7 +935,9 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
         onTap: onTap,
         borderRadius: BorderRadius.circular(ThixPolicy.rXs),
         child: Container(
-          width: 30, height: 30, alignment: Alignment.center,
+          width: 30,
+          height: 30,
+          alignment: Alignment.center,
           decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(ThixPolicy.rXs), border: Border.all(color: ThixPolicy.border)),
           child: child,
         ),
@@ -689,7 +952,8 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
         onTap: (_isUploading || _isRecording) ? null : onTap,
         borderRadius: BorderRadius.circular(ThixPolicy.rXl),
         child: Container(
-          width: 42, height: 42,
+          width: 42,
+          height: 42,
           decoration: BoxDecoration(color: ThixPolicy.card, shape: BoxShape.circle, border: Border.all(color: color.withOpacity(0.28), width: 1.3)),
           child: Icon(icon, size: 18, color: color),
         ),
@@ -716,7 +980,6 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Header
               Row(
                 children: [
                   Text('Créer un post', style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, letterSpacing: -0.2)),
@@ -729,7 +992,7 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                 ],
               ),
               const SizedBox(height: ThixPolicy.s16),
-              
+
               Row(
                 children: [
                   _typeTab('Publication', 0, Icons.article_rounded),
@@ -743,7 +1006,8 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
 
               if (_errorMessage != null)
                 Container(
-                  margin: const EdgeInsets.only(bottom: ThixPolicy.s12), padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s12, vertical: ThixPolicy.s10),
+                  margin: const EdgeInsets.only(bottom: ThixPolicy.s12),
+                  padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s12, vertical: ThixPolicy.s10),
                   decoration: BoxDecoration(color: ThixPolicy.danger.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(ThixPolicy.rSm), border: Border.all(color: ThixPolicy.danger.withOpacity(0.15))),
                   child: Text(_errorMessage!, style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.danger)),
                 ),
@@ -777,7 +1041,6 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                         const SizedBox(height: ThixPolicy.s12),
                       ],
 
-                      // Zone texte
                       Container(
                         decoration: BoxDecoration(
                           color: _canHaveBgColor && _hasBgColor ? _selectedBgColor : ThixPolicy.surfaceSoft,
@@ -805,8 +1068,8 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                               decoration: InputDecoration(
                                 hintText: _postTypeMode == 1 ? 'Posez votre question...' : _postTypeMode == 2 ? 'Titre du challenge...' : 'Commencer un post...',
                                 hintStyle: ThixPolicy.bodyStyle.copyWith(color: _canHaveBgColor && _hasBgColor ? Colors.white70 : ThixPolicy.textSecondary),
-                                border: InputBorder.none, 
-                                isCollapsed: true, 
+                                border: InputBorder.none,
+                                isCollapsed: true,
                                 counterText: "",
                                 fillColor: Colors.transparent,
                                 filled: true,
@@ -839,8 +1102,9 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                           decoration: BoxDecoration(color: ThixPolicy.danger.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(ThixPolicy.rMd), border: Border.all(color: ThixPolicy.danger.withOpacity(0.2))),
                           child: Row(
                             children: [
-                              const Icon(Icons.mic, color: ThixPolicy.danger, size: 20), const SizedBox(width: ThixPolicy.s12),
-                              Text('Enregistrement... ${_recordDuration ~/ 60}:${(_recordDuration % 60).toString().padLeft(2, '0')} / 0${_maxAudioDuration~/60}:${(_maxAudioDuration%60).toString().padLeft(2,'0')}', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold)),
+                              const Icon(Icons.mic, color: ThixPolicy.danger, size: 20),
+                              const SizedBox(width: ThixPolicy.s12),
+                              Text('Enregistrement... ${_recordDuration ~/ 60}:${(_recordDuration % 60).toString().padLeft(2, '0')} / 0${_maxAudioDuration ~/ 60}:${(_maxAudioDuration % 60).toString().padLeft(2, '0')}', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold)),
                               const Spacer(),
                               GestureDetector(onTap: _stopRecording, child: const Icon(Icons.stop_circle_rounded, color: ThixPolicy.danger, size: 30)),
                             ],
@@ -854,24 +1118,36 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                           child: Row(
                             children: [
                               Expanded(child: _DialogAudioPlayer(audioPath: _localAudioPath!)),
-                              IconButton(icon: const Icon(Icons.delete_outline_rounded, color: ThixPolicy.textSecondary, size: 20), onPressed: () => setState(() { _audioBytes = null; _localAudioPath = null; })),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline_rounded, color: ThixPolicy.textSecondary, size: 20),
+                                onPressed: () => setState(() {
+                                  _audioBytes = null;
+                                  _localAudioPath = null;
+                                }),
+                              ),
                             ],
                           ),
                         ),
 
                       if (_canHaveBgColor)
                         SingleChildScrollView(
-                          scrollDirection: Axis.horizontal, padding: const EdgeInsets.only(top: ThixPolicy.s12),
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.only(top: ThixPolicy.s12),
                           child: Row(
                             children: _bgColors.map((c) {
                               final sel = _selectedBgColor == c;
                               return GestureDetector(
                                 onTap: () {
-                                  if (!_canFormatText && c != Colors.transparent) { _showUpgradeDialog('Les fonds colorés', 'Standard'); return; }
+                                  if (!_canFormatText && c != Colors.transparent) {
+                                    _showUpgradeDialog('Les fonds colorés', 'Standard');
+                                    return;
+                                  }
                                   setState(() => _selectedBgColor = c);
                                 },
                                 child: Container(
-                                  margin: const EdgeInsets.only(right: 9), width: 30, height: 30,
+                                  margin: const EdgeInsets.only(right: 9),
+                                  width: 30,
+                                  height: 30,
                                   decoration: BoxDecoration(color: c, shape: BoxShape.circle, border: Border.all(color: sel ? ThixPolicy.textMain : ThixPolicy.borderStrong, width: sel ? 2.2 : 1.3)),
                                   child: c == Colors.transparent ? const Icon(Icons.format_color_reset_rounded, size: 15, color: Colors.black45) : null,
                                 ),
@@ -885,7 +1161,6 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                           child: Text('Texte trop long pour un fond coloré (max $_maxCharsForBgColor caractères).', style: ThixPolicy.captionStyle.copyWith(fontStyle: FontStyle.italic)),
                         ),
 
-                      // Sondage
                       if (_postTypeMode == 1) ...[
                         const SizedBox(height: ThixPolicy.s16),
                         Text('Options', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
@@ -897,12 +1172,29 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                               children: [
                                 Expanded(
                                   child: TextField(
-                                    controller: e.value, style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5),
-                                    decoration: InputDecoration(hintText: 'Option ${e.key + 1}', filled: true, fillColor: ThixPolicy.surface, border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12)),
+                                    controller: e.value,
+                                    maxLength: _maxPollOptionLength,
+                                    style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5),
+                                    decoration: InputDecoration(
+                                      hintText: 'Option ${e.key + 1}',
+                                      filled: true,
+                                      fillColor: ThixPolicy.surface,
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm), borderSide: BorderSide.none),
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                      counterText: '',
+                                    ),
                                   ),
                                 ),
-                                if (e.key > 1) 
-                                  IconButton(icon: const Icon(Icons.remove_circle_outline, color: ThixPolicy.danger, size: 20), onPressed: () { setState(() { _pollOptionControllers[e.key].dispose(); _pollOptionControllers.removeAt(e.key); }); })
+                                if (e.key > 1)
+                                  IconButton(
+                                    icon: const Icon(Icons.remove_circle_outline, color: ThixPolicy.danger, size: 20),
+                                    onPressed: () {
+                                      setState(() {
+                                        _pollOptionControllers[e.key].dispose();
+                                        _pollOptionControllers.removeAt(e.key);
+                                      });
+                                    },
+                                  )
                               ],
                             ),
                           );
@@ -915,48 +1207,114 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                           ),
                         const SizedBox(height: ThixPolicy.s8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14), decoration: BoxDecoration(color: ThixPolicy.surface, borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          decoration: BoxDecoration(color: ThixPolicy.surface, borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
                           child: DropdownButtonHideUnderline(
                             child: DropdownButton<int>(
-                              value: _pollDurationDays, isExpanded: true, style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5),
-                              items: const [DropdownMenuItem(value: 1, child: Text('1 jour')), DropdownMenuItem(value: 3, child: Text('3 jours')), DropdownMenuItem(value: 7, child: Text('1 semaine'))],
+                              value: _pollDurationDays,
+                              isExpanded: true,
+                              style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5),
+                              items: const [
+                                DropdownMenuItem(value: 1, child: Text('1 jour')),
+                                DropdownMenuItem(value: 3, child: Text('3 jours')),
+                                DropdownMenuItem(value: 7, child: Text('1 semaine'))
+                              ],
                               onChanged: (v) => setState(() => _pollDurationDays = v ?? 1),
                             ),
                           ),
                         ),
                       ],
 
-                      // Challenge
                       if (_postTypeMode == 2) ...[
                         const SizedBox(height: ThixPolicy.s16),
                         Text('Description du Challenge', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
                         const SizedBox(height: ThixPolicy.s8),
-                        TextField(controller: _challengeDescController, minLines: 3, maxLines: 5, style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5), decoration: InputDecoration(hintText: 'Expliquez les règles et comment participer...', filled: true, fillColor: ThixPolicy.surface, border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide.none), contentPadding: const EdgeInsets.all(14))),
+                        TextField(
+                          controller: _challengeDescController,
+                          minLines: 3,
+                          maxLines: 5,
+                          maxLength: 2000,
+                          style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5),
+                          decoration: InputDecoration(
+                            hintText: 'Expliquez les règles et comment participer...',
+                            filled: true,
+                            fillColor: ThixPolicy.surface,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide.none),
+                            contentPadding: const EdgeInsets.all(14),
+                            counterText: '',
+                          ),
+                        ),
                         const SizedBox(height: ThixPolicy.s12),
-                        TextField(controller: _challengeRewardController, style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5), decoration: InputDecoration(hintText: 'Récompense (optionnel)', filled: true, fillColor: ThixPolicy.surface, prefixIcon: const Icon(Icons.card_giftcard_rounded, size: 18, color: ThixPolicy.gold), border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(vertical: 14))),
+                        TextField(
+                          controller: _challengeRewardController,
+                          maxLength: 500,
+                          style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5),
+                          decoration: InputDecoration(
+                            hintText: 'Récompense (optionnel)',
+                            filled: true,
+                            fillColor: ThixPolicy.surface,
+                            prefixIcon: const Icon(Icons.card_giftcard_rounded, size: 18, color: ThixPolicy.gold),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide.none),
+                            contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                            counterText: '',
+                          ),
+                        ),
                         const SizedBox(height: 10),
                         TextButton.icon(
                           style: TextButton.styleFrom(backgroundColor: ThixPolicy.surface, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm))),
                           onPressed: () async {
-                            final picked = await showDatePicker(context: context, initialDate: DateTime.now().add(const Duration(days: 7)), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: DateTime.now().add(const Duration(days: 7)),
+                              firstDate: DateTime.now(),
+                              lastDate: DateTime.now().add(const Duration(days: 365)),
+                            );
                             if (picked != null) setState(() => _challengeEndDate = picked);
                           },
                           icon: const Icon(Icons.calendar_today_rounded, size: 15, color: ThixPolicy.primary),
-                          label: Text(_challengeEndDate == null ? 'Choisir la date de fin' : 'Date de fin: ${_challengeEndDate!.day}/${_challengeEndDate!.month}/${_challengeEndDate!.year}', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.semiBold)),
+                          label: Text(
+                            _challengeEndDate == null ? 'Choisir la date de fin' : 'Date de fin: ${_challengeEndDate!.day}/${_challengeEndDate!.month}/${_challengeEndDate!.year}',
+                            style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.semiBold),
+                          ),
                         ),
                       ],
 
                       if (_showMentions && _mentionSuggestions.isNotEmpty)
-                        Container(margin: const EdgeInsets.only(top: 10), decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(ThixPolicy.rMd), border: Border.all(color: ThixPolicy.border)), child: Column(children: _mentionSuggestions.map((u) => ListTile(dense: true, title: Text(u['display_name'] ?? '', style: ThixPolicy.bodyStyle.copyWith(fontSize: 13)), onTap: () => _insertMention(u))).toList())),
+                        Container(
+                          margin: const EdgeInsets.only(top: 10),
+                          decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(ThixPolicy.rMd), border: Border.all(color: ThixPolicy.border)),
+                          child: Column(
+                            children: _mentionSuggestions
+                                .map((u) => ListTile(
+                                      dense: true,
+                                      title: Text(u['display_name'] ?? '', style: ThixPolicy.bodyStyle.copyWith(fontSize: 13)),
+                                      onTap: () => _insertMention(u),
+                                    ))
+                                .toList(),
+                          ),
+                        ),
 
                       if (_images.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 14),
                           child: Wrap(
-                            spacing: 8, runSpacing: 8,
+                            spacing: 8,
+                            runSpacing: 8,
                             children: [
                               for (int i = 0; i < _images.length; i++)
-                                Stack(children: [ClipRRect(borderRadius: BorderRadius.circular(ThixPolicy.rSm), child: Image.memory(_images[i].bytes, width: 82, height: 82, fit: BoxFit.cover)), Positioned(top: 4, right: 4, child: GestureDetector(onTap: () => _removeMedia(i, false), child: Container(padding: const EdgeInsets.all(3), decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle), child: const Icon(Icons.close, size: 13, color: Colors.white))))]),
+                                Stack(
+                                  children: [
+                                    ClipRRect(borderRadius: BorderRadius.circular(ThixPolicy.rSm), child: Image.memory(_images[i].bytes, width: 82, height: 82, fit: BoxFit.cover)),
+                                    Positioned(
+                                      top: 4,
+                                      right: 4,
+                                      child: GestureDetector(
+                                        onTap: () => _removeMedia(i, false),
+                                        child: Container(padding: const EdgeInsets.all(3), decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle), child: const Icon(Icons.close, size: 13, color: Colors.white)),
+                                      ),
+                                    )
+                                  ],
+                                ),
                             ],
                           ),
                         ),
@@ -968,7 +1326,19 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                             spacing: 8,
                             children: [
                               for (int i = 0; i < _videos.length; i++)
-                                Stack(children: [Container(width: 82, height: 82, decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(ThixPolicy.rSm)), child: const Center(child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 28))), Positioned(top: 4, right: 4, child: GestureDetector(onTap: () => _removeMedia(i, true), child: Container(padding: const EdgeInsets.all(3), decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle), child: const Icon(Icons.close, size: 13, color: Colors.white))))]),
+                                Stack(
+                                  children: [
+                                    Container(width: 82, height: 82, decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(ThixPolicy.rSm)), child: const Center(child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 28))),
+                                    Positioned(
+                                      top: 4,
+                                      right: 4,
+                                      child: GestureDetector(
+                                        onTap: () => _removeMedia(i, true),
+                                        child: Container(padding: const EdgeInsets.all(3), decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle), child: const Icon(Icons.close, size: 13, color: Colors.white)),
+                                      ),
+                                    )
+                                  ],
+                                ),
                             ],
                           ),
                         ),
@@ -976,12 +1346,6 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
                   ),
                 ),
               ),
-
-              if (_factCheckStatusLabel != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10, top: 6),
-                  child: Row(children: [const SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary)), const SizedBox(width: ThixPolicy.s8), Text(_factCheckStatusLabel!, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary))]),
-                ),
 
               Row(
                 children: [
@@ -993,19 +1357,18 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
               ),
               const SizedBox(height: ThixPolicy.s14),
               SizedBox(
-                width: double.infinity, height: 48,
+                width: double.infinity,
+                height: 48,
                 child: ElevatedButton(
-                  onPressed: (_isUploading || _isRecording) ? null : _publishPost, 
+                  onPressed: (_isUploading || _isRecording) ? null : _publishPost,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: ThixPolicy.primary, 
+                    backgroundColor: ThixPolicy.primary,
                     foregroundColor: Colors.white,
                     disabledBackgroundColor: ThixPolicy.surfaceStrong,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rXl)),
                     elevation: 0,
                   ),
-                  child: _isUploading 
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) 
-                    : Text('Publier', style: ThixPolicy.buttonText),
+                  child: _isUploading ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : Text('Publier', style: ThixPolicy.buttonText),
                 ),
               ),
             ],
@@ -1019,7 +1382,8 @@ class _CreatePostDialogState extends ConsumerState<CreatePostDialog> with Single
 class _DialogAudioPlayer extends StatefulWidget {
   final String audioPath;
   const _DialogAudioPlayer({required this.audioPath});
-  @override State<_DialogAudioPlayer> createState() => _DialogAudioPlayerState();
+  @override
+  State<_DialogAudioPlayer> createState() => _DialogAudioPlayerState();
 }
 
 class _DialogAudioPlayerState extends State<_DialogAudioPlayer> {
@@ -1028,15 +1392,38 @@ class _DialogAudioPlayerState extends State<_DialogAudioPlayer> {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
-  @override void initState() {
+  @override
+  void initState() {
     super.initState();
-    if (kIsWeb) _player.setSourceUrl(widget.audioPath); else _player.setSourceDeviceFile(widget.audioPath);
-    _player.onPlayerStateChanged.listen((state) { if (mounted) setState(() => _isPlaying = state == PlayerState.playing); });
-    _player.onPositionChanged.listen((p) { if (mounted) setState(() => _position = p); });
-    _player.onDurationChanged.listen((d) { if (mounted) setState(() => _duration = d); });
+    _initPlayer();
   }
 
-  @override void dispose() { _player.dispose(); super.dispose(); }
+  Future<void> _initPlayer() async {
+    try {
+      if (kIsWeb) {
+        await _player.setSourceUrl(widget.audioPath);
+      } else {
+        await _player.setSourceDeviceFile(widget.audioPath);
+      }
+      _player.onPlayerStateChanged.listen((state) {
+        if (mounted) setState(() => _isPlaying = state == PlayerState.playing);
+      });
+      _player.onPositionChanged.listen((p) {
+        if (mounted) setState(() => _position = p);
+      });
+      _player.onDurationChanged.listen((d) {
+        if (mounted) setState(() => _duration = d);
+      });
+    } catch (e) {
+      debugPrint('[AudioPlayer] Init error: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
 
   String _formatDuration(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
@@ -1044,15 +1431,34 @@ class _DialogAudioPlayerState extends State<_DialogAudioPlayer> {
     return "$m:$s";
   }
 
-  @override Widget build(BuildContext context) {
+  @override
+  Widget build(BuildContext context) {
     return Row(
       children: [
         GestureDetector(
-          onTap: () { if (_isPlaying) _player.pause(); else _player.resume(); },
+          onTap: () {
+            if (_isPlaying) {
+              _player.pause();
+            } else {
+              _player.resume();
+            }
+          },
           child: Container(width: 32, height: 32, decoration: const BoxDecoration(color: ThixPolicy.primary, shape: BoxShape.circle), child: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white, size: 20)),
         ),
         const SizedBox(width: 10),
-        Expanded(child: SliderTheme(data: const SliderThemeData(trackHeight: 2, thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6), activeTrackColor: ThixPolicy.primary, inactiveTrackColor: ThixPolicy.border, thumbColor: ThixPolicy.primary), child: Slider(min: 0, max: _duration.inMilliseconds.toDouble() > 0 ? _duration.inMilliseconds.toDouble() : 1.0, value: _position.inMilliseconds.toDouble().clamp(0.0, _duration.inMilliseconds.toDouble() > 0 ? _duration.inMilliseconds.toDouble() : 1.0), onChanged: (val) { _player.seek(Duration(milliseconds: val.toInt())); }))),
+        Expanded(
+          child: SliderTheme(
+            data: const SliderThemeData(trackHeight: 2, thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6), activeTrackColor: ThixPolicy.primary, inactiveTrackColor: ThixPolicy.border, thumbColor: ThixPolicy.primary),
+            child: Slider(
+              min: 0,
+              max: _duration.inMilliseconds.toDouble() > 0 ? _duration.inMilliseconds.toDouble() : 1.0,
+              value: _position.inMilliseconds.toDouble().clamp(0.0, _duration.inMilliseconds.toDouble() > 0 ? _duration.inMilliseconds.toDouble() : 1.0),
+              onChanged: (val) {
+                _player.seek(Duration(milliseconds: val.toInt()));
+              },
+            ),
+          ),
+        ),
         const SizedBox(width: 8),
         Text(_formatDuration(_duration.inSeconds > 0 && !_isPlaying && _position.inSeconds == 0 ? _duration : _position), style: ThixPolicy.captionStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
       ],
