@@ -143,108 +143,86 @@ class NetworkService extends ChangeNotifier {
   }
 
   Future<List<NetworkPost>> getFeedPosts({
-    int limit = 20,
-    int? offset,
-    DateTime? lastCreatedAt,
-    String feedType = 'all',
-  }) async {
-    final uid = currentUserId;
-    if (uid.isEmpty) return [];
+  int limit = 20,
+  int? offset,
+  DateTime? lastCreatedAt,
+  String feedType = 'all',
+}) async {
+  final uid = currentUserId;
+  if (uid.isEmpty) return [];
 
-    limit = limit.clamp(1, 100);
-    final safeOffset = (offset ?? 0) < 0 ? 0 : (offset ?? 0);
-    final type = _normalizeFeedType(feedType);
+  limit = limit.clamp(1, 100);
+  final safeOffset = (offset ?? 0) < 0 ? 0 : (offset ?? 0);
+  final type = _normalizeFeedType(feedType);
 
-    try {
-      // Charger les posts cachés
-      final hiddenRes = await _supabase
-          .from('hidden_posts')
-          .select('post_id')
-          .eq('user_id', uid)
-          .timeout(_requestTimeout);
-      final hiddenSet = (hiddenRes as List).map((e) => '${e['post_id']}').toSet();
-
-      List<dynamic> res;
-
-      Future<List<dynamic>> fetchWithPagination(dynamic query) async {
-        if (lastCreatedAt != null) {
-          return await query
-              .lt('created_at', lastCreatedAt.toUtc().toIso8601String())
-              .limit(limit);
-        } else {
-          return await query.range(safeOffset, safeOffset + limit - 1);
-        }
-      }
-
-      switch (type) {
-        case 'network':
-          final connIds = await getMyConnectionIds();
-          connIds.add(uid);
-          if (connIds.isEmpty) return [];
-          final q = _supabase
-              .from('posts_view')
-              .select()
-              .inFilter('user_id', connIds.toList())
-              .order('created_at', ascending: false);
-          res = await fetchWithPagination(q);
-          break;
-
-        case 'popular':
-          res = await _supabase
-              .from('posts_view')
-              .select()
-              .eq('is_public', true)
-              .order('likes_count', ascending: false)
-              .range(safeOffset, safeOffset + limit - 1)
-              .timeout(_requestTimeout);
-          break;
-
-        case 'recent':
-        case 'all':
-        default:
-          final q = _supabase
-              .from('posts_view')
-              .select()
-              .eq('is_public', true)
-              .order('created_at', ascending: false);
-          res = await fetchWithPagination(q);
-          break;
-      }
+  try {
+    // ✅ SMART FEED — mix intelligent calculé côté DB
+    if (type == 'all') {
+      final res = await _supabase.rpc('get_smart_feed', params: {
+        'p_user_id': uid,
+        'p_limit': limit,
+        'p_offset': safeOffset,
+      }).timeout(_requestTimeout);
 
       return (res as List)
           .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
-          .where((p) => !hiddenSet.contains(p.id))
           .toList();
-    } on TimeoutException {
-      debugPrint('[FeedService] Timeout getFeedPosts');
-      return [];
-    } catch (e) {
-      debugPrint('[FeedService] Error getFeedPosts: $e');
-      return [];
     }
-  }
 
-  Future<List<NetworkPost>> getPosts({String? feedType}) =>
-      getFeedPosts(feedType: feedType ?? 'all');
+    // ── Abonnements : uniquement les personnes suivies ──
+    if (type == 'network') {
+      final connIds = await getMyConnectionIds();
+      connIds.add(uid);
+      if (connIds.isEmpty) return [];
 
-  Future<NetworkPost?> getPostById(String postId) async {
-    try {
       final res = await _supabase
           .from('posts_view')
           .select()
-          .eq('id', postId)
-          .maybeSingle()
+          .inFilter('user_id', connIds.toList())
+          .order('created_at', ascending: false)
+          .range(safeOffset, safeOffset + limit - 1)
           .timeout(_requestTimeout);
-      if (res == null) return null;
-      return NetworkPost.fromJson(Map<String, dynamic>.from(res));
-    } on TimeoutException {
-      debugPrint('[PostService] Timeout getPostById');
-      return null;
-    } catch (e) {
-      debugPrint('[PostService] Error getPostById: $e');
-      return null;
+
+      return (res as List)
+          .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
     }
+
+    // ── Tendances : tri par engagement ──
+    if (type == 'popular') {
+      final res = await _supabase
+          .from('posts_view')
+          .select()
+          .eq('is_public', true)
+          .order('likes_count', ascending: false)
+          .range(safeOffset, safeOffset + limit - 1)
+          .timeout(_requestTimeout);
+
+      return (res as List)
+          .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    }
+
+    // ── Récents : tri chronologique ──
+    final res = await _supabase
+        .from('posts_view')
+        .select()
+        .eq('is_public', true)
+        .order('created_at', ascending: false)
+        .range(safeOffset, safeOffset + limit - 1)
+        .timeout(_requestTimeout);
+
+    return (res as List)
+        .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  } on TimeoutException {
+    debugPrint('[FeedService] Timeout getFeedPosts');
+    return [];
+  } catch (e) {
+    debugPrint('[FeedService] Error getFeedPosts: $e');
+    return [];
   }
+}
 
   // ─────────────────────────────────────────────────────────────
   // COMMUNITIES
