@@ -2,11 +2,11 @@ import 'dart:math';
 import 'package:thix_id/models/network_post.dart';
 
 /// Algorithme de ranking intelligent type Facebook EdgeRank
-/// 
+///
 /// Score = (Affinité × Poids × Décroissance) + Boost
-/// 
+///
 /// - Affinité : Connexion avec l'auteur (0.0 à 1.0)
-/// - Poids : Type d'interaction (like=1, comment=2, share=3)
+/// - Poids : Type d'interaction (like=1, comment=2)
 /// - Décroissance : Âge du post (plus ancien = score plus bas)
 /// - Boost : Posts épinglés, tendances, etc.
 class FeedRanker {
@@ -39,7 +39,7 @@ class FeedRanker {
     Set<String> connectionIds,
   ) {
     final now = DateTime.now().toUtc();
-    
+
     final scored = posts.map((post) {
       final score = _calculateScore(post, connectionIds, now);
       return (post: post, score: score);
@@ -47,7 +47,7 @@ class FeedRanker {
 
     // Tri décroissant par score
     scored.sort((a, b) => b.score.compareTo(a.score));
-    
+
     return scored.map((e) => e.post).toList();
   }
 
@@ -77,13 +77,12 @@ class FeedRanker {
     return affinity * engagementScore * decay * pinBoost * mediaBoost;
   }
 
-  /// Score d'engagement (likes + comments × 2 + shares × 3)
+  /// Score d'engagement (likes + comments × 2)
   static double _calculateEngagementScore(NetworkPost post) {
     final likes = post.likesCount.toDouble();
     final comments = post.commentsCount.toDouble();
-    final shares = post.sharesCount.toDouble();
-    
-    return likes + (comments * 2.0) + (shares * 3.0);
+
+    return likes + (comments * 2.0);
   }
 
   /// Tri par popularité (likes décroissants)
@@ -109,7 +108,7 @@ class FeedRanker {
     sorted.sort((a, b) {
       final aIsConnection = connectionIds.contains(a.userId) ? 1 : 0;
       final bIsConnection = connectionIds.contains(b.userId) ? 1 : 0;
-      
+
       if (aIsConnection != bIsConnection) {
         return bIsConnection.compareTo(aIsConnection);
       }
