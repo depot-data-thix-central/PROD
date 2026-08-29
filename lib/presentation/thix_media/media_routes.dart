@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:thix_id/models/media_content.dart';
-
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'create_post_page.dart';
 import 'user_profile_page.dart';
 import 'thix_media_page.dart';
