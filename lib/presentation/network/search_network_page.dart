@@ -681,7 +681,7 @@ class _SearchNetworkPageState extends ConsumerState<SearchNetworkPage> with Sing
   }
 
   Widget _commTile(NetworkCommunity c) {
-    final coverUrl = _SearchValidators.sanitizeUrl(c.coverUrl);
+    final coverUrl = _SearchValidators.sanitizeUrl(c.bannerUrl); 
     final name = _SearchValidators.sanitize(c.name, maxLength: 100);
 
     return GestureDetector(
