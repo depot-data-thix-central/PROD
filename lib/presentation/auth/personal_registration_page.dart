@@ -277,7 +277,7 @@ class _PremiumDropdown extends StatelessWidget {
       ),
     );
   }
-
+}
 
 // ============================================================================
 // PAGE PRINCIPALE
