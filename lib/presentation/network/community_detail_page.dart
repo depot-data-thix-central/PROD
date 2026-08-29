@@ -117,7 +117,8 @@ class CommunityChatNotifier extends StateNotifier<AsyncValue<List<ChatMessage>>>
           event: PostgresChangeEvent.insert,
           schema: 'public',
           table: 'community_messages',
-          filter: PostgresChangeFilter(type: PostgresFilterType.eq, column: 'community_id', value: communityId),
+          filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'community_id', value: communityId),
+
           callback: (payload) async {
             final newMsg = payload.newRecord;
             // Récupérer le profil si non présent
