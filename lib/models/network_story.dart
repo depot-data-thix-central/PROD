@@ -1,4 +1,3 @@
-// lib/models/network_story.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -43,7 +42,7 @@ class NetworkStory {
     String? userTitle,
     int durationHours = 24,
   }) {
-    final now = DateTime.now();
+    final now = DateTime.now().toUtc(); // ✅ UTC
     return NetworkStory(
       id: '',
       userId: userId,
@@ -58,19 +57,36 @@ class NetworkStory {
       expiresAt: now.add(Duration(hours: durationHours)),
     );
   }
-  // 🔥 FIX ULTIME : Extraction ultra-robuste + Mode Débogage
+
   factory NetworkStory.fromJson(Map<String, dynamic> json) {
     final profiles = json['profiles'] is Map
         ? Map<String, dynamic>.from(json['profiles'] as Map)
         : null;
 
+    // ✅ CORRIGÉ : Parsing UTC
     DateTime parseDate(dynamic v, {Duration? fallbackAdd}) {
-      if (v == null) return DateTime.now().add(fallbackAdd ?? Duration.zero);
-      try { return DateTime.parse(v.toString()); } 
-      catch (_) { return DateTime.now().add(fallbackAdd ?? Duration.zero); }
+      if (v == null) return DateTime.now().toUtc().add(fallbackAdd ?? Duration.zero);
+      try {
+        return DateTime.parse(v.toString()).toUtc(); // ✅ UTC
+      } catch (_) {
+        return DateTime.now().toUtc().add(fallbackAdd ?? Duration.zero);
+      }
     }
 
-    // 1. Recherche agressive de l'image (Gère les listes, les strings, et les tableaux Postgres)
+    // ✅ NOUVEAU : Validation d'URL
+    String validateUrl(String? url) {
+      if (url == null || url.trim().isEmpty) return '';
+      final trimmed = url.trim();
+      
+      // Seules les URLs HTTP/HTTPS sont autorisées
+      if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+        return '';
+      }
+      
+      return trimmed;
+    }
+
+    // Extraction de l'image
     String media = '';
     final possibleMediaKeys = ['media_urls', 'image_urls', 'media_url', 'image_url', 'file_url', 'photo_url', 'url'];
     
@@ -78,25 +94,24 @@ class NetworkStory {
       final val = json[key];
       if (val != null && val.toString() != 'null' && val.toString().trim().isNotEmpty) {
         if (val is List && val.isNotEmpty) {
-          media = val.first.toString();
-          break;
+          media = validateUrl(val.first.toString());
+          if (media.isNotEmpty) break;
         } else if (val is String) {
-          // Si Supabase renvoie un tableau au format String Postgres "{lien1, lien2}"
           if (val.startsWith('{') && val.endsWith('}')) {
             final clean = val.substring(1, val.length - 1);
             if (clean.isNotEmpty) {
-              media = clean.split(',').first.replaceAll('"', '').trim();
-              break;
+              media = validateUrl(clean.split(',').first.replaceAll('"', '').trim());
+              if (media.isNotEmpty) break;
             }
           } else {
-            media = val.trim();
-            break;
+            media = validateUrl(val.trim());
+            if (media.isNotEmpty) break;
           }
         }
       }
     }
 
-    // 2. Recherche agressive du texte
+    // Extraction du texte
     String text = '';
     final possibleTextKeys = ['text_content', 'content', 'text', 'description', 'caption'];
     for (final key in possibleTextKeys) {
@@ -107,22 +122,20 @@ class NetworkStory {
       }
     }
 
-    // 🚨 LE MODE DÉTECTIVE 🚨
-    // Si la story est toujours vide, on affiche le JSON brut à l'écran pour comprendre !
-    if (media.isEmpty && text.isEmpty) {
-      text = "🔧 LIGNE VIDE DANS SUPABASE\n\nVoici ce que la base a renvoyé :\n\n$json";
-    }
+    // ✅ SUPPRIMÉ : Mode détective (fuite de données)
+    // if (media.isEmpty && text.isEmpty) {
+    //   text = "🔧 LIGNE VIDE DANS SUPABASE\n\nVoici ce que la base a renvoyé :\n\n$json";
+    // }
 
-    // 3. Extraction Profil
     final name = (profiles?['display_name'] ?? profiles?['full_name'] ?? json['user_name'] ?? json['author_name'] ?? 'Utilisateur').toString();
-    final avatar = (profiles?['avatar_url'] ?? profiles?['photo_url'] ?? json['user_avatar'] ?? json['author_avatar'])?.toString();
+    final avatar = validateUrl(profiles?['avatar_url']?.toString() ?? profiles?['photo_url']?.toString() ?? json['user_avatar']?.toString() ?? json['author_avatar']?.toString());
     final title = (profiles?['profession'] ?? json['user_title'] ?? 'Membre THIX').toString();
 
     return NetworkStory(
       id: (json['id'] ?? '').toString(),
       userId: (json['user_id'] ?? json['userId'] ?? '').toString(),
       userName: name == 'null' ? 'Utilisateur' : name,
-      userAvatar: avatar == 'null' ? null : avatar,
+      userAvatar: avatar == 'null' || avatar.isEmpty ? null : avatar,
       userTitle: title == 'null' ? 'Membre THIX' : title,
       imageUrl: media,
       textContent: text.isEmpty ? null : text,
@@ -134,23 +147,25 @@ class NetworkStory {
     );
   }
 
-
-    Map<String, dynamic> toJson() => {
+  Map<String, dynamic> toJson() => {
     'user_id': userId,
-    'media_url': imageUrl,      
-    'image_url': imageUrl,      
+    'media_url': imageUrl,
+    'image_url': imageUrl,
     'text': textContent,
     'text_content': textContent,
     'media_type': mediaType,
     'duration': duration,
   };
 
-
+  /// ✅ OPTIMISÉ : Cache le résultat pour éviter les appels répétés
+  bool? _isCurrentUserCache;
   bool get isCurrentUser {
     if (isCurrentUserOverride != null) return isCurrentUserOverride!;
-    try { return Supabase.instance.client.auth.currentUser?.id == userId; } catch (_) { return false; }
+    _isCurrentUserCache ??= Supabase.instance.client.auth.currentUser?.id == userId;
+    return _isCurrentUserCache ?? false;
   }
-  bool get isExpired => DateTime.now().isAfter(expiresAt);
+
+  bool get isExpired => DateTime.now().toUtc().isAfter(expiresAt);
   bool get isActive => !isExpired;
   String get avatarUrl => userAvatar ?? '';
   String get userInitial => userName.isNotEmpty ? userName[0].toUpperCase() : '?';
@@ -158,12 +173,12 @@ class NetworkStory {
   double get remainingPercentage {
     final total = expiresAt.difference(createdAt).inSeconds;
     if (total <= 0) return 0;
-    final elapsed = DateTime.now().difference(createdAt).inSeconds;
+    final elapsed = DateTime.now().toUtc().difference(createdAt).inSeconds;
     return (1 - elapsed / total).clamp(0.0, 1.0);
   }
 
   String get timeRemaining {
-    final r = expiresAt.difference(DateTime.now());
+    final r = expiresAt.difference(DateTime.now().toUtc());
     if (r.isNegative) return 'expirée';
     if (r.inHours > 0) return '${r.inHours}h';
     if (r.inMinutes > 0) return '${r.inMinutes}min';
@@ -172,7 +187,20 @@ class NetworkStory {
 
   NetworkStory markAsViewed() => copyWith(isViewed: true);
 
-  NetworkStory copyWith({String? id, String? userId, String? userName, String? userAvatar, String? userTitle, String? imageUrl, String? textContent, String? mediaType, int? duration, DateTime? createdAt, DateTime? expiresAt, bool? isViewed}) {
+  NetworkStory copyWith({
+    String? id,
+    String? userId,
+    String? userName,
+    String? userAvatar,
+    String? userTitle,
+    String? imageUrl,
+    String? textContent,
+    String? mediaType,
+    int? duration,
+    DateTime? createdAt,
+    DateTime? expiresAt,
+    bool? isViewed,
+  }) {
     return NetworkStory(
       id: id ?? this.id,
       userId: userId ?? this.userId,
@@ -193,10 +221,12 @@ class NetworkStory {
 extension NetworkStoryListExtension on List<NetworkStory> {
   List<NetworkStory> get active => where((s) => !s.isExpired).toList();
   List<NetworkStory> get unviewed => where((s) => !s.isViewed).toList();
-  List<NetworkStory> get sortedByNewest => toList()..sort((a,b)=> b.createdAt.compareTo(a.createdAt));
+  List<NetworkStory> get sortedByNewest => toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   Map<String, List<NetworkStory>> groupByUser() {
     final map = <String, List<NetworkStory>>{};
-    for (final s in this) { map.putIfAbsent(s.userId, ()=> []).add(s); }
+    for (final s in this) {
+      map.putIfAbsent(s.userId, () => []).add(s);
+    }
     return map;
   }
 }
