@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-import '../providers/thix_media_providers.dart';
+import 'package:thix_id/presentation/thix_media/providers/thix_media_provider.dart';
 import '../utils/media_constants.dart';
 
 class CommentsSheet extends ConsumerStatefulWidget {
