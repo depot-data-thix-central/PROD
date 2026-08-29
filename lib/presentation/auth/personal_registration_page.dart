@@ -659,7 +659,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
                     
                     const SizedBox(height: ThixPolicy.s16),
                     
-                    // ✅ LE BOUTON EST PLACÉ EXACTEMENT ICI ET CORRECTEMENT FORMÉ
                     if (_step < 3)
                       TextButton(
                         onPressed: isLoading ? null : () async {
@@ -1001,45 +1000,54 @@ class _Step3Final extends StatelessWidget {
         const SizedBox(height: ThixPolicy.s8),
         Text('Votre compte est actif. Bienvenue sur THIX ID, $name.', textAlign: TextAlign.center, style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary)),
         const SizedBox(height: ThixPolicy.s32),
-        Container(
-          padding: const EdgeInsets.all(ThixPolicy.s24),
-          decoration: BoxDecoration(gradient: ThixPolicy.brandGradient, borderRadius: BorderRadius.circular(ThixPolicy.rLg), boxShadow: ThixPolicy.shadowCard()),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text("CARTE D'IDENTITÉ THIX", style: ThixPolicy.microStyle.copyWith(color: Colors.white70, fontWeight: ThixPolicy.bold, letterSpacing: 1.2)),
-              const SizedBox(height: ThixPolicy.s24),
-              Text('THIX ID OFFICIEL', style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.gold, fontWeight: ThixPolicy.bold, letterSpacing: 1.5)),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      thixId.isEmpty ? 'Génération…' : thixId,
-                      style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.onBrand, fontWeight: ThixPolicy.bold, letterSpacing: 1.5),
-                      maxLines: 1, overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (thixId.isNotEmpty)
-                    IconButton(
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(text: thixId));
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('THIX ID copié !'), backgroundColor: ThixPolicy.success));
-                      },
-                      icon: const Icon(Icons.copy_rounded, color: Colors.white, size: 18),
-                    ),
-                ],
-              ),
-              const SizedBox(height: ThixPolicy.s24),
-              Column(
+        // ✅ Carte réduite et centrée : largeur maximale contrainte + padding réduit
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 300),
+            child: Container(
+              padding: const EdgeInsets.all(ThixPolicy.s20),
+              decoration: BoxDecoration(gradient: ThixPolicy.brandGradient, borderRadius: BorderRadius.circular(ThixPolicy.rLg), boxShadow: ThixPolicy.shadowCard()),
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('THIX CHAT', style: ThixPolicy.microStyle.copyWith(color: Colors.white70, fontWeight: ThixPolicy.bold)),
+                  Text("CARTE D'IDENTITÉ THIX", style: ThixPolicy.microStyle.copyWith(color: Colors.white70, fontWeight: ThixPolicy.bold, letterSpacing: 1.0, fontSize: 10)),
+                  const SizedBox(height: ThixPolicy.s16),
+                  Text('THIX ID OFFICIEL', style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.gold, fontWeight: ThixPolicy.bold, letterSpacing: 1.2, fontSize: 10)),
                   const SizedBox(height: 4),
-                  Text(thixChat, style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand, fontWeight: ThixPolicy.semiBold)),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          thixId.isEmpty ? 'Génération…' : thixId,
+                          style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand, fontWeight: ThixPolicy.bold, letterSpacing: 0.8, fontSize: 15),
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (thixId.isNotEmpty)
+                        InkWell(
+                          onTap: () {
+                            Clipboard.setData(ClipboardData(text: thixId));
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('THIX ID copié !'), backgroundColor: ThixPolicy.success));
+                          },
+                          child: const Padding(
+                            padding: EdgeInsets.only(left: 4),
+                            child: Icon(Icons.copy_rounded, color: Colors.white, size: 16),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: ThixPolicy.s16),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('THIX CHAT', style: ThixPolicy.microStyle.copyWith(color: Colors.white70, fontWeight: ThixPolicy.bold, fontSize: 10)),
+                      const SizedBox(height: 4),
+                      Text(thixChat, style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand, fontWeight: ThixPolicy.semiBold, fontSize: 14)),
+                    ],
+                  ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
         const SizedBox(height: ThixPolicy.s32),
