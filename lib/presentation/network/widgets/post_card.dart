@@ -48,14 +48,15 @@ bool _isVideoUrl(String url) {
 class _PostCardValidators {
   _PostCardValidators._();
 
-  static String sanitize(String? input) {
+  static String sanitize(String? input, {int maxLength = 5000}) {
     if (input == null || input.trim().isEmpty) return '';
     final doc = html_parser.parse(input);
-    return (doc.body?.text ?? input)
+    var sanitized = (doc.body?.text ?? input)
         .replaceAll(RegExp(r'<[^>]*>'), '')
         .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
         .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
         .trim();
+    return sanitized.length > maxLength ? sanitized.substring(0, maxLength) : sanitized;
   }
 
   static bool isValidUrl(String url) {
