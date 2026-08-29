@@ -169,19 +169,23 @@ class UserPostsNotifier extends StateNotifier<AsyncValue<UserPostsState>> {
   }
 
   Future<List<MediaContent>> _fetchPage(DateTime? cursor) async {
-    var q = Supabase.instance.client
+    // ✅ ÉTAPE 1 : Appliquer tous les filtres d'abord
+    var query = Supabase.instance.client
         .from('media_content')
         .select('*')
         .eq('user_id', userId)
-        .eq('is_published', true)
+        .eq('is_published', true);
+
+    // ✅ ÉTAPE 2 : Ajouter le filtre de curseur si nécessaire (AVANT l'ordre/limite)
+    if (cursor != null) {
+      query = query.lt('created_at', cursor.toIso8601String());
+    }
+
+    // ✅ ÉTAPE 3 : Terminer par order() et limit(), puis exécuter
+    final data = await query
         .order('created_at', ascending: false)
         .limit(_limit);
 
-    if (cursor != null) {
-      q = q.lt('created_at', cursor.toIso8601String());
-    }
-
-    final data = await q;
     return (data as List).map((e) => MediaContent.fromJson(Map<String, dynamic>.from(e as Map))).toList();
   }
 }
