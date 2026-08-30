@@ -392,10 +392,10 @@ class _LivePrepScreenState extends ConsumerState<LivePrepScreen> {
         title: title,
         hostId: user.id,
         hostName: hostName,
-        hostAvatarUrl: (ref.read(authControllerProvider).valueOrNull?['avatar_url'] as String?) ??
-            (ref.read(authControllerProvider).valueOrNull?['photo_url'] as String?),
-        certificationTier: ref.read(authControllerProvider).valueOrNull?['certification_tier']?.toString(),
-        certificationStatus: ref.read(authControllerProvider).valueOrNull?['certification_status']?.toString(),
+        hostAvatarUrl: ref.read(authControllerProvider).valueOrNull?.avatarUrl ?? 
+               ref.read(authControllerProvider).valueOrNull?.photoUrl,
+certificationTier: ref.read(authControllerProvider).valueOrNull?.certificationTier?.toString(),
+certificationStatus: ref.read(authControllerProvider).valueOrNull?.certificationStatus?.toString(),
       );
 
       // 3. Libérer le moteur de preview
