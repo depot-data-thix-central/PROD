@@ -84,27 +84,22 @@ final shopStatsProvider =
 
   final db = ref.read(supabaseClientProvider);
 
-  // Requêtes parallèles pour performance
+  // Requêtes parallèles pour performance (Syntaxe Supabase v2)
+  
   final productsFuture = _withRetry(
-    () => db.from('products').select('id').eq('shop_id', shopId),
+    () => db.from('products').count(CountOption.exact).eq('shop_id', shopId),
     label: 'countProducts',
-  ).then((res) => (res as List).length).catchError((_) => 0);
+  ).catchError((_) => 0);
 
   final followersFuture = _withRetry(
-    () => db
-        .from('shop_followers')
-        .select('id', count: CountOption.exact)
-        .eq('shop_id', shopId),
+    () => db.from('shop_followers').count(CountOption.exact).eq('shop_id', shopId),
     label: 'countFollowers',
-  ).then((res) => res.count).catchError((_) => 0);
+  ).catchError((_) => 0);
 
   final ordersFuture = _withRetry(
-    () => db
-        .from('order_items')
-        .select('id', count: CountOption.exact)
-        .eq('shop_id', shopId),
+    () => db.from('order_items').count(CountOption.exact).eq('shop_id', shopId),
     label: 'countOrders',
-  ).then((res) => res.count).catchError((_) => 0);
+  ).catchError((_) => 0);
 
   // Note dynamique calculée depuis les reviews
   final ratingFuture = _withRetry(
