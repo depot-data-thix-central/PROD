@@ -1,5 +1,4 @@
 // lib/data/models/live/live_model.dart
-
 class LiveSession {
   final String id;
   final String channelName;
@@ -8,6 +7,10 @@ class LiveSession {
   final String hostName;
   final String? hostAvatarUrl;
 
+  // ✅ AJOUT : Certification du host (optionnelle, pour backward compat)
+  final String? certificationTier;
+  final String? certificationStatus;
+
   const LiveSession({
     required this.id,
     required this.channelName,
@@ -15,6 +18,8 @@ class LiveSession {
     required this.hostId,
     required this.hostName,
     this.hostAvatarUrl,
+    this.certificationTier,
+    this.certificationStatus,
   });
 
   factory LiveSession.fromMap(Map<String, dynamic> map) {
@@ -25,8 +30,13 @@ class LiveSession {
       hostId: map['host_id']?.toString() ?? '',
       hostName: map['host_name']?.toString() ?? 'Hôte THIX',
       hostAvatarUrl: map['host_avatar_url']?.toString(),
+      certificationTier: map['certification_tier']?.toString(),
+      certificationStatus: map['certification_status']?.toString(),
     );
   }
+
+  // ✅ Alias pour compatibilité avec les écrans qui utilisent fromJson
+  factory LiveSession.fromJson(Map<String, dynamic> json) => LiveSession.fromMap(json);
 }
 
 class LiveComment {
@@ -43,17 +53,30 @@ class LiveComment {
   }) : sentAt = sentAt ?? DateTime.now();
 
   factory LiveComment.fromPayload(Map<String, dynamic> payload) {
+    DateTime? parsedSentAt;
+    try {
+      final sentAtStr = payload['sentAt']?.toString();
+      if (sentAtStr != null && sentAtStr.isNotEmpty) {
+        parsedSentAt = DateTime.parse(sentAtStr);
+      }
+    } catch (_) {
+      parsedSentAt = null;
+    }
+
     return LiveComment(
       userId: payload['userId']?.toString() ?? '',
-      userName: payload['user']?.toString() ?? 'Invité',
+      // ✅ Supporte les deux clés pour backward compat
+      userName: payload['userName']?.toString() ?? payload['user']?.toString() ?? 'Invité',
       text: payload['text']?.toString() ?? '',
+      sentAt: parsedSentAt,
     );
   }
 
   Map<String, dynamic> toPayload() => {
         'userId': userId,
-        'user': userName,
+        'userName': userName,  // ✅ Aligné avec live_service.dart qui attend 'userName'
         'text': text,
+        'sentAt': sentAt.toUtc().toIso8601String(),  // ✅ Timestamp UTC
       };
 }
 
