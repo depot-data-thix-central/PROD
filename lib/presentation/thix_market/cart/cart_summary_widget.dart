@@ -29,9 +29,11 @@ class _CartSummaryValidators {
 
   static String safeCurrency(String? currency) {
     if (currency == null || currency.trim().isEmpty) return 'FC';
-    final cleaned = currency.replaceAll(RegExp(r'[<>"\']'), '').trim();
+    // On enlève le 'r' juste avant les guillemets
+    final cleaned = currency.replaceAll(RegExp('[<>"\']'), '').trim();
     return cleaned.isEmpty ? 'FC' : cleaned;
   }
+
 
   static String formatAmount(double amount, String locale, {bool isUSD = false}) {
     try {
