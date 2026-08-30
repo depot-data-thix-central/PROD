@@ -1,12 +1,11 @@
 // lib/presentation/thix_market/checkout/payment_waiting_page.dart
 import 'dart:async';
 import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'package:go_router/go_router.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'checkout_provider.dart';
 
