@@ -228,36 +228,57 @@ class LiveService {
         .onBroadcast(
           event: 'cohost_response',
           callback: (payload) {
-            // Géré côté hôte / viewer selon le cas
             debugPrint('[LiveService] 📨 CoHost response received: ${payload['accepted']}');
           },
         )
-      .onPresenceSync((_) {
-  try {
-    final presences = channel.presenceState();
-    // Compter uniquement les viewers (exclure l'hôte)
-    int viewerCount = 0;
-    for (final p in presences) {
-      try {
-        // ✅ FIX : utiliser .payload (pas .state) — API realtime_client 2.13.0
-        final metadata = p.payload;
-        if (metadata != null && metadata['is_host'] != true) {
-          viewerCount++;
-        }
-      } catch (e) {
-        debugPrint('[LiveService] ⚠️ Presence entry parse error: $e');
-      }
-    }
-    onPresenceSync(viewerCount);
-  } catch (e) {
-    debugPrint('[LiveService] ⚠️ Presence sync error: $e');
-  }
-})
+        // ✅ FIX AGNOSTIQUE : utilise cast dynamique pour contourner les variations
+        // d'API de SinglePresenceState entre les versions de realtime_client
+        .onPresenceSync((_) {
+          try {
+            final presences = channel.presenceState();
+            int viewerCount = 0;
+
+            for (final p in presences) {
+              try {
+                // Cast dynamique : contourne le typage statique strict
+                // qui varie selon les versions de realtime_client
+                final dynamic dynP = p;
+
+                Map<String, dynamic>? metadata;
+
+                // Essaie les différentes propriétés possibles
+                try {
+                  metadata = dynP.payload as Map<String, dynamic>?;
+                } catch (_) {
+                  try {
+                    metadata = dynP.state as Map<String, dynamic>?;
+                  } catch (_) {
+                    // En dernier recours : si p est directement un Map
+                    if (dynP is Map) {
+                      metadata = Map<String, dynamic>.from(dynP);
+                    }
+                  }
+                }
+
+                // Compte seulement les viewers (exclut l'hôte)
+                if (metadata != null && metadata['is_host'] != true) {
+                  viewerCount++;
+                }
+              } catch (e) {
+                debugPrint('[LiveService] ⚠️ Presence entry parse error: $e');
+              }
+            }
+
+            onPresenceSync(viewerCount);
+          } catch (e) {
+            debugPrint('[LiveService] ⚠️ Presence sync error: $e');
+          }
+        })
         .onPresenceJoin((payload) {
-          debugPrint('[LiveViewer] 👤 Presence join: ${payload.key}');
+          debugPrint('[LiveService] 👤 Presence join: ${payload.key}');
         })
         .onPresenceLeave((payload) {
-          debugPrint('[LiveViewer] 👋 Presence leave: ${payload.key}');
+          debugPrint('[LiveService] 👋 Presence leave: ${payload.key}');
         })
         .subscribe((status, [error]) {
           if (error != null) {
@@ -372,7 +393,7 @@ class LiveService {
     try {
       final userId = payload['userId']?.toString() ?? '';
       final userName = _LiveServiceValidators.sanitize(
-        payload['userName']?.toString(),
+        payload['userName']?.toString() ?? payload['user']?.toString(),
         maxLength: _kMaxUserNameLength,
       );
       final text = _LiveServiceValidators.sanitize(
