@@ -146,7 +146,7 @@ class _MyActivityPageState extends ConsumerState<MyActivityPage> with SingleTick
         _withRetry(() => provider.loadPurchases(), label: 'loadPurchases'),
         _withRetry(() => provider.loadSales(), label: 'loadSales'),
         _withRetry(() => provider.loadRatings(), label: 'loadRatings'),
-        _withRetry(() => provider.loadGlobalStats(), label: 'loadGlobalStats'),
+        //_withRetry(() => provider.loadGlobalStats(), label: 'loadGlobalStats'),
       ]);
       debugPrint('[MyActivity] ✓ All data loaded');
     } catch (e) {
