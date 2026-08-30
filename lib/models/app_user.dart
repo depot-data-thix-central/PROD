@@ -42,6 +42,10 @@ class AppUser {
   final String passwordSaltB64;
   final String passwordHashHex;
 
+  // ✅ AJOUT : Champs certification (privés, exposés via getters)
+  final String? _certificationTier;
+  final String? _certificationStatus;
+
   const AppUser({
     required this.id,
     required this.thixId,
@@ -80,9 +84,18 @@ class AppUser {
     required this.updatedAt,
     this.passwordSaltB64 = '',
     this.passwordHashHex = '',
-  });
+    // ✅ AJOUT : Paramètres optionnels certification
+    String? certificationTier,
+    String? certificationStatus,
+  })  : _certificationTier = certificationTier,
+        _certificationStatus = certificationStatus;
 
-  // ====== TES FACTORY EXISTANTES - GARDÉES ======
+  // ✅ GETTERS ALIAS (résout les 3 erreurs de compilation web)
+  String? get avatarUrl => photoUrl;
+  String? get certificationTier => _certificationTier;
+  String? get certificationStatus => _certificationStatus;
+
+  // ====== FACTORY FIREBASE ======
   factory AppUser.firebase({required String uid, required String? email, required String? phone}) {
     final now = DateTime.now();
     return AppUser(
@@ -97,7 +110,7 @@ class AppUser {
     );
   }
 
-  // ====== NOUVEAU - SCALABLE POUR MILLIONS - SUPABASE FIRST ======
+  // ====== FROM SUPABASE ======
   static AppUser fromSupabase(Map<String, dynamic> json) {
     List<Map<String, dynamic>> _parseMapList(dynamic v) {
       if (v == null) return const [];
@@ -140,6 +153,9 @@ class AppUser {
       twoFaEnabled: (json['two_fa_enabled'] ?? json['twoFaEnabled'] ?? false) as bool,
       createdAt: _readDate(json['created_at'] ?? json['createdAt']) ?? DateTime.now(),
       updatedAt: _readDate(json['updated_at'] ?? json['updatedAt']) ?? DateTime.now(),
+      // ✅ AJOUT : Certification depuis Supabase
+      certificationTier: json['certification_tier']?.toString() ?? json['certificationTier']?.toString(),
+      certificationStatus: json['certification_status']?.toString() ?? json['certificationStatus']?.toString(),
     );
   }
 
@@ -156,10 +172,13 @@ class AppUser {
       'bio': bio,
       'registration_status': registrationStatus,
       'updated_at': DateTime.now().toIso8601String(),
+      // ✅ AJOUT
+      'certification_tier': _certificationTier,
+      'certification_status': _certificationStatus,
     };
   }
 
-  // ====== TES MÉTHODES EXISTANTES - GARDÉES 100% ======
+  // ====== COPYWITH (avec support certification) ======
   AppUser copyWith({
     String? id, String? thixId, String? thixChat, int? thixScore, String? email, String? phone,
     String? displayName, AccountType? accountType, String? photoUrl, String? bio, String? countryOrOrigin,
@@ -170,6 +189,9 @@ class AppUser {
     List<Map<String, dynamic>>? skills, List<Map<String, dynamic>>? enrollments, List<String>? languages,
     bool? biometricsEnabled, bool? twoFaEnabled, DateTime? createdAt, DateTime? updatedAt,
     String? passwordSaltB64, String? passwordHashHex,
+    // ✅ AJOUT
+    String? certificationTier,
+    String? certificationStatus,
   }) {
     return AppUser(
       id: id ?? this.id, thixId: thixId ?? this.thixId, thixChat: thixChat ?? this.thixChat,
@@ -190,6 +212,9 @@ class AppUser {
       biometricsEnabled: biometricsEnabled ?? this.biometricsEnabled, twoFaEnabled: twoFaEnabled ?? this.twoFaEnabled,
       createdAt: createdAt ?? this.createdAt, updatedAt: updatedAt ?? this.updatedAt,
       passwordSaltB64: passwordSaltB64 ?? this.passwordSaltB64, passwordHashHex: passwordHashHex ?? this.passwordHashHex,
+      // ✅ AJOUT
+      certificationTier: certificationTier ?? _certificationTier,
+      certificationStatus: certificationStatus ?? _certificationStatus,
     );
   }
 
@@ -208,6 +233,9 @@ class AppUser {
       'languages': languages, 'biometricsEnabled': biometricsEnabled, 'twoFaEnabled': twoFaEnabled,
       'createdAt': createdAt.toIso8601String(), 'updatedAt': updatedAt.toIso8601String(),
       'passwordSaltB64': passwordSaltB64, 'passwordHashHex': passwordHashHex,
+      // ✅ AJOUT
+      'certificationTier': _certificationTier,
+      'certificationStatus': _certificationStatus,
     };
   }
 
@@ -233,6 +261,9 @@ class AppUser {
       biometricsEnabled: (json['biometricsEnabled'] as bool?) ?? true, twoFaEnabled: (json['twoFaEnabled'] as bool?) ?? false,
       createdAt: DateTime.parse(json['createdAt'] as String), updatedAt: DateTime.parse(json['updatedAt'] as String),
       passwordSaltB64: (json['passwordSaltB64'] as String?) ?? '', passwordHashHex: (json['passwordHashHex'] as String?) ?? '',
+      // ✅ AJOUT
+      certificationTier: json['certificationTier']?.toString(),
+      certificationStatus: json['certificationStatus']?.toString(),
     );
   }
 
