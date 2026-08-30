@@ -35,7 +35,7 @@ class _OrderConfValidators {
 
   static String safeSymbol(String? symbol) {
     if (symbol == null || symbol.trim().isEmpty) return 'FC';
-    final cleaned = symbol.replaceAll(RegExp(r'[<>"\']'), '').trim();
+    final cleaned = symbol.replaceAll(RegExp('[<>"\']'), '').trim();
     return cleaned.isEmpty ? 'FC' : cleaned;
   }
 
