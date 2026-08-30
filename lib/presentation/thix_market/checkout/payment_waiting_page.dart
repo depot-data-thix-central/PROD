@@ -477,7 +477,7 @@ class _WaitingState extends StatelessWidget {
         children: [
           // Animated pulse circle
           AnimatedBuilder(
-            animation: pulseAnimation,
+            listenable: pulseAnimation,
             builder: (context, child) {
               return Container(
                 width: 120,
