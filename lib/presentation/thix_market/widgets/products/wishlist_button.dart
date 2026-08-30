@@ -17,7 +17,7 @@ const int _kMaxRetries = 1;
 // PROVIDER (avec écoute de session + autoDispose)
 // ============================================================================
 
-class WishlistNotifier extends AsyncNotifier<Set<String>> {
+class WishlistNotifier extends AutoDisposeAsyncNotifier<Set<String>> {
   bool _isToggling = false;
   StreamSubscription? _authSub;
 
