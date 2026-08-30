@@ -349,7 +349,7 @@ class _ConversationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lastMessage = _MessagesValidators.sanitize(conversation['last_message']?.toString(), maxLength: 100);
-    final isUnread = (conversation['unread_count'] as num?)?.toInt() ?? 0 > 0;
+    final isUnread = ((conversation['unread_count'] as num?)?.toInt() ?? 0) > 0;
     final formattedTime = _MessagesValidators.formatDate(conversation['last_message_time']?.toString());
     final otherUser = conversation['other_user'] as Map? ?? {};
     final userName = _MessagesValidators.sanitize(otherUser['name']?.toString() ?? 'Utilisateur', maxLength: 60);
