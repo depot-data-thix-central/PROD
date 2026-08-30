@@ -597,7 +597,7 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
       final receiptCode = _CheckoutValidators.generateReceiptCode(orderId);
       try {
         await _withRetry(
-          () => db.from('orders').update({'receipt_code': receiptCode}).eq('id', orderId),
+          () => db.from('orders').update({'receipt_code': receiptCode}).eq('id', orderId ?? ''),
           label: 'updateReceiptCode',
         );
         orderMap['receipt_code'] = receiptCode;
