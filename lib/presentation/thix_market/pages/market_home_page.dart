@@ -16,7 +16,6 @@ import 'package:thix_id/presentation/network/live/live_viewer_screen.dart';
 
 import '../l10n/market_strings.dart';
 import '../providers/market_providers.dart';
-import '../providers/featured_products_provider.dart';
 import '../widgets/products/product_card.dart';
 import '../widgets/market/flash_sale_timer.dart';
 
