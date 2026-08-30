@@ -233,20 +233,18 @@ class SearchNotifier extends StateNotifier<AsyncValue<List<Map<String, dynamic>>
         qBuilder = qBuilder.lte('price', filters.maxPrice!);
       }
 
-      // Tri
-      switch (filters.sortBy) {
-        case 'price_asc':
-          qBuilder = qBuilder.order('price', ascending: true);
-          break;
-        case 'price_desc':
-          qBuilder = qBuilder.order('price', ascending: false);
-          break;
-        default:
-          qBuilder = qBuilder.order('created_at', ascending: false);
-      }
-
+      // Tri et exécution directe pour éviter l'erreur TransformBuilder vs FilterBuilder
       final res = await _withRetry(
-        () => qBuilder.range(offset, offset + _kPageSize - 1),
+        () {
+          switch (filters.sortBy) {
+            case 'price_asc':
+              return qBuilder.order('price', ascending: true).range(offset, offset + _kPageSize - 1);
+            case 'price_desc':
+              return qBuilder.order('price', ascending: false).range(offset, offset + _kPageSize - 1);
+            default:
+              return qBuilder.order('created_at', ascending: false).range(offset, offset + _kPageSize - 1);
+          }
+        },
         label: loadMore ? 'searchLoadMore[$_all.length]' : 'search["$q"]',
       );
 
