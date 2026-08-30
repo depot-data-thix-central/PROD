@@ -1,20 +1,21 @@
-// lib/presentation/thix_market/pages/shops_page.dart
+// lib/presentation/thix_market/pages/wishlist_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:html/parser.dart' as html_parser;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-import '../providers/shop_provider.dart';
+import '../providers/market_providers.dart';
+import '../providers/product_provider.dart';
 
 // ============================================================================
 // CONSTANTES & VALIDATEURS
 // ============================================================================
-class _ShopsValidators {
-  _ShopsValidators._();
+class _WishlistValidators {
+  _WishlistValidators._();
 
   static String sanitize(String? input, {int maxLength = 200}) {
     if (input == null || input.trim().isEmpty) return '';
@@ -35,15 +36,13 @@ class _ShopsValidators {
     return t.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
   }
 
-  static double clampRating(dynamic rating) {
-    if (rating == null) return 0.0;
-    final val = (rating as num?)?.toDouble() ?? 0.0;
-    return val.clamp(0.0, 5.0);
+  static double safePrice(dynamic price) {
+    return (price as num?)?.toDouble() ?? 0.0;
   }
 
-  static int safeFollowers(dynamic followers) {
-    if (followers == null) return 0;
-    final val = (followers as num?)?.toInt() ?? 0;
+  static int safeStock(dynamic stock) {
+    if (stock == null) return 0;
+    final val = (stock as num?)?.toInt() ?? 0;
     return val < 0 ? 0 : val;
   }
 }
@@ -51,348 +50,320 @@ class _ShopsValidators {
 // ============================================================================
 // PAGE PRINCIPALE
 // ============================================================================
-class ShopsPage extends ConsumerStatefulWidget {
-  const ShopsPage({super.key});
+class WishlistPage extends ConsumerStatefulWidget {
+  const WishlistPage({super.key});
 
   @override
-  ConsumerState<ShopsPage> createState() => _ShopsPageState();
+  ConsumerState<WishlistPage> createState() => _WishlistPageState();
 }
 
-class _ShopsPageState extends ConsumerState<ShopsPage> {
+class _WishlistPageState extends ConsumerState<WishlistPage> {
   @override
   void initState() {
     super.initState();
-    debugPrint('[Shops] 🏪 Page opened');
+    debugPrint('[Wishlist] ❤️ Page opened');
   }
 
   @override
   void dispose() {
-    debugPrint('[Shops] 👋 Page disposed');
+    debugPrint('[Wishlist] 👋 Page disposed');
     super.dispose();
   }
 
   void _refresh() {
     HapticFeedback.selectionClick();
-    ref.invalidate(myShopsProvider);
-    ref.invalidate(followedShopsProvider);
-    debugPrint('[Shops] 🔄 Refreshing providers');
+    ref.invalidate(favoritesProvider);
+    debugPrint('[Wishlist] 🔄 Refreshing provider');
+  }
+
+  Future<void> _remove(String wishlistId) async {
+    HapticFeedback.mediumImpact();
+    try {
+      final db = ref.read(supabaseClientProvider);
+      await db.from('wishlist').delete().eq('id', wishlistId);
+      ref.invalidate(favoritesProvider);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_outline_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                const Text('Produit retiré des favoris'),
+              ],
+            ),
+            backgroundColor: ThixPolicy.success,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[Wishlist] ❌ Remove error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Erreur lors de la suppression'),
+            backgroundColor: ThixPolicy.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _addToCart(String productId) async {
+    HapticFeedback.selectionClick();
+    final db = ref.read(supabaseClientProvider);
+    final uid = db.auth.currentUser?.id;
+    
+    if (uid == null) {
+      context.push('/login');
+      return;
+    }
+    
+    try {
+      final existing = await db.from('cart').select().match({'user_id': uid, 'product_id': productId}).maybeSingle();
+      
+      if (existing != null) {
+        await db.from('cart').update({'quantity': (existing['quantity'] as int) + 1}).eq('id', existing['id']);
+      } else {
+        await db.from('cart').insert({'user_id': uid, 'product_id': productId, 'quantity': 1});
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.shopping_cart_checkout_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                const Text('Ajouté au panier !'),
+              ],
+            ),
+            backgroundColor: ThixPolicy.success,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[Wishlist] ❌ Add to cart error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Erreur lors de l\'ajout au panier'),
+            backgroundColor: ThixPolicy.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final myAsync = ref.watch(myShopsProvider);
-    final followedAsync = ref.watch(followedShopsProvider);
+    final favAsync = ref.watch(favoritesProvider);
 
-    final myCount = myAsync.valueOrNull?.length ?? 0;
-    final followedCount = followedAsync.valueOrNull?.length ?? 0;
-
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        backgroundColor: ThixPolicy.surfaceSoft,
-        appBar: AppBar(
-          title: Text(
-            'Mes Boutiques',
-            style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain),
-          ),
-          backgroundColor: ThixPolicy.card,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: ThixPolicy.textMain, size: 20),
-            onPressed: () {
-              HapticFeedback.selectionClick();
+    return Scaffold(
+      backgroundColor: ThixPolicy.surfaceSoft,
+      appBar: AppBar(
+        title: Text(
+          'Mes Favoris',
+          style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain),
+        ),
+        backgroundColor: ThixPolicy.card,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: ThixPolicy.textMain, size: 20),
+          onPressed: () {
+            HapticFeedback.selectionClick();
+            if (context.canPop()) {
               context.pop();
-            },
-          ),
-          bottom: TabBar(
-            labelColor: ThixPolicy.primary,
-            unselectedLabelColor: ThixPolicy.textSecondary,
-            indicatorColor: ThixPolicy.gold,
-            indicatorWeight: 3,
-            labelStyle: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold),
-            unselectedLabelStyle: ThixPolicy.labelStyle,
-            tabs: [
-              Tab(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.store_rounded, size: 18),
-                    const SizedBox(width: 6),
-                    Text('Mes boutiques'),
-                    if (myCount > 0) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: ThixPolicy.primary.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(ThixPolicy.rFull),
-                        ),
-                        child: Text(
-                          '$myCount',
-                          style: ThixPolicy.microStyle.copyWith(
-                            color: ThixPolicy.primary,
-                            fontWeight: ThixPolicy.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              Tab(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.favorite_rounded, size: 18),
-                    const SizedBox(width: 6),
-                    Text('Suivies'),
-                    if (followedCount > 0) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: ThixPolicy.danger.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(ThixPolicy.rFull),
-                        ),
-                        child: Text(
-                          '$followedCount',
-                          style: ThixPolicy.microStyle.copyWith(
-                            color: ThixPolicy.danger,
-                            fontWeight: ThixPolicy.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh_rounded, color: ThixPolicy.textMain),
-              tooltip: 'Rafraîchir',
-              onPressed: _refresh,
-            ),
-          ],
-        ),
-        body: TabBarView(
-          children: [
-            _buildMyShopsTab(myAsync),
-            _buildFollowedShopsTab(followedAsync),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMyShopsTab(AsyncValue<List<Map<String, dynamic>>> async) {
-    return async.when(
-      loading: () => const _SkeletonList(),
-      error: (e, _) => _ErrorState(
-        message: _ShopsValidators.sanitize(e.toString(), maxLength: 200),
-        onRetry: _refresh,
-      ),
-      data: (list) {
-        if (list.isEmpty) {
-          return _EmptyState(
-            icon: Icons.storefront_rounded,
-            title: 'Aucune boutique',
-            subtitle: 'Créez votre première boutique pour commencer à vendre',
-            actionLabel: 'Créer ma boutique',
-            onAction: () {
-              HapticFeedback.mediumImpact();
-              context.push('/market/shop/create');
-            },
-          );
-        }
-
-        return RefreshIndicator(
-          color: ThixPolicy.primary,
-          onRefresh: () async {
-            _refresh();
-            await Future.delayed(const Duration(milliseconds: 500));
+            } else {
+              context.go('/market');
+            }
           },
-          child: ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: list.length,
-            itemBuilder: (context, i) => _buildShopCard(list[i], isOwned: true),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildFollowedShopsTab(AsyncValue<List<Map<String, dynamic>>> async) {
-    return async.when(
-      loading: () => const _SkeletonList(),
-      error: (e, _) => _ErrorState(
-        message: _ShopsValidators.sanitize(e.toString(), maxLength: 200),
-        onRetry: _refresh,
-      ),
-      data: (list) {
-        if (list.isEmpty) {
-          return _EmptyState(
-            icon: Icons.favorite_border_rounded,
-            title: 'Aucune boutique suivie',
-            subtitle: 'Explorez les boutiques et suivez vos favorites',
-            actionLabel: 'Explorer les boutiques',
-            onAction: () {
-              HapticFeedback.mediumImpact();
-              context.push('/market/shops');
-            },
-          );
-        }
-
-        return RefreshIndicator(
-          color: ThixPolicy.primary,
-          onRefresh: () async {
-            _refresh();
-            await Future.delayed(const Duration(milliseconds: 500));
-          },
-          child: ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: list.length,
-            itemBuilder: (context, i) => _buildShopCard(list[i], isOwned: false),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildShopCard(Map<String, dynamic> shop, {required bool isOwned}) {
-    final id = shop['id']?.toString();
-    if (id == null || id.isEmpty) return const SizedBox.shrink();
-
-    final name = _ShopsValidators.sanitize(shop['name']?.toString() ?? 'Boutique', maxLength: 60);
-    final city = _ShopsValidators.sanitize(shop['city']?.toString() ?? '', maxLength: 40);
-    final logoUrl = _ShopsValidators.sanitizeUrl(shop['logo_url']?.toString());
-    final rating = _ShopsValidators.clampRating(shop['rating']);
-    final followers = _ShopsValidators.safeFollowers(shop['followers']);
-    final isVerified = shop['is_verified'] == true;
-
-    return Semantics(
-      button: true,
-      label: 'Boutique $name, note $rating, $followers abonnés',
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: ThixPolicy.card,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: ThixPolicy.shadowSoft(opacity: 0.05),
-          border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
         ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () {
-              HapticFeedback.selectionClick();
-              context.push('/market/shop/$id');
-              debugPrint('[Shops] 🏪 Tap shop $id');
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: ThixPolicy.textMain),
+            tooltip: 'Rafraîchir',
+            onPressed: _refresh,
+          ),
+        ],
+      ),
+      body: favAsync.when(
+        loading: () => const _SkeletonList(),
+        error: (e, _) => _ErrorState(
+          message: _WishlistValidators.sanitize(e.toString(), maxLength: 200),
+          onRetry: _refresh,
+        ),
+        data: (items) {
+          if (items.isEmpty) {
+            return _EmptyState(
+              icon: Icons.favorite_border_rounded,
+              title: 'Votre liste est vide',
+              subtitle: 'Vous n\'avez pas encore ajouté de produits à vos favoris. Explorez le marché.',
+              actionLabel: 'Explorer le marché',
+              onAction: () {
+                HapticFeedback.mediumImpact();
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.push('/market');
+                }
+              },
+            );
+          }
+
+          return RefreshIndicator(
+            color: ThixPolicy.primary,
+            onRefresh: () async {
+              _refresh();
+              await Future.delayed(const Duration(milliseconds: 500));
             },
-            child: Padding(
+            child: ListView.builder(
               padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  // Avatar
-                  Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: ThixPolicy.border, width: 1.5),
-                    ),
-                    child: CircleAvatar(
-                      radius: 26,
-                      backgroundColor: ThixPolicy.surfaceSoft,
-                      backgroundImage: logoUrl != null ? CachedNetworkImageProvider(logoUrl) : null,
-                      child: logoUrl == null
-                          ? const Icon(Icons.store_rounded, color: ThixPolicy.textMuted, size: 26)
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
+              itemCount: items.length,
+              itemBuilder: (context, i) => _buildWishlistCard(items[i]),
+            ),
+          );
+        },
+      ),
+    );
+  }
 
-                  // Infos
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                name,
-                                style: ThixPolicy.labelStyle.copyWith(
-                                  fontWeight: ThixPolicy.bold,
-                                  fontSize: 14,
-                                  color: ThixPolicy.textMain,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+  Widget _buildWishlistCard(Map<String, dynamic> raw) {
+    // raw peut venir de favoritesProvider (produit direct) ou wishlist join
+    final product = raw['products'] != null ? Map<String, dynamic>.from(raw['products']) : raw;
+    final wishlistId = (raw['wishlist_id'] ?? raw['id']).toString();
+    final productId = (product['id'] ?? raw['product_id']).toString();
+    
+    if (productId.isEmpty || wishlistId.isEmpty) return const SizedBox.shrink();
+
+    final title = _WishlistValidators.sanitize(product['title']?.toString() ?? 'Produit', maxLength: 100);
+    final price = _WishlistValidators.safePrice(product['price']);
+    final currency = _WishlistValidators.sanitize(product['currency']?.toString() ?? 'FC', maxLength: 10);
+    final stock = _WishlistValidators.safeStock(product['stock']);
+    final isAvailable = stock > 0;
+    final imageUrl = _WishlistValidators.sanitizeUrl(product['image_url']?.toString());
+
+    return Dismissible(
+      key: Key(wishlistId),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: ThixPolicy.danger.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const Icon(Icons.delete_outline_rounded, color: ThixPolicy.danger, size: 28),
+      ),
+      onDismissed: (_) => _remove(wishlistId),
+      child: Semantics(
+        button: true,
+        label: 'Produit favori $title, Prix ${price.toInt()} $currency',
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: ThixPolicy.card,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: ThixPolicy.shadowSoft(opacity: 0.05),
+            border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () {
+                HapticFeedback.selectionClick();
+                context.push('/market/product/$productId');
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    // Image produit
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        width: 80,
+                        height: 80,
+                        color: ThixPolicy.surfaceSoft,
+                        child: imageUrl == null
+                            ? const Icon(Icons.image_not_supported_outlined, color: ThixPolicy.textMuted)
+                            : CachedNetworkImage(
+                                imageUrl: imageUrl,
+                                fit: BoxFit.cover,
+                                errorWidget: (_, __, ___) => const Icon(Icons.broken_image_outlined, color: ThixPolicy.textMuted),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+
+                    // Infos
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: ThixPolicy.labelStyle.copyWith(
+                              fontSize: 14,
+                              fontWeight: ThixPolicy.bold,
+                              color: ThixPolicy.textMain,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '${price.toInt()} $currency',
+                            style: ThixPolicy.h3Style.copyWith(
+                              fontWeight: ThixPolicy.bold,
+                              fontSize: 16,
+                              color: ThixPolicy.primary,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: (isAvailable ? ThixPolicy.success : ThixPolicy.danger).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+                            ),
+                            child: Text(
+                              isAvailable ? 'En stock' : 'Rupture de stock',
+                              style: ThixPolicy.microStyle.copyWith(
+                                color: isAvailable ? ThixPolicy.success : ThixPolicy.danger,
+                                fontWeight: ThixPolicy.bold,
                               ),
                             ),
-                            if (isVerified) ...[
-                              const SizedBox(width: 4),
-                              const Icon(Icons.verified_rounded, size: 14, color: ThixPolicy.primary),
-                            ],
-                            if (isOwned) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: ThixPolicy.success.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-                                ),
-                                child: Text(
-                                  'Propriétaire',
-                                  style: ThixPolicy.microStyle.copyWith(
-                                    color: ThixPolicy.success,
-                                    fontWeight: ThixPolicy.bold,
-                                    fontSize: 9,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        RatingBar.builder(
-                          initialRating: rating,
-                          itemCount: 5,
-                          itemSize: 12,
-                          ignoreGestures: true,
-                          allowHalfRating: true,
-                          itemBuilder: (_, __) => const Icon(Icons.star_rounded, color: ThixPolicy.gold),
-                          onRatingUpdate: (_) {},
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            if (city.isNotEmpty) ...[
-                              const Icon(Icons.location_on_outlined, size: 11, color: ThixPolicy.textMuted),
-                              const SizedBox(width: 2),
-                              Text(
-                                city,
-                                style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 11),
-                              ),
-                              const SizedBox(width: 8),
-                            ],
-                            const Icon(Icons.people_outline_rounded, size: 11, color: ThixPolicy.textMuted),
-                            const SizedBox(width: 2),
-                            Text(
-                              '$followers abonnés',
-                              style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 11),
-                            ),
-                          ],
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-
-                  // Chevron
-                  const Icon(Icons.chevron_right_rounded, color: ThixPolicy.textMuted, size: 22),
-                ],
+                    
+                    // Bouton Ajouter au panier
+                    if (isAvailable)
+                      IconButton(
+                        onPressed: () => _addToCart(productId),
+                        icon: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: ThixPolicy.primary.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.shopping_cart_outlined, color: ThixPolicy.primary, size: 20),
+                        ),
+                        tooltip: 'Ajouter au panier',
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -424,20 +395,20 @@ class _SkeletonList extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(color: Colors.grey.shade200, shape: BoxShape.circle),
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(12)),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(height: 14, width: 140, color: Colors.grey.shade200),
+                  Container(height: 14, width: double.infinity, color: Colors.grey.shade200),
                   const SizedBox(height: 8),
-                  Container(height: 10, width: 80, color: Colors.grey.shade200),
-                  const SizedBox(height: 6),
-                  Container(height: 10, width: 100, color: Colors.grey.shade200),
+                  Container(height: 14, width: 120, color: Colors.grey.shade200),
+                  const SizedBox(height: 12),
+                  Container(height: 16, width: 80, color: Colors.grey.shade200),
                 ],
               ),
             ),
