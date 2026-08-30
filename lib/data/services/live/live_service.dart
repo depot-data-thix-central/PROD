@@ -232,19 +232,27 @@ class LiveService {
             debugPrint('[LiveService] 📨 CoHost response received: ${payload['accepted']}');
           },
         )
-        .onPresenceSync((_) {
-          try {
-            final state = channel.presenceState();
-            // Compter uniquement les viewers (exclure l'hôte)
-            final viewerCount = state.where((p) {
-              final payload = p.state; 
-              return payload != null && payload['is_host'] != true;
-            }).length;
-            onPresenceSync(viewerCount);
-          } catch (e) {
-            debugPrint('[LiveService] ⚠️ Presence sync error: $e');
-          }
-        })
+      .onPresenceSync((_) {
+  try {
+    final presences = channel.presenceState();
+    // Compter uniquement les viewers (exclure l'hôte)
+    int viewerCount = 0;
+    for (final p in presences) {
+      try {
+        // ✅ FIX : utiliser .payload (pas .state) — API realtime_client 2.13.0
+        final metadata = p.payload;
+        if (metadata != null && metadata['is_host'] != true) {
+          viewerCount++;
+        }
+      } catch (e) {
+        debugPrint('[LiveService] ⚠️ Presence entry parse error: $e');
+      }
+    }
+    onPresenceSync(viewerCount);
+  } catch (e) {
+    debugPrint('[LiveService] ⚠️ Presence sync error: $e');
+  }
+})
         .onPresenceJoin((payload) {
           debugPrint('[LiveViewer] 👤 Presence join: ${payload.key}');
         })
