@@ -94,18 +94,48 @@ class CommunityChatNotifier extends StateNotifier<AsyncValue<List<ChatMessage>>>
 
   Future<void> _load() async {
     try {
+      // 1. Messages SANS join
       final res = await Supabase.instance.client
           .from('community_messages')
-          .select('*, profiles(display_name, avatar_url, photo_url)')
+          .select('*')
           .eq('community_id', communityId)
           .order('created_at', ascending: true)
           .limit(50);
 
-      state = AsyncData((res as List).map((e) => ChatMessage.fromMap(e as Map<String, dynamic>)).toList());
+      final messages = (res as List).cast<Map<String, dynamic>>();
+
+      // 2. Profils en une seule requête groupée
+      final userIds = messages.map((m) => m['user_id'].toString()).toSet().toList();
+      final profiles = await _fetchProfiles(userIds);
+
+      state = AsyncData(messages
+          .map((m) => ChatMessage.fromMap({
+                ...m,
+                'profiles': profiles[m['user_id']],
+              }))
+          .toList());
+
       _subscribeRealtime();
     } catch (e) {
       debugPrint('[CommunityChat] Load error: $e');
       state = AsyncError(e, StackTrace.current);
+    }
+  }
+
+  Future<Map<String, Map<String, dynamic>>> _fetchProfiles(List<String> ids) async {
+    if (ids.isEmpty) return {};
+    try {
+      final res = await Supabase.instance.client
+          .from('profiles')
+          .select('id, display_name, avatar_url, photo_url')
+          .inFilter('id', ids);
+      return {
+        for (final p in (res as List).cast<Map<String, dynamic>>())
+          p['id'].toString(): p,
+      };
+    } catch (e) {
+      debugPrint('[CommunityChat] Profiles error: $e');
+      return {};
     }
   }
 
@@ -117,20 +147,21 @@ class CommunityChatNotifier extends StateNotifier<AsyncValue<List<ChatMessage>>>
           event: PostgresChangeEvent.insert,
           schema: 'public',
           table: 'community_messages',
-          filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'community_id', value: communityId),
-
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq, // ✅ CORRIGÉ ICI
+            column: 'community_id',
+            value: communityId,
+          ),
           callback: (payload) async {
-            final newMsg = payload.newRecord;
-            // Récupérer le profil si non présent
-            final profile = await Supabase.instance.client
-                .from('profiles')
-                .select('display_name, avatar_url, photo_url')
-                .eq('id', newMsg['user_id'])
-                .maybeSingle();
-
-            final enriched = {...newMsg, 'profiles': profile};
-            final msg = ChatMessage.fromMap(enriched);
+            final newMsg = Map<String, dynamic>.from(payload.newRecord);
+            // Profil séparé (pas de join Realtime)
+            final profiles = await _fetchProfiles([newMsg['user_id'].toString()]);
+            final msg = ChatMessage.fromMap({
+              ...newMsg,
+              'profiles': profiles[newMsg['user_id']],
+            });
             final current = state.valueOrNull ?? [];
+            if (current.any((m) => m.id == msg.id)) return; // anti-doublon
             state = AsyncData([...current, msg]);
           },
         )
@@ -141,8 +172,9 @@ class CommunityChatNotifier extends StateNotifier<AsyncValue<List<ChatMessage>>>
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) throw Exception('Non authentifié');
 
-    final sanitized = _CommunityValidators.sanitize(content, maxLength: 1000);
+    final sanitized = content.trim();
     if (sanitized.isEmpty) throw Exception('Message vide');
+    if (sanitized.length > 1000) throw Exception('Message trop long');
 
     await Supabase.instance.client.from('community_messages').insert({
       'community_id': communityId,
@@ -186,6 +218,8 @@ class _CommunityDetailPageState extends ConsumerState<CommunityDetailPage> with 
   bool _isJoiningProcess = false;
   String _memberSearchQuery = '';
   bool _isSending = false;
+  
+  int _currentTab = 0; // ✅ AJOUT
 
   @override
   void initState() {
@@ -193,6 +227,7 @@ class _CommunityDetailPageState extends ConsumerState<CommunityDetailPage> with 
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) HapticFeedback.selectionClick();
+      setState(() => _currentTab = _tabController.index); // ✅ AJOUT
     });
     _postsScroll.addListener(() {
       if (_postsScroll.position.pixels >= _postsScroll.position.maxScrollExtent - 400) {
@@ -411,7 +446,7 @@ class _CommunityDetailPageState extends ConsumerState<CommunityDetailPage> with 
           ),
         ),
       ),
-      floatingActionButton: asyncState.valueOrNull?.isMember == true
+      floatingActionButton: (asyncState.valueOrNull?.isMember == true && _currentTab != 2) // ✅ CORRIGÉ ICI
           ? FloatingActionButton(
               onPressed: () => _showCreatePostDialog(asyncState.valueOrNull!),
               backgroundColor: ThixPolicy.primary,
