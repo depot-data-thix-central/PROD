@@ -549,14 +549,15 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                           borderRadius: BorderRadius.circular(20),
                           gradient: ThixPolicy.heroGradient,
                           border: Border.all(color: Colors.white.withOpacity(0.5), width: 1),
-                          image: imageUrl != null
+                                                    image: imageUrl != null
                               ? DecorationImage(
                                   image: CachedNetworkImageProvider(imageUrl),
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(color: ThixPolicy.inkDeep),
+                                  // errorBuilder supprimé car non supporté par DecorationImage
                                   colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.6), BlendMode.darken),
                                 )
                               : null,
+
                           boxShadow: ThixPolicy.shadowCard(),
                         ),
                         child: Column(
@@ -880,13 +881,14 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                               color: Colors.white.withOpacity(0.6),
                               border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.5),
                               boxShadow: ThixPolicy.shadowSoft(),
-                              image: logoUrl != null
+                                                            image: logoUrl != null
                                   ? DecorationImage(
                                       image: CachedNetworkImageProvider(logoUrl),
                                       fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => null,
+                                      // errorBuilder supprimé car non supporté par DecorationImage
                                     )
                                   : null,
+
                             ),
                             child: logoUrl == null ? const Icon(Icons.storefront_rounded, color: ThixPolicy.textMuted, size: 28) : null,
                           ),
