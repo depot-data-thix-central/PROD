@@ -89,11 +89,14 @@ class HelpSupportPage extends StatefulWidget {
   State<HelpSupportPage> createState() => _HelpSupportPageState();
 }
 
-class _HelpSupportPageState extends State<HelpSupportPage> {
+// CORRECTION 1 : Ajout du SingleTickerProviderStateMixin
+class _HelpSupportPageState extends State<HelpSupportPage> with SingleTickerProviderStateMixin {
   final TextEditingController _messageController = TextEditingController();
   final TextEditingController _subjectController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
-  final TabController _tabController = TabController(length: 3, vsync: null);
+  
+  // CORRECTION 1 (suite) : Utilisation de late pour le contrôleur
+  late TabController _tabController;
   
   Timer? _searchDebounceTimer;
   String _selectedCategory = 'general';
@@ -111,6 +114,8 @@ class _HelpSupportPageState extends State<HelpSupportPage> {
   @override
   void initState() {
     super.initState();
+    // CORRECTION 1 (fin) : Initialisation avec vsync: this
+    _tabController = TabController(length: 3, vsync: this);
     debugPrint('[Support] 🎧 Page opened');
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadInitialData());
   }
@@ -136,6 +141,7 @@ class _HelpSupportPageState extends State<HelpSupportPage> {
     _messageController.dispose();
     _subjectController.dispose();
     _searchController.dispose();
+    _tabController.dispose();
     debugPrint('[Support] 👋 Page disposed');
     super.dispose();
   }
@@ -152,7 +158,6 @@ class _HelpSupportPageState extends State<HelpSupportPage> {
 
   void _switchToContactTab() {
     HapticFeedback.selectionClick();
-    // TabController non accessible depuis Stateful, utiliser DefaultTabController
     DefaultTabController.of(context).animateTo(2);
     debugPrint('[Support] 📞 Switched to contact tab');
   }
@@ -657,8 +662,9 @@ class _HelpSupportPageState extends State<HelpSupportPage> {
     HapticFeedback.mediumImpact();
 
     try {
+      // CORRECTION 2: On passe uniquement 'subject' et 'message'
       await _withRetry(
-        () => context.read<SupportProvider>().createTicket(_selectedCategory, subject, message),
+        () => context.read<SupportProvider>().createTicket(subject, message),
         label: 'createTicket',
       );
 
