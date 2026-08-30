@@ -15,7 +15,7 @@ const int _kMaxAddressLength = 200;
 const int _kMaxLandmarkLength = 100;
 const int _kMaxPhoneLength = 20;
 
-// ============================================================================
+// // ============================================================================
 // VALIDATEURS
 // ============================================================================
 class _AddressValidators {
@@ -25,10 +25,12 @@ class _AddressValidators {
     if (id == null || id.trim().isEmpty) return false;
     return RegExp(r'^[0-9a-fA-F-]{8,}$').hasMatch(id.trim());
   }
-static String shortId(String? id) {
+
+  static String shortId(String? id) {
     if (id == null || id.trim().isEmpty) return 'inconnu';
     return id.length >= 8 ? id.substring(0, 8) : id;
-  
+  } // <--- C'EST CETTE ACCOLADE QUI MANQUAIT !
+
   static String sanitize(String? input, {int maxLength = 500}) {
     if (input == null || input.trim().isEmpty) return '';
     final doc = html_parser.parse(input);
@@ -75,6 +77,7 @@ static String shortId(String? id) {
     return 'Une erreur est survenue. Réessayez.';
   }
 }
+
 
 // ============================================================================
 // LOCALIZATION HELPER
