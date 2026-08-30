@@ -709,7 +709,7 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
       if (newUrls.isNotEmpty) {
         await _cleanupOrphans(newUrls);
       }
-      if (mounted) _showError(_AnnouncementValidators.friendlyError(e.toString())); 
+      if (mounted) _showError(_AnnouncementValidators.friendlyError(e.toString()) ?? 'Une erreur inconnue est survenue'); 
 
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
