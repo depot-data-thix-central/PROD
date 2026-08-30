@@ -237,7 +237,7 @@ class LiveService {
             final state = channel.presenceState();
             // Compter uniquement les viewers (exclure l'hôte)
             final viewerCount = state.where((p) {
-              final payload = p.payload;
+              final payload = p.state; 
               return payload != null && payload['is_host'] != true;
             }).length;
             onPresenceSync(viewerCount);
