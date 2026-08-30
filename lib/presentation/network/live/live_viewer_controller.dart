@@ -474,7 +474,10 @@ class LiveViewerController extends StateNotifier<LiveViewerState> {
 
     // 1. Realtime unsubscribe
     try {
-      await _realtimeChannel?.unsubscribe().timeout(_kCleanupTimeout, onTimeout: () {});
+      await _realtimeChannel?.unsubscribe().timeout(_kCleanupTimeout, onTimeout: () {
+  return 'timeout'; // ou simplement return '';
+});
+
       _realtimeChannel = null;
       _realtimeConnected = false;
       debugPrint('[LiveViewer] ✓ Realtime unsubscribed');
