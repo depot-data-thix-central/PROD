@@ -44,7 +44,8 @@ final vendorAllOrdersProvider =
 
     if (shopIds.isEmpty) return [];
 
-    final query = db
+    // 1. On prépare la requête de base AVEC le filtre inFilter
+    var query = db
         .from('orders')
         .select(
           'id, total, status, payment_status, payout_status, payment_method, '
@@ -52,14 +53,16 @@ final vendorAllOrdersProvider =
           'refund_reason, received_at, shipping_method, shipping_address, '
           'customer_name, customer_phone, customer_email',
         )
-        .inFilter('shop_id', shopIds)
-        .order('created_at', ascending: false)
-        .limit(100);
+        .inFilter('shop_id', shopIds);
 
+    // 2. On ajoute le filtre eq() AVANT de faire le tri
+    if (statusFilter != null && statusFilter.isNotEmpty && statusFilter != 'all') {
+      query = query.eq('status', statusFilter);
+    }
+
+    // 3. On ajoute l'ordre et la limite, et on exécute la requête
     final res = await _voRetry(
-      () => (statusFilter != null && statusFilter.isNotEmpty && statusFilter != 'all')
-          ? query.eq('status', statusFilter)
-          : query,
+      () => query.order('created_at', ascending: false).limit(100),
       label: 'fetchVendorOrders[${statusFilter ?? 'all'}]',
     );
 
@@ -68,6 +71,8 @@ final vendorAllOrdersProvider =
     debugPrint('[VendorOrders] ❌ Provider error: $e');
     return [];
   }
+});
+
 });
 
 // ============================================================================
