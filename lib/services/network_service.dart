@@ -1,3 +1,4 @@
+// lib/services/network_service.dart
 import 'dart:async';
 import 'dart:collection';
 import 'dart:isolate';
@@ -147,7 +148,7 @@ class NetworkService extends ChangeNotifier {
     int? offset,
     DateTime? lastCreatedAt,
     String feedType = 'all',
-    int seed = 0,                      
+    int seed = 0,
   }) async {
     final uid = currentUserId;
     if (uid.isEmpty) return [];
@@ -162,7 +163,7 @@ class NetworkService extends ChangeNotifier {
           'p_user_id': uid,
           'p_limit': limit,
           'p_offset': safeOffset,
-          'p_seed': seed,             
+          'p_seed': seed,
         }).timeout(_requestTimeout);
 
         return (res as List)
@@ -180,7 +181,7 @@ class NetworkService extends ChangeNotifier {
             .from('posts_view')
             .select()
             .inFilter('user_id', connIds.toList())
-            .isFilter('community_id', null)          // ✅ AJOUT
+            .isFilter('community_id', null)
             .order('created_at', ascending: false)
             .range(safeOffset, safeOffset + limit - 1)
             .timeout(_requestTimeout);
@@ -196,7 +197,7 @@ class NetworkService extends ChangeNotifier {
             .from('posts_view')
             .select()
             .eq('is_public', true)
-            .isFilter('community_id', null)          // ✅ AJOUT
+            .isFilter('community_id', null)
             .order('likes_count', ascending: false)
             .range(safeOffset, safeOffset + limit - 1)
             .timeout(_requestTimeout);
@@ -211,7 +212,7 @@ class NetworkService extends ChangeNotifier {
           .from('posts_view')
           .select()
           .eq('is_public', true)
-          .isFilter('community_id', null)            // ✅ AJOUT
+          .isFilter('community_id', null)
           .order('created_at', ascending: false)
           .range(safeOffset, safeOffset + limit - 1)
           .timeout(_requestTimeout);
@@ -228,7 +229,7 @@ class NetworkService extends ChangeNotifier {
     }
   }
 
-    // ─────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────
   // COMMUNITIES
   // ─────────────────────────────────────────────────────────────
 
@@ -245,7 +246,6 @@ class NetworkService extends ChangeNotifier {
     if (sanitizedName.isEmpty) throw Exception('Nom de communauté requis');
 
     try {
-      // ✅ 1. VÉRIFICATION SI LA COMMUNAUTÉ EXISTE DÉJÀ (insensible à la casse)
       final existing = await _supabase
           .from('communities')
           .select('id')
@@ -257,12 +257,10 @@ class NetworkService extends ChangeNotifier {
         throw Exception('Une communauté avec ce nom existe déjà.');
       }
 
-      // 2. Préparation des données
       final sanitizedDesc = description != null
           ? _NetworkValidators.sanitizeText(description, maxLength: 2000)
           : null;
 
-      // 3. Créer la communauté
       final res = await _supabase.from('communities').insert({
         'name': sanitizedName,
         'description': sanitizedDesc,
@@ -278,7 +276,6 @@ class NetworkService extends ChangeNotifier {
 
       final communityId = res['id'];
 
-      // 4. Ajouter le créateur comme propriétaire (owner)
       await _supabase.from('community_members').upsert({
         'community_id': communityId,
         'user_id': uid,
@@ -288,7 +285,6 @@ class NetworkService extends ChangeNotifier {
 
       notifyListeners();
       return NetworkCommunity.fromJson(res);
-      
     } catch (e) {
       debugPrint('[NetworkService] Create community error: $e');
       rethrow;
@@ -296,7 +292,7 @@ class NetworkService extends ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // POSTS CRUD (avec validation XSS + ownership)
+  // POSTS CRUD
   // ─────────────────────────────────────────────────────────────
 
   Future<NetworkPost?> getPostById(String postId) async {
@@ -373,7 +369,6 @@ class NetworkService extends ChangeNotifier {
   Future<void> updatePost(String id, String content) async {
     if (currentUserId.isEmpty) throw Exception('Non authentifié');
 
-    // Vérification ownership
     await _verifyPostOwnership(id);
 
     final sanitizedContent = _NetworkValidators.sanitizeText(content);
@@ -390,7 +385,6 @@ class NetworkService extends ChangeNotifier {
   Future<void> deletePost(String id) async {
     if (currentUserId.isEmpty) throw Exception('Non authentifié');
 
-    // Vérification ownership
     await _verifyPostOwnership(id);
 
     await _supabase.from('posts').delete().eq('id', id).timeout(_requestTimeout);
@@ -717,7 +711,7 @@ class NetworkService extends ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // COMMENTS (avec validation XSS)
+  // COMMENTS
   // ─────────────────────────────────────────────────────────────
 
   Future<List<Comment>> getCommentsWithReplies(String postId) async {
@@ -814,7 +808,6 @@ class NetworkService extends ChangeNotifier {
 
   Future<bool> updateComment(String commentId, String newContent) async {
     try {
-      // Vérification ownership
       final comment = await _supabase
           .from('comments')
           .select('user_id')
@@ -843,7 +836,6 @@ class NetworkService extends ChangeNotifier {
 
   Future<bool> deleteComment(String commentId) async {
     try {
-      // Vérification ownership
       final comment = await _supabase
           .from('comments')
           .select('user_id')
@@ -861,6 +853,35 @@ class NetworkService extends ChangeNotifier {
     } catch (e) {
       debugPrint('[CommentService] Error deleteComment: $e');
       return false;
+    }
+  }
+
+  /// ✅ AJOUT : Signaler un commentaire
+  Future<void> reportComment(String commentId, String reason, String? details) async {
+    final uid = currentUserId;
+    if (uid.isEmpty) throw Exception('Non authentifié');
+
+    final sanitizedReason = _NetworkValidators.sanitizeText(reason, maxLength: 100);
+    if (sanitizedReason.isEmpty) throw Exception('Motif requis');
+
+    final sanitizedDetails = details != null
+        ? _NetworkValidators.sanitizeText(details, maxLength: 500)
+        : null;
+
+    try {
+      await _supabase.from('comment_reports').insert({
+        'comment_id': commentId,
+        'reporter_id': uid,
+        'reason': sanitizedReason,
+        'details': sanitizedDetails,
+        'status': 'pending',
+        'reported_at': DateTime.now().toUtc().toIso8601String(),
+      }).timeout(_requestTimeout);
+
+      debugPrint('[CommentService] ✓ Reported comment $commentId');
+    } catch (e) {
+      debugPrint('[CommentService] Error reportComment: $e');
+      rethrow;
     }
   }
 
@@ -991,7 +1012,7 @@ class NetworkService extends ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // STORIES (avec validation)
+  // STORIES
   // ─────────────────────────────────────────────────────────────
 
   Future<List<NetworkStory>> getActiveStories() async {
@@ -1010,30 +1031,30 @@ class NetworkService extends ChangeNotifier {
   }
 
   Future<void> createStory(
-  String? mediaUrl, {
-  String? text,
-  String mediaType = 'image',
-  int duration = 24,
-  String? bgColor,                    
-}) async {
-  if (currentUserId.isEmpty) throw Exception('Non authentifié');
+    String? mediaUrl, {
+    String? text,
+    String mediaType = 'image',
+    int duration = 24,
+    String? bgColor,
+  }) async {
+    if (currentUserId.isEmpty) throw Exception('Non authentifié');
 
-  await _supabase.from('stories').insert({
-    'user_id': currentUserId,
-    'media_url': mediaUrl,
-    'image_url': mediaUrl,
-    'text_content': text,
-    'content': text,
-    'text': text,                     
-    'media_type': mediaType,
-    'bg_color': bgColor,              
-    'is_active': true,
-    'expires_at': DateTime.now().toUtc()
-        .add(Duration(hours: duration.clamp(6, 48))).toIso8601String(),
-  }).timeout(_requestTimeout);
+    await _supabase.from('stories').insert({
+      'user_id': currentUserId,
+      'media_url': mediaUrl,
+      'image_url': mediaUrl,
+      'text_content': text,
+      'content': text,
+      'text': text,
+      'media_type': mediaType,
+      'bg_color': bgColor,
+      'is_active': true,
+      'expires_at': DateTime.now().toUtc()
+          .add(Duration(hours: duration.clamp(6, 48))).toIso8601String(),
+    }).timeout(_requestTimeout);
 
-  notifyListeners();
-}
+    notifyListeners();
+  }
 
   Future<void> deleteStory(String storyId) async {
     if (currentUserId.isEmpty) return;
@@ -1247,27 +1268,27 @@ class NetworkService extends ChangeNotifier {
   // ─────────────────────────────────────────────────────────────
 
   Future<List<NetworkCommunity>> getAllCommunities({
-  int limit = 20,
-  int offset = 0,                    // ✅ AJOUT
-}) async {
-  final safeLimit = limit.clamp(1, 100);
-  final safeOffset = offset < 0 ? 0 : offset;
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final safeLimit = limit.clamp(1, 100);
+    final safeOffset = offset < 0 ? 0 : offset;
 
-  try {
-    final res = await _supabase
-        .from('communities')
-        .select('*')
-        .eq('is_active', true)
-        .order('members_count', ascending: false)
-        .range(safeOffset, safeOffset + safeLimit - 1)
-        .timeout(_requestTimeout);
+    try {
+      final res = await _supabase
+          .from('communities')
+          .select('*')
+          .eq('is_active', true)
+          .order('members_count', ascending: false)
+          .range(safeOffset, safeOffset + safeLimit - 1)
+          .timeout(_requestTimeout);
 
-    return (res as List).map((e) => NetworkCommunity.fromJson(e as Map<String, dynamic>)).toList();
-  } catch (e) {
-    debugPrint('[NetworkService] getAllCommunities error: $e');
-    return [];
+      return (res as List).map((e) => NetworkCommunity.fromJson(e as Map<String, dynamic>)).toList();
+    } catch (e) {
+      debugPrint('[NetworkService] getAllCommunities error: $e');
+      return [];
+    }
   }
-}
 
   Future<List<NetworkCommunity>> getSuggestedCommunities({int limit = 10}) async {
     try {
@@ -1312,7 +1333,7 @@ class NetworkService extends ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // SEARCH (avec validation XSS)
+  // SEARCH
   // ─────────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> searchUsers(String q) async {
@@ -1355,7 +1376,7 @@ class NetworkService extends ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // MESSAGES (avec validation XSS)
+  // MESSAGES
   // ─────────────────────────────────────────────────────────────
 
   Future<List<Conversation>> getConversations() async {
@@ -1488,17 +1509,43 @@ class NetworkService extends ChangeNotifier {
     await _supabase.from('notifications').update({'is_read': true}).eq('user_id', currentUserId).eq('is_read', false).timeout(_requestTimeout);
   }
 
+  /// ✅ AJOUT : Marque UNE notification spécifique comme lue
+  /// (utilisé par notifications_page.dart au tap sur une notification)
+  Future<void> markNotificationAsRead(String notificationId) async {
+    if (notificationId.isEmpty) return;
+    final uid = currentUserId;
+    if (uid.isEmpty) return;
+
+    try {
+      await _supabase
+          .from('notifications')
+          .update({
+            'is_read': true,
+            'read_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('id', notificationId)
+          .eq('user_id', uid)  // Sécurité : seul le propriétaire peut marquer comme lu
+          .timeout(_requestTimeout);
+
+      debugPrint('[NotificationService] ✓ Marked $notificationId as read');
+    } on TimeoutException {
+      debugPrint('[NotificationService] ⏱️ Timeout markNotificationAsRead');
+      rethrow;
+    } catch (e) {
+      debugPrint('[NotificationService] ❌ Error markNotificationAsRead: $e');
+      rethrow;
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────
-  // PROFILE / POSTS USER (avec cache + requête optimisée)
+  // PROFILE / POSTS USER
   // ─────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>?> getUserProfile(String userId) async {
-    // Cache check
     final cached = _profileCache.get(userId);
     if (cached != null) return cached;
 
     try {
-      // Requête unique avec JOIN au lieu de N+1
       final res = await _supabase
           .from('profiles')
           .select(
@@ -1511,7 +1558,6 @@ class NetworkService extends ChangeNotifier {
 
       if (res == null) return null;
 
-      // Compter les posts, followers, following en parallèle
       final results = await Future.wait([
         _supabase.from('posts').count(CountOption.exact).eq('user_id', userId).timeout(_requestTimeout),
         _supabase.from('follows').count(CountOption.exact).eq('following_id', userId).timeout(_requestTimeout),
@@ -1525,7 +1571,6 @@ class NetworkService extends ChangeNotifier {
         'following_count': results[2],
       };
 
-      // Cache set
       _profileCache.set(userId, profile);
 
       return profile;
@@ -1574,7 +1619,7 @@ class NetworkService extends ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // UPLOAD AVEC COMPRESSION ASYNCHRONE + VALIDATION
+  // UPLOAD
   // ─────────────────────────────────────────────────────────────
 
   Future<String?> uploadImageBytes(
@@ -1584,12 +1629,10 @@ class NetworkService extends ChangeNotifier {
   }) async {
     if (currentUserId.isEmpty) throw Exception('Non authentifié');
 
-    // Validation taille
     if (!_NetworkValidators.validateFileSize(bytes.length, maxSizeMB: _maxImageSizeMB)) {
       throw Exception('Image trop volumineuse (max ${_maxImageSizeMB}MB)');
     }
 
-    // Validation extension
     if (!_NetworkValidators.validateFileExtension(fileExtension, _allowedImageExts)) {
       throw Exception('Format image non supporté : $fileExtension');
     }
@@ -1600,7 +1643,6 @@ class NetworkService extends ChangeNotifier {
 
       Uint8List finalBytes = bytes;
 
-      // Compression asynchrone dans un isolate
       if (!kIsWeb) {
         try {
           finalBytes = await _compressImageAsync(bytes, fileExtension);
@@ -1657,7 +1699,6 @@ class NetworkService extends ChangeNotifier {
   Future<String?> uploadAudioBytes(Uint8List bytes, {String bucket = 'audio_uploads'}) async {
     if (currentUserId.isEmpty) throw Exception('Non authentifié');
 
-    // Validation taille
     if (!_NetworkValidators.validateFileSize(bytes.length, maxSizeMB: _maxAudioSizeMB)) {
       throw Exception('Audio trop volumineux (max ${_maxAudioSizeMB}MB)');
     }
