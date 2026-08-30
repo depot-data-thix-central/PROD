@@ -143,7 +143,8 @@ class _PublishAnnouncementPageState extends ConsumerState<PublishAnnouncementPag
             final firstId = shops.first['id']?.toString();
             if (_PublishValidators.isValidId(firstId)) {
               _selectedShopId = firstId;
-              debugPrint('[PublishAnnouncement] 🏪 Auto-selected first shop: ${firstId.substring(0, 8)}...');
+              debugPrint('[PublishAnnouncement] 🏪 Auto-selected first shop: ${firstId?.substring(0, 8) ?? "Inconnu"}...');
+
             }
           }
 
