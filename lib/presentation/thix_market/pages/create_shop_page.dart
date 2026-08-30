@@ -10,7 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:uuid/uuid.dart';
-
+import 'package:flutter/foundation.dart'; 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../providers/shop_provider.dart';
 import '../providers/market_providers.dart';
@@ -199,7 +199,7 @@ class _CreateShopPageState extends ConsumerState<CreateShopPage> {
           .uploadBinary(
             path,
             _logoPreviewBytes!,
-            fileOptions: const FileOptions(
+            fileOptions:  FileOptions(
               contentType: 'image/jpeg',
               upsert: false,
             ),
