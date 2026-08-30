@@ -9,7 +9,8 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-import 'delivery_provider.dart';
+import 'delivery_provider.dart' hide LatLng;
+
 
 // ============================================================================
 // CONSTANTES
