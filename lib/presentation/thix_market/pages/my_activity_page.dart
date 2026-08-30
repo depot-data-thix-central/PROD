@@ -279,10 +279,10 @@ class _MyActivityPageState extends ConsumerState<MyActivityPage> with SingleTick
 
   Widget _buildRatingsTab(ActivityProvider provider) {
     final stats = provider.ratingStats;
-    final average = _ActivityValidators.safeDouble(stats['average']);
-    final total = _ActivityValidators.safeInt(stats['total']);
-    final distribution = stats['distribution'] as Map? ?? {};
-
+    final average = _ActivityValidators.safeDouble(stats.average); 
+final total = _ActivityValidators.safeInt(stats.total); 
+final distribution = stats.distribution; // (Si 'distribution' est déjà une Map dans
+    
     return Column(
       children: [
         // Rating summary
