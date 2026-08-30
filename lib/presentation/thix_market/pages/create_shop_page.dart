@@ -14,6 +14,7 @@ import 'package:flutter/foundation.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../providers/shop_provider.dart';
 import '../providers/market_providers.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ============================================================================
 // CONSTANTES
