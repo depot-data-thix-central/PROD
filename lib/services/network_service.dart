@@ -228,7 +228,7 @@ class NetworkService extends ChangeNotifier {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────
   // COMMUNITIES
   // ─────────────────────────────────────────────────────────────
 
@@ -238,35 +238,61 @@ class NetworkService extends ChangeNotifier {
     String? bannerUrl,
     String? logoUrl,
   }) async {
-    if (currentUserId.isEmpty) throw Exception('Non authentifié');
+    final uid = currentUserId;
+    if (uid.isEmpty) throw Exception('Non authentifié');
 
     final sanitizedName = _NetworkValidators.sanitizeText(name, maxLength: 200);
-    if (sanitizedName.isEmpty) throw Exception('Nom invalide');
+    if (sanitizedName.isEmpty) throw Exception('Nom de communauté requis');
 
-    final sanitizedDesc = description != null
-        ? _NetworkValidators.sanitizeText(description, maxLength: 2000)
-        : null;
+    try {
+      // ✅ 1. VÉRIFICATION SI LA COMMUNAUTÉ EXISTE DÉJÀ (insensible à la casse)
+      final existing = await _supabase
+          .from('communities')
+          .select('id')
+          .ilike('name', sanitizedName)
+          .maybeSingle()
+          .timeout(_requestTimeout);
 
-    final res = await _supabase.from('communities').insert({
-      'name': sanitizedName,
-      'description': sanitizedDesc,
-      'logo_url': _NetworkValidators.sanitizeUrl(logoUrl ?? bannerUrl),
-      'banner_url': _NetworkValidators.sanitizeUrl(bannerUrl),
-      'created_by': currentUserId,
-      'created_at': DateTime.now().toUtc().toIso8601String(),
-      'members_count': 1,
-      'posts_count': 0,
-    }).select().single().timeout(_requestTimeout);
+      if (existing != null) {
+        throw Exception('Une communauté avec ce nom existe déjà.');
+      }
 
-    await _supabase.from('community_members').upsert({
-      'community_id': res['id'],
-      'user_id': currentUserId,
-      'role': 'admin',
-      'joined_at': DateTime.now().toUtc().toIso8601String(),
-    }, onConflict: 'community_id,user_id');
+      // 2. Préparation des données
+      final sanitizedDesc = description != null
+          ? _NetworkValidators.sanitizeText(description, maxLength: 2000)
+          : null;
 
-    notifyListeners();
-    return NetworkCommunity.fromJson(res);
+      // 3. Créer la communauté
+      final res = await _supabase.from('communities').insert({
+        'name': sanitizedName,
+        'description': sanitizedDesc,
+        'logo_url': _NetworkValidators.sanitizeUrl(logoUrl ?? bannerUrl),
+        'banner_url': _NetworkValidators.sanitizeUrl(bannerUrl),
+        'created_by': uid,
+        'privacy': 'public',
+        'is_active': true,
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+        'members_count': 1,
+        'posts_count': 0,
+      }).select().single().timeout(_requestTimeout);
+
+      final communityId = res['id'];
+
+      // 4. Ajouter le créateur comme propriétaire (owner)
+      await _supabase.from('community_members').upsert({
+        'community_id': communityId,
+        'user_id': uid,
+        'role': 'owner',
+        'joined_at': DateTime.now().toUtc().toIso8601String(),
+      }, onConflict: 'community_id,user_id');
+
+      notifyListeners();
+      return NetworkCommunity.fromJson(res);
+      
+    } catch (e) {
+      debugPrint('[NetworkService] Create community error: $e');
+      rethrow;
+    }
   }
 
   // ─────────────────────────────────────────────────────────────
