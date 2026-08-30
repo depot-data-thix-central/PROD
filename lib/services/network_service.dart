@@ -1246,27 +1246,28 @@ class NetworkService extends ChangeNotifier {
   // COMMUNITIES LIST
   // ─────────────────────────────────────────────────────────────
 
-  Future<List<NetworkCommunity>> getAllCommunities({int limit = 50}) async {
-    try {
-      final res = await _supabase
-          .from('communities_with_membership')
-          .select()
-          .eq('current_user_id', currentUserId)
-          .order('members_count', ascending: false)
-          .limit(limit)
-          .timeout(_requestTimeout);
-      return (res as List).map((e) => NetworkCommunity.fromJson(e)).toList();
-    } catch (e) {
-      debugPrint('[CommunityService] Fallback getAllCommunities: $e');
-      try {
-        final res = await _supabase.from('communities').select().order('members_count', ascending: false).limit(limit).timeout(_requestTimeout);
-        return (res as List).map((e) => NetworkCommunity.fromJson(e)).toList();
-      } catch (e2) {
-        debugPrint('[CommunityService] Error getAllCommunities: $e2');
-        return [];
-      }
-    }
+  Future<List<NetworkCommunity>> getAllCommunities({
+  int limit = 20,
+  int offset = 0,                    // ✅ AJOUT
+}) async {
+  final safeLimit = limit.clamp(1, 100);
+  final safeOffset = offset < 0 ? 0 : offset;
+
+  try {
+    final res = await _supabase
+        .from('communities')
+        .select('*')
+        .eq('is_active', true)
+        .order('members_count', ascending: false)
+        .range(safeOffset, safeOffset + safeLimit - 1)
+        .timeout(_requestTimeout);
+
+    return (res as List).map((e) => NetworkCommunity.fromJson(e as Map<String, dynamic>)).toList();
+  } catch (e) {
+    debugPrint('[NetworkService] getAllCommunities error: $e');
+    return [];
   }
+}
 
   Future<List<NetworkCommunity>> getSuggestedCommunities({int limit = 10}) async {
     try {
