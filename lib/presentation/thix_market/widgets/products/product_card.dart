@@ -388,7 +388,7 @@ class ProductCard extends ConsumerWidget {
     required MarketStrings t,
   }) {
     if (isOut) return t.unavailable;
-    if (price <= 0) return t.priceOnRequest ?? 'Sur demande';
+    if (price <= 0) return 'Sur demande';
     return '${price.toInt()} $symbol';
   }
 
