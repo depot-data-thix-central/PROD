@@ -57,11 +57,13 @@ class _ShopValidators {
     return t.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
   }
 
-  static bool isValidEmail(String? email) {
+    static bool isValidEmail(String? email) {
     if (email == null || email.trim().isEmpty) return true; // Optionnel
-    return RegExp(r'^[a-zA-Z0-9.!#$%&\'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$')
+    // On utilise r"..." (guillemets doubles) pour éviter que l'apostrophe de la regex ne ferme la chaîne
+    return RegExp(r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$")
         .hasMatch(email.trim());
   }
+
 
   static bool isValidPhone(String? phone) {
     if (phone == null || phone.trim().isEmpty) return true;
