@@ -1,10 +1,108 @@
+// lib/presentation/thix_market/pages/messages_page.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
+import 'package:html/parser.dart' as html_parser;
+
+import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../providers/message_provider.dart';
 
+// ============================================================================
+// CONSTANTES
+// ============================================================================
+const Duration _kRequestTimeout = Duration(seconds: 15);
+const Duration _kRetryDelay = Duration(milliseconds: 400);
+
+// ============================================================================
+// VALIDATEURS
+// ============================================================================
+class _MessagesValidators {
+  _MessagesValidators._();
+
+  static String sanitize(String? input, {int maxLength = 500}) {
+    if (input == null || input.trim().isEmpty) return '';
+    final doc = html_parser.parse(input);
+    var s = doc.body?.text ?? input;
+    s = s
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
+        .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+    return s.length > maxLength ? s.substring(0, maxLength) : s;
+  }
+
+  static String? sanitizeUrl(String? url) {
+    if (url == null || url.trim().isEmpty) return null;
+    final t = url.trim();
+    if (!t.startsWith('http://') && !t.startsWith('https://')) return null;
+    return t.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
+  }
+
+  static bool isValidId(String? id) {
+    if (id == null || id.isEmpty) return false;
+    return RegExp(r'^[0-9a-fA-F-]{8,}$').hasMatch(id);
+  }
+
+  static String formatDate(String? dateStr) {
+    if (dateStr == null || dateStr.isEmpty) return '';
+    try {
+      final date = DateTime.parse(dateStr);
+      final now = DateTime.now();
+      if (date.day == now.day && date.month == now.month && date.year == now.year) {
+        return DateFormat('HH:mm').format(date);
+      } else {
+        return DateFormat('dd/MM').format(date);
+      }
+    } catch (_) {
+      return _MessagesValidators.sanitize(dateStr, maxLength: 20);
+    }
+  }
+
+  static String formatFullDate(String? dateStr) {
+    if (dateStr == null || dateStr.isEmpty) return '';
+    try {
+      return DateFormat('dd/MM/yyyy').format(DateTime.parse(dateStr));
+    } catch (_) {
+      return _MessagesValidators.sanitize(dateStr, maxLength: 20);
+    }
+  }
+}
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+Future<T> _withRetry<T>(
+  Future<T> Function() fn, {
+  required String label,
+  int maxRetries = 1,
+}) async {
+  int attempt = 0;
+  while (true) {
+    try {
+      return await fn().timeout(_kRequestTimeout);
+    } on TimeoutException {
+      attempt++;
+      if (attempt > maxRetries) {
+        debugPrint('[Messages] ❌ $label: timeout after $attempt attempts');
+        throw TimeoutException('$label: délai dépassé');
+      }
+      debugPrint('[Messages] ⏱️ $label timeout — retry $attempt/$maxRetries');
+      await Future.delayed(_kRetryDelay);
+    } catch (e) {
+      debugPrint('[Messages] ❌ $label error: $e');
+      rethrow;
+    }
+  }
+}
+
+// ============================================================================
+// PAGE PRINCIPALE
+// ============================================================================
 class MessagesPage extends StatefulWidget {
   const MessagesPage({super.key});
 
@@ -15,28 +113,34 @@ class MessagesPage extends StatefulWidget {
 class _MessagesPageState extends State<MessagesPage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  static const Color primaryBlue = Color(0xFF1A73E8);
-  static const Color bgLight = Color(0xFFF8F9FA);
-
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    debugPrint('[Messages] 💬 Page opened');
     _loadData();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    debugPrint('[Messages] 👋 Page disposed');
     super.dispose();
   }
 
   Future<void> _loadData() async {
     final provider = context.read<MessageProvider>();
-    await Future.wait([
-      provider.loadConversations(),
-      provider.loadDisputes(),
-    ]);
+    HapticFeedback.selectionClick();
+
+    try {
+      await Future.wait([
+        _withRetry(() => provider.loadConversations(), label: 'loadConversations'),
+        _withRetry(() => provider.loadDisputes(), label: 'loadDisputes'),
+      ]);
+      debugPrint('[Messages] ✓ All data loaded');
+    } catch (e) {
+      debugPrint('[Messages] ❌ Load error: $e');
+    }
   }
 
   @override
@@ -44,14 +148,15 @@ class _MessagesPageState extends State<MessagesPage> with SingleTickerProviderSt
     final messageProvider = context.watch<MessageProvider>();
 
     return Scaffold(
-      backgroundColor: bgLight,
+      backgroundColor: ThixPolicy.surfaceSoft,
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           'Messages',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+          style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 20, color: ThixPolicy.textMain),
         ),
-        backgroundColor: Colors.white,
+        backgroundColor: ThixPolicy.card,
         elevation: 0,
+        scrolledUnderElevation: 0,
         bottom: TabBar(
           controller: _tabController,
           tabs: [
@@ -59,47 +164,49 @@ class _MessagesPageState extends State<MessagesPage> with SingleTickerProviderSt
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.chat, size: 18),
+                  const Icon(Icons.chat_rounded, size: 18),
                   const SizedBox(width: 8),
-                  Text('Conversations'),
+                  Text('Conversations', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.semiBold)),
                   if (messageProvider.unreadCount > 0)
                     Container(
                       margin: const EdgeInsets.only(left: 8),
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.red,
+                        color: ThixPolicy.danger,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         '${messageProvider.unreadCount}',
-                        style: const TextStyle(fontSize: 10, color: Colors.white),
+                        style: ThixPolicy.microStyle.copyWith(fontSize: 10, color: Colors.white, fontWeight: ThixPolicy.bold),
                       ),
                     ),
                 ],
               ),
             ),
-            const Tab(
+            Tab(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.gavel, size: 18),
-                  SizedBox(width: 8),
-                  Text('Litiges'),
+                  const Icon(Icons.gavel_rounded, size: 18),
+                  const SizedBox(width: 8),
+                  Text('Litiges', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.semiBold)),
                 ],
               ),
             ),
           ],
-          indicatorColor: primaryBlue,
-          labelColor: primaryBlue,
-          unselectedLabelColor: Colors.grey,
+          indicatorColor: ThixPolicy.primary,
+          labelColor: ThixPolicy.primary,
+          unselectedLabelColor: ThixPolicy.textSecondary,
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.black87),
+            icon: const Icon(Icons.refresh_rounded, color: ThixPolicy.textMain),
+            tooltip: 'Rafraîchir',
             onPressed: _loadData,
           ),
           IconButton(
-            icon: const Icon(Icons.phone_in_talk, color: Colors.black87),
+            icon: const Icon(Icons.phone_in_talk_rounded, color: ThixPolicy.textMain),
+            tooltip: 'Appel vocal',
             onPressed: () => _startVoiceCall(),
           ),
         ],
@@ -119,171 +226,35 @@ class _MessagesPageState extends State<MessagesPage> with SingleTickerProviderSt
   // ============================================================
   Widget _buildConversationsTab(MessageProvider provider) {
     if (provider.isLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return const _SkeletonList();
     }
 
     if (provider.conversations.isEmpty) {
-      return _buildEmptyState(
-        'Aucune conversation',
-        'Commencez à discuter avec des vendeurs',
-        Icons.chat_bubble_outline,
+      return _EmptyState(
+        title: 'Aucune conversation',
+        subtitle: 'Commencez à discuter avec des vendeurs',
+        icon: Icons.chat_bubble_outline_rounded,
+        actionLabel: 'Découvrir des boutiques',
+        onAction: () {
+          HapticFeedback.mediumImpact();
+          context.push('/market/search');
+        },
       );
     }
 
     return RefreshIndicator(
+      color: ThixPolicy.primary,
       onRefresh: _loadData,
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 4),
         itemCount: provider.conversations.length,
         itemBuilder: (context, index) {
           final conv = provider.conversations[index];
-          return _buildConversationTile(conv);
+          return _ConversationTile(
+            conversation: conv,
+            onTap: () => _openChat(conv['id']?.toString() ?? '', conv['other_user'] as Map? ?? {}),
+          );
         },
-      ),
-    );
-  }
-
-  Widget _buildConversationTile(Map<String, dynamic> conversation) {
-    final lastMessage = conversation['last_message'];
-    final isUnread = (conversation['unread_count'] ?? 0) > 0;
-    final lastMessageTime = conversation['last_message_time'];
-    final otherUser = conversation['other_user'] as Map? ?? {};
-    final userName = otherUser['name'] ?? 'Utilisateur';
-    final userAvatar = otherUser['avatar'] as String?;
-    final isOnline = otherUser['is_online'] ?? false;
-
-    String formattedTime = '';
-    if (lastMessageTime != null) {
-      try {
-        final date = DateTime.parse(lastMessageTime);
-        final now = DateTime.now();
-        if (date.day == now.day && date.month == now.month && date.year == now.year) {
-          formattedTime = DateFormat('HH:mm').format(date);
-        } else {
-          formattedTime = DateFormat('dd/MM').format(date);
-        }
-      } catch (_) {}
-    }
-
-    return InkWell(
-      // ✅ Correction : on caste otherUser en Map<String, dynamic>
-      onTap: () => _openChat(conversation['id'], Map<String, dynamic>.from(otherUser)),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        color: isUnread ? primaryBlue.withOpacity(0.05) : Colors.white,
-        child: Row(
-          children: [
-            // Avatar
-            Stack(
-              children: [
-                CircleAvatar(
-                  radius: 26,
-                  backgroundImage: userAvatar != null
-                      ? CachedNetworkImageProvider(userAvatar)
-                      : null,
-                  child: userAvatar == null
-                      ? Icon(Icons.person, size: 26, color: Colors.grey[400])
-                      : null,
-                ),
-                if (isOnline)
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: Colors.green,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(width: 12),
-
-            // Contenu
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          userName,
-                          style: TextStyle(
-                            fontWeight: isUnread ? FontWeight.bold : FontWeight.normal,
-                            fontSize: 15,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (formattedTime.isNotEmpty)
-                        Text(
-                          formattedTime,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey[500],
-                            fontWeight: isUnread ? FontWeight.w500 : FontWeight.normal,
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      if (conversation['is_typing'] == true)
-                        const SizedBox(
-                          width: 60,
-                          child: Text(
-                            'Écrit...',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: primaryBlue,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        )
-                      else
-                        Expanded(
-                          child: Text(
-                            lastMessage ?? 'Dernier message',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: isUnread ? Colors.black87 : Colors.grey[600],
-                              fontWeight: isUnread ? FontWeight.w500 : FontWeight.normal,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      if (conversation['unread_count'] > 0)
-                        Container(
-                          margin: const EdgeInsets.only(left: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: primaryBlue,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            '${conversation['unread_count']}',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -293,304 +264,616 @@ class _MessagesPageState extends State<MessagesPage> with SingleTickerProviderSt
   // ============================================================
   Widget _buildDisputesTab(MessageProvider provider) {
     if (provider.isLoadingDisputes) {
-      return const Center(child: CircularProgressIndicator());
+      return const _SkeletonList();
     }
 
     if (provider.disputes.isEmpty) {
-      return _buildEmptyState(
-        'Aucun litige',
-        'Tous vos litiges seront affichés ici',
-        Icons.gavel,
+      return _EmptyState(
+        title: 'Aucun litige',
+        subtitle: 'Tous vos litiges seront affichés ici',
+        icon: Icons.gavel_rounded,
       );
     }
 
     return RefreshIndicator(
+      color: ThixPolicy.primary,
       onRefresh: _loadData,
       child: ListView.builder(
         padding: const EdgeInsets.all(12),
         itemCount: provider.disputes.length,
         itemBuilder: (context, index) {
           final dispute = provider.disputes[index];
-          return _buildDisputeCard(dispute);
+          return _DisputeCard(
+            dispute: dispute,
+            onTap: () => _openDispute(dispute['id']?.toString() ?? ''),
+          );
         },
       ),
     );
   }
 
-  Widget _buildDisputeCard(Map<String, dynamic> dispute) {
-    final status = dispute['status'] ?? 'open';
-    final statusColors = {
-      'open': Colors.orange,
-      'mediation': Colors.blue,
-      'resolved': Colors.green,
-      'closed': Colors.grey,
-    };
-    final statusTexts = {
-      'open': 'En cours',
-      'mediation': 'Médiation',
-      'resolved': 'Résolu',
-      'closed': 'Fermé',
-    };
-    final statusColor = statusColors[status] ?? Colors.grey;
-    final statusText = statusTexts[status] ?? 'Inconnu';
+  void _openChat(String conversationId, Map otherUser) {
+    if (!_MessagesValidators.isValidId(conversationId)) {
+      debugPrint('[Messages] ⚠️ Invalid conversation ID: $conversationId');
+      return;
+    }
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey[200]!),
+    HapticFeedback.selectionClick();
+    final userMap = Map<String, dynamic>.from(otherUser);
+
+    context.push(
+      '/market/chat/$conversationId',
+      extra: {
+        'title': _MessagesValidators.sanitize(userMap['name']?.toString() ?? 'Discussion', maxLength: 60),
+        'userName': _MessagesValidators.sanitize(userMap['name']?.toString() ?? '', maxLength: 60),
+        'userAvatar': _MessagesValidators.sanitizeUrl(userMap['avatar']?.toString()),
+      },
+    );
+    debugPrint('[Messages] 💬 Opened chat $conversationId');
+  }
+
+  void _openDispute(String disputeId) {
+    if (!_MessagesValidators.isValidId(disputeId)) {
+      debugPrint('[Messages] ⚠️ Invalid dispute ID: $disputeId');
+      return;
+    }
+
+    HapticFeedback.selectionClick();
+    context.push('/market/dispute/$disputeId');
+    debugPrint('[Messages] ⚖️ Opened dispute $disputeId');
+  }
+
+  void _startVoiceCall() {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      builder: (context) => const _VoiceCallSheet(),
+    );
+  }
+}
+
+// ============================================================================
+// COMPOSANTS
+// ============================================================================
+
+class _ConversationTile extends StatelessWidget {
+  final Map<String, dynamic> conversation;
+  final VoidCallback onTap;
+
+  const _ConversationTile({required this.conversation, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final lastMessage = _MessagesValidators.sanitize(conversation['last_message']?.toString(), maxLength: 100);
+    final isUnread = (conversation['unread_count'] as num?)?.toInt() ?? 0 > 0;
+    final formattedTime = _MessagesValidators.formatDate(conversation['last_message_time']?.toString());
+    final otherUser = conversation['other_user'] as Map? ?? {};
+    final userName = _MessagesValidators.sanitize(otherUser['name']?.toString() ?? 'Utilisateur', maxLength: 60);
+    final userAvatar = _MessagesValidators.sanitizeUrl(otherUser['avatar']?.toString());
+    final isOnline = otherUser['is_online'] == true;
+    final isTyping = conversation['is_typing'] == true;
+    final unreadCount = (conversation['unread_count'] as num?)?.toInt() ?? 0;
+
+    return Semantics(
+      button: true,
+      label: 'Conversation avec $userName, ${isUnread ? "non lue" : "lue"}, dernier message: $lastMessage',
       child: InkWell(
-        onTap: () => _openDispute(dispute['id']),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          color: isUnread ? ThixPolicy.primary.withOpacity(0.05) : ThixPolicy.card,
+          child: Row(
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              // Avatar
+              Stack(
                 children: [
-                  Text(
-                    'Litige #${dispute['id']}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+                  CircleAvatar(
+                    radius: 26,
+                    backgroundColor: ThixPolicy.surfaceSoft,
+                    backgroundImage: userAvatar != null ? CachedNetworkImageProvider(userAvatar) : null,
+                    child: userAvatar == null
+                        ? const Icon(Icons.person_rounded, size: 26, color: ThixPolicy.textMuted)
+                        : null,
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      statusText,
-                      style: TextStyle(
-                        color: statusColor,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (dispute['reason'] != null)
-                Text(
-                  dispute['reason'],
-                  style: TextStyle(color: Colors.grey[700]),
-                ),
-              const SizedBox(height: 8),
-              Text(
-                'Commande #${dispute['order_id']}',
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(Icons.access_time, size: 14, color: Colors.grey[500]),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Ouvert le ${DateFormat('dd/MM/yyyy').format(DateTime.parse(dispute['created_at']))}',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                  ),
-                ],
-              ),
-              if (dispute['last_message'] != null) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.message, size: 14, color: Colors.grey),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          dispute['last_message'],
-                          style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                  if (isOnline)
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: ThixPolicy.success,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: ThixPolicy.card, width: 2),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 12),
+
+              // Contenu
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            userName,
+                            style: ThixPolicy.labelStyle.copyWith(
+                              fontWeight: isUnread ? ThixPolicy.bold : ThixPolicy.regular,
+                              fontSize: 15,
+                              color: ThixPolicy.textMain,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (formattedTime.isNotEmpty)
+                          Text(
+                            formattedTime,
+                            style: ThixPolicy.captionStyle.copyWith(
+                              fontSize: 11,
+                              color: ThixPolicy.textMuted,
+                              fontWeight: isUnread ? ThixPolicy.semiBold : ThixPolicy.regular,
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        if (isTyping)
+                          SizedBox(
+                            width: 60,
+                            child: Text(
+                              'Écrit...',
+                              style: ThixPolicy.captionStyle.copyWith(
+                                fontSize: 12,
+                                color: ThixPolicy.primary,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          )
+                        else
+                          Expanded(
+                            child: Text(
+                              lastMessage.isEmpty ? 'Dernier message' : lastMessage,
+                              style: ThixPolicy.captionStyle.copyWith(
+                                fontSize: 13,
+                                color: isUnread ? ThixPolicy.textMain : ThixPolicy.textSecondary,
+                                fontWeight: isUnread ? ThixPolicy.semiBold : ThixPolicy.regular,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        if (unreadCount > 0)
+                          Container(
+                            margin: const EdgeInsets.only(left: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: ThixPolicy.primary,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$unreadCount',
+                              style: ThixPolicy.microStyle.copyWith(
+                                fontSize: 11,
+                                color: Colors.white,
+                                fontWeight: ThixPolicy.bold,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ],
           ),
         ),
       ),
     );
   }
+}
 
-  // ============================================================
-  // UTILITAIRES
-  // ============================================================
-  Widget _buildEmptyState(String title, String subtitle, IconData icon) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 80, color: Colors.grey[300]),
-          const SizedBox(height: 16),
-          Text(
-            title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            subtitle,
-            style: TextStyle(color: Colors.grey[600]),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () => context.push('/market/search'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: primaryBlue,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
-              ),
+class _DisputeCard extends StatelessWidget {
+  final Map<String, dynamic> dispute;
+  final VoidCallback onTap;
+
+  const _DisputeCard({required this.dispute, required this.onTap});
+
+  static const Map<String, Color> _statusColors = {
+    'open': ThixPolicy.gold,
+    'mediation': ThixPolicy.primary,
+    'resolved': ThixPolicy.success,
+    'closed': ThixPolicy.textMuted,
+  };
+
+  static const Map<String, String> _statusLabels = {
+    'open': 'En cours',
+    'mediation': 'Médiation',
+    'resolved': 'Résolu',
+    'closed': 'Fermé',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final id = dispute['id']?.toString() ?? '';
+    if (!_MessagesValidators.isValidId(id)) return const SizedBox.shrink();
+
+    final status = dispute['status']?.toString() ?? 'open';
+    final statusColor = _statusColors[status] ?? ThixPolicy.textMuted;
+    final statusText = _statusLabels[status] ?? 'Inconnu';
+    final reason = _MessagesValidators.sanitize(dispute['reason']?.toString(), maxLength: 200);
+    final orderId = dispute['order_id']?.toString() ?? '';
+    final createdDate = _MessagesValidators.formatFullDate(dispute['created_at']?.toString());
+    final lastMessage = _MessagesValidators.sanitize(dispute['last_message']?.toString(), maxLength: 100);
+
+    return Semantics(
+      button: true,
+      label: 'Litige $id, statut $statusText, commande $orderId',
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: ThixPolicy.card,
+          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+          border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
+          boxShadow: ThixPolicy.shadowSoft(opacity: 0.03),
+        ),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Litige #$id',
+                      style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16, color: ThixPolicy.textMain),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        statusText,
+                        style: ThixPolicy.captionStyle.copyWith(
+                          color: statusColor,
+                          fontSize: 12,
+                          fontWeight: ThixPolicy.semiBold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (reason.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(reason, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary)),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  'Commande #$orderId',
+                  style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.textMuted),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.access_time_rounded, size: 14, color: ThixPolicy.textMuted),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Ouvert le $createdDate',
+                      style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.textMuted),
+                    ),
+                  ],
+                ),
+                if (lastMessage.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: ThixPolicy.surfaceSoft,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.message_rounded, size: 14, color: ThixPolicy.textMuted),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            lastMessage,
+                            style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.textSecondary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
             ),
-            child: const Text('Découvrir des boutiques'),
           ),
-        ],
+        ),
       ),
-    );
-  }
-
-  // ✅ Modification de la signature pour accepter Map<dynamic, dynamic> ou Map<String, dynamic>
-  // On peut laisser Map<String, dynamic> et faire le cast à l'appel (déjà fait)
-  void _openChat(String conversationId, Map<String, dynamic> otherUser) {
-    context.push(
-      '/market/chat/$conversationId',
-      extra: {
-        'title': otherUser['name'] ?? 'Discussion',
-        'userName': otherUser['name'] ?? '',
-        'userAvatar': otherUser['avatar'],
-      },
-    );
-  }
-
-  void _openDispute(String disputeId) {
-    context.push('/market/dispute/$disputeId');
-  }
-
-  void _startVoiceCall() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => const VoiceCallSheet(),
     );
   }
 }
 
-// ============================================================
-// VOICE CALL SHEET
-// ============================================================
-class VoiceCallSheet extends StatelessWidget {
-  const VoiceCallSheet({super.key});
-
-  // ✅ Définition d'une constante locale pour primaryBlue
-  static const Color _primaryBlue = Color(0xFF1A73E8);
+class _VoiceCallSheet extends StatelessWidget {
+  const _VoiceCallSheet();
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: ThixPolicy.card,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            'Appel vocal temporaire',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: ThixPolicy.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.phone_in_talk_rounded, color: ThixPolicy.primary, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Appel vocal temporaire',
+                style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           Text(
             'Appel sécurisé - Non enregistré',
-            style: TextStyle(color: Colors.grey[600]),
+            style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted),
           ),
           const SizedBox(height: 24),
           Row(
             children: [
               Expanded(
-                child: _buildContactTile(
-                  'Vendeur',
-                  'Jean Dupont',
-                  'Électronique Pro',
-                  Icons.store,
+                child: _ContactTile(
+                  role: 'Vendeur',
+                  name: 'Jean Dupont',
+                  info: 'Électronique Pro',
+                  icon: Icons.store_rounded,
                 ),
               ),
               const SizedBox(width: 16),
               Expanded(
-                child: _buildContactTile(
-                  'Acheteur',
-                  'Marie Claire',
-                  'Achat #12345',
-                  Icons.shopping_bag,
+                child: _ContactTile(
+                  role: 'Acheteur',
+                  name: 'Marie Claire',
+                  info: 'Achat #12345',
+                  icon: Icons.shopping_bag_rounded,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.pop(context);
-              // Démarrer l'appel
-            },
-            icon: const Icon(Icons.call),
-            label: const Text('Démarrer l\'appel'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _primaryBlue, // ✅ Utilisation de la constante locale
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
+          Semantics(
+            button: true,
+            label: 'Démarrer l\'appel',
+            child: ElevatedButton.icon(
+              onPressed: () {
+                HapticFeedback.mediumImpact();
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Row(
+                      children: [
+                        const Icon(Icons.phone_in_talk_rounded, color: Colors.white, size: 20),
+                        const SizedBox(width: 8),
+                        const Text('Fonctionnalité en développement'),
+                      ],
+                    ),
+                    backgroundColor: ThixPolicy.primary,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+              icon: const Icon(Icons.call_rounded),
+              label: const Text('Démarrer l\'appel', style: TextStyle(fontWeight: ThixPolicy.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ThixPolicy.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
               ),
             ),
           ),
           const SizedBox(height: 16),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Annuler'),
+          Semantics(
+            button: true,
+            label: 'Annuler',
+            child: TextButton(
+              onPressed: () {
+                HapticFeedback.selectionClick();
+                Navigator.pop(context);
+              },
+              child: Text('Annuler', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary)),
+            ),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildContactTile(String role, String name, String info, IconData icon) {
+class _ContactTile extends StatelessWidget {
+  final String role;
+  final String name;
+  final String info;
+  final IconData icon;
+
+  const _ContactTile({
+    required this.role,
+    required this.name,
+    required this.info,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey[200]!),
-        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: ThixPolicy.border),
+        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
       ),
       child: Column(
         children: [
-          Icon(icon, size: 32, color: _primaryBlue), // ✅ Utilisation de la constante locale
+          Icon(icon, size: 32, color: ThixPolicy.primary),
           const SizedBox(height: 8),
           Text(
             role,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            style: ThixPolicy.captionStyle.copyWith(fontSize: 12, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.textMain),
           ),
           const SizedBox(height: 4),
           Text(
             name,
-            style: const TextStyle(fontWeight: FontWeight.bold),
+            style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain),
           ),
           const SizedBox(height: 2),
           Text(
             info,
-            style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+            style: ThixPolicy.captionStyle.copyWith(fontSize: 11, color: ThixPolicy.textMuted),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  const _EmptyState({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: ThixPolicy.textMuted.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 64, color: ThixPolicy.textMuted),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted),
+              textAlign: TextAlign.center,
+            ),
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(height: 24),
+              Semantics(
+                button: true,
+                label: actionLabel,
+                child: ElevatedButton(
+                  onPressed: onAction,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: ThixPolicy.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                  ),
+                  child: Text(actionLabel!, style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SkeletonList extends StatelessWidget {
+  const _SkeletonList();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      itemCount: 6,
+      itemBuilder: (_, __) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(height: 14, width: 150, color: Colors.grey.shade200),
+                  const SizedBox(height: 8),
+                  Container(height: 12, width: 200, color: Colors.grey.shade200),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
