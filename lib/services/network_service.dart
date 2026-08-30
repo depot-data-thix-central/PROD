@@ -141,34 +141,34 @@ class NetworkService extends ChangeNotifier {
     if (t == 'tendance' || t == 'trending') return 'popular';
     return t;
   }
-Future<List<NetworkPost>> getFeedPosts({
-  int limit = 20,
-  int? offset,
-  DateTime? lastCreatedAt,
-  String feedType = 'all',
-  int seed = 0,                      
-}) async {
-  final uid = currentUserId;
-  if (uid.isEmpty) return [];
 
-  limit = limit.clamp(1, 100);
-  final safeOffset = (offset ?? 0) < 0 ? 0 : (offset ?? 0);
-  final type = _normalizeFeedType(feedType);
+  Future<List<NetworkPost>> getFeedPosts({
+    int limit = 20,
+    int? offset,
+    DateTime? lastCreatedAt,
+    String feedType = 'all',
+    int seed = 0,                      
+  }) async {
+    final uid = currentUserId;
+    if (uid.isEmpty) return [];
 
-  try {
-    if (type == 'all') {
-      final res = await _supabase.rpc('get_smart_feed', params: {
-        'p_user_id': uid,
-        'p_limit': limit,
-        'p_offset': safeOffset,
-        'p_seed': seed,             
-      }).timeout(_requestTimeout);
+    limit = limit.clamp(1, 100);
+    final safeOffset = (offset ?? 0) < 0 ? 0 : (offset ?? 0);
+    final type = _normalizeFeedType(feedType);
 
-      return (res as List)
-          .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-    }
-    
+    try {
+      if (type == 'all') {
+        final res = await _supabase.rpc('get_smart_feed', params: {
+          'p_user_id': uid,
+          'p_limit': limit,
+          'p_offset': safeOffset,
+          'p_seed': seed,             
+        }).timeout(_requestTimeout);
+
+        return (res as List)
+            .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      }
 
       // ── Abonnements : uniquement les personnes suivies ──
       if (type == 'network') {
@@ -180,6 +180,7 @@ Future<List<NetworkPost>> getFeedPosts({
             .from('posts_view')
             .select()
             .inFilter('user_id', connIds.toList())
+            .isFilter('community_id', null)          // ✅ AJOUT
             .order('created_at', ascending: false)
             .range(safeOffset, safeOffset + limit - 1)
             .timeout(_requestTimeout);
@@ -195,6 +196,7 @@ Future<List<NetworkPost>> getFeedPosts({
             .from('posts_view')
             .select()
             .eq('is_public', true)
+            .isFilter('community_id', null)          // ✅ AJOUT
             .order('likes_count', ascending: false)
             .range(safeOffset, safeOffset + limit - 1)
             .timeout(_requestTimeout);
@@ -209,6 +211,7 @@ Future<List<NetworkPost>> getFeedPosts({
           .from('posts_view')
           .select()
           .eq('is_public', true)
+          .isFilter('community_id', null)            // ✅ AJOUT
           .order('created_at', ascending: false)
           .range(safeOffset, safeOffset + limit - 1)
           .timeout(_requestTimeout);
@@ -270,7 +273,6 @@ Future<List<NetworkPost>> getFeedPosts({
   // POSTS CRUD (avec validation XSS + ownership)
   // ─────────────────────────────────────────────────────────────
 
-  // ✅ La fonction manquante est ici !
   Future<NetworkPost?> getPostById(String postId) async {
     try {
       final response = await _supabase
@@ -649,7 +651,6 @@ Future<List<NetworkPost>> getFeedPosts({
       final feedPostId = row['feed_post_id']?.toString();
       if (feedPostId == null || feedPostId.isEmpty) return null;
 
-      // Cette fonction est désormais disponible !
       return await getPostById(feedPostId);
     } catch (e) {
       debugPrint('[PostService] Fallback repostPost: $e');
