@@ -434,7 +434,7 @@ class _LiveBadgeState extends State<_LiveBadge> with SingleTickerProviderStateMi
         mainAxisSize: MainAxisSize.min,
         children: [
           AnimatedBuilder(
-            animation: _ctrl,
+            listenable: _ctrl, // <-- C'est ici que se trouvait l'erreur (remplacement de 'animation' par 'listenable')
             builder: (_, child) => Opacity(
               opacity: 0.5 + _ctrl.value * 0.5,
               child: child,
@@ -455,6 +455,7 @@ class _LiveBadgeState extends State<_LiveBadge> with SingleTickerProviderStateMi
     );
   }
 }
+
 
 class AnimatedBuilder extends AnimatedWidget {
   final Widget Function(BuildContext, Widget?) builder;
