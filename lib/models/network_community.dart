@@ -5,10 +5,10 @@ class NetworkCommunity {
   final String id;
   final String name;
   final String? description;
-  final String? logoUrl;          // ✅ AJOUT : URL du logo
+  final String? logoUrl;          //  : URL du logo
   final String? bannerUrl;
-  final String privacy;           // ✅ AJOUT : 'public', 'private', 'connections'
-  final String? domain;           // ✅ AJOUT : Correction de l'erreur de compilation
+  final String privacy;           //  'public', 'private', 'connections'
+  final String? domain;           // : Correction de l'erreur de compilation
   final int membersCount;
   final int postsCount;
   final String? createdBy;
@@ -22,8 +22,8 @@ class NetworkCommunity {
     this.description,
     this.logoUrl,
     this.bannerUrl,
-    this.privacy = 'public',      // ✅ Valeur par défaut
-    this.domain,                  // ✅ AJOUT
+    this.privacy = 'public',      //  Valeur par défaut
+    this.domain,                  // AJOUT
     required this.membersCount,
     required this.postsCount,
     this.createdBy,
@@ -40,7 +40,7 @@ class NetworkCommunity {
         logoUrl = null,
         bannerUrl = null,
         privacy = 'public',
-        domain = null,            // ✅ AJOUT
+        domain = null,            //  AJOUT
         membersCount = 0,
         postsCount = 0,
         createdBy = null,
@@ -88,7 +88,7 @@ class NetworkCommunity {
       logoUrl: json['logo_url']?.toString() ?? json['logoUrl']?.toString(),
       bannerUrl: json['banner_url']?.toString() ?? json['bannerUrl']?.toString(),
       privacy: json['privacy']?.toString() ?? 'public',
-      domain: json['domain']?.toString(), // ✅ AJOUT
+      domain: json['domain']?.toString(), 
       membersCount: (json['members_count'] as int?) ?? 0,
       postsCount: (json['posts_count'] as int?) ?? 0,
       createdBy: json['created_by']?.toString(),
@@ -107,7 +107,7 @@ class NetworkCommunity {
     'logo_url': logoUrl,
     'banner_url': bannerUrl,
     'privacy': privacy,
-    'domain': domain,                     // ✅ AJOUT
+    'domain': domain,                     
     'members_count': membersCount,
     'posts_count': postsCount,
     'created_by': createdBy,
@@ -121,7 +121,7 @@ class NetworkCommunity {
     String? logoUrl,
     String? bannerUrl,
     String? privacy,
-    String? domain,                       // ✅ AJOUT
+    String? domain,                       
     int? membersCount,
     int? postsCount,
     String? createdBy,
@@ -136,7 +136,7 @@ class NetworkCommunity {
       logoUrl: logoUrl ?? this.logoUrl,
       bannerUrl: bannerUrl ?? this.bannerUrl,
       privacy: privacy ?? this.privacy,
-      domain: domain ?? this.domain,      // ✅ AJOUT
+      domain: domain ?? this.domain,      
       membersCount: membersCount ?? this.membersCount,
       postsCount: postsCount ?? this.postsCount,
       createdBy: createdBy ?? this.createdBy,
