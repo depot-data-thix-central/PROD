@@ -280,7 +280,8 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
     }
   }
 
-  void _handlePresenceLeave(RealtimePresenceLeaveEvent leave) {
+  void _handlePresenceLeave(dynamic leave) { // Remplacer RealtimePresenceLeaveEvent par dynamic
+
     if (_isDisposed) return;
 
     try {
