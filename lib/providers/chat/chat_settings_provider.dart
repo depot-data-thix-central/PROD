@@ -1,11 +1,10 @@
 // lib/providers/chat/chat_settings_provider.dart
 import 'dart:io';
 import 'dart:async';
-
 import 'package:flutter/foundation.dart'; // Ajouté pour debugPrint
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'package:thix_id/providers/chat/chat_settings_provider.dart';
 import 'package:thix_id/models/chat/chat_user.dart';
 import 'package:thix_id/models/chat/chat_settings.dart';
 import 'package:thix_id/services/chat/chat_settings_service.dart';
