@@ -107,8 +107,8 @@ Future<T> _dashRetry<T>(
   }
 }
 
-// ============================================================================
-// CACHE (Thread-safe singleton)
+/// ============================================================================
+// CACHE (Singleton simple)
 // ============================================================================
 class DashboardCache {
   static final DashboardCache _instance = DashboardCache._internal();
@@ -117,36 +117,25 @@ class DashboardCache {
 
   ThixProfile? _lastProfile;
   DateTime? _lastFetch;
-  final _lock = Object();
 
   ThixProfile? get lastProfile => _lastProfile;
 
   bool get isStale {
-    synchronized(_lock) {
-      if (_lastFetch == null) return true;
-      return DateTime.now().difference(_lastFetch!).inMinutes > _kCacheStaleMinutes;
-    }
+    if (_lastFetch == null) return true;
+    return DateTime.now().difference(_lastFetch!).inMinutes > _kCacheStaleMinutes;
   }
 
   void update(ThixProfile profile) {
-    synchronized(_lock) {
-      _lastProfile = profile;
-      _lastFetch = DateTime.now();
-    }
+    _lastProfile = profile;
+    _lastFetch = DateTime.now();
   }
 
   void clear() {
-    synchronized(_lock) {
-      _lastProfile = null;
-      _lastFetch = null;
-    }
+    _lastProfile = null;
+    _lastFetch = null;
   }
 }
 
-// Extension pour synchronized (simplification)
-extension _Synchronized on Object {
-  T synchronized<T>(Object lock, T Function() fn) => fn();
-}
 
 // ============================================================================
 // STATE MANAGEMENT
