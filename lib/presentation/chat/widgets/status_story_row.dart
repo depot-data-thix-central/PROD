@@ -150,8 +150,9 @@ class StatusStoryRow extends ConsumerWidget {
                     ? l10n.t('status_my_status_unseen')
                     : l10n.t('status_my_status_seen'))
                 : (hasUnseen
-                    ? l10n.t('status_user_unseen', args: [displayName])
-                    : l10n.t('status_user_seen', args: [displayName]));
+                    ? "${l10n.t('status_user_unseen')} $displayName" 
+: "${l10n.t('status_user_seen')} $displayName");
+
 
             return _StatusAvatar(
               label: displayName,
