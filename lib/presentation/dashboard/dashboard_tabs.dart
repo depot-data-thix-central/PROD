@@ -974,7 +974,7 @@ class _DocumentsTabState extends State<DocumentsTab> {
                       final docId = _DashValidators.sanitize(data['doc_id'] as String?, maxLength: 40);
                       final status = (data['status'] as String?) ?? 'pending';
                       final expiresAt = _DashValidators.safeParseDate(data['expires_at']);
-                      final dateStr = _DashValidators.formatDate(expiresAt, l10n.localeName);
+                      final dateStr = _DashValidators.formatDate(expiresAt, Localizations.localeOf(context).languageCode);
                       final chip = _DocStatusChip.from(status, l10n);
 
                       return DocRow(
@@ -1298,7 +1298,7 @@ class _PaymentsTabState extends State<PaymentsTab> {
                   final method = _DashValidators.sanitize(data['method'] as String?, maxLength: 40);
                   final status = (data['status'] as String?) ?? 'paid';
                   final dt = _DashValidators.safeParseDate(data['created_at']);
-                  final dateStr = _DashValidators.formatDate(dt, l10n.localeName);
+                  final dateStr = _DashValidators.formatDate(expiresAt, Localizations.localeOf(context).languageCode);
                   final amountStr = _DashValidators.formatAmount(amount, currency, l10n.localeName);
                   final symbol = currency == 'USD' ? '\$' : currency;
                   final txId = data['tx_ref']?.toString() ?? data.hashCode.toString();
@@ -1333,7 +1333,7 @@ class _PaymentsTabState extends State<PaymentsTab> {
                                   color: ThixPolicy.textMuted,
                                 ),
                               ),
-                            ],
+                            ], 
                           ),
                         ),
                         Text(
@@ -1609,8 +1609,7 @@ class _SecurityTabState extends State<SecurityTab> {
                         maxLength: 60,
                       );
                       final dt = _DashValidators.safeParseDate(data['created_at']);
-                      final dateStr = _DashValidators.formatDateTime(dt, l10n.localeName);
-
+                      final dateStr = _DashValidators.formatDate(expiresAt, Localizations.localeOf(context).languageCode);
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 6),
                         child: Row(
