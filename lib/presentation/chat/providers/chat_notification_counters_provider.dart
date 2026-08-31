@@ -1,46 +1,24 @@
-// lib/presentation/chat/providers/notification_counters_provider.dart
-//
-// ============================================================================
-// NOTIFICATION COUNTERS — Realtime + DB sync
-// ============================================================================
-//
-// Centralise les compteurs de notifications pour la bottom bar :
-//   - unreadMessages    (messages non lus dans toutes conversations)
-//   - missedCalls       (appels manqués non lus)
-//   - newConnections    (demandes de connexion en attente)
-//   - pendingEscalations (escalades assignées non traitées)
-//
-// Architecture :
-//   1. `refresh()` au démarrage (batch query unique)
-//   2. 3 channels Realtime filtrés par user (events incrémentaux)
-//   3. Debounce 500ms sur updates pour éviter le spam
-//   4. Rollback optimiste si action serveur échoue
-//
-// ============================================================================
-
+// lib/presentation/chat/providers/chat_notification_counters_provider.dart
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:thix_id/auth/auth_controller.dart' show currentUserProvider;
-import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
-    show supabaseClientProvider;
+
+import 'package:thix_id/auth/auth_controller.dart';
 import 'package:thix_id/models/app_user.dart';
-import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
-
-
+import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
 const Duration _kDbTimeout = Duration(seconds: 10);
 const Duration _kDebounceDelay = Duration(milliseconds: 500);
-const int _kMaxCounterValue = 9999; // Protection DoS + UI cap
+const int _kMaxCounterValue = 9999;
 const int _kMaxRetries = 2;
 const Duration _kRetryDelay = Duration(milliseconds: 500);
 
-/// Status values pour `escalation_steps.status`
+/// Status values pour escalation_steps.status
 enum EscalationStatus {
   pending(0),
   inProgress(1),
@@ -51,10 +29,7 @@ enum EscalationStatus {
   const EscalationStatus(this.code);
 }
 
-/// Status values pour `connections.status`
 const String _kConnectionPending = 'pending';
-
-/// Status values pour `call_history.status`
 const String _kCallStatusMissed = 'missed';
 
 // ============================================================================
@@ -63,7 +38,6 @@ const String _kCallStatusMissed = 'missed';
 class _NotificationValidators {
   _NotificationValidators._();
 
-  /// Valide un UUID v4 strict
   static bool isValidUuid(String? id) {
     if (id == null || id.isEmpty) return false;
     return RegExp(
@@ -72,14 +46,12 @@ class _NotificationValidators {
     ).hasMatch(id);
   }
 
-  /// Clamp un compteur à [_kMaxCounterValue]
   static int safeCount(int value) {
     if (value < 0) return 0;
     if (value > _kMaxCounterValue) return _kMaxCounterValue;
     return value;
   }
 
-  /// Extrait et valide un user_id d'un payload Realtime
   static String? extractUserId(Map<String, dynamic> record, String key) {
     final raw = record[key];
     if (raw == null) return null;
@@ -92,10 +64,6 @@ class _NotificationValidators {
 // STATE
 // ============================================================================
 
-/// État des compteurs de notifications.
-///
-/// Immuable, exposé via StateNotifier. Chaque champ est borné entre
-/// 0 et [_kMaxCounterValue] pour protection DoS et UI.
 class NotificationCounters {
   final int unreadMessages;
   final int missedCalls;
@@ -113,12 +81,10 @@ class NotificationCounters {
     this.isRefreshing = false,
   });
 
-  /// Total de toutes les notifications (pour le badge global)
   int get total => _NotificationValidators.safeCount(
         unreadMessages + missedCalls + newConnections + pendingEscalations,
       );
 
-  /// Vrai si au moins une notification existe
   bool get hasAny => total > 0;
 
   NotificationCounters copyWith({
@@ -153,18 +119,6 @@ class NotificationCounters {
 // NOTIFIER
 // ============================================================================
 
-/// Notifier pour les compteurs de notifications.
-///
-/// **Cycle de vie** :
-/// - Créé au premier `ref.watch`
-/// - S'abonne aux changements d'auth (cleanup/reconnect auto)
-/// - Dispose proprement les 3 channels Realtime
-///
-/// **Sécurité** :
-/// - Validation UUID sur tous les user_ids
-/// - Sanitization des payloads Realtime
-/// - Protection DoS (max 9999 par compteur)
-/// - Pas de stack traces exposées à l'UI
 class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
   final Ref _ref;
 
@@ -176,7 +130,7 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
   RealtimeChannel? _missedCallsChannel;
   RealtimeChannel? _connectionsChannel;
   RealtimeChannel? _escalationsChannel;
-  StreamSubscription? _authSubscription;
+  ProviderSubscription? _authSubscription;
 
   NotificationCountersNotifier(this._ref)
       : super(const NotificationCounters()) {
@@ -191,15 +145,12 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
   void dispose() {
     _isDisposed = true;
     _refreshDebounce?.cancel();
-    _authSubscription?.cancel();
+    _authSubscription?.close();
     _cleanupChannels();
     debugPrint('[NotificationCounters] 👋 Disposed');
     super.dispose();
   }
 
-  // ── AUTH BINDING ─────────────────────────────────────────────────────
-
-  /// Écoute les changements d'utilisateur (logout/login/switch).
   void _bindAuthChanges() {
     _authSubscription = _ref.listen<AppUser?>(
       currentUserProvider,
@@ -224,8 +175,6 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
     );
   }
 
-  // ── INIT ─────────────────────────────────────────────────────────────
-
   Future<void> _init() async {
     if (_isDisposed) return;
 
@@ -236,18 +185,13 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
     }
 
     _userId = userId;
-    debugPrint('[NotificationCounters] 🌐 Init for user ${_obfuscate(userId)}');
+    debugPrint(
+        '[NotificationCounters] 🌐 Init for user ${_obfuscate(userId)}');
 
     await refresh();
     _subscribeRealtime();
   }
 
-  // ── REFRESH (debounced, race-safe) ───────────────────────────────────
-
-  /// Rafraîchit tous les compteurs.
-  ///
-  /// Protection contre les appels concurrents et debouncing automatique
-  /// pour éviter le spam sur updates Realtime groupés.
   Future<void> refresh({bool immediate = false}) async {
     if (_isDisposed || _userId == null) return;
 
@@ -268,8 +212,7 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
     debugPrint('[NotificationCounters] 🔄 Refreshing counters');
 
     try {
-      // Batch les 3 count queries pour réduire latence
-      final results = await Future.wait([
+      final results = await Future.wait<dynamic>([
         _safeCountMissedCalls(),
         _safeCountConnections(),
         _safeCountEscalations(),
@@ -285,7 +228,8 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
         clearError: true,
       );
       debugPrint('[NotificationCounters] ✓ Counters refreshed: '
-          'calls=${results[0]}, connections=${results[1]}, escalations=${results[2]}');
+          'calls=${results[0]}, connections=${results[1]}, '
+          'escalations=${results[2]}');
     } catch (e) {
       debugPrint('[NotificationCounters] ❌ Refresh failed: $e');
       if (!_isDisposed) {
@@ -298,8 +242,6 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
       _isRefreshInProgress = false;
     }
   }
-
-  // ── COUNT QUERIES ────────────────────────────────────────────────────
 
   Future<int> _safeCountMissedCalls() async {
     int attempt = 0;
@@ -349,13 +291,16 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
   }
 
   Future<int> _safeCountEscalations() async {
+    final userId = _userId;
+    if (userId == null) return 0;
+
     int attempt = 0;
     while (true) {
       try {
         final res = await _client
             .from('escalation_steps')
             .select('id')
-            .eq('to_agent_id', _userId!)
+            .eq('to_agent_id', userId)
             .eq('status', EscalationStatus.pending.code)
             .timeout(_kDbTimeout);
         return _NotificationValidators.safeCount((res as List).length);
@@ -370,8 +315,6 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
       }
     }
   }
-
-  // ── REALTIME SUBSCRIPTIONS ───────────────────────────────────────────
 
   void _subscribeRealtime() {
     if (_isDisposed || _userId == null) return;
@@ -388,22 +331,21 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
   }
 
   void _subscribeMissedCalls() {
+    final userId = _userId;
+    if (userId == null) return;
+
     _missedCallsChannel = _client
-        .channel('thix_missed_calls_$_userId')
+        .channel('thix_missed_calls_$userId')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
           table: 'call_history',
-          filter: PostgresChangeFilter(
-            type: PostgresFilterType.eq,
-            column: 'user_id',
-            value: _userId,
-          ),
           callback: (payload) {
             if (_isDisposed) return;
             final record = payload.newRecord;
+            final userIdFromRecord = record['user_id']?.toString();
             final status = record['status']?.toString();
-            if (status == _kCallStatusMissed) {
+            if (userIdFromRecord == userId && status == _kCallStatusMissed) {
               state = state.copyWith(missedCalls: state.missedCalls + 1);
               debugPrint('[NotificationCounters] ➕ Missed call received');
             }
@@ -413,11 +355,6 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
           event: PostgresChangeEvent.update,
           schema: 'public',
           table: 'call_history',
-          filter: PostgresChangeFilter(
-            type: PostgresFilterType.eq,
-            column: 'user_id',
-            value: _userId,
-          ),
           callback: (_) {
             if (!_isDisposed) refresh();
           },
@@ -426,18 +363,14 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
           event: PostgresChangeEvent.delete,
           schema: 'public',
           table: 'call_history',
-          filter: PostgresChangeFilter(
-            type: PostgresFilterType.eq,
-            column: 'user_id',
-            value: _userId,
-          ),
           callback: (_) {
             if (!_isDisposed) refresh();
           },
         )
         .subscribe((status, [error]) {
           if (status == RealtimeSubscribeStatus.subscribed) {
-            debugPrint('[NotificationCounters] ✓ Missed calls channel subscribed');
+            debugPrint(
+                '[NotificationCounters] ✓ Missed calls channel subscribed');
           } else if (error != null) {
             debugPrint('[NotificationCounters] ❌ Missed calls error: $error');
           }
@@ -445,8 +378,11 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
   }
 
   void _subscribeConnections() {
+    final userId = _userId;
+    if (userId == null) return;
+
     _connectionsChannel = _client
-        .channel('thix_connections_$_userId')
+        .channel('thix_connections_$userId')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
@@ -461,8 +397,9 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
             final status = record['status']?.toString();
 
             if (status == _kConnectionPending &&
-                (requesterId == _userId || responderId == _userId)) {
-              state = state.copyWith(newConnections: state.newConnections + 1);
+                (requesterId == userId || responderId == userId)) {
+              state = state.copyWith(
+                  newConnections: state.newConnections + 1);
               debugPrint('[NotificationCounters] ➕ New connection request');
             }
           },
@@ -485,7 +422,8 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
         )
         .subscribe((status, [error]) {
           if (status == RealtimeSubscribeStatus.subscribed) {
-            debugPrint('[NotificationCounters] ✓ Connections channel subscribed');
+            debugPrint(
+                '[NotificationCounters] ✓ Connections channel subscribed');
           } else if (error != null) {
             debugPrint('[NotificationCounters] ❌ Connections error: $error');
           }
@@ -493,22 +431,22 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
   }
 
   void _subscribeEscalations() {
+    final userId = _userId;
+    if (userId == null) return;
+
     _escalationsChannel = _client
-        .channel('thix_escalations_$_userId')
+        .channel('thix_escalations_$userId')
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
           table: 'escalation_steps',
-          filter: PostgresChangeFilter(
-            type: PostgresFilterType.eq,
-            column: 'to_agent_id',
-            value: _userId,
-          ),
           callback: (payload) {
             if (_isDisposed) return;
             final record = payload.newRecord;
+            final toAgentId = record['to_agent_id']?.toString();
             final status = record['status'];
-            if (status == EscalationStatus.pending.code) {
+            if (toAgentId == userId &&
+                status == EscalationStatus.pending.code) {
               state = state.copyWith(
                   pendingEscalations: state.pendingEscalations + 1);
               debugPrint('[NotificationCounters] ➕ New escalation assigned');
@@ -519,30 +457,20 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
           event: PostgresChangeEvent.update,
           schema: 'public',
           table: 'escalation_steps',
-          filter: PostgresChangeFilter(
-            type: PostgresFilterType.eq,
-            column: 'to_agent_id',
-            value: _userId,
-          ),
           callback: (_) {
             if (!_isDisposed) refresh();
           },
         )
         .subscribe((status, [error]) {
           if (status == RealtimeSubscribeStatus.subscribed) {
-            debugPrint('[NotificationCounters] ✓ Escalations channel subscribed');
+            debugPrint(
+                '[NotificationCounters] ✓ Escalations channel subscribed');
           } else if (error != null) {
             debugPrint('[NotificationCounters] ❌ Escalations error: $error');
           }
         });
   }
 
-  // ── ACTIONS ──────────────────────────────────────────────────────────
-
-  /// Marque tous les appels manqués comme lus.
-  ///
-  /// **Rollback automatique** si la requête serveur échoue : le compteur
-  /// est restauré à sa valeur précédente.
   Future<void> clearMissedCalls() async {
     if (_userId == null) return;
 
@@ -560,7 +488,8 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
           .timeout(_kDbTimeout);
       debugPrint('[NotificationCounters] ✓ Missed calls marked as read');
     } catch (e) {
-      debugPrint('[NotificationCounters] ❌ Mark read failed, rollback: $e');
+      debugPrint(
+          '[NotificationCounters] ❌ Mark read failed, rollback: $e');
       if (!_isDisposed) {
         state = state.copyWith(
           missedCalls: previousCount,
@@ -570,25 +499,20 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
     }
   }
 
-  /// Réinitialise le compteur de nouvelles connexions (côté client).
   void clearNewConnections() {
     state = state.copyWith(newConnections: 0);
     debugPrint('[NotificationCounters] 🧹 Cleared connections counter');
   }
 
-  /// Réinitialise le compteur d'escalades en attente (côté client).
   void clearPendingEscalations() {
     state = state.copyWith(pendingEscalations: 0);
     debugPrint('[NotificationCounters] 🧹 Cleared escalations counter');
   }
 
-  /// Réinitialise le compteur de messages non lus (côté client).
   void clearUnreadMessages() {
     state = state.copyWith(unreadMessages: 0);
     debugPrint('[NotificationCounters] 🧹 Cleared messages counter');
   }
-
-  // ── CLEANUP ──────────────────────────────────────────────────────────
 
   void _cleanupChannels() {
     debugPrint('[NotificationCounters] 🧹 Cleaning up channels');
@@ -614,8 +538,6 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
     }
   }
 
-  // ── HELPERS ──────────────────────────────────────────────────────────
-
   String _obfuscate(String? s) {
     if (s == null || s.length <= 8) return '***';
     return '${s.substring(0, 4)}...${s.substring(s.length - 4)}';
@@ -626,52 +548,35 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
 // PROVIDERS
 // ============================================================================
 
-/// Provider principal pour les compteurs de notifications.
-///
-/// Usage :
-/// ```dart
-/// final counters = ref.watch(notificationCountersProvider);
-/// final badge = counters.total;
-/// final hasNotifs = counters.hasAny;
-/// ```
 final notificationCountersProvider = StateNotifierProvider<
     NotificationCountersNotifier, NotificationCounters>((ref) {
   return NotificationCountersNotifier(ref);
 });
 
-// ── DERIVED PROVIDERS (rebuild optimization) ─────────────────────────
-
-/// Nombre total de notifications (pour badge global).
 final totalNotificationsProvider = Provider<int>((ref) {
   return ref.watch(notificationCountersProvider).total;
 });
 
-/// Vrai si au moins une notification existe.
 final hasNotificationsProvider = Provider<bool>((ref) {
   return ref.watch(notificationCountersProvider).hasAny;
 });
 
-/// Nombre d'appels manqués non lus.
 final missedCallsCountProvider = Provider<int>((ref) {
   return ref.watch(notificationCountersProvider).missedCalls;
 });
 
-/// Nombre de demandes de connexion en attente.
 final pendingConnectionsCountProvider = Provider<int>((ref) {
   return ref.watch(notificationCountersProvider).newConnections;
 });
 
-/// Nombre d'escalades assignées non traitées.
 final pendingEscalationsCountProvider = Provider<int>((ref) {
   return ref.watch(notificationCountersProvider).pendingEscalations;
 });
 
-/// Nombre de messages non lus.
 final unreadMessagesCountProvider = Provider<int>((ref) {
   return ref.watch(notificationCountersProvider).unreadMessages;
 });
 
-/// Dernière erreur (pour debug UI / toast).
 final notificationCountersErrorProvider = Provider<String?>((ref) {
   return ref.watch(notificationCountersProvider).lastError;
 });
