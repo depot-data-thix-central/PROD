@@ -1,7 +1,6 @@
 // lib/presentation/home/dashboard_tabs.dart
 import 'dart:async';
 import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -10,13 +9,12 @@ import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/thix_profile.dart';
 import 'package:thix_id/nav.dart';
 import 'package:thix_id/services/document_service.dart';
-
+import 'package:thix_id/models/app_user.dart';
 import 'dashboard_ui.dart';
 import 'dashboard_editors.dart';
 
