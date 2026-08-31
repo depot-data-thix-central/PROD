@@ -1277,21 +1277,22 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
   }
 
   String _fmt(DateTime d, AppLocalizations l10n) {
-    final localDate = d.toLocal();
-    final now = DateTime.now();
-    final day = DateTime(localDate.year, localDate.month, localDate.day);
-    final today = DateTime(now.year, now.month, now.day);
+  final localDate = d.toLocal();
+  final now = DateTime.now();
+  final day = DateTime(localDate.year, localDate.month, localDate.day);
+  final today = DateTime(now.year, now.month, now.day);
 
-    if (day == today) return DateFormat('HH:mm').format(localDate);
-    if (day == today.subtract(const Duration(days: 1))) return l10n.t('chatlist_yesterday');
-    if (now.difference(localDate).inDays < 7) {
-      try {
-        return DateFormat('EEEE', l10n.localeName).format(localDate);
-      } catch (_) {
-        return DateFormat('EEEE', 'fr_FR').format(localDate);
-      }
+  if (day == today) return DateFormat('HH:mm').format(localDate);
+  if (day == today.subtract(const Duration(days: 1))) return l10n.t('chatlist_yesterday');
+  if (now.difference(localDate).inDays < 7) {
+    try {
+      // Utilisation de Localizations.localeOf(context).languageCode à la place de l10n.localeName
+      return DateFormat('EEEE', Localizations.localeOf(context).languageCode).format(localDate);
+    } catch (_) {
+      return DateFormat('EEEE', 'fr_FR').format(localDate);
     }
-    return DateFormat('dd/MM/yy').format(localDate);
+  }
+  return DateFormat('dd/MM/yy').format(localDate);
   }
 }
 
