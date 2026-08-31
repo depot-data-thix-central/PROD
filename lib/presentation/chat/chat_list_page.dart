@@ -526,7 +526,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
         for (final c in state.filtered) {
       if (c.isGroup) continue;
       final otherUserId = c.participantIds.firstWhere((id) => id != currentUserId, orElse: () => '');
-      if (otherUserId.isNotEmpty && onlineUserIds.onlineUsers.contains(otherUserId)) { // 👈 Parenthèse ajoutée ici
+      if (otherUserId.isNotEmpty && onlineUserIds.onlineUserIds.contains(otherUserId)) {
         if (seenUserIds.add(otherUserId)) {
           onlineContacts.add(c);
         }
@@ -703,8 +703,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
                                 ),
                                 boxShadow: ThixPolicy.shadowSoft(opacity: 0.02),
                               ),
-                              child: _chatList(state.filtered, currentUserId, currentUserName, onlineUserIds.onlineUsers, l10n),
-
+                              child: _chatList(state.filtered, currentUserId, currentUserName, onlineUserIds.onlineUserIds, l10n),
                             ),
                           ),
 
