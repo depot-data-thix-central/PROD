@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/providers/auth/auth_controller.dart';
+import 'package:thix_id/auth/auth_controller.dart';
 
 import 'package:thix_id/presentation/chat/profile/chat_profile_page.dart';
 import 'package:thix_id/providers/chat/chat_settings_provider.dart';
@@ -47,7 +47,7 @@ class _ChatSettingsPageState extends ConsumerState<ChatSettingsPage> {
       return;
     }
 
-    debugPrint('[Settings]  Loading settings for user: $userId');
+    debugPrint('[Settings] 🔄 Loading settings for user: $userId');
     try {
       await ref.read(chatSettingsProvider.notifier).load(userId);
       debugPrint('[Settings] ✓ Settings loaded successfully');
@@ -197,7 +197,7 @@ class _ChatSettingsPageState extends ConsumerState<ChatSettingsPage> {
           : ListView(
               padding: const EdgeInsets.symmetric(vertical: 16),
               children: [
-                // ─ Apparence ──
+                // ── Apparence ──
                 ChatSettingsSection(
                   title: l10n.t('settings_section_appearance'),
                   children: [
