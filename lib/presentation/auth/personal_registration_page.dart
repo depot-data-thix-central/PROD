@@ -12,8 +12,7 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:zxcvbn/zxcvbn.dart';
-
-import 'package:thix_id/auth/supabase_auth_manager.dart' show AuthException, AuthErrorCode;
+import 'package:thix_id/auth/supabase_auth_manager.dart' show AuthErrorCode;
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
