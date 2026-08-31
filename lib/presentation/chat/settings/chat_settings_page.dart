@@ -8,7 +8,7 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/presentation/auth/providers/auth_controller.dart'; // Assurez-vous que ce provider existe
 import 'package:thix_id/presentation/chat/profile/chat_profile_page.dart';
-import 'package:thix_id/presentation/chat/providers/chat_settings_provider.dart';
+import 'package:thix_id/providers/chat/chat_settings_provider.dart';
 import 'package:thix_id/presentation/chat/settings/chat_appearance_settings.dart';
 import 'package:thix_id/presentation/chat/settings/chat_data_settings.dart';
 import 'package:thix_id/presentation/chat/settings/chat_notification_settings.dart';
