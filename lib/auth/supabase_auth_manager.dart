@@ -1,4 +1,8 @@
+// lib/auth/auth_manager.dart (interface inchangée)
+// lib/auth/supabase_auth_manager.dart
+
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthException;
 import 'package:supabase_flutter/supabase_flutter.dart' as sup show AuthException;
@@ -11,17 +15,161 @@ import 'package:thix_id/services/push_notification_service.dart';
 import 'package:thix_id/services/supabase_safe_write.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
 
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+const Duration _kRequestTimeout = Duration(seconds: 15);
+const Duration _kLongRequestTimeout = Duration(seconds: 30);
+const Duration _kRetryDelay = Duration(milliseconds: 400);
+const int _kMaxRetries = 1;
+const int _kMinPasswordLength = 8;
+const int _kMaxEmailLength = 254;
+const int _kMaxPasswordLength = 128;
+const int _kMaxDisplayNameLength = 100;
+const int _kMaxTokenLength = 100;
+const int _kMaxChatLength = 21;
+const int _kMaxCountryCodeLength = 3;
+
+const String _kDefaultDisplayName = 'Utilisateur THIX';
+const String _kPendingThixId = 'THIX-PENDING';
+
+const List<String> _kPendingThixIdPrefixes = [
+  'THIX-PENDING',
+  'THIX-000000',
+  'THIX-PENDING-',
+  'THIX-CD-FALLBACK',
+  'THIX-0',
+];
+
+// ============================================================================
+// AUTH ERROR CODES (découplage UI/Service)
+// ============================================================================
+
+/// Codes d'erreur authentification.
+/// L'UI se charge de traduire chaque code via i18n.
+enum AuthErrorCode {
+  identifierRequired,
+  passwordRequired,
+  thixIdLoginNotAvailable,
+  invalidEmail,
+  passwordTooShort,
+  signUpFailed,
+  otpSent,
+  emailNotVerified,
+  serverMisconfiguration,
+  signInFailed,
+  accountAlreadyExists,
+  accountExistsWrongPassword,
+  accountExistsNewOtpSent,
+  invalidOtp,
+  otpExpired,
+  networkError,
+  rateLimit,
+  technicalError,
+  sessionExpired,
+  userMismatch,
+  profileUpdateFailed,
+  markEmailVerifiedFailed,
+  qrTokenGenerationFailed,
+  finalizeRegistrationFailed,
+  consumeQrTokenFailed,
+  resendOtpFailed,
+  phoneAuthNotAvailable,
+  deleteAccountNotAvailable,
+  updateEmailFailed,
+  resetPasswordFailed,
+}
+
+/// Exception d'authentification avec code découplé de l'UI.
+class AuthException implements Exception {
+  final AuthErrorCode code;
+  final Map<String, dynamic>? data; // Données additionnelles pour i18n
+  final String? rawMessage; // Message brut pour debug uniquement
+
+  AuthException(this.code, {this.data, this.rawMessage});
+
+  @override
+  String toString() => 'AuthException(code: $code, data: $data)';
+}
+
+// ============================================================================
+// VALIDATORS
+// ============================================================================
+class _AuthValidators {
+  _AuthValidators._();
+
+  /// Sanitize une entrée utilisateur (XSS + caractères de contrôle)
+  static String sanitize(String? input, {int maxLength = 500}) {
+    if (input == null || input.trim().isEmpty) return '';
+    var s = input
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
+        .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+    return s.length > maxLength ? s.substring(0, maxLength) : s;
+  }
+
+  static bool isValidEmail(String email) {
+    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
+  }
+
+  static String normalizeEmail(String email) {
+    return sanitize(email, maxLength: _kMaxEmailLength).toLowerCase();
+  }
+
+  static bool isValidPassword(String password) {
+    return password.length >= _kMinPasswordLength && password.length <= _kMaxPasswordLength;
+  }
+}
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+Future<T> _authRetry<T>(
+  Future<T> Function() fn, {
+  required String label,
+  int maxRetries = _kMaxRetries,
+  Duration timeout = _kRequestTimeout,
+}) async {
+  int attempt = 0;
+  while (true) {
+    try {
+      return await fn().timeout(timeout);
+    } on TimeoutException {
+      attempt++;
+      if (attempt > maxRetries) {
+        debugPrint('[Auth] ❌ $label: timeout after $attempt attempts');
+        throw AuthException(AuthErrorCode.networkError, rawMessage: 'timeout');
+      }
+      debugPrint('[Auth] ⏱️ $label timeout — retry $attempt/$maxRetries');
+      await Future.delayed(_kRetryDelay);
+    } on sup.AuthException {
+      rethrow; // Pas de retry sur erreurs auth (credentials invalides, etc.)
+    } catch (e) {
+      attempt++;
+      if (attempt > maxRetries) {
+        debugPrint('[Auth] ❌ $label error after $attempt attempts: $e');
+        rethrow;
+      }
+      debugPrint('[Auth] ⚠️ $label error — retry $attempt/$maxRetries: $e');
+      await Future.delayed(_kRetryDelay);
+    }
+  }
+}
+
+// ============================================================================
+// SUPABASE AUTH MANAGER
+// ============================================================================
+
 /// Implémentation Supabase de AuthManager.
-/// ✅ CORRECTIONS :
-///  - signUp sans session (Confirm email ON) → NE connecte PAS, NE hydrate PAS,
-///    lève AuthException('otp_sent') pour que l'UI affiche le champ OTP.
-///  - signUp avec session + email confirmé immédiat (Confirm email OFF) →
-///    signOut + erreur de configuration (l'OTP reste obligatoire).
-///  - verifyOTP : aucun bypass, hydratation SEULEMENT après vérification réussie.
-///  - THIX ID officiel jamais généré avant confirmation de l'email et choix du pays.
-///  - ✅ NOUVEAU : backfill du profil (nom, date de naissance, pays...) si la ligne
-///    `profiles` existait déjà (créée par le trigger handle_new_user) mais que les
-///    données d'inscription n'ont jamais été copiées depuis les métadonnées auth.
+///
+/// Architecture :
+/// - signUp sans session (Confirm email ON) → NE connecte PAS, lève AuthException(otpSent)
+/// - signUp avec session + email confirmé (Confirm email OFF) → signOut + erreur configuration
+/// - verifyOTP : hydratation SEULEMENT après vérification réussie
+/// - THIX ID officiel jamais généré avant confirmation email + choix pays
+/// - Backfill profil si données manquantes
 class SupabaseAuthManager implements AuthManager {
   final SupabaseClient _client;
   final ProfileService _profiles;
@@ -46,13 +194,13 @@ class SupabaseAuthManager implements AuthManager {
 
   @override
   Future<void> init() async {
+    debugPrint('[Auth] 🚀 Initializing auth manager');
     await _sub?.cancel();
 
     _sub = _client.auth.onAuthStateChange.listen((state) async {
       try {
         final user = state.session?.user;
         if (user == null) {
-          // ✅ Pas de session (signUp en attente d'OTP, signOut, etc.)
           await _cleanupSession();
           return;
         }
@@ -60,8 +208,9 @@ class SupabaseAuthManager implements AuthManager {
         _currentUser.value = hydrated;
         _bindProfileSync(user.id);
         unawaited(PushNotificationService.instance.onSignedIn(userId: user.id));
-      } catch (e, st) {
-        debugPrint('SupabaseAuthManager: auth state hydrate failed err=$e\n$st');
+        debugPrint('[Auth] ✓ User hydrated: ${user.id}');
+      } catch (e) {
+        debugPrint('[Auth] ❌ Auth state hydrate failed: $e');
         await _cleanupSession();
       }
     });
@@ -76,12 +225,14 @@ class SupabaseAuthManager implements AuthManager {
       final hydrated = await _hydrateUser(u);
       _currentUser.value = hydrated;
       _bindProfileSync(u.id);
-    } catch (e, st) {
-      debugPrint('SupabaseAuthManager: initial hydration failed err=$e\n$st');
+      debugPrint('[Auth] ✓ Initial user hydrated: ${u.id}');
+    } catch (e) {
+      debugPrint('[Auth] ❌ Initial hydration failed: $e');
     }
   }
 
   Future<void> _cleanupSession() async {
+    debugPrint('[Auth] 👋 Cleaning up session');
     await _profileSub?.cancel();
     _profileSub = null;
     _currentUser.value = null;
@@ -95,12 +246,11 @@ class SupabaseAuthManager implements AuthManager {
   bool _isPendingThixId(String? id) {
     if (id == null) return true;
     final v = id.trim().toUpperCase();
-    return v.isEmpty ||
-        v == 'THIX-PENDING' ||
-        v == 'THIX-000000' ||
-        v.startsWith('THIX-PENDING-') ||
-        v.startsWith('THIX-CD-FALLBACK') ||
-        v.startsWith('THIX-0');
+    if (v.isEmpty) return true;
+    for (final prefix in _kPendingThixIdPrefixes) {
+      if (v == prefix || v.startsWith('$prefix-')) return true;
+    }
+    return false;
   }
 
   void _bindProfileSync(String uid) {
@@ -160,9 +310,10 @@ class SupabaseAuthManager implements AuthManager {
 
         if (unchanged) return;
         _currentUser.value = merged;
+        debugPrint('[Auth] ✓ Profile synced for $uid');
       },
       onError: (e, st) {
-        debugPrint('SupabaseAuthManager: profile sync stream failed uid=$uid err=$e\n$st');
+        debugPrint('[Auth] ❌ Profile sync stream failed uid=$uid err=$e');
       },
     );
   }
@@ -173,20 +324,24 @@ class SupabaseAuthManager implements AuthManager {
 
   Future<AppUser> _hydrateUser(User user) async {
     final uid = user.id;
-    final email = (user.email ?? '').toLowerCase();
+    final email = _AuthValidators.sanitize(user.email?.toLowerCase() ?? '', maxLength: _kMaxEmailLength);
     final meta = (user.userMetadata ?? const <String, dynamic>{});
 
     String? s(String k) {
       final v = meta[k];
       if (v == null) return null;
-      final t = v.toString().trim();
+      final t = _AuthValidators.sanitize(v.toString(), maxLength: 200);
       return t.isEmpty ? null : t;
     }
 
     List<String> strList(String k) {
       final v = meta[k];
       if (v is List) {
-        return v.whereType<String>().map((e) => e.trim()).where((e) => e.isNotEmpty).toList(growable: false);
+        return v
+            .whereType<String>()
+            .map((e) => _AuthValidators.sanitize(e, maxLength: 50))
+            .where((e) => e.isNotEmpty)
+            .toList(growable: false);
       }
       return const <String>[];
     }
@@ -195,13 +350,13 @@ class SupabaseAuthManager implements AuthManager {
     if (row == null) {
       final base = AppUser(
         id: uid,
-        thixId: 'THIX-PENDING',
+        thixId: _kPendingThixId,
         thixChat: '',
         thixScore: null,
         email: email,
         phone: user.phone,
         photoUrl: null,
-        displayName: s('display_name') ?? s('full_name') ?? 'Utilisateur THIX',
+        displayName: s('display_name') ?? s('full_name') ?? _kDefaultDisplayName,
         accountType: _accountTypeFromMeta(meta),
         bio: s('bio'),
         countryOrOrigin: s('country_or_origin') ?? s('countryOrOrigin'),
@@ -242,15 +397,13 @@ class SupabaseAuthManager implements AuthManager {
 
     var appUser = _appUserFromProfileRow(uid: uid, email: email, row: row, phone: user.phone);
 
-    // ✅ NOUVEAU : backfill si la ligne profiles existait déjà (créée par le trigger
-    // handle_new_user, qui ne remplit que id/account_status/registration_status)
-    // mais que les données d'inscription (nom, date de naissance, pays...) n'ont
-    // jamais été copiées depuis les métadonnées auth vers la table profiles.
+    // Backfill si données manquantes
     final metaFullName = s('display_name') ?? s('full_name');
     final needsBackfill = appUser.displayName.trim().isEmpty ||
-        (appUser.displayName == 'Utilisateur THIX' && metaFullName != null && metaFullName.isNotEmpty);
+        (appUser.displayName == _kDefaultDisplayName && metaFullName != null && metaFullName.isNotEmpty);
 
     if (needsBackfill) {
+      debugPrint('[Auth] 🔄 Backfilling profile for $uid');
       final backfillUser = appUser.copyWith(
         displayName: metaFullName ?? appUser.displayName,
         countryOrOrigin: appUser.countryOrOrigin ?? s('country_or_origin') ?? s('countryOrOrigin'),
@@ -279,21 +432,21 @@ class SupabaseAuthManager implements AuthManager {
         } else {
           appUser = backfillUser;
         }
+        debugPrint('[Auth] ✓ Profile backfilled for $uid');
       } catch (e) {
-        debugPrint('SupabaseAuthManager: backfill profile failed uid=$uid err=$e');
+        debugPrint('[Auth] ❌ Backfill profile failed uid=$uid err=$e');
         appUser = backfillUser;
       }
     }
-
-    // 🔴 SUPPRIMÉ : On ne génère plus automatiquement le THIX ID ici pour éviter le conflit 
-    // avec la sélection dynamique du pays.
-    // La génération se fera UNIQUEMENT via `finalize_registration` depuis l'interface.
 
     return appUser;
   }
 
   AccountType _accountTypeFromMeta(Map<String, dynamic>? meta) {
-    final raw = (meta?['account_type'] ?? meta?['accountType'] ?? '').toString().trim().toLowerCase();
+    final raw = _AuthValidators.sanitize(
+      (meta?['account_type'] ?? meta?['accountType'] ?? '').toString(),
+      maxLength: 20,
+    ).toLowerCase();
     if (raw == AccountType.enterprise.name) return AccountType.enterprise;
     return AccountType.personal;
   }
@@ -323,35 +476,38 @@ class SupabaseAuthManager implements AuthManager {
         ? v.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList(growable: false)
         : const <Map<String, dynamic>>[];
 
-    final rawThixId = (row['thix_id'] ?? row['thixId'] ?? row['thix_uid'] ?? '').toString().trim();
+    final rawThixId = _AuthValidators.sanitize(
+      (row['thix_id'] ?? row['thixId'] ?? row['thix_uid'] ?? '').toString(),
+      maxLength: 50,
+    );
 
     return AppUser(
       id: uid,
       thixId: rawThixId.isEmpty ? '' : rawThixId,
-      thixChat: (row['thix_chat'] ?? row['thixChat'] ?? '').toString(),
+      thixChat: _AuthValidators.sanitize((row['thix_chat'] ?? row['thixChat'] ?? '').toString(), maxLength: _kMaxChatLength),
       thixScore: (row['thix_score'] as num?)?.toInt(),
       email: email,
       phone: phone,
-      displayName: (row['display_name'] ?? row['displayName'] ?? 'Utilisateur THIX').toString(),
+      displayName: _AuthValidators.sanitize((row['display_name'] ?? row['displayName'] ?? _kDefaultDisplayName).toString(), maxLength: _kMaxDisplayNameLength),
       accountType: accountType,
-      photoUrl: (row['avatar_url'] ?? row['photo_url'])?.toString(),
-      bio: row['bio']?.toString(),
-      countryOrOrigin: (row['country_or_origin'] ?? row['countryOrOrigin'])?.toString(),
-      contactPhone: (row['contact_phone'] ?? row['contactPhone'])?.toString(),
-      maritalStatus: (row['marital_status'] ?? row['maritalStatus'])?.toString(),
-      gender: row['gender']?.toString(),
-      occupation: (row['occupation'] ?? row['occupation_title'])?.toString(),
-      profession: (row['profession'] ?? row['job_title'])?.toString(),
-      dateOfBirth: (row['date_of_birth'] ?? row['dateOfBirth'])?.toString(),
-      placeOfBirth: (row['place_of_birth'] ?? row['placeOfBirth'])?.toString(),
-      nationality: row['nationality']?.toString(),
-      address: row['address']?.toString(),
-      fatherName: (row['father_name'] ?? row['fatherName'])?.toString(),
-      motherName: (row['mother_name'] ?? row['motherName'])?.toString(),
-      emergencyContactName: (row['emergency_contact_name'] ?? row['emergencyContactName'])?.toString(),
-      emergencyContactPhone: (row['emergency_contact_phone'] ?? row['emergencyContactPhone'])?.toString(),
-      emergencyContactRelation: (row['emergency_contact_relation'] ?? row['emergencyContactRelation'])?.toString(),
-      registrationStatus: (row['registration_status'] ?? row['registrationStatus'])?.toString(),
+      photoUrl: _AuthValidators.sanitize((row['avatar_url'] ?? row['photo_url'])?.toString(), maxLength: 500),
+      bio: _AuthValidators.sanitize(row['bio']?.toString(), maxLength: 500),
+      countryOrOrigin: _AuthValidators.sanitize((row['country_or_origin'] ?? row['countryOrOrigin'])?.toString(), maxLength: 100),
+      contactPhone: _AuthValidators.sanitize((row['contact_phone'] ?? row['contactPhone'])?.toString(), maxLength: 20),
+      maritalStatus: _AuthValidators.sanitize((row['marital_status'] ?? row['maritalStatus'])?.toString(), maxLength: 50),
+      gender: _AuthValidators.sanitize(row['gender']?.toString(), maxLength: 20),
+      occupation: _AuthValidators.sanitize((row['occupation'] ?? row['occupation_title'])?.toString(), maxLength: 100),
+      profession: _AuthValidators.sanitize((row['profession'] ?? row['job_title'])?.toString(), maxLength: 100),
+      dateOfBirth: _AuthValidators.sanitize((row['date_of_birth'] ?? row['dateOfBirth'])?.toString(), maxLength: 20),
+      placeOfBirth: _AuthValidators.sanitize((row['place_of_birth'] ?? row['placeOfBirth'])?.toString(), maxLength: 100),
+      nationality: _AuthValidators.sanitize(row['nationality']?.toString(), maxLength: 100),
+      address: _AuthValidators.sanitize(row['address']?.toString(), maxLength: 500),
+      fatherName: _AuthValidators.sanitize((row['father_name'] ?? row['fatherName'])?.toString(), maxLength: 100),
+      motherName: _AuthValidators.sanitize((row['mother_name'] ?? row['motherName'])?.toString(), maxLength: 100),
+      emergencyContactName: _AuthValidators.sanitize((row['emergency_contact_name'] ?? row['emergencyContactName'])?.toString(), maxLength: 100),
+      emergencyContactPhone: _AuthValidators.sanitize((row['emergency_contact_phone'] ?? row['emergencyContactPhone'])?.toString(), maxLength: 20),
+      emergencyContactRelation: _AuthValidators.sanitize((row['emergency_contact_relation'] ?? row['emergencyContactRelation'])?.toString(), maxLength: 50),
+      registrationStatus: _AuthValidators.sanitize((row['registration_status'] ?? row['registrationStatus'])?.toString(), maxLength: 50),
       education: mapList(row['education']),
       experience: mapList(row['experience']),
       skills: mapList(row['skills']),
@@ -366,10 +522,13 @@ class SupabaseAuthManager implements AuthManager {
 
   Future<Map<String, dynamic>?> _selectProfileRow(String uid) async {
     try {
-      final row = await _client.from('profiles').select('*').eq('id', uid).maybeSingle();
+      final row = await _authRetry(
+        () => _client.from('profiles').select('*').eq('id', uid).maybeSingle(),
+        label: 'selectProfileRow[$uid]',
+      );
       if (row != null) return (row as Map).cast<String, dynamic>();
     } catch (e) {
-      debugPrint('SupabaseAuthManager: profiles select by id failed uid=$uid err=$e');
+      debugPrint('[Auth] ❌ Profiles select by id failed uid=$uid err=$e');
     }
     return null;
   }
@@ -405,24 +564,25 @@ class SupabaseAuthManager implements AuthManager {
     };
 
     try {
-      await SupabaseSafeWrite.upsert(
-        client: _client,
-        table: 'profiles',
-        payload: payload,
-        onUnknownColumn: () async {
-          try {
-            await _client.functions.invoke('pgrst_schema_reload', body: const {});
-          } catch (e) {
-            debugPrint('SupabaseAuthManager: schema reload invoke failed err=$e');
-          }
-        },
+      await _authRetry(
+        () => SupabaseSafeWrite.upsert(
+          client: _client,
+          table: 'profiles',
+          payload: payload,
+          onUnknownColumn: () async {
+            try {
+              await _client.functions.invoke('pgrst_schema_reload', body: const {});
+            } catch (e) {
+              debugPrint('[Auth] ⚠️ Schema reload invoke failed err=$e');
+            }
+          },
+        ),
+        label: 'ensureProfileRow[${user.id}]',
       );
     } catch (e) {
-      debugPrint('SupabaseAuthManager: profiles upsert failed uid=${user.id} err=$e');
+      debugPrint('[Auth] ❌ Profiles upsert failed uid=${user.id} err=$e');
     }
   }
-
-  bool _isValidEmail(String email) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
 
   // ==========================================================================
   // CONNEXION
@@ -434,41 +594,57 @@ class SupabaseAuthManager implements AuthManager {
     required String password,
     required bool rememberMe,
   }) async {
-    final id = identifier.trim();
-    if (id.isEmpty) throw AuthException('Identifiant requis.');
-    if (password.isEmpty) throw AuthException('Mot de passe requis.');
-    if (!id.contains('@')) {
-      throw AuthException('Connexion via THIX ID non disponible. Utilisez votre email.');
+    final id = _AuthValidators.sanitize(identifier.trim(), maxLength: _kMaxEmailLength);
+    if (id.isEmpty) {
+      throw AuthException(AuthErrorCode.identifierRequired);
     }
-    try {
-      final res = await _client.auth.signInWithPassword(email: id.toLowerCase(), password: password);
-      final user = res.user;
-      if (user == null) throw AuthException('Connexion échouée.');
 
-      // ✅ Compte non confirmé → bloquer la connexion et renvoyer un code
+    final sanitizedPassword = _AuthValidators.sanitize(password, maxLength: _kMaxPasswordLength);
+    if (sanitizedPassword.isEmpty) {
+      throw AuthException(AuthErrorCode.passwordRequired);
+    }
+
+    if (!id.contains('@')) {
+      throw AuthException(AuthErrorCode.thixIdLoginNotAvailable);
+    }
+
+    debugPrint('[Auth] 🔐 Sign in attempt for: ${id.substring(0, id.length > 20 ? 20 : id.length)}...');
+
+    try {
+      final res = await _authRetry(
+        () => _client.auth.signInWithPassword(email: id.toLowerCase(), password: sanitizedPassword),
+        label: 'signInWithEmail',
+      );
+      final user = res.user;
+      if (user == null) {
+        throw AuthException(AuthErrorCode.signInFailed);
+      }
+
+      // Compte non confirmé → bloquer et renvoyer code
       if (user.emailConfirmedAt == null) {
         try {
           await _client.auth.resend(type: OtpType.signup, email: id.toLowerCase());
         } catch (_) {}
         await _client.auth.signOut();
-        throw AuthException('Email non vérifié. Un code vient d\'être envoyé à votre adresse.');
+        throw AuthException(AuthErrorCode.emailNotVerified);
       }
 
       final hydrated = await _hydrateUser(user);
       _currentUser.value = hydrated;
       _bindProfileSync(user.id);
+      debugPrint('[Auth] ✓ Sign in successful: ${user.id}');
       return hydrated;
     } on sup.AuthException catch (e) {
-      throw AuthException(e.message);
+      throw _mapSupabaseAuthError(e, context: 'signIn');
     } catch (e) {
       if (e is AuthException) rethrow;
-      debugPrint('SupabaseAuthManager: signIn crash err=$e');
-      throw AuthException('Erreur technique. Veuillez réessayer.');
+      debugPrint('[Auth] ❌ SignIn crash err=$e');
+      throw AuthException(AuthErrorCode.technicalError);
     }
   }
 
   // ==========================================================================
-  // ✅ INSCRIPTION CORRIGÉE
+  // INSCRIPTION
   // ==========================================================================
 
   @override
@@ -480,91 +656,103 @@ class SupabaseAuthManager implements AuthManager {
     required bool rememberMe,
     Map<String, dynamic>? profileDraft,
   }) async {
-    final normalizedEmail = email.trim().toLowerCase();
-    if (!_isValidEmail(normalizedEmail)) throw AuthException('Email invalide.');
-    if (password.trim().length < 8) {
-      throw AuthException('Le mot de passe doit contenir au moins 8 caractères.');
+    final normalizedEmail = _AuthValidators.normalizeEmail(email);
+    if (!_AuthValidators.isValidEmail(normalizedEmail)) {
+      throw AuthException(AuthErrorCode.invalidEmail);
     }
+
+    final sanitizedPassword = _AuthValidators.sanitize(password, maxLength: _kMaxPasswordLength);
+    if (!_AuthValidators.isValidPassword(sanitizedPassword)) {
+      throw AuthException(AuthErrorCode.passwordTooShort, data: {'minLength': _kMinPasswordLength});
+    }
+
+    final sanitizedDisplayName = _AuthValidators.sanitize(displayName, maxLength: _kMaxDisplayNameLength);
+
+    debugPrint('[Auth] 🚀 Register attempt for: $normalizedEmail');
 
     try {
       final userMeta = <String, dynamic>{
-        'display_name': displayName.trim().isEmpty ? 'Utilisateur THIX' : displayName.trim(),
+        'display_name': sanitizedDisplayName.isEmpty ? _kDefaultDisplayName : sanitizedDisplayName,
         'account_type': accountType.name,
         ...?profileDraft,
       };
 
-      final res = await _client.auth.signUp(email: normalizedEmail, password: password, data: userMeta);
+      final res = await _authRetry(
+        () => _client.auth.signUp(email: normalizedEmail, password: sanitizedPassword, data: userMeta),
+        label: 'signUp',
+      );
       final session = res.session;
       final user = res.user;
 
       if (user == null) {
-        throw AuthException('Erreur lors de l\'inscription.');
+        throw AuthException(AuthErrorCode.signUpFailed);
       }
 
-      // ✅ CAS NOMINAL (Confirm email ON) : Supabase a envoyé le code 6 chiffres,
-      // aucune session n'est créée. On NE connecte PAS, on NE hydrate PAS.
-      // Le profil sera créé après verifyOTP réussi.
+      // CAS NOMINAL (Confirm email ON) : pas de session, OTP envoyé
       if (session == null) {
-        throw AuthException('otp_sent');
+        throw AuthException(AuthErrorCode.otpSent);
       }
 
-      // ✅ MISCONFIGURATION (Confirm email OFF) : session + email confirmé
-      // immédiats → aucun email OTP parti. On refuse de rester connecté.
+      // MISCONFIGURATION (Confirm email OFF) : session + email confirmé immédiats
       if (user.emailConfirmedAt != null) {
         try {
           await _client.auth.signOut();
         } catch (_) {}
-        throw AuthException(
-            'Configuration serveur : la confirmation email est désactivée. Activez "Confirm email" dans Supabase (Auth → Providers → Email).');
+        throw AuthException(AuthErrorCode.serverMisconfiguration);
       }
 
-      // Cas rare : session ouverte mais email non confirmé → pas de connexion persistante.
+      // Cas rare : session ouverte mais email non confirmé
       try {
         await _client.auth.signOut();
       } catch (_) {}
-      throw AuthException('otp_sent');
+      throw AuthException(AuthErrorCode.otpSent);
     } on sup.AuthException catch (e) {
-      final msg = e.message.toLowerCase();
-
-      // Compte déjà existant
-      if (msg.contains('already registered') || msg.contains('already exists') || msg.contains('déjà')) {
-        try {
-          final res = await _client.auth.signInWithPassword(email: normalizedEmail, password: password);
-          final user = res.user;
-
-          // Compte existant mais JAMAIS vérifié → renvoyer un OTP, pas de connexion
-          if (user != null && user.emailConfirmedAt == null) {
-            try {
-              await _client.auth.resend(type: OtpType.signup, email: normalizedEmail);
-            } catch (_) {}
-            await _client.auth.signOut();
-            throw AuthException('Un compte existe déjà. Un nouveau code vient d\'être envoyé à votre email.');
-          }
-
-          if (user != null) {
-            final appUser = await _hydrateUser(user);
-            _currentUser.value = appUser;
-            _bindProfileSync(user.id);
-            return appUser;
-          }
-          throw AuthException('Un compte existe déjà avec cet email.');
-        } on sup.AuthException catch (loginErr) {
-          final lm = loginErr.message.toLowerCase();
-          if (lm.contains('invalid login') || lm.contains('invalid credentials')) {
-            throw AuthException('Un compte existe déjà avec cet email. Mot de passe incorrect.');
-          }
-          // "Email not confirmed" → renvoi du code
-          try {
-            await _client.auth.resend(type: OtpType.signup, email: normalizedEmail);
-          } catch (_) {}
-          throw AuthException('Un compte existe déjà. Un nouveau code vient d\'être envoyé à votre email.');
-        }
+      final mapped = _mapSupabaseAuthError(e, context: 'register');
+      
+      // Gestion spéciale "already registered"
+      if (mapped.code == AuthErrorCode.accountAlreadyExists) {
+        return _handleExistingAccount(normalizedEmail, sanitizedPassword);
       }
-      throw AuthException(e.message);
+      
+      throw mapped;
     } catch (e) {
       if (e is AuthException) rethrow;
-      debugPrint('SupabaseAuthManager: register crash err=$e');
-      throw AuthException('Erreur technique. Réessayez.');
+      debugPrint('[Auth] ❌ Register crash err=$e');
+      throw AuthException(AuthErrorCode.technicalError);
+    }
+  }
+
+  Future<AppUser> _handleExistingAccount(String email, String password) async {
+    try {
+      final res = await _client.auth.signInWithPassword(email: email, password: password);
+      final user = res.user;
+
+      // Compte existant mais jamais vérifié → renvoyer OTP
+      if (user != null && user.emailConfirmedAt == null) {
+        try {
+          await _client.auth.resend(type: OtpType.signup, email: email);
+        } catch (_) {}
+        await _client.auth.signOut();
+        throw AuthException(AuthErrorCode.accountExistsNewOtpSent);
+      }
+
+      if (user != null) {
+        final appUser = await _hydrateUser(user);
+        _currentUser.value = appUser;
+        _bindProfileSync(user.id);
+        return appUser;
+      }
+      throw AuthException(AuthErrorCode.accountAlreadyExists);
+    } on sup.AuthException catch (loginErr) {
+      final msg = loginErr.message.toLowerCase();
+      if (msg.contains('invalid login') || msg.contains('invalid credentials')) {
+        throw AuthException(AuthErrorCode.accountExistsWrongPassword);
+      }
+      // "Email not confirmed" → renvoi du code
+      try {
+        await _client.auth.resend(type: OtpType.signup, email: email);
+      } catch (_) {}
+      throw AuthException(AuthErrorCode.accountExistsNewOtpSent);
     }
   }
 
@@ -587,59 +775,71 @@ class SupabaseAuthManager implements AuthManager {
   }
 
   // ==========================================================================
-  // ✅ VERIFY OTP — aucun bypass, connexion SEULEMENT après succès
+  // VERIFY OTP
   // ==========================================================================
 
   @override
   Future<void> verifyOTP({required String email, required String token}) async {
+    final normalizedEmail = _AuthValidators.normalizeEmail(email);
+    final sanitizedToken = _AuthValidators.sanitize(token.trim(), maxLength: _kMaxTokenLength);
+
+    debugPrint('[Auth] 🔑 Verifying OTP for: $normalizedEmail');
+
     try {
-      final res = await _client.auth.verifyOTP(
-        email: email.trim().toLowerCase(),
-        token: token.trim(),
-        type: OtpType.signup,
+      final res = await _authRetry(
+        () => _client.auth.verifyOTP(
+          email: normalizedEmail,
+          token: sanitizedToken,
+          type: OtpType.signup,
+        ),
+        label: 'verifyOTP',
       );
 
       if (res.session == null || res.user == null) {
-        throw AuthException('Le code saisi est invalide ou a expiré. Demandez un nouveau code.');
+        throw AuthException(AuthErrorCode.invalidOtp);
       }
 
-      // ✅ Vérification réussie : maintenant on hydrate et on connecte.
+      // Vérification réussie : hydrater et connecter
       final appUser = await _hydrateUser(res.user!);
       _currentUser.value = appUser;
       _bindProfileSync(res.user!.id);
       unawaited(PushNotificationService.instance.onSignedIn(userId: res.user!.id));
+      debugPrint('[Auth] ✓ OTP verified and user hydrated: ${res.user!.id}');
     } on AuthException {
       rethrow;
     } on sup.AuthException catch (e) {
-      final msg = e.message.toLowerCase();
-      if (msg.contains('expired') || msg.contains('invalid') || msg.contains('otp') || msg.contains('token')) {
-        throw AuthException('Le code saisi est invalide ou a expiré. Demandez un nouveau code.');
-      }
-      throw AuthException(e.message);
+      throw _mapSupabaseAuthError(e, context: 'verifyOTP');
     } catch (e) {
-      debugPrint('SupabaseAuthManager: verifyOTP failed err=$e');
-      throw AuthException(e.toString());
+      debugPrint('[Auth] ❌ VerifyOTP failed err=$e');
+      throw AuthException(AuthErrorCode.technicalError);
     }
   }
 
   @override
   Future<void> markEmailVerified() async {
     try {
-      await _client.rpc('mark_email_verified');
+      await _authRetry(
+        () => _client.rpc('mark_email_verified'),
+        label: 'markEmailVerified',
+      );
+      debugPrint('[Auth] ✓ Email marked as verified');
     } catch (e) {
-      debugPrint('SupabaseAuthManager: markEmailVerified failed err=$e');
-      throw AuthException('Impossible de marquer l\'email comme vérifié.');
+      debugPrint('[Auth] ❌ MarkEmailVerified failed err=$e');
+      throw AuthException(AuthErrorCode.markEmailVerifiedFailed);
     }
   }
 
   @override
   Future<String> generateQrToken() async {
     try {
-      final result = await _client.rpc('generate_qr_activation_token');
-      return result.toString();
+      final result = await _authRetry(
+        () => _client.rpc('generate_qr_activation_token'),
+        label: 'generateQrToken',
+      );
+      return _AuthValidators.sanitize(result.toString(), maxLength: _kMaxTokenLength);
     } catch (e) {
-      debugPrint('SupabaseAuthManager: generateQrToken failed err=$e');
-      throw AuthException('Impossible de générer le QR de parrainage.');
+      debugPrint('[Auth] ❌ GenerateQrToken failed err=$e');
+      throw AuthException(AuthErrorCode.qrTokenGenerationFailed);
     }
   }
 
@@ -648,27 +848,47 @@ class SupabaseAuthManager implements AuthManager {
     required String desiredChat,
     required String countryCode,
   }) async {
+    final sanitizedChat = _AuthValidators.sanitize(desiredChat, maxLength: _kMaxChatLength);
+    final sanitizedCountry = _AuthValidators.sanitize(countryCode, maxLength: _kMaxCountryCodeLength);
+
+    debugPrint('[Auth] 🏁 Finalizing registration: chat=$sanitizedChat, country=$sanitizedCountry');
+
     try {
-      final result = await _client.rpc(
-        'finalize_registration',
-        params: {'p_desired_chat': desiredChat, 'p_country_code': countryCode},
+      final result = await _authRetry(
+        () => _client.rpc(
+          'finalize_registration',
+          params: {'p_desired_chat': sanitizedChat, 'p_country_code': sanitizedCountry},
+        ),
+        label: 'finalizeRegistration',
+        timeout: _kLongRequestTimeout,
       );
-      if (result is Map<String, dynamic>) return result;
-      if (result is Map) return Map<String, dynamic>.from(result);
-      throw Exception('Réponse serveur invalide.');
+      if (result is Map<String, dynamic>) {
+        debugPrint('[Auth] ✓ Registration finalized');
+        return result;
+      }
+      if (result is Map) {
+        debugPrint('[Auth] ✓ Registration finalized');
+        return Map<String, dynamic>.from(result);
+      }
+      throw Exception('Invalid server response');
     } catch (e) {
-      debugPrint('SupabaseAuthManager: finalizeRegistration failed err=$e');
-      throw AuthException('Impossible de finaliser l\'inscription.');
+      debugPrint('[Auth] ❌ FinalizeRegistration failed err=$e');
+      throw AuthException(AuthErrorCode.finalizeRegistrationFailed);
     }
   }
 
   @override
   Future<void> consumeQrToken({required String token}) async {
+    final sanitizedToken = _AuthValidators.sanitize(token, maxLength: _kMaxTokenLength);
     try {
-      await _client.rpc('consume_qr_activation_token', params: {'p_token': token});
+      await _authRetry(
+        () => _client.rpc('consume_qr_activation_token', params: {'p_token': sanitizedToken}),
+        label: 'consumeQrToken',
+      );
+      debugPrint('[Auth] ✓ QR token consumed');
     } catch (e) {
-      debugPrint('SupabaseAuthManager: consumeQrToken failed err=$e');
-      throw AuthException('Impossible de valider le parrainage.');
+      debugPrint('[Auth] ❌ ConsumeQrToken failed err=$e');
+      throw AuthException(AuthErrorCode.consumeQrTokenFailed);
     }
   }
 
@@ -678,7 +898,7 @@ class SupabaseAuthManager implements AuthManager {
     if (session == null) {
       final current = _currentUser.value;
       if (current != null) return current;
-      throw AuthException('Aucune session active.');
+      throw AuthException(AuthErrorCode.sessionExpired);
     }
     final hydrated = await _hydrateUser(session.user);
     _currentUser.value = hydrated;
@@ -688,19 +908,24 @@ class SupabaseAuthManager implements AuthManager {
 
   @override
   Future<void> resendOTP({required String email}) async {
+    final normalizedEmail = _AuthValidators.normalizeEmail(email);
     try {
-      await _client.auth.resend(type: OtpType.signup, email: email.trim().toLowerCase());
+      await _authRetry(
+        () => _client.auth.resend(type: OtpType.signup, email: normalizedEmail),
+        label: 'resendOTP',
+      );
+      debugPrint('[Auth] ✓ OTP resent to: $normalizedEmail');
     } on sup.AuthException catch (e) {
-      throw AuthException(e.message);
+      throw _mapSupabaseAuthError(e, context: 'resendOTP');
     } catch (e) {
-      debugPrint('SupabaseAuthManager: resendOTP failed err=$e');
-      throw AuthException(e.toString());
+      debugPrint('[Auth] ❌ ResendOTP failed err=$e');
+      throw AuthException(AuthErrorCode.resendOtpFailed);
     }
   }
 
   @override
   Future<PhoneAuthSession> startPhoneAuth({required String phoneNumber}) {
-    throw AuthException('Connexion téléphone indisponible dans cette version.');
+    throw AuthException(AuthErrorCode.phoneAuthNotAvailable);
   }
 
   @override
@@ -710,47 +935,66 @@ class SupabaseAuthManager implements AuthManager {
     String? displayName,
     AccountType accountType = AccountType.personal,
   }) {
-    throw AuthException('Connexion téléphone indisponible dans cette version.');
+    throw AuthException(AuthErrorCode.phoneAuthNotAvailable);
   }
 
   @override
   Future<void> signOut() async {
+    debugPrint('[Auth] 👋 Signing out');
     await _client.auth.signOut();
     await _cleanupSession();
   }
 
   @override
   Future<void> deleteAccount() {
-    throw AuthException('Suppression de compte indisponible (nécessite une fonction serveur sécurisée).');
+    throw AuthException(AuthErrorCode.deleteAccountNotAvailable);
   }
 
   @override
   Future<void> updateEmail(String newEmail) async {
-    final normalized = newEmail.trim().toLowerCase();
-    if (!_isValidEmail(normalized)) throw AuthException('Email invalide.');
+    final normalized = _AuthValidators.normalizeEmail(newEmail);
+    if (!_AuthValidators.isValidEmail(normalized)) {
+      throw AuthException(AuthErrorCode.invalidEmail);
+    }
     try {
-      await _client.auth.updateUser(UserAttributes(email: normalized));
+      await _authRetry(
+        () => _client.auth.updateUser(UserAttributes(email: normalized)),
+        label: 'updateEmail',
+      );
+      debugPrint('[Auth] ✓ Email updated to: $normalized');
     } catch (e) {
-      throw AuthException('Impossible de mettre à jour l\'email.');
+      debugPrint('[Auth] ❌ UpdateEmail failed err=$e');
+      throw AuthException(AuthErrorCode.updateEmailFailed);
     }
   }
 
   @override
   Future<void> requestPasswordReset(String email) async {
-    final normalized = email.trim().toLowerCase();
-    if (!_isValidEmail(normalized)) throw AuthException('Email invalide.');
+    final normalized = _AuthValidators.normalizeEmail(email);
+    if (!_AuthValidators.isValidEmail(normalized)) {
+      throw AuthException(AuthErrorCode.invalidEmail);
+    }
     try {
-      await _client.auth.resetPasswordForEmail(normalized);
+      await _authRetry(
+        () => _client.auth.resetPasswordForEmail(normalized),
+        label: 'requestPasswordReset',
+      );
+      debugPrint('[Auth] ✓ Password reset requested for: $normalized');
     } catch (e) {
-      throw AuthException('Impossible d\'envoyer la demande de réinitialisation.');
+      debugPrint('[Auth] ❌ RequestPasswordReset failed err=$e');
+      throw AuthException(AuthErrorCode.resetPasswordFailed);
     }
   }
 
   @override
   Future<void> updateCurrentUser(AppUser user) async {
     final current = currentUser;
-    if (current == null) throw AuthException('Session expirée.');
-    if (current.id != user.id) throw AuthException('Utilisateur courant différent.');
+    if (current == null) {
+      throw AuthException(AuthErrorCode.sessionExpired);
+    }
+    if (current.id != user.id) {
+      throw AuthException(AuthErrorCode.userMismatch);
+    }
 
     final safeUser = user.copyWith(
       thixId: current.thixId,
@@ -761,18 +1005,40 @@ class SupabaseAuthManager implements AuthManager {
     try {
       await _ensureProfileRow(user: safeUser);
       await _profiles.ensureProfileExists(user: safeUser);
+      debugPrint('[Auth] ✓ Current user updated: ${user.id}');
     } catch (e) {
-      debugPrint('SupabaseAuthManager: updateCurrentUser failed uid=${user.id} err=$e');
-      throw AuthException('Erreur lors de la mise à jour du profil.');
+      debugPrint('[Auth] ❌ UpdateCurrentUser failed uid=${user.id} err=$e');
+      throw AuthException(AuthErrorCode.profileUpdateFailed);
     }
     _currentUser.value = safeUser;
     _bindProfileSync(user.id);
   }
-}
 
-class AuthException implements Exception {
-  final String message;
-  AuthException(this.message);
-  @override
-  String toString() => 'AuthException: $message';
+  // ==========================================================================
+  // ERROR MAPPING
+  // ==========================================================================
+
+  /// Mappe les erreurs Supabase vers des AuthErrorCode user-friendly
+  AuthException _mapSupabaseAuthError(sup.AuthException e, {required String context}) {
+    final msg = e.message.toLowerCase();
+
+    if (msg.contains('invalid login') || msg.contains('invalid credentials')) {
+      return AuthException(AuthErrorCode.signInFailed, rawMessage: e.message);
+    }
+    if (msg.contains('already registered') || msg.contains('already exists') || msg.contains('déjà')) {
+      return AuthException(AuthErrorCode.accountAlreadyExists, rawMessage: e.message);
+    }
+    if (msg.contains('expired') || msg.contains('invalid') || msg.contains('otp') || msg.contains('token')) {
+      return AuthException(AuthErrorCode.invalidOtp, rawMessage: e.message);
+    }
+    if (msg.contains('rate limit') || msg.contains('too many')) {
+      return AuthException(AuthErrorCode.rateLimit, rawMessage: e.message);
+    }
+    if (msg.contains('network') || msg.contains('timeout') || msg.contains('unavailable')) {
+      return AuthException(AuthErrorCode.networkError, rawMessage: e.message);
+    }
+
+    debugPrint('[Auth] ⚠️ Unmapped Supabase error in $context: ${e.message}');
+    return AuthException(AuthErrorCode.technicalError, rawMessage: e.message);
+  }
 }
