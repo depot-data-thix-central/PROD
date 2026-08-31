@@ -1546,7 +1546,7 @@ class _LimitedListState extends State<_LimitedList> {
         ...visibleChildren,
         Semantics(
           button: true,
-          label: _expanded ? l10n.t('common_show_less') : l10n.t('public_show_more', args: ['${widget.children.length - widget.limit}']),
+          label: _expanded ? l10n.t('common_show_less') : "${l10n.t('public_show_more')} (${widget.children.length - widget.limit})",
           child: InkWell(
             onTap: () {
               HapticFeedback.lightImpact();
@@ -1557,7 +1557,8 @@ class _LimitedListState extends State<_LimitedList> {
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Center(
                 child: Text(
-                  _expanded ? l10n.t('common_show_less') : l10n.t('public_show_more', args: ['${widget.children.length - widget.limit}']),
+                  _expanded ? l10n.t('common_show_less') : "${l10n.t('public_show_more')} (${widget.children.length - widget.limit})",
+
                   style: ThixPolicy.labelStyle.copyWith(
                     color: ThixPolicy.primary,
                     fontWeight: ThixPolicy.bold,
