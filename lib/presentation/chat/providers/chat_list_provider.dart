@@ -5,10 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// ✅ L'IMPORT CORRIGÉ AVEC LE NOUVEAU CHEMIN
-import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart'
-    show currentUserProvider, AuthControllerState;
-import 'package:thix_id/models/app_user.dart';
+// ✅ PLUS AUCUN IMPORT DE AUTH_CONTROLLER ICI ! C'est 100% indépendant.
 import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
@@ -173,7 +170,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   Timer? _searchDebounce;
   Timer? _refreshDebounce;
   RealtimeChannel? _channel;
-  ProviderSubscription<AppUser?>? _authSubscription; // ✅ TYPE CORRIGÉ
+  ProviderSubscription<String?>? _authSubscription; // ✅ TYPE CORRIGÉ EN String?
   bool _isDisposed = false;
   bool _isLoadInProgress = false;
   String? _currentUserId;
@@ -195,7 +192,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     _isDisposed = true;
     _searchDebounce?.cancel();
     _refreshDebounce?.cancel();
-    _authSubscription?.close(); // ✅ BONNE METHODE
+    _authSubscription?.close(); 
     _cleanupChannel();
     debugPrint('[ChatList] 👋 Disposed');
     super.dispose();
@@ -204,15 +201,14 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   // ── AUTH BINDING ─────────────────────────────────────────────────────
 
   void _bindAuthChanges() {
-    _authSubscription = _ref.listen<AppUser?>(
-      currentUserProvider,
+    _authSubscription = _ref.listen<String?>(
+      supabaseUserIdProvider, // ✅ Utilisation du bon provider
       (previous, next) {
-        final prevId = previous?.id;
-        final nextId = next?.id;
+        final prevId = previous; 
+        final nextId = next;     
         if (prevId == nextId) return;
 
-        debugPrint('[ChatList] 🔄 Auth changed: '
-            '${_obfuscate(prevId)} → ${_obfuscate(nextId)}');
+        debugPrint('[ChatList] 🔄 Auth changed: ${_obfuscate(prevId)} → ${_obfuscate(nextId)}');
 
         _cleanupChannel();
         _currentUserId = nextId;
