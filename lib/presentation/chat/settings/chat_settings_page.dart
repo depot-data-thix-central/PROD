@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'; // Migration vers Riverpod pour cohérence
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:thix_id/auth/providers/auth_controller.dart';
-
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/auth/auth_controller.dart';
