@@ -53,7 +53,8 @@ class HomeQuickActions extends StatelessWidget {
         return _buildRow(
           l10n,
           chatBadge: _safeBadge(c.messages),
-          sosBadge: _safeBadge(c.alerts),
+          sosBadge: _safeBadge(c.health), 
+
         );
       },
     );
