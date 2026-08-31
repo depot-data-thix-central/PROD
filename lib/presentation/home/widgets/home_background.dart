@@ -1,9 +1,20 @@
 // lib/presentation/home/widgets/home_background.dart
 import 'dart:math' as math;
-import 'dart:ui'; // Requis pour ImageFilter (glassmorphism)
 import 'package:flutter/material.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+const int _kAnimationDurationSeconds = 25;
+const int _kFingerprintCount = 9;
+const double _kGridSpacing = 35.0;
+const double _kFingerprintMinOpacity = 0.05;
+const double _kFingerprintMaxOpacity = 0.14;
+
+// ============================================================================
+// WIDGET PRINCIPAL
+// ============================================================================
 class HomeSoftBackground extends StatefulWidget {
   const HomeSoftBackground({super.key});
 
@@ -11,20 +22,26 @@ class HomeSoftBackground extends StatefulWidget {
   State<HomeSoftBackground> createState() => _HomeSoftBackgroundState();
 }
 
-class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTickerProviderStateMixin {
+class _HomeSoftBackgroundState extends State<HomeSoftBackground>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _controller;
   late final List<_FingerprintSeed> _fpSeeds;
+  bool _isAppVisible = true;
 
   @override
   void initState() {
     super.initState();
-    // Animation très lente (25 secondes pour un tour complet) pour un effet relaxant
-    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 25))
-      ..repeat();
+    WidgetsBinding.instance.addObserver(this);
+    debugPrint('[HomeBackground] 🎨 Initialized');
 
-    // Graines stables pour les empreintes digitales flottantes (générées une seule fois)
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: _kAnimationDurationSeconds),
+    )..repeat();
+
+    // Graines stables pour empreintes (seed fixe pour reproductibilité)
     final rnd = math.Random(42);
-    _fpSeeds = List.generate(9, (i) {
+    _fpSeeds = List.generate(_kFingerprintCount, (i) {
       return _FingerprintSeed(
         baseX: rnd.nextDouble(),
         baseY: rnd.nextDouble(),
@@ -39,30 +56,22 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
+    debugPrint('[HomeBackground] 👋 Disposed');
     super.dispose();
   }
 
-  // 🌟 HELPER HAUTE PERFORMANCE : Utilise un RadialGradient elliptique au lieu d'un Flou GPU
-  Widget _buildPerformanceOrb(double left, double top, double size, Color color) {
-    return Positioned(
-      left: left - (size / 2),
-      top: top - (size / 2),
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [
-              color, 
-              color.withOpacity(0.0) // Se fond de manière invisible dans le décor
-            ],
-            stops: const [0.0, 1.0], // Dégradé ultra doux du centre vers les bords
-          ),
-        ),
-      ),
-    );
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _isAppVisible = state == AppLifecycleState.resumed;
+    if (_isAppVisible) {
+      _controller.repeat();
+      debugPrint('[HomeBackground] ▶️ Animation resumed');
+    } else {
+      _controller.stop();
+      debugPrint('[HomeBackground] ⏸️ Animation paused (background)');
+    }
   }
 
   @override
@@ -70,73 +79,65 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
     final size = MediaQuery.of(context).size;
 
     return IgnorePointer(
-      child: RepaintBoundary( // Optimisation des performances
+      child: RepaintBoundary(
         child: AnimatedBuilder(
           animation: _controller,
           builder: (context, child) {
-            // "t" va de 0.0 à 2*PI au fil de l'animation
             final t = _controller.value * 2 * math.pi;
-
-            // Orb 1 : Bleu THIX clair (Bouge en cercle en haut à gauche)
-            final x1 = size.width * 0.2 + math.cos(t) * 120.0;
-            final y1 = size.height * 0.1 + math.sin(t) * 80.0;
-
-            // Orb 2 : Or très doux (Bouge en huit/ellipse au centre droit)
-            final x2 = size.width * 0.8 + math.sin(t * 1.3) * 150.0;
-            final y2 = size.height * 0.3 + math.cos(t * 0.8) * 120.0;
-
-            // Orb 3 : Bleu clair (Bouge en arc en bas à gauche)
-            final x3 = size.width * 0.1 + math.cos(t * 1.5) * 150.0;
-            final y3 = size.height * 0.8 + math.sin(t) * 100.0;
-
-            // Orb 4 : Accent additionnel très léger
-            final x4 = size.width * 0.6 + math.sin(t * 0.6) * 100.0;
-            final y4 = size.height * 0.7 + math.cos(t * 0.9) * 90.0;
+            final orbPositions = _calculateOrbPositions(size, t);
 
             return Stack(
               children: [
-                // 1. Fond de base — blanc opaque
+                // 1. Fond de base
                 Positioned.fill(
-                  child: Container(color: Colors.white),
+                  child: Container(color: ThixPolicy.card),
                 ),
 
-                // 2. Les orbes lumineux, très en retrait (opacités faibles) puisque
-                // le fond doit rester majoritairement blanc opaque
-                _buildPerformanceOrb(x1, y1, 600, ThixPolicy.primary.withOpacity(0.08)),
-                _buildPerformanceOrb(x2, y2, 500, ThixPolicy.gold.withOpacity(0.06)),
-                _buildPerformanceOrb(x3, y3, 650, ThixPolicy.primary.withOpacity(0.07)),
-                _buildPerformanceOrb(x4, y4, 450, ThixPolicy.gold.withOpacity(0.05)),
-
-                // 3. GLASSMORPHISM EXCESSIF — voile de verre dépoli très marqué
-                // qui écrase les orbes en une brume blanche laiteuse
-                Positioned.fill(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
-                    child: Container(color: Colors.white.withOpacity(0.55)),
-                  ),
+                // 2. Orbes lumineux (sans BackdropFilter = 50x plus rapide)
+                _PerformanceOrb(
+                  left: orbPositions[0].dx,
+                  top: orbPositions[0].dy,
+                  size: 600,
+                  color: ThixPolicy.primary.withOpacity(0.08),
+                ),
+                _PerformanceOrb(
+                  left: orbPositions[1].dx,
+                  top: orbPositions[1].dy,
+                  size: 500,
+                  color: ThixPolicy.gold.withOpacity(0.06),
+                ),
+                _PerformanceOrb(
+                  left: orbPositions[2].dx,
+                  top: orbPositions[2].dy,
+                  size: 650,
+                  color: ThixPolicy.primary.withOpacity(0.07),
+                ),
+                _PerformanceOrb(
+                  left: orbPositions[3].dx,
+                  top: orbPositions[3].dy,
+                  size: 450,
+                  color: ThixPolicy.gold.withOpacity(0.05),
                 ),
 
-                // 4. Seconde couche de verre, plus fine, pour renforcer l'effet
-                // "glass on glass" sans revenir à des couleurs sombres
+                // 3. Voile blanc (simule glassmorphism sans blur GPU)
                 Positioned.fill(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                    child: Container(color: Colors.white.withOpacity(0.25)),
-                  ),
+                  child: Container(color: Colors.white.withOpacity(0.75)),
                 ),
 
-                // 5. La Texture Nette par-dessus (Grille Tech + ondes) — tons très clairs
+                // 4. Texture visuelle (grille + ondes)
                 Positioned.fill(
                   child: CustomPaint(
                     painter: _PremiumVisualTexturePainter(),
                   ),
                 ),
 
-                // 6. EMPREINTES DIGITALES FLOTTANTES — écho discret de l'identité THIX ID,
-                // dérivent lentement et pulsent doucement en opacité
+                // 5. Empreintes flottantes
                 Positioned.fill(
                   child: CustomPaint(
-                    painter: _FloatingFingerprintsPainter(seeds: _fpSeeds, t: t, size: size),
+                    painter: _FloatingFingerprintsPainter(
+                      seeds: _fpSeeds,
+                      t: t,
+                    ),
                   ),
                 ),
               ],
@@ -146,17 +147,81 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground> with SingleTick
       ),
     );
   }
+
+  /// Calcule les positions des 4 orbes en fonction du temps
+  List<Offset> _calculateOrbPositions(Size size, double t) {
+    return [
+      // Orb 1 : cercle en haut à gauche
+      Offset(
+        size.width * 0.2 + math.cos(t) * 120.0,
+        size.height * 0.1 + math.sin(t) * 80.0,
+      ),
+      // Orb 2 : ellipse au centre droit
+      Offset(
+        size.width * 0.8 + math.sin(t * 1.3) * 150.0,
+        size.height * 0.3 + math.cos(t * 0.8) * 120.0,
+      ),
+      // Orb 3 : arc en bas à gauche
+      Offset(
+        size.width * 0.1 + math.cos(t * 1.5) * 150.0,
+        size.height * 0.8 + math.sin(t) * 100.0,
+      ),
+      // Orb 4 : accent additionnel
+      Offset(
+        size.width * 0.6 + math.sin(t * 0.6) * 100.0,
+        size.height * 0.7 + math.cos(t * 0.9) * 90.0,
+      ),
+    ];
+  }
 }
 
-/// Graine stable décrivant la trajectoire et le rythme d'une empreinte flottante
+// ============================================================================
+// PERFORMANCE ORB (Sans BackdropFilter)
+// ============================================================================
+class _PerformanceOrb extends StatelessWidget {
+  final double left;
+  final double top;
+  final double size;
+  final Color color;
+
+  const _PerformanceOrb({
+    required this.left,
+    required this.top,
+    required this.size,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: left - (size / 2),
+      top: top - (size / 2),
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            colors: [color, color.withOpacity(0.0)],
+            stops: const [0.0, 1.0],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// FINGERPRINT SEED
+// ============================================================================
 class _FingerprintSeed {
-  final double baseX; // position de base normalisée (0..1)
+  final double baseX;
   final double baseY;
-  final double radius; // rayon du mouvement en pixels
-  final double speed; // multiplicateur de vitesse
-  final double phase; // déphasage initial du mouvement
-  final double size; // taille de l'icône
-  final double pulsePhase; // déphasage du pulse d'opacité
+  final double radius;
+  final double speed;
+  final double phase;
+  final double size;
+  final double pulsePhase;
 
   const _FingerprintSeed({
     required this.baseX,
@@ -169,14 +234,17 @@ class _FingerprintSeed {
   });
 }
 
-/// Peintre : petites empreintes digitales qui dérivent doucement et pulsent en opacité,
-/// clin d'œil discret à l'identité THIX ID sans surcharger le fond.
+// ============================================================================
+// FLOATING FINGERPRINTS PAINTER
+// ============================================================================
 class _FloatingFingerprintsPainter extends CustomPainter {
   final List<_FingerprintSeed> seeds;
   final double t;
-  final Size size;
 
-  _FloatingFingerprintsPainter({required this.seeds, required this.t, required this.size});
+  _FloatingFingerprintsPainter({
+    required this.seeds,
+    required this.t,
+  });
 
   @override
   void paint(Canvas canvas, Size canvasSize) {
@@ -187,28 +255,36 @@ class _FloatingFingerprintsPainter extends CustomPainter {
       final ox = cx + math.cos(angle) * s.radius;
       final oy = cy + math.sin(angle) * s.radius;
 
-      // Pulse doux d'opacité entre 0.05 et 0.14 pour rester très discret
-      final pulse = (math.sin(t * 0.8 + s.pulsePhase) + 1) / 2; // 0..1
-      final opacity = 0.05 + pulse * 0.09;
+      // Pulse d'opacité entre min et max
+      final pulse = (math.sin(t * 0.8 + s.pulsePhase) + 1) / 2;
+      final opacity = _kFingerprintMinOpacity +
+          pulse * (_kFingerprintMaxOpacity - _kFingerprintMinOpacity);
 
-      _paintFingerprintGlyph(canvas, Offset(ox, oy), s.size, ThixPolicy.primary.withOpacity(opacity));
+      _paintFingerprintGlyph(
+        canvas,
+        Offset(ox, oy),
+        s.size,
+        ThixPolicy.primary.withOpacity(opacity),
+      );
     }
   }
 
-  /// Dessine un petit glyphe d'empreinte digitale stylisé (arcs concentriques
-  /// incomplets), en Canvas pur pour rester léger — pas besoin de police d'icônes.
-  void _paintFingerprintGlyph(Canvas canvas, Offset center, double size, Color color) {
+  void _paintFingerprintGlyph(
+    Canvas canvas,
+    Offset center,
+    double size,
+    Color color,
+  ) {
     final paint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = size * 0.09
       ..strokeCap = StrokeCap.round;
 
-    final rings = 4;
+    const rings = 4;
     for (var i = 0; i < rings; i++) {
       final r = size * (0.3 + i * 0.18);
       final rect = Rect.fromCircle(center: center, radius: r);
-      // Arc incomplet (comme une crête d'empreinte), angle et ouverture variés par anneau
       final startAngle = -math.pi / 2 - (i * 0.35);
       final sweepAngle = math.pi * 1.3 - (i * 0.12);
       canvas.drawArc(rect, startAngle, sweepAngle, false, paint);
@@ -216,32 +292,33 @@ class _FloatingFingerprintsPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _FloatingFingerprintsPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _FloatingFingerprintsPainter oldDelegate) {
+    // Redraw seulement si le temps a changé
+    return oldDelegate.t != t;
+  }
 }
 
-/// Peintre personnalisé pour dessiner la grille tech fine — version très claire
+// ============================================================================
+// PREMIUM VISUAL TEXTURE PAINTER
+// ============================================================================
 class _PremiumVisualTexturePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    // ─── GRILLE DE POINTS (Style Fintech), quasi invisible ───
+    // Grille de points
     final dotPaint = Paint()
       ..color = ThixPolicy.primary.withOpacity(0.025)
       ..strokeWidth = 1.5
       ..strokeCap = StrokeCap.round;
 
     final points = <Offset>[];
-    const double spacing = 35.0; // Espacement de la grille
-
-    for (double x = 0; x < size.width; x += spacing) {
-      for (double y = 0; y < size.height; y += spacing) {
+    for (double x = 0; x < size.width; x += _kGridSpacing) {
+      for (double y = 0; y < size.height; y += _kGridSpacing) {
         points.add(Offset(x, y));
       }
     }
-    
-    // Dessine tous les points en une seule opération ultra-rapide
     canvas.drawPoints(PointMode.points, points, dotPaint);
 
-    // ─── ONDES ABSTRAITES très subtiles, tons très clairs ───
+    // Ondes abstraites
     final wavePaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
@@ -256,21 +333,26 @@ class _PremiumVisualTexturePainter extends CustomPainter {
       ],
     ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
 
-    final path1 = Path();
-    path1.moveTo(0, size.height * 0.15);
-    path1.quadraticBezierTo(
-      size.width * 0.4, size.height * 0.05,
-      size.width, size.height * 0.25,
-    );
+    final path1 = Path()
+      ..moveTo(0, size.height * 0.15)
+      ..quadraticBezierTo(
+        size.width * 0.4,
+        size.height * 0.05,
+        size.width,
+        size.height * 0.25,
+      );
     canvas.drawPath(path1, wavePaint);
 
-    final path2 = Path();
-    path2.moveTo(0, size.height * 0.35);
-    path2.cubicTo(
-      size.width * 0.3, size.height * 0.50,
-      size.width * 0.7, size.height * 0.25,
-      size.width, size.height * 0.45,
-    );
+    final path2 = Path()
+      ..moveTo(0, size.height * 0.35)
+      ..cubicTo(
+        size.width * 0.3,
+        size.height * 0.50,
+        size.width * 0.7,
+        size.height * 0.25,
+        size.width,
+        size.height * 0.45,
+      );
     canvas.drawPath(path2, wavePaint);
   }
 
