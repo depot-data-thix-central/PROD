@@ -74,7 +74,8 @@ class _ChatPrivacySettingsState extends ConsumerState<ChatPrivacySettings> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              l10n.t('settings_save_error', args: [settingName]),
+              // CORRECTION: Interpolation au lieu de args:
+              "${l10n.t('settings_save_error')} $settingName",
             ),
           ),
         ]),
@@ -194,7 +195,7 @@ class _ChatPrivacySettingsState extends ConsumerState<ChatPrivacySettings> {
                     Container(
                       color: ThixPolicy.card,
                       child: ChatSettingsSwitch(
-                        icon: Icons.check_circle_outline_rounded,
+                        // CORRECTION: Suppression de l'argument 'icon'
                         title: l10n.t('settings_read_receipts'),
                         subtitle: l10n.t('settings_read_receipts_desc'),
                         value: readReceipts,
@@ -217,7 +218,7 @@ class _ChatPrivacySettingsState extends ConsumerState<ChatPrivacySettings> {
                     Container(
                       color: ThixPolicy.card,
                       child: ChatSettingsSwitch(
-                        icon: Icons.edit_note_rounded,
+                        // CORRECTION: Suppression de l'argument 'icon'
                         title: l10n.t('settings_typing_indicator'),
                         subtitle: l10n.t('settings_typing_indicator_desc'),
                         value: typingIndicator,
