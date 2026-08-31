@@ -3,7 +3,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
-
+import 'package:http/http.dart' as http;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
@@ -19,7 +19,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/network/presentation/providers/user_profile_providers.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -2504,7 +2503,10 @@ class _ThixChatBackgroundPainter extends CustomPainter {
       fontWeight: FontWeight.w900,
       letterSpacing: 2.0,
     );
-    final textPainter = TextPainter(text: TextSpan(text: 'THIX CHAT', style: textStyle), textDirection: TextDirection.ltr);
+    final textPainter = TextPainter(
+      text: TextSpan(text: 'THIX CHAT', style: textStyle),
+      textDirection: TextDirection.ltr,
+    );
     textPainter.layout();
 
     const double stepX = 180.0;
