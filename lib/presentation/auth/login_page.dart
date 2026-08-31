@@ -7,8 +7,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:html/parser.dart' as html_parser;
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide AuthException;
 
+import 'package:thix_id/auth/supabase_auth_manager.dart' show AuthException, AuthErrorCode;
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -24,7 +25,7 @@ const int _kLockoutDuration = 30;
 const int _kResetCooldownDuration = 45;
 const int _kMaxEmailLength = 254;
 const int _kMaxPasswordLength = 128;
-const int _kMaxOtpLength = 6;
+const int _kMaxOtpLength = 8;
 const int _kMaxIdentifierLength = 100;
 
 // ============================================================================
@@ -53,46 +54,113 @@ class _LoginValidators {
   static bool looksLikeEmail(String s) {
     return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(sanitize(s, maxLength: _kMaxEmailLength));
   }
+}
 
-  static String userFacingError(Object e, AppLocalizations l10n) {
-    final msg = e.toString().toLowerCase();
+// ============================================================================
+// AUTH ERROR TRANSLATOR (MIGRATION CLÉ)
+// ============================================================================
 
-    if (msg.contains('account_suspended') || msg.contains('suspended')) {
-      return l10n.t('login_error_suspended');
+/// Traduit un [AuthErrorCode] en message user-friendly via i18n.
+///
+/// Chaque code d'erreur a sa propre clé de traduction, garantissant :
+/// - Cohérence des messages dans toute l'application
+/// - Traduction facile dans toutes les langues supportées
+/// - Pas d'exposition de détails techniques à l'utilisateur
+String _translateAuthError(Object e, AppLocalizations l10n) {
+  // Cas 1 : AuthException custom (avec code enum)
+  if (e is AuthException) {
+    switch (e.code) {
+      case AuthErrorCode.identifierRequired:
+        return l10n.t('auth_error_identifier_required');
+      case AuthErrorCode.passwordRequired:
+        return l10n.t('auth_error_password_required');
+      case AuthErrorCode.thixIdLoginNotAvailable:
+        return l10n.t('auth_error_thix_id_login_not_available');
+      case AuthErrorCode.invalidEmail:
+        return l10n.t('auth_error_invalid_email');
+      case AuthErrorCode.passwordTooShort:
+        final min = e.data?['minLength'] ?? 8;
+        return '${l10n.t('auth_error_password_too_short')} $min';
+      case AuthErrorCode.signInFailed:
+        return l10n.t('auth_error_sign_in_failed');
+      case AuthErrorCode.emailNotVerified:
+        return l10n.t('auth_error_email_not_verified');
+      case AuthErrorCode.serverMisconfiguration:
+        return l10n.t('auth_error_server_misconfiguration');
+      case AuthErrorCode.accountAlreadyExists:
+        return l10n.t('auth_error_account_already_exists');
+      case AuthErrorCode.accountExistsWrongPassword:
+        return l10n.t('auth_error_account_exists_wrong_password');
+      case AuthErrorCode.accountExistsNewOtpSent:
+        return l10n.t('auth_error_account_exists_new_otp_sent');
+      case AuthErrorCode.invalidOtp:
+        return l10n.t('auth_error_invalid_otp');
+      case AuthErrorCode.otpExpired:
+        return l10n.t('auth_error_otp_expired');
+      case AuthErrorCode.networkError:
+        return l10n.t('auth_error_network');
+      case AuthErrorCode.rateLimit:
+        return l10n.t('auth_error_rate_limit');
+      case AuthErrorCode.technicalError:
+        return l10n.t('auth_error_technical');
+      case AuthErrorCode.sessionExpired:
+        return l10n.t('auth_error_session_expired');
+      case AuthErrorCode.userMismatch:
+        return l10n.t('auth_error_user_mismatch');
+      case AuthErrorCode.profileUpdateFailed:
+        return l10n.t('auth_error_profile_update_failed');
+      case AuthErrorCode.markEmailVerifiedFailed:
+        return l10n.t('auth_error_mark_email_verified_failed');
+      case AuthErrorCode.qrTokenGenerationFailed:
+        return l10n.t('auth_error_qr_token_generation_failed');
+      case AuthErrorCode.finalizeRegistrationFailed:
+        return l10n.t('auth_error_finalize_registration_failed');
+      case AuthErrorCode.consumeQrTokenFailed:
+        return l10n.t('auth_error_consume_qr_token_failed');
+      case AuthErrorCode.resendOtpFailed:
+        return l10n.t('auth_error_resend_otp_failed');
+      case AuthErrorCode.phoneAuthNotAvailable:
+        return l10n.t('auth_error_phone_auth_not_available');
+      case AuthErrorCode.deleteAccountNotAvailable:
+        return l10n.t('auth_error_delete_account_not_available');
+      case AuthErrorCode.updateEmailFailed:
+        return l10n.t('auth_error_update_email_failed');
+      case AuthErrorCode.resetPasswordFailed:
+        return l10n.t('auth_error_reset_password_failed');
+      case AuthErrorCode.signUpFailed:
+        return l10n.t('auth_error_sign_up_failed');
+      case AuthErrorCode.otpSent:
+        return l10n.t('auth_info_otp_sent');
     }
-    if (msg.contains('account_not_active') || msg.contains('not active')) {
-      return l10n.t('login_error_not_active');
-    }
-    if (msg.contains('aucun compte trouvé') || msg.contains('phone_resolution_failed')) {
-      return l10n.t('login_error_no_account');
-    }
-    if (msg.contains('mfa_required') || msg.contains('two_fa')) {
-      return l10n.t('login_error_mfa_required');
-    }
-    if (e is AuthException) {
-      if (msg.contains('rate limit') || msg.contains('too many')) {
-        return l10n.t('login_error_rate_limit');
-      }
-      if (msg.contains('network') || msg.contains('connection')) {
-        return l10n.t('login_error_network');
-      }
-    }
-    return l10n.t('login_error_invalid_credentials');
   }
+
+  // Cas 2 : Erreurs business spécifiques (non-authentification)
+  final msg = e.toString().toLowerCase();
+  if (msg.contains('account_suspended') || msg.contains('suspended')) {
+    return l10n.t('login_error_suspended');
+  }
+  if (msg.contains('account_not_active') || msg.contains('not active')) {
+    return l10n.t('login_error_not_active');
+  }
+  if (msg.contains('aucun compte trouvé') || msg.contains('phone_resolution_failed')) {
+    return l10n.t('login_error_no_account');
+  }
+  if (msg.contains('mfa_required') || msg.contains('two_fa')) {
+    return l10n.t('login_error_mfa_required');
+  }
+  if (msg.contains('user_not_found_after_login')) {
+    return l10n.t('auth_error_sign_in_failed');
+  }
+
+  // Cas 3 : Fallback générique (ne jamais exposer stack trace)
+  debugPrint('[Login] ⚠️ Unmapped error: $e');
+  return l10n.t('auth_error_technical');
 }
 
 // ============================================================================
 // LOGIN PAGE
 // ============================================================================
 
-/// Page de connexion utilisateur.
-///
-/// Fonctionnalités :
-/// - Connexion par email, téléphone ou THIX ID
-/// - Protection anti-bruteforce (lockout après 5 tentatives)
-/// - Récupération de mot de passe avec OTP
-/// - Vérification statut compte (suspended, not active)
-/// - Support biométrie (Face ID, Touch ID)
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
 
@@ -367,15 +435,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       await _logLoginAttempt(
         identifier: _identifierC.text.trim(),
         success: false,
-        failureReason: e.toString(),
+        failureReason: e is AuthException ? e.code.name : e.toString(),
       );
 
       _failedAttempts += 1;
       if (_failedAttempts >= _kLockoutThreshold) {
         _startLockoutTimer();
-        _showError(l10n.t('login_error_too_many_attempts', args: ['$_kLockoutDuration']));
+        _showError('${l10n.t('login_error_too_many_attempts_prefix')} $_kLockoutDuration${l10n.t('login_seconds_suffix')}');
       } else {
-        _showError(_LoginValidators.userFacingError(e, l10n));
+        _showError(_translateAuthError(e, l10n));
       }
     }
   }
@@ -395,7 +463,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       _showInfo(l10n.t('login_reset_email_sent'));
     } catch (e) {
       debugPrint('[Login] ❌ Password reset failed: $e');
-      _showError(l10n.t('login_reset_email_failed'));
+      _showError(_translateAuthError(e, l10n));
     }
     _startResetCooldown();
     return true;
@@ -424,7 +492,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     _showInfo(l10n.t('login_biometric_not_supported'));
   }
 
-  // ── BUILD ─────────────────────────────────────────────────────────────────
+  // ── BUILD (inchangé) ──────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -438,7 +506,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         top: false,
         child: Stack(
           children: [
-            // ── Header avec gradient ──
             Positioned(
               top: 0,
               left: 0,
@@ -475,8 +542,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                 ),
               ),
             ),
-
-            // ── Contenu principal ──
             Positioned.fill(
               top: 200,
               child: SingleChildScrollView(
@@ -511,8 +576,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                 ),
                           ),
                           const SizedBox(height: ThixPolicy.s28),
-
-                          // ── Champ identifiant ──
                           Semantics(
                             label: l10n.t('login_identifier_label'),
                             textField: true,
@@ -529,8 +592,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             ),
                           ),
                           const SizedBox(height: ThixPolicy.s16),
-
-                          // ── Champ mot de passe ──
                           Semantics(
                             label: l10n.t('login_password_label'),
                             textField: true,
@@ -547,10 +608,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               onSubmitted: (_) => _signIn(),
                             ),
                           ),
-
                           const SizedBox(height: ThixPolicy.s12),
-
-                          // ── Rester connecté + Mot de passe oublié ──
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -619,10 +677,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               ),
                             ],
                           ),
-
                           const SizedBox(height: ThixPolicy.s32),
-
-                          // ── Bouton connexion ──
                           Semantics(
                             button: true,
                             label: l10n.t('login_button'),
@@ -653,7 +708,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                   ],
                                   Text(
                                     _lockoutSecondsLeft > 0
-                                        ? l10n.t('login_retry_in', args: ['$_lockoutSecondsLeft'])
+                                        ? '${l10n.t('login_retry_in')} $_lockoutSecondsLeft${l10n.t('login_seconds_suffix')}'
                                         : (isLoading ? l10n.t('login_verifying') : l10n.t('login_button')),
                                     style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: 0.5),
                                   ),
@@ -665,10 +720,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               ),
                             ),
                           ),
-
                           const SizedBox(height: ThixPolicy.s24),
-
-                          // ── Séparateur biométrie ──
                           Row(
                             children: [
                               const Expanded(child: Divider(color: ThixPolicy.border)),
@@ -688,8 +740,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             ],
                           ),
                           const SizedBox(height: 20),
-
-                          // ── Boutons biométrie ──
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -717,10 +767,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         ],
                       ),
                     ),
-
                     const SizedBox(height: ThixPolicy.s24),
-
-                    // ── Bannière sécurité ──
                     RepaintBoundary(
                       child: Container(
                         padding: const EdgeInsets.all(ThixPolicy.s16),
@@ -773,10 +820,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: ThixPolicy.s28),
-
-                    // ── Lien inscription ──
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -808,10 +852,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: ThixPolicy.s24),
-
-                    // ── Sélecteur langue ──
                     Container(
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
@@ -842,7 +883,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 }
 
 // ============================================================================
-// SECURE INPUT
+// SECURE INPUT (inchangé)
 // ============================================================================
 
 class _SecureInput extends StatefulWidget {
@@ -878,6 +919,7 @@ class _SecureInputState extends State<_SecureInput> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -902,7 +944,7 @@ class _SecureInputState extends State<_SecureInput> {
             suffixIcon: widget.isPassword
                 ? Semantics(
                     button: true,
-                    label: _obscured ? 'Afficher le mot de passe' : 'Masquer le mot de passe',
+                    label: _obscured ? l10n.t('common_show_password') : l10n.t('common_hide_password'),
                     child: IconButton(
                       splashRadius: 20,
                       icon: Icon(
@@ -937,7 +979,7 @@ class _SecureInputState extends State<_SecureInput> {
 }
 
 // ============================================================================
-// SOCIAL AUTH BUTTON
+// SOCIAL AUTH BUTTON (inchangé)
 // ============================================================================
 
 class _SocialAuth extends StatelessWidget {
@@ -981,7 +1023,7 @@ class _SocialAuth extends StatelessWidget {
 }
 
 // ============================================================================
-// LANGUAGE CHIP
+// LANGUAGE CHIP (inchangé)
 // ============================================================================
 
 class _LangChip extends StatelessWidget {
@@ -996,7 +1038,7 @@ class _LangChip extends StatelessWidget {
     return Semantics(
       button: true,
       selected: active,
-      label: 'Langue: $label',
+      label: '${AppLocalizations.of(context).t('common_language')}: $label',
       child: InkWell(
         onTap: () {
           HapticFeedback.selectionClick();
@@ -1024,7 +1066,7 @@ class _LangChip extends StatelessWidget {
 }
 
 // ============================================================================
-// FORGOT PASSWORD DIALOG
+// FORGOT PASSWORD DIALOG (adapté pour utiliser _translateAuthError)
 // ============================================================================
 
 class _ForgotPasswordDialog extends StatefulWidget {
@@ -1066,6 +1108,22 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
     _otpC.dispose();
     _newPasswordC.dispose();
     super.dispose();
+  }
+
+  void _showDialogError(String message) {
+    if (!mounted) return;
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(message)),
+        ]),
+        backgroundColor: ThixPolicy.danger,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
@@ -1113,10 +1171,9 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
               ],
             ),
             const SizedBox(height: ThixPolicy.s16),
-
             Text(
               _isOtpSent
-                  ? l10n.t('login_reset_otp_sent', args: [_emailC.text])
+                  ? '${l10n.t('login_reset_otp_sent_prefix')} ${_emailC.text}. ${l10n.t('login_reset_otp_sent_suffix')}'
                   : l10n.t('login_reset_instructions'),
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: ThixPolicy.textSecondary,
@@ -1125,7 +1182,6 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                   ),
             ),
             const SizedBox(height: ThixPolicy.s24),
-
             if (!_isOtpSent)
               Semantics(
                 label: l10n.t('login_email_label'),
@@ -1135,9 +1191,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                   keyboardType: TextInputType.emailAddress,
                   maxLength: _kMaxEmailLength,
                   style: const TextStyle(fontSize: 14, color: ThixPolicy.textMain, fontWeight: FontWeight.w500),
-                  decoration: _buildInputDecoration(
-                    hintText: l10n.t('login_email_hint'),
-                  ),
+                  decoration: _buildInputDecoration(hintText: l10n.t('login_email_hint')),
                 ),
               )
             else ...[
@@ -1151,7 +1205,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                   style: const TextStyle(fontSize: 14, color: ThixPolicy.textMain, fontWeight: FontWeight.w500),
                   decoration: _buildInputDecoration(
                     labelText: l10n.t('login_otp_label'),
-                    hintText: '000000',
+                    hintText: '00000000',
                   ),
                 ),
               ),
@@ -1168,22 +1222,24 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                     labelText: l10n.t('login_new_password_label'),
                     hintText: l10n.t('login_password_min_length'),
                     errorText: _passwordError,
-                    suffixIcon: IconButton(
-                      splashRadius: 20,
-                      icon: Icon(
-                        _isObscured ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                        color: ThixPolicy.textSecondary,
-                        size: 20,
+                    suffixIcon: Semantics(
+                      button: true,
+                      label: _isObscured ? l10n.t('common_show_password') : l10n.t('common_hide_password'),
+                      child: IconButton(
+                        splashRadius: 20,
+                        icon: Icon(
+                          _isObscured ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                          color: ThixPolicy.textSecondary,
+                          size: 20,
+                        ),
+                        onPressed: () => setState(() => _isObscured = !_isObscured),
                       ),
-                      onPressed: () => setState(() => _isObscured = !_isObscured),
                     ),
                   ),
                 ),
               ),
             ],
-
             const SizedBox(height: ThixPolicy.s28),
-
             Row(
               children: [
                 Expanded(
@@ -1213,13 +1269,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                                 if (!canSend) return;
                                 final email = _LoginValidators.sanitize(_emailC.text.trim(), maxLength: _kMaxEmailLength);
                                 if (!_LoginValidators.looksLikeEmail(email)) {
-                                  HapticFeedback.lightImpact();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(l10n.t('login_error_invalid_email')),
-                                      backgroundColor: ThixPolicy.danger,
-                                    ),
-                                  );
+                                  _showDialogError(l10n.t('auth_error_invalid_email'));
                                   return;
                                 }
 
@@ -1238,13 +1288,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                                 final newPass = _LoginValidators.sanitize(_newPasswordC.text, maxLength: _kMaxPasswordLength);
 
                                 if (otp.isEmpty) {
-                                  HapticFeedback.lightImpact();
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(l10n.t('login_error_empty_otp')),
-                                      backgroundColor: ThixPolicy.danger,
-                                    ),
-                                  );
+                                  _showDialogError(l10n.t('login_error_empty_otp'));
                                   return;
                                 }
 
@@ -1301,14 +1345,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                                 } catch (e) {
                                   debugPrint('[Login] ❌ Password reset error: $e');
                                   if (mounted) {
-                                    HapticFeedback.lightImpact();
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(l10n.t('login_error_invalid_otp')),
-                                        backgroundColor: ThixPolicy.danger,
-                                        behavior: SnackBarBehavior.floating,
-                                      ),
-                                    );
+                                    _showDialogError(_translateAuthError(e, l10n));
                                     setState(() => _isSending = false);
                                   }
                                 }
@@ -1326,7 +1363,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                             : (_isOtpSent
                                 ? l10n.t('login_confirm')
                                 : (!canSend && widget.resetCooldown > 0
-                                    ? l10n.t('login_wait_seconds', args: ['${widget.resetCooldown}'])
+                                    ? '${l10n.t('login_wait_prefix')} ${widget.resetCooldown}${l10n.t('login_seconds_suffix')}'
                                     : l10n.t('login_send'))),
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
