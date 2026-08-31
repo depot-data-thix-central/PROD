@@ -934,7 +934,7 @@ class _SecureInputState extends State<_SecureInput> {
           keyboardType: widget.type,
           textInputAction: widget.textInputAction,
           maxLength: widget.maxLength,
-          onSubmitted: widget.onSubmitted,
+          onFieldSubmitted: widget.onSubmitted,
           style: const TextStyle(fontSize: 14, color: ThixPolicy.textMain, fontWeight: FontWeight.w500),
           decoration: InputDecoration(
             counterText: '',
@@ -1301,10 +1301,10 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                                 );
 
                                 if (passError != null) {
-                                  HapticFeedback.lightImpact();
-                                  setState(() => _passwordError = passError);
-                                  return;
-                                }
+  HapticFeedback.lightImpact();
+  setState(() => _passwordError = passError.message); // Remplace .message par la propriété textuelle de ton objet si elle a un autre nom
+  return;
+}
 
                                 setState(() => _isSending = true);
                                 HapticFeedback.mediumImpact();
