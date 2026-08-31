@@ -1,4 +1,3 @@
-// lib/auth/auth_manager.dart (interface inchangée)
 // lib/auth/supabase_auth_manager.dart
 
 import 'dart:async';
@@ -654,7 +653,7 @@ class SupabaseAuthManager implements AuthManager {
     required String displayName,
     required AccountType accountType,
     required bool rememberMe,
-    Map<String, dynamic>? profileDraft,
+    ProfileDraft? profileDraft,
   }) async {
     final normalizedEmail = _AuthValidators.normalizeEmail(email);
     if (!_AuthValidators.isValidEmail(normalizedEmail)) {
@@ -674,7 +673,8 @@ class SupabaseAuthManager implements AuthManager {
       final userMeta = <String, dynamic>{
         'display_name': sanitizedDisplayName.isEmpty ? _kDefaultDisplayName : sanitizedDisplayName,
         'account_type': accountType.name,
-        ...?profileDraft,
+        // Si ProfileDraft utilise .toJson() ou .toMap()
+        if (profileDraft != null) ...profileDraft.toMap(),
       };
 
       final res = await _authRetry(
@@ -762,7 +762,7 @@ class SupabaseAuthManager implements AuthManager {
     required String password,
     required String displayName,
     required bool rememberMe,
-    Map<String, dynamic>? profileDraft,
+    ProfileDraft? profileDraft,
   }) {
     return registerWithEmail(
       email: email,
@@ -1040,5 +1040,17 @@ class SupabaseAuthManager implements AuthManager {
 
     debugPrint('[Auth] ⚠️ Unmapped Supabase error in $context: ${e.message}');
     return AuthException(AuthErrorCode.technicalError, rawMessage: e.message);
+  }
+
+  // ==========================================================================
+  // DISPOSE
+  // ==========================================================================
+  
+  @override
+  void dispose() {
+    debugPrint('[Auth] 🧹 Disposing AuthManager');
+    _sub?.cancel();
+    _profileSub?.cancel();
+    _currentUser.dispose();
   }
 }
