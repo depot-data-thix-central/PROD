@@ -1,18 +1,19 @@
 // lib/presentation/chat/providers/presence_provider.dart
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:thix_id/auth/auth_controller.dart' show currentUserProvider;
+
+import 'package:thix_id/auth/auth_controller.dart';
 import 'package:thix_id/models/app_user.dart';
-import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
 const String _kChannelName = 'thix-global-presence';
 const String _kPayloadUserIdKey = 'user_id';
-const int _kMaxSetSize = 10000; // Protection DoS mémoire
+const int _kMaxSetSize = 10000;
 const Duration _kHeartbeatInterval = Duration(seconds: 30);
 const Duration _kTrackTimeout = Duration(seconds: 10);
 const Duration _kReconnectDelay = Duration(seconds: 3);
@@ -23,7 +24,6 @@ const Duration _kReconnectDelay = Duration(seconds: 3);
 class _PresenceValidators {
   _PresenceValidators._();
 
-  /// Valide qu'un string est un UUID v4 valide
   static bool isValidUuid(String? id) {
     if (id == null || id.isEmpty) return false;
     return RegExp(
@@ -32,7 +32,6 @@ class _PresenceValidators {
     ).hasMatch(id);
   }
 
-  /// Extrait un user_id valide d'un payload Realtime
   static String? extractUserId(Map<String, dynamic>? payload) {
     if (payload == null) return null;
     final raw = payload[_kPayloadUserIdKey];
@@ -46,15 +45,9 @@ class _PresenceValidators {
 // STATE
 // ============================================================================
 
-/// État de présence global : ensemble des user IDs en ligne.
 class PresenceState {
-  /// Set immuable des user IDs en ligne
   final Set<String> onlineUserIds;
-
-  /// Vrai si le canal Realtime est connecté
   final bool isConnected;
-
-  /// Dernière erreur (pour debug UI)
   final String? error;
 
   const PresenceState({
@@ -63,10 +56,7 @@ class PresenceState {
     this.error,
   });
 
-  /// Nombre d'utilisateurs en ligne
   int get onlineCount => onlineUserIds.length;
-
-  /// Vérifie si un utilisateur donné est en ligne
   bool isOnline(String userId) => onlineUserIds.contains(userId);
 
   PresenceState copyWith({
@@ -87,24 +77,11 @@ class PresenceState {
 // NOTIFIER
 // ============================================================================
 
-/// Notifier de présence temps réel basé sur Supabase Realtime.
-///
-/// **Architecture** :
-/// - Utilise `onPresenceSync` pour l'état initial complet
-/// - Utilise `onPresenceJoin` / `onPresenceLeave` pour les updates incrémentales
-/// - Heartbeat périodique pour maintenir la présence
-/// - Écoute les changements d'auth pour reconnexion propre
-///
-/// **Sécurité** :
-/// - Validation stricte des UUIDs reçus
-/// - Sanitization des payloads
-/// - Protection DoS (max 10 000 users)
-/// - Pas d'exposition d'erreurs techniques à l'UI
 class PresenceNotifier extends StateNotifier<PresenceState> {
   final Ref _ref;
   RealtimeChannel? _channel;
   Timer? _heartbeatTimer;
-  StreamSubscription? _authSubscription;
+  ProviderSubscription? _authSubscription;
   String? _currentUserId;
   bool _isTracked = false;
   bool _isDisposed = false;
@@ -115,19 +92,18 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
     _initPresence();
   }
 
+  SupabaseClient get _supabase => Supabase.instance.client;
+
   @override
   void dispose() {
     _isDisposed = true;
     _heartbeatTimer?.cancel();
-    _authSubscription?.cancel();
+    _authSubscription?.close();
     _cleanupChannel();
     debugPrint('[Presence] 👋 Disposed');
     super.dispose();
   }
 
-  // ── AUTH CHANGES ──────────────────────────────────────────────────────
-
-  /// Écoute les changements d'utilisateur (login/logout/switch).
   void _bindAuthChanges() {
     _authSubscription = _ref.listen<AppUser?>(
       currentUserProvider,
@@ -136,12 +112,11 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
         final nextId = next?.id;
         if (prevId == nextId) return;
 
-        debugPrint('[Presence] 🔄 Auth changed: ${_obfuscate(prevId)} → ${_obfuscate(nextId)}');
+        debugPrint('[Presence] 🔄 Auth changed: '
+            '${_obfuscate(prevId)} → ${_obfuscate(nextId)}');
 
-        // Logout ou switch user : cleanup de l'ancien channel
         _cleanupChannel();
 
-        // Login ou switch : init nouveau channel
         if (nextId != null) {
           _initPresence();
         } else {
@@ -151,9 +126,6 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
     );
   }
 
-  // ── INIT PRESENCE ─────────────────────────────────────────────────────
-
-  /// Initialise le canal Realtime et s'annonce.
   void _initPresence() {
     if (_isDisposed) return;
 
@@ -169,29 +141,24 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
     try {
       _channel = _supabase.channel(
         _kChannelName,
-        opts: const RealtimeChannelConfig(), // Correction 1 : selfBroadcast retiré
+        opts: const RealtimeChannelConfig(selfBroadcast: false),
       );
 
-      // 1. Sync initial : état complet au join
       _channel!.onPresenceSync((_) => _handlePresenceSync());
-
-      // 2. Updates incrémentales (plus efficace que sync à chaque fois)
       _channel!.onPresenceJoin((join) => _handlePresenceJoin(join));
       _channel!.onPresenceLeave((leave) => _handlePresenceLeave(leave));
 
-      // 3. Subscribe avec gestion d'erreur
       _channel!.subscribe((status, [error]) {
         if (_isDisposed) return;
         _handleSubscriptionStatus(status, error);
       });
     } catch (e) {
       debugPrint('[Presence] ❌ Init failed: $e');
-      state = state.copyWith(error: 'Échec de connexion présence', isConnected: false);
+      state = state.copyWith(
+          error: 'Échec de connexion présence', isConnected: false);
       _scheduleReconnect();
     }
   }
-
-  // ── SUBSCRIPTION HANDLING ─────────────────────────────────────────────
 
   void _handleSubscriptionStatus(RealtimeSubscribeStatus status, Object? error) {
     if (_isDisposed) return;
@@ -219,17 +186,17 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
 
       case RealtimeSubscribeStatus.channelError:
         debugPrint('[Presence] ❌ Channel error: $error');
-        state = state.copyWith(isConnected: false, error: 'Erreur canal présence');
+        state =
+            state.copyWith(isConnected: false, error: 'Erreur canal présence');
         _scheduleReconnect();
         break;
     }
   }
 
-  // ── TRACKING ──────────────────────────────────────────────────────────
-
-  /// S'annonce aux autres utilisateurs.
   Future<void> _trackSelf() async {
-    if (_isDisposed || _isTracked || _channel == null || _currentUserId == null) return;
+    if (_isDisposed || _isTracked || _channel == null || _currentUserId == null) {
+      return;
+    }
 
     try {
       await _channel!
@@ -240,8 +207,6 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
       debugPrint('[Presence] ❌ Track failed: $e');
     }
   }
-
-  // ── HEARTBEAT ─────────────────────────────────────────────────────────
 
   void _startHeartbeat() {
     _heartbeatTimer?.cancel();
@@ -260,22 +225,16 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
     _heartbeatTimer = null;
   }
 
-  // ── PRESENCE EVENTS ──────────────────────────────────────────────────
-
-  /// Sync initial : reconstruit le Set complet depuis l'état Realtime.
   void _handlePresenceSync() {
     if (_isDisposed) return;
 
     try {
       final newState = <String>{};
-      // Correction 2 : Cast sécurisé en Map pour éviter l'erreur sur .entries
-      final presenceMap = (_channel?.presenceState() as Map?) ?? {};
+      final presenceMap = _channel?.presenceState() ?? {};
 
       for (final entry in presenceMap.entries) {
-        final presencesList = entry.value as List; // Sécurité de typage
-        for (final presence in presencesList) {
-          // Gère les versions où presence est un Map ou un objet
-          final payload = presence is Map ? presence['payload'] : presence.payload;
+        for (final presence in entry.value) {
+          final payload = presence.payload;
           final userId = _PresenceValidators.extractUserId(payload);
           if (userId != null) {
             newState.add(userId);
@@ -294,23 +253,13 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
     }
   }
 
-  /// Update incrémental : utilisateur(s) rejoint(s).
-  // Correction 3 : Passage en dynamic pour tolérer les changements de package Supabase
-  void _handlePresenceJoin(dynamic join) {
+  void _handlePresenceJoin(RealtimePresenceJoinEvent join) {
     if (_isDisposed) return;
 
     try {
       final newUsers = <String>{};
-      
-      // Sécurité 4 : Support des versions 1.x et 2.x du package
-      List presencesList = [];
-      try { presencesList = join.newPresences; } catch (_) { 
-        try { presencesList = join.presences; } catch (_) {}
-      }
-
-      for (final presence in presencesList) {
-        final payload = presence is Map ? presence['payload'] : presence.payload;
-        final userId = _PresenceValidators.extractUserId(payload);
+      for (final presence in join.presences) {
+        final userId = _PresenceValidators.extractUserId(presence.payload);
         if (userId != null) newUsers.add(userId);
       }
 
@@ -324,28 +273,20 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
       }
 
       state = state.copyWith(onlineUserIds: updated);
-      debugPrint('[Presence] ➕ Joined: ${newUsers.length} user(s) (total: ${updated.length})');
+      debugPrint('[Presence] ➕ Joined: ${newUsers.length} user(s) '
+          '(total: ${updated.length})');
     } catch (e) {
       debugPrint('[Presence] ❌ Join error: $e');
     }
   }
 
-  /// Update incrémental : utilisateur(s) parti(s).
-  void _handlePresenceLeave(dynamic leave) {
+  void _handlePresenceLeave(RealtimePresenceLeaveEvent leave) {
     if (_isDisposed) return;
 
     try {
       final leftUsers = <String>{};
-      
-      // Sécurité 4 : Support des versions 1.x et 2.x du package
-      List presencesList = [];
-      try { presencesList = leave.leftPresences; } catch (_) { 
-        try { presencesList = leave.presences; } catch (_) {}
-      }
-
-      for (final presence in presencesList) {
-        final payload = presence is Map ? presence['payload'] : presence.payload;
-        final userId = _PresenceValidators.extractUserId(payload);
+      for (final presence in leave.presences) {
+        final userId = _PresenceValidators.extractUserId(presence.payload);
         if (userId != null) leftUsers.add(userId);
       }
 
@@ -353,13 +294,12 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
 
       final updated = Set<String>.from(state.onlineUserIds)..removeAll(leftUsers);
       state = state.copyWith(onlineUserIds: updated);
-      debugPrint('[Presence] ➖ Left: ${leftUsers.length} user(s) (total: ${updated.length})');
+      debugPrint('[Presence] ➖ Left: ${leftUsers.length} user(s) '
+          '(total: ${updated.length})');
     } catch (e) {
       debugPrint('[Presence] ❌ Leave error: $e');
     }
   }
-
-  // ── RECONNECT & CLEANUP ──────────────────────────────────────────────
 
   void _scheduleReconnect() {
     if (_isDisposed || _currentUserId == null) return;
@@ -390,16 +330,11 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
     }
   }
 
-  // ── HELPERS ──────────────────────────────────────────────────────────
-
   String _obfuscate(String? s) {
     if (s == null || s.length <= 8) return '***';
     return '${s.substring(0, 4)}...${s.substring(s.length - 4)}';
   }
 
-  SupabaseClient get _supabase => Supabase.instance.client;
-
-  /// API publique : force un refresh de l'état de présence.
   void forceRefresh() {
     debugPrint('[Presence] 🔄 Force refresh requested');
     _cleanupChannel();
@@ -411,36 +346,19 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
 // PROVIDERS
 // ============================================================================
 
-/// Provider principal pour la présence temps réel.
-///
-/// Usage :
-/// ```dart
-/// final presence = ref.watch(presenceProvider);
-/// final isOnline = presence.isOnline(userId);
-/// final count = presence.onlineCount;
-/// final allIds = presence.onlineUserIds;
-/// ```
 final presenceProvider =
     StateNotifierProvider<PresenceNotifier, PresenceState>((ref) {
   return PresenceNotifier(ref);
 });
 
-/// Provider dérivé : vérifie si un utilisateur spécifique est en ligne.
-///
-/// Usage :
-/// ```dart
-/// final isUserOnline = ref.watch(isUserOnlineProvider(userId));
-/// ```
 final isUserOnlineProvider = Provider.family<bool, String>((ref, userId) {
   return ref.watch(presenceProvider).isOnline(userId);
 });
 
-/// Provider dérivé : nombre d'utilisateurs en ligne.
 final onlineCountProvider = Provider<int>((ref) {
   return ref.watch(presenceProvider).onlineCount;
 });
 
-/// Provider dérivé : état de connexion du canal Realtime.
 final presenceConnectedProvider = Provider<bool>((ref) {
   return ref.watch(presenceProvider).isConnected;
 });
