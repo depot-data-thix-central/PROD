@@ -1,52 +1,168 @@
-// ============================================================
-// 📁 lib/presentation/chat/settings/chat_settings_page.dart
-// ============================================================
-
+// lib/presentation/chat/settings/chat_settings_page.dart
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // IMPORTANT: Ajouté pour avoir l'ID de l'utilisateur
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'; // Migration vers Riverpod pour cohérence
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../../providers/chat/chat_settings_provider.dart';
-import 'widgets/chat_settings_tile.dart';
-import 'widgets/chat_settings_section.dart';
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
+import 'package:thix_id/presentation/auth/providers/auth_controller.dart'; // Assurez-vous que ce provider existe
+import 'package:thix_id/presentation/chat/profile/chat_profile_page.dart';
+import 'package:thix_id/presentation/chat/providers/chat_settings_provider.dart';
+import 'package:thix_id/presentation/chat/settings/chat_appearance_settings.dart';
+import 'package:thix_id/presentation/chat/settings/chat_data_settings.dart';
+import 'package:thix_id/presentation/chat/settings/chat_notification_settings.dart';
+import 'package:thix_id/presentation/chat/settings/chat_privacy_settings.dart';
+import 'package:thix_id/presentation/chat/settings/widgets/chat_settings_section.dart';
+import 'package:thix_id/presentation/chat/settings/widgets/chat_settings_tile.dart';
 
-import 'chat_appearance_settings.dart';
-import 'chat_privacy_settings.dart';
-import 'chat_notification_settings.dart';
-import 'chat_data_settings.dart';
-import '../profile/chat_profile_page.dart';
+// ============================================================================
+// CHAT SETTINGS PAGE
+// ============================================================================
 
-class ChatSettingsPage extends StatefulWidget {
+/// Page principale des paramètres du chat.
+///
+/// Regroupe : Apparence, Confidentialité, Notifications, Messages, Compte.
+class ChatSettingsPage extends ConsumerStatefulWidget {
   const ChatSettingsPage({super.key});
 
   @override
-  State<ChatSettingsPage> createState() => _ChatSettingsPageState();
+  ConsumerState<ChatSettingsPage> createState() => _ChatSettingsPageState();
 }
 
-class _ChatSettingsPageState extends State<ChatSettingsPage> {
-  static const Color primaryBlue = Color(0xFF4A8BFF);
-  static const Color navyDeep = Color(0xFF0A1F44);
-  static const Color ivory = Color(0xFFF3F5FA);
-  static const Color danger = Color(0xFFD64545);
-  static const Color mutedText = Color(0xFF6B7690);
-
-  // ✅ NOUVEAU : On charge les données dès l'ouverture de la page !
+class _ChatSettingsPageState extends ConsumerState<ChatSettingsPage> {
   @override
   void initState() {
     super.initState();
+    // Chargement asynchrone des paramètres au démarrage
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final userId = Supabase.instance.client.auth.currentUser?.id;
-      if (userId != null) {
-        context.read<ChatSettingsProvider>().load(userId);
-      }
+      _loadSettings();
     });
+  }
+
+  Future<void> _loadSettings() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) {
+      debugPrint('[Settings] ⚠️ No user ID found, cannot load settings');
+      return;
+    }
+
+    debugPrint('[Settings]  Loading settings for user: $userId');
+    try {
+      await ref.read(chatSettingsProvider.notifier).load(userId);
+      debugPrint('[Settings] ✓ Settings loaded successfully');
+    } catch (e) {
+      debugPrint('[Settings] ❌ Error loading settings: $e');
+      // Optionnel : afficher un SnackBar d'erreur ici
+    }
+  }
+
+  Future<void> _handleLogout() async {
+    final l10n = AppLocalizations.of(context);
+    HapticFeedback.mediumImpact();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ThixPolicy.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: ThixPolicy.border),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.logout_rounded, color: ThixPolicy.danger),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                l10n.t('settings_logout_title'),
+                style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          l10n.t('settings_logout_message'),
+          style: ThixPolicy.bodyStyle,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              Navigator.pop(ctx, false);
+            },
+            child: Text(l10n.t('common_cancel')),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ThixPolicy.danger,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              HapticFeedback.mediumImpact();
+              Navigator.pop(ctx, true);
+            },
+            child: Text(l10n.t('settings_logout_confirm')),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      debugPrint('[Settings] 🚪 Logging out...');
+      await ref.read(authControllerProvider.notifier).logout();
+      // Le logout redirige généralement vers la page de login via le provider
+      // Si besoin de navigation manuelle :
+      // if (mounted) Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+    } catch (e) {
+      debugPrint('[Settings] ❌ Logout error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(l10n.t('settings_logout_error')),
+            backgroundColor: ThixPolicy.danger,
+          ),
+        );
+      }
+    }
+  }
+
+  String _getThemeLabel(String theme, AppLocalizations l10n) {
+    switch (theme) {
+      case 'light': return l10n.t('settings_theme_light');
+      case 'dark': return l10n.t('settings_theme_dark');
+      default: return l10n.t('settings_theme_system');
+    }
+  }
+
+  String _getVisibilityLabel(String visibility, AppLocalizations l10n) {
+    switch (visibility) {
+      case 'everyone': return l10n.t('settings_visibility_everyone');
+      case 'contacts': return l10n.t('settings_visibility_contacts');
+      case 'nobody': return l10n.t('settings_visibility_nobody');
+      default: return l10n.t('settings_visibility_everyone');
+    }
+  }
+
+  String _getDownloadLabel(String mode, AppLocalizations l10n) {
+    switch (mode) {
+      case 'wifi': return l10n.t('settings_download_wifi');
+      case 'mobile': return l10n.t('settings_download_mobile');
+      default: return l10n.t('settings_download_never');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<ChatSettingsProvider>();
-    final settings = provider.settings;
+    final l10n = AppLocalizations.of(context);
+    final settingsState = ref.watch(chatSettingsProvider);
+    final settings = settingsState.settings;
+    final isLoading = settingsState.isLoading;
+    final chatUser = settingsState.chatUser;
 
+    // Valeurs par défaut sécurisées
     final theme = settings?.theme ?? 'system';
     final wallpaper = settings?.wallpaper ?? 'default';
     final lastSeen = settings?.lastSeenVisibility ?? 'everyone';
@@ -57,102 +173,201 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
     final autoDownload = settings?.autoDownload ?? 'wifi';
 
     return Scaffold(
-      backgroundColor: ivory,
+      backgroundColor: ThixPolicy.surfaceSoft,
       appBar: AppBar(
-        title: const Text('Paramètres du chat', style: TextStyle(fontWeight: FontWeight.w800)),
-        backgroundColor: navyDeep,
+        title: Text(
+          l10n.t('settings_title'),
+          style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold),
+        ),
+        backgroundColor: ThixPolicy.primary, // Ou transparent selon design
         foregroundColor: Colors.white,
         elevation: 0,
+        leading: Semantics(
+          button: true,
+          label: l10n.t('common_back'),
+          child: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              Navigator.pop(context);
+            },
+          ),
+        ),
       ),
-      body: provider.isLoading
-          ? const Center(child: CircularProgressIndicator(color: primaryBlue))
+      body: isLoading
+          ? Center(
+              child: CircularProgressIndicator(color: ThixPolicy.primary),
+            )
           : ListView(
               padding: const EdgeInsets.symmetric(vertical: 16),
               children: [
+                // ─ Apparence ──
                 ChatSettingsSection(
-                  title: 'Apparence',
+                  title: l10n.t('settings_section_appearance'),
                   children: [
                     ChatSettingsTile(
                       icon: Icons.palette_rounded,
-                      title: 'Thème',
-                      subtitle: _getThemeLabel(theme),
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatAppearanceSettings())),
+                      title: l10n.t('settings_theme'),
+                      subtitle: _getThemeLabel(theme, l10n),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ChatAppearanceSettings()),
+                        );
+                      },
                     ),
                     ChatSettingsTile(
                       icon: Icons.brush_rounded,
-                      title: 'Fond d\'écran',
-                      subtitle: wallpaper == 'default' ? 'Par défaut' : 'Personnalisé',
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatAppearanceSettings())),
+                      title: l10n.t('settings_wallpaper'),
+                      subtitle: wallpaper == 'default'
+                          ? l10n.t('settings_wallpaper_default')
+                          : l10n.t('settings_wallpaper_custom'),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ChatAppearanceSettings()),
+                        );
+                      },
                     ),
                   ],
                 ),
+
+                // ── Confidentialité ──
                 ChatSettingsSection(
-                  title: 'Confidentialité',
+                  title: l10n.t('settings_section_privacy'),
                   children: [
                     ChatSettingsTile(
                       icon: Icons.visibility_rounded,
-                      title: 'Dernière activité',
-                      subtitle: _getVisibilityLabel(lastSeen),
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatPrivacySettings())),
+                      title: l10n.t('settings_last_seen'),
+                      subtitle: _getVisibilityLabel(lastSeen, l10n),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ChatPrivacySettings()),
+                        );
+                      },
                     ),
                     ChatSettingsTile(
                       icon: Icons.image_rounded,
-                      title: 'Photo de profil',
-                      subtitle: _getVisibilityLabel(profilePhoto),
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatPrivacySettings())),
+                      title: l10n.t('settings_profile_photo'),
+                      subtitle: _getVisibilityLabel(profilePhoto, l10n),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ChatPrivacySettings()),
+                        );
+                      },
                     ),
                   ],
                 ),
+
+                // ── Notifications ──
                 ChatSettingsSection(
-                  title: 'Notifications',
+                  title: l10n.t('settings_section_notifications'),
                   children: [
                     ChatSettingsTile(
                       icon: Icons.notifications_rounded,
-                      title: 'Messages',
-                      subtitle: notifMsgs ? 'Activé' : 'Désactivé',
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatNotificationSettings())),
+                      title: l10n.t('settings_messages'),
+                      subtitle: notifMsgs
+                          ? l10n.t('common_enabled')
+                          : l10n.t('common_disabled'),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ChatNotificationSettings()),
+                        );
+                      },
                     ),
                     ChatSettingsTile(
                       icon: Icons.phone_rounded,
-                      title: 'Appels',
-                      subtitle: notifCalls ? 'Activé' : 'Désactivé',
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatNotificationSettings())),
+                      title: l10n.t('settings_calls'),
+                      subtitle: notifCalls
+                          ? l10n.t('common_enabled')
+                          : l10n.t('common_disabled'),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ChatNotificationSettings()),
+                        );
+                      },
                     ),
                   ],
                 ),
+
+                // ── Messages ──
                 ChatSettingsSection(
-                  title: 'Messages',
+                  title: l10n.t('settings_section_messages'),
                   children: [
                     ChatSettingsTile(
                       icon: Icons.timer_rounded,
-                      title: 'Messages éphémères',
-                      subtitle: ephemeralDuration == null ? 'Désactivé' : '${ephemeralDuration}s',
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatDataSettings())),
+                      title: l10n.t('settings_ephemeral'),
+                      subtitle: ephemeralDuration == null
+                          ? l10n.t('common_disabled')
+                          : '${ephemeralDuration}s',
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ChatDataSettings()),
+                        );
+                      },
                     ),
                     ChatSettingsTile(
                       icon: Icons.cloud_download_rounded,
-                      title: 'Téléchargement auto',
-                      subtitle: _getDownloadLabel(autoDownload),
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ChatDataSettings())),
+                      title: l10n.t('settings_auto_download'),
+                      subtitle: _getDownloadLabel(autoDownload, l10n),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ChatDataSettings()),
+                        );
+                      },
                     ),
                   ],
                 ),
+
+                // ── Compte ──
                 ChatSettingsSection(
-                  title: 'Compte',
+                  title: l10n.t('settings_section_account'),
                   children: [
                     ChatSettingsTile(
                       icon: Icons.person_rounded,
-                      title: 'Voir mon profil',
+                      title: l10n.t('settings_view_profile'),
                       onTap: () {
-                        if (provider.chatUser?.id != null) {
-                          Navigator.push(context, MaterialPageRoute(builder: (_) => ChatProfilePage(userId: provider.chatUser!.id))); 
+                        if (chatUser?.id != null) {
+                          HapticFeedback.selectionClick();
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ChatProfilePage(userId: chatUser!.id),
+                            ),
+                          );
+                        } else {
+                          debugPrint('[Settings] ⚠️ Cannot view profile: user ID is null');
                         }
                       },
                     ),
-                    ListTile(
-                      leading: const Icon(Icons.logout_rounded, color: danger),
-                      title: const Text('Se déconnecter', style: TextStyle(color: danger, fontWeight: FontWeight.bold)),
-                      onTap: () {},
+                    Semantics(
+                      button: true,
+                      label: l10n.t('settings_logout'),
+                      child: ListTile(
+                        leading: Icon(Icons.logout_rounded, color: ThixPolicy.danger),
+                        title: Text(
+                          l10n.t('settings_logout'),
+                          style: TextStyle(
+                            color: ThixPolicy.danger,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        onTap: _handleLogout,
+                      ),
                     ),
                   ],
                 ),
@@ -160,30 +375,5 @@ class _ChatSettingsPageState extends State<ChatSettingsPage> {
               ],
             ),
     );
-  }
-
-  String _getThemeLabel(String theme) {
-    switch (theme) {
-      case 'light': return 'Clair';
-      case 'dark': return 'Sombre';
-      default: return 'Système';
-    }
-  }
-
-  String _getVisibilityLabel(String visibility) {
-    switch (visibility) {
-      case 'everyone': return 'Tout le monde';
-      case 'contacts': return 'Mes contacts';
-      case 'nobody': return 'Personne';
-      default: return 'Tout le monde';
-    }
-  }
-
-  String _getDownloadLabel(String mode) {
-    switch (mode) {
-      case 'wifi': return 'Wi-Fi uniquement';
-      case 'mobile': return 'Données mobiles';
-      default: return 'Jamais';
-    }
   }
 }
