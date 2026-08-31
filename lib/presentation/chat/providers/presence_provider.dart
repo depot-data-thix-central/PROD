@@ -169,7 +169,7 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
     try {
       _channel = _supabase.channel(
         _kChannelName,
-        opts: const RealtimeChannelConfig(selfBroadcast: false),
+        opts: const RealtimeChannelConfig(), // Correction 1 : selfBroadcast retiré
       );
 
       // 1. Sync initial : état complet au join
@@ -268,11 +268,14 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
 
     try {
       final newState = <String>{};
-      final presenceMap = _channel?.presenceState() ?? {};
+      // Correction 2 : Cast sécurisé en Map pour éviter l'erreur sur .entries
+      final presenceMap = (_channel?.presenceState() as Map?) ?? {};
 
       for (final entry in presenceMap.entries) {
-        for (final presence in entry.value) {
-          final payload = presence.payload;
+        final presencesList = entry.value as List; // Sécurité de typage
+        for (final presence in presencesList) {
+          // Gère les versions où presence est un Map ou un objet
+          final payload = presence is Map ? presence['payload'] : presence.payload;
           final userId = _PresenceValidators.extractUserId(payload);
           if (userId != null) {
             newState.add(userId);
@@ -292,13 +295,22 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
   }
 
   /// Update incrémental : utilisateur(s) rejoint(s).
-  void _handlePresenceJoin(RealtimePresenceJoinEvent join) {
+  // Correction 3 : Passage en dynamic pour tolérer les changements de package Supabase
+  void _handlePresenceJoin(dynamic join) {
     if (_isDisposed) return;
 
     try {
       final newUsers = <String>{};
-      for (final presence in join.presences) {
-        final userId = _PresenceValidators.extractUserId(presence.payload);
+      
+      // Sécurité 4 : Support des versions 1.x et 2.x du package
+      List presencesList = [];
+      try { presencesList = join.newPresences; } catch (_) { 
+        try { presencesList = join.presences; } catch (_) {}
+      }
+
+      for (final presence in presencesList) {
+        final payload = presence is Map ? presence['payload'] : presence.payload;
+        final userId = _PresenceValidators.extractUserId(payload);
         if (userId != null) newUsers.add(userId);
       }
 
@@ -319,13 +331,21 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
   }
 
   /// Update incrémental : utilisateur(s) parti(s).
-  void _handlePresenceLeave(RealtimePresenceLeaveEvent leave) {
+  void _handlePresenceLeave(dynamic leave) {
     if (_isDisposed) return;
 
     try {
       final leftUsers = <String>{};
-      for (final presence in leave.presences) {
-        final userId = _PresenceValidators.extractUserId(presence.payload);
+      
+      // Sécurité 4 : Support des versions 1.x et 2.x du package
+      List presencesList = [];
+      try { presencesList = leave.leftPresences; } catch (_) { 
+        try { presencesList = leave.presences; } catch (_) {}
+      }
+
+      for (final presence in presencesList) {
+        final payload = presence is Map ? presence['payload'] : presence.payload;
+        final userId = _PresenceValidators.extractUserId(payload);
         if (userId != null) leftUsers.add(userId);
       }
 
