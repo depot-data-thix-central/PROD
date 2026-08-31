@@ -1,11 +1,12 @@
 // lib/presentation/chat/settings/chat_settings_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart'; // Migration vers Riverpod pour cohérence
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/auth/auth_controller.dart';
+import 'package:thix_id/providers/auth/auth_controller.dart';
+
 import 'package:thix_id/presentation/chat/profile/chat_profile_page.dart';
 import 'package:thix_id/providers/chat/chat_settings_provider.dart';
 import 'package:thix_id/presentation/chat/settings/chat_appearance_settings.dart';
@@ -52,7 +53,6 @@ class _ChatSettingsPageState extends ConsumerState<ChatSettingsPage> {
       debugPrint('[Settings] ✓ Settings loaded successfully');
     } catch (e) {
       debugPrint('[Settings] ❌ Error loading settings: $e');
-      // Optionnel : afficher un SnackBar d'erreur ici
     }
   }
 
@@ -112,9 +112,6 @@ class _ChatSettingsPageState extends ConsumerState<ChatSettingsPage> {
     try {
       debugPrint('[Settings] 🚪 Logging out...');
       await ref.read(authControllerProvider.notifier).logout();
-      // Le logout redirige généralement vers la page de login via le provider
-      // Si besoin de navigation manuelle :
-      // if (mounted) Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
     } catch (e) {
       debugPrint('[Settings] ❌ Logout error: $e');
       if (mounted) {
@@ -178,7 +175,7 @@ class _ChatSettingsPageState extends ConsumerState<ChatSettingsPage> {
           l10n.t('settings_title'),
           style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold),
         ),
-        backgroundColor: ThixPolicy.primary, // Ou transparent selon design
+        backgroundColor: ThixPolicy.primary,
         foregroundColor: Colors.white,
         elevation: 0,
         leading: Semantics(
