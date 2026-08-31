@@ -606,7 +606,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
           ),
         ),
         content: Text(
-          l10n.t('connections_remove_message', args: [name.isEmpty ? '—' : name]),
+          "${l10n.t('connections_remove_message')} ${name.isEmpty ? '—' : name}",
           style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 14),
         ),
         actions: [
@@ -862,7 +862,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                   children: [
                     // SECTION: DEMANDES REÇUES
                     if (state.received.isNotEmpty) ...[
-                      _SectionTitle(title: l10n.t('connections_received', args: ['${state.received.length}'])),
+                      _SectionTitle(title: "${l10n.t('connections_received')} (${state.received.length})"),
                       ...state.received.map((r) => _ReceivedRequestCard(
                             request: r,
                             pendingActions: state.pendingActions,
@@ -892,7 +892,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
 
                     // SECTION: DEMANDES ENVOYÉES
                     if (state.sent.isNotEmpty) ...[
-                      _SectionTitle(title: l10n.t('connections_sent', args: ['${state.sent.length}'])),
+                      _SectionTitle(title: "${l10n.t('connections_sent')} (${state.sent.length})"),
                       ...state.sent.map((r) => _SentRequestCard(
                             request: r,
                             onCancel: () => _confirmCancel(r.id),
@@ -901,7 +901,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                     ],
 
                     // SECTION: CONNEXIONS ACTIVES
-                    _SectionTitle(title: l10n.t('connections_active', args: ['${state.connections.length}'])),
+                    _SectionTitle(title: "${l10n.t('connections_active')} (${state.connections.length})"),
                     if (state.connections.isEmpty)
                       _EmptyState(l10n: l10n)
                     else
