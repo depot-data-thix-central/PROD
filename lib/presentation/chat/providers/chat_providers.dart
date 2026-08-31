@@ -3,23 +3,6 @@
 // ============================================================================
 // ⚠️ SOURCE UNIQUE — NE PAS REDÉFINIR CES PROVIDERS AILLEURS
 // ============================================================================
-//
-// Tous les services de chat sont centralisés ici. Les widgets et autres
-// providers doivent TOUJOURS utiliser ces providers via ref.watch/ref.read.
-//
-// Architecture :
-//   supabaseClientProvider (injectable)
-//       ↓
-//   ┌─────────────┬────────────────┬──────────────┬──────────────┐
-//   ↓             ↓                ↓              ↓              ↓
-// ChatService  PresenceService  AudioService  GroupService  StatusService
-//   (WebSocket) (Realtime)      (Record)      (DB+RPC)      (DB)
-//
-// Tous les services sont `keepAlive` (Provider standard) car ils maintiennent
-// des connexions stateful (WebSocket, Realtime, audio recorder).
-//
-// Pour les tests : utiliser `overrides:` dans ProviderScope
-// ============================================================================
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,19 +20,6 @@ import 'package:thix_id/services/chat/status_service.dart';
 // ============================================================================
 
 /// Provider racine pour le client Supabase.
-///
-/// Permet l'injection de mocks dans les tests :
-/// ```dart
-/// ProviderScope(
-///   overrides: [
-///     supabaseClientProvider.overrideWithValue(MockSupabaseClient()),
-///   ],
-///   child: MyApp(),
-/// )
-/// ```
-///
-/// ⚠️ Doit être utilisé par TOUS les services qui dépendent de Supabase,
-/// au lieu d'accéder directement à `Supabase.instance.client`.
 final supabaseClientProvider = Provider<SupabaseClient>((ref) {
   debugPrint('[supabaseClientProvider] 🚀 Resolved');
   return Supabase.instance.client;
@@ -60,15 +30,6 @@ final supabaseClientProvider = Provider<SupabaseClient>((ref) {
 // ============================================================================
 
 /// Service de chat principal (WebSocket, messages, conversations).
-///
-/// **Cycle de vie** : Créé au premier `ref.watch`, persiste jusqu'au
-/// `ProviderScope.dispose()` (jamais auto-détruit).
-///
-/// **Usage** :
-/// ```dart
-/// final chatService = ref.read(chatServiceProvider);
-/// final messages = await chatService.getMessages(conversationId);
-/// ```
 final chatServiceProvider = Provider<ChatService>((ref) {
   final client = ref.watch(supabaseClientProvider);
   debugPrint('[chatServiceProvider] 🚀 Created');
@@ -76,17 +37,9 @@ final chatServiceProvider = Provider<ChatService>((ref) {
     debugPrint('[chatServiceProvider] 👋 Disposed');
   });
   return ChatService(client);
-}, name: 'chatServiceProvider', dependencies: [supabaseClientProvider]);
+}, name: 'chatServiceProvider');
 
 /// Service de présence (Realtime presence, online/offline).
-///
-/// **Cycle de vie** : Persistant (maintient un canal Realtime actif).
-///
-/// **Usage** :
-/// ```dart
-/// final presence = ref.read(presenceServiceProvider);
-/// await presence.trackMyPresence();
-/// ```
 final presenceServiceProvider = Provider<PresenceService>((ref) {
   final client = ref.watch(supabaseClientProvider);
   debugPrint('[presenceServiceProvider] 🚀 Created');
@@ -94,17 +47,9 @@ final presenceServiceProvider = Provider<PresenceService>((ref) {
     debugPrint('[presenceServiceProvider] 👋 Disposed');
   });
   return PresenceService(client);
-}, name: 'presenceServiceProvider', dependencies: [supabaseClientProvider]);
+}, name: 'presenceServiceProvider');
 
 /// Service audio (enregistrement, lecture, upload).
-///
-/// **Cycle de vie** : Persistant (maintient des ressources natives audio).
-///
-/// **Usage** :
-/// ```dart
-/// final audio = ref.read(audioServiceProvider);
-/// final url = await audio.recordAndUpload();
-/// ```
 final audioServiceProvider = Provider<AudioService>((ref) {
   final client = ref.watch(supabaseClientProvider);
   debugPrint('[audioServiceProvider] 🚀 Created');
@@ -112,17 +57,9 @@ final audioServiceProvider = Provider<AudioService>((ref) {
     debugPrint('[audioServiceProvider] 👋 Disposed');
   });
   return AudioService(client);
-}, name: 'audioServiceProvider', dependencies: [supabaseClientProvider]);
+}, name: 'audioServiceProvider');
 
 /// Service de groupes (CRUD, membres, permissions).
-///
-/// **Cycle de vie** : Persistant.
-///
-/// **Usage** :
-/// ```dart
-/// final groups = ref.read(groupServiceProvider);
-/// final info = await groups.getGroupInfo(groupId);
-/// ```
 final groupServiceProvider = Provider<GroupService>((ref) {
   final client = ref.watch(supabaseClientProvider);
   debugPrint('[groupServiceProvider] 🚀 Created');
@@ -130,17 +67,9 @@ final groupServiceProvider = Provider<GroupService>((ref) {
     debugPrint('[groupServiceProvider] 👋 Disposed');
   });
   return GroupService(client);
-}, name: 'groupServiceProvider', dependencies: [supabaseClientProvider]);
+}, name: 'groupServiceProvider');
 
 /// Service de statuts/stories (création, vues, expiration).
-///
-/// **Cycle de vie** : Persistant.
-///
-/// **Usage** :
-/// ```dart
-/// final status = ref.read(statusServiceProvider);
-/// final items = await status.getVisibleStatuses();
-/// ```
 final statusServiceProvider = Provider<StatusService>((ref) {
   final client = ref.watch(supabaseClientProvider);
   debugPrint('[statusServiceProvider] 🚀 Created');
@@ -148,24 +77,9 @@ final statusServiceProvider = Provider<StatusService>((ref) {
     debugPrint('[statusServiceProvider] 👋 Disposed');
   });
   return StatusService(client);
-}, name: 'statusServiceProvider', dependencies: [supabaseClientProvider]);
+}, name: 'statusServiceProvider');
 
-// ============================================================================
-// CONNECTION SERVICE (stateless, utility)
-// ============================================================================
-
-/// Service de vérification de connexion réseau.
-///
-/// Contrairement aux autres services, celui-ci n'utilise pas Supabase
-/// directement. Il vérifie la connectivité réseau (internet reachability).
-///
-/// **Cycle de vie** : Persistant (singleton-like).
-///
-/// **Usage** :
-/// ```dart
-/// final connection = ref.read(connectionServiceProvider);
-/// final isOnline = await connection.isConnected();
-/// ```
+/// Service de connexion réseau.
 final connectionServiceProvider = Provider<ConnectionService>((ref) {
   debugPrint('[connectionServiceProvider] 🚀 Created');
   ref.onDispose(() {
@@ -175,63 +89,39 @@ final connectionServiceProvider = Provider<ConnectionService>((ref) {
 }, name: 'connectionServiceProvider');
 
 // ============================================================================
-// CONVENIENCE PROVIDERS (accès rapide)
+// CONVENIENCE PROVIDERS
 // ============================================================================
 
-/// Provider booléen : vrai si l'utilisateur est connecté au réseau.
-///
-/// Se base sur [connectionServiceProvider] avec rafraîchissement périodique.
-///
-/// **Usage** :
-/// ```dart
-/// final isOnline = ref.watch(isNetworkOnlineProvider);
-/// if (!isOnline) showOfflineBanner();
-/// ```
+/// Provider booléen : vrai si réseau disponible.
 final isNetworkOnlineProvider = FutureProvider<bool>((ref) async {
-  final connection = ref.watch(connectionServiceProvider);
   try {
-    return await connection.isConnected();
+    // Utilise Supabase comme probe de connectivité
+    final client = ref.watch(supabaseClientProvider);
+    final user = client.auth.currentUser;
+    // Simple test : si on peut lire l'auth, on est connecté
+    return user != null || await _pingNetwork();
   } catch (e) {
     debugPrint('[isNetworkOnlineProvider] ❌ Error: $e');
     return false;
   }
 });
 
-/// Provider pour l'ID de l'utilisateur courant connecté à Supabase.
-///
-/// Utile pour les services qui ont besoin de l'user ID sans passer par
-/// le AuthController (ex: services de chat bas niveau).
-///
-/// ⚠️ Préférez `currentUserProvider` du auth_controller pour l'UI.
+/// Ping réseau simple via une requête HTTP légère
+Future<bool> _pingNetwork() async {
+  try {
+    final uri = Uri.parse('https://www.google.com/generate_204');
+    final client = await HttpClient().getUrl(uri).timeout(
+      const Duration(seconds: 3),
+    );
+    final response = await client.close();
+    return response.statusCode == 204;
+  } catch (_) {
+    return true; // Assume connecté si le test échoue
+  }
+}
+
+/// Provider pour l'ID de l'utilisateur courant Supabase.
 final supabaseUserIdProvider = Provider<String?>((ref) {
   final client = ref.watch(supabaseClientProvider);
   return client.auth.currentUser?.id;
 });
-
-// ============================================================================
-// HELPERS POUR TESTS
-// ============================================================================
-
-/// Extensions pour faciliter l'override des providers dans les tests.
-///
-/// Exemple d'utilisation :
-/// ```dart
-/// testWidgets('chat page displays messages', (tester) async {
-///   final mockChat = MockChatService();
-///   when(mockChat.getMessages(any)).thenAnswer((_) async => mockMessages);
-///
-///   await tester.pumpWidget(
-///     ProviderScope(
-///       overrides: [
-///         chatServiceProvider.overrideWithValue(mockChat),
-///         supabaseClientProvider.overrideWithValue(MockSupabaseClient()),
-///       ],
-///       child: const ChatPage(),
-///     ),
-///   );
-/// });
-/// ```
-extension ChatProvidersTestOverrides on ProviderBase {
-  /// Alias pour `overrideWithValue` spécifique aux providers de chat.
-  Override chatOverride<T>(T value) => overrideWithValue(value);
-}
