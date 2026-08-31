@@ -2494,8 +2494,7 @@ class _ChatWaveformAudioPlayerState extends State<_ChatWaveformAudioPlayer> {
 // ============================================================================
 // BACKGROUND PAINTER
 // ============================================================================
-class textDirection: TextDirection.ltr,
- extends CustomPainter {
+class _ThixChatBackgroundPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final textStyle = TextStyle(
@@ -2507,7 +2506,6 @@ class textDirection: TextDirection.ltr,
     final textPainter = TextPainter(
       text: TextSpan(text: 'THIX CHAT', style: textStyle),
       textDirection: TextDirection.ltr,
-
     );
     textPainter.layout();
 
