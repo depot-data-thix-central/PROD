@@ -73,7 +73,8 @@ class _ChatAppearanceSettingsState extends ConsumerState<ChatAppearanceSettings>
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              l10n.t('settings_save_error', args: [settingName]),
+              // CORRECTION ICI : Remplacement de args: [settingName]
+              l10n.t('settings_save_error').replaceAll('{0}', settingName), 
             ),
           ),
         ]),
@@ -134,7 +135,7 @@ class _ChatAppearanceSettingsState extends ConsumerState<ChatAppearanceSettings>
         ),
       ),
       body: isLoading && settings == null
-          ? Center(child: CircularProgressIndicator(color: ThixPolicy.primary))
+          ? const Center(child: CircularProgressIndicator(color: ThixPolicy.primary))
           : settings == null
               ? Center(
                   child: Text(
@@ -242,7 +243,7 @@ class _ChatAppearanceSettingsState extends ConsumerState<ChatAppearanceSettings>
           icon: const Icon(Icons.arrow_drop_down_rounded, color: ThixPolicy.textMuted),
           style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMain),
           items: items,
-          onChanged: _isSaving ? null : onChanged, // Désactivé pendant sauvegarde
+          onChanged: _isSaving ? null : onChanged,
         ),
       ),
     );
