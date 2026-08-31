@@ -1,41 +1,97 @@
+// lib/presentation/home/dashboard_ui.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:html/parser.dart' as html_parser;
 import 'package:share_plus/share_plus.dart';
-import '../../theme.dart';
-import '../../nav.dart';
-import '../common/notifications_sheet.dart';
 
-// ============================================================
-// DASHBOARD_UI.DART - TOUS LES WIDGETS STATIQUES PURS
-// Aucune logique métier, aucun service, 100% UI Optimisée
-// ============================================================
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
+import 'package:thix_id/nav.dart';
+import 'package:thix_id/presentation/common/notifications_sheet.dart';
 
-const _blue = Color(0xFF0D2CC1);
-const _blueDark = Color(0xFF0A1E8A);
-const _bgLight = Color(0xFFF5F6FB);
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+const double _kTopBarHeight = 220.0;
+const double _kProfileCardTopMargin = 88.0;
+const int _kMaxDisplayNameLength = 60;
+const int _kMaxBioLength = 200;
+const int _kMaxThixIdLength = 50;
 
-bool _isPendingThixId(String? id) {
-  if (id == null) return true;
-  final v = id.trim().toUpperCase();
-  return v.isEmpty ||
-      v == 'THIX-PENDING' ||
-      v == 'THIX-000000' ||
-      v.startsWith('THIX-PENDING-');
+// ============================================================================
+// VALIDATORS
+// ============================================================================
+class _UiValidators {
+  _UiValidators._();
+
+  static String sanitize(String? input, {int maxLength = 500}) {
+    if (input == null || input.trim().isEmpty) return '';
+    final doc = html_parser.parse(input);
+    var s = doc.body?.text ?? input;
+    s = s
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
+        .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+    return s.length > maxLength ? s.substring(0, maxLength) : s;
+  }
+
+  static bool isPendingThixId(String? id) {
+    if (id == null) return true;
+    final v = id.trim().toUpperCase();
+    return v.isEmpty ||
+        v == 'THIX-PENDING' ||
+        v == 'THIX-000000' ||
+        v.startsWith('THIX-PENDING-');
+  }
+
+  static bool isVerifiedUser(dynamic user) {
+    final status = (user.registrationStatus ?? '').toString().toLowerCase();
+    final thixId = (user.thixId ?? '').toString();
+    return status == 'paid' ||
+        status == 'verified' ||
+        status == 'active' ||
+        !_UiValidators.isPendingThixId(thixId);
+  }
+
+  static String buildPublicProfileUrl(String thixId) {
+    if (thixId.trim().isEmpty) return '';
+    final encoded = Uri.encodeComponent(thixId.trim());
+    return '${AppRoutes.publicProfile}?thixId=$encoded';
+  }
+
+  static String buildShareUrl(String thixId) {
+    if (thixId.trim().isEmpty) return '';
+    final encoded = Uri.encodeComponent(thixId.trim());
+    return 'https://thix.app/public-profile?thixId=$encoded';
+  }
 }
 
+// ============================================================================
+// BACKGROUND
+// ============================================================================
 class DashboardBackground extends StatelessWidget {
   const DashboardBackground({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Container(color: _bgLight);
+    return Container(color: ThixPolicy.surfaceSoft);
   }
 }
 
+// ============================================================================
+// TOP BAR
+// ============================================================================
 class DashboardTopBar extends StatelessWidget {
   final dynamic user;
   final int score;
-  final VoidCallback onBack, onOpenSettings, onEditProfile, onDownloadCv, onShareProfile;
+  final VoidCallback onBack;
+  final VoidCallback onOpenSettings;
+  final VoidCallback onEditProfile;
+  final VoidCallback onDownloadCv;
+  final VoidCallback onShareProfile;
   final Future<void> Function() onLogout;
 
   const DashboardTopBar({
@@ -52,28 +108,38 @@ class DashboardTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = (user.registrationStatus ?? '').toString().toLowerCase();
-    final thixId = (user.thixId ?? '').toString();
-    final verified = status == 'paid' ||
-        status == 'verified' ||
-        status == 'active' ||
-        !_isPendingThixId(thixId);
-    final photoUrl = (user.photoUrl ?? '').toString().trim();
-    final bio = (user.bio ?? '').toString().trim();
+    final l10n = AppLocalizations.of(context);
+    final verified = _UiValidators.isVerifiedUser(user);
+    final photoUrl = _UiValidators.sanitize(
+      (user.photoUrl ?? '').toString(),
+      maxLength: 300,
+    );
+    final displayName = _UiValidators.sanitize(
+      (user.displayName ?? l10n.t('dashboard_user_default')).toString(),
+      maxLength: _kMaxDisplayNameLength,
+    );
+    final thixId = _UiValidators.sanitize(
+      (user.thixId ?? '').toString(),
+      maxLength: _kMaxThixIdLength,
+    );
+    final bio = _UiValidators.sanitize(
+      (user.bio ?? '').toString(),
+      maxLength: _kMaxBioLength,
+    );
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        // 1. En-tête bleu
+        // 1. En-tête gradient
         Container(
-          height: 220,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [_blue, _blueDark],
+          height: _kTopBarHeight,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [ThixPolicy.primary, ThixPolicy.primaryDeep],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
-            borderRadius: BorderRadius.only(
+            borderRadius: const BorderRadius.only(
               bottomLeft: Radius.circular(28),
               bottomRight: Radius.circular(28),
             ),
@@ -86,28 +152,53 @@ class DashboardTopBar extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             child: Row(
               children: [
-                _TopIconButton(icon: Icons.arrow_back_ios_new_rounded, onTap: onBack),
+                _TopIconButton(
+                  icon: Icons.arrow_back_ios_new_rounded,
+                  semanticsLabel: l10n.t('common_back'),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    onBack();
+                  },
+                ),
                 const Spacer(),
-                const Text(
-                  'TABLEAU DE BORD',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.5,
-                    fontSize: 14,
+                Semantics(
+                  header: true,
+                  child: Text(
+                    l10n.t('dashboard_title'),
+                    style: ThixPolicy.labelStyle.copyWith(
+                      color: Colors.white,
+                      fontWeight: ThixPolicy.bold,
+                      letterSpacing: 0.5,
+                      fontSize: 14,
+                    ),
                   ),
                 ),
                 const Spacer(),
                 _TopIconButton(
                   icon: Icons.notifications_rounded,
-                  onTap: () => NotificationsSheet.show(context),
+                  semanticsLabel: l10n.t('dashboard_notifications'),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    NotificationsSheet.show(context);
+                  },
                 ),
                 const SizedBox(width: 6),
-                _TopIconButton(icon: Icons.settings_rounded, onTap: onOpenSettings),
+                _TopIconButton(
+                  icon: Icons.settings_rounded,
+                  semanticsLabel: l10n.t('dashboard_settings'),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    onOpenSettings();
+                  },
+                ),
                 const SizedBox(width: 6),
                 _TopIconButton(
                   icon: Icons.logout_rounded,
-                  onTap: () async => onLogout(),
+                  semanticsLabel: l10n.t('common_logout'),
+                  onTap: () async {
+                    HapticFeedback.mediumImpact();
+                    await onLogout();
+                  },
                 ),
               ],
             ),
@@ -116,74 +207,33 @@ class DashboardTopBar extends StatelessWidget {
 
         // 3. Carte profil
         Container(
-          margin: const EdgeInsets.only(top: 88, left: 14, right: 14, bottom: 12),
+          margin: const EdgeInsets.only(
+            top: _kProfileCardTopMargin,
+            left: 14,
+            right: 14,
+            bottom: 12,
+          ),
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: ThixPolicy.card,
             borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.07),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
+            boxShadow: ThixPolicy.shadowSoft(opacity: 0.08),
           ),
           child: Column(
             children: [
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Stack(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(2.5),
-                        decoration: const BoxDecoration(
-                          color: _blue,
-                          shape: BoxShape.circle,
-                        ),
-                        child: CircleAvatar(
-                          radius: 32,
-                          backgroundColor: const Color(0xFFEFF4FF),
-                          backgroundImage:
-                              photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
-                          child: photoUrl.isEmpty
-                              ? const Icon(Icons.person, size: 32, color: Colors.grey)
-                              : null,
-                        ),
-                      ),
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Container(
-                          width: 22,
-                          height: 22,
-                          decoration: BoxDecoration(
-                            color: verified ? Colors.green : Colors.orange,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                          alignment: Alignment.center,
-                          child: Icon(
-                            verified
-                                ? Icons.check_rounded
-                                : Icons.hourglass_bottom_rounded,
-                            color: Colors.white,
-                            size: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                  _ProfileAvatar(photoUrl: photoUrl, verified: verified),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          user.displayName ?? 'Utilisateur',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
+                          displayName.isEmpty ? '—' : displayName,
+                          style: ThixPolicy.labelStyle.copyWith(
+                            fontWeight: ThixPolicy.bold,
                             fontSize: 16,
                           ),
                           maxLines: 1,
@@ -194,58 +244,28 @@ class DashboardTopBar extends StatelessWidget {
                           children: [
                             Expanded(
                               child: Text(
-                                'THIX ID: ${user.thixId}',
-                                style: const TextStyle(
+                                'THIX ID: ${thixId.isEmpty ? '—' : thixId}',
+                                style: ThixPolicy.captionStyle.copyWith(
                                   fontSize: 11,
-                                  color: Colors.black54,
-                                  fontWeight: FontWeight.w700,
+                                  color: ThixPolicy.textMuted,
+                                  fontWeight: ThixPolicy.semiBold,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 7,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _blue.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    verified
-                                        ? Icons.verified_rounded
-                                        : Icons.pending_rounded,
-                                    size: 11,
-                                    color: _blue,
-                                  ),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    verified ? 'Vérifié' : 'En attente',
-                                    style: const TextStyle(
-                                      color: _blue,
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 9.5,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                            _VerificationBadge(verified: verified),
                           ],
                         ),
                         const SizedBox(height: 6),
                         Text(
                           bio.isEmpty
-                              ? 'Complétez votre biographie pour augmenter votre visibilité.'
+                              ? l10n.t('dashboard_bio_empty')
                               : bio,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.black87,
+                          style: ThixPolicy.captionStyle.copyWith(
+                            color: ThixPolicy.textMain,
                             fontSize: 11.5,
                             height: 1.3,
                           ),
@@ -256,14 +276,14 @@ class DashboardTopBar extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              const Divider(height: 1, color: Color(0xFFEEEEEE)),
+              Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6)),
               const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
                     child: _HeaderActionButton(
                       icon: Icons.edit_rounded,
-                      label: 'Modifier',
+                      label: l10n.t('common_edit'),
                       onTap: onEditProfile,
                     ),
                   ),
@@ -271,7 +291,7 @@ class DashboardTopBar extends StatelessWidget {
                   Expanded(
                     child: _HeaderActionButton(
                       icon: Icons.download_rounded,
-                      label: 'CV Doc',
+                      label: l10n.t('dashboard_cv_doc'),
                       onTap: onDownloadCv,
                     ),
                   ),
@@ -279,7 +299,7 @@ class DashboardTopBar extends StatelessWidget {
                   Expanded(
                     child: _HeaderActionButton(
                       icon: Icons.ios_share_rounded,
-                      label: 'Partager',
+                      label: l10n.t('common_share'),
                       onTap: onShareProfile,
                     ),
                   ),
@@ -293,25 +313,120 @@ class DashboardTopBar extends StatelessWidget {
   }
 }
 
-class _TopIconButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
+class _ProfileAvatar extends StatelessWidget {
+  final String photoUrl;
+  final bool verified;
 
-  const _TopIconButton({required this.icon, required this.onTap});
+  const _ProfileAvatar({required this.photoUrl, required this.verified});
 
   @override
   Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(2.5),
+          decoration: const BoxDecoration(
+            color: ThixPolicy.primary,
+            shape: BoxShape.circle,
+          ),
+          child: CircleAvatar(
+            radius: 32,
+            backgroundColor: ThixPolicy.surfaceSoft,
+            backgroundImage: photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+            child: photoUrl.isEmpty
+                ? const Icon(Icons.person, size: 32, color: ThixPolicy.textMuted)
+                : null,
+          ),
+        ),
+        Positioned(
+          bottom: 0,
+          right: 0,
+          child: Container(
+            width: 22,
+            height: 22,
+            decoration: BoxDecoration(
+              color: verified ? ThixPolicy.success : ThixPolicy.warning,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              verified ? Icons.check_rounded : Icons.hourglass_bottom_rounded,
+              color: Colors.white,
+              size: 12,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _VerificationBadge extends StatelessWidget {
+  final bool verified;
+
+  const _VerificationBadge({required this.verified});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
-      width: 34,
-      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
-        shape: BoxShape.circle,
+        color: ThixPolicy.primary.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
       ),
-      child: IconButton(
-        icon: Icon(icon, color: Colors.white, size: 16),
-        onPressed: onTap,
-        padding: EdgeInsets.zero,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            verified ? Icons.verified_rounded : Icons.pending_rounded,
+            size: 11,
+            color: ThixPolicy.primary,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            verified ? l10n.t('status_verified') : l10n.t('status_pending'),
+            style: ThixPolicy.captionStyle.copyWith(
+              color: ThixPolicy.primary,
+              fontWeight: ThixPolicy.bold,
+              fontSize: 9.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TopIconButton extends StatelessWidget {
+  final IconData icon;
+  final String semanticsLabel;
+  final VoidCallback onTap;
+
+  const _TopIconButton({
+    required this.icon,
+    required this.semanticsLabel,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: semanticsLabel,
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.15),
+          shape: BoxShape.circle,
+        ),
+        child: IconButton(
+          icon: Icon(icon, color: Colors.white, size: 16),
+          onPressed: onTap,
+          padding: EdgeInsets.zero,
+        ),
       ),
     );
   }
@@ -330,98 +445,130 @@ class _HeaderActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 14, color: _blueDark),
-      label: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: _blueDark,
-          fontWeight: FontWeight.w800,
-          fontSize: 10.5,
+    return Semantics(
+      button: true,
+      label: label,
+      child: OutlinedButton.icon(
+        onPressed: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        icon: Icon(icon, size: 14, color: ThixPolicy.primaryDeep),
+        label: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: ThixPolicy.captionStyle.copyWith(
+            color: ThixPolicy.primaryDeep,
+            fontWeight: ThixPolicy.bold,
+            fontSize: 10.5,
+          ),
         ),
-      ),
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-        side: BorderSide(color: _blue.withOpacity(0.2)),
-        backgroundColor: _blue.withOpacity(0.04),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+          side: BorderSide(color: ThixPolicy.primary.withOpacity(0.2)),
+          backgroundColor: ThixPolicy.primary.withOpacity(0.04),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
       ),
     );
   }
 }
 
+// ============================================================================
+// TABS HEADER
+// ============================================================================
 class DashboardTabsHeader extends StatelessWidget {
   const DashboardTabsHeader({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: ThixPolicy.card,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.black12),
+        border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
       ),
       child: TabBar(
         isScrollable: true,
         labelColor: Colors.white,
-        unselectedLabelColor: Colors.black54,
+        unselectedLabelColor: ThixPolicy.textMuted,
         indicator: BoxDecoration(
-          color: _blue,
+          color: ThixPolicy.primary,
           borderRadius: BorderRadius.circular(24),
         ),
         dividerColor: Colors.transparent,
         labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12),
-        unselectedLabelStyle:
-            const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
         indicatorSize: TabBarIndicatorSize.tab,
         tabAlignment: TabAlignment.start,
         padding: const EdgeInsets.all(3),
-        tabs: const [
-          Tab(text: 'Profil', height: 36),
-          Tab(text: 'Documents', height: 36),
-          Tab(text: 'Expériences', height: 36),
-          Tab(text: 'Formations', height: 36),
-          Tab(text: 'CV', height: 36),
-          Tab(text: 'Paiements', height: 36),
-          Tab(text: 'Sécurité', height: 36),
+        tabs: [
+          Tab(text: l10n.t('tab_profile'), height: 36),
+          Tab(text: l10n.t('tab_documents'), height: 36),
+          Tab(text: l10n.t('tab_experiences'), height: 36),
+          Tab(text: l10n.t('tab_formations'), height: 36),
+          Tab(text: l10n.t('tab_cv'), height: 36),
+          Tab(text: l10n.t('tab_payments'), height: 36),
+          Tab(text: l10n.t('tab_security'), height: 36),
         ],
       ),
     );
   }
 }
 
+// ============================================================================
+// CHAT FAB
+// ============================================================================
 class ChatFab extends StatelessWidget {
-  const ChatFab({super.key});
+  final VoidCallback? onTap;
+
+  const ChatFab({super.key, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 50,
-      height: 50,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.12),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+    final l10n = AppLocalizations.of(context);
+
+    return Semantics(
+      button: true,
+      label: l10n.t('dashboard_chat'),
+      child: GestureDetector(
+        onTap: () {
+          if (onTap == null) {
+            debugPrint('[DashboardUI] ⚠️ ChatFab tapped but no handler provided');
+            return;
+          }
+          HapticFeedback.mediumImpact();
+          onTap!();
+        },
+        child: Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: ThixPolicy.card,
+            boxShadow: ThixPolicy.shadowSoft(opacity: 0.12),
           ),
-        ],
+          alignment: Alignment.center,
+          child: Icon(Icons.forum_rounded, size: 24, color: ThixPolicy.primary),
+        ),
       ),
-      alignment: Alignment.center,
-      child: const Icon(Icons.forum_rounded, size: 24, color: _blue),
     );
   }
 }
 
+// ============================================================================
+// SECTION HEADER
+// ============================================================================
 class SectionHeader extends StatelessWidget {
-  final String title, subtitle, actionLabel;
+  final String title;
+  final String subtitle;
+  final String actionLabel;
   final bool showAction;
+  final VoidCallback? onAction;
 
   const SectionHeader({
     super.key,
@@ -429,6 +576,7 @@ class SectionHeader extends StatelessWidget {
     required this.subtitle,
     this.actionLabel = 'Action',
     this.showAction = false,
+    this.onAction,
   });
 
   @override
@@ -444,29 +592,39 @@ class SectionHeader extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
+                  style: ThixPolicy.titleStyle.copyWith(
+                    fontWeight: ThixPolicy.bold,
                     fontSize: 15,
-                    color: _blueDark,
+                    color: ThixPolicy.primaryDeep,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: const TextStyle(fontSize: 11, color: Colors.black54),
+                  style: ThixPolicy.captionStyle.copyWith(
+                    fontSize: 11,
+                    color: ThixPolicy.textMuted,
+                  ),
                 ),
               ],
             ),
           ),
-          if (showAction)
-            TextButton(
-              onPressed: () {},
-              child: Text(
-                actionLabel,
-                style: const TextStyle(
-                  color: _blue,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12,
+          if (showAction && onAction != null)
+            Semantics(
+              button: true,
+              label: actionLabel,
+              child: TextButton(
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  onAction!();
+                },
+                child: Text(
+                  actionLabel,
+                  style: ThixPolicy.captionStyle.copyWith(
+                    color: ThixPolicy.primary,
+                    fontWeight: ThixPolicy.bold,
+                    fontSize: 12,
+                  ),
                 ),
               ),
             ),
@@ -476,8 +634,13 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// STATS
+// ============================================================================
 class DashboardProfileStat extends StatelessWidget {
-  final String label, value;
+  final String label;
+  final String value;
+
   const DashboardProfileStat({
     super.key,
     required this.label,
@@ -491,19 +654,19 @@ class DashboardProfileStat extends StatelessWidget {
         children: [
           Text(
             value,
-            style: const TextStyle(
-              fontWeight: FontWeight.w900,
+            style: ThixPolicy.titleStyle.copyWith(
+              fontWeight: ThixPolicy.bold,
               fontSize: 16,
-              color: _blueDark,
+              color: ThixPolicy.primaryDeep,
             ),
           ),
           const SizedBox(height: 2),
           Text(
             label,
-            style: const TextStyle(
+            style: ThixPolicy.captionStyle.copyWith(
               fontSize: 10.5,
-              color: Colors.black54,
-              fontWeight: FontWeight.w600,
+              color: ThixPolicy.textMuted,
+              fontWeight: ThixPolicy.semiBold,
             ),
           ),
         ],
@@ -512,9 +675,13 @@ class DashboardProfileStat extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// DASHBOARD CARD
+// ============================================================================
 class DashboardCard extends StatelessWidget {
   final IconData icon;
-  final String title, subtitle;
+  final String title;
+  final String subtitle;
   final Widget child;
 
   const DashboardCard({
@@ -531,15 +698,9 @@ class DashboardCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: ThixPolicy.card,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        boxShadow: ThixPolicy.shadowSoft(opacity: 0.04),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -550,11 +711,11 @@ class DashboardCard extends StatelessWidget {
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: _blue.withOpacity(0.1),
+                  color: ThixPolicy.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(9),
                 ),
                 alignment: Alignment.center,
-                child: Icon(icon, color: _blue, size: 17),
+                child: Icon(icon, color: ThixPolicy.primary, size: 17),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -563,8 +724,8 @@ class DashboardCard extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
+                      style: ThixPolicy.labelStyle.copyWith(
+                        fontWeight: ThixPolicy.bold,
                         fontSize: 13.5,
                       ),
                       maxLines: 1,
@@ -572,7 +733,10 @@ class DashboardCard extends StatelessWidget {
                     ),
                     Text(
                       subtitle,
-                      style: const TextStyle(color: Colors.black54, fontSize: 11),
+                      style: ThixPolicy.captionStyle.copyWith(
+                        color: ThixPolicy.textMuted,
+                        fontSize: 11,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -582,7 +746,7 @@ class DashboardCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          const Divider(height: 1, color: Color(0xFFEEEEEE)),
+          Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6)),
           const SizedBox(height: 12),
           child,
         ],
@@ -591,9 +755,14 @@ class DashboardCard extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// STATUS CHIP
+// ============================================================================
 class StatusChip extends StatelessWidget {
   final String label;
-  final Color bg, textColor;
+  final Color bg;
+  final Color textColor;
+
   const StatusChip({
     super.key,
     required this.label,
@@ -621,9 +790,15 @@ class StatusChip extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// DOC ROW
+// ============================================================================
 class DocRow extends StatelessWidget {
-  final String name, date, status;
-  final Color statusBg, statusText;
+  final String name;
+  final String date;
+  final String status;
+  final Color statusBg;
+  final Color statusText;
 
   const DocRow({
     super.key,
@@ -636,6 +811,10 @@ class DocRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final safeName = _UiValidators.sanitize(name, maxLength: 60);
+    final safeDate = _UiValidators.sanitize(date, maxLength: 40);
+    final safeStatus = _UiValidators.sanitize(status, maxLength: 20);
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
@@ -644,13 +823,13 @@ class DocRow extends StatelessWidget {
             width: 38,
             height: 38,
             decoration: BoxDecoration(
-              color: _bgLight,
+              color: ThixPolicy.surfaceSoft,
               borderRadius: BorderRadius.circular(9),
             ),
             alignment: Alignment.center,
             child: const Icon(
               Icons.insert_drive_file_rounded,
-              color: Colors.black54,
+              color: ThixPolicy.textMuted,
               size: 17,
             ),
           ),
@@ -660,9 +839,9 @@ class DocRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
+                  safeName.isEmpty ? '—' : safeName,
+                  style: ThixPolicy.captionStyle.copyWith(
+                    fontWeight: ThixPolicy.semiBold,
                     fontSize: 12.5,
                   ),
                   maxLines: 1,
@@ -670,21 +849,30 @@ class DocRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  date,
-                  style: const TextStyle(color: Colors.black54, fontSize: 10.5),
+                  safeDate.isEmpty ? '—' : safeDate,
+                  style: ThixPolicy.captionStyle.copyWith(
+                    color: ThixPolicy.textMuted,
+                    fontSize: 10.5,
+                  ),
                 ),
               ],
             ),
           ),
-          StatusChip(label: status, bg: statusBg, textColor: statusText),
+          StatusChip(label: safeStatus.isEmpty ? '—' : safeStatus, bg: statusBg, textColor: statusText),
         ],
       ),
     );
   }
 }
 
+// ============================================================================
+// NETWORK ITEM
+// ============================================================================
 class NetworkItem extends StatelessWidget {
-  final String name, role, avatarDesc;
+  final String name;
+  final String role;
+  final String avatarDesc;
+
   const NetworkItem({
     super.key,
     required this.name,
@@ -694,14 +882,18 @@ class NetworkItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final safeName = _UiValidators.sanitize(name, maxLength: 60);
+    final safeRole = _UiValidators.sanitize(role, maxLength: 60);
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          const CircleAvatar(
+          CircleAvatar(
             radius: 18,
-            backgroundColor: _bgLight,
-            child: Icon(Icons.person, color: Colors.grey, size: 18),
+            backgroundColor: ThixPolicy.surfaceSoft,
+            child: const Icon(Icons.person, color: ThixPolicy.textMuted, size: 18),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -709,9 +901,9 @@ class NetworkItem extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
+                  safeName.isEmpty ? '—' : safeName,
+                  style: ThixPolicy.captionStyle.copyWith(
+                    fontWeight: ThixPolicy.semiBold,
                     fontSize: 13,
                   ),
                   maxLines: 1,
@@ -719,8 +911,11 @@ class NetworkItem extends StatelessWidget {
                 ),
                 const SizedBox(height: 1),
                 Text(
-                  role,
-                  style: const TextStyle(color: Colors.black54, fontSize: 11),
+                  safeRole.isEmpty ? '—' : safeRole,
+                  style: ThixPolicy.captionStyle.copyWith(
+                    color: ThixPolicy.textMuted,
+                    fontSize: 11,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -730,14 +925,14 @@ class NetworkItem extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.green.withOpacity(0.1),
+              color: ThixPolicy.success.withOpacity(0.1),
               borderRadius: BorderRadius.circular(20),
             ),
-            child: const Text(
-              'Connecté',
-              style: TextStyle(
-                color: Colors.green,
-                fontWeight: FontWeight.w800,
+            child: Text(
+              l10n.t('status_connected'),
+              style: ThixPolicy.captionStyle.copyWith(
+                color: ThixPolicy.success,
+                fontWeight: ThixPolicy.bold,
                 fontSize: 9.5,
               ),
             ),
@@ -748,8 +943,13 @@ class NetworkItem extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// INFO ROW
+// ============================================================================
 class DashboardInfoRow extends StatelessWidget {
-  final String label, value;
+  final String label;
+  final String value;
+
   const DashboardInfoRow({
     super.key,
     required this.label,
@@ -758,6 +958,9 @@ class DashboardInfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final safeLabel = _UiValidators.sanitize(label, maxLength: 40);
+    final safeValue = _UiValidators.sanitize(value, maxLength: 200);
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -766,10 +969,10 @@ class DashboardInfoRow extends StatelessWidget {
           SizedBox(
             width: 110,
             child: Text(
-              label,
-              style: const TextStyle(
-                color: Colors.black54,
-                fontWeight: FontWeight.w600,
+              safeLabel,
+              style: ThixPolicy.captionStyle.copyWith(
+                color: ThixPolicy.textMuted,
+                fontWeight: ThixPolicy.semiBold,
                 fontSize: 11.5,
               ),
             ),
@@ -777,9 +980,9 @@ class DashboardInfoRow extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              value,
-              style: const TextStyle(
-                fontWeight: FontWeight.w700,
+              safeValue.isEmpty ? '—' : safeValue,
+              style: ThixPolicy.captionStyle.copyWith(
+                fontWeight: ThixPolicy.semiBold,
                 fontSize: 12.5,
                 height: 1.3,
               ),
@@ -791,20 +994,12 @@ class DashboardInfoRow extends StatelessWidget {
   }
 }
 
-/// Conservé pour compatibilité, mais plus utilisé (paiement retiré).
-class ActivationCalloutCard extends StatelessWidget {
-  final VoidCallback onActivate;
-  const ActivationCalloutCard({super.key, required this.onActivate});
-
-  @override
-  Widget build(BuildContext context) {
-    // Widget vide — le paiement a été retiré du flux d'inscription
-    return const SizedBox.shrink();
-  }
-}
-
+// ============================================================================
+// TAB SCAFFOLD
+// ============================================================================
 class TabScaffold extends StatelessWidget {
   final List<Widget> children;
+
   const TabScaffold({super.key, required this.children});
 
   @override
@@ -819,20 +1014,34 @@ class TabScaffold extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// SHARE PROFILE SHEET
+// ============================================================================
 class ShareProfileSheet {
   static Future<void> show(BuildContext context, dynamic profile) async {
+    final l10n = AppLocalizations.of(context);
+    final thixId = _UiValidators.sanitize(
+      (profile.thixId ?? '').toString(),
+      maxLength: _kMaxThixIdLength,
+    );
+
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
+      builder: (sheetCtx) => Container(
+        decoration: BoxDecoration(
+          color: ThixPolicy.card,
+          borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(20),
             topRight: Radius.circular(20),
           ),
         ),
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          20,
+          20,
+          20 + MediaQuery.of(sheetCtx).padding.bottom,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -840,90 +1049,120 @@ class ShareProfileSheet {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Partager le profil',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
+                Text(
+                  l10n.t('dashboard_share_title'),
+                  style: ThixPolicy.titleStyle.copyWith(
+                    fontWeight: ThixPolicy.bold,
                     fontSize: 16,
-                    color: _blueDark,
+                    color: ThixPolicy.primaryDeep,
                   ),
                 ),
-                IconButton(
-                  onPressed: () => context.pop(),
-                  icon: const Icon(Icons.close_rounded, size: 20),
+                Semantics(
+                  button: true,
+                  label: l10n.t('common_close'),
+                  child: IconButton(
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      sheetCtx.pop();
+                    },
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _bgLight,
-                  borderRadius: BorderRadius.circular(9),
+
+            // Voir profil public
+            Semantics(
+              button: true,
+              label: l10n.t('dashboard_view_public'),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: ThixPolicy.surfaceSoft,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(
+                    Icons.remove_red_eye_rounded,
+                    color: ThixPolicy.primary,
+                    size: 18,
+                  ),
                 ),
-                child: const Icon(
-                  Icons.remove_red_eye_rounded,
-                  color: _blue,
-                  size: 18,
+                title: Text(
+                  l10n.t('dashboard_view_public'),
+                  style: ThixPolicy.labelStyle.copyWith(
+                    fontWeight: ThixPolicy.bold,
+                    fontSize: 13.5,
+                  ),
                 ),
+                subtitle: Text(
+                  l10n.t('dashboard_view_public_sub'),
+                  style: ThixPolicy.captionStyle.copyWith(fontSize: 11),
+                ),
+                onTap: () {
+                  if (!sheetCtx.mounted) return;
+                  HapticFeedback.selectionClick();
+                  sheetCtx.pop();
+                  final url = _UiValidators.buildPublicProfileUrl(thixId);
+                  if (url.isNotEmpty && context.mounted) {
+                    debugPrint('[DashboardUI] 🌐 Navigate public profile: $url');
+                    context.push(url);
+                  }
+                },
               ),
-              title: const Text(
-                'Voir mon profil public',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
-              ),
-              subtitle: const Text(
-                'Aperçu en lecture seule',
-                style: TextStyle(fontSize: 11),
-              ),
-              onTap: () {
-                context.pop();
-                final thixId = profile.thixId.trim();
-                context.push(
-                  '\( {AppRoutes.publicProfile}?thixId= \){Uri.encodeComponent(thixId)}',
-                );
-              },
             ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _bgLight,
-                  borderRadius: BorderRadius.circular(9),
+
+            // Partager lien
+            Semantics(
+              button: true,
+              label: l10n.t('dashboard_share_link'),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: ThixPolicy.surfaceSoft,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(
+                    Icons.ios_share_rounded,
+                    color: ThixPolicy.primary,
+                    size: 18,
+                  ),
                 ),
-                child: const Icon(
-                  Icons.ios_share_rounded,
-                  color: _blue,
-                  size: 18,
+                title: Text(
+                  l10n.t('dashboard_share_link'),
+                  style: ThixPolicy.labelStyle.copyWith(
+                    fontWeight: ThixPolicy.bold,
+                    fontSize: 13.5,
+                  ),
                 ),
+                subtitle: Text(
+                  l10n.t('dashboard_share_link_sub'),
+                  style: ThixPolicy.captionStyle.copyWith(fontSize: 11),
+                ),
+                onTap: () async {
+                  if (!sheetCtx.mounted) return;
+                  HapticFeedback.mediumImpact();
+                  sheetCtx.pop();
+
+                  final shareUrl = _UiValidators.buildShareUrl(thixId);
+                  final text = shareUrl.isEmpty
+                      ? '${l10n.t('dashboard_share_text_prefix')}: $thixId'
+                      : '${l10n.t('dashboard_share_text_prefix')}: $thixId\n$shareUrl';
+
+                  try {
+                    await Share.share(text);
+                    debugPrint('[DashboardUI] ✓ Profile shared');
+                  } catch (e) {
+                    debugPrint('[DashboardUI] ❌ Share failed: $e');
+                  }
+                },
               ),
-              title: const Text(
-                'Partager mon lien public',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
-              ),
-              subtitle: const Text(
-                'Copie/partage le lien de votre profil',
-                style: TextStyle(fontSize: 11),
-              ),
-              onTap: () async {
-                context.pop();
-                final thixId = profile.thixId.trim();
-                final url = thixId.isEmpty
-                    ? ''
-                    : 'https://thix.app/public-profile?thixId=${Uri.encodeComponent(thixId)}';
-                final text = url.isEmpty
-                    ? 'Mon profil THIX ID: $thixId'
-                    : 'Mon profil THIX ID: $thixId\n$url';
-                try {
-                  await Share.share(text);
-                } catch (e) {
-                  debugPrint('Share profile failed err=$e');
-                }
-              },
             ),
             const SizedBox(height: 16),
           ],
