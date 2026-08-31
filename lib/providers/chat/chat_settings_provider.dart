@@ -1,11 +1,11 @@
-// lib/presentation/chat/providers/chat_settings_provider.dart
+// lib/providers/chat/chat_settings_provider.dart
 import 'dart:io';
 import 'dart:async';
 
+import 'package:flutter/foundation.dart'; // Ajouté pour debugPrint
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:thix_id/core/utils/logger.dart'; // Assurez-vous d'avoir un logger ou utilisez debugPrint
 import 'package:thix_id/models/chat/chat_user.dart';
 import 'package:thix_id/models/chat/chat_settings.dart';
 import 'package:thix_id/services/chat/chat_settings_service.dart';
@@ -67,12 +67,12 @@ class ChatSettingsNotifier extends StateNotifier<ChatSettingsState> {
   Future<void> load(String userId) async {
     if (userId.isEmpty) {
       state = state.copyWith(error: 'ID utilisateur invalide');
-      Logger.e('[Settings] ❌ Load failed: Invalid User ID');
+      debugPrint('[Settings] ❌ Load failed: Invalid User ID');
       return;
     }
 
     state = state.copyWith(isLoading: true, error: null, currentUserId: userId);
-    Logger.i('[Settings] 🔄 Loading settings for user: $userId');
+    debugPrint('[Settings] 🔄 Loading settings for user: $userId');
 
     ChatUser? loadedUser;
     ChatSettings? loadedSettings;
@@ -88,13 +88,13 @@ class ChatSettingsNotifier extends StateNotifier<ChatSettingsState> {
       loadedUser = results[0] as ChatUser?;
       loadedSettings = results[1] as ChatSettings?;
 
-      Logger.i('[Settings] ✓ Data loaded successfully');
+      debugPrint('[Settings] ✓ Data loaded successfully');
     } on TimeoutException {
       errorMsg = 'Délai dépassé. Vérifiez votre connexion.';
-      Logger.e('[Settings] ⏱️ Timeout during load');
+      debugPrint('[Settings] ⏱️ Timeout during load');
     } catch (e) {
       errorMsg = _friendlyError(e, 'chargement');
-      Logger.e('[Settings]  Load error: $e');
+      debugPrint('[Settings]  Load error: $e');
     }
 
     if (!mounted) return;
@@ -111,7 +111,7 @@ class ChatSettingsNotifier extends StateNotifier<ChatSettingsState> {
 
   Future<bool> updateSettings(ChatSettings newSettings) async {
     if (state.currentUserId == null) {
-      Logger.w('[Settings] ⚠️ Update skipped: No user ID');
+      debugPrint('[Settings] ⚠️ Update skipped: No user ID');
       return false;
     }
 
@@ -121,17 +121,17 @@ class ChatSettingsNotifier extends StateNotifier<ChatSettingsState> {
 
     // 2. Optimistic UI Update
     state = state.copyWith(settings: newSettings, error: null);
-    Logger.i('[Settings] 💾 Optimistic update applied');
+    debugPrint('[Settings] 💾 Optimistic update applied');
 
     try {
       await _service
           .updateSettings(state.currentUserId!, newSettings)
           .timeout(_kRequestTimeout);
       
-      Logger.i('[Settings] ✓ Settings saved to server');
+      debugPrint('[Settings] ✓ Settings saved to server');
       return true;
     } catch (e) {
-      Logger.e('[Settings] ❌ Save failed, rolling back: $e');
+      debugPrint('[Settings] ❌ Save failed, rolling back: $e');
       
       if (!mounted) return false;
 
@@ -158,10 +158,10 @@ class ChatSettingsNotifier extends StateNotifier<ChatSettingsState> {
           .timeout(_kRequestTimeout);
       
       state = state.copyWith(chatUser: user, isLoading: false);
-      Logger.i('[Settings] ✓ Profile updated');
+      debugPrint('[Settings] ✓ Profile updated');
       return true;
     } catch (e) {
-      Logger.e('[Settings] ❌ Profile update failed: $e');
+      debugPrint('[Settings] ❌ Profile update failed: $e');
       if (mounted) {
         state = state.copyWith(
           chatUser: previousUser,
@@ -177,7 +177,7 @@ class ChatSettingsNotifier extends StateNotifier<ChatSettingsState> {
 
   Future<String?> uploadAvatar(File image) async {
     if (state.currentUserId == null) {
-      Logger.w('[Settings] ⚠️ Upload skipped: No user ID');
+      debugPrint('[Settings] ⚠️ Upload skipped: No user ID');
       return null;
     }
 
@@ -194,11 +194,11 @@ class ChatSettingsNotifier extends StateNotifier<ChatSettingsState> {
           chatUser: state.chatUser!.copyWith(avatarUrl: url),
           isLoading: false,
         );
-        Logger.i('[Settings] ✓ Avatar uploaded: $url');
+        debugPrint('[Settings] ✓ Avatar uploaded: $url');
       }
       return url;
     } catch (e) {
-      Logger.e('[Settings] ❌ Avatar upload failed: $e');
+      debugPrint('[Settings] ❌ Avatar upload failed: $e');
       if (mounted) {
         state = state.copyWith(
           chatUser: previousUser,
