@@ -611,27 +611,28 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
                                       ),
                                     ),
                                     Row(
-                                      children: [
-                                        _iconButtonGlass(
-                                          l10n,
-                                          icon: Icons.swap_vert_rounded,
-                                          semanticsLabel: l10n.t('chatlist_escalations'),
-                                          badge: state.pendingEscalations > 0,
-                                          onTap: () {
-                                            HapticFeedback.selectionClick();
-                                            context.pushNamed('chatEscalationReceived');
-                                          },
-                                        ),
-                                        const SizedBox(width: ThixPolicy.s12),
-                                        _iconButtonGlass(
-                                          l10n,
-                                          icon: Icons.notifications_none_rounded,
-                                          semanticsLabel: l10n.t('chatlist_notifications'),
-                                          badge: state.pendingEscalations > 0,
-                                          onTap: () => _openNotifications(state.pendingEscalations),
-                                        ),
-                                      ],
-                                    ),
+  children: [
+    _iconButtonGlass(
+      l10n: l10n, // ✅ Nommé correctement
+      icon: Icons.swap_vert_rounded,
+      semanticsLabel: l10n.t('chatlist_escalations'),
+      badge: state.pendingEscalations > 0,
+      onTap: () {
+        HapticFeedback.selectionClick();
+        context.pushNamed('chatEscalationReceived');
+      },
+    ),
+    const SizedBox(width: ThixPolicy.s12),
+    _iconButtonGlass(
+      l10n: l10n, // ✅ Nommé correctement
+      icon: Icons.notifications_none_rounded,
+      semanticsLabel: l10n.t('chatlist_notifications'),
+      badge: state.pendingEscalations > 0,
+      onTap: () => _openNotifications(state.pendingEscalations),
+    ),
+  ],
+),
+
                                   ],
                                 ),
                               ),
