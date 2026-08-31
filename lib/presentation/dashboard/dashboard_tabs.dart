@@ -1161,7 +1161,7 @@ class ExperienceSkillsTab extends StatelessWidget {
 class PaymentsTab extends StatefulWidget {
   final String uid;
   final dynamic userService;
-  final ThixProfile user;
+  final AppUser user;
 
   const PaymentsTab({
     super.key,
@@ -1298,8 +1298,8 @@ class _PaymentsTabState extends State<PaymentsTab> {
                   final method = _DashValidators.sanitize(data['method'] as String?, maxLength: 40);
                   final status = (data['status'] as String?) ?? 'paid';
                   final dt = _DashValidators.safeParseDate(data['created_at']);
-                  final dateStr = _DashValidators.formatDate(expiresAt, Localizations.localeOf(context).languageCode);
-                  final amountStr = _DashValidators.formatAmount(amount, currency, l10n.localeName);
+                  final dateStr = _DashValidators.formatDate(dt, Localizations.localeOf(context).languageCode);
+                  final amountStr = _DashValidators.formatAmount(amount, currency, Localizations.localeOf(context).languageCode);
                   final symbol = currency == 'USD' ? '\$' : currency;
                   final txId = data['tx_ref']?.toString() ?? data.hashCode.toString();
                   final isDownloading = _downloadingIds.contains(txId);
@@ -1377,7 +1377,7 @@ class _PaymentsTabState extends State<PaymentsTab> {
 
 class _ReceiptPdf {
   static Future<Uint8List> build({
-    required ThixProfile user,
+    required dynamic user,
     required Map<String, dynamic> tx,
   }) async {
     final title = _DashValidators.sanitize(tx['title'] as String?, maxLength: _kMaxTitleLength);
@@ -1434,7 +1434,7 @@ class _ReceiptPdf {
 // ============================================================================
 class SecurityTab extends StatefulWidget {
   final String uid;
-  final ThixProfile user;
+  final AppUser user;
   final dynamic userService;
 
   const SecurityTab({
@@ -1609,7 +1609,7 @@ class _SecurityTabState extends State<SecurityTab> {
                         maxLength: 60,
                       );
                       final dt = _DashValidators.safeParseDate(data['created_at']);
-                      final dateStr = _DashValidators.formatDate(expiresAt, Localizations.localeOf(context).languageCode);
+                      final dateStr = _DashValidators.formatDateTime(dt, Localizations.localeOf(context).languageCode);
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 6),
                         child: Row(
