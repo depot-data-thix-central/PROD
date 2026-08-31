@@ -523,15 +523,16 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     final seenUserIds = <String>{};
     final onlineContacts = <ChatConversation>[];
 
-    for (final c in state.filtered) {
+        for (final c in state.filtered) {
       if (c.isGroup) continue;
       final otherUserId = c.participantIds.firstWhere((id) => id != currentUserId, orElse: () => '');
-      if (otherUserId.isNotEmpty && onlineUserIds.onlineUsers.contains(otherUserId) {
+      if (otherUserId.isNotEmpty && onlineUserIds.onlineUsers.contains(otherUserId)) { // 👈 Parenthèse ajoutée ici
         if (seenUserIds.add(otherUserId)) {
           onlineContacts.add(c);
         }
       }
     }
+
 
     return PopScope(
       canPop: _selectedNav == 1,
