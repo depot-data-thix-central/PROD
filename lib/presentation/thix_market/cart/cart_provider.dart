@@ -430,7 +430,7 @@ class CartNotifier extends StateNotifier<CartState> {
     List<Map<String, dynamic>> cartRecords,
   ) async {
     if (cartRecords.isEmpty) {
-      state = state.copyWith(items: [], isSyncing: false);
+      state = state.copyWith(items: [], isSyncing: false, isLoading: false); // CORRECTION ICI
       await _saveToCache();
       return;
     }
@@ -505,12 +505,13 @@ class CartNotifier extends StateNotifier<CartState> {
       // L'utilisateur doit gérer manuellement via l'UI pour éviter
       // la perte involontaire d'items. L'UI affichera l'alerte.
 
-      state = state.copyWith(items: enriched, isSyncing: false, lastError: null);
+      state = state.copyWith(items: enriched, isSyncing: false, isLoading: false, lastError: null); // CORRECTION ICI
       await _saveToCache();
     } catch (e) {
       debugPrint('[CartProvider] ❌ Sync error: $e');
       state = state.copyWith(
         isSyncing: false,
+        isLoading: false, // CORRECTION ICI
         lastError: _friendlyError(e),
       );
     }
