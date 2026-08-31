@@ -2,7 +2,8 @@
 // lib/features/auth/presentation/providers/auth_controller.dart
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'package:thix_id/auth/auth_manager.dart' show AuthManager, PhoneAuthSession, ProfileDraft;
+import 'package:thix_id/auth/supabase_auth_manager.dart' show SupabaseAuthManager, AuthException, AuthErrorCode;
 import 'package:thix_id/auth/auth_manager.dart';
 import 'package:thix_id/auth/supabase_auth_manager.dart'; // ✅ Import complet (pas show)
 import 'package:thix_id/models/app_user.dart';
