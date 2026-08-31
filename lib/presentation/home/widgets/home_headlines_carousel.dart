@@ -1,13 +1,108 @@
 // lib/presentation/home/widgets/home_headlines_carousel.dart
 import 'dart:async';
-import 'dart:ui'; // ✅ NÉCESSAIRE POUR LE GLASSMORPHISM
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:cached_network_image/cached_network_image.dart'; // ✅ AJOUT DE CACHED NETWORK IMAGE
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:html/parser.dart' as html_parser;
+
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/presentation/common/notifications_sheet.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+const Duration _kRequestTimeout = Duration(seconds: 15);
+const Duration _kRetryDelay = Duration(milliseconds: 500);
+const int _kMaxRetries = 2;
+const double _kBannerHeight = 160.0;
+const int _kAutoScrollInterval = 5; // secondes
+const int _kMaxTitleLength = 100;
+const int _kMaxTagLength = 30;
+
+// ============================================================================
+// VALIDATORS
+// ============================================================================
+class _CarouselValidators {
+  _CarouselValidators._();
+
+  static String sanitize(String? input, {int maxLength = 500}) {
+    if (input == null || input.trim().isEmpty) return '';
+    final doc = html_parser.parse(input);
+    var s = doc.body?.text ?? input;
+    s = s
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
+        .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+    return s.length > maxLength ? s.substring(0, maxLength) : s;
+  }
+
+  static String? sanitizeUrl(String? url) {
+    if (url == null || url.trim().isEmpty) return null;
+    final t = url.trim();
+    if (!t.startsWith('http://') && !t.startsWith('https://')) return null;
+    return t.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
+  }
+
+  static String friendlyError(dynamic e) {
+    final msg = e.toString().toLowerCase();
+    if (msg.contains('timeout')) return 'Délai dépassé. Vérifiez votre connexion.';
+    if (msg.contains('network') || msg.contains('socket')) return 'Erreur réseau. Réessayez.';
+    if (msg.contains('permission') || msg.contains('policy')) return 'Accès non autorisé.';
+    if (msg.contains('not found')) return 'Ressource introuvable.';
+    return 'Une erreur est survenue. Réessayez.';
+  }
+
+  static String? extractStoragePath(String? imageUrl) {
+    if (imageUrl == null || imageUrl.isEmpty) return null;
+    try {
+      final uri = Uri.parse(imageUrl);
+      final segments = uri.pathSegments;
+      final bucketIndex = segments.indexOf('banners');
+      if (bucketIndex != -1 && bucketIndex < segments.length - 1) {
+        return segments.sublist(bucketIndex + 1).join('/');
+      }
+    } catch (e) {
+      debugPrint('[Carousel] ⚠️ Failed to parse image URL: $e');
+    }
+    return null;
+  }
+}
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+Future<T> _carouselRetry<T>(
+  Future<T> Function() fn, {
+  required String label,
+  int maxRetries = _kMaxRetries,
+}) async {
+  int attempt = 0;
+  while (true) {
+    try {
+      return await fn().timeout(_kRequestTimeout);
+    } on TimeoutException {
+      attempt++;
+      if (attempt > maxRetries) {
+        debugPrint('[Carousel] ❌ $label: timeout after $attempt attempts');
+        throw TimeoutException('$label: délai dépassé');
+      }
+      debugPrint('[Carousel] ⏱️ $label timeout — retry $attempt/$maxRetries');
+      await Future.delayed(_kRetryDelay);
+    } catch (e) {
+      debugPrint('[Carousel] ❌ $label error: $e');
+      rethrow;
+    }
+  }
+}
+
+// ============================================================================
+// WIDGET PRINCIPAL
+// ============================================================================
 class HomeHeadlinesCarousel extends StatefulWidget {
   final PageController controller;
   final String? uid;
@@ -26,138 +121,227 @@ class HomeHeadlinesCarousel extends StatefulWidget {
   State<HomeHeadlinesCarousel> createState() => _HomeHeadlinesCarouselState();
 }
 
-class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel> {
+class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel>
+    with WidgetsBindingObserver {
   late final Stream<List<Map<String, dynamic>>> _bannersStream;
   Stream<List<Map<String, dynamic>>>? _priorityNotifStream;
-  
+
   Timer? _autoTimer;
   int _cardCount = 0;
   bool _isAdmin = false;
-  static const double _bannerHeight = 160; // Légèrement plus haut pour l'élégance
+  bool _isAppVisible = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    debugPrint('[Carousel] 🎠 Initialized');
+
     _checkAdminRole();
-    
+    _initStreams();
+    _startAutoScroll();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _autoTimer?.cancel();
+    debugPrint('[Carousel] 👋 Disposed');
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _isAppVisible = state == AppLifecycleState.resumed;
+    if (_isAppVisible) {
+      _startAutoScroll();
+    } else {
+      _autoTimer?.cancel();
+      debugPrint('[Carousel] ⏸️ Auto-scroll paused (app background)');
+    }
+  }
+
+  void _initStreams() {
     final client = Supabase.instance.client;
 
-    // 1. Écoute les Bannières dynamiques (table "banners")
+    // Bannières dynamiques
     _bannersStream = client
         .from('banners')
         .stream(primaryKey: ['id'])
         .eq('is_active', true)
         .order('created_at', ascending: false);
-        
-    // 2. Garde l'écoute de tes Notifications Prioritaires
+
+    // Notifications prioritaires
     final uid = widget.uid;
     if (uid != null && uid.trim().isNotEmpty) {
       try {
-        _priorityNotifStream = client.from('notifications')
-            .stream(primaryKey: ['id']).eq('user_id', uid).order('created_at', ascending: false).limit(5);
+        _priorityNotifStream = client
+            .from('notifications')
+            .stream(primaryKey: ['id'])
+            .eq('user_id', uid)
+            .order('created_at', ascending: false)
+            .limit(5);
       } catch (e) {
+        debugPrint('[Carousel] ⚠️ Priority notif stream error: $e');
         _priorityNotifStream = null;
       }
     }
-    
-    _autoTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (!widget.controller.hasClients || _cardCount <= 1) return;
-      final current = widget.controller.page?.round() ?? 0;
-      final next = (current + 1) % _cardCount;
-      widget.controller.animateToPage(next, duration: const Duration(milliseconds: 600), curve: Curves.easeInOutCubic);
-    });
   }
 
-  @override
-  void dispose() {
+  void _startAutoScroll() {
     _autoTimer?.cancel();
-    super.dispose();
+    _autoTimer = Timer.periodic(
+      const Duration(seconds: _kAutoScrollInterval),
+      (_) {
+        if (!_isAppVisible) return;
+        if (!widget.controller.hasClients || _cardCount <= 1) return;
+        final current = widget.controller.page?.round() ?? 0;
+        final next = (current + 1) % _cardCount;
+        widget.controller.animateToPage(
+          next,
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.easeInOutCubic,
+        );
+      },
+    );
   }
 
-  // Vérifie si l'utilisateur est admin pour afficher la corbeille
   Future<void> _checkAdminRole() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
-    try {
-      final data = await Supabase.instance.client
-          .from('profiles')
-          .select('role, account_type')
-          .eq('id', user.id)
-          .maybeSingle();
-          
-      if (data != null && mounted) {
-        final role = (data['role'] ?? data['account_type'] ?? '').toString().toLowerCase();
-        if (role == 'admin' || role == 'entreprise' || role == 'support') {
-          setState(() => _isAdmin = true);
-        }
-      }
-    } catch (_) {}
-  }
-
-  // Fonction pour supprimer l'annonce et l'image du stockage
-  Future<void> _deleteBanner(String id, String? imageUrl) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: AlertDialog(
-          backgroundColor: Colors.white.withValues(alpha: 0.9),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.8)),
-          ),
-          title: const Text('Supprimer l\'annonce ?', style: TextStyle(fontWeight: FontWeight.w800, color: ThixPolicy.textMain)),
-          content: const Text('Cette action est irréversible. L\'annonce sera retirée pour tout le monde.', style: TextStyle(color: ThixPolicy.textSecondary)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false), 
-              child: const Text('Annuler', style: TextStyle(color: ThixPolicy.textSecondary))
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.danger, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              onPressed: () => Navigator.pop(ctx, true), 
-              child: const Text('Supprimer', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))
-            ),
-          ],
-        ),
-      )
-    );
-
-    if (confirm != true) return;
 
     try {
-      await Supabase.instance.client.from('banners').delete().eq('id', id);
+      final data = await _carouselRetry(
+        () => Supabase.instance.client
+            .from('profiles')
+            .select('role, account_type')
+            .eq('id', user.id)
+            .maybeSingle(),
+        label: 'checkAdminRole',
+      );
 
-      if (imageUrl != null && imageUrl.isNotEmpty) {
-        final uri = Uri.parse(imageUrl);
-        final segments = uri.pathSegments;
-        final bucketIndex = segments.indexOf('banners');
-        if (bucketIndex != -1 && bucketIndex < segments.length - 1) {
-          final path = segments.sublist(bucketIndex + 1).join('/');
-          await Supabase.instance.client.storage.from('banners').remove([path]);
-        }
-      }
+      if (!mounted) return;
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Annonce supprimée'), backgroundColor: ThixPolicy.success),
-        );
+      if (data != null) {
+        final role = (data['role'] ?? data['account_type'] ?? '')
+            .toString()
+            .toLowerCase();
+        final isAdmin = role == 'admin' || role == 'entreprise' || role == 'support';
+        setState(() => _isAdmin = isAdmin);
+        debugPrint('[Carousel] ✓ Admin check: $isAdmin');
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur: $e'), backgroundColor: ThixPolicy.danger),
-        );
-      }
+      debugPrint('[Carousel] ⚠️ Admin check failed (non-critical): $e');
     }
+  }
+
+  Future<void> _deleteBanner(String id, String? imageUrl) async {
+    if (!mounted) return;
+
+    HapticFeedback.mediumImpact();
+
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          l10n.t('banner_delete_title'),
+          style: const TextStyle(fontWeight: FontWeight.w800, color: ThixPolicy.textMain),
+        ),
+        content: Text(
+          l10n.t('banner_delete_message'),
+          style: const TextStyle(color: ThixPolicy.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.t('common_cancel'), style: const TextStyle(color: ThixPolicy.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ThixPolicy.danger,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.t('banner_delete_confirm'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    debugPrint('[Carousel] 🗑️ Deleting banner $id');
+
+    try {
+      // Delete DB
+      await _carouselRetry(
+        () => Supabase.instance.client.from('banners').delete().eq('id', id),
+        label: 'deleteBanner[$id]',
+      );
+
+      // Delete storage (si image existe)
+      final storagePath = _CarouselValidators.extractStoragePath(imageUrl);
+      if (storagePath != null) {
+        try {
+          await _carouselRetry(
+            () => Supabase.instance.client.storage.from('banners').remove([storagePath]),
+            label: 'deleteBannerStorage[$storagePath]',
+          );
+          debugPrint('[Carousel] ✓ Storage deleted: $storagePath');
+        } catch (e) {
+          debugPrint('[Carousel] ⚠️ Storage delete failed (non-critical): $e');
+        }
+      }
+
+      if (mounted) {
+        _showSuccess(l10n.t('banner_deleted'));
+      }
+      debugPrint('[Carousel] ✓ Banner deleted');
+    } catch (e) {
+      debugPrint('[Carousel] ❌ Delete banner error: $e');
+      if (mounted) _showError(_CarouselValidators.friendlyError(e));
+    }
+  }
+
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(message)),
+        ]),
+        backgroundColor: ThixPolicy.success,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(message)),
+        ]),
+        backgroundColor: ThixPolicy.danger,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   Color _getAccentColor(String tag) {
     final t = tag.toLowerCase();
-    if (t.contains('opportunit')) return ThixPolicy.domainOpportunity; // Or
-    if (t.contains('info')) return ThixPolicy.domainInfo; // Bleu Corporate
-    if (t.contains('urgent') || t.contains('sos')) return ThixPolicy.danger; // Rouge
-    return ThixPolicy.primaryDeep; // Indigo Corporate
+    if (t.contains('opportunit')) return ThixPolicy.domainOpportunity;
+    if (t.contains('info')) return ThixPolicy.domainInfo;
+    if (t.contains('urgent') || t.contains('sos')) return ThixPolicy.danger;
+    return ThixPolicy.primaryDeep;
   }
 
   IconData _getIcon(String tag) {
@@ -176,34 +360,49 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel> {
       stream: _priorityNotifStream,
       builder: (context, notifSnap) {
         final notifs = (notifSnap.data ?? const <Map<String, dynamic>>[])
-            .where((n) => (n['priority'] == true) || (n['is_priority'] == true)).toList(growable: false);
+            .where((n) => (n['priority'] == true) || (n['is_priority'] == true))
+            .toList(growable: false);
         final priorityNotif = notifs.isEmpty ? null : notifs.first;
-        
+
         return StreamBuilder<List<Map<String, dynamic>>>(
           stream: _bannersStream,
           builder: (context, bannerSnap) {
             final banners = bannerSnap.data ?? [];
             final cards = <Widget>[];
 
-            // 1. Ajouter la notification prioritaire (Si elle existe)
+            // 1. Notification prioritaire
             if (priorityNotif != null) {
               cards.add(_HeadlineBanner(
                 label: l10n.t('home_headline_notif_priority'),
-                title: (priorityNotif['title'] as String?) ?? (priorityNotif['message'] as String?) ?? l10n.t('home_headline_new_notif'),
-                imageUrl: priorityNotif['image_url'] as String?,
+                title: _CarouselValidators.sanitize(
+                  (priorityNotif['title'] as String?) ??
+                      (priorityNotif['message'] as String?) ??
+                      l10n.t('home_headline_new_notif'),
+                  maxLength: _kMaxTitleLength,
+                ),
+                imageUrl: _CarouselValidators.sanitizeUrl(priorityNotif['image_url'] as String?),
                 icon: Icons.priority_high_rounded,
                 accent: ThixPolicy.danger,
-                height: _bannerHeight,
-                onTap: () => NotificationsSheet.show(context),
+                height: _kBannerHeight,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  NotificationsSheet.show(context);
+                },
               ));
             }
 
-            // 2. Ajouter les bannières administratives dynamiques
+            // 2. Bannières administratives
             for (final b in banners) {
               final id = b['id'].toString();
-              final title = b['title'] as String? ?? 'Annonce';
-              final tag = b['tag'] as String? ?? 'À la une';
-              final imageUrl = b['image_url'] as String?;
+              final title = _CarouselValidators.sanitize(
+                b['title'] as String? ?? l10n.t('banner_default_title'),
+                maxLength: _kMaxTitleLength,
+              );
+              final tag = _CarouselValidators.sanitize(
+                b['tag'] as String? ?? l10n.t('banner_default_tag'),
+                maxLength: _kMaxTagLength,
+              );
+              final imageUrl = _CarouselValidators.sanitizeUrl(b['image_url'] as String?);
               final accent = _getAccentColor(tag);
 
               cards.add(
@@ -215,8 +414,9 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel> {
                       imageUrl: imageUrl,
                       icon: _getIcon(tag),
                       accent: accent,
-                      height: _bannerHeight,
+                      height: _kBannerHeight,
                       onTap: () {
+                        HapticFeedback.selectionClick();
                         if (tag.toLowerCase().contains('opportunit')) {
                           widget.onOpportunityTap();
                         } else {
@@ -224,76 +424,41 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel> {
                         }
                       },
                     ),
-                    
-                    // Bouton Corbeille pour l'admin (Glassmorphism Rouge)
                     if (_isAdmin)
                       Positioned(
                         top: 12,
                         left: 12,
-                        child: GestureDetector(
+                        child: _AdminDeleteButton(
                           onTap: () => _deleteBanner(id, imageUrl),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: ThixPolicy.danger.withValues(alpha: 0.8),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1.2),
-                                ),
-                                child: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.white),
-                              ),
-                            ),
-                          ),
                         ),
                       ),
-                  ]
-                )
+                  ],
+                ),
               );
             }
-            
-            // 3. Fallback Premium (S'il n'y a aucune annonce)
+
+            // 3. Fallback si aucune annonce
             if (cards.isEmpty) {
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: Container(
-                    height: _bannerHeight,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.2),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'Aucune annonce pour le moment', 
-                        style: TextStyle(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600)
-                      )
-                    ),
-                  ),
-                ),
-              );
+              return _EmptyBanner(message: l10n.t('banner_empty'));
             }
-            
+
             _cardCount = cards.length;
-            
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SizedBox(
-                  height: _bannerHeight, 
-                  child: PageView(controller: widget.controller, children: cards)
-                ),
-                if (cards.length > 1) ...[
-                  const SizedBox(height: 10),
-                  _CarouselDots(controller: widget.controller, count: cards.length),
-                ]
-              ],
+
+            return RepaintBoundary(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizedBox(
+                    height: _kBannerHeight,
+                    child: PageView(controller: widget.controller, children: cards),
+                  ),
+                  if (cards.length > 1) ...[
+                    const SizedBox(height: 10),
+                    _CarouselDots(controller: widget.controller, count: cards.length),
+                  ],
+                ],
+              ),
             );
           },
         );
@@ -302,38 +467,117 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel> {
   }
 }
 
+// ============================================================================
+// COMPOSANTS
+// ============================================================================
+
+class _AdminDeleteButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _AdminDeleteButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
+    return Semantics(
+      button: true,
+      label: l10n.t('banner_delete_button'),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: ThixPolicy.danger.withOpacity(0.9),
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white.withOpacity(0.5), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: const Icon(Icons.delete_outline_rounded, size: 18, color: Colors.white),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyBanner extends StatelessWidget {
+  final String message;
+
+  const _EmptyBanner({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: _kBannerHeight,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: ThixPolicy.card,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: ThixPolicy.border.withOpacity(0.6), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          message,
+          style: ThixPolicy.labelStyle.copyWith(
+            color: ThixPolicy.textSecondary,
+            fontWeight: ThixPolicy.semiBold,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CarouselDots extends StatefulWidget {
   final PageController controller;
   final int count;
+
   const _CarouselDots({required this.controller, required this.count});
-  @override State<_CarouselDots> createState() => _CarouselDotsState();
+
+  @override
+  State<_CarouselDots> createState() => _CarouselDotsState();
 }
 
 class _CarouselDotsState extends State<_CarouselDots> {
   int _page = 0;
-  
+
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_onScroll);
   }
-  
+
   void _onScroll() {
     if (!widget.controller.hasClients) return;
     final p = widget.controller.page?.round() ?? 0;
-    if (p != _page && mounted) setState(() => _page = p);
+    if (p != _page && mounted) {
+      setState(() => _page = p);
+    }
   }
-  
+
   @override
   void dispose() {
     widget.controller.removeListener(_onScroll);
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final activePage = widget.count == 0 ? 0 : _page.clamp(0, widget.count - 1);
-    
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: List.generate(widget.count, (i) {
@@ -374,56 +618,62 @@ class _HeadlineBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasImage = (imageUrl ?? '').trim().isNotEmpty;
-    
-    return GestureDetector(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4.0), // Marge pour voir un peu la page suivante
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: hasImage ? 0 : 15, sigmaY: hasImage ? 0 : 15),
+    final hasImage = imageUrl != null && imageUrl!.trim().isNotEmpty;
+    final l10n = AppLocalizations.of(context);
+
+    return Semantics(
+      button: true,
+      label: '$label. $title',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
             child: Container(
               height: height,
               decoration: BoxDecoration(
-                color: hasImage ? Colors.transparent : Colors.white.withValues(alpha: 0.6),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
+                color: hasImage ? Colors.transparent : ThixPolicy.card,
+                border: Border.all(color: ThixPolicy.border.withOpacity(0.6), width: 1.2),
                 boxShadow: [
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12, offset: const Offset(0, 4))
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
                 ],
               ),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
                   if (hasImage)
-                    // ✅ CACHED NETWORK IMAGE
                     CachedNetworkImage(
                       imageUrl: imageUrl!.trim(),
                       fit: BoxFit.cover,
                       placeholder: (context, url) => Container(
-                        color: accent.withValues(alpha: 0.05),
+                        color: accent.withOpacity(0.05),
                         child: Center(
                           child: SizedBox(
-                            width: 22, height: 22,
+                            width: 22,
+                            height: 22,
                             child: CircularProgressIndicator(strokeWidth: 2.4, color: accent),
                           ),
                         ),
                       ),
                       errorWidget: (context, url, error) => Container(
-                        color: accent.withValues(alpha: 0.1),
+                        color: accent.withOpacity(0.1),
                         alignment: Alignment.center,
-                        child: Icon(icon, color: accent.withValues(alpha: 0.5), size: 40),
+                        child: Icon(icon, color: accent.withOpacity(0.5), size: 40),
                       ),
                     )
                   else
                     Container(
-                      color: accent.withValues(alpha: 0.05),
+                      color: accent.withOpacity(0.05),
                       alignment: Alignment.center,
-                      child: Icon(icon, color: accent.withValues(alpha: 0.4), size: 50),
+                      child: Icon(icon, color: accent.withOpacity(0.4), size: 50),
                     ),
-                    
-                  // Gradient Premium pour la lisibilité
+
+                  // Gradient pour lisibilité
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
@@ -431,16 +681,16 @@ class _HeadlineBanner extends StatelessWidget {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            Colors.black.withValues(alpha: 0.0),
-                            Colors.black.withValues(alpha: hasImage ? 0.7 : 0.2), // Moins sombre s'il n'y a pas d'image
+                            Colors.black.withOpacity(0.0),
+                            Colors.black.withOpacity(hasImage ? 0.7 : 0.2),
                           ],
                           stops: const [0.3, 1.0],
                         ),
                       ),
                     ),
                   ),
-                  
-                  // Textes (Titre & Catégorie)
+
+                  // Textes
                   Positioned(
                     left: ThixPolicy.s16,
                     right: ThixPolicy.s16,
@@ -449,18 +699,19 @@ class _HeadlineBanner extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Tag/Catégorie Glassmorphism
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(color: accent.withValues(alpha: 0.8)),
-                              child: Text(
-                                label,
-                                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5),
-                              ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: accent.withOpacity(0.9),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            label,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
                             ),
                           ),
                         ),
@@ -468,11 +719,11 @@ class _HeadlineBanner extends StatelessWidget {
                         Text(
                           title,
                           style: TextStyle(
-                            color: hasImage ? Colors.white : ThixPolicy.textMain, 
-                            fontSize: 16, 
-                            fontWeight: FontWeight.w900, 
-                            height: 1.2, 
-                            letterSpacing: -0.3
+                            color: hasImage ? Colors.white : ThixPolicy.textMain,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                            height: 1.2,
+                            letterSpacing: -0.3,
                           ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
@@ -480,24 +731,23 @@ class _HeadlineBanner extends StatelessWidget {
                       ],
                     ),
                   ),
-                  
-                  // Flèche de navigation Glassmorphism
+
+                  // Flèche navigation
                   Positioned(
                     right: ThixPolicy.s12,
                     top: ThixPolicy.s12,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                        child: Container(
-                          width: 32, height: 32,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.25),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 1.2)
-                          ),
-                          child: Icon(Icons.arrow_forward_rounded, size: 18, color: hasImage ? Colors.white : ThixPolicy.textMain),
-                        ),
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.25),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white.withOpacity(0.5), width: 1.2),
+                      ),
+                      child: Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 18,
+                        color: hasImage ? Colors.white : ThixPolicy.textMain,
                       ),
                     ),
                   ),
