@@ -4,8 +4,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-// ✅ UNIQUE IMPORT D'AUTHENTIFICATION REQUIS
-import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart'; 
+// ✅ PLUS BESOIN DE AUTH_CONTROLLER ICI NON PLUS !
 import 'package:thix_id/models/chat/user_status_story.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
 
@@ -152,16 +151,18 @@ class StatusNotifier extends StateNotifier<StatusState> {
     super.dispose();
   }
 
+  // ✅ CORRIGÉ : Utilisation de supabaseUserIdProvider
   bool _isAuthenticated() {
-    final user = _ref.read(currentUserProvider);
-    if (user == null) {
+    final userId = _ref.read(supabaseUserIdProvider);
+    if (userId == null) {
       debugPrint('[StatusProvider] ⚠️ User not authenticated');
       return false;
     }
     return true;
   }
 
-  String? _currentUserId() => _ref.read(currentUserProvider)?.id;
+  // ✅ CORRIGÉ : Utilisation de supabaseUserIdProvider
+  String? _currentUserId() => _ref.read(supabaseUserIdProvider);
 
   void _purgeExpired() {
     final before = state.items.length;
