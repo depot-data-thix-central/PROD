@@ -254,7 +254,8 @@ class _GroupCreatePageState extends State<GroupCreatePage> {
     }
 
     if (_selectedUserIds.length < _kMinMembersRequired) {
-      _showError(l10n.t('group_create_error_min_members', args: ['$_kMinMembersRequired']));
+      _showError(l10n.t('group_create_error_min_members').replaceAll('{count}', '$_kMinMembersRequired')); 
+
       return;
     }
 
