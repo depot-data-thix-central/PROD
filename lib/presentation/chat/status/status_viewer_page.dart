@@ -205,7 +205,8 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
     final diff = now.difference(local);
 
     if (diff.inMinutes < 1) return l10n.t('status_just_now');
-    if (diff.inMinutes < 60) return l10n.t('status_minutes_ago', args: ['${diff.inMinutes}']);
+    // CORRECTION 1 : Interpolation de texte pour l'argument
+    if (diff.inMinutes < 60) return "${diff.inMinutes} ${l10n.t('status_minutes_ago')}";
     if (diff.inHours < 24 && local.day == now.day) {
       return DateFormat('HH:mm').format(local);
     }
@@ -278,7 +279,8 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
           content: Row(children: [
             Text(emoji, style: const TextStyle(fontSize: 18)),
             const SizedBox(width: 8),
-            Expanded(child: Text(l10n.t('status_reaction_sent', args: [emoji]))),
+            // CORRECTION 2 : Interpolation de texte pour la réaction
+            Expanded(child: Text("${l10n.t('status_reaction_sent')} $emoji")),
           ]),
           backgroundColor: ThixPolicy.success,
           behavior: SnackBarBehavior.floating,
@@ -365,8 +367,9 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                       children: [
                         const Icon(Icons.visibility_outlined, size: 20, color: ThixPolicy.textMain),
                         const SizedBox(width: 8),
+                        // CORRECTION 3 : Interpolation de texte
                         Text(
-                          l10n.t('status_viewed_by', args: ['${viewers.length}']),
+                          "${l10n.t('status_viewed_by')} ${viewers.length}",
                           style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16),
                         ),
                       ],
@@ -508,7 +511,7 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                   return CachedNetworkImage(
                     imageUrl: mediaUrl,
                     fit: BoxFit.contain,
-                    backgroundColor: Colors.black,
+                    // CORRECTION 4 : Suppression de backgroundColor
                     placeholder: (_, __) => const Center(child: CircularProgressIndicator(color: Colors.white)),
                     errorWidget: (_, __, ___) => Center(
                       child: Icon(Icons.broken_image_outlined, color: Colors.white54, size: 64),
