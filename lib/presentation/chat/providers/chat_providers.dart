@@ -7,6 +7,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http; // 👈 Import ajouté pour la compatibilité Web
 
 import 'package:thix_id/services/chat/audio_service.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
@@ -106,17 +107,17 @@ final isNetworkOnlineProvider = FutureProvider<bool>((ref) async {
   }
 });
 
-/// Ping réseau simple via une requête HTTP légère
+/// Ping réseau simple via une requête HTTP légère (Compatible Web)
 Future<bool> _pingNetwork() async {
   try {
     final uri = Uri.parse('https://www.google.com/generate_204');
-    final client = await HttpClient().getUrl(uri).timeout(
+    // 👈 Utilisation de http.get qui fonctionne sur Web, Android et iOS
+    final response = await http.get(uri).timeout(
       const Duration(seconds: 3),
     );
-    final response = await client.close();
     return response.statusCode == 204;
   } catch (_) {
-    return true; // Assume connecté si le test échoue
+    return true; // Assume connecté si le test échoue (protection anti-CORS)
   }
 }
 
