@@ -1,14 +1,92 @@
 // lib/presentation/chat/status/status_viewer_page.dart
 import 'dart:async';
+
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:html/parser.dart' as html_parser;
 import 'package:intl/intl.dart';
 
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/chat/user_status_story.dart';
-import 'package:thix_id/presentation/chat/providers/status_provider.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
+import 'package:thix_id/presentation/chat/providers/status_provider.dart';
 import 'package:thix_id/presentation/chat/status/create_status_page.dart';
+import 'package:thix_id/services/chat/status_service.dart';
 
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+const Duration _kTextDuration = Duration(seconds: 5);
+const Duration _kImageDuration = Duration(seconds: 7);
+const double _kProgressHeight = 3.0;
+const double _kAvatarRadius = 18.0;
+const double _kFontSizeContent = 28.0;
+const double _kFontSizeName = 14.0;
+const double _kFontSizeTime = 11.0;
+const int _kMaxNameLength = 80;
+const int _kMaxContentLength = 500;
+
+// ============================================================================
+// VALIDATORS
+// ============================================================================
+class _StatusValidators {
+  _StatusValidators._();
+
+  static String sanitize(String? input, {int maxLength = 500}) {
+    if (input == null || input.trim().isEmpty) return '';
+    final doc = html_parser.parse(input);
+    var s = doc.body?.text ?? input;
+    s = s
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
+        .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+    return s.length > maxLength ? s.substring(0, maxLength) : s;
+  }
+
+  static String? sanitizeUrl(String? url) {
+    if (url == null || url.trim().isEmpty) return null;
+    final t = url.trim();
+    if (!t.startsWith('http://') && !t.startsWith('https://')) return null;
+    return t.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
+  }
+
+  static Color parseBg(String hex) {
+    try {
+      final h = hex.replaceAll('#', '');
+      if (h.length < 6) return ThixPolicy.primary;
+      return Color(int.parse('FF$h', radix: 16));
+    } catch (_) {
+      return ThixPolicy.primary;
+    }
+  }
+
+  static String friendlyError(dynamic e) {
+    final msg = e.toString().toLowerCase();
+    if (msg.contains('timeout')) return 'Délai dépassé. Vérifiez votre connexion.';
+    if (msg.contains('network')) return 'Erreur réseau. Réessayez.';
+    if (msg.contains('not found')) return 'Statut introuvable.';
+    return 'Une erreur est survenue.';
+  }
+}
+
+// ============================================================================
+// STATUS VIEWER PAGE
+// ============================================================================
+
+/// Visionneuse de statuts (Stories) avec navigation, réactions et métriques.
+///
+/// Fonctionnalités :
+/// - Navigation tactile (gauche/droite) ou swipe
+/// - Appui long pour pause
+/// - Barres de progression multiples
+/// - Réactions rapides
+/// - Menu actions (propriétaire) : vues, edit, delete
+/// - Repost (non propriétaire)
 class StatusViewerPage extends ConsumerStatefulWidget {
   final List<UserStatusStory> stories;
 
@@ -24,9 +102,7 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
   late AnimationController _progress;
   int _index = 0;
   bool _paused = false;
-
-  static const _textDuration = Duration(seconds: 5);
-  static const _imageDuration = Duration(seconds: 7);
+  bool _isNavigating = false; // Protection race condition
 
   @override
   void initState() {
@@ -34,8 +110,9 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
     _pageCtrl = PageController();
     _progress = AnimationController(vsync: this)
       ..addStatusListener((s) {
-        if (s == AnimationStatus.completed) _next();
+        if (s == AnimationStatus.completed && !_isNavigating) _next();
       });
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _markCurrent();
       _startProgress();
@@ -50,47 +127,68 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
   }
 
   Duration get _currentDuration {
-    if (widget.stories.isEmpty) return _textDuration;
+    if (widget.stories.isEmpty) return _kTextDuration;
     final s = widget.stories[_index];
-    return s.isImage ? _imageDuration : _textDuration;
+    return s.isImage ? _kImageDuration : _kTextDuration;
   }
 
   void _startProgress() {
-    if (_paused || widget.stories.isEmpty) return;
+    if (_paused || widget.stories.isEmpty || _isNavigating) return;
     _progress.duration = _currentDuration;
     _progress.forward(from: 0);
   }
 
   void _pause() {
-    _paused = true;
-    _progress.stop();
+    if (!_paused) {
+      _paused = true;
+      _progress.stop();
+    }
   }
 
   void _resume() {
-    _paused = false;
-    _progress.forward();
+    if (_paused) {
+      _paused = false;
+      _progress.forward();
+    }
   }
 
   void _next() {
-    if (_index < widget.stories.length - 1) {
-      setState(() => _index++);
-      _pageCtrl.jumpToPage(_index);
-      _markCurrent();
-      _startProgress();
-    } else {
-      if (mounted) Navigator.pop(context);
+    if (_isNavigating || _index >= widget.stories.length - 1) {
+      if (!_isNavigating && mounted) Navigator.pop(context);
+      return;
     }
+
+    _isNavigating = true;
+    setState(() => _index++);
+    _pageCtrl.jumpToPage(_index);
+    _markCurrent();
+    
+    // Petit délai pour éviter les conflits d'animation
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (mounted) {
+        _isNavigating = false;
+        _startProgress();
+      }
+    });
   }
 
   void _prev() {
-    if (_index > 0) {
-      setState(() => _index--);
-      _pageCtrl.jumpToPage(_index);
-      _markCurrent();
-      _startProgress();
-    } else {
-      if (mounted) Navigator.pop(context);
+    if (_isNavigating || _index <= 0) {
+      if (!_isNavigating && mounted) Navigator.pop(context);
+      return;
     }
+
+    _isNavigating = true;
+    setState(() => _index--);
+    _pageCtrl.jumpToPage(_index);
+    _markCurrent();
+
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (mounted) {
+        _isNavigating = false;
+        _startProgress();
+      }
+    });
   }
 
   void _markCurrent() {
@@ -101,213 +199,277 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
     }
   }
 
-  Color _parseBg(String hex) {
-    try {
-      final h = hex.replaceAll('#', '');
-      return Color(int.parse('FF$h', radix: 16));
-    } catch (_) {
-      return const Color(0xFF1D4ED8);
-    }
-  }
-
-  String _formatTime(DateTime dt) {
+  String _formatTime(DateTime dt, AppLocalizations l10n) {
     final local = dt.toLocal();
     final now = DateTime.now();
     final diff = now.difference(local);
 
-    if (diff.inMinutes < 1) return 'À l’instant';
-    if (diff.inMinutes < 60) return 'Il y a ${diff.inMinutes} min';
+    if (diff.inMinutes < 1) return l10n.t('status_just_now');
+    if (diff.inMinutes < 60) return l10n.t('status_minutes_ago', args: ['${diff.inMinutes}']);
     if (diff.inHours < 24 && local.day == now.day) {
       return DateFormat('HH:mm').format(local);
     }
     if (diff.inHours < 48) {
-      return 'Hier ${DateFormat('HH:mm').format(local)}';
+      return '${l10n.t('status_yesterday')} ${DateFormat('HH:mm').format(local)}';
     }
     return DateFormat('dd/MM HH:mm').format(local);
   }
 
   Future<void> _delete() async {
-    final s = widget.stories[_index];
-    if (!s.isMine) return;
+    final l10n = AppLocalizations.of(context);
+    HapticFeedback.mediumImpact();
 
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Supprimer ce statut ?'),
+        backgroundColor: ThixPolicy.card,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: ThixPolicy.border),
+        ),
+        title: Text(l10n.t('status_delete_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
+        content: Text(l10n.t('status_delete_message'), style: ThixPolicy.bodyStyle),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annuler'),
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              Navigator.pop(ctx, false);
+            },
+            child: Text(l10n.t('common_cancel')),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+            onPressed: () {
+              HapticFeedback.mediumImpact();
+              Navigator.pop(ctx, true);
+            },
+            child: Text(l10n.t('common_delete'), style: const TextStyle(color: ThixPolicy.danger, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
     );
-    if (ok != true) return;
 
-    await ref.read(statusServiceProvider).deleteStatus(s.statusId);
-    await ref.read(statusProvider.notifier).refresh();
-    if (mounted) Navigator.pop(context);
+    if (ok != true || !mounted) return;
+
+    final s = widget.stories[_index];
+    try {
+      debugPrint('[StatusViewer] ️ Deleting status: ${s.statusId}');
+      await ref.read(statusServiceProvider).deleteStatus(s.statusId);
+      await ref.read(statusProvider.notifier).refresh();
+      if (mounted) Navigator.pop(context);
+      debugPrint('[StatusViewer] ✓ Status deleted');
+    } catch (e) {
+      debugPrint('[StatusViewer] ❌ Delete error: $e');
+      if (mounted) _showError(_StatusValidators.friendlyError(e));
+    }
   }
 
   Future<void> _react(String emoji) async {
+    final l10n = AppLocalizations.of(context);
+    HapticFeedback.selectionClick();
+    
     final s = widget.stories[_index];
-    await ref.read(statusServiceProvider).react(s.statusId, emoji);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Réaction $emoji envoyée'),
-        duration: const Duration(milliseconds: 800),
-        backgroundColor: Colors.black87,
-      ),
-    );
+    try {
+      debugPrint('[StatusViewer] ❤️ Reacting with $emoji');
+      await ref.read(statusServiceProvider).react(s.statusId, emoji);
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(children: [
+            Text(emoji, style: const TextStyle(fontSize: 18)),
+            const SizedBox(width: 8),
+            Expanded(child: Text(l10n.t('status_reaction_sent', args: [emoji]))),
+          ]),
+          backgroundColor: ThixPolicy.success,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 1200),
+        ),
+      );
+    } catch (e) {
+      debugPrint('[StatusViewer] ❌ React error: $e');
+      if (mounted) _showError(_StatusValidators.friendlyError(e));
+    }
   }
 
   Future<void> _repost() async {
+    final l10n = AppLocalizations.of(context);
+    HapticFeedback.mediumImpact();
+
     final s = widget.stories[_index];
-    final id = await ref.read(statusServiceProvider).repost(s);
-    await ref.read(statusProvider.notifier).refresh();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(id != null ? 'Statut republié' : 'Erreur repost'),
-        backgroundColor: id != null ? Colors.green : Colors.red,
-      ),
-    );
+    try {
+      debugPrint('[StatusViewer] 🔄 Reposting status');
+      final id = await ref.read(statusServiceProvider).repost(s);
+      await ref.read(statusProvider.notifier).refresh();
+      
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(children: [
+            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(id != null ? l10n.t('status_reposted') : l10n.t('status_repost_error'))),
+          ]),
+          backgroundColor: id != null ? ThixPolicy.success : ThixPolicy.danger,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      debugPrint('[StatusViewer] ❌ Repost error: $e');
+      if (mounted) _showError(_StatusValidators.friendlyError(e));
+    }
   }
 
   void _edit() {
-    final s = widget.stories[_index];
-    if (!s.isMine) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const CreateStatusPage()),
-    );
+    HapticFeedback.selectionClick();
+    Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateStatusPage()));
   }
 
   Future<void> _showViewers(String statusId) async {
+    final l10n = AppLocalizations.of(context);
     _pause();
-    final viewers = await ref.read(statusServiceProvider).getViewers(statusId);
-    if (!mounted) return;
+    
+    try {
+      debugPrint('[StatusViewer] 👁️ Fetching viewers for $statusId');
+      final viewers = await ref.read(statusServiceProvider).getViewers(statusId);
+      if (!mounted) return;
 
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.45,
-          minChildSize: 0.3,
-          maxChildSize: 0.85,
-          expand: false,
-          builder: (_, scrollCtrl) {
-            return Column(
-              children: [
-                const SizedBox(height: 12),
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2),
+      await showModalBottomSheet(
+        context: context,
+        backgroundColor: ThixPolicy.card,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (ctx) {
+          return DraggableScrollableSheet(
+            initialChildSize: 0.45,
+            minChildSize: 0.3,
+            maxChildSize: 0.85,
+            expand: false,
+            builder: (_, scrollCtrl) {
+              return Column(
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: ThixPolicy.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.visibility_outlined, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Vu par ${viewers.length}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.visibility_outlined, size: 20, color: ThixPolicy.textMain),
+                        const SizedBox(width: 8),
+                        Text(
+                          l10n.t('status_viewed_by', args: ['${viewers.length}']),
+                          style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: viewers.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'Personne n’a encore vu ce statut',
-                            style: TextStyle(color: Colors.grey),
+                  const Divider(height: 1, color: ThixPolicy.border),
+                  Expanded(
+                    child: viewers.isEmpty
+                        ? Center(
+                            child: Text(
+                              l10n.t('status_no_views'),
+                              style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: scrollCtrl,
+                            itemCount: viewers.length,
+                            itemBuilder: (_, i) {
+                              final v = viewers[i];
+                              final rawName = v['display_name']?.toString() ?? '';
+                              final name = _StatusValidators.sanitize(rawName, maxLength: _kMaxNameLength);
+                              final rawAvatar = v['avatar_url']?.toString();
+                              final avatarUrl = _StatusValidators.sanitizeUrl(rawAvatar);
+                              final viewedAt = DateTime.tryParse('${v['viewed_at']}')?.toLocal();
+                              final time = viewedAt != null ? DateFormat('HH:mm').format(viewedAt) : '';
+
+                              return ListTile(
+                                leading: CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor: ThixPolicy.surfaceSoft,
+                                  backgroundImage: avatarUrl != null ? CachedNetworkImageProvider(avatarUrl) : null,
+                                  child: avatarUrl == null
+                                      ? Text(
+                                          name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                          style: TextStyle(color: ThixPolicy.primary, fontWeight: FontWeight.bold),
+                                        )
+                                      : null,
+                                ),
+                                title: Text(
+                                  name.isEmpty ? l10n.t('status_unknown_user') : name,
+                                  style: ThixPolicy.bodyStyle.copyWith(fontWeight: FontWeight.w600),
+                                ),
+                                trailing: Text(
+                                  time,
+                                  style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 12),
+                                ),
+                              );
+                            },
                           ),
-                        )
-                      : ListView.builder(
-                          controller: scrollCtrl,
-                          itemCount: viewers.length,
-                          itemBuilder: (_, i) {
-                            final v = viewers[i];
-                            final name =
-                                v['display_name']?.toString() ?? 'Utilisateur';
-                            final avatar = v['avatar_url']?.toString();
-                            final viewedAt =
-                                DateTime.tryParse('${v['viewed_at']}')
-                                    ?.toLocal();
-                            final time = viewedAt != null
-                                ? DateFormat('HH:mm').format(viewedAt)
-                                : '';
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } catch (e) {
+      debugPrint('[StatusViewer] ❌ Fetch viewers error: $e');
+      if (mounted) _showError(_StatusValidators.friendlyError(e));
+    } finally {
+      if (mounted) _resume();
+    }
+  }
 
-                            return ListTile(
-                              leading: CircleAvatar(
-                                backgroundImage: avatar != null &&
-                                        avatar.isNotEmpty
-                                    ? NetworkImage(avatar)
-                                    : null,
-                                child: avatar == null || avatar.isEmpty
-                                    ? Text(name.isNotEmpty ? name[0] : '?')
-                                    : null,
-                              ),
-                              title: Text(
-                                name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              trailing: Text(
-                                time,
-                                style: const TextStyle(
-                                  color: Colors.grey,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                ),
-              ],
-            );
-          },
-        );
-      },
+  void _showError(String message) {
+    if (!mounted) return;
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(message)),
+        ]),
+        backgroundColor: ThixPolicy.danger,
+        behavior: SnackBarBehavior.floating,
+      ),
     );
-
-    if (mounted) _resume();
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final stories = widget.stories;
+
     if (stories.isEmpty) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: Colors.black,
         body: Center(
-          child: Text('Aucun statut', style: TextStyle(color: Colors.white)),
+          child: Text(
+            l10n.t('status_no_stories'),
+            style: const TextStyle(color: Colors.white),
+          ),
         ),
       );
     }
 
     final current = stories[_index];
+    final safeName = _StatusValidators.sanitize(current.displayName, maxLength: _kMaxNameLength);
+    final safeContent = _StatusValidators.sanitize(current.content ?? '', maxLength: _kMaxContentLength);
+    final safeAvatar = _StatusValidators.sanitizeUrl(current.avatarUrl);
+    final safeMedia = _StatusValidators.sanitizeUrl(current.mediaUrl);
+    final bgColor = _StatusValidators.parseBg(current.background);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -315,6 +477,7 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
         onLongPressStart: (_) => _pause(),
         onLongPressEnd: (_) => _resume(),
         onTapUp: (d) {
+          if (_isNavigating) return;
           final w = MediaQuery.of(context).size.width;
           if (d.localPosition.dx < w / 3) {
             _prev();
@@ -325,26 +488,44 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Contenu
+            // ─ Contenu (Image ou Texte) ──
             PageView.builder(
               controller: _pageCtrl,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: stories.length,
+              onPageChanged: (i) {
+                // Sync index si swipe manuel
+                if (i != _index) {
+                  setState(() => _index = i);
+                  _markCurrent();
+                }
+              },
               itemBuilder: (_, i) {
                 final s = stories[i];
-                if (s.isImage && s.mediaUrl != null) {
-                  return Image.network(s.mediaUrl!, fit: BoxFit.contain);
+                final mediaUrl = _StatusValidators.sanitizeUrl(s.mediaUrl);
+                
+                if (s.isImage && mediaUrl != null) {
+                  return CachedNetworkImage(
+                    imageUrl: mediaUrl,
+                    fit: BoxFit.contain,
+                    backgroundColor: Colors.black,
+                    placeholder: (_, __) => const Center(child: CircularProgressIndicator(color: Colors.white)),
+                    errorWidget: (_, __, ___) => Center(
+                      child: Icon(Icons.broken_image_outlined, color: Colors.white54, size: 64),
+                    ),
+                  );
                 }
+                
                 return Container(
-                  color: _parseBg(s.background),
+                  color: bgColor,
                   alignment: Alignment.center,
                   padding: const EdgeInsets.all(32),
                   child: Text(
-                    s.content ?? '',
+                    safeContent.isEmpty ? '—' : safeContent,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: Colors.white,
-                      fontSize: 28,
+                      fontSize: _kFontSizeContent,
                       fontWeight: FontWeight.w700,
                       height: 1.3,
                     ),
@@ -353,12 +534,13 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
               },
             ),
 
-            // Top
+            // ── Top Bar (Progress + Info) ──
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                 child: Column(
                   children: [
+                    // Progress bars
                     Row(
                       children: List.generate(stories.length, (i) {
                         return Expanded(
@@ -372,11 +554,9 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                                 if (i == _index) value = _progress.value;
                                 return LinearProgressIndicator(
                                   value: value,
-                                  minHeight: 3,
+                                  minHeight: _kProgressHeight,
                                   backgroundColor: Colors.white30,
-                                  valueColor: const AlwaysStoppedAnimation(
-                                    Colors.white,
-                                  ),
+                                  valueColor: const AlwaysStoppedAnimation(Colors.white),
                                   borderRadius: BorderRadius.circular(2),
                                 );
                               },
@@ -386,16 +566,16 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                       }),
                     ),
                     const SizedBox(height: 12),
+                    
+                    // Header Info
                     Row(
                       children: [
                         CircleAvatar(
-                          radius: 18,
-                          backgroundImage: current.avatarUrl != null
-                              ? NetworkImage(current.avatarUrl!)
-                              : null,
-                          child: current.avatarUrl == null
-                              ? const Icon(Icons.person,
-                                  color: Colors.white, size: 18)
+                          radius: _kAvatarRadius,
+                          backgroundColor: ThixPolicy.surfaceSoft,
+                          backgroundImage: safeAvatar != null ? CachedNetworkImageProvider(safeAvatar) : null,
+                          child: safeAvatar == null
+                              ? const Icon(Icons.person, color: Colors.white, size: 18)
                               : null,
                         ),
                         const SizedBox(width: 10),
@@ -404,20 +584,18 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                current.isMine
-                                    ? 'Mon statut'
-                                    : current.displayName,
-                                style: const TextStyle(
+                                current.isMine ? l10n.t('status_my_status') : (safeName.isEmpty ? l10n.t('status_unknown_user') : safeName),
+                                style: TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,
-                                  fontSize: 14,
+                                  fontSize: _kFontSizeName,
                                 ),
                               ),
                               Text(
-                                _formatTime(current.createdAt),
-                                style: const TextStyle(
+                                _formatTime(current.createdAt, l10n),
+                                style: TextStyle(
                                   color: Colors.white70,
-                                  fontSize: 11,
+                                  fontSize: _kFontSizeTime,
                                 ),
                               ),
                             ],
@@ -425,38 +603,53 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                         ),
                         if (current.isMine)
                           PopupMenuButton<String>(
-                            icon: const Icon(Icons.more_vert,
-                                color: Colors.white),
-                            color: Colors.white,
+                            icon: const Icon(Icons.more_vert, color: Colors.white),
+                            color: ThixPolicy.card,
+                            surfaceTintColor: ThixPolicy.card,
                             onSelected: (v) {
+                              HapticFeedback.selectionClick();
                               if (v == 'edit') _edit();
                               if (v == 'delete') _delete();
-                              if (v == 'views') {
-                                _showViewers(current.statusId);
-                              }
+                              if (v == 'views') _showViewers(current.statusId);
                             },
-                            itemBuilder: (_) => const [
+                            itemBuilder: (_) => [
                               PopupMenuItem(
                                 value: 'views',
-                                child: Text('Voir les vues'),
+                                child: Row(children: [
+                                  const Icon(Icons.visibility_outlined, size: 18),
+                                  const SizedBox(width: 8),
+                                  Text(l10n.t('status_view_views')),
+                                ]),
                               ),
                               PopupMenuItem(
                                 value: 'edit',
-                                child: Text('Modifier'),
+                                child: Row(children: [
+                                  const Icon(Icons.edit_outlined, size: 18),
+                                  const SizedBox(width: 8),
+                                  Text(l10n.t('status_edit')),
+                                ]),
                               ),
                               PopupMenuItem(
                                 value: 'delete',
-                                child: Text(
-                                  'Supprimer',
-                                  style: TextStyle(color: Colors.red),
-                                ),
+                                child: Row(children: [
+                                  const Icon(Icons.delete_outline, size: 18, color: ThixPolicy.danger),
+                                  const SizedBox(width: 8),
+                                  Text(l10n.t('status_delete'), style: const TextStyle(color: ThixPolicy.danger)),
+                                ]),
                               ),
                             ],
                           )
                         else
-                          IconButton(
-                            icon: const Icon(Icons.close, color: Colors.white),
-                            onPressed: () => Navigator.pop(context),
+                          Semantics(
+                            button: true,
+                            label: l10n.t('common_close'),
+                            child: IconButton(
+                              icon: const Icon(Icons.close, color: Colors.white),
+                              onPressed: () {
+                                HapticFeedback.selectionClick();
+                                Navigator.pop(context);
+                              },
+                            ),
                           ),
                       ],
                     ),
@@ -465,7 +658,7 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
               ),
             ),
 
-            // Bottom actions
+            // ── Bottom Actions ──
             Positioned(
               left: 0,
               right: 0,
@@ -478,7 +671,7 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                       begin: Alignment.bottomCenter,
                       end: Alignment.topCenter,
                       colors: [
-                        Colors.black.withValues(alpha: 0.6),
+                        Colors.black.withOpacity(0.6),
                         Colors.transparent,
                       ],
                     ),
@@ -486,15 +679,18 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                   child: Row(
                     children: [
                       if (current.isMine)
-                        TextButton.icon(
-                          onPressed: () => _showViewers(current.statusId),
-                          icon: const Icon(Icons.visibility,
-                              color: Colors.white70, size: 18),
-                          label: const Text(
-                            'Vus',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontWeight: FontWeight.w600,
+                        Semantics(
+                          button: true,
+                          label: l10n.t('status_view_views'),
+                          child: TextButton.icon(
+                            onPressed: () => _showViewers(current.statusId),
+                            icon: const Icon(Icons.visibility, color: Colors.white70, size: 18),
+                            label: Text(
+                              l10n.t('status_views_count'),
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ),
@@ -505,15 +701,18 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                       _ReactBtn('😮', () => _react('😮')),
                       const Spacer(),
                       if (!current.isMine)
-                        TextButton.icon(
-                          onPressed: _repost,
-                          icon: const Icon(Icons.repeat,
-                              color: Colors.white, size: 18),
-                          label: const Text(
-                            'Repost',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
+                        Semantics(
+                          button: true,
+                          label: l10n.t('status_repost'),
+                          child: TextButton.icon(
+                            onPressed: _repost,
+                            icon: const Icon(Icons.repeat, color: Colors.white, size: 18),
+                            label: Text(
+                              l10n.t('status_repost'),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ),
@@ -529,19 +728,28 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
   }
 }
 
+// ============================================================================
+// REACT BUTTON
+// ============================================================================
+
 class _ReactBtn extends StatelessWidget {
   final String emoji;
   final VoidCallback onTap;
+
   const _ReactBtn(this.emoji, this.onTap);
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
-        child: Text(emoji, style: const TextStyle(fontSize: 22)),
+    return Semantics(
+      button: true,
+      label: 'Réagir avec $emoji',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
+          child: Text(emoji, style: const TextStyle(fontSize: 22)),
+        ),
       ),
     );
   }
