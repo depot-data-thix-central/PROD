@@ -703,7 +703,8 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
                                 ),
                                 boxShadow: ThixPolicy.shadowSoft(opacity: 0.02),
                               ),
-                              child: _chatList(..., onlineUserIds.onlineUsers, l10n)
+                              child: _chatList(state.filtered, currentUserId, currentUserName, onlineUserIds.onlineUsers, l10n),
+
                             ),
                           ),
 
