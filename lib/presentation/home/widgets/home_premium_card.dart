@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/certification_tier.dart';
-import 'package:thix_id/models/certification_info.dart';
+import 'package:thix_id/services/certification_service.dart';
 import 'package:thix_id/presentation/certification/certification_tiers_page.dart';
 import 'package:thix_id/presentation/certification/providers/certification_provider.dart';
 
