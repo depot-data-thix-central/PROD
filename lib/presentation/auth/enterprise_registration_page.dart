@@ -250,16 +250,17 @@ class _EnterpriseRegistrationPageState
         return;
       }
 
-      await auth.registerEnterprise(
+            await auth.registerEnterprise(
         email: email,
         password: pass,
         displayName: name,
         rememberMe: _rememberMe,
-        profileDraft: {
-          'registration_status': 'draft',
-          'display_name': name,
-        },
+        profileDraft: ProfileDraft(
+          registrationStatus: 'draft',
+          displayName: name,
+        ),
       );
+
 
       if (!mounted) return;
 
