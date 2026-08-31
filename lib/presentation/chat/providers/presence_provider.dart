@@ -5,9 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// ✅ UN SEUL import (le bon)
-import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
-import 'package:thix_id/models/app_user.dart';
+// ✅ IMPORT UNIQUE POUR LE CHAT (On n'utilise plus auth_controller !)
+import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -82,7 +81,10 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
   final Ref _ref;
   RealtimeChannel? _channel;
   Timer? _heartbeatTimer;
-  ProviderSubscription<AppUser?>? _authSubscription;
+  
+  // ✅ MODIFIÉ : On écoute un String? (l'ID) au lieu de AppUser?
+  ProviderSubscription<String?>? _authSubscription;
+  
   String? _currentUserId;
   bool _isTracked = false;
   bool _isDisposed = false;
@@ -99,18 +101,19 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
   void dispose() {
     _isDisposed = true;
     _heartbeatTimer?.cancel();
-    _authSubscription?.close();
+    _authSubscription?.close(); // ✅ Parfait
     _cleanupChannel();
     debugPrint('[Presence] 👋 Disposed');
     super.dispose();
   }
 
   void _bindAuthChanges() {
-    _authSubscription = _ref.listen<AppUser?>(
-      currentUserProvider,
+    // ✅ MODIFIÉ : On utilise supabaseUserIdProvider au lieu de currentUserProvider
+    _authSubscription = _ref.listen<String?>(
+      supabaseUserIdProvider,
       (previous, next) {
-        final prevId = previous?.id;
-        final nextId = next?.id;
+        final prevId = previous;
+        final nextId = next;
         if (prevId == nextId) return;
 
         debugPrint('[Presence] 🔄 Auth changed: '
@@ -142,7 +145,7 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
     try {
       _channel = _supabase.channel(
         _kChannelName,
-        opts: const RealtimeChannelConfig(), // ✅ CORRECTION : plus de selfBroadcast
+        opts: const RealtimeChannelConfig(), // ✅ PARFAIT : Plus de selfBroadcast
       );
 
       _channel!.onPresenceSync((_) => _handlePresenceSync());
@@ -231,7 +234,7 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
 
     try {
       final newState = <String>{};
-      final presenceMap = (_channel?.presenceState() as Map?) ?? {};
+      final presenceMap = (_channel?.presenceState() as Map?) ?? {}; // ✅ PARFAIT : Cast en Map?
 
       for (final entry in presenceMap.entries) {
         final presencesList = entry.value as List;
@@ -255,7 +258,7 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
     }
   }
 
-  void _handlePresenceJoin(dynamic join) { // ✅ CORRECTION : Utilisation de dynamic
+  void _handlePresenceJoin(dynamic join) { // ✅ PARFAIT : dynamic
     if (_isDisposed) return;
 
     try {
@@ -289,7 +292,7 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
     }
   }
 
-  void _handlePresenceLeave(dynamic leave) { // ✅ CORRECTION : Utilisation de dynamic
+  void _handlePresenceLeave(dynamic leave) { // ✅ PARFAIT : dynamic
     if (_isDisposed) return;
 
     try {
