@@ -321,74 +321,77 @@ class AppRouter {
         ])),
       ),
                               redirect: (context, state) async {
-        try {
-          final loc = state.matchedLocation;
-          final isLoginPage = loc == AppRoutes.login;
-          final isStartPage = loc == AppRoutes.start;
-          final isRegPage = loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
-          
-          final isPublic = isStartPage || 
-                          isLoginPage || 
-                          isRegPage || 
-                          loc == AppRoutes.publicProfile || 
-                          loc == AppRoutes.jobs || 
-                          loc == AppRoutes.opportunities || 
-                          loc == AppRoutes.education || 
-                          loc == AppRoutes.trainingHome || 
-                          loc.startsWith('${AppRoutes.trainingDetailsBasePath}/') || 
-                          loc == AppRoutes.monPays || 
-                          loc.startsWith('${AppRoutes.monPays}/') || 
-                          loc.startsWith('/thix-event') || 
-                          loc.startsWith('/thix-retrouve') || 
-                          loc.startsWith('/thix-weeding') || 
-                          loc.startsWith('/thix-reservation/delivery');
-          
-          final logged = auth.isAuthenticated;
-          final currentUser = auth.currentUser;
-          final status = currentUser?.registrationStatus?.toLowerCase() ?? '';
+  try {
+    final loc = state.matchedLocation;
+    final isLoginPage = loc == AppRoutes.login;
+    final isStartPage = loc == AppRoutes.start;
+    final isRegPage = loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
 
-          // ✅ 1. RÈGLE STRICTE : Le compte est actif UNIQUEMENT si le statut exact est 'active'
-          final isAccountActive = currentUser != null && (status == 'active' || status == 'completed');
+    final isPublic = isStartPage ||
+                    isLoginPage ||
+                    isRegPage ||
+                    loc == AppRoutes.publicProfile ||
+                    loc == AppRoutes.jobs ||
+                    loc == AppRoutes.opportunities ||
+                    loc == AppRoutes.education ||
+                    loc == AppRoutes.trainingHome ||
+                    loc.startsWith('${AppRoutes.trainingDetailsBasePath}/') ||
+                    loc == AppRoutes.monPays ||
+                    loc.startsWith('${AppRoutes.monPays}/') ||
+                    loc.startsWith('/thix-event') ||
+                    loc.startsWith('/thix-retrouve') ||
+                    loc.startsWith('/thix-weeding') ||
+                    loc.startsWith('/thix-reservation/delivery');
 
-          // Cas 1 : Non connecté
-          if (!logged) {
-            return isPublic ? null : AppRoutes.login;
-          }
+    final logged = auth.isAuthenticated;
+    final currentUser = auth.currentUser;
+    final status = currentUser?.registrationStatus?.toLowerCase() ?? '';
 
-          // ✅ NOUVEAU Cas 2 : Connecté et se trouve sur la page Login ou Start
-          if (logged && (isLoginPage || isStartPage)) {
-            // S'il est actif, direction Dashboard
-            if (isAccountActive) return AppRoutes.userDashboard;
-            // S'il n'est PAS actif, on le laisse tranquille sur Login ou Start.
-            // Cela lui permet de cliquer sur un bouton pour se déconnecter et vider le cache !
-            return null; 
-          }
+    // ✅ RÈGLE STRICTE : Le compte est actif UNIQUEMENT si le statut exact est 'active'
+    final isAccountActive = currentUser != null && (status == 'active' || status == 'completed');
 
-          // Cas 3 : Connecté sur page d'inscription avec compte ACTIVÉ
-          if (logged && isRegPage && isAccountActive) {
-            // On le laisse voir sa carte finale à l'étape 3
-            if (state.uri.queryParameters['step'] == '3') return null; 
-            return AppRoutes.userDashboard;
-          }
+    // Cas 1 : Non connecté
+    if (!logged) {
+      return isPublic ? null : AppRoutes.login;
+    }
 
-          // Cas 4 : Connecté mais compte NON ACTIVÉ (bloqué à une étape) et tente d'aller sur une page privée (ex: Dashboard)
-          if (logged && !isRegPage && !isLoginPage && !isStartPage && !isAccountActive && currentUser?.registrationStatus != null) {
-            if (status == 'draft_step1') {
-              return '${AppRoutes.personalReg}?step=1';
-            } else {
-              // Pour tout autre statut (draft_step2, pending, email_verified), on force 
-              // la complétion de l'inscription à l'étape 2
-              return '${AppRoutes.personalReg}?step=2';
-            }
-          }
+    // ✅ NOUVEAU Cas 2 : Connecté et se trouve sur la page Login ou Start
+    if (logged && (isLoginPage || isStartPage)) {
+      if (isAccountActive) return AppRoutes.userDashboard;
+      return null;
+    }
 
-          // Cas par défaut (Navigation normale dans l'app)
-          return null;
-        } catch (e) {
-          debugPrint('GoRouter redirect error: $e');
-          return null;
-        }
-      },
+    // Cas 3 : Connecté sur page d'inscription avec compte ACTIVÉ
+    if (logged && isRegPage && isAccountActive) {
+      if (state.uri.queryParameters['step'] == '3') return null;
+      return AppRoutes.userDashboard;
+    }
+
+    // ✅ Cas 4 CORRIGÉ : Connecté mais compte NON ACTIVÉ
+    if (logged && !isRegPage && !isLoginPage && !isStartPage && !isAccountActive && currentUser?.registrationStatus != null) {
+      // Si l'utilisateur est déjà en train de compléter son inscription
+      // dans CETTE session (venant d'une page interne), on le renvoie à l'étape.
+      // Mais si c'est un lancement à froid de l'app (home au démarrage),
+      // on déconnecte la session périmée au lieu de forcer l'inscription en boucle.
+      if (loc == AppRoutes.home) {
+        await auth.signOut();
+        return AppRoutes.login;
+      }
+
+      if (status == 'draft_step1') {
+        return '${AppRoutes.personalReg}?step=1';
+      } else {
+        return '${AppRoutes.personalReg}?step=2';
+      }
+    }
+
+    // Cas par défaut (Navigation normale dans l'app)
+    return null;
+  } catch (e) {
+    debugPrint('GoRouter redirect error: $e');
+    return null;
+  }
+},
 
 
 
