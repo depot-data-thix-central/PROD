@@ -31,7 +31,7 @@ class ChatSettings {
   // Stockage
   final String autoDownload; // 'wifi', 'mobile', 'never'
 
-  ChatSettings({
+  const ChatSettings({
     this.theme = 'system',
     this.wallpaper = 'default',
     this.fontSize = 14.0,
@@ -51,6 +51,8 @@ class ChatSettings {
     this.notifPreview = true,
     this.autoDownload = 'wifi',
   });
+
+  factory ChatSettings.empty() => const ChatSettings();
 
   factory ChatSettings.fromJson(Map<String, dynamic> json) {
     return ChatSettings(
