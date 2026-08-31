@@ -273,7 +273,7 @@ class _GroupCreatePageState extends State<GroupCreatePage> {
       if (!mounted) return;
       setState(() => _isCreating = false);
       _showSuccess(l10n.t('group_create_success'));
-      debugPrint('[GroupCreate] ✓ Group created: ${conv.groupId}');
+      debugPrint('[GroupCreate] ✓ Group created: ${conv.id}');
       Navigator.pop(context, conv);
     } catch (e) {
       debugPrint('[GroupCreate] ❌ Create error: $e');
