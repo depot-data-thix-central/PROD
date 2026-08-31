@@ -5,7 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/auth/auth_controller.dart';
+import 'package:thix_id/auth/auth_controller_provider.dart'; // Ajuste le chemin selon l'emplacement exact de ton fichier provider
+
 
 import 'package:thix_id/presentation/chat/profile/chat_profile_page.dart';
 import 'package:thix_id/providers/chat/chat_settings_provider.dart';
@@ -111,7 +112,7 @@ class _ChatSettingsPageState extends ConsumerState<ChatSettingsPage> {
 
     try {
       debugPrint('[Settings] 🚪 Logging out...');
-      await ref.read(authControllerProvider.notifier).logout();
+      await ref.read(authControllerProvider.notifier).signOut();
     } catch (e) {
       debugPrint('[Settings] ❌ Logout error: $e');
       if (mounted) {
