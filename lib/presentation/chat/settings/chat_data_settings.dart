@@ -67,7 +67,7 @@ class _ChatDataSettingsState extends ConsumerState<ChatDataSettings> {
     }
   }
 
-  void _showError(String settingName) {
+    void _showError(String settingName) {
     final l10n = AppLocalizations.of(context);
     HapticFeedback.lightImpact();
     
@@ -78,7 +78,8 @@ class _ChatDataSettingsState extends ConsumerState<ChatDataSettings> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              l10n.t('settings_save_error', args: [settingName]),
+              // CORRECTION APPLIQUÉE
+              l10n.t('settings_save_error').replaceAll('{0}', settingName), 
             ),
           ),
         ]),
@@ -87,6 +88,7 @@ class _ChatDataSettingsState extends ConsumerState<ChatDataSettings> {
       ),
     );
   }
+
 
   String _getEphemeralLabel(int? duration, AppLocalizations l10n) {
     if (duration == null) return l10n.t('data_ephemeral_off');
