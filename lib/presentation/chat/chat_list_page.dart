@@ -1361,7 +1361,7 @@ class _ConversationTile extends StatelessWidget {
                         child: CircleAvatar(
                           radius: 26,
                           backgroundColor: ThixPolicy.surface,
-                          backgroundImage: chatAvatar != null ? CachedNetworkImageProvider(chatAvatar) : null,
+                          backgroundImage: chatAvatar != null ? CachedNetworkImageProvider(chatAvatar!) : null,
                           child: chatAvatar == null
                               ? Text(
                                   _ListValidators.safeInitial(chatName),
