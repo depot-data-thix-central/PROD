@@ -185,7 +185,7 @@ class _ChatProfilePageState extends ConsumerState<ChatProfilePage> {
             // ── Nom ─
             Text(
               user.displayName,
-              style: ThixPolicy.headlineStyle.copyWith(
+              style: ThixPolicy.headlineStyle.copyWith( 
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
                 color: ThixPolicy.textMain,
