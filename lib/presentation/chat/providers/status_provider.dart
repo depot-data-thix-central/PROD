@@ -1,12 +1,13 @@
 // lib/presentation/chat/providers/status_provider.dart
+// lib/presentation/chat/providers/status_provider.dart
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
-import 'package:thix_id/auth/auth_controller.dart';
+import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart'; // 👈 C'est lui qui définit currentUserProvider
 import 'package:thix_id/models/chat/user_status_story.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
+
 
 // ============================================================================
 // CONSTANTS
