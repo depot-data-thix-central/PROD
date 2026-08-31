@@ -2505,7 +2505,8 @@ class _ThixChatBackgroundPainter extends CustomPainter {
     );
     final textPainter = TextPainter(
       text: TextSpan(text: 'THIX CHAT', style: textStyle),
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,
+
     );
     textPainter.layout();
 
