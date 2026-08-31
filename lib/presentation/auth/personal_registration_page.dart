@@ -13,6 +13,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:zxcvbn/zxcvbn.dart';
 
+import 'package:thix_id/auth/supabase_auth_manager.dart' show AuthException, AuthErrorCode;
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -85,29 +86,6 @@ class _RegValidators {
     return s.startsWith('@') ? s : '@$s';
   }
 
-  static String userFacingError(Object e, AppLocalizations l10n) {
-    final msg = e.toString().toLowerCase();
-
-    if (msg.contains('configuration serveur')) return l10n.t('reg_error_supabase_config');
-    if (msg.contains('already registered') || msg.contains('already exists')) return l10n.t('reg_error_email_exists');
-    if (msg.contains('23505') || msg.contains('unique constraint')) {
-      if (msg.contains('phone')) return l10n.t('reg_error_phone_exists');
-      if (msg.contains('thix_chat')) return l10n.t('reg_error_chat_taken');
-      if (msg.contains('thix_id')) return l10n.t('reg_error_thix_id_failed');
-      return l10n.t('reg_error_info_used');
-    }
-    if (msg.contains('invalid login') || msg.contains('invalid credentials')) return l10n.t('reg_error_invalid_credentials');
-    if (msg.contains('email_not_verified')) return l10n.t('reg_error_email_not_verified');
-    if (msg.contains('invalid_chat') || msg.contains('reserved') || msg.contains('réservé')) return l10n.t('reg_error_chat_reserved');
-    if (msg.contains('chat_taken')) return l10n.t('reg_error_chat_taken');
-    if (msg.contains('expired')) return l10n.t('reg_error_code_expired');
-    if (msg.contains('invalid') && msg.contains('token')) return l10n.t('reg_error_invalid_code');
-    if (msg.contains('rate limit') || msg.contains('too many')) return l10n.t('reg_error_rate_limit');
-    if (msg.contains('network') || msg.contains('timeout') || msg.contains('unavailable')) return l10n.t('reg_error_network');
-
-    return l10n.t('reg_error_generic');
-  }
-
   static String mapCountryToCode(String? name) {
     const map = {
       'Afrique du Sud': 'ZA', 'Algérie': 'DZ', 'Angola': 'AO', 'Bénin': 'BJ',
@@ -126,6 +104,131 @@ class _RegValidators {
     };
     return map[name] ?? 'XX';
   }
+}
+
+// ============================================================================
+// AUTH ERROR TRANSLATOR (MIGRATION CLÉ)
+// ============================================================================
+
+/// Traduit un [AuthErrorCode] en message user-friendly via i18n.
+///
+/// Gère également les erreurs business spécifiques à l'inscription
+/// (thix_id_failed, chat_taken, chat_reserved, etc.) qui ne sont pas
+/// des erreurs d'authentification à proprement parler.
+String _translateAuthError(Object e, AppLocalizations l10n) {
+  // Cas 1 : AuthException custom (avec code enum)
+  if (e is AuthException) {
+    switch (e.code) {
+      case AuthErrorCode.identifierRequired:
+        return l10n.t('auth_error_identifier_required');
+      case AuthErrorCode.passwordRequired:
+        return l10n.t('auth_error_password_required');
+      case AuthErrorCode.thixIdLoginNotAvailable:
+        return l10n.t('auth_error_thix_id_login_not_available');
+      case AuthErrorCode.invalidEmail:
+        return l10n.t('auth_error_invalid_email');
+      case AuthErrorCode.passwordTooShort:
+        final min = e.data?['minLength'] ?? 8;
+        return '${l10n.t('auth_error_password_too_short')} $min';
+      case AuthErrorCode.signInFailed:
+        return l10n.t('auth_error_sign_in_failed');
+      case AuthErrorCode.emailNotVerified:
+        return l10n.t('auth_error_email_not_verified');
+      case AuthErrorCode.serverMisconfiguration:
+        return l10n.t('auth_error_server_misconfiguration');
+      case AuthErrorCode.accountAlreadyExists:
+        return l10n.t('auth_error_account_already_exists');
+      case AuthErrorCode.accountExistsWrongPassword:
+        return l10n.t('auth_error_account_exists_wrong_password');
+      case AuthErrorCode.accountExistsNewOtpSent:
+        return l10n.t('auth_error_account_exists_new_otp_sent');
+      case AuthErrorCode.invalidOtp:
+        return l10n.t('auth_error_invalid_otp');
+      case AuthErrorCode.otpExpired:
+        return l10n.t('auth_error_otp_expired');
+      case AuthErrorCode.networkError:
+        return l10n.t('auth_error_network');
+      case AuthErrorCode.rateLimit:
+        return l10n.t('auth_error_rate_limit');
+      case AuthErrorCode.technicalError:
+        return l10n.t('auth_error_technical');
+      case AuthErrorCode.sessionExpired:
+        return l10n.t('auth_error_session_expired');
+      case AuthErrorCode.userMismatch:
+        return l10n.t('auth_error_user_mismatch');
+      case AuthErrorCode.profileUpdateFailed:
+        return l10n.t('auth_error_profile_update_failed');
+      case AuthErrorCode.markEmailVerifiedFailed:
+        return l10n.t('auth_error_mark_email_verified_failed');
+      case AuthErrorCode.qrTokenGenerationFailed:
+        return l10n.t('auth_error_qr_token_generation_failed');
+      case AuthErrorCode.finalizeRegistrationFailed:
+        return l10n.t('auth_error_finalize_registration_failed');
+      case AuthErrorCode.consumeQrTokenFailed:
+        return l10n.t('auth_error_consume_qr_token_failed');
+      case AuthErrorCode.resendOtpFailed:
+        return l10n.t('auth_error_resend_otp_failed');
+      case AuthErrorCode.phoneAuthNotAvailable:
+        return l10n.t('auth_error_phone_auth_not_available');
+      case AuthErrorCode.deleteAccountNotAvailable:
+        return l10n.t('auth_error_delete_account_not_available');
+      case AuthErrorCode.updateEmailFailed:
+        return l10n.t('auth_error_update_email_failed');
+      case AuthErrorCode.resetPasswordFailed:
+        return l10n.t('auth_error_reset_password_failed');
+      case AuthErrorCode.signUpFailed:
+        return l10n.t('auth_error_sign_up_failed');
+      case AuthErrorCode.otpSent:
+        return l10n.t('auth_info_otp_sent');
+    }
+  }
+
+  // Cas 2 : Erreurs business spécifiques à l'inscription
+  final msg = e.toString().toLowerCase();
+
+  if (msg.contains('configuration serveur')) {
+    return l10n.t('reg_error_supabase_config');
+  }
+  if (msg.contains('already registered') || msg.contains('already exists')) {
+    return l10n.t('reg_error_email_exists');
+  }
+  if (msg.contains('23505') || msg.contains('unique constraint')) {
+    if (msg.contains('phone')) return l10n.t('reg_error_phone_exists');
+    if (msg.contains('thix_chat')) return l10n.t('reg_error_chat_taken');
+    if (msg.contains('thix_id')) return l10n.t('reg_error_thix_id_failed');
+    return l10n.t('reg_error_info_used');
+  }
+  if (msg.contains('invalid login') || msg.contains('invalid credentials')) {
+    return l10n.t('reg_error_invalid_credentials');
+  }
+  if (msg.contains('email_not_verified')) {
+    return l10n.t('reg_error_email_not_verified');
+  }
+  if (msg.contains('invalid_chat') || msg.contains('reserved') || msg.contains('réservé')) {
+    return l10n.t('reg_error_chat_reserved');
+  }
+  if (msg.contains('chat_taken')) {
+    return l10n.t('reg_error_chat_taken');
+  }
+  if (msg.contains('thix_id_failed')) {
+    return l10n.t('reg_error_thix_id_failed');
+  }
+  if (msg.contains('expired')) {
+    return l10n.t('reg_error_code_expired');
+  }
+  if (msg.contains('invalid') && msg.contains('token')) {
+    return l10n.t('reg_error_invalid_code');
+  }
+  if (msg.contains('rate limit') || msg.contains('too many')) {
+    return l10n.t('reg_error_rate_limit');
+  }
+  if (msg.contains('network') || msg.contains('timeout') || msg.contains('unavailable')) {
+    return l10n.t('reg_error_network');
+  }
+
+  // Cas 3 : Fallback générique (ne jamais exposer stack trace)
+  debugPrint('[Registration] ⚠️ Unmapped error: $e');
+  return l10n.t('reg_error_generic');
 }
 
 // ============================================================================
@@ -680,7 +783,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       String? errorMsg;
       switch (result.code) {
         case PasswordErrorCode.tooShort:
-          errorMsg = l10n.t('reg_password_too_short', args: ['$_kMinPasswordLength']);
+          errorMsg = '${l10n.t('reg_password_too_short')} $_kMinPasswordLength';
           break;
         case PasswordErrorCode.tooWeak:
           errorMsg = l10n.t('reg_password_too_weak');
@@ -780,7 +883,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       String errorMsg;
       switch (passResult.code) {
         case PasswordErrorCode.tooShort:
-          errorMsg = l10n.t('reg_password_too_short', args: ['$_kMinPasswordLength']);
+          errorMsg = '${l10n.t('reg_password_too_short')} $_kMinPasswordLength';
           break;
         case PasswordErrorCode.tooWeak:
           errorMsg = l10n.t('reg_password_too_weak');
@@ -819,10 +922,11 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       return true;
     } catch (e) {
       final message = e.toString().toLowerCase();
+      // Signal de succès : OTP envoyé, pas une vraie erreur
       if (message.contains('otp_sent') || message.contains('nouveau code') || message.contains('confirm') || message.contains('inscription enregistrée')) {
         return true;
       }
-      _showError(_RegValidators.userFacingError(e, l10n));
+      _showError(_translateAuthError(e, l10n)); // ← MIGRATION : utilise _translateAuthError
       return false;
     }
   }
@@ -981,7 +1085,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       debugPrint('[Registration] ✓ Account activated: $officialThixId');
     } catch (e) {
       debugPrint('[Registration] ❌ Activation error: $e');
-      if (mounted) _showError(_RegValidators.userFacingError(e, l10n));
+      if (mounted) _showError(_translateAuthError(e, l10n)); // ← MIGRATION : utilise _translateAuthError
     } finally {
       if (mounted) setState(() => _busy = false);
     }
