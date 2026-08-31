@@ -1,31 +1,16 @@
 // lib/presentation/chat/providers/chat_list_provider.dart
-//
-// ============================================================================
-// CHAT LIST PROVIDER — Realtime + pagination + filters
-// ============================================================================
-//
-// État central de la liste des conversations.
-//
-// Architecture :
-//   1. `loadInitial()` au démarrage (batch : convs + unread + escalations)
-//   2. Channel Realtime filtré serveur (events user-only)
-//   3. Debounce 500ms sur updates Realtime
-//   4. Recherche locale avec pré-indexation lowercase
-//   5. Rollback optimiste sur markAsRead
-//
-// ============================================================================
-
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:thix_id/auth/auth_controller.dart' show currentUserProvider;
+
+import 'package:thix_id/auth/auth_controller.dart';
+import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
-import 'package:thix_id/models/app_user.dart';
-import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
-
-
+import 'package:thix_id/services/chat/chat_service.dart';
+import 'package:thix_id/services/chat/presence_service.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -60,7 +45,7 @@ class _ChatListValidators {
     ).hasMatch(id);
   }
 
-  /// Sanitize une query de recherche (XSS + caractères de contrôle)
+  /// Sanitize une query de recherche
   static String sanitizeQuery(String? input, {int maxLength = 100}) {
     if (input == null || input.trim().isEmpty) return '';
     var s = input
@@ -94,7 +79,7 @@ class _ChatListValidators {
 /// Conversation enrichie avec métadonnées de filtrage pré-calculées.
 class _IndexedConversation {
   final ChatConversation conversation;
-  final String searchKey; // lowercase concat pour recherche rapide
+  final String searchKey;
 
   _IndexedConversation(this.conversation)
       : searchKey = _buildSearchKey(conversation);
@@ -178,18 +163,6 @@ class ChatListState {
 // NOTIFIER
 // ============================================================================
 
-/// Notifier pour la liste des conversations.
-///
-/// **Cycle de vie** :
-/// - Init au premier `ref.watch`
-/// - Écoute changements auth (cleanup/reconnect)
-/// - Dispose proprement channels + timers
-///
-/// **Sécurité** :
-/// - Validation UUID sur tous les payloads Realtime
-/// - Sanitization de la search query
-/// - Filtre server-side sur Realtime
-/// - Protection DoS (max counters)
 class ChatListNotifier extends StateNotifier<ChatListState> {
   final Ref _ref;
   final ChatService _chatService;
@@ -198,7 +171,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   Timer? _searchDebounce;
   Timer? _refreshDebounce;
   RealtimeChannel? _channel;
-  StreamSubscription? _authSubscription;
+  ProviderSubscription? _authSubscription;
   bool _isDisposed = false;
   bool _isLoadInProgress = false;
   String? _currentUserId;
@@ -220,7 +193,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     _isDisposed = true;
     _searchDebounce?.cancel();
     _refreshDebounce?.cancel();
-    _authSubscription?.cancel();
+    _authSubscription?.close();
     _cleanupChannel();
     debugPrint('[ChatList] 👋 Disposed');
     super.dispose();
@@ -314,7 +287,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
             if (_isDisposed) return;
             if (status == RealtimeSubscribeStatus.subscribed) {
               debugPrint('[ChatList] ✓ Messages channel subscribed');
-              state = state.copyWith(isRealtimeConnected: true, clearError: true);
+              state = state.copyWith(
+                  isRealtimeConnected: true, clearError: true);
             } else if (error != null) {
               debugPrint('[ChatList] ❌ Subscribe error: $error');
               state = state.copyWith(
@@ -378,10 +352,6 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
   // ── LOAD / PAGINATION ────────────────────────────────────────────────
 
-  /// Charge les conversations initiales.
-  ///
-  /// **Protection race condition** : `_isLoadInProgress` empêche les appels
-  /// concurrents (Realtime refresh + user action simultanés).
   Future<void> loadInitial({bool silent = false}) async {
     if (_isDisposed || _isLoadInProgress) return;
     if (_currentUserId == null) {
@@ -397,15 +367,20 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
     try {
       // Batch les 3 requêtes pour latence réduite
-      final results = await Future.wait([
-        _chatService.getConversations(limit: _kPageSize, offset: 0),
-        _chatService.getTotalUnreadCount(),
-        _getPendingEscalations(),
+      final convsFuture =
+          _chatService.getConversations(limit: _kPageSize, offset: 0);
+      final unreadFuture = _chatService.getTotalUnreadCount();
+      final escalationsFuture = _getPendingEscalations();
+
+      final results = await Future.wait<dynamic>([
+        convsFuture,
+        unreadFuture,
+        escalationsFuture,
       ]).timeout(_kDbTimeout);
 
       if (_isDisposed) return;
 
-      final convs = results[0] as List<ChatConversation>;
+      final convs = (results[0] as List).cast<ChatConversation>();
       final unread = results[1] as int;
       final escalations = results[2] as int;
 
@@ -458,7 +433,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
       final seenIds = state.all.map((c) => c.id).toSet();
       final uniqueNew = newConvs.where((c) => !seenIds.contains(c.id)).toList();
 
-      final merged = [...state.all, ...uniqueNew];
+      final merged = <ChatConversation>[...state.all, ...uniqueNew];
       _indexedAll = merged.map((c) => _IndexedConversation(c)).toList();
 
       state = state.copyWith(
@@ -496,7 +471,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   }
 
   Future<int> _getPendingEscalations() async {
-    if (_currentUserId == null) return 0;
+    final userId = _currentUserId;
+    if (userId == null) return 0;
 
     int attempt = 0;
     while (true) {
@@ -504,7 +480,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         final res = await _client
             .from('escalation_steps')
             .select('id')
-            .eq('to_agent_id', _currentUserId)
+            .eq('to_agent_id', userId)
             .eq('status', 0)
             .timeout(_kDbTimeout);
         return (res as List).length;
@@ -538,10 +514,6 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     _applyFilter();
   }
 
-  /// Applique filtre + recherche en utilisant l'index pré-calculé.
-  ///
-  /// Optimisation : la lowercase est calculée une seule fois dans
-  /// `_IndexedConversation`, pas à chaque filtre.
   void _applyFilter() {
     if (_isDisposed) return;
 
@@ -567,23 +539,18 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
         break;
     }
 
-    state = state.copyWith(filtered: filtered.map((idx) => idx.conversation).toList());
+    state = state.copyWith(
+        filtered: filtered.map((idx) => idx.conversation).toList());
   }
 
   // ── MARK AS READ (avec rollback) ─────────────────────────────────────
 
-  /// Marque une conversation comme lue.
-  ///
-  /// **Rollback automatique** : si l'appel serveur échoue, le compteur
-  /// `unreadCount` est restauré à sa valeur précédente.
   Future<void> markAsRead(String convId) async {
     if (_isDisposed || !_ChatListValidators.isValidUuid(convId)) return;
 
-    // Snapshot pour rollback
     final previousConvs = List<ChatConversation>.from(state.all);
     final previousTotal = state.totalUnread;
 
-    // Optimistic update
     final updated = state.all.map((c) {
       if (c.id == convId) return c.copyWith(unreadCount: 0);
       return c;
@@ -607,7 +574,8 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
           totalUnread: previousTotal,
           lastError: 'Échec du marquage comme lu',
         );
-        _indexedAll = previousConvs.map((c) => _IndexedConversation(c)).toList();
+        _indexedAll =
+            previousConvs.map((c) => _IndexedConversation(c)).toList();
         _applyFilter();
       }
     }
@@ -644,14 +612,6 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 // PROVIDERS
 // ============================================================================
 
-/// Provider principal pour la liste des conversations.
-///
-/// Usage :
-/// ```dart
-/// final chatList = ref.watch(chatListProvider);
-/// final conversations = chatList.filtered;
-/// final badge = chatList.totalUnread;
-/// ```
 final chatListProvider =
     StateNotifierProvider<ChatListNotifier, ChatListState>((ref) {
   final chatService = ref.watch(chatServiceProvider);
@@ -659,44 +619,36 @@ final chatListProvider =
   return ChatListNotifier(ref, chatService, presenceService);
 });
 
-// ── DERIVED PROVIDERS (rebuild optimization) ─────────────────────────
+// ── DERIVED PROVIDERS ─────────────────────────────────────────────────
 
-/// Liste filtrée des conversations affichées dans l'UI.
 final chatListFilteredProvider = Provider<List<ChatConversation>>((ref) {
   return ref.watch(chatListProvider).filtered;
 });
 
-/// Vrai si la liste est vide (pas de conversations après filtre).
 final chatListIsEmptyProvider = Provider<bool>((ref) {
   return ref.watch(chatListProvider).isEmpty;
 });
 
-/// Nombre total de messages non lus (badge global).
 final chatListTotalUnreadProvider = Provider<int>((ref) {
   return ref.watch(chatListProvider).totalUnread;
 });
 
-/// Nombre d'escalades en attente (pour agents).
 final chatListPendingEscalationsProvider = Provider<int>((ref) {
   return ref.watch(chatListProvider).pendingEscalations;
 });
 
-/// Vrai si le chargement initial est en cours.
 final chatListIsLoadingProvider = Provider<bool>((ref) {
   return ref.watch(chatListProvider).isLoading;
 });
 
-/// Vrai si un chargement additionnel (pagination) est en cours.
 final chatListIsLoadingMoreProvider = Provider<bool>((ref) {
   return ref.watch(chatListProvider).isLoadingMore;
 });
 
-/// Vrai si le canal Realtime est connecté.
 final chatListRealtimeConnectedProvider = Provider<bool>((ref) {
   return ref.watch(chatListProvider).isRealtimeConnected;
 });
 
-/// Dernière erreur (pour affichage UI / toast).
 final chatListErrorProvider = Provider<String?>((ref) {
   return ref.watch(chatListProvider).lastError;
 });
