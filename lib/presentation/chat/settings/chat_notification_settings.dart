@@ -72,7 +72,7 @@ class _ChatNotificationSettingsState extends ConsumerState<ChatNotificationSetti
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              l10n.t('settings_save_error', args: [settingName]),
+              l10n.t('settings_save_error').replaceAll('{0}', settingName)
             ),
           ),
         ]),
