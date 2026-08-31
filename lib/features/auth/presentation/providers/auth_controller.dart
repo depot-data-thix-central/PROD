@@ -1,13 +1,15 @@
 // lib/features/auth/presentation/providers/auth_controller.dart
+// lib/features/auth/presentation/providers/auth_controller.dart
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:thix_id/auth/auth_manager.dart';
-import 'package:thix_id/auth/supabase_auth_manager.dart';
+import 'package:thix_id/auth/supabase_auth_manager.dart'; // ✅ Import complet (pas show)
 import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/models/account_type.dart';
 import 'package:thix_id/services/profile_service.dart';
 
+// Le reste du fichier reste IDENTIQUE
 // ============================================================================
 // PARTIE 1 : Legacy ChangeNotifier (utilisé par main.dart et app_router)
 // ============================================================================
