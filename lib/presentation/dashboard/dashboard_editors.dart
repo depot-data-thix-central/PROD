@@ -405,7 +405,7 @@ Future<bool> _confirmDelete(BuildContext context, String itemName) async {
         ],
       ),
       content: Text(
-        l10n.t('editors_delete_confirm', args: [itemName]),
+        "${l10n.t('editors_delete_confirm')} $itemName",
         style: ThixPolicy.bodyStyle,
       ),
       actions: [
