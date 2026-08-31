@@ -2,6 +2,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'dart:ui';
 
 // ============================================================================
 // CONSTANTS
