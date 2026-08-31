@@ -125,7 +125,7 @@ class _CartSummaryWidgetState extends ConsumerState<CartSummaryWidget> {
     final formattedTotal = _CartSummaryValidators.formatAmount(total, locale, isUSD: isUSD);
 
     final authState = ref.watch(authControllerProvider);
-    final isLoggedIn = authState.currentUser != null;
+    final isLoggedIn = authState.valueOrNull != null;
 
     final subtotalLabel = context.sumW(
       'Sous-total ($itemCount ${itemCount > 1 ? 'articles' : 'article'})',
