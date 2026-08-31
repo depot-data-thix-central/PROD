@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/presentation/chat/providers/chat_settings_provider.dart';
+import 'package:thix_id/providers/chat/chat_settings_provider.dart';
 import 'package:thix_id/presentation/chat/settings/widgets/chat_settings_switch.dart';
 
 // ============================================================================
