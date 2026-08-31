@@ -1,128 +1,249 @@
-// ============================================================
-// 📁 lib/presentation/chat/settings/chat_appearance_settings.dart
-// ============================================================
-
+// lib/presentation/chat/settings/chat_appearance_settings.dart
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../../providers/chat/chat_settings_provider.dart';
-import 'widgets/chat_settings_switch.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
+import 'package:thix_id/providers/chat/chat_settings_provider.dart';
+import 'package:thix_id/presentation/chat/settings/widgets/chat_settings_switch.dart';
 
-class ChatAppearanceSettings extends StatelessWidget {
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+const List<double> _kFontSizes = [12.0, 14.0, 16.0, 18.0, 20.0];
+const List<String> _kThemes = ['system', 'light', 'dark'];
+
+// ============================================================================
+// APPEARANCE SETTINGS PAGE
+// ============================================================================
+
+/// Page de configuration de l'apparence.
+///
+/// Gère : Thème, Taille de police, Style des bulles.
+class ChatAppearanceSettings extends ConsumerStatefulWidget {
   const ChatAppearanceSettings({super.key});
 
-  static const Color primaryBlue = Color(0xFF4A8BFF);
-  static const Color navyDeep = Color(0xFF0A1F44);
-  static const Color ivory = Color(0xFFF3F5FA);
-  static const Color darkText = Color(0xFF10182B);
-  static const Color mutedText = Color(0xFF6B7690);
+  @override
+  ConsumerState<ChatAppearanceSettings> createState() => _ChatAppearanceSettingsState();
+}
 
-  // Fonction pour afficher l'erreur
-  void _showError(BuildContext context) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Erreur lors de la sauvegarde'), backgroundColor: Colors.red),
-      );
+class _ChatAppearanceSettingsState extends ConsumerState<ChatAppearanceSettings> {
+  bool _isSaving = false;
+
+  Future<void> _updateSetting<T>(
+    T newValue,
+    Future<bool> Function(T) updateFn,
+    String settingName,
+  ) async {
+    if (_isSaving) return; // Protection double-tap
+    
+    setState(() => _isSaving = true);
+    HapticFeedback.selectionClick();
+    
+    debugPrint('[Appearance] 💾 Updating $settingName to: $newValue');
+
+    try {
+      final success = await updateFn(newValue);
+      
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+
+      if (!success) {
+        _showError(settingName);
+      } else {
+        debugPrint('[Appearance] ✓ $settingName updated successfully');
+      }
+    } catch (e) {
+      debugPrint('[Appearance] ❌ Error updating $settingName: $e');
+      if (mounted) {
+        setState(() => _isSaving = false);
+        _showError(settingName);
+      }
     }
+  }
+
+  void _showError(String settingName) {
+    final l10n = AppLocalizations.of(context);
+    HapticFeedback.lightImpact();
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              l10n.t('settings_save_error', args: [settingName]),
+            ),
+          ),
+        ]),
+        backgroundColor: ThixPolicy.danger,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  String _getThemeLabel(String theme, AppLocalizations l10n) {
+    switch (theme) {
+      case 'light': return l10n.t('appearance_theme_light');
+      case 'dark': return l10n.t('appearance_theme_dark');
+      default: return l10n.t('appearance_theme_system');
+    }
+  }
+
+  String _getFontSizeLabel(double size, AppLocalizations l10n) {
+    if (size <= 12.0) return l10n.t('appearance_font_xs');
+    if (size <= 14.0) return l10n.t('appearance_font_s');
+    if (size <= 16.0) return l10n.t('appearance_font_m');
+    if (size <= 18.0) return l10n.t('appearance_font_l');
+    return l10n.t('appearance_font_xl');
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<ChatSettingsProvider>();
-    final settings = provider.settings;
+    final l10n = AppLocalizations.of(context);
+    final settingsState = ref.watch(chatSettingsProvider);
+    final settings = settingsState.settings;
+    final isLoading = settingsState.isLoading;
 
-    if (provider.isLoading && settings == null) {
-      return Scaffold(
-        backgroundColor: ivory,
-        appBar: AppBar(title: const Text('Apparence', style: TextStyle(fontWeight: FontWeight.w800)), backgroundColor: navyDeep, foregroundColor: Colors.white, elevation: 0),
-        body: const Center(child: CircularProgressIndicator(color: primaryBlue)),
-      );
-    }
-
-    if (settings == null) {
-      return Scaffold(
-        backgroundColor: ivory,
-        appBar: AppBar(title: const Text('Apparence', style: TextStyle(fontWeight: FontWeight.w800)), backgroundColor: navyDeep, foregroundColor: Colors.white, elevation: 0),
-        body: const Center(child: Text('Impossible de charger les réglages', style: TextStyle(color: mutedText))),
-      );
-    }
-
-    final currentTheme = settings.theme ?? 'system';
-    final currentFontSize = settings.fontSize ?? 16.0;
-    final isRounded = (settings.bubbleStyle ?? 'rounded') == 'rounded';
+    // Valeurs par défaut sécurisées
+    final currentTheme = settings?.theme ?? 'system';
+    final currentFontSize = settings?.fontSize ?? 16.0;
+    final isRounded = (settings?.bubbleStyle ?? 'rounded') == 'rounded';
 
     return Scaffold(
-      backgroundColor: ivory,
+      backgroundColor: ThixPolicy.surfaceSoft,
       appBar: AppBar(
-        title: const Text('Apparence', style: TextStyle(fontWeight: FontWeight.w800)),
-        backgroundColor: navyDeep,
+        title: Text(
+          l10n.t('appearance_title'),
+          style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold),
+        ),
+        backgroundColor: ThixPolicy.primary,
         foregroundColor: Colors.white,
         elevation: 0,
+        leading: Semantics(
+          button: true,
+          label: l10n.t('common_back'),
+          child: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              Navigator.pop(context);
+            },
+          ),
+        ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        children: [
-          Container(
-            color: Colors.white,
-            child: ListTile(
-              title: const Text('Thème', style: TextStyle(fontWeight: FontWeight.bold, color: darkText)),
-              trailing: DropdownButton<String>(
-                value: currentTheme,
-                underline: const SizedBox(),
-                items: const [
-                  DropdownMenuItem(value: 'light', child: Text('Clair')),
-                  DropdownMenuItem(value: 'dark', child: Text('Sombre')),
-                  DropdownMenuItem(value: 'system', child: Text('Système')),
-                ],
-                onChanged: (val) {
-                  if (val != null) {
-                    provider.updateSettings(settings.copyWith(theme: val)).then((success) {
-                      if (!success) _showError(context);
-                    });
-                  }
-                },
-              ),
-            ),
-          ),
-          const Divider(height: 1, color: ivory),
-          Container(
-            color: Colors.white,
-            child: ListTile(
-              title: const Text('Taille de police', style: TextStyle(fontWeight: FontWeight.bold, color: darkText)),
-              trailing: DropdownButton<double>(
-                value: currentFontSize,
-                underline: const SizedBox(),
-                items: const [
-                  DropdownMenuItem(value: 12.0, child: Text('Très petite')),
-                  DropdownMenuItem(value: 14.0, child: Text('Petite')),
-                  DropdownMenuItem(value: 16.0, child: Text('Normale')),
-                  DropdownMenuItem(value: 18.0, child: Text('Grande')),
-                  DropdownMenuItem(value: 20.0, child: Text('Très grande')),
-                ],
-                onChanged: (val) {
-                  if (val != null) {
-                    provider.updateSettings(settings.copyWith(fontSize: val)).then((success) {
-                      if (!success) _showError(context);
-                    });
-                  }
-                },
-              ),
-            ),
-          ),
-          const Divider(height: 1, color: ivory),
-          Container(
-            color: Colors.white,
-            child: ChatSettingsSwitch(
-              title: 'Style des bulles',
-              subtitle: 'Arrondies ou carrées',
-              value: isRounded,
-              onChanged: (val) {
-                provider.updateSettings(settings.copyWith(bubbleStyle: val ? 'rounded' : 'square')).then((success) {
-                  if (!success) _showError(context);
-                });
-              },
-            ),
-          ),
-        ],
+      body: isLoading && settings == null
+          ? Center(child: CircularProgressIndicator(color: ThixPolicy.primary))
+          : settings == null
+              ? Center(
+                  child: Text(
+                    l10n.t('settings_load_error'),
+                    style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted),
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  children: [
+                    // ── Thème ──
+                    _buildDropdownTile(
+                      l10n: l10n,
+                      icon: Icons.palette_rounded,
+                      title: l10n.t('appearance_theme'),
+                      value: currentTheme,
+                      items: _kThemes.map((v) => DropdownMenuItem(
+                        value: v,
+                        child: Text(_getThemeLabel(v, l10n)),
+                      )).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          _updateSetting(
+                            val,
+                            (v) => ref.read(chatSettingsProvider.notifier).updateSettings(
+                              settings.copyWith(theme: v),
+                            ),
+                            l10n.t('appearance_theme'),
+                          );
+                        }
+                      },
+                    ),
+                    
+                    const Divider(height: 1, color: ThixPolicy.border),
+
+                    // ── Taille de police ──
+                    _buildDropdownTile(
+                      l10n: l10n,
+                      icon: Icons.text_fields_rounded,
+                      title: l10n.t('appearance_font_size'),
+                      value: currentFontSize,
+                      items: _kFontSizes.map((v) => DropdownMenuItem(
+                        value: v,
+                        child: Text(_getFontSizeLabel(v, l10n)),
+                      )).toList(),
+                      onChanged: (val) {
+                        if (val != null) {
+                          _updateSetting(
+                            val,
+                            (v) => ref.read(chatSettingsProvider.notifier).updateSettings(
+                              settings.copyWith(fontSize: v),
+                            ),
+                            l10n.t('appearance_font_size'),
+                          );
+                        }
+                      },
+                    ),
+
+                    const Divider(height: 1, color: ThixPolicy.border),
+
+                    // ── Style des bulles ─
+                    Container(
+                      color: ThixPolicy.card,
+                      child: ChatSettingsSwitch(
+                        icon: Icons.chat_bubble_rounded,
+                        title: l10n.t('appearance_bubble_style'),
+                        subtitle: l10n.t('appearance_bubble_style_desc'),
+                        value: isRounded,
+                        isEnabled: !_isSaving,
+                        onChanged: (val) {
+                          _updateSetting(
+                            val,
+                            (v) => ref.read(chatSettingsProvider.notifier).updateSettings(
+                              settings.copyWith(bubbleStyle: v ? 'rounded' : 'square'),
+                            ),
+                            l10n.t('appearance_bubble_style'),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+    );
+  }
+
+  Widget _buildDropdownTile({
+    required AppLocalizations l10n,
+    required IconData icon,
+    required String title,
+    required dynamic value,
+    required List<DropdownMenuItem<dynamic>> items,
+    required ValueChanged<dynamic> onChanged,
+  }) {
+    return Container(
+      color: ThixPolicy.card,
+      child: ListTile(
+        leading: Icon(icon, color: ThixPolicy.primary),
+        title: Text(
+          title,
+          style: ThixPolicy.bodyStyle.copyWith(fontWeight: FontWeight.w600),
+        ),
+        trailing: DropdownButton<dynamic>(
+          value: value,
+          underline: const SizedBox(),
+          icon: const Icon(Icons.arrow_drop_down_rounded, color: ThixPolicy.textMuted),
+          style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMain),
+          items: items,
+          onChanged: _isSaving ? null : onChanged, // Désactivé pendant sauvegarde
+        ),
       ),
     );
   }
