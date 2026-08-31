@@ -157,16 +157,16 @@ class _ChatEphemeralTimerState extends State<ChatEphemeralTimer> {
     if (_remaining <= 0) return l10n.t('timer_expired');
 
     if (_remaining < _kSecondsInMinute) {
-      return l10n.t('timer_remaining_seconds', args: ['$_remaining']);
+      return "${l10n.t('timer_remaining_seconds')} $_remaining";
     }
 
     if (_remaining < _kSecondsInHour) {
       final m = _remaining ~/ _kSecondsInMinute;
-      return l10n.t('timer_remaining_minutes', args: ['$m']);
+      return "${l10n.t('timer_remaining_minutes')} $m";
     }
 
     final h = _remaining ~/ _kSecondsInHour;
-    return l10n.t('timer_remaining_hours', args: ['$h']);
+    return "${l10n.t('timer_remaining_hours')} $h";
   }
 
   @override
