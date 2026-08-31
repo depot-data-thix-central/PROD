@@ -127,7 +127,7 @@ String _translateAuthError(Object e, AppLocalizations l10n) {
       case AuthErrorCode.invalidEmail:
         return l10n.t('auth_error_invalid_email');
       case AuthErrorCode.passwordTooShort:
-        final min = e.data?['minLength'] ?? 8;
+        final min = 8;
         return '${l10n.t('auth_error_password_too_short')} $min';
       case AuthErrorCode.signInFailed:
         return l10n.t('auth_error_sign_in_failed');
