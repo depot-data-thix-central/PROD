@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/certification_tier.dart';
+// CORRECTION 1 : Ajout de l'import manquant pour CertificationInfo
+import 'package:thix_id/models/certification_info.dart';
 import 'package:thix_id/presentation/certification/certification_tiers_page.dart';
 import 'package:thix_id/presentation/certification/providers/certification_provider.dart';
 
@@ -93,12 +95,15 @@ class HomePremiumCard extends ConsumerWidget {
 
   String _statusLine(AppLocalizations l10n, CertificationInfo info) {
     final statusLabel = info.status.labelFr;
+    
+    // CORRECTION 2 : Retrait du paramètre 'args:' qui n'est pas supporté par ta méthode t()
+    // Utilisation d'une simple interpolation pour garantir la compilation.
     return switch (info.tier) {
-      CertificationTier.official => l10n.t('cert_official_status', args: [statusLabel]),
-      CertificationTier.enterprise => l10n.t('cert_enterprise_status', args: [statusLabel]),
-      CertificationTier.premium => l10n.t('cert_premium_status', args: [statusLabel]),
-      CertificationTier.standard => l10n.t('cert_standard_status', args: [statusLabel]),
-      CertificationTier.free => l10n.t('cert_free_status', args: [statusLabel]),
+      CertificationTier.official => "${l10n.t('cert_official_status')} - $statusLabel",
+      CertificationTier.enterprise => "${l10n.t('cert_enterprise_status')} - $statusLabel",
+      CertificationTier.premium => "${l10n.t('cert_premium_status')} - $statusLabel",
+      CertificationTier.standard => "${l10n.t('cert_standard_status')} - $statusLabel",
+      CertificationTier.free => "${l10n.t('cert_free_status')} - $statusLabel",
     };
   }
 
