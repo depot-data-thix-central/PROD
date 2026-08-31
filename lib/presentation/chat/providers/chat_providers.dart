@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http; // 👈 Import ajouté pour la compatibilité Web
+import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 
 import 'package:thix_id/services/chat/audio_service.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
