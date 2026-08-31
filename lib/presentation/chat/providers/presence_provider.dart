@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ✅ UN SEUL import (le bon)
-import 'package:thix_id/auth/auth_controller.dart' show currentUserProvider;
+import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 import 'package:thix_id/models/app_user.dart';
 
 // ============================================================================
@@ -82,7 +82,7 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
   final Ref _ref;
   RealtimeChannel? _channel;
   Timer? _heartbeatTimer;
-  ProviderSubscription? _authSubscription;
+  ProviderSubscription<AppUser?>? _authSubscription;
   String? _currentUserId;
   bool _isTracked = false;
   bool _isDisposed = false;
@@ -142,7 +142,7 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
     try {
       _channel = _supabase.channel(
         _kChannelName,
-        opts: const RealtimeChannelConfig(selfBroadcast: false),
+        opts: const RealtimeChannelConfig(), // ✅ CORRECTION : plus de selfBroadcast
       );
 
       _channel!.onPresenceSync((_) => _handlePresenceSync());
@@ -234,8 +234,9 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
       final presenceMap = (_channel?.presenceState() as Map?) ?? {};
 
       for (final entry in presenceMap.entries) {
-        for (final presence in entry.value) {
-          final payload = presence.payload;
+        final presencesList = entry.value as List;
+        for (final presence in presencesList) {
+          final payload = presence is Map ? presence['payload'] : presence.payload;
           final userId = _PresenceValidators.extractUserId(payload);
           if (userId != null) {
             newState.add(userId);
@@ -254,13 +255,20 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
     }
   }
 
-  void _handlePresenceJoin(RealtimePresenceJoinEvent join) {
+  void _handlePresenceJoin(dynamic join) { // ✅ CORRECTION : Utilisation de dynamic
     if (_isDisposed) return;
 
     try {
       final newUsers = <String>{};
-      for (final presence in join.presences) {
-        final userId = _PresenceValidators.extractUserId(presence.payload);
+      
+      List presencesList = [];
+      try { presencesList = join.newPresences; } catch (_) { 
+        try { presencesList = join.presences; } catch (_) {}
+      }
+
+      for (final presence in presencesList) {
+        final payload = presence is Map ? presence['payload'] : presence.payload;
+        final userId = _PresenceValidators.extractUserId(payload);
         if (userId != null) newUsers.add(userId);
       }
 
@@ -281,14 +289,20 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
     }
   }
 
-  void _handlePresenceLeave(dynamic leave) { // Remplacer RealtimePresenceLeaveEvent par dynamic
-
+  void _handlePresenceLeave(dynamic leave) { // ✅ CORRECTION : Utilisation de dynamic
     if (_isDisposed) return;
 
     try {
       final leftUsers = <String>{};
-      for (final presence in leave.presences) {
-        final userId = _PresenceValidators.extractUserId(presence.payload);
+      
+      List presencesList = [];
+      try { presencesList = leave.leftPresences; } catch (_) { 
+        try { presencesList = leave.presences; } catch (_) {}
+      }
+
+      for (final presence in presencesList) {
+        final payload = presence is Map ? presence['payload'] : presence.payload;
+        final userId = _PresenceValidators.extractUserId(payload);
         if (userId != null) leftUsers.add(userId);
       }
 
