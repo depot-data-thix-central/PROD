@@ -1302,7 +1302,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
 
                                 if (passError != null) {
   HapticFeedback.lightImpact();
-  setState(() => _passwordError = passError.message); // Remplace .message par la propriété textuelle de ton objet si elle a un autre nom
+  setState(() => _passwordError = passError.toString());
   return;
 }
 
