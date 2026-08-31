@@ -4,9 +4,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:thix_id/auth/auth_controller.dart' show currentUserProvider;
-import 'package:thix_id/auth/auth_controller.dart';
-import 'package:thix_id/models/app_user.dart';
+
+// ✅ PLUS D'IMPORT DE AUTH_CONTROLLER ICI ! (100% indépendant)
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
 
 // ============================================================================
@@ -130,7 +129,7 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
   RealtimeChannel? _missedCallsChannel;
   RealtimeChannel? _connectionsChannel;
   RealtimeChannel? _escalationsChannel;
-  ProviderSubscription? _authSubscription;
+  ProviderSubscription<String?>? _authSubscription; // ✅ TYPE CORRIGÉ EN String?
 
   NotificationCountersNotifier(this._ref)
       : super(const NotificationCounters()) {
@@ -145,18 +144,19 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
   void dispose() {
     _isDisposed = true;
     _refreshDebounce?.cancel();
-    _authSubscription?.close();
+    _authSubscription?.close(); // ✅ BONNE MÉTHODE POUR RIVERPOD 2.x
     _cleanupChannels();
     debugPrint('[NotificationCounters] 👋 Disposed');
     super.dispose();
   }
 
   void _bindAuthChanges() {
-    _authSubscription = _ref.listen<AppUser?>(
-      currentUserProvider,
+    // ✅ MODIFIÉ : On utilise supabaseUserIdProvider au lieu de currentUserProvider
+    _authSubscription = _ref.listen<String?>(
+      supabaseUserIdProvider,
       (previous, next) {
-        final prevId = previous?.id;
-        final nextId = next?.id;
+        final prevId = previous; 
+        final nextId = next;     
         if (prevId == nextId) return;
 
         debugPrint('[NotificationCounters] 🔄 Auth changed: '
