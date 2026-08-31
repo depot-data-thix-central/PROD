@@ -1,16 +1,28 @@
 // lib/presentation/chat/widgets/chat_input_bar.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-class _C {
-  static const navy = Color(0xFF0A1F44);
-  static const primary = Color(0xFF1D4ED8);
-  static const gold = Color(0xFFE3B23C);
-  static const orange = Color(0xFFF59E0B);
-  static const border = Color(0xFFE2E8F0);
-  static const textMuted = Color(0xFF64748B);
-  static const surface = Color(0xFFF1F5F9);
-}
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
 
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+const double _kInputMinHeight = 42.0;
+const double _kInputMaxHeight = 130.0;
+const double _kInputRadius = 22.0;
+const double _kToolChipRadius = 20.0;
+const double _kMicButtonSize = 42.0;
+const double _kSendButtonSize = 44.0;
+const double _kIconSize = 16.0;
+const double _kSendIconSize = 20.0;
+const double _kMicIconSize = 22.0;
+const double _kLoaderSize = 18.0;
+const int _kMaxMessageLength = 5000;
+
+// ============================================================================
+// CHAT INPUT BAR
+// ============================================================================
 class ChatInputBar extends StatefulWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -81,39 +93,42 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 
   void _handleSend() {
-    if (widget.isSending || !_hasText) return;
+    if (widget.isSending || !_hasText) {
+      debugPrint('[ChatInput] ⚠️ Send blocked: isSending=${widget.isSending}, hasText=$_hasText');
+      return;
+    }
+    if (!mounted) return;
+    HapticFeedback.mediumImpact();
+    debugPrint('[ChatInput] 📤 Send triggered');
     widget.onSend();
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isNote = widget.isInternalNote;
-    final bg = isNote ? const Color(0xFFFFF7ED) : Colors.white;
-    final topBorder =
-        isNote ? const Color(0xFFFED7AA) : _C.border;
-    final hint = isNote
-        ? 'Écrire une note interne…'
-        : 'Écrire un message…';
-    final sendColor = isNote ? _C.orange : _C.navy;
+
+    // Couleurs dynamiques selon le mode
+    final bg = isNote ? ThixPolicy.warning.withOpacity(0.08) : ThixPolicy.card;
+    final topBorder = isNote ? ThixPolicy.warning.withOpacity(0.3) : ThixPolicy.border;
+    final hint = isNote ? l10n.t('input_note_hint') : l10n.t('input_message_hint');
+    final sendColor = isNote ? ThixPolicy.warning : ThixPolicy.primary;
+    final inputFill = isNote ? ThixPolicy.warning.withOpacity(0.12) : ThixPolicy.surfaceSoft;
+    final inputBorder = isNote ? ThixPolicy.warning.withOpacity(0.3) : Colors.transparent;
+    final focusBorder = isNote ? ThixPolicy.warning : ThixPolicy.primary;
 
     return Container(
       decoration: BoxDecoration(
         color: bg,
         border: Border(top: BorderSide(color: topBorder)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 6,
-            offset: const Offset(0, -2),
-          ),
-        ],
+        boxShadow: ThixPolicy.shadowSoft(opacity: 0.04),
       ),
       child: SafeArea(
         top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── Bande d’outils ──
+            // ── Bande d'outils ──
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
@@ -121,35 +136,57 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 children: [
                   _ToolChip(
                     icon: Icons.attach_file_rounded,
-                    label: 'Fichier',
-                    onTap: widget.onAttach,
+                    label: l10n.t('input_attach_file'),
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      debugPrint('[ChatInput] 📎 Attach tapped');
+                      widget.onAttach();
+                    },
                   ),
                   _ToolChip(
                     icon: Icons.emoji_emotions_outlined,
-                    label: 'Sticker',
-                    onTap: widget.onStickerTap,
+                    label: l10n.t('input_sticker'),
+                    onTap: widget.onStickerTap != null
+                        ? () {
+                            HapticFeedback.selectionClick();
+                            debugPrint('[ChatInput] 😊 Sticker tapped');
+                            widget.onStickerTap!();
+                          }
+                        : null,
                   ),
                   _ToolChip(
                     icon: widget.isEphemeral
                         ? Icons.timer_rounded
                         : Icons.timer_outlined,
-                    label: 'Éphémère',
-                    onTap: widget.onEphemeralToggle,
+                    label: l10n.t('input_ephemeral'),
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      debugPrint('[ChatInput] ⏱️ Ephemeral toggled: ${!widget.isEphemeral}');
+                      widget.onEphemeralToggle();
+                    },
                     active: widget.isEphemeral,
-                    activeColor: _C.gold,
+                    activeColor: ThixPolicy.gold,
                   ),
                   _ToolChip(
                     icon: Icons.lock_outline_rounded,
-                    label: 'Protégé',
-                    onTap: widget.onSecureMessage,
+                    label: l10n.t('input_secure'),
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      debugPrint('[ChatInput] 🔒 Secure message tapped');
+                      widget.onSecureMessage();
+                    },
                   ),
                   if (widget.onInternalNoteToggle != null)
                     _ToolChip(
                       icon: Icons.speaker_notes_outlined,
-                      label: 'Note',
-                      onTap: widget.onInternalNoteToggle,
+                      label: l10n.t('input_note'),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        debugPrint('[ChatInput] 📝 Note toggled: ${!isNote}');
+                        widget.onInternalNoteToggle!();
+                      },
                       active: isNote,
-                      activeColor: _C.orange,
+                      activeColor: ThixPolicy.warning,
                     ),
                 ],
               ),
@@ -160,24 +197,23 @@ class _ChatInputBarState extends State<ChatInputBar> {
               Container(
                 width: double.infinity,
                 margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFEDD5),
+                  color: ThixPolicy.warning.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFFED7AA)),
+                  border: Border.all(color: ThixPolicy.warning.withOpacity(0.3)),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.lock_outline, size: 14, color: _C.orange),
-                    SizedBox(width: 6),
+                    const Icon(Icons.lock_outline, size: 14, color: ThixPolicy.warning),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        'Mode note interne — visible uniquement par les agents',
-                        style: TextStyle(
+                        l10n.t('input_note_banner'),
+                        style: ThixPolicy.microStyle.copyWith(
                           fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: _C.orange,
+                          fontWeight: ThixPolicy.semiBold,
+                          color: ThixPolicy.warning,
                         ),
                       ),
                     ),
@@ -190,24 +226,23 @@ class _ChatInputBarState extends State<ChatInputBar> {
               Container(
                 width: double.infinity,
                 margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFFBEB),
+                  color: ThixPolicy.gold.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFFDE68A)),
+                  border: Border.all(color: ThixPolicy.gold.withOpacity(0.3)),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.timer_rounded, size: 14, color: _C.gold),
-                    SizedBox(width: 6),
+                    const Icon(Icons.timer_rounded, size: 14, color: ThixPolicy.gold),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        'Message éphémère activé',
-                        style: TextStyle(
+                        l10n.t('input_ephemeral_banner'),
+                        style: ThixPolicy.microStyle.copyWith(
                           fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFFB45309),
+                          fontWeight: ThixPolicy.semiBold,
+                          color: ThixPolicy.gold,
                         ),
                       ),
                     ),
@@ -225,8 +260,12 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   if (!_hasText) ...[
                     _IconRound(
                       icon: Icons.mic_none_rounded,
-                      onTap: widget.onAudio,
-                      tooltip: 'Message audio',
+                      semanticsLabel: l10n.t('input_audio'),
+                      onTap: () {
+                        HapticFeedback.mediumImpact();
+                        debugPrint('[ChatInput] 🎤 Audio tapped');
+                        widget.onAudio();
+                      },
                     ),
                     const SizedBox(width: 6),
                   ],
@@ -235,57 +274,54 @@ class _ChatInputBarState extends State<ChatInputBar> {
                   Expanded(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(
-                        minHeight: 42,
-                        maxHeight: 130,
+                        minHeight: _kInputMinHeight,
+                        maxHeight: _kInputMaxHeight,
                       ),
-                      child: TextField(
-                        controller: widget.controller,
-                        focusNode: widget.focusNode,
-                        onChanged: (v) {
-                          widget.onTyping?.call(v);
-                          _onTextChanged();
-                        },
-                        maxLines: null,
-                        minLines: 1,
-                        textCapitalization: TextCapitalization.sentences,
-                        keyboardType: TextInputType.multiline,
-                        textInputAction: TextInputAction.newline,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          color: Color(0xFF0F172A),
-                          height: 1.35,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: hint,
-                          hintStyle: const TextStyle(
-                            color: _C.textMuted,
-                            fontSize: 14,
+                      child: Semantics(
+                        label: l10n.t('input_text_label'),
+                        textField: true,
+                        child: TextField(
+                          controller: widget.controller,
+                          focusNode: widget.focusNode,
+                          onChanged: (v) {
+                            widget.onTyping?.call(v);
+                            _onTextChanged();
+                          },
+                          maxLines: null,
+                          minLines: 1,
+                          maxLength: _kMaxMessageLength,
+                          textCapitalization: TextCapitalization.sentences,
+                          keyboardType: TextInputType.multiline,
+                          textInputAction: TextInputAction.newline,
+                          style: ThixPolicy.bodyStyle.copyWith(
+                            fontSize: 15,
+                            color: ThixPolicy.textMain,
+                            height: 1.35,
                           ),
-                          filled: true,
-                          fillColor: isNote
-                              ? const Color(0xFFFFEDD5)
-                              : _C.surface,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(22),
-                            borderSide: BorderSide.none,
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(22),
-                            borderSide: BorderSide(
-                              color: isNote
-                                  ? const Color(0xFFFED7AA)
-                                  : Colors.transparent,
+                          decoration: InputDecoration(
+                            counterText: '',
+                            hintText: hint,
+                            hintStyle: ThixPolicy.captionStyle.copyWith(
+                              color: ThixPolicy.textMuted,
+                              fontSize: 14,
                             ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(22),
-                            borderSide: BorderSide(
-                              color: isNote ? _C.orange : _C.primary,
-                              width: 1.2,
+                            filled: true,
+                            fillColor: inputFill,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(_kInputRadius),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(_kInputRadius),
+                              borderSide: BorderSide(color: inputBorder),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(_kInputRadius),
+                              borderSide: BorderSide(color: focusBorder, width: 1.2),
                             ),
                           ),
                         ),
@@ -300,6 +336,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     enabled: _hasText && !widget.isSending,
                     loading: widget.isSending,
                     color: sendColor,
+                    semanticsLabel: l10n.t('input_send'),
                     onTap: _handleSend,
                   ),
                 ],
@@ -312,10 +349,9 @@ class _ChatInputBarState extends State<ChatInputBar> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// WIDGETS INTERNES
-// ─────────────────────────────────────────────────────────────
-
+// ============================================================================
+// TOOL CHIP
+// ============================================================================
 class _ToolChip extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -328,39 +364,44 @@ class _ToolChip extends StatelessWidget {
     required this.label,
     this.onTap,
     this.active = false,
-    this.activeColor = _C.gold,
+    this.activeColor = ThixPolicy.gold,
   });
 
   @override
   Widget build(BuildContext context) {
-    final color = active ? activeColor : _C.textMuted;
+    final color = active ? activeColor : ThixPolicy.textMuted;
+    final bgColor = active ? activeColor.withOpacity(0.12) : Colors.transparent;
 
     return Padding(
       padding: const EdgeInsets.only(right: 6),
-      child: Material(
-        color: active
-            ? activeColor.withValues(alpha: 0.12)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(20),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 16, color: color),
-                const SizedBox(width: 4),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                    color: color,
+      child: Semantics(
+        button: true,
+        label: label,
+        selected: active,
+        enabled: onTap != null,
+        child: Material(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(_kToolChipRadius),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(_kToolChipRadius),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: _kIconSize, color: color),
+                  const SizedBox(width: 4),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                      color: color,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -369,78 +410,94 @@ class _ToolChip extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// ICON ROUND (MIC)
+// ============================================================================
 class _IconRound extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
-  final String? tooltip;
+  final String semanticsLabel;
 
   const _IconRound({
     required this.icon,
     required this.onTap,
-    this.tooltip,
+    required this.semanticsLabel,
   });
 
   @override
   Widget build(BuildContext context) {
-    final btn = Material(
-      color: _C.surface,
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: SizedBox(
-          width: 42,
-          height: 42,
-          child: Icon(icon, size: 22, color: _C.textMuted),
+    return Semantics(
+      button: true,
+      label: semanticsLabel,
+      child: Material(
+        color: ThixPolicy.surfaceSoft,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: _kMicButtonSize,
+            height: _kMicButtonSize,
+            child: Icon(icon, size: _kMicIconSize, color: ThixPolicy.textMuted),
+          ),
         ),
       ),
     );
-
-    if (tooltip == null) return btn;
-    return Tooltip(message: tooltip!, child: btn);
   }
 }
 
+// ============================================================================
+// SEND BUTTON
+// ============================================================================
 class _SendButton extends StatelessWidget {
   final bool enabled;
   final bool loading;
   final Color color;
+  final String semanticsLabel;
   final VoidCallback onTap;
 
   const _SendButton({
     required this.enabled,
     required this.loading,
     required this.color,
+    required this.semanticsLabel,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: enabled ? color : const Color(0xFFCBD5E1),
-      shape: const CircleBorder(),
-      elevation: enabled ? 1 : 0,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: enabled ? onTap : null,
-        child: SizedBox(
-          width: 44,
-          height: 44,
-          child: Center(
-            child: loading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.2,
+    final bgColor = enabled ? color : ThixPolicy.textMuted.withOpacity(0.3);
+
+    return Semantics(
+      button: true,
+      label: semanticsLabel,
+      enabled: enabled,
+      child: Material(
+        color: bgColor,
+        shape: const CircleBorder(),
+        elevation: enabled ? 1 : 0,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: enabled ? onTap : null,
+          child: SizedBox(
+            width: _kSendButtonSize,
+            height: _kSendButtonSize,
+            child: Center(
+              child: loading
+                  ? const SizedBox(
+                      width: _kLoaderSize,
+                      height: _kLoaderSize,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(
+                      Icons.send_rounded,
                       color: Colors.white,
+                      size: _kSendIconSize,
                     ),
-                  )
-                : const Icon(
-                    Icons.send_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
+            ),
           ),
         ),
       ),
