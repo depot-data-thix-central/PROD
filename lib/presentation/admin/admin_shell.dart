@@ -76,81 +76,23 @@ class AdminTopBar extends ConsumerWidget {
   final String? role;
   final TextEditingController searchController;
   final FocusNode searchFocus;
-
-  const AdminTopBar({
-    super.key,
-    required this.isDesktop,
-    required this.role,
-    required this.searchController,
-    required this.searchFocus,
-  });
-
+  const AdminTopBar({super.key, required this.isDesktop, required this.role, required this.searchController, required this.searchFocus});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // ✅ NOUVELLE API : accès direct à AuthControllerState
-    final authState = ref.watch(authControllerProvider);
-    final user = authState.currentUser;
-    final isSigningOut = authState.isLoading;
-
-    Future<void> handleSignOut() async {
-      if (isSigningOut) return;
-      HapticFeedback.mediumImpact();
-      debugPrint('[AdminTopBar] 👋 Sign out requested');
-      try {
-        await ref.read(authControllerProvider.notifier).signOut();
-        if (!context.mounted) return;
-        context.go(AppRoutes.home);
-      } catch (e) {
-        debugPrint('[AdminTopBar] ❌ Sign out error: $e');
-      }
-    }
-
+    final user = ref.watch(authControllerProvider).valueOrNull;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Row(
-        children: [
-          if (!isDesktop)
-            Builder(
-              builder: (context) => _GlassIconButton(
-                icon: Icons.menu_rounded,
-                tooltip: 'Menu',
-                onTap: () => Scaffold.of(context).openDrawer(),
-              ),
-            ),
-          if (!isDesktop) const SizedBox(width: 8),
-          Expanded(
-            child: _GlassSearchField(
-              controller: searchController,
-              focusNode: searchFocus,
-            ),
-          ),
-          const SizedBox(width: 8),
-          _GlassPill(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  user?.displayName ?? 'Admin',
-                  style: const TextStyle(color: _AdminColors.text),
-                ),
-                const SizedBox(width: 10),
-                Semantics(
-                  button: true,
-                  label: 'Déconnexion',
-                  enabled: !isSigningOut,
-                  child: _GlassIconButton(
-                    icon: isSigningOut
-                        ? Icons.hourglass_empty_rounded
-                        : Icons.logout_rounded,
-                    tooltip: 'Déconnexion',
-                    onTap: handleSignOut,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      child: Row(children: [
+        if (!isDesktop) Builder(builder: (context) => _GlassIconButton(icon: Icons.menu_rounded, tooltip: 'Menu', onTap: () => Scaffold.of(context).openDrawer())),
+        if (!isDesktop) const SizedBox(width: 8),
+        Expanded(child: _GlassSearchField(controller: searchController, focusNode: searchFocus)),
+        const SizedBox(width: 8),
+        _GlassPill(child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(user?.displayName?? 'Admin', style: const TextStyle(color: _AdminColors.text)),
+          const SizedBox(width: 10),
+          _GlassIconButton(icon: Icons.logout_rounded, tooltip: 'Déconnexion', onTap: () async { await ref.read(authControllerProvider.notifier).signOut(); if (!context.mounted) return; context.go(AppRoutes.home); }),
+        ])),
+      ]),
     );
   }
 }
