@@ -230,7 +230,7 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
 
     try {
       final newState = <String>{};
-      final presenceMap = _channel?.presenceState() ?? {};
+      final presenceMap = (_channel?.presenceState() as Map?) ?? {};
 
       for (final entry in presenceMap.entries) {
         for (final presence in entry.value) {
