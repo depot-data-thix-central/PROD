@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/chat/chat_user.dart';
-import 'package:thix_id/presentation/chat/providers/chat_settings_provider.dart';
+import 'package:thix_id/providers/chat/chat_settings_provider.dart';
 import 'package:thix_id/presentation/chat/profile/edit_chat_profile_page.dart';
 
 // ============================================================================
