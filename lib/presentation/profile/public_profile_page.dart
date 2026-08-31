@@ -2012,24 +2012,71 @@ class _ThixIdCardWidget extends StatelessWidget {
                                 : null,
                           ),
                           const SizedBox(width: 16),
-                          const SizedBox(width: 16), // Correction : "const" avec un "c" minuscule
-Expanded(
-  child: Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    mainAxisAlignment: MainAxisAlignment.end,
-    children: [
-      _CardLabelValue(l10n.t('public_full_name').toUpperCase(), safeName),
-      const SizedBox(height: 6),
-      _CardLabelValue(l10n.t('public_profession').toUpperCase(), safeProfession),
-      const SizedBox(height: 6),
-      Row(
-        children: [
-          Expanded(child: _CardLabelValue(l10n.t('public_dob').toUpperCase(), safeDob)),
-          // J'ai ajouté un child générique pour fermer ton Expanded manquant.
-          // Si c'est le lieu de naissance (POB), tu peux mettre safePob à la place.
-          Expanded(child: _CardLabelValue('INFO', '—')), 
-        ],
-      ), // Fermeture du Row
-    ],
-  ), // Fermeture du Column
-), // Fermeture du Expanded
+                                                    const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                _CardLabelValue(l10n.t('public_full_name').toUpperCase(), safeName),
+                                const SizedBox(height: 6),
+                                _CardLabelValue(l10n.t('public_profession').toUpperCase(), safeProfession),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Expanded(child: _CardLabelValue(l10n.t('public_dob').toUpperCase(), safeDob)),
+                                    Expanded(child: _CardLabelValue(l10n.t('public_nationality').toUpperCase(), safeNationality)),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CardLabelValue extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _CardLabelValue(this.label, this.value);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: ThixPolicy.captionStyle.copyWith(
+            color: Colors.white.withOpacity(0.5),
+            fontSize: 7,
+            fontWeight: ThixPolicy.bold,
+            letterSpacing: 0.5,
+          ),
+        ),
+        Text(
+          value.isEmpty ? '—' : value,
+          style: ThixPolicy.labelStyle.copyWith(
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: ThixPolicy.bold,
+            letterSpacing: 0.2,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+}
