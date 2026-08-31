@@ -5,6 +5,7 @@ import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/services/certification_service.dart';
 import 'package:thix_id/services/bcc_exchange_rate_service.dart';
 import 'package:thix_id/services/certification_payment_service.dart';
+import 'package:thix_id/models/certification_info.dart';
 
 final certificationServiceProvider = Provider<CertificationService>((ref) {
   return CertificationService(Supabase.instance.client);
