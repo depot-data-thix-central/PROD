@@ -887,7 +887,8 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
             const SizedBox(height: 12),
             Text(
               displayName.isEmpty ? l10n.t('group_default_name') : displayName,
-              style: ThixPolicy.headlineStyle.copyWith(
+              style: ThixPolicy.titleStyle.copyWith( // <-- Remplacer headlineStyle par titleStyle
+
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
                 color: ThixPolicy.textMain,
