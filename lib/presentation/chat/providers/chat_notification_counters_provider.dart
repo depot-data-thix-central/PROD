@@ -23,10 +23,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'package:thix_id/auth/auth_controller.dart' show currentUserProvider;
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
     show supabaseClientProvider;
+import 'package:thix_id/models/app_user.dart';
+import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
+
+
 
 // ============================================================================
 // CONSTANTS
