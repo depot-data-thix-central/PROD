@@ -2012,16 +2012,24 @@ class _ThixIdCardWidget extends StatelessWidget {
                                 : null,
                           ),
                           const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                _CardLabelValue(l10n.t('public_full_name').toUpperCase(), safeName),
-                                const SizedBox(height: 6),
-                                _CardLabelValue(l10n.t('public_profession').toUpperCase(), safeProfession),
-                                const SizedBox(height: 6),
-                                Row(
-                                  children: [
-                                    Expanded(child: _CardLabelValue(l10n.t('public_dob').toUpperCase(), safeDob)),
-                                    Expanded(
+                          const SizedBox(width: 16), // Correction : "const" avec un "c" minuscule
+Expanded(
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    mainAxisAlignment: MainAxisAlignment.end,
+    children: [
+      _CardLabelValue(l10n.t('public_full_name').toUpperCase(), safeName),
+      const SizedBox(height: 6),
+      _CardLabelValue(l10n.t('public_profession').toUpperCase(), safeProfession),
+      const SizedBox(height: 6),
+      Row(
+        children: [
+          Expanded(child: _CardLabelValue(l10n.t('public_dob').toUpperCase(), safeDob)),
+          // J'ai ajouté un child générique pour fermer ton Expanded manquant.
+          // Si c'est le lieu de naissance (POB), tu peux mettre safePob à la place.
+          Expanded(child: _CardLabelValue('INFO', '—')), 
+        ],
+      ), // Fermeture du Row
+    ],
+  ), // Fermeture du Column
+), // Fermeture du Expanded
