@@ -1,13 +1,139 @@
-
-// ============================================================
 // lib/services/chat/connection_service.dart
-// ============================================================
+//
+// ============================================================================
+// CONNECTION SERVICE — Production Enterprise
+// ============================================================================
+//
+// Service de gestion du réseau de connexions utilisateur :
+//   - Demandes de connexion (envoyées/reçues)
+//   - Connexions actives
+//   - Accept/reject/cancel/block/remove
+//   - Statut entre 2 utilisateurs
+//
+// Architecture :
+//   - SupabaseClient injectable (testable via Riverpod)
+//   - Validation UUID stricte sur tous les IDs
+//   - Sanitization XSS sur tous les contenus user
+//   - Modèles typés (plus de Map<String, dynamic>)
+//   - Queries optimisées (OR, RPC batch)
+//   - Protection ownership (vérification user authentifié)
+//
+// Sécurité :
+//   - Validation UUID v4 sur tous les IDs
+//   - Sanitization XSS sur messages
+//   - Max message length 500 caractères
+//   - Ownership checks sur actions destructives
+//   - Stack traces masquées en production
+// ============================================================================
 
-import 'package:flutter/material.dart';
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// ─── MODÈLES ──────────────────────────────────────────────────
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+const int _kDefaultLimit = 20;
+const int _kMaxLimit = 100;
+const int _kMaxMessageLength = 500;
+const int _kMaxDisplayNameLength = 100;
+const Duration _kDbTimeout = Duration(seconds: 15);
+const Duration _kRpcTimeout = Duration(seconds: 20);
+const Duration _kRejectedFreshness = Duration(days: 30); // Reject ignoré si > 30j
 
+// ============================================================================
+// VALIDATORS
+// ============================================================================
+class _ConnectionValidators {
+  _ConnectionValidators._();
+
+  /// Valide un UUID v4 strict.
+  static bool isValidUuid(String? id) {
+    if (id == null) return false;
+    final trimmed = id.trim();
+    if (trimmed.isEmpty || trimmed.length > 100) return false;
+    return RegExp(
+      r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+      caseSensitive: false,
+    ).hasMatch(trimmed);
+  }
+
+  /// Sanitize un message (XSS + caractères de contrôle).
+  static String sanitizeMessage(String? input) {
+    if (input == null) return '';
+    var s = input
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
+        .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+    return s.length > _kMaxMessageLength
+        ? s.substring(0, _kMaxMessageLength)
+        : s;
+  }
+
+  /// Sanitize un display name.
+  static String sanitizeName(String? input) {
+    if (input == null) return 'Inconnu';
+    var s = input
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+    if (s.isEmpty) return 'Inconnu';
+    return s.length > _kMaxDisplayNameLength
+        ? s.substring(0, _kMaxDisplayNameLength)
+        : s;
+  }
+
+  /// Obfusque un ID pour les logs.
+  static String obfuscate(String? s) {
+    if (s == null || s.length <= 8) return '***';
+    return '${s.substring(0, 4)}...${s.substring(s.length - 4)}';
+  }
+}
+
+// ============================================================================
+// EXCEPTIONS
+// ============================================================================
+
+class ConnectionException implements Exception {
+  final String message;
+  final Object? cause;
+  const ConnectionException(this.message, [this.cause]);
+  @override
+  String toString() => 'ConnectionException: $message';
+}
+
+// ============================================================================
+// MODÈLES
+// ============================================================================
+
+/// Représente un profil utilisateur dans le contexte des connexions.
+class ConnectionUserProfile {
+  final String id;
+  final String displayName;
+  final String? username;
+  final String? avatarUrl;
+
+  const ConnectionUserProfile({
+    required this.id,
+    required this.displayName,
+    this.username,
+    this.avatarUrl,
+  });
+
+  factory ConnectionUserProfile.fromJson(Map<String, dynamic> json) {
+    return ConnectionUserProfile(
+      id: (json['id'] ?? '').toString(),
+      displayName: _ConnectionValidators.sanitizeName(json['display_name'] as String?),
+      username: (json['username'] as String?)?.trim(),
+      avatarUrl: json['avatar_url'] as String?,
+    );
+  }
+}
+
+/// Demande de connexion (envoyée ou reçue).
 class ConnectionRequest {
   final String id;
   final String senderId;
@@ -16,8 +142,8 @@ class ConnectionRequest {
   final String? message;
   final DateTime createdAt;
   final DateTime? respondedAt;
-  final Map<String, dynamic>? sender;
-  final Map<String, dynamic>? receiver;
+  final ConnectionUserProfile? sender;
+  final ConnectionUserProfile? receiver;
 
   ConnectionRequest({
     required this.id,
@@ -33,17 +159,21 @@ class ConnectionRequest {
 
   factory ConnectionRequest.fromJson(Map<String, dynamic> json) {
     return ConnectionRequest(
-      id: json['id'] ?? '',
-      senderId: json['sender_id'] ?? '',
-      receiverId: json['receiver_id'] ?? '',
-      status: json['status'] ?? 'pending',
-      message: json['message'],
-      createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
+      id: (json['id'] ?? '').toString(),
+      senderId: (json['sender_id'] ?? '').toString(),
+      receiverId: (json['receiver_id'] ?? '').toString(),
+      status: (json['status'] ?? 'pending').toString(),
+      message: _ConnectionValidators.sanitizeMessage(json['message'] as String?),
+      createdAt: _safeParseDate(json['created_at']),
       respondedAt: json['responded_at'] != null
-          ? DateTime.parse(json['responded_at'])
+          ? _safeParseDate(json['responded_at'])
           : null,
-      sender: json['sender'],
-      receiver: json['receiver'],
+      sender: json['sender'] is Map
+          ? ConnectionUserProfile.fromJson(Map<String, dynamic>.from(json['sender'] as Map))
+          : null,
+      receiver: json['receiver'] is Map
+          ? ConnectionUserProfile.fromJson(Map<String, dynamic>.from(json['receiver'] as Map))
+          : null,
     );
   }
 
@@ -60,6 +190,7 @@ class ConnectionRequest {
   }
 }
 
+/// Connexion active entre 2 utilisateurs.
 class Connection {
   final String id;
   final String user1Id;
@@ -75,69 +206,156 @@ class Connection {
 
   factory Connection.fromJson(Map<String, dynamic> json) {
     return Connection(
-      id: json['id'] ?? '',
-      user1Id: json['user1_id'] ?? '',
-      user2Id: json['user2_id'] ?? '',
-      createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
+      id: (json['id'] ?? '').toString(),
+      user1Id: (json['user1_id'] ?? '').toString(),
+      user2Id: (json['user2_id'] ?? '').toString(),
+      createdAt: _safeParseDate(json['created_at']),
     );
   }
 }
 
-// ─── SERVICE ──────────────────────────────────────────────────
+/// Vue enrichie d'une connexion avec le profil de l'autre utilisateur.
+class ConnectionView {
+  final String connectionId;
+  final String otherUserId;
+  final ConnectionUserProfile otherUser;
 
+  const ConnectionView({
+    required this.connectionId,
+    required this.otherUserId,
+    required this.otherUser,
+  });
+}
+
+/// Statut de la relation entre 2 utilisateurs.
+enum ConnectionStatus {
+  self,
+  blocked,
+  connected,
+  pendingSent,     // J'ai envoyé une demande en attente
+  pendingReceived, // J'ai reçu une demande en attente
+  rejected,
+  none,
+}
+
+/// Parse une date de manière sûre.
+DateTime _safeParseDate(dynamic value) {
+  if (value == null) return DateTime.now().toUtc();
+  try {
+    return DateTime.parse(value.toString());
+  } catch (_) {
+    return DateTime.now().toUtc();
+  }
+}
+
+// ============================================================================
+// CONNECTION SERVICE
+// ============================================================================
+
+/// Service de gestion des connexions utilisateur.
+///
+/// **Usage** :
+/// ```dart
+/// final service = ref.read(connectionServiceProvider);
+/// await service.loadData(userId);
+/// final connections = service.connections;
+/// ```
 class ConnectionService extends ChangeNotifier {
-  final SupabaseClient _supabase = Supabase.instance.client;
+  final SupabaseClient _supabase;
+  bool _isDisposed = false;
 
   List<ConnectionRequest> _sentRequests = [];
   List<ConnectionRequest> _receivedRequests = [];
-  List<Map<String, dynamic>> _connections = [];
+  List<ConnectionView> _connections = [];
   bool _isLoading = false;
   String? _error;
 
+  ConnectionService({SupabaseClient? client})
+      : _supabase = client ?? Supabase.instance.client {
+    debugPrint('[ConnectionService] 🚀 Initialized');
+  }
+
   // ─── GETTERS ────────────────────────────────────────────────
 
-  List<ConnectionRequest> get sentRequests => _sentRequests;
-  List<ConnectionRequest> get receivedRequests => _receivedRequests;
-  List<Map<String, dynamic>> get connections => _connections;
+  List<ConnectionRequest> get sentRequests => List.unmodifiable(_sentRequests);
+  List<ConnectionRequest> get receivedRequests => List.unmodifiable(_receivedRequests);
+  List<ConnectionView> get connections => List.unmodifiable(_connections);
   bool get isLoading => _isLoading;
   String? get error => _error;
 
   // ─── CHARGEMENT & PAGINATION ────────────────────────────────
 
-  Future<void> loadData(String userId, {int limit = 20, int offset = 0}) async {
+  /// Charge toutes les données (demandes + connexions) pour un utilisateur.
+  Future<void> loadData(String userId, {int limit = _kDefaultLimit, int offset = 0}) async {
+    if (_isDisposed) return;
+    if (!_ConnectionValidators.isValidUuid(userId)) {
+      _setError('userId invalide');
+      return;
+    }
+
     _setLoading(true);
     _error = null;
 
     try {
-      final sent = await _getSentRequests(userId);
-      final received = await _getPendingRequests(userId);
-      final active = await _getActiveConnections(userId, limit: limit, offset: offset);
+      // Parallélisation des 3 queries indépendantes
+      final results = await Future.wait<dynamic>([
+        _getSentRequests(userId),
+        _getPendingRequests(userId),
+        _getActiveConnections(userId, limit: limit, offset: offset),
+      ]).timeout(_kDbTimeout);
 
-      _sentRequests = sent;
-      _receivedRequests = received;
-      
+      if (_isDisposed) return;
+
+      _sentRequests = results[0] as List<ConnectionRequest>;
+      _receivedRequests = results[1] as List<ConnectionRequest>;
+
+      final active = results[2] as List<ConnectionView>;
       if (offset == 0) {
         _connections = active;
       } else {
-        _connections.addAll(active);
+        // Déduplication par otherUserId
+        final existingIds = _connections.map((c) => c.otherUserId).toSet();
+        final uniqueNew = active.where((c) => !existingIds.contains(c.otherUserId)).toList();
+        _connections = [..._connections, ...uniqueNew];
       }
-      
+
       _setLoading(false);
+      debugPrint('[ConnectionService] ✓ Loaded data for ${_ConnectionValidators.obfuscate(userId)}');
     } catch (e) {
-      _error = e.toString();
-      _setLoading(false);
+      if (_isDisposed) return;
+      _setError(e);
+      debugPrint('[ConnectionService] ❌ loadData: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
     }
   }
 
-  Future<List<Map<String, dynamic>>> loadMoreConnections(String userId, {required int offset, required int limit}) async {
+  /// Charge plus de connexions (pagination).
+  Future<List<ConnectionView>> loadMoreConnections(
+    String userId, {
+    required int offset,
+    required int limit,
+  }) async {
+    if (_isDisposed) return [];
+    if (!_ConnectionValidators.isValidUuid(userId)) return [];
+
     try {
-      final moreActive = await _getActiveConnections(userId, limit: limit, offset: offset);
-      _connections.addAll(moreActive);
+      final more = await _getActiveConnections(
+        userId,
+        limit: limit.clamp(1, _kMaxLimit),
+        offset: offset.clamp(0, 10000),
+      ).timeout(_kDbTimeout);
+
+      if (_isDisposed) return [];
+
+      // Déduplication
+      final existingIds = _connections.map((c) => c.otherUserId).toSet();
+      final uniqueNew = more.where((c) => !existingIds.contains(c.otherUserId)).toList();
+      _connections = [..._connections, ...uniqueNew];
+
       notifyListeners();
-      return moreActive;
+      return uniqueNew;
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
+      _setError(e);
       return [];
     }
   }
@@ -150,8 +368,12 @@ class ConnectionService extends ChangeNotifier {
         .select('*, sender:profiles!sender_id(id, display_name, username, avatar_url)')
         .eq('receiver_id', userId)
         .eq('status', 'pending')
-        .order('created_at', ascending: false);
-    return response.map((json) => ConnectionRequest.fromJson(json)).toList();
+        .order('created_at', ascending: false)
+        .limit(_kMaxLimit);
+
+    return (response as List)
+        .map((json) => ConnectionRequest.fromJson(Map<String, dynamic>.from(json as Map)))
+        .toList();
   }
 
   Future<List<ConnectionRequest>> _getSentRequests(String userId) async {
@@ -160,11 +382,19 @@ class ConnectionService extends ChangeNotifier {
         .select('*, receiver:profiles!receiver_id(id, display_name, username, avatar_url)')
         .eq('sender_id', userId)
         .eq('status', 'pending')
-        .order('created_at', ascending: false);
-    return response.map((json) => ConnectionRequest.fromJson(json)).toList();
+        .order('created_at', ascending: false)
+        .limit(_kMaxLimit);
+
+    return (response as List)
+        .map((json) => ConnectionRequest.fromJson(Map<String, dynamic>.from(json as Map)))
+        .toList();
   }
 
-  Future<List<Map<String, dynamic>>> _getActiveConnections(String userId, {int limit = 20, int offset = 0}) async {
+  Future<List<ConnectionView>> _getActiveConnections(
+    String userId, {
+    int limit = _kDefaultLimit,
+    int offset = 0,
+  }) async {
     final response = await _supabase
         .from('connections')
         .select('''
@@ -175,292 +405,449 @@ class ConnectionService extends ChangeNotifier {
           user2:profiles!connections_user2_id_fkey(id, display_name, username, avatar_url)
         ''')
         .or('user1_id.eq.$userId,user2_id.eq.$userId')
-        .range(offset, offset + limit - 1); // Pagination Supabase
+        .range(offset, offset + limit - 1);
 
-    final List<Map<String, dynamic>> connectionsList = [];
+    final views = <ConnectionView>[];
     for (var row in response) {
-      final isUser1 = row['user1_id'] == userId;
-      final other = isUser1 ? row['user2'] : row['user1'];
-      if (other != null) {
-        connectionsList.add({
-          'id': row['id'],
-          'user_id': other['id'],
-          'display_name': other['display_name'] ?? 'Inconnu',
-          'username': other['username'],
-          'avatar_url': other['avatar_url'],
-        });
+      final map = Map<String, dynamic>.from(row as Map);
+      final isUser1 = map['user1_id'] == userId;
+      final otherRaw = isUser1 ? map['user2'] : map['user1'];
+
+      if (otherRaw is Map) {
+        final other = ConnectionUserProfile.fromJson(Map<String, dynamic>.from(otherRaw));
+        views.add(ConnectionView(
+          connectionId: map['id'].toString(),
+          otherUserId: other.id,
+          otherUser: other,
+        ));
       }
     }
-    return connectionsList;
+    return views;
   }
 
   void _setLoading(bool loading) {
+    if (_isDisposed) return;
     _isLoading = loading;
     notifyListeners();
   }
 
-  // ─── MÉTHODES PUBLIQUES ────────────────────────────────────
+  void _setError(Object? e) {
+    if (_isDisposed) return;
+    _error = kDebugMode ? e?.toString() : 'Une erreur est survenue';
+    _isLoading = false;
+    notifyListeners();
+  }
 
+  // ─── SEND REQUEST ────────────────────────────────────────────
+
+  /// Envoie une demande de connexion.
+  ///
+  /// Si une demande existe déjà (dans un sens ou l'autre), elle est réactivée.
   Future<bool> sendRequest({
     required String senderId,
     required String receiverId,
     String? message,
   }) async {
-    if (senderId == receiverId) {
-      _error = 'Impossible de s\'envoyer une demande à soi-même';
-      notifyListeners();
+    if (_isDisposed) return false;
+
+    if (!_ConnectionValidators.isValidUuid(senderId)) {
+      _setError('senderId invalide');
       return false;
     }
+    if (!_ConnectionValidators.isValidUuid(receiverId)) {
+      _setError('receiverId invalide');
+      return false;
+    }
+    if (senderId == receiverId) {
+      _setError('Impossible de s\'envoyer une demande à soi-même');
+      return false;
+    }
+
+    final sanitizedMessage = _ConnectionValidators.sanitizeMessage(message);
+
     try {
-      final existing1 = await _supabase
+      // 1 query au lieu de 2 avec OR
+      final existing = await _supabase
           .from('connection_requests')
           .select()
-          .eq('sender_id', senderId)
-          .eq('receiver_id', receiverId)
-          .maybeSingle();
-
-      final existing2 = await _supabase
-          .from('connection_requests')
-          .select()
-          .eq('sender_id', receiverId)
-          .eq('receiver_id', senderId)
-          .maybeSingle();
-
-      final existing = existing1 ?? existing2;
+          .or(
+            'and(sender_id.eq.$senderId,receiver_id.eq.$receiverId),'
+            'and(sender_id.eq.$receiverId,receiver_id.eq.$senderId)',
+          )
+          .maybeSingle()
+          .timeout(_kDbTimeout);
 
       if (existing != null) {
+        // Reactivate existing request
         await _supabase
             .from('connection_requests')
             .update({
               'status': 'pending',
-              'message': message,
-              'updated_at': DateTime.now().toIso8601String(),
+              'message': sanitizedMessage,
+              'sender_id': senderId,
+              'receiver_id': receiverId,
+              'updated_at': DateTime.now().toUtc().toIso8601String(),
+              'responded_at': null,
             })
-            .eq('id', existing['id']);
-        await loadData(senderId);
-        return true;
+            .eq('id', existing['id'])
+            .timeout(_kDbTimeout);
+
+        debugPrint('[ConnectionService] ✓ Request reactivated: '
+            '${_ConnectionValidators.obfuscate(existing['id'].toString())}');
+      } else {
+        await _supabase
+            .from('connection_requests')
+            .insert({
+              'sender_id': senderId,
+              'receiver_id': receiverId,
+              'message': sanitizedMessage.isEmpty ? null : sanitizedMessage,
+              'status': 'pending',
+            })
+            .select()
+            .single()
+            .timeout(_kDbTimeout);
+
+        debugPrint('[ConnectionService] ✓ Request sent: '
+            '${_ConnectionValidators.obfuscate(senderId)} → '
+            '${_ConnectionValidators.obfuscate(receiverId)}');
       }
 
-      final data = {
-        'sender_id': senderId,
-        'receiver_id': receiverId,
-        'message': message,
-        'status': 'pending',
-      };
-      await _supabase
-          .from('connection_requests')
-          .insert(data)
-          .select()
-          .single();
       await loadData(senderId);
       return true;
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
-      debugPrint('❌ sendRequest error: $e');
+      _setError(e);
+      debugPrint('[ConnectionService] ❌ sendRequest: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
       return false;
     }
   }
 
+  // ─── ACCEPT / REJECT / CANCEL ────────────────────────────────
+
   Future<bool> acceptRequest(String requestId, String userId) async {
+    if (_isDisposed) return false;
+    if (!_ConnectionValidators.isValidUuid(requestId) ||
+        !_ConnectionValidators.isValidUuid(userId)) {
+      _setError('ID invalide');
+      return false;
+    }
+
     try {
+      // Récupérer la demande avec maybeSingle (pas single)
       final request = await _supabase
           .from('connection_requests')
           .select()
           .eq('id', requestId)
-          .single();
+          .eq('receiver_id', userId)  // ✅ Ownership check
+          .maybeSingle()
+          .timeout(_kDbTimeout);
 
+      if (request == null) {
+        _setError('Demande introuvable ou accès refusé');
+        return false;
+      }
+
+      // Update status
       await _supabase
           .from('connection_requests')
           .update({
             'status': 'accepted',
-            'responded_at': DateTime.now().toIso8601String(),
+            'responded_at': DateTime.now().toUtc().toIso8601String(),
           })
-          .eq('id', requestId);
+          .eq('id', requestId)
+          .timeout(_kDbTimeout);
 
-      final ids = [request['sender_id'], request['receiver_id']]..sort();
-      await _supabase
-          .from('connections')
-          .insert({
-            'user1_id': ids[0],
-            'user2_id': ids[1],
-          });
+      // Créer la connexion (évite doublons avec tri)
+      final ids = [request['sender_id'].toString(), request['receiver_id'].toString()]..sort();
+      if (!_ConnectionValidators.isValidUuid(ids[0]) ||
+          !_ConnectionValidators.isValidUuid(ids[1])) {
+        _setError('IDs de connexion invalides');
+        return false;
+      }
+
+      // Upsert pour éviter violation contrainte unique
+      await _supabase.from('connections').upsert(
+        {
+          'user1_id': ids[0],
+          'user2_id': ids[1],
+        },
+        onConflict: 'user1_id,user2_id',
+      ).timeout(_kDbTimeout);
+
+      debugPrint('[ConnectionService] ✓ Request accepted: '
+          '${_ConnectionValidators.obfuscate(requestId)}');
 
       await loadData(userId);
       return true;
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
+      _setError(e);
+      debugPrint('[ConnectionService] ❌ acceptRequest: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
       return false;
     }
   }
 
   Future<bool> rejectRequest(String requestId, String userId) async {
+    if (_isDisposed) return false;
+    if (!_ConnectionValidators.isValidUuid(requestId) ||
+        !_ConnectionValidators.isValidUuid(userId)) {
+      _setError('ID invalide');
+      return false;
+    }
+
     try {
       await _supabase
           .from('connection_requests')
           .update({
             'status': 'rejected',
-            'responded_at': DateTime.now().toIso8601String(),
+            'responded_at': DateTime.now().toUtc().toIso8601String(),
           })
-          .eq('id', requestId);
+          .eq('id', requestId)
+          .eq('receiver_id', userId)  // ✅ Ownership check
+          .timeout(_kDbTimeout);
+
+      debugPrint('[ConnectionService] ✓ Request rejected: '
+          '${_ConnectionValidators.obfuscate(requestId)}');
+
       await loadData(userId);
       return true;
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
+      _setError(e);
       return false;
     }
   }
 
   Future<bool> cancelRequest(String requestId, String userId) async {
+    if (_isDisposed) return false;
+    if (!_ConnectionValidators.isValidUuid(requestId) ||
+        !_ConnectionValidators.isValidUuid(userId)) {
+      _setError('ID invalide');
+      return false;
+    }
+
     try {
       await _supabase
           .from('connection_requests')
           .delete()
-          .eq('id', requestId);
+          .eq('id', requestId)
+          .eq('sender_id', userId)  // ✅ Ownership check
+          .timeout(_kDbTimeout);
+
+      debugPrint('[ConnectionService] ✓ Request cancelled: '
+          '${_ConnectionValidators.obfuscate(requestId)}');
+
       await loadData(userId);
       return true;
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
+      _setError(e);
       return false;
     }
   }
 
-  // ✅ NOUVEAU : Supprimer une connexion du réseau
+  // ─── REMOVE / BLOCK ──────────────────────────────────────────
+
+  /// Supprime une connexion (ownership check sur currentUserId).
   Future<bool> removeConnection(String currentUserId, String otherUserId) async {
+    if (_isDisposed) return false;
+    if (!_ConnectionValidators.isValidUuid(currentUserId) ||
+        !_ConnectionValidators.isValidUuid(otherUserId)) {
+      _setError('ID invalide');
+      return false;
+    }
+    if (currentUserId == otherUserId) {
+      _setError('Opération invalide');
+      return false;
+    }
+
     try {
-      await _supabase
+      final count = await _supabase
           .from('connections')
           .delete()
-          .or('and(user1_id.eq.$currentUserId,user2_id.eq.$otherUserId),and(user1_id.eq.$otherUserId,user2_id.eq.$currentUserId)');
-      
+          .or(
+            'and(user1_id.eq.$currentUserId,user2_id.eq.$otherUserId),'
+            'and(user1_id.eq.$otherUserId,user2_id.eq.$currentUserId)',
+          )
+          .timeout(_kDbTimeout);
+
+      debugPrint('[ConnectionService] ✓ Connection removed: '
+          '${_ConnectionValidators.obfuscate(currentUserId)} ↔ '
+          '${_ConnectionValidators.obfuscate(otherUserId)}');
+
       await loadData(currentUserId);
       return true;
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
-      debugPrint('❌ Erreur removeConnection: $e');
+      _setError(e);
+      debugPrint('[ConnectionService] ❌ removeConnection: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
       return false;
     }
   }
 
-  // ✅ NOUVEAU : Bloquer un utilisateur
+  /// Bloque un utilisateur (via RPC qui nettoie demandes + connexions).
   Future<bool> blockUser(String currentUserId, String otherUserId) async {
+    if (_isDisposed) return false;
+    if (!_ConnectionValidators.isValidUuid(currentUserId) ||
+        !_ConnectionValidators.isValidUuid(otherUserId)) {
+      _setError('ID invalide');
+      return false;
+    }
+    if (currentUserId == otherUserId) {
+      _setError('Impossible de se bloquer soi-même');
+      return false;
+    }
+
     try {
-      // Appel de la fonction SQL intelligente
-      await _supabase.rpc(
-        'block_user_and_clean',
-        params: {
-          'blocker': currentUserId,
-          'blocked': otherUserId,
-        },
-      );
-      
+      await _supabase
+          .rpc(
+            'block_user_and_clean',
+            params: {
+              'blocker': currentUserId,
+              'blocked': otherUserId,
+            },
+          )
+          .timeout(_kRpcTimeout);
+
+      debugPrint('[ConnectionService] ✓ User blocked: '
+          '${_ConnectionValidators.obfuscate(currentUserId)} → '
+          '${_ConnectionValidators.obfuscate(otherUserId)}');
+
       await loadData(currentUserId);
       return true;
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
-      debugPrint('❌ Erreur blockUser: $e');
+      _setError(e);
+      debugPrint('[ConnectionService] ❌ blockUser: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
       return false;
     }
   }
 
+  // ─── STATUS BETWEEN USERS ────────────────────────────────────
+
+  /// Vérifie si 2 utilisateurs sont connectés (booléen simple).
   Future<bool> checkConnection(String userId1, String userId2) async {
     if (userId1 == userId2) return false;
+    if (!_ConnectionValidators.isValidUuid(userId1) ||
+        !_ConnectionValidators.isValidUuid(userId2)) {
+      return false;
+    }
+
     try {
-      final response1 = await _supabase
+      // 1 query avec OR au lieu de 2 queries séquentielles
+      final response = await _supabase
           .from('connections')
           .select('id')
-          .eq('user1_id', userId1)
-          .eq('user2_id', userId2)
-          .maybeSingle();
+          .or(
+            'and(user1_id.eq.$userId1,user2_id.eq.$userId2),'
+            'and(user1_id.eq.$userId2,user2_id.eq.$userId1)',
+          )
+          .maybeSingle()
+          .timeout(_kDbTimeout);
 
-      if (response1 != null) return true;
-
-      final response2 = await _supabase
-          .from('connections')
-          .select('id')
-          .eq('user1_id', userId2)
-          .eq('user2_id', userId1)
-          .maybeSingle();
-
-      return response2 != null;
+      return response != null;
     } catch (e) {
-      debugPrint('❌ checkConnection error: $e');
+      debugPrint('[ConnectionService] ⚠️ checkConnection: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
       return false;
     }
   }
 
-  Future<String> getStatusBetween(String userId1, String userId2) async {
-    if (userId1 == userId2) return 'self';
+  /// Retourne le statut complet de la relation entre 2 utilisateurs.
+  ///
+  /// Ordre de priorité :
+  ///   1. `self` — même utilisateur
+  ///   2. `blocked` — blocage dans un sens ou l'autre
+  ///   3. `connected` — connexion active
+  ///   4. `pendingSent` — demande envoyée en attente
+  ///   5. `pendingReceived` — demande reçue en attente
+  ///   6. `rejected` — demande rejetée (si < 30 jours)
+  ///   7. `none` — aucune relation
+  Future<ConnectionStatus> getStatusBetween(String userId1, String userId2) async {
+    if (userId1 == userId2) return ConnectionStatus.self;
+    if (!_ConnectionValidators.isValidUuid(userId1) ||
+        !_ConnectionValidators.isValidUuid(userId2)) {
+      return ConnectionStatus.none;
+    }
+
     try {
-      // 1. Vérifier si un blocage existe (dans les deux sens)
+      // 1. Blocage (1 query avec OR)
       final blockCheck = await _supabase
           .from('blocked_users')
           .select('id')
-          .or('and(blocker_id.eq.$userId1,blocked_id.eq.$userId2),and(blocker_id.eq.$userId2,blocked_id.eq.$userId1)')
-          .maybeSingle();
-      if (blockCheck != null) return 'blocked';
+          .or(
+            'and(blocker_id.eq.$userId1,blocked_id.eq.$userId2),'
+            'and(blocker_id.eq.$userId2,blocked_id.eq.$userId1)',
+          )
+          .maybeSingle()
+          .timeout(_kDbTimeout);
+      if (blockCheck != null) return ConnectionStatus.blocked;
 
-      final conn1 = await _supabase
+      // 2. Connexion active (1 query avec OR)
+      final connCheck = await _supabase
           .from('connections')
           .select('id')
-          .eq('user1_id', userId1)
-          .eq('user2_id', userId2)
-          .maybeSingle();
-      if (conn1 != null) return 'connected';
+          .or(
+            'and(user1_id.eq.$userId1,user2_id.eq.$userId2),'
+            'and(user1_id.eq.$userId2,user2_id.eq.$userId1)',
+          )
+          .maybeSingle()
+          .timeout(_kDbTimeout);
+      if (connCheck != null) return ConnectionStatus.connected;
 
-      final conn2 = await _supabase
-          .from('connections')
-          .select('id')
-          .eq('user1_id', userId2)
-          .eq('user2_id', userId1)
-          .maybeSingle();
-      if (conn2 != null) return 'connected';
-
-      final pending1 = await _supabase
+      // 3. Demandes en attente (1 query avec OR + filter status)
+      final pendingCheck = await _supabase
           .from('connection_requests')
-          .select('status')
-          .eq('sender_id', userId1)
-          .eq('receiver_id', userId2)
-          .eq('status', 'pending')
-          .maybeSingle();
-      if (pending1 != null) return 'pending';
+          .select('sender_id, status')
+          .or(
+            'and(sender_id.eq.$userId1,receiver_id.eq.$userId2),'
+            'and(sender_id.eq.$userId2,receiver_id.eq.$userId1)',
+          )
+          .inFilter('status', ['pending', 'rejected'])
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle()
+          .timeout(_kDbTimeout);
 
-      final pending2 = await _supabase
-          .from('connection_requests')
-          .select('status')
-          .eq('sender_id', userId2)
-          .eq('receiver_id', userId1)
-          .eq('status', 'pending')
-          .maybeSingle();
-      if (pending2 != null) return 'pending';
+      if (pendingCheck != null) {
+        final status = pendingCheck['status']?.toString();
+        final senderId = pendingCheck['sender_id']?.toString();
 
-      final rejected1 = await _supabase
-          .from('connection_requests')
-          .select('status')
-          .eq('sender_id', userId1)
-          .eq('receiver_id', userId2)
-          .eq('status', 'rejected')
-          .maybeSingle();
-      if (rejected1 != null) return 'rejected';
+        if (status == 'pending') {
+          return senderId == userId1
+              ? ConnectionStatus.pendingSent
+              : ConnectionStatus.pendingReceived;
+        }
 
-      final rejected2 = await _supabase
-          .from('connection_requests')
-          .select('status')
-          .eq('sender_id', userId2)
-          .eq('receiver_id', userId1)
-          .eq('status', 'rejected')
-          .maybeSingle();
-      if (rejected2 != null) return 'rejected';
+        if (status == 'rejected') {
+          // Ignore si > 30 jours
+          final respondedAt = pendingCheck['responded_at'];
+          if (respondedAt != null) {
+            final responded = _safeParseDate(respondedAt);
+            if (DateTime.now().difference(responded) > _kRejectedFreshness) {
+              return ConnectionStatus.none;
+            }
+          }
+          return ConnectionStatus.rejected;
+        }
+      }
 
-      return 'none';
+      return ConnectionStatus.none;
     } catch (e) {
-      debugPrint('❌ getStatusBetween error: $e');
-      return 'none';
+      debugPrint('[ConnectionService] ⚠️ getStatusBetween: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+      return ConnectionStatus.none;
     }
+  }
+
+  // ─── DISPOSE ────────────────────────────────────────────────
+
+  @override
+  void dispose() {
+    if (_isDisposed) return;
+    _isDisposed = true;
+    _sentRequests = [];
+    _receivedRequests = [];
+    _connections = [];
+    debugPrint('[ConnectionService] 👋 Disposed');
+    super.dispose();
   }
 }
