@@ -1,5 +1,6 @@
 /// THIX SOS — Historique des incidents (Production Enterprise)
 /// ✅ SÉCURISÉ : ThixPolicy, i18n, semantics, haptic, mounted checks, logs
+/// ✅ DESIGN : Fonds sombres translucides pour visibilité sur inkDeep
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -105,7 +106,8 @@ class _MesIncidentsPageState extends ConsumerState<MesIncidentsPage> {
       ),
       body: RefreshIndicator(
         color: ThixPolicy.danger,
-        backgroundColor: ThixPolicy.card,
+        // ✅ FIX : fond sombre au lieu de ThixPolicy.card
+        backgroundColor: ThixPolicy.inkDeep,
         onRefresh: _refresh,
         child: historyAsync.when(
           loading: () => const _SkeletonLoader(),
@@ -258,9 +260,10 @@ class _IncidentCard extends StatelessWidget {
         button: true,
         label: '${l10n.t('sos_incident')} ${incident.publicId}',
         child: Material(
+          // ✅ FIX : fond sombre translucide au lieu de ThixPolicy.card
           color: highlight
               ? ThixPolicy.danger.withValues(alpha: 0.35)
-              : ThixPolicy.card,
+              : Colors.white.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(14),
           child: InkWell(
             onTap: onTap,
@@ -272,7 +275,7 @@ class _IncidentCard extends StatelessWidget {
                 border: Border.all(
                   color: highlight
                       ? ThixPolicy.danger.withValues(alpha: 0.45)
-                      : ThixPolicy.border,
+                      : Colors.white.withValues(alpha: 0.12),
                 ),
               ),
               child: Row(
@@ -375,7 +378,8 @@ class _SkeletonLoaderState extends State<_SkeletonLoader>
           height: h,
           width: w,
           decoration: BoxDecoration(
-            color: ThixPolicy.border,
+            // ✅ FIX : couleur sombre translucide au lieu de ThixPolicy.border
+            color: Colors.white.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(ThixPolicy.rSm),
           ),
         ),
