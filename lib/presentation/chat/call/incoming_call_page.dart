@@ -36,7 +36,6 @@ import 'package:thix_id/presentation/chat/call/call_page.dart';
 import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
 import 'package:thix_id/presentation/thix_sos/pages/chambre_crise_secours_page.dart';
 import 'package:thix_id/presentation/thix_sos/providers/sos_providers.dart';
-
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -337,7 +336,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
             // ── Nom de l'appelant ──
             Text(
               name,
-              style: ThixPolicy.headlineStyle.copyWith(
+              style: ThixPolicy.titleStyle.copyWith(...)
                 color: Colors.white,
                 fontSize: 26,
                 fontWeight: FontWeight.w800,
