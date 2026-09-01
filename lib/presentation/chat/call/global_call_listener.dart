@@ -27,10 +27,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';  // ✅ AJOUTÉ
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:thix_id/auth/auth_controller.dart' show currentUserProvider;
-import 'package:thix_id/models/app_user.dart';
+// ✅ IMPORT CORRIGÉ : On utilise le provider d'ID indépendant
+import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
+
 import 'package:thix_id/models/chat/call_invite.dart';
 import 'package:thix_id/presentation/chat/call/incoming_call_page.dart';
 import 'package:thix_id/services/chat/call_signaling_service.dart';
@@ -99,7 +100,7 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
     with WidgetsBindingObserver {
   CallSignalingService? _signal;
   StreamSubscription<CallInvite>? _callSubscription;
-  ProviderSubscription? _authSubscription;
+  ProviderSubscription<String?>? _authSubscription; // ✅ TYPE CORRIGÉ EN String?
   StreamSubscription? _authStreamSubscription;
 
   String? _currentUserId;
@@ -144,13 +145,14 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
   // ── AUTH BINDING ─────────────────────────────────────────────────────
 
   void _bindAuthChanges() {
-    _authSubscription = ref.listen<AppUser?>(
-      currentUserProvider,
+    // ✅ CORRECTION : listenManual au lieu de listen dans un State
+    _authSubscription = ref.listenManual<String?>(
+      supabaseUserIdProvider,
       (previous, next) {
         if (_isDisposed) return;
 
-        final prevId = previous?.id;
-        final nextId = next?.id;
+        final prevId = previous;
+        final nextId = next;
         if (prevId == nextId) return;
 
         debugPrint('[GlobalCallListener] 🔄 Auth changed: '
