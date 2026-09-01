@@ -36,11 +36,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:thix_id/models/chat/escalation_level.dart';
-import 'package:thix_id/models/chat/escalation_priority.dart';
-import 'package:thix_id/models/chat/escalation_status.dart';
-import 'package:thix_id/models/chat/escalation_step.dart';
-
+import 'package:thix_id/presentation/chat/escalation/models/escalation_level.dart';
+import 'package:thix_id/presentation/chat/escalation/models/escalation_priority.dart';
+import 'package:thix_id/presentation/chat/escalation/models/escalation_status.dart';
+import 'package:thix_id/presentation/chat/escalation/models/escalation_step.dart';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
