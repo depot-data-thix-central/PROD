@@ -1,5 +1,6 @@
 /// THIX SOS — Ajouter un secours via THIX ID (production audité)
 /// ✅ SÉCURISÉ : Validation URL, Safe extraction, Mounted checks, Double-tap protection
+/// ✅ DESIGN : Fonds sombres translucides pour visibilité sur inkDeep
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -240,9 +241,9 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: ThixPolicy.primary.withOpacity(0.35),
+              color: ThixPolicy.primary.withValues(alpha: 0.35),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: ThixPolicy.primary.withOpacity(0.3)),
+              border: Border.all(color: ThixPolicy.primary.withValues(alpha: 0.3)),
             ),
             child: Text(
               l10n.t('sos_add_rescuer_info'),
@@ -428,7 +429,7 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
                 onPressed: (_profile == null || _saving) ? null : _save,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: ThixPolicy.danger,
-                  disabledBackgroundColor: Colors.grey.shade800,
+                  disabledBackgroundColor: Colors.white.withValues(alpha: 0.15),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -476,9 +477,10 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: ThixPolicy.card,
+        // ✅ FIX : fond sombre translucide au lieu de ThixPolicy.card
+        color: Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: ThixPolicy.success.withOpacity(0.4)),
+        border: Border.all(color: ThixPolicy.success.withValues(alpha: 0.4)),
       ),
       child: Row(
         children: [
@@ -538,25 +540,26 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
   InputDecoration _decoration(String hint) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: GoogleFonts.inter(color: Colors.white24),
+      hintStyle: GoogleFonts.inter(color: Colors.white38),
       filled: true,
-      fillColor: ThixPolicy.card,
+      // ✅ FIX : fond sombre translucide (8% blanc sur inkDeep)
+      fillColor: Colors.white.withValues(alpha: 0.08),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.white12),
+        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.white12),
+        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: ThixPolicy.danger, width: 1.5),
+        borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: ThixPolicy.danger, width: 1.5),
+        borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
       ),
     );
   }
@@ -608,7 +611,10 @@ class _CircleChoice extends StatelessWidget {
       selected: selected,
       label: '${l10n.t('sos_circle')} $circle, ${_label(context)}',
       child: Material(
-        color: selected ? _color.withOpacity(0.2) : ThixPolicy.card,
+        // ✅ FIX : fond sombre translucide si non sélectionné
+        color: selected
+            ? _color.withValues(alpha: 0.2)
+            : Colors.white.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: onTap,
@@ -618,7 +624,7 @@ class _CircleChoice extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: selected ? _color : Colors.white12,
+                color: selected ? _color : Colors.white.withValues(alpha: 0.12),
                 width: selected ? 1.5 : 1,
               ),
             ),
