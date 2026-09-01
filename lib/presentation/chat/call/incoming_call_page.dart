@@ -336,7 +336,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
             // ── Nom de l'appelant ──
             Text(
               name,
-              style: ThixPolicy.titleStyle.copyWith(...)
+              style: ThixPolicy.titleStyle.copyWith(
                 color: Colors.white,
                 fontSize: 26,
                 fontWeight: FontWeight.w800,
