@@ -34,7 +34,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// ✅ IMPORT CORRIGÉ : On utilise supabaseUserIdProvider 
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
     show supabaseClientProvider, supabaseUserIdProvider;
 import 'package:thix_id/core/theme/thix_design_policy.dart';
@@ -138,7 +137,6 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
 
   SupabaseClient get _db => ref.read(supabaseClientProvider);
 
-  // ✅ CORRIGÉ : Utilisation de supabaseUserIdProvider
   String get _myId => ref.read(supabaseUserIdProvider) ?? '';
 
   // ── FEEDBACK HELPERS ─────────────────────────────────────────────────
@@ -304,14 +302,14 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-            builder: (ctx) => _SearchCallSheet(
+      builder: (ctx) => _SearchCallSheet(
         onPick: (id, name, avatar, {required bool video}) async {
           Navigator.pop(ctx);
           await _callBack(
             _CallRow(
               invite: CallInvite(
                 id: '',
-                channelName: 'call_${_myId}_$id', // 👈 LE VOILÀ ENFIN !
+                channelName: 'call_${_myId}_$id', // ✅ AJOUTÉ ET CORRECT
                 callerId: _myId,
                 calleeId: id,
                 callerName: '',
@@ -330,13 +328,14 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
           );
         },
       ),
-
+    ); // ✅ PARENTHÈSE ET POINT-VIRGULE REMIS !
+  }
 
   // ── HELPERS ──────────────────────────────────────────────────────────
 
   String _subtitle(_CallRow row, AppLocalizations l10n) {
     final inv = row.invite;
-    final isVideoCall = inv.callType == CallType.video; // Vérification selon le bon type
+    final isVideoCall = inv.callType == CallType.video;
     final type = isVideoCall ? l10n.t('call_type_video') : l10n.t('call_type_audio');
     final label = inv.status.label;
     if (inv.durationSec > 0) {
@@ -669,7 +668,6 @@ class _SearchCallSheetState extends ConsumerState<_SearchCallSheet> {
     final query = _CallHistoryValidators.sanitizeName(q, maxLength: _kMaxSearchLength)
         .toLowerCase();
     
-    // ✅ CORRIGÉ : Utilisation de supabaseUserIdProvider
     final myId = ref.read(supabaseUserIdProvider);
     
     if (myId == null || !_CallHistoryValidators.isValidUuid(myId)) return;
