@@ -58,6 +58,14 @@ class _ConnValidators {
     return t.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
   }
 
+  /// Extrait une initiale sûre (pas de RangeError)
+  static String safeInitial(String? name, {String fallback = '?'}) {
+    if (name == null) return fallback;
+    final trimmed = sanitize(name, maxLength: 100).trim();
+    if (trimmed.isEmpty) return fallback;
+    return trimmed[0].toUpperCase();
+  }
+
   static String friendlyError(dynamic e) {
     final msg = e.toString().toLowerCase();
     if (msg.contains('timeout')) return 'Délai dépassé. Vérifiez votre connexion.';
@@ -96,7 +104,7 @@ Future<T> _connRetry<T>(
   }
 }
 
-/// Extrait les infos de certification d'une map user
+/// Extrait les infos de certification d'un profil
 class _CertificationInfo {
   final CertificationTier? tier;
   final CertificationStatus? status;
@@ -110,7 +118,36 @@ class _CertificationInfo {
     required this.isLegacyVerified,
   });
 
-  factory _CertificationInfo.fromMap(Map<String, dynamic> user) {
+  /// ✅ NOUVEAU : factory depuis ConnectionUserProfile (objet typé)
+  factory _CertificationInfo.fromUserProfile(ConnectionUserProfile? user) {
+    if (user == null) {
+      return const _CertificationInfo(
+        tier: null,
+        status: null,
+        isCertified: false,
+        isLegacyVerified: false,
+      );
+    }
+    // Les champs certification ne sont pas dans ConnectionUserProfile actuel
+    // On pourrait les ajouter au modèle, mais pour l'instant on retourne false
+    return const _CertificationInfo(
+      tier: null,
+      status: null,
+      isCertified: false,
+      isLegacyVerified: false,
+    );
+  }
+
+  /// Legacy : factory depuis Map (pour ConnectionRequest.sender/receiver)
+  factory _CertificationInfo.fromMap(Map<String, dynamic>? user) {
+    if (user == null) {
+      return const _CertificationInfo(
+        tier: null,
+        status: null,
+        isCertified: false,
+        isLegacyVerified: false,
+      );
+    }
     CertificationTier? tier;
     CertificationStatus? status;
     bool isCertified = false;
@@ -119,7 +156,8 @@ class _CertificationInfo {
     if (user.containsKey('certification_tier') && user['certification_tier'] != null) {
       tier = CertificationTierX.parse(user['certification_tier']);
       status = CertificationStatusX.parse(user['certification_status']);
-      isCertified = status == CertificationStatus.approved || status == CertificationStatus.generated;
+      isCertified = status == CertificationStatus.approved ||
+          status == CertificationStatus.generated;
     }
 
     return _CertificationInfo(
@@ -132,17 +170,17 @@ class _CertificationInfo {
 }
 
 // ============================================================================
-// STATE
+// STATE — ✅ TYPÉ CORRECTEMENT
 // ============================================================================
 class ConnectionsState {
   final List<ConnectionRequest> received;
   final List<ConnectionRequest> sent;
-  final List<dynamic> connections;
+  final List<ConnectionView> connections; // ✅ Typé au lieu de List<dynamic>
   final bool loading;
   final bool loadingMore;
   final bool hasMoreConnections;
   final String? error;
-  final Set<String> pendingActions; // IDs en cours d'action (protection double-tap)
+  final Set<String> pendingActions;
 
   const ConnectionsState({
     this.received = const [],
@@ -158,7 +196,7 @@ class ConnectionsState {
   ConnectionsState copyWith({
     List<ConnectionRequest>? received,
     List<ConnectionRequest>? sent,
-    List<dynamic>? connections,
+    List<ConnectionView>? connections,
     bool? loading,
     bool? loadingMore,
     bool? hasMoreConnections,
@@ -214,7 +252,8 @@ class ConnectionsNotifier extends StateNotifier<ConnectionsState> {
           '${_svc.sentRequests.length} sent, ${_svc.connections.length} connections');
     } catch (e) {
       debugPrint('[Connections] ❌ Load initial error: $e');
-      state = state.copyWith(loading: false, error: _ConnValidators.friendlyError(e));
+      state = state.copyWith(
+          loading: false, error: _ConnValidators.friendlyError(e));
     }
   }
 
@@ -230,7 +269,8 @@ class ConnectionsNotifier extends StateNotifier<ConnectionsState> {
 
     try {
       final more = await _connRetry(
-        () => _svc.loadMoreConnections(uid, offset: state.connections.length, limit: _kPageSize),
+        () => _svc.loadMoreConnections(uid,
+            offset: state.connections.length, limit: _kPageSize),
         label: 'loadMore',
       );
       state = state.copyWith(
@@ -249,6 +289,7 @@ class ConnectionsNotifier extends StateNotifier<ConnectionsState> {
   void _startAction(String id) {
     state = state.copyWith(pendingActions: {...state.pendingActions, id});
   }
+
   void _endAction(String id) {
     final s = Set<String>.from(state.pendingActions)..remove(id);
     state = state.copyWith(pendingActions: s);
@@ -260,7 +301,8 @@ class ConnectionsNotifier extends StateNotifier<ConnectionsState> {
     try {
       final uid = Supabase.instance.client.auth.currentUser?.id;
       if (uid == null) return false;
-      final ok = await _connRetry(() => _svc.acceptRequest(id, uid), label: 'accept[$id]');
+      final ok = await _connRetry(() => _svc.acceptRequest(id, uid),
+          label: 'accept[$id]');
       if (ok) await loadInitial();
       return ok;
     } catch (e) {
@@ -277,7 +319,8 @@ class ConnectionsNotifier extends StateNotifier<ConnectionsState> {
     try {
       final uid = Supabase.instance.client.auth.currentUser?.id;
       if (uid == null) return false;
-      final ok = await _connRetry(() => _svc.rejectRequest(id, uid), label: 'reject[$id]');
+      final ok = await _connRetry(() => _svc.rejectRequest(id, uid),
+          label: 'reject[$id]');
       if (ok) await loadInitial();
       return ok;
     } catch (e) {
@@ -294,7 +337,8 @@ class ConnectionsNotifier extends StateNotifier<ConnectionsState> {
     try {
       final uid = Supabase.instance.client.auth.currentUser?.id;
       if (uid == null) return false;
-      final ok = await _connRetry(() => _svc.cancelRequest(id, uid), label: 'cancel[$id]');
+      final ok = await _connRetry(() => _svc.cancelRequest(id, uid),
+          label: 'cancel[$id]');
       if (ok) await loadInitial();
       return ok;
     } catch (e) {
@@ -317,7 +361,9 @@ class ConnectionsNotifier extends StateNotifier<ConnectionsState> {
       );
       if (ok) {
         state = state.copyWith(
-          connections: state.connections.where((c) => c['user_id'] != otherUserId).toList(),
+          connections: state.connections
+              .where((c) => c.otherUserId != otherUserId)
+              .toList(),
         );
         debugPrint('[Connections] ✓ Connection removed: $otherUserId');
       }
@@ -342,7 +388,9 @@ class ConnectionsNotifier extends StateNotifier<ConnectionsState> {
       );
       if (ok) {
         state = state.copyWith(
-          connections: state.connections.where((c) => c['user_id'] != otherUserId).toList(),
+          connections: state.connections
+              .where((c) => c.otherUserId != otherUserId)
+              .toList(),
         );
         debugPrint('[Connections] ✓ User blocked: $otherUserId');
       }
@@ -358,7 +406,8 @@ class ConnectionsNotifier extends StateNotifier<ConnectionsState> {
   bool isActionPending(String id) => _isActionPending(id);
 }
 
-final connectionsProvider = StateNotifierProvider<ConnectionsNotifier, ConnectionsState>((ref) {
+final connectionsProvider =
+    StateNotifierProvider<ConnectionsNotifier, ConnectionsState>((ref) {
   return ConnectionsNotifier(ConnectionService());
 });
 
@@ -393,9 +442,12 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   }
 
   void _onScroll() {
-    if (_scroll.position.pixels > _scroll.position.maxScrollExtent - _kLoadMoreThresholdPx) {
+    if (_scroll.position.pixels >
+        _scroll.position.maxScrollExtent - _kLoadMoreThresholdPx) {
       final now = DateTime.now();
-      if (_lastLoadMore != null && now.difference(_lastLoadMore!).inMilliseconds < _kLoadMoreThrottleMs) {
+      if (_lastLoadMore != null &&
+          now.difference(_lastLoadMore!).inMilliseconds <
+              _kLoadMoreThrottleMs) {
         return;
       }
       _lastLoadMore = now;
@@ -404,10 +456,10 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // COMMUNICATION ACTIONS
+  // COMMUNICATION ACTIONS — ✅ CORRIGÉES POUR UTILISER ConnectionView
   // ══════════════════════════════════════════════════════════════════════════
 
-  Future<void> _startChat(Map<String, dynamic> connection) async {
+  Future<void> _startChat(ConnectionView connection) async {
     if (_isStartingChat) {
       debugPrint('[Connections] ⚠️ Chat creation already in progress');
       return;
@@ -416,18 +468,18 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
     final l10n = AppLocalizations.of(context);
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
     if (currentUserId == null) {
-      _showError(l10n.t('connections_not_authenticated'));
+      _showError(l10n.t('escalation_not_authenticated'));
       return;
     }
 
-    final otherUserId = connection['user_id'] as String?;
-    if (otherUserId == null) {
-      _showError(l10n.t('connections_invalid_user'));
+    final otherUserId = connection.otherUserId;
+    if (otherUserId.isEmpty) {
+      _showError(l10n.t('escalation_invalid_conversation'));
       return;
     }
 
     setState(() => _isStartingChat = true);
-    _showInfo(l10n.t('connections_opening_chat'));
+    _showInfo(l10n.t('chat_new_message'));
 
     try {
       final res = await _connRetry(
@@ -451,7 +503,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
         }
       }
 
-      _showError(l10n.t('connections_cannot_start_chat'));
+      _showError(l10n.t('escalation_conversation_not_found'));
     } catch (e) {
       debugPrint('[Connections] ❌ Start chat error: $e');
       if (mounted) _showError(_ConnValidators.friendlyError(e));
@@ -460,17 +512,17 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
     }
   }
 
-  void _startAudioCall(Map<String, dynamic> connection) {
+  void _startAudioCall(ConnectionView connection) {
     final l10n = AppLocalizations.of(context);
     final myId = Supabase.instance.client.auth.currentUser?.id;
     if (myId == null) {
-      _showError(l10n.t('connections_not_authenticated'));
+      _showError(l10n.t('escalation_not_authenticated'));
       return;
     }
 
-    final calleeId = connection['user_id'] as String?;
-    if (calleeId == null) {
-      _showError(l10n.t('connections_invalid_user'));
+    final calleeId = connection.otherUserId;
+    if (calleeId.isEmpty) {
+      _showError(l10n.t('escalation_invalid_conversation'));
       return;
     }
 
@@ -480,25 +532,29 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
     ref.read(callProvider.notifier).start(
           myUserId: myId,
           calleeId: calleeId,
-          calleeName: _ConnValidators.sanitize(connection['display_name']?.toString(), maxLength: _kMaxNameLength),
-          calleeAvatar: _ConnValidators.sanitizeUrl(connection['avatar_url']?.toString()),
+          calleeName: _ConnValidators.sanitize(
+              connection.otherUser.displayName,
+              maxLength: _kMaxNameLength),
+          calleeAvatar:
+              _ConnValidators.sanitizeUrl(connection.otherUser.avatarUrl),
           type: CallType.audio,
         );
 
-    Navigator.push(context, MaterialPageRoute(builder: (_) => const CallPage()));
+    Navigator.push(
+        context, MaterialPageRoute(builder: (_) => const CallPage()));
   }
 
-  void _startVideoCall(Map<String, dynamic> connection) {
+  void _startVideoCall(ConnectionView connection) {
     final l10n = AppLocalizations.of(context);
     final myId = Supabase.instance.client.auth.currentUser?.id;
     if (myId == null) {
-      _showError(l10n.t('connections_not_authenticated'));
+      _showError(l10n.t('escalation_not_authenticated'));
       return;
     }
 
-    final calleeId = connection['user_id'] as String?;
-    if (calleeId == null) {
-      _showError(l10n.t('connections_invalid_user'));
+    final calleeId = connection.otherUserId;
+    if (calleeId.isEmpty) {
+      _showError(l10n.t('escalation_invalid_conversation'));
       return;
     }
 
@@ -508,12 +564,16 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
     ref.read(callProvider.notifier).start(
           myUserId: myId,
           calleeId: calleeId,
-          calleeName: _ConnValidators.sanitize(connection['display_name']?.toString(), maxLength: _kMaxNameLength),
-          calleeAvatar: _ConnValidators.sanitizeUrl(connection['avatar_url']?.toString()),
+          calleeName: _ConnValidators.sanitize(
+              connection.otherUser.displayName,
+              maxLength: _kMaxNameLength),
+          calleeAvatar:
+              _ConnValidators.sanitizeUrl(connection.otherUser.avatarUrl),
           type: CallType.video,
         );
 
-    Navigator.push(context, MaterialPageRoute(builder: (_) => const CallPage()));
+    Navigator.push(
+        context, MaterialPageRoute(builder: (_) => const CallPage()));
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -533,7 +593,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
           side: BorderSide(color: ThixPolicy.border),
         ),
         title: Text(
-          l10n.t('connections_cancel_title'),
+          l10n.t('cancel'),
           style: ThixPolicy.h3Style.copyWith(
             color: ThixPolicy.textMain,
             fontWeight: ThixPolicy.bold,
@@ -542,7 +602,8 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
         ),
         content: Text(
           l10n.t('connections_cancel_message'),
-          style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 14),
+          style:
+              ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 14),
         ),
         actions: [
           TextButton(
@@ -551,8 +612,9 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
               Navigator.pop(ctx, false);
             },
             child: Text(
-              l10n.t('common_no'),
-              style: TextStyle(color: ThixPolicy.textMuted, fontWeight: FontWeight.w600),
+              l10n.t('cancel'),
+              style: TextStyle(
+                  color: ThixPolicy.textMuted, fontWeight: FontWeight.w600),
             ),
           ),
           ElevatedButton(
@@ -560,13 +622,15 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
               backgroundColor: ThixPolicy.danger,
               foregroundColor: Colors.white,
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () {
               HapticFeedback.mediumImpact();
               Navigator.pop(ctx, true);
             },
-            child: Text(l10n.t('connections_cancel_confirm'), style: const TextStyle(fontWeight: FontWeight.bold)),
+            child: Text(l10n.t('confirm'),
+                style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -586,11 +650,12 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
     }
   }
 
-  Future<void> _confirmRemove(Map<String, dynamic> connection) async {
+  Future<void> _confirmRemove(ConnectionView connection) async {
     final l10n = AppLocalizations.of(context);
     HapticFeedback.lightImpact();
 
-    final name = _ConnValidators.sanitize(connection['display_name']?.toString(), maxLength: _kMaxNameLength);
+    final name = _ConnValidators.sanitize(connection.otherUser.displayName,
+        maxLength: _kMaxNameLength);
 
     final ok = await showDialog<bool>(
       context: context,
@@ -607,22 +672,25 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
         ),
         content: Text(
           "${l10n.t('connections_remove_message')} ${name.isEmpty ? '—' : name}",
-          style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 14),
+          style:
+              ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 14),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.t('common_cancel')),
+            child: Text(l10n.t('cancel')),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: ThixPolicy.warning,
               foregroundColor: Colors.white,
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(l10n.t('connections_remove_confirm'), style: const TextStyle(fontWeight: FontWeight.bold)),
+            child: Text(l10n.t('confirm'),
+                style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -630,10 +698,11 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
 
     if (ok != true || !mounted) return;
 
-    final userId = connection['user_id'] as String?;
-    if (userId == null) return;
+    final userId = connection.otherUserId;
+    if (userId.isEmpty) return;
 
-    final res = await ref.read(connectionsProvider.notifier).removeConnection(userId);
+    final res =
+        await ref.read(connectionsProvider.notifier).removeConnection(userId);
     if (mounted) {
       if (res) {
         _showSuccess(l10n.t('connections_removed'));
@@ -643,7 +712,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
     }
   }
 
-  Future<void> _confirmBlock(Map<String, dynamic> connection) async {
+  Future<void> _confirmBlock(ConnectionView connection) async {
     final l10n = AppLocalizations.of(context);
     HapticFeedback.lightImpact();
 
@@ -670,22 +739,25 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
         ),
         content: Text(
           l10n.t('connections_block_message'),
-          style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 14),
+          style:
+              ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 14),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.t('common_cancel')),
+            child: Text(l10n.t('cancel')),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: ThixPolicy.danger,
               foregroundColor: Colors.white,
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(l10n.t('connections_block_confirm'), style: const TextStyle(fontWeight: FontWeight.bold)),
+            child: Text(l10n.t('confirm'),
+                style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -693,8 +765,8 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
 
     if (ok != true || !mounted) return;
 
-    final userId = connection['user_id'] as String?;
-    if (userId == null) return;
+    final userId = connection.otherUserId;
+    if (userId.isEmpty) return;
 
     final res = await ref.read(connectionsProvider.notifier).blockUser(userId);
     if (mounted) {
@@ -707,10 +779,10 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // BOTTOM SHEET (ACTIONS MENU)
+  // BOTTOM SHEET (ACTIONS MENU) — ✅ CORRIGÉ POUR ConnectionView
   // ══════════════════════════════════════════════════════════════════════════
 
-  void _showConnectionActions(Map<String, dynamic> connection) {
+  void _showConnectionActions(ConnectionView connection) {
     HapticFeedback.selectionClick();
     final l10n = AppLocalizations.of(context);
 
@@ -758,7 +830,8 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(children: [
-          const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+          const Icon(Icons.check_circle_rounded,
+              color: Colors.white, size: 18),
           const SizedBox(width: 8),
           Expanded(child: Text(message)),
         ]),
@@ -774,7 +847,8 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
+          const Icon(Icons.error_outline_rounded,
+              color: Colors.white, size: 18),
           const SizedBox(width: 8),
           Expanded(child: Text(message)),
         ]),
@@ -789,7 +863,8 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(children: [
-          const Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
+          const Icon(Icons.info_outline_rounded,
+              color: Colors.white, size: 18),
           const SizedBox(width: 8),
           Expanded(child: Text(message)),
         ]),
@@ -801,7 +876,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // BUILD
+  // BUILD — ✅ CORRIGÉ
   // ══════════════════════════════════════════════════════════════════════════
 
   @override
@@ -809,6 +884,49 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
     final l10n = AppLocalizations.of(context);
     final state = ref.watch(connectionsProvider);
     final notifier = ref.read(connectionsProvider.notifier);
+
+    // ✅ GARDE : utilisateur non authentifié
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      return Scaffold(
+        backgroundColor: ThixPolicy.surfaceSoft,
+        appBar: AppBar(
+          backgroundColor: ThixPolicy.card,
+          elevation: 0,
+          leading: Semantics(
+            button: true,
+            label: l10n.t('back'),
+            child: IconButton(
+              icon: Icon(Icons.arrow_back_rounded,
+                  color: ThixPolicy.textMain, size: 24),
+              onPressed: () {
+                HapticFeedback.selectionClick();
+                Navigator.pop(context);
+              },
+            ),
+          ),
+          title: Text(
+            l10n.t('connections_page_title'),
+            style: ThixPolicy.titleStyle.copyWith(
+              color: ThixPolicy.textMain,
+              fontSize: 20,
+              fontWeight: ThixPolicy.bold,
+            ),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.lock_outline_rounded,
+                  size: 48, color: ThixPolicy.textMuted),
+              const SizedBox(height: 12),
+              Text(l10n.t('escalation_not_authenticated')),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: ThixPolicy.surfaceSoft,
@@ -819,9 +937,10 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
         shadowColor: Colors.black.withOpacity(0.05),
         leading: Semantics(
           button: true,
-          label: l10n.t('common_back'),
+          label: l10n.t('back'),
           child: IconButton(
-            icon: Icon(Icons.arrow_back_rounded, color: ThixPolicy.textMain, size: 24),
+            icon: Icon(Icons.arrow_back_rounded,
+                color: ThixPolicy.textMain, size: 24),
             onPressed: () {
               HapticFeedback.selectionClick();
               Navigator.pop(context);
@@ -840,9 +959,10 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
         actions: [
           Semantics(
             button: true,
-            label: l10n.t('common_refresh'),
+            label: l10n.t('retry'),
             child: IconButton(
-              icon: Icon(Icons.refresh_rounded, color: ThixPolicy.textMain, size: 24),
+              icon: Icon(Icons.refresh_rounded,
+                  color: ThixPolicy.textMain, size: 24),
               onPressed: state.loading ? null : () => notifier.loadInitial(),
             ),
           ),
@@ -850,7 +970,9 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
         ],
       ),
       body: state.loading
-          ? Center(child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 3))
+          ? Center(
+              child: CircularProgressIndicator(
+                  color: ThixPolicy.primary, strokeWidth: 3))
           : RefreshIndicator(
               color: ThixPolicy.primary,
               backgroundColor: ThixPolicy.card,
@@ -858,11 +980,14 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
               child: RepaintBoundary(
                 child: ListView(
                   controller: _scroll,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 16),
                   children: [
                     // SECTION: DEMANDES REÇUES
                     if (state.received.isNotEmpty) ...[
-                      _SectionTitle(title: "${l10n.t('connections_received')} (${state.received.length})"),
+                      _SectionTitle(
+                          title:
+                              "${l10n.t('connections_received')} (${state.received.length})"),
                       ...state.received.map((r) => _ReceivedRequestCard(
                             request: r,
                             pendingActions: state.pendingActions,
@@ -870,9 +995,11 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                               final ok = await notifier.accept(r.id);
                               if (mounted) {
                                 if (ok) {
-                                  _showSuccess(l10n.t('connections_accepted'));
+                                  _showSuccess(
+                                      l10n.t('connections_accepted'));
                                 } else {
-                                  _showError(l10n.t('connections_accept_error'));
+                                  _showError(
+                                      l10n.t('connections_accept_error'));
                                 }
                               }
                             },
@@ -880,9 +1007,11 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                               final ok = await notifier.reject(r.id);
                               if (mounted) {
                                 if (ok) {
-                                  _showSuccess(l10n.t('connections_ignored'));
+                                  _showSuccess(
+                                      l10n.t('connections_ignored'));
                                 } else {
-                                  _showError(l10n.t('connections_reject_error'));
+                                  _showError(
+                                      l10n.t('connections_reject_error'));
                                 }
                               }
                             },
@@ -892,7 +1021,9 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
 
                     // SECTION: DEMANDES ENVOYÉES
                     if (state.sent.isNotEmpty) ...[
-                      _SectionTitle(title: "${l10n.t('connections_sent')} (${state.sent.length})"),
+                      _SectionTitle(
+                          title:
+                              "${l10n.t('connections_sent')} (${state.sent.length})"),
                       ...state.sent.map((r) => _SentRequestCard(
                             request: r,
                             onCancel: () => _confirmCancel(r.id),
@@ -900,8 +1031,10 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                       const SizedBox(height: 16),
                     ],
 
-                    // SECTION: CONNEXIONS ACTIVES
-                    _SectionTitle(title: "${l10n.t('connections_active')} (${state.connections.length})"),
+                    // SECTION: CONNEXIONS ACTIVES — ✅ CORRIGÉ
+                    _SectionTitle(
+                        title:
+                            "${l10n.t('connections_active')} (${state.connections.length})"),
                     if (state.connections.isEmpty)
                       _EmptyState(l10n: l10n)
                     else
@@ -913,19 +1046,23 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                           boxShadow: ThixPolicy.shadowSoft(opacity: 0.02),
                         ),
                         child: Column(
-                          children: state.connections.asMap().entries.map((entry) {
+                          children: state.connections.asMap().entries.map(
+                              (entry) {
                             final i = entry.key;
-                            final c = entry.value as Map<String, dynamic>;
+                            final c = entry.value; // ✅ Déjà typé ConnectionView
                             final isLast = i == state.connections.length - 1;
 
                             return Column(
                               children: [
                                 _ConnectionItem(
-                                  connection: c,
+                                  connection: c, // ✅ Passé directement
                                   onTap: () => _showConnectionActions(c),
                                 ),
                                 if (!isLast)
-                                  Divider(height: 1, color: ThixPolicy.border, indent: 76),
+                                  Divider(
+                                      height: 1,
+                                      color: ThixPolicy.border,
+                                      indent: 76),
                               ],
                             );
                           }).toList(),
@@ -935,7 +1072,9 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                     if (state.loadingMore)
                       const Padding(
                         padding: EdgeInsets.all(24),
-                        child: Center(child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 3)),
+                        child: Center(
+                            child: CircularProgressIndicator(
+                                color: ThixPolicy.primary, strokeWidth: 3)),
                       ),
 
                     const SizedBox(height: 80),
@@ -992,8 +1131,10 @@ class _EmptyState extends StatelessWidget {
         children: [
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, shape: BoxShape.circle),
-            child: Icon(Icons.people_outline_rounded, size: 40, color: ThixPolicy.textMuted),
+            decoration: BoxDecoration(
+                color: ThixPolicy.surfaceSoft, shape: BoxShape.circle),
+            child: Icon(Icons.people_outline_rounded,
+                size: 40, color: ThixPolicy.textMuted),
           ),
           const SizedBox(height: 16),
           Text(
@@ -1008,7 +1149,8 @@ class _EmptyState extends StatelessWidget {
           Text(
             l10n.t('connections_empty_message'),
             textAlign: TextAlign.center,
-            style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 14),
+            style: ThixPolicy.bodyStyle.copyWith(
+                color: ThixPolicy.textMuted, fontSize: 14),
           ),
         ],
       ),
@@ -1035,18 +1177,23 @@ class _ReceivedRequestCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    
-    final senderMap = (request.sender as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
-    
+
+    final senderMap =
+        (request.sender as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+
     final certInfo = _CertificationInfo.fromMap(senderMap);
 
-    final name = _ConnValidators.sanitize(senderMap['display_name']?.toString(), maxLength: _kMaxNameLength);
+    final name = _ConnValidators.sanitize(
+        senderMap['display_name']?.toString(),
+        maxLength: _kMaxNameLength);
     final message = _ConnValidators.sanitize(
       request.message ?? l10n.t('connections_wants_connect'),
       maxLength: _kMaxMessageLength,
     );
-    final avatarUrl = _ConnValidators.sanitizeUrl(senderMap['avatar_url']?.toString());
+    final avatarUrl =
+        _ConnValidators.sanitizeUrl(senderMap['avatar_url']?.toString());
     final isPending = pendingActions.contains(request.id);
+    final safeInitial = _ConnValidators.safeInitial(name);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1068,13 +1215,15 @@ class _ReceivedRequestCard extends StatelessWidget {
                   color: ThixPolicy.tint,
                   borderRadius: BorderRadius.circular(14),
                   image: avatarUrl != null
-                      ? DecorationImage(image: CachedNetworkImageProvider(avatarUrl), fit: BoxFit.cover)
+                      ? DecorationImage(
+                          image: CachedNetworkImageProvider(avatarUrl),
+                          fit: BoxFit.cover)
                       : null,
                 ),
                 child: avatarUrl == null
                     ? Center(
                         child: Text(
-                          name.isNotEmpty ? name[0].toUpperCase() : '?',
+                          safeInitial,
                           style: ThixPolicy.labelStyle.copyWith(
                             color: ThixPolicy.primary,
                             fontWeight: ThixPolicy.bold,
@@ -1093,7 +1242,9 @@ class _ReceivedRequestCard extends StatelessWidget {
                       children: [
                         Flexible(
                           child: Text(
-                            name.isEmpty ? l10n.t('connections_unknown_user') : name,
+                            name.isEmpty
+                                ? l10n.t('avatar_user')
+                                : name,
                             style: ThixPolicy.labelStyle.copyWith(
                               color: ThixPolicy.textMain,
                               fontWeight: ThixPolicy.bold,
@@ -1114,14 +1265,16 @@ class _ReceivedRequestCard extends StatelessWidget {
                         else if (certInfo.isLegacyVerified)
                           const Padding(
                             padding: EdgeInsets.only(left: 4),
-                            child: Icon(Icons.verified_rounded, color: ThixPolicy.gold, size: 15),
+                            child: Icon(Icons.verified_rounded,
+                                color: ThixPolicy.gold, size: 15),
                           ),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(
                       message.isEmpty ? '—' : message,
-                      style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 13),
+                      style: ThixPolicy.captionStyle.copyWith(
+                          color: ThixPolicy.textMuted, fontSize: 13),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1139,17 +1292,21 @@ class _ReceivedRequestCard extends StatelessWidget {
                   label: l10n.t('connections_ignore'),
                   enabled: !isPending,
                   child: OutlinedButton(
-                    onPressed: isPending ? null : () {
-                      HapticFeedback.lightImpact();
-                      onReject();
-                    },
+                    onPressed: isPending
+                        ? null
+                        : () {
+                            HapticFeedback.lightImpact();
+                            onReject();
+                          },
                     style: OutlinedButton.styleFrom(
                       foregroundColor: ThixPolicy.textMuted,
                       side: BorderSide(color: ThixPolicy.border),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    child: Text(l10n.t('connections_ignore'), style: const TextStyle(fontWeight: FontWeight.bold)),
+                    child: Text(l10n.t('connections_ignore'),
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
               ),
@@ -1160,24 +1317,30 @@ class _ReceivedRequestCard extends StatelessWidget {
                   label: l10n.t('connections_accept'),
                   enabled: !isPending,
                   child: ElevatedButton(
-                    onPressed: isPending ? null : () {
-                      HapticFeedback.mediumImpact();
-                      onAccept();
-                    },
+                    onPressed: isPending
+                        ? null
+                        : () {
+                            HapticFeedback.mediumImpact();
+                            onAccept();
+                          },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: ThixPolicy.primary,
                       foregroundColor: Colors.white,
                       elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                     child: isPending
                         ? const SizedBox(
                             width: 18,
                             height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
                           )
-                        : Text(l10n.t('connections_accept'), style: const TextStyle(fontWeight: FontWeight.bold)),
+                        : Text(l10n.t('connections_accept'),
+                            style:
+                                const TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
               ),
@@ -1201,13 +1364,18 @@ class _SentRequestCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    
-    final receiverMap = (request.receiver as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
-    
+
+    final receiverMap = (request.receiver as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
+
     final certInfo = _CertificationInfo.fromMap(receiverMap);
 
-    final name = _ConnValidators.sanitize(receiverMap['display_name']?.toString(), maxLength: _kMaxNameLength);
-    final avatarUrl = _ConnValidators.sanitizeUrl(receiverMap['avatar_url']?.toString());
+    final name = _ConnValidators.sanitize(
+        receiverMap['display_name']?.toString(),
+        maxLength: _kMaxNameLength);
+    final avatarUrl =
+        _ConnValidators.sanitizeUrl(receiverMap['avatar_url']?.toString());
+    final safeInitial = _ConnValidators.safeInitial(name);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1217,7 +1385,8 @@ class _SentRequestCard extends StatelessWidget {
         border: Border.all(color: ThixPolicy.border),
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Container(
           width: 44,
           height: 44,
@@ -1225,13 +1394,15 @@ class _SentRequestCard extends StatelessWidget {
             color: ThixPolicy.surfaceSoft,
             borderRadius: BorderRadius.circular(12),
             image: avatarUrl != null
-                ? DecorationImage(image: CachedNetworkImageProvider(avatarUrl), fit: BoxFit.cover)
+                ? DecorationImage(
+                    image: CachedNetworkImageProvider(avatarUrl),
+                    fit: BoxFit.cover)
                 : null,
           ),
           child: avatarUrl == null
               ? Center(
                   child: Text(
-                    name.isNotEmpty ? name[0].toUpperCase() : '?',
+                    safeInitial,
                     style: ThixPolicy.labelStyle.copyWith(
                       color: ThixPolicy.textMuted,
                       fontWeight: ThixPolicy.bold,
@@ -1245,7 +1416,7 @@ class _SentRequestCard extends StatelessWidget {
           children: [
             Flexible(
               child: Text(
-                name.isEmpty ? l10n.t('connections_unknown_user') : name,
+                name.isEmpty ? l10n.t('avatar_user') : name,
                 style: ThixPolicy.labelStyle.copyWith(
                   color: ThixPolicy.textMain,
                   fontWeight: ThixPolicy.bold,
@@ -1266,13 +1437,15 @@ class _SentRequestCard extends StatelessWidget {
             else if (certInfo.isLegacyVerified)
               const Padding(
                 padding: EdgeInsets.only(left: 4),
-                child: Icon(Icons.verified_rounded, color: ThixPolicy.gold, size: 15),
+                child: Icon(Icons.verified_rounded,
+                    color: ThixPolicy.gold, size: 15),
               ),
           ],
         ),
         subtitle: Row(
           children: [
-            const Icon(Icons.access_time_rounded, size: 14, color: ThixPolicy.warning),
+            const Icon(Icons.access_time_rounded,
+                size: 14, color: ThixPolicy.warning),
             const SizedBox(width: 4),
             Text(
               l10n.t('connections_pending'),
@@ -1292,8 +1465,10 @@ class _SentRequestCard extends StatelessWidget {
               HapticFeedback.selectionClick();
               onCancel();
             },
-            style: TextButton.styleFrom(foregroundColor: ThixPolicy.textMuted),
-            child: Text(l10n.t('connections_cancel_request'), style: const TextStyle(fontWeight: FontWeight.bold)),
+            style: TextButton.styleFrom(
+                foregroundColor: ThixPolicy.textMuted),
+            child: Text(l10n.t('connections_cancel_request'),
+                style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
         ),
       ),
@@ -1302,10 +1477,10 @@ class _SentRequestCard extends StatelessWidget {
 }
 
 // ============================================================================
-// CONNECTION ITEM
+// CONNECTION ITEM — ✅ CORRIGÉ POUR UTILISER ConnectionView
 // ============================================================================
 class _ConnectionItem extends StatelessWidget {
-  final Map<String, dynamic> connection;
+  final ConnectionView connection;
   final VoidCallback onTap;
 
   const _ConnectionItem({required this.connection, required this.onTap});
@@ -1313,17 +1488,21 @@ class _ConnectionItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final certInfo = _CertificationInfo.fromMap(connection);
+    final certInfo = _CertificationInfo.fromUserProfile(connection.otherUser);
 
-    final name = _ConnValidators.sanitize(connection['display_name']?.toString(), maxLength: _kMaxNameLength);
-    final role = _ConnValidators.sanitize(connection['role']?.toString(), maxLength: _kMaxRoleLength);
-    final avatarUrl = _ConnValidators.sanitizeUrl(connection['avatar_url']?.toString());
+    final name = _ConnValidators.sanitize(connection.otherUser.displayName,
+        maxLength: _kMaxNameLength);
+    final role = ''; // Le modèle ConnectionUserProfile n'a pas de role
+    final avatarUrl =
+        _ConnValidators.sanitizeUrl(connection.otherUser.avatarUrl);
+    final safeInitial = _ConnValidators.safeInitial(name);
 
     return Semantics(
       button: true,
-      label: '$name. ${role.isEmpty ? l10n.t('connections_network') : role}',
+      label: name.isEmpty ? l10n.t('avatar_user') : name,
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Container(
           width: 44,
           height: 44,
@@ -1331,13 +1510,15 @@ class _ConnectionItem extends StatelessWidget {
             color: ThixPolicy.tint,
             borderRadius: BorderRadius.circular(12),
             image: avatarUrl != null
-                ? DecorationImage(image: CachedNetworkImageProvider(avatarUrl), fit: BoxFit.cover)
+                ? DecorationImage(
+                    image: CachedNetworkImageProvider(avatarUrl),
+                    fit: BoxFit.cover)
                 : null,
           ),
           child: avatarUrl == null
               ? Center(
                   child: Text(
-                    name.isNotEmpty ? name[0].toUpperCase() : '?',
+                    safeInitial,
                     style: ThixPolicy.labelStyle.copyWith(
                       color: ThixPolicy.primary,
                       fontWeight: ThixPolicy.bold,
@@ -1351,7 +1532,7 @@ class _ConnectionItem extends StatelessWidget {
           children: [
             Flexible(
               child: Text(
-                name.isEmpty ? l10n.t('connections_unknown_user') : name,
+                name.isEmpty ? l10n.t('avatar_user') : name,
                 style: ThixPolicy.labelStyle.copyWith(
                   color: ThixPolicy.textMain,
                   fontWeight: ThixPolicy.bold,
@@ -1372,19 +1553,22 @@ class _ConnectionItem extends StatelessWidget {
             else if (certInfo.isLegacyVerified)
               const Padding(
                 padding: EdgeInsets.only(left: 4),
-                child: Icon(Icons.verified_rounded, color: ThixPolicy.gold, size: 15),
+                child: Icon(Icons.verified_rounded,
+                    color: ThixPolicy.gold, size: 15),
               ),
           ],
         ),
         subtitle: Text(
           role.isEmpty ? l10n.t('connections_network') : role,
-          style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 13),
+          style: ThixPolicy.captionStyle.copyWith(
+              color: ThixPolicy.textMuted, fontSize: 13),
         ),
         trailing: Semantics(
           button: true,
-          label: l10n.t('connections_actions'),
+          label: l10n.t('more'),
           child: IconButton(
-            icon: Icon(Icons.more_horiz_rounded, color: ThixPolicy.textMuted),
+            icon: Icon(Icons.more_horiz_rounded,
+                color: ThixPolicy.textMuted),
             onPressed: () {
               HapticFeedback.selectionClick();
               onTap();
@@ -1401,10 +1585,10 @@ class _ConnectionItem extends StatelessWidget {
 }
 
 // ============================================================================
-// CONNECTION ACTIONS SHEET
+// CONNECTION ACTIONS SHEET — ✅ CORRIGÉ POUR ConnectionView
 // ============================================================================
 class _ConnectionActionsSheet extends StatelessWidget {
-  final Map<String, dynamic> connection;
+  final ConnectionView connection;
   final VoidCallback onMessage;
   final VoidCallback onAudioCall;
   final VoidCallback onVideoCall;
@@ -1426,18 +1610,23 @@ class _ConnectionActionsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final certInfo = _CertificationInfo.fromMap(connection);
+    final certInfo =
+        _CertificationInfo.fromUserProfile(connection.otherUser);
 
-    final name = _ConnValidators.sanitize(connection['display_name']?.toString(), maxLength: _kMaxNameLength);
-    final role = _ConnValidators.sanitize(connection['role']?.toString(), maxLength: _kMaxRoleLength);
-    final avatarUrl = _ConnValidators.sanitizeUrl(connection['avatar_url']?.toString());
+    final name = _ConnValidators.sanitize(connection.otherUser.displayName,
+        maxLength: _kMaxNameLength);
+    final role = '';
+    final avatarUrl =
+        _ConnValidators.sanitizeUrl(connection.otherUser.avatarUrl);
 
     return SafeArea(
       child: Container(
-        padding: EdgeInsets.only(bottom: 24 + MediaQuery.of(context).padding.bottom),
+        padding: EdgeInsets.only(
+            bottom: 24 + MediaQuery.of(context).padding.bottom),
         decoration: BoxDecoration(
           color: ThixPolicy.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1446,7 +1635,9 @@ class _ConnectionActionsSheet extends StatelessWidget {
             Container(
               width: 40,
               height: 4,
-              decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4)),
+              decoration: BoxDecoration(
+                  color: ThixPolicy.border,
+                  borderRadius: BorderRadius.circular(4)),
             ),
 
             // Header du Profil
@@ -1457,9 +1648,12 @@ class _ConnectionActionsSheet extends StatelessWidget {
                   CircleAvatar(
                     radius: 32,
                     backgroundColor: ThixPolicy.tint,
-                    backgroundImage: avatarUrl != null ? CachedNetworkImageProvider(avatarUrl) : null,
+                    backgroundImage: avatarUrl != null
+                        ? CachedNetworkImageProvider(avatarUrl)
+                        : null,
                     child: avatarUrl == null
-                        ? Icon(Icons.person, color: ThixPolicy.primary, size: 32)
+                        ? Icon(Icons.person,
+                            color: ThixPolicy.primary, size: 32)
                         : null,
                   ),
                   const SizedBox(width: 16),
@@ -1471,7 +1665,9 @@ class _ConnectionActionsSheet extends StatelessWidget {
                           children: [
                             Flexible(
                               child: Text(
-                                name.isEmpty ? l10n.t('connections_unknown_user') : name,
+                                name.isEmpty
+                                    ? l10n.t('avatar_user')
+                                    : name,
                                 style: ThixPolicy.titleStyle.copyWith(
                                   fontSize: 18,
                                   fontWeight: ThixPolicy.bold,
@@ -1492,13 +1688,16 @@ class _ConnectionActionsSheet extends StatelessWidget {
                             else if (certInfo.isLegacyVerified)
                               const Padding(
                                 padding: EdgeInsets.only(left: 6),
-                                child: Icon(Icons.verified_rounded, color: ThixPolicy.gold, size: 18),
+                                child: Icon(Icons.verified_rounded,
+                                    color: ThixPolicy.gold, size: 18),
                               ),
                           ],
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          role.isEmpty ? l10n.t('connections_network_member') : role,
+                          role.isEmpty
+                              ? l10n.t('connections_network_member')
+                              : role,
                           style: ThixPolicy.bodySmallStyle.copyWith(
                             fontSize: 14,
                             color: ThixPolicy.textMuted,
@@ -1512,7 +1711,7 @@ class _ConnectionActionsSheet extends StatelessWidget {
               ),
             ),
 
-            // Barre d'actions rapides (Chat / Call)
+            // Barre d'actions rapides
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Row(
@@ -1617,7 +1816,10 @@ class _QuickActionButton extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 label,
-                style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold),
               ),
             ],
           ),
@@ -1636,7 +1838,11 @@ class _ActionListTile extends StatelessWidget {
   final Color? color;
   final VoidCallback onTap;
 
-  const _ActionListTile({required this.icon, required this.title, this.color, required this.onTap});
+  const _ActionListTile(
+      {required this.icon,
+      required this.title,
+      this.color,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1648,18 +1854,22 @@ class _ActionListTile extends StatelessWidget {
       child: ListTile(
         leading: Container(
           padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: c.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
+          decoration: BoxDecoration(
+              color: c.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(8)),
           child: Icon(icon, color: c, size: 20),
         ),
         title: Text(
           title,
-          style: TextStyle(color: c, fontSize: 15, fontWeight: FontWeight.w600),
+          style: TextStyle(
+              color: c, fontSize: 15, fontWeight: FontWeight.w600),
         ),
         onTap: () {
           HapticFeedback.selectionClick();
           onTap();
         },
-        contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
       ),
     );
   }
