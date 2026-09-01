@@ -283,7 +283,8 @@ class NewConvNotifier extends StateNotifier<NewConvState> {
       if (id == null || id == cur || map.containsKey(id)) continue;
       try {
         map[id] = await _convRetry(
-          () => connSvc.getStatusBetween(cur, id),
+          () async => (await connSvc.getStatusBetween(cur, id)).name,
+
           label: 'getStatus[$id]',
         );
       } catch (e) {
