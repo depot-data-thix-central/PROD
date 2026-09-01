@@ -37,10 +37,13 @@ import 'package:go_router/go_router.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import '../models/escalation_level.dart';
-import '../models/escalation_priority.dart';
-import '../models/escalation_status.dart';
-import '../models/escalation_step.dart';
+
+// ✅ IMPORTS DES MODÈLES CORRIGÉS
+import 'package:thix_id/presentation/chat/escalation/models/escalation_level.dart';
+import 'package:thix_id/presentation/chat/escalation/models/escalation_priority.dart';
+import 'package:thix_id/presentation/chat/escalation/models/escalation_status.dart';
+import 'package:thix_id/presentation/chat/escalation/models/escalation_step.dart';
+
 import 'package:thix_id/presentation/chat/escalation/providers/escalation_provider.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
     show supabaseClientProvider;
@@ -302,12 +305,15 @@ class _EscalateConversationPageState
             user['display_name']?.toString() ?? user['username']?.toString(),
             maxLength: 100,
           );
-          _showSuccess(l10n.t('escalate_user_found', args: [displayName]));
+          
+          // ✅ CORRECTION : Remplacement de args
+          _showSuccess("${l10n.t('escalate_user_found')} $displayName");
         } else {
           setState(() => _searchError = l10n.t('escalate_invalid_id'));
         }
       } else {
-        setState(() => _searchError = l10n.t('escalate_user_not_found', args: [clean]));
+        // ✅ CORRECTION : Remplacement de args
+        setState(() => _searchError = "${l10n.t('escalate_user_not_found')} $clean");
       }
     } on TimeoutException {
       if (mounted) {
@@ -367,7 +373,9 @@ class _EscalateConversationPageState
           });
 
           Navigator.pop(ctx);
-          _showSuccess(l10n.t('escalate_user_selected', args: [displayName]));
+          
+          // ✅ CORRECTION : Remplacement de args
+          _showSuccess("${l10n.t('escalate_user_selected')} $displayName");
         },
       ),
     );
