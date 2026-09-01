@@ -28,7 +28,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:thix_id/auth/auth_controller.dart' show currentUserProvider;
+// ✅ IMPORT CORRIGÉ : On utilise le provider indépendant
+import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
+
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/chat/call_invite.dart';
@@ -36,6 +38,7 @@ import 'package:thix_id/presentation/chat/call/call_page.dart';
 import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
 import 'package:thix_id/presentation/thix_sos/pages/chambre_crise_secours_page.dart';
 import 'package:thix_id/presentation/thix_sos/providers/sos_providers.dart';
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -250,7 +253,9 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
 
     if (_isProcessing) return;
 
-    final myId = ref.read(currentUserProvider)?.id;
+    // ✅ CORRIGÉ : On utilise supabaseUserIdProvider
+    final myId = ref.read(supabaseUserIdProvider);
+    
     if (myId == null || !_CallValidators.isValidUuid(myId)) {
       debugPrint('[IncomingCall] ⚠️ No valid current user');
       _showError(l10n.t('call_error_not_authenticated'));
@@ -293,6 +298,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
       widget.callerName ?? widget.invite.callerName,
       l10n,
     );
+    // Assure-toi que la propriété isVideo ou callType == CallType.video existe bien sur CallInvite
     final isVideo = widget.invite.isVideo;
 
     return Scaffold(
