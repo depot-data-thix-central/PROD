@@ -36,7 +36,10 @@ import 'package:intl/intl.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/models/chat/escalation_step.dart';
+
+// ✅ IMPORTS DES MODÈLES CORRIGÉS
+import 'package:thix_id/presentation/chat/escalation/models/escalation_step.dart';
+
 import 'package:thix_id/presentation/chat/chat_screen.dart';
 import 'package:thix_id/presentation/chat/escalation/providers/escalation_provider.dart';
 import 'package:thix_id/presentation/chat/escalation/widgets/level_badge.dart';
@@ -87,7 +90,8 @@ class _EscalationHistoryValidators {
   static String formatDate(DateTime? date, AppLocalizations l10n) {
     if (date == null) return '';
     try {
-      return DateFormat('dd MMM yyyy, HH:mm', l10n.localeName).format(date.toLocal());
+      // ✅ CORRECTION : Utilisation de Intl.getCurrentLocale()
+      return DateFormat('dd MMM yyyy, HH:mm', Intl.getCurrentLocale()).format(date.toLocal());
     } catch (_) {
       return DateFormat('dd/MM/yyyy HH:mm').format(date.toLocal());
     }
