@@ -5,10 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-
+import 'dart:async';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-
 import '../providers/sos_providers.dart';
 import '../thix_sos_screen.dart';
 
@@ -431,7 +430,7 @@ class _SosPinPageState extends ConsumerState<SosPinPage>
                         padding:
                             const EdgeInsets.symmetric(horizontal: 32),
                         child: Text(
-                          l10n.t('sos_pin_enter', args: ['$_kPinLength']),
+                          "${l10n.t('sos_pin_enter')} $_kPinLength",
                           textAlign: TextAlign.center,
                           style: GoogleFonts.inter(
                             fontSize: 14,
