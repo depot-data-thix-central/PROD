@@ -43,7 +43,6 @@ import 'package:thix_id/presentation/chat/call/call_page.dart';
 import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
     show supabaseClientProvider;
-
 // ============================================================================
 // CONSTANTS
 // ============================================================================
