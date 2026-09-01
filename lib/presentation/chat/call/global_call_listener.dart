@@ -27,6 +27,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';  // ✅ AJOUTÉ
 
 import 'package:thix_id/auth/auth_controller.dart' show currentUserProvider;
 import 'package:thix_id/models/app_user.dart';
