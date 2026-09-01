@@ -37,8 +37,10 @@ import 'package:go_router/go_router.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/models/chat/escalation_level.dart';
-import 'package:thix_id/models/chat/escalation_status.dart';
+
+// ✅ IMPORTS DES MODÈLES CORRIGÉS
+import 'package:thix_id/presentation/chat/escalation/models/escalation_level.dart';
+import 'package:thix_id/presentation/chat/escalation/models/escalation_status.dart';
 import 'package:thix_id/presentation/chat/escalation/models/escalation_step.dart';  
 import 'package:thix_id/presentation/chat/escalation/providers/escalation_provider.dart';
 
