@@ -76,7 +76,7 @@ class _MesSecoursPageState extends ConsumerState<MesSecoursPage> {
     final ok = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (_) => AjouterSecoursPage(initialCircle: circle),
+        builder: (_) => AjouterSecoursPage(initialCircle: circle ?? 0),
       ),
     );
     if (ok == true && mounted) {
