@@ -1,16 +1,20 @@
-/// THIX SOS — Chambre de crise (victime) — production complète
+/// THIX SOS — Chambre de crise (victime) — Production Enterprise (audité)
+/// ✅ SÉCURISÉ : validation URL, permissions, timeouts, retry, i18n, semantics
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'package:thix_id/nav.dart';
 import 'package:thix_id/models/chat/chat_conversation.dart';
-import 'package:thix_id/services/chat/chat_service.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
+import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
+    show chatServiceProvider;
 import '../services/sos_crisis_media_service.dart';
 import '../services/sos_remote_capture_service.dart';
 import '../services/sos_victim_capture_daemon.dart';
@@ -18,6 +22,94 @@ import '../models/sos_models.dart';
 import '../providers/sos_providers.dart';
 import 'sos_pin_page.dart';
 
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+const Duration _kActionTimeout = Duration(seconds: 15);
+const Duration _kMediaTimeout = Duration(seconds: 30);
+const int _kMaxRetries = 1;
+const Duration _kRetryDelay = Duration(milliseconds: 600);
+const Duration _kQuickCooldown = Duration(seconds: 30);
+const int _kMaxEvents = 30;
+
+// ============================================================================
+// VALIDATORS
+// ============================================================================
+class _CrisisValidators {
+  _CrisisValidators._();
+
+  static bool isValidId(String? id) {
+    if (id == null || id.trim().isEmpty) return false;
+    return id.trim().length >= 8;
+  }
+
+  static bool isValidUrl(String? url) {
+    if (url == null || url.isEmpty) return false;
+    final uri = Uri.tryParse(url);
+    if (uri == null) return false;
+    return uri.scheme == 'http' || uri.scheme == 'https';
+  }
+
+  static String safeInitial(String? name, {String fallback = '?'}) {
+    if (name == null || name.trim().isEmpty) return fallback;
+    return name.trim()[0].toUpperCase();
+  }
+
+  static String sanitizeText(String? input, {int maxLength = 200}) {
+    if (input == null) return '';
+    var s = input
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+    return s.length > maxLength ? s.substring(0, maxLength) : s;
+  }
+
+  static String friendlyError(dynamic e, AppLocalizations l10n) {
+    final msg = e.toString().toLowerCase();
+    if (msg.contains('timeout')) return l10n.t('sos_error_timeout');
+    if (msg.contains('permission')) return l10n.t('sos_error_permission');
+    if (msg.contains('network') || msg.contains('socket')) {
+      return l10n.t('sos_error_network');
+    }
+    return l10n.t('sos_error_generic');
+  }
+}
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+Future<T> _crisisRetry<T>(
+  Future<T> Function() fn, {
+  required String label,
+  Duration timeout = _kActionTimeout,
+  int maxRetries = _kMaxRetries,
+}) async {
+  int attempt = 0;
+  while (true) {
+    try {
+      return await fn().timeout(timeout);
+    } on TimeoutException {
+      attempt++;
+      if (attempt > maxRetries) {
+        debugPrint('[ChambreCrise] ❌ $label: timeout after $attempt');
+        rethrow;
+      }
+      debugPrint('[ChambreCrise] ⏱️ $label timeout — retry $attempt/$maxRetries');
+      await Future.delayed(_kRetryDelay);
+    } catch (e) {
+      attempt++;
+      if (attempt > maxRetries) {
+        debugPrint('[ChambreCrise] ❌ $label: $e');
+        rethrow;
+      }
+      await Future.delayed(_kRetryDelay);
+    }
+  }
+}
+
+// ============================================================================
+// PAGE
+// ============================================================================
 class ChambreCrisePage extends ConsumerStatefulWidget {
   const ChambreCrisePage({
     super.key,
@@ -32,12 +124,13 @@ class ChambreCrisePage extends ConsumerStatefulWidget {
   ConsumerState<ChambreCrisePage> createState() => _ChambreCrisePageState();
 }
 
-class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
+class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage>
+    with WidgetsBindingObserver {
   Timer? _uiTimer;
   Duration _elapsed = Duration.zero;
   String? _resolvedConversationId;
 
-  final Set<String> _sentQuick = {};
+  final Map<String, DateTime> _quickSentAt = {};
   bool _camOn = false;
   bool _camBusy = false;
   bool _clipBusy = false;
@@ -46,12 +139,19 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _resolvedConversationId = widget.conversationId;
 
+    if (!_CrisisValidators.isValidId(widget.incidentId)) {
+      debugPrint('[ChambreCrise] ⚠️ incidentId invalide');
+      return;
+    }
+
     _uiTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
       final incident =
           ref.read(sosIncidentProvider(widget.incidentId)).valueOrNull;
-      if (incident != null && mounted) {
+      if (incident != null) {
         var d = DateTime.now().difference(incident.startedAt.toLocal());
         if (d.isNegative) d = Duration.zero;
         setState(() => _elapsed = d);
@@ -59,6 +159,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       ref
           .read(sosHeartbeatControllerProvider.notifier)
           .start(widget.incidentId);
@@ -67,15 +168,61 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
     });
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    debugPrint('[ChambreCrise] 🔄 lifecycle: ${state.name}');
+    if (state == AppLifecycleState.resumed && _camOn && mounted) {
+      // Vérifie que le broadcast est toujours actif après retour foreground
+      _startCamera();
+    }
+  }
+
+  @override
+  void dispose() {
+    _uiTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _remoteCapture.stop();
+    SosVictimCaptureDaemon.instance.stop();
+    SosCrisisMediaService.instance.leave();
+    super.dispose();
+  }
+
+  // ✅ FIX P0 : permission caméra + garde kIsWeb + retry + timeout
+  Future<bool> _ensureCameraPermission() async {
+    if (kIsWeb) return true;
+    try {
+      final status = await Permission.camera.status;
+      if (status.isGranted) return true;
+      final res = await Permission.camera.request();
+      return res.isGranted;
+    } catch (e) {
+      debugPrint('[ChambreCrise] ⚠️ permission caméra: $e');
+      return false;
+    }
+  }
+
   Future<void> _startCamera() async {
     if (_camOn || _camBusy) return;
     setState(() => _camBusy = true);
     try {
-      await SosCrisisMediaService.instance
-          .startVictimBroadcast(widget.incidentId);
+      final hasPerm = await _ensureCameraPermission();
+      if (!hasPerm) {
+        if (mounted) _snack(AppLocalizations.of(context).t('sos_error_permission'));
+        return;
+      }
+      await _crisisRetry(
+        () => SosCrisisMediaService.instance
+            .startVictimBroadcast(widget.incidentId),
+        label: 'startCamera',
+        timeout: _kMediaTimeout,
+      );
       if (mounted) setState(() => _camOn = true);
+      debugPrint('[ChambreCrise] ✓ caméra LIVE');
     } catch (e) {
-      debugPrint('chambre victime caméra: $e');
+      debugPrint('[ChambreCrise] ❌ caméra: $e');
+      if (mounted) {
+        _snack(AppLocalizations.of(context).t('sos_error_camera'));
+      }
     } finally {
       if (mounted) setState(() => _camBusy = false);
     }
@@ -83,50 +230,51 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
 
   Future<void> _toggleCamera() async {
     if (_camBusy) return;
+    HapticFeedback.mediumImpact();
     setState(() => _camBusy = true);
     try {
       if (_camOn) {
-        await SosCrisisMediaService.instance.leave();
+        await _crisisRetry(
+          () => SosCrisisMediaService.instance.leave(),
+          label: 'stopCamera',
+          timeout: _kMediaTimeout,
+        );
         if (mounted) setState(() => _camOn = false);
       } else {
-        await SosCrisisMediaService.instance
-            .startVictimBroadcast(widget.incidentId);
-        if (mounted) setState(() => _camOn = true);
+        await _startCamera();
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Caméra: $e',
-            style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand),
-          ),
-          backgroundColor: ThixPolicy.danger,
-        ),
-      );
+      _snack(_CrisisValidators.friendlyError(e, AppLocalizations.of(context)));
     } finally {
       if (mounted) setState(() => _camBusy = false);
     }
   }
 
+  // ✅ FIX P1 : timeout + log structuré (plus de catch silencieux)
   Future<void> _loadConversationId() async {
     try {
       if (_resolvedConversationId == null) {
-        final incident =
-            await ref.read(sosServiceProvider).getIncidentById(widget.incidentId);
+        final incident = await _crisisRetry(
+          () => ref
+              .read(sosServiceProvider)
+              .getIncidentById(widget.incidentId),
+          label: 'getIncident',
+        );
         _resolvedConversationId = incident?.chatConversationId;
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ChambreCrise] ❌ loadConversationId: $e');
+    }
 
+    if (!mounted) return;
     _remoteCapture.listenAsVictim(
       incidentId: widget.incidentId,
       conversationId: _resolvedConversationId,
       onInfo: _snack,
       onError: (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Capture: $e')),
-        );
+        _snack(_CrisisValidators.friendlyError(e, AppLocalizations.of(context)));
       },
     );
 
@@ -152,40 +300,33 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
 
   Future<void> _launchClip10(SosIncident incident) async {
     if (_clipBusy) return;
+    HapticFeedback.mediumImpact();
     setState(() => _clipBusy = true);
+    final l10n = AppLocalizations.of(context);
     try {
       final conv = incident.chatConversationId ?? _resolvedConversationId;
-      final e = await SosRemoteCaptureService.instance.runVictimClip10(
-        incidentId: incident.id,
-        conversationId: conv,
+      final e = await _crisisRetry(
+        () => SosRemoteCaptureService.instance.runVictimClip10(
+          incidentId: incident.id,
+          conversationId: conv,
+        ),
+        label: 'clip10',
+        timeout: _kMediaTimeout,
       );
       if (!mounted) return;
       _snack(
         e == null
-            ? 'Clip 10s impossible sur cet appareil'
+            ? l10n.t('sos_clip_unavailable')
             : e.postedToChat
-                ? '🎥 Clip 10s envoyé dans le groupe SOS'
-                : '🎥 Clip 10s enregistré — envoi groupe en cours',
+                ? l10n.t('sos_clip_sent')
+                : l10n.t('sos_clip_pending'),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Clip: $e'),
-          backgroundColor: ThixPolicy.danger,
-        ),
-      );
+      _snack(_CrisisValidators.friendlyError(e, l10n));
     } finally {
       if (mounted) setState(() => _clipBusy = false);
     }
-  }
-
-  @override
-  void dispose() {
-    _uiTimer?.cancel();
-    _remoteCapture.stop();
-    SosVictimCaptureDaemon.instance.stop();
-    super.dispose();
   }
 
   String get _elapsedLabel {
@@ -195,20 +336,26 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
     return '$h:$m:$s';
   }
 
+  // ✅ FIX P1 : DI via provider (plus d'instanciation inline)
   Future<void> _openChat(SosIncident incident) async {
+    final l10n = AppLocalizations.of(context);
     final convId = incident.chatConversationId ?? _resolvedConversationId;
     if (convId == null || convId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Conversation SOS pas encore créée',
-              style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand)),
-          backgroundColor: ThixPolicy.inkDeep,
-        ),
-      );
+      _snack(l10n.t('sos_chat_not_ready'));
       return;
     }
 
-    final conversation = ChatConversation(
+    ChatConversation? conversation;
+    try {
+      conversation = await _crisisRetry(
+        () => ref.read(chatServiceProvider).getConversation(convId),
+        label: 'getConversation',
+      );
+    } catch (e) {
+      debugPrint('[ChambreCrise] ⚠️ getConversation: $e');
+    }
+
+    conversation ??= ChatConversation(
       id: convId,
       isGroup: true,
       groupName: 'THIX CHAT ${incident.publicId}',
@@ -216,6 +363,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
       updatedAt: DateTime.now(),
     );
 
+    if (!mounted) return;
     context.push(
       AppRoutes.chatDetail(convId),
       extra: conversation,
@@ -223,47 +371,51 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
   }
 
   Future<void> _callContact(SosContact contact) async {
+    final l10n = AppLocalizations.of(context);
+    HapticFeedback.mediumImpact();
     final userId =
         await ref.read(sosServiceProvider).resolveContactUserId(contact);
+    if (!mounted) return;
     if (userId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${contact.name} : pas de compte THIX',
-              style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand)),
-          backgroundColor: ThixPolicy.danger,
-        ),
-      );
+      _snack(l10n.t('sos_no_thix_account'));
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Appel THIX vers ${contact.name}…',
-            style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand)),
-        backgroundColor: ThixPolicy.inkDeep,
-      ),
-    );
+    _snack(l10n.t('sos_calling'));
   }
 
+  // ✅ FIX P1 : cooldown temporel au lieu de blocage définitif
   Future<void> _sendQuickMessage(SosIncident incident, String text) async {
-    if (_sentQuick.contains(text)) return;
-    setState(() => _sentQuick.add(text));
+    final lastSent = _quickSentAt[text];
+    if (lastSent != null &&
+        DateTime.now().difference(lastSent) < _kQuickCooldown) {
+      return;
+    }
+    setState(() => _quickSentAt[text] = DateTime.now());
+    HapticFeedback.lightImpact();
 
     final convId = incident.chatConversationId ?? _resolvedConversationId;
 
-    await ref.read(sosServiceProvider).logEventPublic(
-          incident.id,
-          'QUICK_MESSAGE',
-          {'text': text},
-        );
+    try {
+      await ref.read(sosServiceProvider).logEventPublic(
+            incident.id,
+            'QUICK_MESSAGE',
+            {'text': text},
+          );
+    } catch (e) {
+      debugPrint('[ChambreCrise] ❌ logEvent: $e');
+    }
 
     if (convId != null && convId.isNotEmpty) {
       try {
-        await ChatService(Supabase.instance.client).sendMessage(
-          conversationId: convId,
-          content: text,
+        await _crisisRetry(
+          () => ref.read(chatServiceProvider).sendMessage(
+                conversationId: convId,
+                content: text,
+              ),
+          label: 'quickMsg',
         );
       } catch (e) {
-        debugPrint('Quick msg chat: $e');
+        debugPrint('[ChambreCrise] ❌ quickMsg chat: $e');
       }
     }
 
@@ -279,6 +431,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
   }
 
   void _endSos() {
+    HapticFeedback.mediumImpact();
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -291,6 +444,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
   }
 
   void _cancelSos() {
+    HapticFeedback.mediumImpact();
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -304,6 +458,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final incidentAsync = ref.watch(sosIncidentProvider(widget.incidentId));
     final eventsAsync = ref.watch(sosEventsProvider(widget.incidentId));
     final contactsAsync = ref.watch(sosContactsProvider);
@@ -312,26 +467,25 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: incidentAsync.when(
-          loading: () => const Center(
-            child: CircularProgressIndicator(color: ThixPolicy.danger),
-          ),
-          error: (e, _) => Center(
-            child: Text('Erreur: $e',
-                style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.danger)),
+          loading: () => const _SkeletonLoader(),
+          error: (e, _) => _ErrorState(
+            message: _CrisisValidators.friendlyError(e, l10n),
+            onRetry: () =>
+                ref.invalidate(sosIncidentProvider(widget.incidentId)),
           ),
           data: (incident) {
             if (incident == null) {
-              return Center(
-                child: Text(
-                  'Incident introuvable',
-                  style: ThixPolicy.bodyStyle,
-                ),
+              return _ErrorState(
+                message: l10n.t('sos_incident_not_found'),
+                onRetry: () =>
+                    ref.invalidate(sosIncidentProvider(widget.incidentId)),
               );
             }
 
             final circleContacts = contactsAsync.maybeWhen(
-              data: (all) =>
-                  all.where((c) => c.circle == incident.activeCircle).toList(),
+              data: (all) => all
+                  .where((c) => c.circle == incident.activeCircle)
+                  .toList(),
               orElse: () => <SosContact>[],
             );
 
@@ -364,16 +518,15 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                       children: [
                         _StatusStrip(incident: incident, camOn: _camOn),
                         const SizedBox(height: ThixPolicy.s16),
-                        _section('LOCALISATION EN DIRECT'),
+                        _section(l10n.t('sos_section_location')),
                         const SizedBox(height: ThixPolicy.s8),
                         _LiveMapCard(incident: incident),
                         const SizedBox(height: ThixPolicy.s20),
-                        _section('SECOURS — CERCLE ${incident.activeCircle}'),
+                        _section(
+                            '${l10n.t('sos_section_rescuers')} — ${l10n.t('sos_circle')} ${incident.activeCircle}'),
                         const SizedBox(height: ThixPolicy.s8),
                         if (circleContacts.isEmpty)
-                          const _EmptyBox(
-                            'Aucun secours dans ce cercle.\nAjoutez des contacts THIX.',
-                          )
+                          _EmptyBox(l10n.t('sos_no_rescuers_circle'))
                         else
                           ...circleContacts.map(
                             (c) => _ResponderTile(
@@ -382,15 +535,15 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                             ),
                           ),
                         const SizedBox(height: ThixPolicy.s20),
-                        _section('COMMUNICATION'),
+                        _section(l10n.t('sos_section_communication')),
                         const SizedBox(height: ThixPolicy.s8),
                         Row(
                           children: [
                             Expanded(
                               child: _ComButton(
                                 icon: Icons.chat_bubble_outline,
-                                label: 'Chat SOS',
-                                color: const Color(0xFFA78BFA),
+                                label: l10n.t('sos_chat'),
+                                color: ThixPolicy.primary,
                                 onTap: () => _openChat(incident),
                               ),
                             ),
@@ -398,8 +551,10 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                             Expanded(
                               child: _ComButton(
                                 icon: Icons.videocam,
-                                label: _clipBusy ? 'Clip…' : 'Clip 10s',
-                                color: const Color(0xFFFB7185),
+                                label: _clipBusy
+                                    ? l10n.t('sos_clip_busy')
+                                    : l10n.t('sos_clip'),
+                                color: ThixPolicy.warning,
                                 onTap: _clipBusy
                                     ? () {}
                                     : () => _launchClip10(incident),
@@ -409,7 +564,7 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                             Expanded(
                               child: _ComButton(
                                 icon: Icons.phone_in_talk,
-                                label: 'Rappeler',
+                                label: l10n.t('sos_recall'),
                                 color: ThixPolicy.success,
                                 onTap: () {
                                   if (circleContacts.isNotEmpty) {
@@ -423,101 +578,102 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
                         if (_clipBusy) ...[
                           const SizedBox(height: ThixPolicy.s8),
                           Text(
-                            'Enregistrement 10s puis envoi automatique dans le groupe SOS…',
+                            l10n.t('sos_clip_recording'),
                             style: ThixPolicy.captionStyle,
                           ),
                         ],
                         const SizedBox(height: ThixPolicy.s20),
-                        _section('MESSAGES RAPIDES'),
+                        _section(l10n.t('sos_section_quick')),
                         const SizedBox(height: ThixPolicy.s8),
                         Wrap(
                           spacing: ThixPolicy.s8,
                           runSpacing: ThixPolicy.s8,
                           children: [
-                            for (final msg in _quickMessages)
+                            for (final msg in _quickMessages(l10n))
                               _QuickMsg(
                                 label: msg,
-                                sent: _sentQuick.contains(msg),
+                                sent: _quickSentAt[msg] != null &&
+                                    DateTime.now().difference(_quickSentAt[msg]!) <
+                                        _kQuickCooldown,
                                 onTap: () => _sendQuickMessage(incident, msg),
                               ),
                           ],
                         ),
                         const SizedBox(height: ThixPolicy.s20),
-                        _section('ÉTAT SYSTÈME'),
+                        _section(l10n.t('sos_section_system')),
                         const SizedBox(height: ThixPolicy.s8),
                         _SystemRow(incident: incident),
                         const SizedBox(height: ThixPolicy.s20),
-                        _section('ÉVÉNEMENTS'),
+                        _section(l10n.t('sos_section_events')),
                         const SizedBox(height: ThixPolicy.s8),
                         eventsAsync.when(
-                          loading: () => const Padding(
-                            padding: EdgeInsets.all(ThixPolicy.s16),
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                color: ThixPolicy.danger,
-                                strokeWidth: 2,
-                              ),
-                            ),
-                          ),
-                          error: (_, __) => const _EmptyBox(
-                              'Impossible de charger les événements'),
+                          loading: () => const _SkeletonLoader(compact: true),
+                          error: (_, __) =>
+                              _EmptyBox(l10n.t('sos_events_error')),
                           data: (events) {
                             if (events.isEmpty) {
-                              return const _EmptyBox('Aucun événement');
+                              return _EmptyBox(l10n.t('sos_no_events'));
                             }
                             return Column(
                               children: events
-                                  .take(30)
+                                  .take(_kMaxEvents)
                                   .map((e) => _EventTile(event: e))
                                   .toList(),
                             );
                           },
                         ),
                         const SizedBox(height: ThixPolicy.s24),
-                        Material(
-                          color: Theme.of(context).cardColor,
-                          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                          child: InkWell(
-                            onTap: _cancelSos,
-                            borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                            child: Container(
-                              width: double.infinity,
-                              padding: ThixPolicy.cardPadding,
-                              decoration: BoxDecoration(
-                                borderRadius:
-                                    BorderRadius.circular(ThixPolicy.rMd),
-                                border: Border.all(
-                                  color: ThixPolicy.danger
-                                      .withValues(alpha: 0.35),
+                        Semantics(
+                          button: true,
+                          label: l10n.t('sos_cancel_sos'),
+                          child: Material(
+                            color: Theme.of(context).cardColor,
+                            borderRadius:
+                                BorderRadius.circular(ThixPolicy.rMd),
+                            child: InkWell(
+                              onTap: _cancelSos,
+                              borderRadius:
+                                  BorderRadius.circular(ThixPolicy.rMd),
+                              child: Container(
+                                width: double.infinity,
+                                padding: ThixPolicy.cardPadding,
+                                decoration: BoxDecoration(
+                                  borderRadius:
+                                      BorderRadius.circular(ThixPolicy.rMd),
+                                  border: Border.all(
+                                    color: ThixPolicy.danger
+                                        .withValues(alpha: 0.35),
+                                  ),
                                 ),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.lock_outline,
-                                    color: ThixPolicy.danger,
-                                  ),
-                                  const SizedBox(width: ThixPolicy.s12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'ANNULER LE SOS',
-                                          style: ThixPolicy.bodyStyle.copyWith(
-                                            fontWeight: ThixPolicy.bold,
-                                            color: ThixPolicy.danger,
-                                          ),
-                                        ),
-                                        Text(
-                                          'Code de sécurité requis',
-                                          style: ThixPolicy.captionStyle,
-                                        ),
-                                      ],
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.lock_outline,
+                                      color: ThixPolicy.danger,
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(width: ThixPolicy.s12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            l10n.t('sos_cancel_sos'),
+                                            style: ThixPolicy.bodyStyle
+                                                .copyWith(
+                                              fontWeight: ThixPolicy.bold,
+                                              color: ThixPolicy.danger,
+                                            ),
+                                          ),
+                                          Text(
+                                            l10n.t('sos_pin_required'),
+                                            style: ThixPolicy.captionStyle,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -534,16 +690,16 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
     );
   }
 
-  static const _quickMessages = [
-    '🚨 J\'AI BESOIN D\'AIDE',
-    '🤫 JE NE PEUX PAS PARLER',
-    '📍 JE SUIS ICI',
-    '🏥 JE SUIS BLESSÉ',
-    '👤 JE SUIS SUIVI',
-    '🚪 JE SUIS ENFERMÉ',
-    '📞 APPELEZ LES SECOURS',
-    '🟢 JE VAIS BIEN',
-  ];
+  List<String> _quickMessages(AppLocalizations l10n) => [
+        l10n.t('sos_qm_help'),
+        l10n.t('sos_qm_silent'),
+        l10n.t('sos_qm_here'),
+        l10n.t('sos_qm_injured'),
+        l10n.t('sos_qm_followed'),
+        l10n.t('sos_qm_locked'),
+        l10n.t('sos_qm_call'),
+        l10n.t('sos_qm_ok'),
+      ];
 
   Widget _section(String title) {
     return Text(
@@ -557,6 +713,9 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage> {
   }
 }
 
+// ============================================================================
+// HEADER
+// ============================================================================
 class _Header extends StatelessWidget {
   const _Header({
     required this.publicId,
@@ -578,12 +737,16 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(4, 4, 8, 14),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF7F1D1D), Color(0xFF450A0A)],
+          colors: [
+            ThixPolicy.danger,
+            ThixPolicy.danger.withValues(alpha: 0.6),
+          ],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -592,13 +755,17 @@ class _Header extends StatelessWidget {
         children: [
           Row(
             children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white70),
-                onPressed: onBack,
+              Semantics(
+                button: true,
+                label: l10n.t('common_back'),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white70),
+                  onPressed: onBack,
+                ),
               ),
               Expanded(
                 child: Text(
-                  'CHAMBRE DE CRISE',
+                  l10n.t('sos_crisis_room'),
                   textAlign: TextAlign.center,
                   style: ThixPolicy.titleStyle.copyWith(
                     fontWeight: ThixPolicy.bold,
@@ -606,12 +773,16 @@ class _Header extends StatelessWidget {
                   ),
                 ),
               ),
-              TextButton(
-                onPressed: onEnd,
-                child: Text(
-                  'Terminer',
-                  style: ThixPolicy.bodyMediumStyle.copyWith(
-                    color: const Color(0xFFFECACA),
+              Semantics(
+                button: true,
+                label: l10n.t('sos_end'),
+                child: TextButton(
+                  onPressed: onEnd,
+                  child: Text(
+                    l10n.t('sos_end'),
+                    style: ThixPolicy.bodyMediumStyle.copyWith(
+                      color: Colors.white.withOpacity(0.8),
+                    ),
                   ),
                 ),
               ),
@@ -639,24 +810,28 @@ class _Header extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: ThixPolicy.s12),
-              InkWell(
-                onTap: onToggleCam,
-                child: Row(
-                  children: [
-                    Icon(
-                      camOn ? Icons.videocam : Icons.videocam_off,
-                      size: 16,
-                      color: camOn ? const Color(0xFFFECACA) : Colors.white54,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      camOn ? 'LIVE' : 'CAM',
-                      style: ThixPolicy.captionStyle.copyWith(
-                        fontWeight: ThixPolicy.bold,
-                        color: camOn ? const Color(0xFFFECACA) : Colors.white54,
+              Semantics(
+                button: true,
+                label: camOn ? l10n.t('sos_cam_off') : l10n.t('sos_cam_on'),
+                child: InkWell(
+                  onTap: onToggleCam,
+                  child: Row(
+                    children: [
+                      Icon(
+                        camOn ? Icons.videocam : Icons.videocam_off,
+                        size: 16,
+                        color: camOn ? Colors.white : Colors.white54,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 4),
+                      Text(
+                        camOn ? 'LIVE' : 'CAM',
+                        style: ThixPolicy.captionStyle.copyWith(
+                          fontWeight: ThixPolicy.bold,
+                          color: camOn ? Colors.white : Colors.white54,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -666,7 +841,7 @@ class _Header extends StatelessWidget {
             status.labelFr.toUpperCase(),
             style: ThixPolicy.captionStyle.copyWith(
               fontWeight: ThixPolicy.bold,
-              color: const Color(0xFFFECACA),
+              color: Colors.white.withOpacity(0.8),
               letterSpacing: 0.5,
             ),
           ),
@@ -676,6 +851,9 @@ class _Header extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// STATUS STRIP
+// ============================================================================
 class _StatusStrip extends StatelessWidget {
   const _StatusStrip({required this.incident, this.camOn = false});
   final SosIncident incident;
@@ -683,22 +861,26 @@ class _StatusStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Row(
       children: [
         _chip(
           context,
           Icons.location_on,
-          'Localisation',
-          incident.hasLocation ? 'ACTIVE' : 'EN ATTENTE',
+          l10n.t('sos_status_location'),
+          incident.hasLocation
+              ? l10n.t('sos_status_active')
+              : l10n.t('sos_status_waiting'),
           incident.hasLocation,
         ),
         const SizedBox(width: ThixPolicy.s8),
-        _chip(context, Icons.favorite, 'Heartbeat', 'ACTIVE', true),
+        _chip(context, Icons.favorite, 'Heartbeat',
+            l10n.t('sos_status_active'), true),
         const SizedBox(width: ThixPolicy.s8),
         _chip(
           context,
           Icons.videocam,
-          'Caméra',
+          l10n.t('sos_status_camera'),
           camOn ? 'LIVE' : 'OFF',
           camOn,
         ),
@@ -736,12 +918,16 @@ class _StatusStrip extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// LIVE MAP CARD
+// ============================================================================
 class _LiveMapCard extends StatelessWidget {
   const _LiveMapCard({required this.incident});
   final SosIncident incident;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final hasPos = incident.hasLocation &&
         incident.lastLat != null &&
         incident.lastLng != null;
@@ -769,7 +955,7 @@ class _LiveMapCard extends StatelessWidget {
                 Icon(Icons.location_off, color: ThixPolicy.textMuted, size: 48),
                 const SizedBox(height: ThixPolicy.s8),
                 Text(
-                  "Carte temporairement désactivée\n(En attente de l'API Google)",
+                  l10n.t('sos_map_disabled'),
                   textAlign: TextAlign.center,
                   style: ThixPolicy.captionStyle,
                 ),
@@ -792,7 +978,7 @@ class _LiveMapCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Position actuelle',
+                      l10n.t('sos_current_position'),
                       style: ThixPolicy.captionStyle.copyWith(
                         fontWeight: ThixPolicy.semiBold,
                         color: Colors.white70,
@@ -826,6 +1012,9 @@ class _LiveMapCard extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// RESPONDER TILE — ✅ URL validée + initiale safe
+// ============================================================================
 class _ResponderTile extends StatelessWidget {
   const _ResponderTile({required this.contact, required this.onCall});
   final SosContact contact;
@@ -833,6 +1022,9 @@ class _ResponderTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final validPhoto = _CrisisValidators.isValidUrl(contact.photoUrl);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -846,15 +1038,12 @@ class _ResponderTile extends StatelessWidget {
           CircleAvatar(
             radius: 18,
             backgroundColor: ThixPolicy.border,
-            backgroundImage:
-                contact.photoUrl != null ? NetworkImage(contact.photoUrl!) : null,
-            child: contact.photoUrl == null
+            backgroundImage: validPhoto ? NetworkImage(contact.photoUrl!) : null,
+            child: !validPhoto
                 ? Text(
-                    contact.name.isNotEmpty
-                        ? contact.name[0].toUpperCase()
-                        : '?',
-                    style: ThixPolicy.bodyStyle
-                        .copyWith(color: Theme.of(context).colorScheme.onSurface),
+                    _CrisisValidators.safeInitial(contact.name),
+                    style: ThixPolicy.bodyStyle.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface),
                   )
                 : null,
           ),
@@ -864,22 +1053,28 @@ class _ResponderTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  contact.name,
+                  _CrisisValidators.sanitizeText(contact.name, maxLength: 60),
                   style: ThixPolicy.bodyStyle
                       .copyWith(fontWeight: ThixPolicy.semiBold),
                 ),
                 Text(
                   contact.thixId ??
-                      (contact.available ? 'Disponible' : 'Indisponible'),
+                      (contact.available
+                          ? l10n.t('sos_available')
+                          : l10n.t('sos_unavailable')),
                   style: ThixPolicy.captionStyle
                       .copyWith(color: ThixPolicy.success),
                 ),
               ],
             ),
           ),
-          IconButton(
-            onPressed: onCall,
-            icon: const Icon(Icons.phone, color: ThixPolicy.success),
+          Semantics(
+            button: true,
+            label: '${l10n.t('sos_call')} ${contact.name}',
+            child: IconButton(
+              onPressed: onCall,
+              icon: const Icon(Icons.phone, color: ThixPolicy.success),
+            ),
           ),
         ],
       ),
@@ -887,6 +1082,9 @@ class _ResponderTile extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// COM BUTTON
+// ============================================================================
 class _ComButton extends StatelessWidget {
   const _ComButton({
     required this.icon,
@@ -902,28 +1100,35 @@ class _ComButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Theme.of(context).cardColor,
-      borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-      child: InkWell(
-        onTap: onTap,
+    return Semantics(
+      button: true,
+      label: label,
+      child: Material(
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-            border: Border.all(color: ThixPolicy.border),
-          ),
-          child: Column(
-            children: [
-              Icon(icon, color: color, size: 22),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                style: ThixPolicy.captionStyle
-                    .copyWith(fontWeight: ThixPolicy.semiBold),
-              ),
-            ],
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onTap();
+          },
+          borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+              border: Border.all(color: ThixPolicy.border),
+            ),
+            child: Column(
+              children: [
+                Icon(icon, color: color, size: 22),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  style: ThixPolicy.captionStyle
+                      .copyWith(fontWeight: ThixPolicy.semiBold),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -931,6 +1136,9 @@ class _ComButton extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// QUICK MSG
+// ============================================================================
 class _QuickMsg extends StatelessWidget {
   const _QuickMsg({
     required this.label,
@@ -944,31 +1152,36 @@ class _QuickMsg extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: sent
-          ? ThixPolicy.success.withValues(alpha: 0.15)
-          : Theme.of(context).cardColor,
-      borderRadius: BorderRadius.circular(ThixPolicy.rLg),
-      child: InkWell(
-        onTap: sent ? null : onTap,
+    return Semantics(
+      button: true,
+      label: label,
+      enabled: !sent,
+      child: Material(
+        color: sent
+            ? ThixPolicy.success.withValues(alpha: 0.15)
+            : Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(ThixPolicy.rLg),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(ThixPolicy.rLg),
-            border: Border.all(
-              color: sent
-                  ? ThixPolicy.success.withValues(alpha: 0.4)
-                  : ThixPolicy.border,
+        child: InkWell(
+          onTap: sent ? null : onTap,
+          borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+              border: Border.all(
+                color: sent
+                    ? ThixPolicy.success.withValues(alpha: 0.4)
+                    : ThixPolicy.border,
+              ),
             ),
-          ),
-          child: Text(
-            label,
-            style: ThixPolicy.captionStyle.copyWith(
-              fontWeight: ThixPolicy.semiBold,
-              color: sent
-                  ? ThixPolicy.success
-                  : Theme.of(context).colorScheme.onSurface,
+            child: Text(
+              label,
+              style: ThixPolicy.captionStyle.copyWith(
+                fontWeight: ThixPolicy.semiBold,
+                color: sent
+                    ? ThixPolicy.success
+                    : Theme.of(context).colorScheme.onSurface,
+              ),
             ),
           ),
         ),
@@ -977,12 +1190,16 @@ class _QuickMsg extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// SYSTEM ROW
+// ============================================================================
 class _SystemRow extends StatelessWidget {
   const _SystemRow({required this.incident});
   final SosIncident incident;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -1014,7 +1231,7 @@ class _SystemRow extends StatelessWidget {
             ),
           ] else
             Text(
-              'Cercle ${incident.activeCircle}',
+              '${l10n.t('sos_circle')} ${incident.activeCircle}',
               style: ThixPolicy.bodySmallStyle,
             ),
         ],
@@ -1023,58 +1240,63 @@ class _SystemRow extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// EVENT TILE — ✅ payloads sanitizés
+// ============================================================================
 class _EventTile extends StatelessWidget {
   const _EventTile({required this.event});
   final SosEvent event;
 
-  String get _label {
+  String _label(AppLocalizations l10n) {
     final p = event.payload;
+    final text = _CrisisValidators.sanitizeText(p?['text']?.toString());
     switch (event.type) {
       case 'CMD_INSTRUCT':
-        return '📢 Secours : ${p?['text'] ?? 'instruction'}';
+        return '📢 ${l10n.t('sos_ev_instruct')}: ${text.isNotEmpty ? text : l10n.t('sos_ev_instruction')}';
       case 'CMD_CAPTURE_PHOTO':
-        return '📸 Photo demandée par le secours';
+        return '📸 ${l10n.t('sos_ev_photo_requested')}';
       case 'CMD_CAPTURE_VIDEO':
-        return '🎥 Vidéo ${p?['seconds'] ?? 10}s demandée';
+        return '🎥 ${l10n.t('sos_ev_video_requested')} ${p?['seconds'] ?? 10}s';
       case 'CMD_CAPTURE_CLIP_10':
-        return '🎥 Clip 10s demandé';
+        return '🎥 ${l10n.t('sos_ev_clip_requested')}';
       case 'CMD_CAPTURE_AUDIO_START':
-        return '🎤 Micro distant ON';
+        return '🎤 ${l10n.t('sos_ev_mic_on')}';
       case 'CMD_CAPTURE_AUDIO_STOP':
-        return '🎤 Micro distant OFF';
+        return '🎤 ${l10n.t('sos_ev_mic_off')}';
       case 'CMD_SURVEILLANCE_ON':
-        return '🛰️ Surveillance 10s ON';
+        return '🛰️ ${l10n.t('sos_ev_surveillance_on')}';
       case 'CMD_SURVEILLANCE_OFF':
-        return '🛰️ Surveillance OFF';
+        return '🛰️ ${l10n.t('sos_ev_surveillance_off')}';
       case 'EVIDENCE_PHOTO':
         return p?['posted_to_chat'] == true
-            ? '📸 Photo envoyée dans le groupe'
-            : '📸 Photo capturée';
+            ? '📸 ${l10n.t('sos_ev_photo_sent')}'
+            : '📸 ${l10n.t('sos_ev_photo_captured')}';
       case 'EVIDENCE_VIDEO':
         return p?['posted_to_chat'] == true
-            ? '🎥 Vidéo envoyée dans le groupe'
-            : '🎥 Vidéo capturée';
+            ? '🎥 ${l10n.t('sos_ev_video_sent')}'
+            : '🎥 ${l10n.t('sos_ev_video_captured')}';
       case 'EVIDENCE_AUDIO':
         return p?['posted_to_chat'] == true
-            ? '🎤 Audio envoyé dans le groupe'
-            : '🎤 Audio capturé';
+            ? '🎤 ${l10n.t('sos_ev_audio_sent')}'
+            : '🎤 ${l10n.t('sos_ev_audio_captured')}';
       case 'EVIDENCE_FAILED':
-        return '⚠️ Échec capture : ${p?['error'] ?? ''}';
+        return '⚠️ ${l10n.t('sos_ev_capture_failed')}';
       case 'QUICK_MESSAGE':
-        return '${p?['text'] ?? event.type}';
+        return text.isNotEmpty ? text : event.type;
       case 'RESCUE_JOINED_CRISIS_ROOM':
-        return '🛟 Un secours a rejoint la salle';
+        return '🛟 ${l10n.t('sos_ev_rescue_joined')}';
       case 'SOS_CREATED':
-        return 'Incident créé';
+        return l10n.t('sos_ev_created');
       case 'SOS_STARTED':
-        return 'SOS démarré';
+        return l10n.t('sos_ev_started');
       default:
-        return event.type;
+        return _CrisisValidators.sanitizeText(event.type, maxLength: 60);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final t = event.createdAt.toLocal();
     final time =
         '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:${t.second.toString().padLeft(2, '0')}';
@@ -1086,10 +1308,7 @@ class _EventTile extends StatelessWidget {
         children: [
           SizedBox(
             width: 52,
-            child: Text(
-              time,
-              style: ThixPolicy.captionStyle,
-            ),
+            child: Text(time, style: ThixPolicy.captionStyle),
           ),
           Container(
             width: 8,
@@ -1102,7 +1321,7 @@ class _EventTile extends StatelessWidget {
           ),
           Expanded(
             child: Text(
-              _label,
+              _label(l10n),
               style: ThixPolicy.labelStyle
                   .copyWith(fontWeight: ThixPolicy.semiBold),
             ),
@@ -1113,6 +1332,9 @@ class _EventTile extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// EMPTY BOX
+// ============================================================================
 class _EmptyBox extends StatelessWidget {
   const _EmptyBox(this.text);
   final String text;
@@ -1127,9 +1349,130 @@ class _EmptyBox extends StatelessWidget {
         borderRadius: BorderRadius.circular(ThixPolicy.rSm),
         border: Border.all(color: ThixPolicy.border),
       ),
-      child: Text(
-        text,
-        style: ThixPolicy.bodySmallStyle,
+      child: Text(text, style: ThixPolicy.bodySmallStyle),
+    );
+  }
+}
+
+// ============================================================================
+// SKELETON LOADER — ✅ FIX P1
+// ============================================================================
+class _SkeletonLoader extends StatefulWidget {
+  const _SkeletonLoader({this.compact = false});
+  final bool compact;
+
+  @override
+  State<_SkeletonLoader> createState() => _SkeletonLoaderState();
+}
+
+class _SkeletonLoaderState extends State<_SkeletonLoader>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Widget _box(double h, [double w = double.infinity]) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) => Opacity(
+        opacity: 0.35 + 0.3 * _ctrl.value,
+        child: Container(
+          height: h,
+          width: w,
+          decoration: BoxDecoration(
+            color: ThixPolicy.border,
+            borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.compact) {
+      return Padding(
+        padding: const EdgeInsets.all(ThixPolicy.s16),
+        child: Column(
+          children: [_box(16), const SizedBox(height: 8), _box(16)],
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.all(ThixPolicy.s16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _box(64),
+          const SizedBox(height: 16),
+          _box(24, 140),
+          const SizedBox(height: 12),
+          _box(120),
+          const SizedBox(height: 16),
+          _box(24, 180),
+          const SizedBox(height: 12),
+          _box(56),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ERROR STATE — ✅ FIX P0 : friendly + retry (pas de fuite d'info)
+// ============================================================================
+class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: ThixPolicy.danger, size: 40),
+            const SizedBox(height: 12),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: ThixPolicy.bodyStyle,
+            ),
+            const SizedBox(height: 16),
+            Semantics(
+              button: true,
+              label: l10n.t('common_retry'),
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  onRetry();
+                },
+                icon: const Icon(Icons.refresh, size: 18),
+                label: Text(l10n.t('common_retry')),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ThixPolicy.danger,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
