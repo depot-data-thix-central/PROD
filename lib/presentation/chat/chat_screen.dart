@@ -3,7 +3,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
-import 'dart:ui' as ui; 
+import 'dart:ui' as ui;
 import 'package:http/http.dart' as http;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -41,7 +41,6 @@ import 'package:thix_id/services/chat/audio_service.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
 import 'package:thix_id/services/chat/connection_service.dart';
 import 'package:thix_id/services/chat/media_saver.dart';
-
 
 // ============================================================================
 // CONSTANTS
@@ -328,7 +327,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   StreamSubscription<List<ChatMessage>>? _messageSub;
   StreamSubscription<List<UserStatus>>? _presenceSub;
 
-    bool _showStickers = false;
+  bool _showStickers = false;
   static const List<String> _emojis = [
     '😀','😃','😄','😁','😆','😅','😂','🤣','🥲','🥹',
     '😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗',
@@ -395,9 +394,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _loadUserRole();
     _getParticipantInfo();
     _markAsRead();
-    _subscribeToPresence();
-    _subscribeToRealtime();
-    _subscribeToTyping();
+    
+    // ✅ CORRECTION : Envelopper les subscriptions dans try-catch
+    try {
+      _subscribeToPresence();
+      _subscribeToRealtime();
+      _subscribeToTyping();
+    } catch (e) {
+      debugPrint('[Chat] ⚠️ Failed to subscribe to realtime: $e');
+    }
+    
     _loadGroupMembers();
     _scrollController.addListener(_onScroll);
   }
@@ -506,7 +512,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _markReadTimer?.cancel();
     _messageSub?.cancel();
     _presenceSub?.cancel();
-    _typingChannel?.unsubscribe();
+    
+    // ✅ CORRECTION : Supprimer réellement le canal (pas juste unsubscribe)
+    try {
+      if (_typingChannel != null) {
+        _typingChannel!.unsubscribe();
+        Supabase.instance.client.removeChannel(_typingChannel!);
+      }
+    } catch (e) {
+      debugPrint('[Chat] ⚠️ Failed to remove typing channel: $e');
+    }
+    
     _recordTimer?.cancel();
     _audioRecorder.dispose();
     super.dispose();
@@ -1203,15 +1219,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   String _getPresenceText(UserStatus status) {
     final l10n = AppLocalizations.of(context);
-    final lastSeen = status.lastSeenAt.toLocal();
-    final diff = DateTime.now().difference(lastSeen);
-    if (status.status == 'online' && diff.inMinutes <= 2) return l10n.t('chat_online');
-    return '${l10n.t('chat_seen_at')} ${_formatLastSeen(lastSeen)}';
+    final lastSeen = status.lastSeenAt;
+    
+    if (status.status == 'online') {
+      if (lastSeen == null) return l10n.t('chat_online');
+      final diff = DateTime.now().difference(lastSeen.toLocal());
+      if (diff.inMinutes <= 2) return l10n.t('chat_online');
+    }
+    
+    if (lastSeen == null) return l10n.t('chat_online');
+    return '${l10n.t('chat_seen_at')} ${_formatLastSeen(lastSeen.toLocal())}';
   }
 
   bool get _isOnline {
     if (_otherParticipant == null) return false;
-    return _otherParticipant!.status == 'online' && DateTime.now().difference(_otherParticipant!.lastSeenAt.toLocal()).inMinutes <= 2;
+    final p = _otherParticipant!;
+    if (p.status != 'online') return false;
+    final lastSeen = p.lastSeenAt;
+    if (lastSeen == null) return true;
+    return DateTime.now().difference(lastSeen.toLocal()).inMinutes <= 2;
   }
 
   String _formatLastSeen(DateTime localDate) {
@@ -2508,7 +2534,6 @@ class _ThixChatBackgroundPainter extends CustomPainter {
     final textPainter = TextPainter(
       text: TextSpan(text: 'THIX CHAT', style: textStyle),
       textDirection: ui.TextDirection.ltr,
-
     );
     textPainter.layout();
 
