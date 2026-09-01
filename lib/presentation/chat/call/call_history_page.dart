@@ -34,15 +34,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:thix_id/auth/auth_controller.dart' show currentUserProvider;
+// ✅ IMPORT CORRIGÉ : On utilise supabaseUserIdProvider 
+import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
+    show supabaseClientProvider, supabaseUserIdProvider;
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/chat/call_invite.dart';
 import 'package:thix_id/models/chat/call_status.dart';
 import 'package:thix_id/presentation/chat/call/call_page.dart';
 import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
-import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
-    show supabaseClientProvider;
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -137,7 +138,8 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
 
   SupabaseClient get _db => ref.read(supabaseClientProvider);
 
-  String get _myId => ref.read(currentUserProvider)?.id ?? '';
+  // ✅ CORRIGÉ : Utilisation de supabaseUserIdProvider
+  String get _myId => ref.read(supabaseUserIdProvider) ?? '';
 
   // ── FEEDBACK HELPERS ─────────────────────────────────────────────────
 
@@ -315,7 +317,7 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
                 calleeName: name,
                 callerAvatar: null,
                 calleeAvatar: avatar,
-                isVideo: video,
+                callType: video ? CallType.video : CallType.audio, // ✅ CORRIGÉ (isVideo -> callType)
                 createdAt: DateTime.now(),
                 status: CallStatus.accepted,
               ),
@@ -334,7 +336,8 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
 
   String _subtitle(_CallRow row, AppLocalizations l10n) {
     final inv = row.invite;
-    final type = inv.isVideo ? l10n.t('call_type_video') : l10n.t('call_type_audio');
+    final isVideoCall = inv.callType == CallType.video; // Vérification selon le bon type
+    final type = isVideoCall ? l10n.t('call_type_video') : l10n.t('call_type_audio');
     final label = inv.status.label;
     if (inv.durationSec > 0) {
       final m = (inv.durationSec / 60).floor();
@@ -665,7 +668,10 @@ class _SearchCallSheetState extends ConsumerState<_SearchCallSheet> {
   Future<void> _search(String q) async {
     final query = _CallHistoryValidators.sanitizeName(q, maxLength: _kMaxSearchLength)
         .toLowerCase();
-    final myId = ref.read(currentUserProvider)?.id;
+    
+    // ✅ CORRIGÉ : Utilisation de supabaseUserIdProvider
+    final myId = ref.read(supabaseUserIdProvider);
+    
     if (myId == null || !_CallHistoryValidators.isValidUuid(myId)) return;
 
     setState(() => _loading = true);
