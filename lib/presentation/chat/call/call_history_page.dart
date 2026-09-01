@@ -304,20 +304,21 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (ctx) => _SearchCallSheet(
+            builder: (ctx) => _SearchCallSheet(
         onPick: (id, name, avatar, {required bool video}) async {
           Navigator.pop(ctx);
           await _callBack(
             _CallRow(
               invite: CallInvite(
                 id: '',
+                channelName: 'call_${_myId}_$id', // 👈 LE VOILÀ ENFIN !
                 callerId: _myId,
                 calleeId: id,
                 callerName: '',
                 calleeName: name,
                 callerAvatar: null,
                 calleeAvatar: avatar,
-                callType: video ? CallType.video : CallType.audio, // ✅ CORRIGÉ (isVideo -> callType)
+                callType: video ? CallType.video : CallType.audio,
                 createdAt: DateTime.now(),
                 status: CallStatus.accepted,
               ),
@@ -329,8 +330,7 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
           );
         },
       ),
-    );
-  }
+
 
   // ── HELPERS ──────────────────────────────────────────────────────────
 
