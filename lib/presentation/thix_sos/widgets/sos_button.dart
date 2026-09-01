@@ -5,7 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-
+import 'dart:async';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 
@@ -297,7 +297,7 @@ class _SosButtonState extends State<SosButton>
                             shape: BoxShape.circle,
                             gradient: RadialGradient(
                               colors: widget.enabled
-                                  ? [ThixPolicy.danger, ThixPolicy.dangerDark]
+                                  ? [ThixPolicy.danger, ThixPolicy.danger]
                                   : [ThixPolicy.textMuted, ThixPolicy.border],
                             ),
                             boxShadow: [
