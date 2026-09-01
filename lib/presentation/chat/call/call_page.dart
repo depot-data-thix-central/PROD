@@ -35,7 +35,7 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/chat/call_status.dart';
 import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
-import 'package:thix_id/services/chat/call_media_service.dart';
+import 'package:thix_id/services/chat/call_service.dart';  
 
 // ============================================================================
 // CONSTANTS
@@ -318,7 +318,7 @@ class _CallPageState extends ConsumerState<CallPage> {
           const SizedBox(height: 20),
           Text(
             remoteName,
-            style: ThixPolicy.headlineStyle.copyWith(
+            style: ThixPolicy.titleStyle.copyWith(...)
               color: Colors.white,
               fontSize: 24,
               fontWeight: FontWeight.w800,
