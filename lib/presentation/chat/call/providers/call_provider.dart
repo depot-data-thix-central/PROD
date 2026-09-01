@@ -33,7 +33,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/models/chat/call_invite.dart';
 import 'package:thix_id/models/chat/call_status.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
-import 'package:thix_id/services/chat/call_media_service.dart';
+import 'package:thix_id/services/chat/call_service.dart';  
 import 'package:thix_id/services/chat/call_service.dart';
 import 'package:thix_id/services/chat/call_signaling_service.dart';
 
