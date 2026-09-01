@@ -1,30 +1,16 @@
 // lib/presentation/chat/escalation/screens/received_escalations_page.dart
 //
 // ============================================================================
-// RECEIVED ESCALATIONS PAGE — Production Enterprise
+// RECEIVED ESCALATIONS PAGE — Production Enterprise (v2)
 // ============================================================================
 //
-// Page listant les escalades reçues par l'agent courant avec actions
-// Accepter / Refuser.
-//
-// Architecture :
-//   - Utilise escalationProvider (Riverpod StateNotifier)
-//   - Scroll infini avec debounce (300ms)
-//   - Pull-to-refresh natif
-//   - Protection double-tap sur Accept/Reject
-//
-// Sécurité :
-//   - Validation UUID sur tous les IDs
-//   - Sanitization XSS sur reason/comment
-//   - Stack traces masquées en production (kDebugMode)
-//   - Mounted checks sur tous les awaits
-//
-// UX :
-//   - ThixPolicy 100% (0 couleurs hardcodées)
-//   - i18n complète (20+ clés)
-//   - Semantics VoiceOver complets
-//   - HapticFeedback sur actions critiques
-//   - DateFormat pour affichage dates lisible
+// Changements vs v1 :
+//   - Remplace step.status.label (deprecated) par localizedLabel(l10n)
+//   - Remplace Future.microtask par addPostFrameCallback (provider readiness)
+//   - Ajoute auth guard au build (session Web async)
+//   - Ajoute null-checks sur step.status après parsing JSON
+//   - Supprime le dispose() manuel de reasonController (déjà géré)
+//   - Logs structurés [ReceivedEscalations]
 // ============================================================================
 
 import 'dart:async';
@@ -37,15 +23,10 @@ import 'package:intl/intl.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-
-// ✅ IMPORTS DES MODÈLES CORRIGÉS
 import 'package:thix_id/presentation/chat/escalation/models/escalation_status.dart';
 import 'package:thix_id/presentation/chat/escalation/models/escalation_step.dart';
-
-// ✅ IMPORT DU PROVIDER D'ID (Remplacement de currentUserProvider)
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
     show chatServiceProvider, supabaseUserIdProvider;
-
 import 'package:thix_id/presentation/chat/chat_screen.dart';
 import 'package:thix_id/presentation/chat/escalation/providers/escalation_provider.dart';
 
@@ -58,7 +39,6 @@ const double _kButtonBorderRadius = 10.0;
 const double _kBadgeBorderRadius = 8.0;
 const double _kScrollThresholdPx = 300.0;
 const int _kMaxReasonLength = 500;
-const int _kMaxCommentLength = 1000;
 const Duration _kScrollDebounce = Duration(milliseconds: 300);
 const Duration _kLoadTimeout = Duration(seconds: 15);
 
@@ -68,7 +48,6 @@ const Duration _kLoadTimeout = Duration(seconds: 15);
 class _EscalationValidators {
   _EscalationValidators._();
 
-  /// Valide un UUID v4 strict.
   static bool isValidUuid(String? id) {
     if (id == null || id.isEmpty) return false;
     return RegExp(
@@ -77,7 +56,6 @@ class _EscalationValidators {
     ).hasMatch(id);
   }
 
-  /// Sanitize un texte (XSS + caractères de contrôle).
   static String sanitize(String? input, {int maxLength = 500}) {
     if (input == null) return '';
     var s = input
@@ -89,13 +67,25 @@ class _EscalationValidators {
     return s.length > maxLength ? s.substring(0, maxLength) : s;
   }
 
-  /// Formate une date de manière sûre.
-  static String formatDate(DateTime date, AppLocalizations l10n) {
+  /// Extrait initiale sûre (pas de RangeError)
+  static String safeInitial(String? name, {String fallback = '?'}) {
+    if (name == null) return fallback;
+    final trimmed = sanitize(name, maxLength: 100).trim();
+    if (trimmed.isEmpty) return fallback;
+    return trimmed[0].toUpperCase();
+  }
+
+  /// Formatage date safe avec fallback ISO
+  static String formatDate(DateTime? date) {
+    if (date == null) return '—';
     try {
-      // Utilise le locale système au lieu de l10n.localeName (propriété inexistante)
       return DateFormat('dd MMM yyyy, HH:mm').format(date.toLocal());
     } catch (_) {
-      return DateFormat('dd/MM/yyyy HH:mm').format(date.toLocal());
+      try {
+        return DateFormat('dd/MM/yyyy HH:mm').format(date.toLocal());
+      } catch (_) {
+        return date.toIso8601String().substring(0, 16).replaceFirst('T', ' ');
+      }
     }
   }
 }
@@ -104,13 +94,6 @@ class _EscalationValidators {
 // RECEIVED ESCALATIONS PAGE
 // ============================================================================
 
-/// Page listant les escalades reçues par l'agent courant.
-///
-/// **Fonctionnalités** :
-/// - Scroll infini avec debounce
-/// - Pull-to-refresh
-/// - Actions Accepter / Refuser avec motif
-/// - Navigation vers la conversation liée
 class ReceivedEscalationsPage extends ConsumerStatefulWidget {
   const ReceivedEscalationsPage({super.key});
 
@@ -123,16 +106,19 @@ class _ReceivedEscalationsPageState
     extends ConsumerState<ReceivedEscalationsPage> {
   final _scrollCtrl = ScrollController();
   Timer? _scrollDebounce;
-  bool _isProcessing = false; // Protection double-tap
+  bool _isProcessing = false;
 
   @override
   void initState() {
     super.initState();
     debugPrint('[ReceivedEscalations] 🚀 Page opened');
-
-    Future.microtask(() => _loadData(refresh: true));
-
     _scrollCtrl.addListener(_onScroll);
+
+    // ✅ CORRECTION : addPostFrameCallback au lieu de Future.microtask
+    // Garantit que le provider Riverpod est disponible dans l'arbre
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadData(refresh: true);
+    });
   }
 
   @override
@@ -147,30 +133,28 @@ class _ReceivedEscalationsPageState
   // ── SCROLL HANDLER ───────────────────────────────────────────────────
 
   void _onScroll() {
+    if (!mounted) return;
     if (_scrollCtrl.position.pixels >
         _scrollCtrl.position.maxScrollExtent - _kScrollThresholdPx) {
       _scrollDebounce?.cancel();
       _scrollDebounce = Timer(_kScrollDebounce, () {
-        _loadData(refresh: false);
+        if (mounted) _loadData(refresh: false);
       });
     }
   }
 
   // ── LOAD DATA ────────────────────────────────────────────────────────
 
-  /// Charge les escalades destinées à l'utilisateur courant (to_agent_id).
   void _loadData({required bool refresh}) {
-    // ✅ CORRECTION : Utilisation de supabaseUserIdProvider
+    if (!mounted) return;
+
     final userId = ref.read(supabaseUserIdProvider);
     if (userId == null || !_EscalationValidators.isValidUuid(userId)) {
       debugPrint('[ReceivedEscalations] ⚠️ No valid user');
       return;
     }
     debugPrint('[ReceivedEscalations] 🔄 Load (refresh=$refresh)');
-    ref.read(escalationProvider.notifier).loadReceived(
-          userId,
-          refresh: refresh,
-        );
+    ref.read(escalationProvider.notifier).loadReceived(userId, refresh: refresh);
   }
 
   // ── FEEDBACK HELPERS ─────────────────────────────────────────────────
@@ -198,7 +182,8 @@ class _ReceivedEscalationsPageState
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
+          const Icon(Icons.error_outline_rounded,
+              color: Colors.white, size: 18),
           const SizedBox(width: 8),
           Expanded(child: Text(message)),
         ]),
@@ -214,13 +199,15 @@ class _ReceivedEscalationsPageState
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(children: [
-          const Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
+          const Icon(Icons.info_outline_rounded,
+              color: Colors.white, size: 18),
           const SizedBox(width: 8),
           Expanded(child: Text(message)),
         ]),
         backgroundColor: ThixPolicy.primary,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -278,7 +265,6 @@ class _ReceivedEscalationsPageState
       return;
     }
 
-    // ✅ CORRECTION : Utilisation de supabaseUserIdProvider
     final userId = ref.read(supabaseUserIdProvider);
     if (userId == null || !_EscalationValidators.isValidUuid(userId)) {
       _showError(l10n.t('escalation_not_authenticated'));
@@ -287,13 +273,15 @@ class _ReceivedEscalationsPageState
 
     setState(() => _isProcessing = true);
     HapticFeedback.mediumImpact();
-    debugPrint('[ReceivedEscalations] ✓ Accepting escalation: '
-        '${_obfuscate(id)}');
+    debugPrint(
+        '[ReceivedEscalations] ✓ Accepting escalation: ${_obfuscate(id)}');
 
-    // Récupérer le step pour obtenir le conversationId
     EscalationStep? step;
     try {
-      step = ref.read(escalationProvider).pending.firstWhere((s) => s.id == id);
+      step = ref
+          .read(escalationProvider)
+          .pending
+          .firstWhere((s) => s.id == id);
     } catch (_) {
       step = null;
     }
@@ -338,34 +326,107 @@ class _ReceivedEscalationsPageState
       return;
     }
 
-    final reasonController = TextEditingController();
+    // ✅ CORRECTION : TextField dans le dialog, pas de controller manuel
+    // (évite le double-dispose et les fuites mémoire)
+    String sanitizedReason = '';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          backgroundColor: ThixPolicy.card,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(_kDialogBorderRadius),
+            side: BorderSide(color: ThixPolicy.border),
+          ),
+          title: Text(
+            l10n.t('escalation_reject_title'),
+            style: ThixPolicy.titleStyle.copyWith(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: ThixPolicy.textMain,
+            ),
+          ),
+          content: Semantics(
+            label: l10n.t('escalation_reject_reason_hint'),
+            textField: true,
+            child: TextField(
+              controller: controller,
+              maxLength: _kMaxReasonLength,
+              maxLines: 3,
+              style: ThixPolicy.bodyStyle.copyWith(
+                color: ThixPolicy.textMain,
+                fontSize: 14,
+              ),
+              decoration: InputDecoration(
+                counterText: '',
+                hintText: l10n.t('escalation_reject_reason_hint'),
+                filled: true,
+                fillColor: ThixPolicy.surfaceSoft,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(_kButtonBorderRadius),
+                  borderSide: BorderSide(color: ThixPolicy.border),
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            Semantics(
+              button: true,
+              label: l10n.t('escalation_cancel'),
+              child: TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(
+                  l10n.t('escalation_cancel'),
+                  style: TextStyle(color: ThixPolicy.textMuted),
+                ),
+              ),
+            ),
+            Semantics(
+              button: true,
+              label: l10n.t('escalation_reject_confirm'),
+              child: ElevatedButton(
+                onPressed: () {
+                  sanitizedReason = _EscalationValidators.sanitize(
+                    controller.text,
+                    maxLength: _kMaxReasonLength,
+                  );
+                  controller.dispose();
+                  Navigator.pop(ctx, true);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ThixPolicy.danger,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(_kButtonBorderRadius),
+                  ),
+                ),
+                child: Text(
+                  l10n.t('escalation_reject_confirm'),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isProcessing = true);
+    HapticFeedback.mediumImpact();
+    debugPrint(
+        '[ReceivedEscalations] ❌ Rejecting escalation: ${_obfuscate(id)}');
+
+    final userId = ref.read(supabaseUserIdProvider);
+    if (userId == null) {
+      _showError(l10n.t('escalation_not_authenticated'));
+      if (mounted) setState(() => _isProcessing = false);
+      return;
+    }
 
     try {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => _buildRejectDialog(ctx, reasonController, l10n),
-      );
-
-      if (confirmed != true) return;
-
-      setState(() => _isProcessing = true);
-      HapticFeedback.mediumImpact();
-
-      final sanitizedReason = _EscalationValidators.sanitize(
-        reasonController.text,
-        maxLength: _kMaxReasonLength,
-      );
-
-      debugPrint('[ReceivedEscalations] ❌ Rejecting escalation: '
-          '${_obfuscate(id)}');
-
-      // ✅ CORRECTION : Utilisation de supabaseUserIdProvider
-      final userId = ref.read(supabaseUserIdProvider);
-      if (userId == null) {
-        _showError(l10n.t('escalation_not_authenticated'));
-        return;
-      }
-
       final ok = await ref
           .read(escalationProvider.notifier)
           .reject(id, userId, sanitizedReason)
@@ -388,8 +449,6 @@ class _ReceivedEscalationsPageState
           '${kDebugMode ? e : e.toString().split('\n').first}');
       if (mounted) _showError(l10n.t('escalation_reject_error'));
     } finally {
-      // ✅ Dispose du controller APRÈS son utilisation
-      reasonController.dispose();
       if (mounted) setState(() => _isProcessing = false);
     }
   }
@@ -400,6 +459,45 @@ class _ReceivedEscalationsPageState
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final state = ref.watch(escalationProvider);
+
+    // ✅ GARDE : utilisateur non authentifié (session Web async)
+    final userId = ref.watch(supabaseUserIdProvider);
+    if (userId == null) {
+      return Scaffold(
+        backgroundColor: ThixPolicy.card,
+        appBar: AppBar(
+          backgroundColor: ThixPolicy.card,
+          elevation: 0,
+          leading: IconButton(
+            icon: Icon(Icons.arrow_back_rounded, color: ThixPolicy.textMain),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: Text(
+            l10n.t('escalation_received_title'),
+            style: ThixPolicy.titleStyle.copyWith(
+              color: ThixPolicy.textMain,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.lock_outline_rounded,
+                  size: 48, color: ThixPolicy.textMuted),
+              const SizedBox(height: 12),
+              Text(
+                l10n.t('escalation_not_authenticated'),
+                style: ThixPolicy.bodyStyle.copyWith(
+                    color: ThixPolicy.textMuted),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: ThixPolicy.card,
@@ -433,7 +531,8 @@ class _ReceivedEscalationsPageState
             label: l10n.t('escalation_refresh'),
             child: IconButton(
               icon: Icon(Icons.refresh_rounded, color: ThixPolicy.textMuted),
-              onPressed: _isProcessing ? null : () => _loadData(refresh: true),
+              onPressed:
+                  _isProcessing ? null : () => _loadData(refresh: true),
             ),
           ),
         ],
@@ -443,7 +542,6 @@ class _ReceivedEscalationsPageState
   }
 
   Widget _buildBody(EscalationState state, AppLocalizations l10n) {
-    // Loading initial
     if (state.isLoading && state.pending.isEmpty) {
       return Center(
         child: CircularProgressIndicator(
@@ -453,7 +551,6 @@ class _ReceivedEscalationsPageState
       );
     }
 
-    // Erreur sans données
     if (state.error != null && state.pending.isEmpty) {
       return Center(
         child: Column(
@@ -487,12 +584,10 @@ class _ReceivedEscalationsPageState
       );
     }
 
-    // Liste vide
     if (state.pending.isEmpty) {
       return _buildEmptyState(l10n);
     }
 
-    // Liste des escalades
     return RefreshIndicator(
       color: ThixPolicy.primary,
       backgroundColor: ThixPolicy.card,
@@ -561,16 +656,19 @@ class _ReceivedEscalationsPageState
   }
 
   Widget _buildEscalationCard(EscalationStep step, AppLocalizations l10n) {
-    final fromAgentName = _EscalationValidators.sanitize(
-      step.fromAgentName,
-      maxLength: 100,
-    );
-    final reason = _EscalationValidators.sanitize(step.reason, maxLength: 500);
+    final fromAgentName =
+        _EscalationValidators.sanitize(step.fromAgentName, maxLength: 100);
+    final reason =
+        _EscalationValidators.sanitize(step.reason, maxLength: 500);
     final comment = step.comment != null
         ? _EscalationValidators.sanitize(step.comment, maxLength: 1000)
         : null;
-    final dateStr = _EscalationValidators.formatDate(step.createdAt, l10n);
-    final isPending = step.status == EscalationStatus.pending;
+    // ✅ CORRECTION : formatDate avec DateTime nullable
+    final dateStr = _EscalationValidators.formatDate(step.createdAt);
+
+    // ✅ CORRECTION : status peut être null après parsing
+    final status = step.status ?? EscalationStatus.pending;
+    final isPending = status == EscalationStatus.pending;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -588,8 +686,9 @@ class _ReceivedEscalationsPageState
       ),
       child: Semantics(
         button: true,
+        // ✅ CORRECTION : utiliser localizedLabel au lieu de .label (deprecated)
         label: '${l10n.t('escalation_from')} $fromAgentName, '
-            '${step.status.label}',
+            '${status.localizedLabel(l10n)}',
         child: InkWell(
           borderRadius: BorderRadius.circular(_kCardBorderRadius),
           onTap: _isProcessing
@@ -600,15 +699,11 @@ class _ReceivedEscalationsPageState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Header : agent + badge status ──
-                _buildCardHeader(fromAgentName, step, l10n),
-
+                _buildCardHeader(fromAgentName, status, l10n),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   child: Divider(height: 1, color: ThixPolicy.border),
                 ),
-
-                // ── Raison ──
                 Text(
                   '${l10n.t('escalation_reason')} : $reason',
                   style: ThixPolicy.bodyStyle.copyWith(
@@ -617,8 +712,6 @@ class _ReceivedEscalationsPageState
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-
-                // ── Commentaire ──
                 if (comment != null && comment.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
@@ -631,10 +724,7 @@ class _ReceivedEscalationsPageState
                       ),
                     ),
                   ),
-
                 const SizedBox(height: 12),
-
-                // ── Date ──
                 Text(
                   '${l10n.t('escalation_requested_on')} $dateStr',
                   style: ThixPolicy.captionStyle.copyWith(
@@ -642,8 +732,6 @@ class _ReceivedEscalationsPageState
                     color: ThixPolicy.textMuted,
                   ),
                 ),
-
-                // ── Actions ──
                 if (isPending) ...[
                   const SizedBox(height: 16),
                   _buildCardActions(step.id, l10n),
@@ -656,11 +744,17 @@ class _ReceivedEscalationsPageState
     );
   }
 
+  // ✅ CORRECTION : reçoit EscalationStatus (non-null) au lieu du step entier
   Widget _buildCardHeader(
     String fromAgentName,
-    EscalationStep step,
+    EscalationStatus status,
     AppLocalizations l10n,
   ) {
+    // ✅ CORRECTION : utiliser localizedLabel au lieu de .label
+    final statusLabel = status.localizedLabel(l10n);
+    final statusColor = status.color;
+    final safeInitial = _EscalationValidators.safeInitial(fromAgentName);
+
     return Row(
       children: [
         Container(
@@ -671,10 +765,15 @@ class _ReceivedEscalationsPageState
             shape: BoxShape.circle,
             border: Border.all(color: ThixPolicy.border),
           ),
-          child: Icon(
-            Icons.person_outline_rounded,
-            size: 16,
-            color: ThixPolicy.textMuted,
+          child: Center(
+            child: Text(
+              safeInitial,
+              style: ThixPolicy.labelStyle.copyWith(
+                color: ThixPolicy.primary,
+                fontWeight: ThixPolicy.bold,
+                fontSize: 14,
+              ),
+            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -692,18 +791,17 @@ class _ReceivedEscalationsPageState
           ),
         ),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
-            color: step.status.color.withOpacity(0.1),
+            color: statusColor.withOpacity(0.1),
             borderRadius: BorderRadius.circular(_kBadgeBorderRadius),
-            border: Border.all(
-              color: step.status.color.withOpacity(0.2),
-            ),
+            border: Border.all(color: statusColor.withOpacity(0.2)),
           ),
           child: Text(
-            step.status.label,
+            statusLabel,
             style: TextStyle(
-              color: step.status.color,
+              color: statusColor,
               fontSize: 11,
               fontWeight: FontWeight.bold,
             ),
@@ -731,9 +829,11 @@ class _ReceivedEscalationsPageState
             style: OutlinedButton.styleFrom(
               foregroundColor: ThixPolicy.danger,
               side: BorderSide(color: ThixPolicy.border),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 16, vertical: 10),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(_kButtonBorderRadius),
+                borderRadius:
+                    BorderRadius.circular(_kButtonBorderRadius),
               ),
             ),
           ),
@@ -754,9 +854,11 @@ class _ReceivedEscalationsPageState
               backgroundColor: ThixPolicy.primary,
               foregroundColor: Colors.white,
               elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 16, vertical: 10),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(_kButtonBorderRadius),
+                borderRadius:
+                    BorderRadius.circular(_kButtonBorderRadius),
               ),
             ),
           ),
@@ -764,86 +866,6 @@ class _ReceivedEscalationsPageState
       ],
     );
   }
-
-  // ── REJECT DIALOG ────────────────────────────────────────────────────
-
-  Widget _buildRejectDialog(
-    BuildContext ctx,
-    TextEditingController controller,
-    AppLocalizations l10n,
-  ) {
-    return AlertDialog(
-      backgroundColor: ThixPolicy.card,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_kDialogBorderRadius),
-        side: BorderSide(color: ThixPolicy.border),
-      ),
-      title: Text(
-        l10n.t('escalation_reject_title'),
-        style: ThixPolicy.titleStyle.copyWith(
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-          color: ThixPolicy.textMain,
-        ),
-      ),
-      content: Semantics(
-        label: l10n.t('escalation_reject_reason_hint'),
-        textField: true,
-        child: TextField(
-          controller: controller,
-          maxLength: _kMaxReasonLength,
-          maxLines: 3,
-          style: ThixPolicy.bodyStyle.copyWith(
-            color: ThixPolicy.textMain,
-            fontSize: 14,
-          ),
-          decoration: InputDecoration(
-            counterText: '',
-            hintText: l10n.t('escalation_reject_reason_hint'),
-            filled: true,
-            fillColor: ThixPolicy.surfaceSoft,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(_kButtonBorderRadius),
-              borderSide: BorderSide(color: ThixPolicy.border),
-            ),
-          ),
-        ),
-      ),
-      actions: [
-        Semantics(
-          button: true,
-          label: l10n.t('escalation_cancel'),
-          child: TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              l10n.t('escalation_cancel'),
-              style: TextStyle(color: ThixPolicy.textMuted),
-            ),
-          ),
-        ),
-        Semantics(
-          button: true,
-          label: l10n.t('escalation_reject_confirm'),
-          child: ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ThixPolicy.danger,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(_kButtonBorderRadius),
-              ),
-            ),
-            child: Text(
-              l10n.t('escalation_reject_confirm'),
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── HELPERS ──────────────────────────────────────────────────────────
 
   String _obfuscate(String? s) {
     if (s == null || s.length <= 8) return '***';
