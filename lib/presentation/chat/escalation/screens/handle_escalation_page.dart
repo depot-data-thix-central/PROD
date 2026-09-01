@@ -36,9 +36,15 @@ import 'package:intl/intl.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/models/chat/escalation_level.dart';
-import 'package:thix_id/models/chat/escalation_status.dart';
-import 'package:thix_id/models/chat/escalation_step.dart';
+
+import 'package:thix_id/presentation/chat/escalation/models/escalation_level.dart';
+import 'package:thix_id/presentation/chat/escalation/models/escalation_status.dart';
+import 'package:thix_id/presentation/chat/escalation/models/escalation_step.dart';
+
+
+// ✅ IMPORT DU PROVIDER D'ID
+import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
+
 import 'package:thix_id/presentation/chat/escalation/providers/escalation_provider.dart';
 import 'package:thix_id/presentation/chat/escalation/widgets/level_badge.dart';
 import 'package:thix_id/presentation/chat/escalation/widgets/priority_chip.dart';
@@ -83,7 +89,8 @@ class _EscalationValidators {
   /// Formate une date de manière sûre et localisée.
   static String formatDate(DateTime date, AppLocalizations l10n) {
     try {
-      return DateFormat('dd MMM yyyy, HH:mm', l10n.localeName).format(date.toLocal());
+      // ✅ CORRECTION : Utilisation de Intl.getCurrentLocale() au lieu de localeName
+      return DateFormat('dd MMM yyyy, HH:mm', Intl.getCurrentLocale()).format(date.toLocal());
     } catch (_) {
       return DateFormat('dd/MM/yyyy HH:mm').format(date.toLocal());
     }
@@ -266,8 +273,9 @@ class _HandleEscalationPageState extends ConsumerState<HandleEscalationPage> {
     debugPrint('[HandleEscalation] ❌ Rejecting: ${_obfuscate(widget.escalationId)}');
 
     try {
+      // ✅ CORRECTION : Ajout du currentUserId
       final success = await notifier
-          .reject(widget.escalationId, sanitizedReason)
+          .reject(widget.escalationId, ref.read(supabaseUserIdProvider) ?? '', sanitizedReason)
           .timeout(_kLoadTimeout);
 
       if (!mounted) return;
@@ -306,8 +314,9 @@ class _HandleEscalationPageState extends ConsumerState<HandleEscalationPage> {
     debugPrint('[HandleEscalation] ✓ Resolving: ${_obfuscate(widget.escalationId)}');
 
     try {
+      // ✅ CORRECTION : Ajout du currentUserId
       final success = await notifier
-          .resolve(widget.escalationId)
+          .resolve(widget.escalationId, ref.read(supabaseUserIdProvider) ?? '')
           .timeout(_kLoadTimeout);
 
       if (!mounted) return;
