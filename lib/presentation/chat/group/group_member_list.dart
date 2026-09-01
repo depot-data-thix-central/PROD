@@ -1,4 +1,4 @@
-// lib/presentation/chat/group/widgets/group_member_list.dart
+// lib/presentation/chat/group/group_member_list.dart
 //
 // ============================================================================
 // GROUP MEMBER LIST — Production Enterprise
@@ -196,7 +196,11 @@ class GroupMemberList extends StatelessWidget {
             : null,
         trailing: showRoles
             ? GroupBadge(
-                role: member.role,
+                // CORRECTION : Conversion du String member.role vers l'enum GroupRole
+                role: GroupRole.values.firstWhere(
+                  (r) => r.name.toLowerCase() == member.role.toLowerCase(),
+                  orElse: () => GroupRole.values.first,
+                ),
                 isCompact: true,
               )
             : null,
