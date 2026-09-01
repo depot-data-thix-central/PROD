@@ -1158,255 +1158,10 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+
+                            
 // ============================================================================
-// RECEIVED REQUEST CARD
-// ============================================================================
-class _ReceivedRequestCard extends StatelessWidget {
-  final ConnectionRequest request;
-  final Set<String> pendingActions;
-  final VoidCallback onAccept;
-  final VoidCallback onReject;
-
-  const _ReceivedRequestCard({
-    required this.request,
-    required this.pendingActions,
-    required this.onAccept,
-    required this.onReject,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-
-    final senderMap =
-        (request.sender as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
-
-    final certInfo = _CertificationInfo.fromMap(senderMap);
-
-    final name = _ConnValidators.sanitize(
-        senderMap['display_name']?.toString(),
-        maxLength: _kMaxNameLength);
-    final message = _ConnValidators.sanitize(
-      request.message ?? l10n.t('connections_wants_connect'),
-      maxLength: _kMaxMessageLength,
-    );
-    final avatarUrl =
-        _ConnValidators.sanitizeUrl(senderMap['avatar_url']?.toString());
-    final isPending = pendingActions.contains(request.id);
-    final safeInitial = _ConnValidators.safeInitial(name);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: ThixPolicy.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: ThixPolicy.border),
-        boxShadow: ThixPolicy.shadowSoft(opacity: 0.02),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: ThixPolicy.tint,
-                  borderRadius: BorderRadius.circular(14),
-                  image: avatarUrl != null
-                      ? DecorationImage(
-                          image: CachedNetworkImageProvider(avatarUrl),
-                          fit: BoxFit.cover)
-                      : null,
-                ),
-                child: avatarUrl == null
-                    ? Center(
-                        child: Text(
-                          safeInitial,
-                          style: ThixPolicy.labelStyle.copyWith(
-                            color: ThixPolicy.primary,
-                            fontWeight: ThixPolicy.bold,
-                            fontSize: 18,
-                          ),
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            name.isEmpty
-                                ? l10n.t('avatar_user')
-                                : name,
-                            style: ThixPolicy.labelStyle.copyWith(
-                              color: ThixPolicy.textMain,
-                              fontWeight: ThixPolicy.bold,
-                              fontSize: 15,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (certInfo.isCertified)
-                          CertificationNameBadge(
-                            tier: certInfo.tier,
-                            status: certInfo.status,
-                            showLabel: false,
-                            iconSize: 15,
-                            padding: const EdgeInsets.only(left: 4),
-                          )
-                        else if (certInfo.isLegacyVerified)
-                          const Padding(
-                            padding: EdgeInsets.only(left: 4),
-                            child: Icon(Icons.verified_rounded,
-                                color: ThixPolicy.gold, size: 15),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      message.isEmpty ? '—' : message,
-                      style: ThixPolicy.captionStyle.copyWith(
-                          color: ThixPolicy.textMuted, fontSize: 13),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Semantics(
-                  button: true,
-                  label: l10n.t('connections_ignore'),
-                  enabled: !isPending,
-                  child: OutlinedButton(
-                    onPressed: isPending
-                        ? null
-                        : () {
-                            HapticFeedback.lightImpact();
-                            onReject();
-                          },
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: ThixPolicy.textMuted,
-                      side: BorderSide(color: ThixPolicy.border),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    child: Text(l10n.t('connections_ignore'),
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Semantics(
-                  button: true,
-                  label: l10n.t('connections_accept'),
-                  enabled: !isPending,
-                  child: ElevatedButton(
-                    onPressed: isPending
-                        ? null
-                        : () {
-                            HapticFeedback.mediumImpact();
-                            onAccept();
-                          },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ThixPolicy.primary,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    child: isPending
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
-                          )
-                        : Text(l10n.t('connections_accept'),
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// SENT REQUEST CARD
-// ============================================================================
-class _SentRequestCard extends StatelessWidget {
-  final ConnectionRequest request;
-  final VoidCallback onCancel;
-
-  const _SentRequestCard({required this.request, required this.onCancel});
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-
-    final receiverMap = (request.receiver as Map?)?.cast<String, dynamic>() ??
-        <String, dynamic>{};
-
-    final certInfo = _CertificationInfo.fromMap(receiverMap);
-
-    final name = _ConnValidators.sanitize(
-        receiverMap['display_name']?.toString(),
-        maxLength: _kMaxNameLength);
-    final avatarUrl =
-        _ConnValidators.sanitizeUrl(receiverMap['avatar_url']?.toString());
-    final safeInitial = _ConnValidators.safeInitial(name);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: ThixPolicy.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: ThixPolicy.border),
-      ),
-      child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: ThixPolicy.surfaceSoft,
-            borderRadius: BorderRadius.circular(12),
-            image: avatarUrl != null
-                ? DecorationImage(
-                    image: CachedNetworkImageProvider(avatarUrl),
-                    fit: BoxFit.cover)
-                : null,
-          ),
-          child: avatarUrl == null
-              ? Center(
-                  child: Text(
-                    safeInitial,
-                    style: ThixPolicy.labelStyle.copyWith(
-                      color: ThixPolicy.textMuted,
-// ============================================================================
-// RECEIVED REQUEST CARD — ✅ CORRIGÉ (utilise ConnectionUserProfile)
+// RECEIVED REQUEST CARD — ✅ CORRIGÉ
 // ============================================================================
 class _ReceivedRequestCard extends StatelessWidget {
   final ConnectionRequest request;
@@ -1425,7 +1180,6 @@ class _ReceivedRequestCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
-    // ✅ CORRECTION : plus de cast Map
     final sender = request.sender;
     final certInfo = _CertificationInfo.fromUserProfile(sender);
 
@@ -1597,7 +1351,7 @@ class _ReceivedRequestCard extends StatelessWidget {
 }
 
 // ============================================================================
-// SENT REQUEST CARD — ✅ CORRIGÉ (utilise ConnectionUserProfile)
+// SENT REQUEST CARD — ✅ CORRIGÉ
 // ============================================================================
 class _SentRequestCard extends StatelessWidget {
   final ConnectionRequest request;
@@ -1609,7 +1363,6 @@ class _SentRequestCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
-    // ✅ CORRECTION : plus de cast Map
     final receiver = request.receiver;
     final certInfo = _CertificationInfo.fromUserProfile(receiver);
 
@@ -1718,6 +1471,8 @@ class _SentRequestCard extends StatelessWidget {
     );
   }
 }
+    
+                
 
 // ============================================================================
 // CONNECTION ITEM — ✅ CORRIGÉ POUR UTILISER ConnectionView
