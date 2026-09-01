@@ -1033,17 +1033,20 @@ class _ReceivedRequestCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+    Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final sender = request.sender ?? {};
-    final certInfo = _CertificationInfo.fromMap(sender);
+    
+    // ✅ CORRECTION : On force le type Map<String, dynamic> proprement
+    final senderMap = (request.sender as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+    
+    final certInfo = _CertificationInfo.fromMap(senderMap);
 
-    final name = _ConnValidators.sanitize(sender['display_name']?.toString(), maxLength: _kMaxNameLength);
+    final name = _ConnValidators.sanitize(senderMap['display_name']?.toString(), maxLength: _kMaxNameLength);
     final message = _ConnValidators.sanitize(
       request.message ?? l10n.t('connections_wants_connect'),
       maxLength: _kMaxMessageLength,
     );
-    final avatarUrl = _ConnValidators.sanitizeUrl(sender['avatar_url']?.toString());
+    final avatarUrl = _ConnValidators.sanitizeUrl(senderMap['avatar_url']?.toString());
     final isPending = pendingActions.contains(request.id);
 
     return Container(
@@ -1054,6 +1057,7 @@ class _ReceivedRequestCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: ThixPolicy.border),
         boxShadow: ThixPolicy.shadowSoft(opacity: 0.02),
+
       ),
       child: Column(
         children: [
@@ -1198,12 +1202,16 @@ class _SentRequestCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+      Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final receiver = request.receiver ?? {};
-    final certInfo = _CertificationInfo.fromMap(receiver);
+    
+    // ✅ CORRECTION : On caste explicitement en Map<String, dynamic>
+    final receiverMap = (request.receiver as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+    
+    final certInfo = _CertificationInfo.fromMap(receiverMap);
 
-    final name = _ConnValidators.sanitize(receiver['display_name']?.toString(), maxLength: _kMaxNameLength);
-    final avatarUrl = _ConnValidators.sanitizeUrl(receiver['avatar_url']?.toString());
+    final name = _ConnValidators.sanitize(receiverMap['display_name']?.toString(), maxLength: _kMaxNameLength);
+    final avatarUrl = _ConnValidators.sanitizeUrl(receiverMap['avatar_url']?.toString());
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1211,6 +1219,7 @@ class _SentRequestCard extends StatelessWidget {
         color: ThixPolicy.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: ThixPolicy.border),
+
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
