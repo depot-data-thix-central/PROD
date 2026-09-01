@@ -31,7 +31,8 @@ import 'package:flutter/material.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/chat/group_info.dart';
-import 'package:thix_id/presentation/chat/group/widgets/group_badge.dart';
+import 'package:thix_id/presentation/chat/group/group_badge.dart';
+
 
 // ============================================================================
 // CONSTANTS
