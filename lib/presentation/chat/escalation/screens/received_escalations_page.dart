@@ -35,11 +35,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import 'package:thix_id/auth/auth_controller.dart' show currentUserProvider;
+import 'package:thix_id/auth/auth_controller.dart' show currentUserProvider;  
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/models/chat/escalation_step.dart';
-import 'package:thix_id/models/chat/escalation_status.dart';
+import 'package:thix_id/models/chat/escalation_status.dart';  
+import 'package:thix_id/presentation/chat/escalation/models/escalation_step.dart';  
 import 'package:thix_id/presentation/chat/chat_screen.dart';
 import 'package:thix_id/presentation/chat/escalation/providers/escalation_provider.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
@@ -87,12 +87,13 @@ class _EscalationValidators {
 
   /// Formate une date de manière sûre.
   static String formatDate(DateTime date, AppLocalizations l10n) {
-    try {
-      return DateFormat('dd MMM yyyy, HH:mm', l10n.localeName).format(date.toLocal());
-    } catch (_) {
-      return DateFormat('dd/MM/yyyy HH:mm').format(date.toLocal());
-    }
+  try {
+    // Utilise le locale système au lieu de l10n.localeName (propriété inexistante)
+    return DateFormat('dd MMM yyyy, HH:mm').format(date.toLocal());
+  } catch (_) {
+    return DateFormat('dd/MM/yyyy HH:mm').format(date.toLocal());
   }
+}
 }
 
 // ============================================================================
@@ -352,11 +353,16 @@ class _ReceivedEscalationsPageState
       debugPrint('[ReceivedEscalations] ❌ Rejecting escalation: '
           '${_obfuscate(id)}');
 
-      final ok = await ref
-          .read(escalationProvider.notifier)
-          .reject(id, sanitizedReason)
-          .timeout(_kLoadTimeout);
+      final user = ref.read(currentUserProvider);
+if (user == null) {
+  _showError(l10n.t('escalation_not_authenticated'));
+  return;
+}
 
+final ok = await ref
+    .read(escalationProvider.notifier)
+    .reject(id, user.id, sanitizedReason)  
+    .timeout(_kLoadTimeout);
       if (!mounted) return;
 
       if (ok != null) {
