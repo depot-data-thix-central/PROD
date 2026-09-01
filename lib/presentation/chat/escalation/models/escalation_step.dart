@@ -240,7 +240,8 @@ class EscalationStep extends Equatable {
       'to_agent_id': toAgentId,
       'to_agent_name': toAgentName,
       'reason': reason,
-      'priority': priority.dbValue,         // ✅ String moderne
+      // ✅ CORRECTION : priority.name au lieu de priority.dbValue
+      'priority': priority.name,            // ✅ String moderne
       'status': status.dbValue,             // ✅ String moderne
       'comment': comment,
       'created_at': createdAt.toIso8601String(),
@@ -334,7 +335,8 @@ class EscalationStep extends Equatable {
     if (value is String) {
       final normalized = value.trim().toLowerCase();
       for (final priority in EscalationPriority.values) {
-        if (priority.dbValue == normalized || priority.name.toLowerCase() == normalized) {
+        // ✅ CORRECTION : Ne vérifier que priority.name
+        if (priority.name.toLowerCase() == normalized) {
           return priority;
         }
       }
