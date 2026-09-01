@@ -2,7 +2,7 @@
 /// ✅ SÉCURISÉ : syntax fix, mounted checks, timeouts, retry, validation URL,
 ///    permissions, i18n, semantics, haptic, removeChannel, lifecycle
 import 'dart:async';
-
+import 'package:go_router/go_router.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +11,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/chat/call_status.dart';
@@ -19,7 +18,6 @@ import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/nav.dart';
 import 'package:thix_id/presentation/chat/widgets/image_viewer.dart';
 import 'package:thix_id/services/chat/call_signaling_service.dart';
-
 import '../models/sos_models.dart';
 import '../providers/sos_providers.dart';
 import '../services/sos_crisis_media_service.dart';
