@@ -1,10 +1,45 @@
-/// THIX SOS — Ajouter un secours via THIX ID (production)
+/// THIX SOS — Ajouter un secours via THIX ID (production audité)
+/// ✅ SÉCURISÉ : Validation URL, Safe extraction, Mounted checks, Double-tap protection
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
+
 import '../providers/sos_providers.dart';
 
+// ============================================================================
+// HELPERS DE VALIDATION
+// ============================================================================
+class _InputValidator {
+  /// Valide qu'une URL est safe (http/https uniquement)
+  static bool isValidUrl(String? url) {
+    if (url == null || url.isEmpty) return false;
+    final uri = Uri.tryParse(url);
+    if (uri == null) return false;
+    return uri.scheme == 'http' || uri.scheme == 'https';
+  }
+
+  /// Valide un numéro de téléphone international
+  static bool isValidPhone(String? phone) {
+    if (phone == null || phone.trim().isEmpty) return true; // Optionnel
+    final cleaned = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    return RegExp(r'^\+?[1-9]\d{6,14}$').hasMatch(cleaned);
+  }
+
+  /// Extrait une initiale de manière safe (pas de RangeError)
+  static String safeInitial(String? name, {String fallback = '?'}) {
+    if (name == null || name.trim().isEmpty) return fallback;
+    final trimmed = name.trim();
+    return trimmed[0].toUpperCase();
+  }
+}
+
+// ============================================================================
+// PAGE PRINCIPALE
+// ============================================================================
 class AjouterSecoursPage extends ConsumerStatefulWidget {
   const AjouterSecoursPage({super.key, this.initialCircle = 1});
 
@@ -25,6 +60,7 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
 
   Map<String, dynamic>? _profile;
   String? _searchError;
+  String? _phoneError;
 
   @override
   void initState() {
@@ -60,7 +96,10 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
     return null;
   }
 
+  // ✅ FIX P1 : Protection double-tap avec mounted check
   Future<void> _search() async {
+    if (_searching) return; // Double-tap protection
+
     final raw = _thixCtrl.text.trim();
     if (raw.isEmpty) {
       setState(() {
@@ -76,10 +115,14 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
       _profile = null;
     });
 
+    HapticFeedback.lightImpact();
+
     try {
       final profile =
           await ref.read(sosServiceProvider).lookupProfileByThixId(raw);
-      if (!mounted) return;
+      
+      if (!mounted) return; // ✅ Mounted check
+      
       if (profile == null) {
         setState(() {
           _searching = false;
@@ -87,12 +130,13 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
         });
         return;
       }
+      
       setState(() {
         _searching = false;
         _profile = profile;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return; // ✅ Mounted check
       setState(() {
         _searching = false;
         _searchError = e.toString();
@@ -100,14 +144,29 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
     }
   }
 
+  // ✅ FIX P1 : Protection double-tap avec validation complète
   Future<void> _save() async {
+    if (_saving) return; // Double-tap protection
+
     final profile = _profile;
     if (profile == null) {
       setState(() => _searchError = 'Recherchez d\'abord un THIX ID valide');
       return;
     }
 
-    setState(() => _saving = true);
+    // ✅ Validation téléphone
+    final phone = _phoneCtrl.text.trim();
+    if (phone.isNotEmpty && !_InputValidator.isValidPhone(phone)) {
+      setState(() => _phoneError = 'Format de téléphone invalide');
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _phoneError = null;
+    });
+
+    HapticFeedback.mediumImpact();
 
     try {
       final thixId = (profile['thix_id'] as String?) ?? _thixCtrl.text.trim();
@@ -119,27 +178,29 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
             name: _displayName(profile),
             circle: _circle,
             photoUrl: _photoUrl(profile),
-            phone: _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
+            phone: phone.isEmpty ? null : phone,
             relation: _relationCtrl.text.trim().isEmpty
                 ? null
                 : _relationCtrl.text.trim(),
           );
 
-      if (!mounted) return;
+      if (!mounted) return; // ✅ Mounted check
+      
+      HapticFeedback.heavyImpact();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Secours THIX enregistré'),
-          backgroundColor: Color(0xFF16A34A),
+        SnackBar(
+          content: Text(AppLocalizations.of(context).t('sos_rescuer_saved')),
+          backgroundColor: ThixPolicy.success,
         ),
       );
       Navigator.pop(context, true);
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted) return; // ✅ Mounted check
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erreur : $e'),
-          backgroundColor: Colors.red,
+          content: Text('${AppLocalizations.of(context).t('common_error')} : $e'),
+          backgroundColor: ThixPolicy.danger,
         ),
       );
     }
@@ -147,17 +208,23 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0F),
+      backgroundColor: ThixPolicy.inkDeep,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0A0A0F),
+        backgroundColor: ThixPolicy.inkDeep,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white70),
-          onPressed: () => Navigator.pop(context),
+        leading: Semantics(
+          button: true,
+          label: l10n.t('common_close'),
+          child: IconButton(
+            icon: const Icon(Icons.close, color: Colors.white70),
+            onPressed: () => Navigator.pop(context),
+          ),
         ),
         title: Text(
-          'Ajouter un secours',
+          l10n.t('sos_add_rescuer'),
           style: GoogleFonts.inter(
             fontSize: 17,
             fontWeight: FontWeight.w700,
@@ -173,12 +240,12 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFF1E3A5F).withOpacity(0.35),
+              color: ThixPolicy.primary.withOpacity(0.35),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF3B82F6).withOpacity(0.3)),
+              border: Border.all(color: ThixPolicy.primary.withOpacity(0.3)),
             ),
             child: Text(
-              'Entrez le THIX ID du secours. Le système récupère automatiquement le nom et la photo depuis THIX.',
+              l10n.t('sos_add_rescuer_info'),
               style: GoogleFonts.inter(
                 fontSize: 12,
                 color: Colors.white70,
@@ -190,7 +257,7 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
 
           // Cercle
           Text(
-            'Cercle',
+            l10n.t('sos_circle'),
             style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w600,
@@ -205,7 +272,10 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
                   child: _CircleChoice(
                     circle: c,
                     selected: _circle == c,
-                    onTap: () => setState(() => _circle = c),
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() => _circle = c);
+                    },
                   ),
                 ),
                 if (c < 3) const SizedBox(width: 8),
@@ -215,47 +285,58 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
           const SizedBox(height: 24),
 
           // THIX ID + recherche
-          Text(
-            'THIX ID *',
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: Colors.white70,
+          Semantics(
+            label: l10n.t('sos_thix_id_label'),
+            child: Text(
+              '${l10n.t('sos_thix_id_label')} *',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.white70,
+              ),
             ),
           ),
           const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
-                child: TextField(
-                  controller: _thixCtrl,
-                  style: const TextStyle(color: Colors.white),
-                  textCapitalization: TextCapitalization.characters,
-                  decoration: _decoration('THIX-XXXX'),
-                  onSubmitted: (_) => _search(),
+                child: Semantics(
+                  textField: true,
+                  label: l10n.t('sos_thix_id_hint'),
+                  child: TextField(
+                    controller: _thixCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: _decoration(l10n.t('sos_thix_id_hint')),
+                    onSubmitted: (_) => _search(),
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
               SizedBox(
                 height: 48,
-                child: ElevatedButton(
-                  onPressed: _searching ? null : _search,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                child: Semantics(
+                  button: true,
+                  label: l10n.t('common_search'),
+                  child: ElevatedButton(
+                    onPressed: _searching ? null : _search,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ThixPolicy.primary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
+                    child: _searching
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.search, color: Colors.white),
                   ),
-                  child: _searching
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(Icons.search, color: Colors.white),
                 ),
               ),
             ],
@@ -267,7 +348,7 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
               _searchError!,
               style: GoogleFonts.inter(
                 fontSize: 12,
-                color: const Color(0xFFEF4444),
+                color: ThixPolicy.danger,
               ),
             ),
           ],
@@ -275,75 +356,14 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
           // Carte profil trouvé
           if (_profile != null) ...[
             const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF16161F),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFF34D399).withOpacity(0.4)),
-              ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: const Color(0xFF374151),
-                    backgroundImage: _photoUrl(_profile!) != null
-                        ? NetworkImage(_photoUrl(_profile!)!)
-                        : null,
-                    child: _photoUrl(_profile!) == null
-                        ? Text(
-                            _displayName(_profile!)[0].toUpperCase(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          )
-                        : null,
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _displayName(_profile!),
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          (_profile!['thix_id'] as String?) ?? '',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            color: const Color(0xFF34D399),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          'Compte THIX vérifié',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: Colors.white38,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.verified, color: Color(0xFF34D399)),
-                ],
-              ),
-            ),
+            _buildProfileCard(_profile!),
           ],
 
           const SizedBox(height: 20),
 
           // Relation (optionnel)
           Text(
-            'Relation',
+            l10n.t('sos_relation'),
             style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w600,
@@ -351,16 +371,20 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
             ),
           ),
           const SizedBox(height: 8),
-          TextField(
-            controller: _relationCtrl,
-            style: const TextStyle(color: Colors.white),
-            decoration: _decoration('Ex: Mère, Ami, Collègue…'),
+          Semantics(
+            textField: true,
+            label: l10n.t('sos_relation_hint'),
+            child: TextField(
+              controller: _relationCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: _decoration(l10n.t('sos_relation_hint')),
+            ),
           ),
           const SizedBox(height: 16),
 
-          // Téléphone optionnel (secours uniquement, pas pour l'appel principal)
+          // Téléphone optionnel
           Text(
-            'Téléphone (optionnel)',
+            l10n.t('sos_phone_optional'),
             style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w600,
@@ -368,52 +392,144 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
             ),
           ),
           const SizedBox(height: 8),
-          TextField(
-            controller: _phoneCtrl,
-            style: const TextStyle(color: Colors.white),
-            keyboardType: TextInputType.phone,
-            decoration: _decoration('+243 …'),
+          Semantics(
+            textField: true,
+            label: l10n.t('sos_phone_hint'),
+            child: TextField(
+              controller: _phoneCtrl,
+              style: const TextStyle(color: Colors.white),
+              keyboardType: TextInputType.phone,
+              decoration: _decoration(l10n.t('sos_phone_hint')),
+            ),
           ),
+          
+          if (_phoneError != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              _phoneError!,
+              style: GoogleFonts.inter(
+                fontSize: 11,
+                color: ThixPolicy.danger,
+              ),
+            ),
+          ],
+          
           const SizedBox(height: 32),
 
+          // Bouton Enregistrer
           SizedBox(
             width: double.infinity,
             height: 52,
-            child: ElevatedButton(
-              onPressed: (_profile == null || _saving) ? null : _save,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFEF4444),
-                disabledBackgroundColor: Colors.grey.shade800,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+            child: Semantics(
+              button: true,
+              label: l10n.t('sos_save_rescuer'),
+              enabled: _profile != null && !_saving,
+              child: ElevatedButton(
+                onPressed: (_profile == null || _saving) ? null : _save,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ThixPolicy.danger,
+                  disabledBackgroundColor: Colors.grey.shade800,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 0,
                 ),
-                elevation: 0,
+                child: _saving
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2.5,
+                        ),
+                      )
+                    : Text(
+                        l10n.t('sos_save_rescuer'),
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
               ),
-              child: _saving
-                  ? const SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2.5,
-                      ),
-                    )
-                  : Text(
-                      'Enregistrer le secours',
-                      style: GoogleFonts.inter(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
             ),
           ),
           const SizedBox(height: 12),
           Text(
-            'Vous pouvez ajouter plusieurs secours dans chaque cercle.',
+            l10n.t('sos_multiple_rescuers_info'),
             textAlign: TextAlign.center,
             style: GoogleFonts.inter(fontSize: 12, color: Colors.white38),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ FIX P0 : Carte profil avec validation URL et extraction safe
+  Widget _buildProfileCard(Map<String, dynamic> profile) {
+    final l10n = AppLocalizations.of(context);
+    final photoUrl = _photoUrl(profile);
+    final isValidPhoto = _InputValidator.isValidUrl(photoUrl);
+    final displayName = _displayName(profile);
+    final thixId = (profile['thix_id'] as String?) ?? '';
+    
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: ThixPolicy.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ThixPolicy.success.withOpacity(0.4)),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 28,
+            backgroundColor: ThixPolicy.border,
+            backgroundImage: isValidPhoto ? NetworkImage(photoUrl!) : null,
+            child: !isValidPhoto
+                ? Text(
+                    _InputValidator.safeInitial(displayName),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  displayName,
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  thixId,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: ThixPolicy.success,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  l10n.t('sos_verified_account'),
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: Colors.white38,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.verified, color: ThixPolicy.success),
         ],
       ),
     );
@@ -424,7 +540,7 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
       hintText: hint,
       hintStyle: GoogleFonts.inter(color: Colors.white24),
       filled: true,
-      fillColor: const Color(0xFF16161F),
+      fillColor: ThixPolicy.card,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -436,12 +552,19 @@ class _AjouterSecoursPageState extends ConsumerState<AjouterSecoursPage> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
+        borderSide: const BorderSide(color: ThixPolicy.danger, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: ThixPolicy.danger, width: 1.5),
       ),
     );
   }
 }
 
+// ============================================================================
+// COMPOSANT CERCLE
+// ============================================================================
 class _CircleChoice extends StatelessWidget {
   const _CircleChoice({
     required this.circle,
@@ -456,61 +579,69 @@ class _CircleChoice extends StatelessWidget {
   Color get _color {
     switch (circle) {
       case 1:
-        return const Color(0xFF10B981);
+        return ThixPolicy.success;
       case 2:
-        return const Color(0xFFF59E0B);
+        return ThixPolicy.warning;
       default:
-        return const Color(0xFF3B82F6);
+        return ThixPolicy.primary;
     }
   }
 
-  String get _label {
+  String _label(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     switch (circle) {
       case 1:
-        return 'Prioritaire';
+        return l10n.t('sos_circle_priority');
       case 2:
-        return 'Secondaire';
+        return l10n.t('sos_circle_secondary');
       default:
-        return 'Urgence';
+        return l10n.t('sos_circle_urgent');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: selected ? _color.withOpacity(0.2) : const Color(0xFF16161F),
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
+    final l10n = AppLocalizations.of(context);
+    
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '${l10n.t('sos_circle')} $circle, ${_label(context)}',
+      child: Material(
+        color: selected ? _color.withOpacity(0.2) : ThixPolicy.card,
         borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected ? _color : Colors.white12,
-              width: selected ? 1.5 : 1,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: selected ? _color : Colors.white12,
+                width: selected ? 1.5 : 1,
+              ),
             ),
-          ),
-          child: Column(
-            children: [
-              Text(
-                '$circle',
-                style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: selected ? _color : Colors.white54,
+            child: Column(
+              children: [
+                Text(
+                  '$circle',
+                  style: GoogleFonts.inter(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: selected ? _color : Colors.white54,
+                  ),
                 ),
-              ),
-              Text(
-                _label,
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: selected ? _color : Colors.white38,
+                Text(
+                  _label(context),
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? _color : Colors.white38,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
