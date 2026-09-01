@@ -35,15 +35,19 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import 'package:thix_id/auth/auth_controller.dart' show currentUserProvider;
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
+
+// ✅ IMPORTS DES MODÈLES CORRIGÉS
 import 'package:thix_id/presentation/chat/escalation/models/escalation_status.dart';
 import 'package:thix_id/presentation/chat/escalation/models/escalation_step.dart';
+
+// ✅ IMPORT DU PROVIDER D'ID (Remplacement de currentUserProvider)
+import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
+    show chatServiceProvider, supabaseUserIdProvider;
+
 import 'package:thix_id/presentation/chat/chat_screen.dart';
 import 'package:thix_id/presentation/chat/escalation/providers/escalation_provider.dart';
-import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
-    show chatServiceProvider;
 
 // ============================================================================
 // CONSTANTS
@@ -156,14 +160,15 @@ class _ReceivedEscalationsPageState
 
   /// Charge les escalades destinées à l'utilisateur courant (to_agent_id).
   void _loadData({required bool refresh}) {
-    final user = ref.read(currentUserProvider);
-    if (user == null || !_EscalationValidators.isValidUuid(user.id)) {
+    // ✅ CORRECTION : Utilisation de supabaseUserIdProvider
+    final userId = ref.read(supabaseUserIdProvider);
+    if (userId == null || !_EscalationValidators.isValidUuid(userId)) {
       debugPrint('[ReceivedEscalations] ⚠️ No valid user');
       return;
     }
     debugPrint('[ReceivedEscalations] 🔄 Load (refresh=$refresh)');
     ref.read(escalationProvider.notifier).loadReceived(
-          user.id,
+          userId,
           refresh: refresh,
         );
   }
@@ -273,8 +278,9 @@ class _ReceivedEscalationsPageState
       return;
     }
 
-    final user = ref.read(currentUserProvider);
-    if (user == null || !_EscalationValidators.isValidUuid(user.id)) {
+    // ✅ CORRECTION : Utilisation de supabaseUserIdProvider
+    final userId = ref.read(supabaseUserIdProvider);
+    if (userId == null || !_EscalationValidators.isValidUuid(userId)) {
       _showError(l10n.t('escalation_not_authenticated'));
       return;
     }
@@ -295,7 +301,7 @@ class _ReceivedEscalationsPageState
     try {
       final ok = await ref
           .read(escalationProvider.notifier)
-          .accept(id, user.id)
+          .accept(id, userId)
           .timeout(_kLoadTimeout);
 
       if (!mounted) return;
@@ -353,15 +359,16 @@ class _ReceivedEscalationsPageState
       debugPrint('[ReceivedEscalations] ❌ Rejecting escalation: '
           '${_obfuscate(id)}');
 
-      final user = ref.read(currentUserProvider);
-      if (user == null) {
+      // ✅ CORRECTION : Utilisation de supabaseUserIdProvider
+      final userId = ref.read(supabaseUserIdProvider);
+      if (userId == null) {
         _showError(l10n.t('escalation_not_authenticated'));
         return;
       }
 
       final ok = await ref
           .read(escalationProvider.notifier)
-          .reject(id, user.id, sanitizedReason)
+          .reject(id, userId, sanitizedReason)
           .timeout(_kLoadTimeout);
 
       if (!mounted) return;
