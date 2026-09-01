@@ -37,8 +37,10 @@ import 'package:go_router/go_router.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/models/chat/escalation_level.dart';
-import 'package:thix_id/models/chat/escalation_priority.dart';
+import '../models/escalation_level.dart';
+import '../models/escalation_priority.dart';
+import '../models/escalation_status.dart';
+import '../models/escalation_step.dart';
 import 'package:thix_id/presentation/chat/escalation/providers/escalation_provider.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
     show supabaseClientProvider;
