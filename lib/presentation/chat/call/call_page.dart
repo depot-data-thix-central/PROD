@@ -318,12 +318,12 @@ class _CallPageState extends ConsumerState<CallPage> {
           const SizedBox(height: 20),
           Text(
             remoteName,
-            style: ThixPolicy.titleStyle.copyWith(...)
+            style: ThixPolicy.titleStyle.copyWith(
               color: Colors.white,
               fontSize: 24,
               fontWeight: FontWeight.w800,
             ),
-          ),
+          ), 
           const SizedBox(height: 8),
           Text(
             statusLabel,
