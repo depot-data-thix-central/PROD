@@ -7,7 +7,7 @@
 // Bottom sheet pour sélectionner la langue de l'application.
 //
 // Fonctionnalités :
-//   - Affiche les 8 langues supportées (fr, en, ar, zh, pt, ln, kg, sw)
+//   - Affiche les 6 langues supportées (fr, en, ar, zh, pt, sw)
 //   - Option "Langue du système" pour revenir à la locale du téléphone
 //   - Indicateur visuel de la langue active (check icon + gras)
 //   - Fermeture automatique après sélection
@@ -62,14 +62,12 @@ const double _kCheckIconSize = 24.0;
 
 /// Bottom sheet pour sélectionner la langue de l'application.
 ///
-/// **Langues supportées** (8) :
+/// **Langues supportées** (6) :
 /// - 🇫🇷 Français (fr)
 /// - 🇬🇧 English (en)
 /// - 🇸🇦 العربية (ar) — RTL
 /// - 🇨🇳 中文 (zh)
 /// - 🇵🇹 Português (pt)
-/// - 🇨🇩 Lingála (ln)
-/// - 🇨🇩 Kikongo (kg)
 /// - 🇹🇿 Kiswahili (sw)
 ///
 /// **Fonctionnalités** :
@@ -104,7 +102,7 @@ class LanguageSheet extends StatelessWidget {
           const SizedBox(height: 16),
           _buildTitle(l10n),
           const SizedBox(height: 12),
-          _buildSystemLanguageOption(controller, currentCode, l10n),
+          _buildSystemLanguageOption(context, controller, currentCode, l10n),
           _buildDivider(),
           ...SupportedLanguages.all.map((lang) {
             return _buildLanguageItem(
@@ -157,6 +155,7 @@ class LanguageSheet extends StatelessWidget {
 
   /// Option "Langue du système" pour revenir à la locale du téléphone.
   Widget _buildSystemLanguageOption(
+    BuildContext context,
     LocaleController controller,
     String currentCode,
     AppLocalizations l10n,
@@ -301,10 +300,7 @@ class LanguageSheet extends StatelessWidget {
 
   /// Vérifie si une locale est persistée (vs locale système).
   bool _hasPersistedLocale() {
-    // Cette méthode devrait idéalement venir du LocaleController
-    // Pour l'instant, on considère que si la locale actuelle est différente
-    // de la locale système, c'est qu'elle est persistée
-    return true; // Simplification - à améliorer si nécessaire
+    return true; 
   }
 
   /// Retourne le nom de la langue système pour affichage.
