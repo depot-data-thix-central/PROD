@@ -1033,10 +1033,9 @@ class _ReceivedRequestCard extends StatelessWidget {
   });
 
   @override
-    Widget build(BuildContext context) {
+  Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     
-    // ✅ CORRECTION : On force le type Map<String, dynamic> proprement
     final senderMap = (request.sender as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
     
     final certInfo = _CertificationInfo.fromMap(senderMap);
@@ -1057,7 +1056,6 @@ class _ReceivedRequestCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: ThixPolicy.border),
         boxShadow: ThixPolicy.shadowSoft(opacity: 0.02),
-
       ),
       child: Column(
         children: [
@@ -1202,10 +1200,8 @@ class _SentRequestCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-      Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     
-    // ✅ CORRECTION : On caste explicitement en Map<String, dynamic>
     final receiverMap = (request.receiver as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
     
     final certInfo = _CertificationInfo.fromMap(receiverMap);
@@ -1219,7 +1215,6 @@ class _SentRequestCard extends StatelessWidget {
         color: ThixPolicy.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: ThixPolicy.border),
-
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
