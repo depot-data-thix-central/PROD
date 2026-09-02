@@ -1,4 +1,4 @@
-// lib/services/security/encryption_service.dart
+// lib/services/chat/encryption_service.dart
 //
 // ============================================================================
 // ENCRYPTION SERVICE — Production Enterprise
@@ -36,9 +36,8 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
-import 'package:encrypt/encrypt.dart';
+import 'package:encrypt/encrypt.dart' as encrypt;
 import 'package:flutter/foundation.dart';
-import 'package:pointycastle/export.dart' as pc;
 
 // ============================================================================
 // CONSTANTS
@@ -50,7 +49,6 @@ const int _kKeyLength = 32; // AES-256
 const int _kMinPasswordLength = 8;
 const int _kMaxPasswordLength = 256;
 const int _kMaxPlaintextLength = 10 * 1024 * 1024; // 10MB
-const int _kHkdfIterations = 100000; // PBKDF2 fallback iterations
 const String _kHkdfInfo = 'thix-id-encryption-v1';
 
 // ============================================================================
@@ -145,16 +143,8 @@ class EncryptionService {
   final Random _secureRandom;
 
   EncryptionService({Random? secureRandom})
-      : _secureRandom = secureRandom ?? _createSecureRandom() {
+      : _secureRandom = secureRandom ?? Random.secure() {
     debugPrint('[EncryptionService] 🚀 Initialized');
-  }
-
-  static Random _createSecureRandom() {
-    final secureRandom = pc.FortunaRandom();
-    final random = Random.secure();
-    final seeds = List<int>.generate(32, (_) => random.nextInt(256));
-    secureRandom.seed(pc.KeyParameter(Uint8List.fromList(seeds)));
-    return secureRandom;
   }
 
   // ============================================================
@@ -204,12 +194,6 @@ class EncryptionService {
   ///
   /// **Throws** :
   ///   - [EncryptionException] si le password ou le texte est invalide
-  ///
-  /// **Exemple** :
-  /// ```dart
-  /// final encrypted = service.encrypt('Hello', 'my-password');
-  /// // encrypted = "AX8k3J..."  (base64url)
-  /// ```
   String encrypt(String plaintext, String password) {
     _EncryptionValidators.validatePassword(password);
     _EncryptionValidators.validatePlaintext(plaintext);
@@ -221,18 +205,22 @@ class EncryptionService {
 
       // 2. Dériver la clé AES-256
       final keyBytes = _deriveKey(password, salt);
-      final key = Key(keyBytes);
+      final key = encrypt.Key(keyBytes);
 
       // 3. Chiffrer avec AES-GCM (authenticated encryption)
-      final encrypter = Encrypter(AES(key, mode: AESMode.gcm));
+      final encrypter = encrypt.Encrypter(
+        encrypt.AES(key, mode: encrypt.AESMode.gcm),
+      );
       final encrypted = encrypter.encryptBytes(
         utf8.encode(plaintext),
-        iv: IV(iv),
+        iv: encrypt.IV(iv),
       );
 
       // 4. Assembler : version + salt + iv + ciphertext (avec tag GCM)
       final ciphertextBytes = encrypted.bytes;
-      final result = Uint8List(1 + _kSaltLength + _kIvLength + ciphertextBytes.length);
+      final result = Uint8List(
+        1 + _kSaltLength + _kIvLength + ciphertextBytes.length,
+      );
       var offset = 0;
 
       result[offset++] = _kVersionByte;
@@ -249,8 +237,10 @@ class EncryptionService {
     } on EncryptionException {
       rethrow;
     } catch (e) {
-      debugPrint('[EncryptionService] ❌ Encryption failed: '
-          '${kDebugMode ? e : "error"}');
+      debugPrint(
+        '[EncryptionService] ❌ Encryption failed: '
+        '${kDebugMode ? e : "error"}',
+      );
       throw EncryptionException('Encryption failed', e);
     }
   }
@@ -262,17 +252,7 @@ class EncryptionService {
   /// Déchiffre un ciphertext produit par [encrypt].
   ///
   /// **Throws** :
-  ///   - [DecryptionException] si :
-  ///     - Le password est invalide
-  ///     - Le ciphertext est corrompu
-  ///     - Le format n'est pas reconnu
-  ///     - La version n'est pas supportée
-  ///
-  /// **Exemple** :
-  /// ```dart
-  /// final decrypted = service.decrypt('AX8k3J...', 'my-password');
-  /// // decrypted = "Hello"
-  /// ```
+  ///   - [DecryptionException] si password invalide / data corrompue
   String decrypt(String ciphertextBase64, String password) {
     _EncryptionValidators.validatePassword(password);
     _EncryptionValidators.validateCiphertext(ciphertextBase64);
@@ -317,14 +297,16 @@ class EncryptionService {
 
       // 4. Dériver la clé avec le même salt
       final keyBytes = _deriveKey(password, salt);
-      final key = Key(keyBytes);
+      final key = encrypt.Key(keyBytes);
 
       // 5. Déchiffrer avec AES-GCM (vérifie automatiquement le tag)
-      final encrypter = Encrypter(AES(key, mode: AESMode.gcm));
+      final encrypter = encrypt.Encrypter(
+        encrypt.AES(key, mode: encrypt.AESMode.gcm),
+      );
       try {
         final decrypted = encrypter.decryptBytes(
-          Encrypted(ciphertextBytes),
-          iv: IV(iv),
+          encrypt.Encrypted(ciphertextBytes),
+          iv: encrypt.IV(iv),
         );
         debugPrint('[EncryptionService] ✓ Decrypted ${decrypted.length} bytes');
         return utf8.decode(decrypted);
@@ -337,8 +319,10 @@ class EncryptionService {
     } on DecryptionException {
       rethrow;
     } catch (e) {
-      debugPrint('[EncryptionService] ❌ Decryption failed: '
-          '${kDebugMode ? e : "error"}');
+      debugPrint(
+        '[EncryptionService] ❌ Decryption failed: '
+        '${kDebugMode ? e : "error"}',
+      );
       throw DecryptionException('Decryption failed', e);
     }
   }
@@ -348,9 +332,6 @@ class EncryptionService {
   // ============================================================
 
   /// Vérifie si un ciphertext est déchiffrable avec un password donné.
-  ///
-  /// Utile pour valider un password avant une opération critique.
-  /// Retourne `true` si le déchiffrement réussit, `false` sinon.
   bool verifyPassword(String ciphertextBase64, String password) {
     try {
       decrypt(ciphertextBase64, password);
@@ -361,8 +342,6 @@ class EncryptionService {
   }
 
   /// Génère un password aléatoire sécurisé de [length] caractères.
-  ///
-  /// Utilise `SecureRandom` du système pour garantir l'imprédictibilité.
   String generatePassword({int length = 24}) {
     if (length < 12 || length > 128) {
       throw ArgumentError('Password length must be between 12 and 128');
