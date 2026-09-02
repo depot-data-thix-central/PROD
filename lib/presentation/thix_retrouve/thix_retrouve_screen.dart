@@ -179,13 +179,13 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
 
   // ── Fond : halo unique très discret ─────────────────────────
   Widget _buildBackgroundGlow() {
-    return IgnorePointer(
-      child: Positioned(
-        top: -120,
-        right: -100,
-        child: Container(
-          width: 280,
-          height: 280,
+  return Positioned(
+    top: -120,
+    right: -100,
+    child: IgnorePointer(
+      child: Container(
+        width: 280,
+        height: 280,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: RadialGradient(
