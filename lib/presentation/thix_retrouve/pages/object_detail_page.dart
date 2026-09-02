@@ -55,13 +55,16 @@ class ObjectDetailPage extends StatelessWidget {
   final String reward;
   final String? imageUrl;
 
+  // CORRECTION : Les 'required' sont retirés. 
+  // Des valeurs par défaut sont fournies pour éviter les erreurs de compilation
+  // lorsque GoRouter appelle la page sans paramètres.
   const ObjectDetailPage({
     super.key,
-    required this.title,
-    required this.status,
-    required this.location,
-    required this.time,
-    required this.description,
+    this.title = 'Détail de l\'objet',
+    this.status = 'Inconnu',
+    this.location = 'Lieu non renseigné',
+    this.time = '',
+    this.description = 'Aucune description disponible.',
     this.reward = '',
     this.imageUrl,
   });
