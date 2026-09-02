@@ -2,12 +2,11 @@
 /// ✅ SÉCURISÉ : timeouts, retry, validation, anti-race, PII protection
 /// ✅ ROBUSTE : logs structurés, atomicité best-effort, sanitization
 import 'dart:math';
-
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
-
 import '../models/sos_models.dart';
 
 // ============================================================================
