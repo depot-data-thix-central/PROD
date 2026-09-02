@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'package:flutter/services.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/presentation/education/providers/recommendation_provider.dart';
@@ -11,10 +11,10 @@ import 'package:thix_id/presentation/education/widgets/common/education_loading_
 
 /// Page des recommandations personnalisées
 ///
-/// ✅ Riverpod pur (migration depuis Provider)
-/// ✅ Logs structurés [Recommendations]
-/// ✅ Error handling avec retry
-/// ✅ Mounted checks sur toutes les opérations async
+/// Riverpod pur (migration depuis Provider)
+///  Logs structurés [Recommendations]
+/// Error handling avec retry
+/// Mounted checks sur toutes les opérations async
 class RecommendationsPage extends ConsumerStatefulWidget {
   const RecommendationsPage({super.key});
 
@@ -41,7 +41,7 @@ class _RecommendationsPageState extends ConsumerState<RecommendationsPage> {
       return;
     }
 
-    // ✅ Riverpod : ref.read au lieu de context.read
+    // Riverpod : ref.read au lieu de context.read
     final notifier = ref.read(recommendationProvider.notifier);
     await notifier.loadRecommendations(userId);
   }
@@ -50,7 +50,7 @@ class _RecommendationsPageState extends ConsumerState<RecommendationsPage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
-    // ✅ Riverpod : ref.watch au lieu de context.watch
+    //  Riverpod : ref.watch au lieu de context.watch
     final state = ref.watch(recommendationProvider);
     final recommendations = state.recommendations;
 
