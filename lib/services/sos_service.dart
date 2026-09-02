@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart'; // ✅ AJOUTÉ pour régler l'erreur debugPrint
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
@@ -50,31 +51,12 @@ class SosService {
     return SosContact.fromJson(Map<String, dynamic>.from(res));
   }
 
+  // 🚨 MÉTHODE NEUTRALISÉE CAR NON UTILISÉE ET SOURCE D'ERREURS
   Future<void> setCallingCircle(String incidentId, int circle) async {
-    _ensureAuth();
-    if (circle < 1 || circle > 3) return;
-
-    final status = circle == 1
-        ? SosStatus.callingCircle1
-        : circle == 2
-            ? SosStatus.callingCircle2
-            : SosStatus.callingCircle3;
-
-    try {
-      await _client.from(_tableIncidents).update({
-        'status': status.dbValue,
-        'active_circle': circle,
-        'updated_at': DateTime.now().toIso8601String(),
-      }).eq('id', incidentId).eq('victim_id', _uid!);
-
-      await _logEvent(incidentId, 'CALLING_CIRCLE_$circle', {
-        'circle': circle,
-      });
-    } catch (e, st) {
-      debugPrint('SosService.setCallingCircle: $e\n$st');
-      // non bloquant pour les appels
-    }
+    debugPrint('⚠️ SosService.setCallingCircle a été appelée mais est désactivée.');
+    return; // On arrête l'exécution ici, rien ne se passe.
   }
+  
   // ── Incident actif ──────────────────────────────────────────
   Future<SosIncident?> getActiveIncident() async {
     final uid = _uid;
