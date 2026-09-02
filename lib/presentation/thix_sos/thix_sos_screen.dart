@@ -1,5 +1,6 @@
 /// THIX SOS — Homepage production (Design System Intégré)
-/// ✅ AUDITÉ : Sécurité, Performance, Accessibilité, UX
+/// ✅ AUDITÉ : Sécurité, Performance (RepaintBoundary), Accessibilité, UX
+/// ✅ Riverpod Listeners corrigés
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -56,19 +57,22 @@ class GlassBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-        child: Container(
-          padding: padding,
-          decoration: BoxDecoration(
-            color: color ?? Colors.white.withOpacity(0.08),
-            borderRadius: BorderRadius.circular(borderRadius),
-            border: border ??
-                Border.all(color: Colors.white.withOpacity(0.15), width: 1),
+    // ✅ FIX CRITIQUE : RepaintBoundary empêche le gel (freeze) de l'UI sur le Web
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          child: Container(
+            padding: padding,
+            decoration: BoxDecoration(
+              color: color ?? Colors.white.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(borderRadius),
+              border: border ??
+                  Border.all(color: Colors.white.withOpacity(0.15), width: 1),
+            ),
+            child: child,
           ),
-          child: child,
         ),
       ),
     );
@@ -86,43 +90,6 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
   bool _isProcessing = false;
 
   @override
-  void initState() {
-    super.initState();
-    
-    // ✅ FIX P0 : Déplacer ref.listen dans initState pour éviter rebuilds infinis
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      
-      ref.listenManual(activeSosProvider, (prev, next) {
-        next.whenData((incident) {
-          if (incident != null && incident.isActive && mounted) {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(
-                builder: (_) => SosActifPage(incidentId: incident.id),
-              ),
-            );
-          }
-        });
-      });
-
-      ref.listenManual(sosRescueAlertProvider, (prev, next) {
-        if (next == null || !mounted) return;
-        if (prev != null && prev.incidentId == next.incidentId) return;
-        
-        HapticFeedback.heavyImpact();
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => ChambreCriseSecoursPage(
-              incidentId: next.incidentId,
-              victimUserId: next.victimId,
-            ),
-          ),
-        );
-      });
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final contactsAsync = ref.watch(sosContactsProvider);
@@ -130,26 +97,63 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
     final triggerState = ref.watch(triggerSosProvider);
     final isTriggering = triggerState.isLoading;
 
+    // ✅ FIX P0 : Les écouteurs Riverpod doivent être dans le build, pas dans initState.
+    // Cela évite les conflits de cycle de vie et les écrans figés.
+    ref.listen<AsyncValue<SosIncident?>>(activeSosProvider, (prev, next) {
+      final incident = next.valueOrNull;
+      if (incident != null && incident.isActive && mounted) {
+        // Microtask évite les collisions de rendu pendant les transitions d'onglets
+        Future.microtask(() {
+          if (mounted) {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (_) => SosActifPage(incidentId: incident.id)),
+            );
+          }
+        });
+      }
+    });
+
+    ref.listen<RescueAlert?>(sosRescueAlertProvider, (prev, next) {
+      if (next == null || !mounted) return;
+      if (prev != null && prev.incidentId == next.incidentId) return;
+      
+      Future.microtask(() {
+        if (mounted) {
+          HapticFeedback.heavyImpact();
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ChambreCriseSecoursPage(
+                incidentId: next.incidentId,
+                victimUserId: next.victimId,
+              ),
+            ),
+          );
+        }
+      });
+    });
+
     return Scaffold(
       backgroundColor: ThixPolicy.inkDeep,
       body: Stack(
         children: [
-          // ─── BACKGROUND GLOW ───
+          // ─── BACKGROUND GLOW (Optimisé avec RepaintBoundary) ───
           Positioned(
             top: -50,
             right: -100,
-            child: Container(
-              width: 300,
-              height: 300,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: ThixPolicy.danger.withOpacity(0.15),
-                boxShadow: [
-                  BoxShadow(
-                      color: ThixPolicy.danger.withOpacity(0.2),
-                      blurRadius: 120,
-                      spreadRadius: 100)
-                ],
+            child: RepaintBoundary(
+              child: Container(
+                width: 300,
+                height: 300,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: ThixPolicy.danger.withOpacity(0.15),
+                  boxShadow: [
+                    BoxShadow(
+                        color: ThixPolicy.danger.withOpacity(0.2),
+                        blurRadius: 120,
+                        spreadRadius: 100)
+                  ],
+                ),
               ),
             ),
           ),
@@ -226,7 +230,7 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
                           const SizedBox(height: ThixPolicy.s32),
 
                           // --- ALERTES À PROXIMITÉ ---
-                          const NearbyAlertsCard(),
+                          const RepaintBoundary(child: NearbyAlertsCard()),
                           const SizedBox(height: ThixPolicy.s32),
 
                           // --- ACTIONS RAPIDES ---
@@ -305,7 +309,6 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
     );
   }
 
-  // ✅ FIX P1 : Protection double-tap avec _isProcessing
   Future<void> _handleSosTrigger(BuildContext context, WidgetRef ref) async {
     if (_isProcessing || !mounted) return;
     
@@ -339,7 +342,6 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
     }
   }
 
-  // ✅ FIX P0 : Mounted check avant navigation
   void _handleCircleTap(BuildContext context, WidgetRef ref, int circle) {
     if (!mounted) return;
     
@@ -450,7 +452,6 @@ class _CrisisRoomCardState extends ConsumerState<_CrisisRoomCard>
     final l10n = AppLocalizations.of(context);
     final alert = ref.watch(sosRescueAlertProvider);
 
-    // ── SOS EN COURS (je suis secours cercle 1) → carte rouge pulsante ──
     if (alert != null) {
       return Semantics(
         button: true,
@@ -577,7 +578,6 @@ class _CrisisRoomCardState extends ConsumerState<_CrisisRoomCard>
       );
     }
 
-    // ── Pas de SOS secours actif → carte classique ──
     return Semantics(
       button: true,
       label: l10n.t('sos_crisis_room'),
@@ -734,7 +734,6 @@ class _HeaderOfficiel extends StatelessWidget {
                   child: const CircleAvatar(
                     radius: 16,
                     backgroundColor: ThixPolicy.primaryDeep,
-                    // ✅ FIX P0 : Image par défaut sans NetworkImage
                     child: Icon(Icons.person, color: Colors.white, size: 20),
                   ),
                 ),
@@ -797,7 +796,6 @@ class _UnifiedSecoursCard extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // ✅ FIX P2 : Mémoïser le filtrage par cercle
     final contactsByCircle = useMemoized(() {
       return {
         1: contacts.where((c) => c.circle == 1).toList(),
@@ -907,7 +905,6 @@ class _UnifiedSecoursCard extends HookConsumerWidget {
             imageUrl = contact.avatarUrl ?? contact.photoUrl;
           } catch (_) {}
 
-          // ✅ FIX P0 : Validation URL avant utilisation
           final isValidImage = _ImageValidator.isValidUrl(imageUrl);
 
           return Positioned(
