@@ -1,9 +1,85 @@
+/// Mes Recherches Page (Production Enterprise)
+/// ✅ ThixPolicy + i18n 8 langues + sanitization + go_router
+/// ✅ Skeleton loader + PullToRefresh + Semantics + HapticFeedback
+/// ✅ Logs structurés + I18nService.relativeTime() + RepaintBoundary
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:go_router/go_router.dart';
+
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
+import 'package:thix_id/l10n/i18n_service.dart';
+
 import '../models/objet_model.dart';
 import '../providers/objet_providers.dart';
-import 'object_detail_page.dart';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const int _kMaxTitleLength = 80;
+const int _kMaxLocationLength = 60;
+const Duration _kTapThrottle = Duration(milliseconds: 400);
+
+// ============================================================================
+// VALIDATORS & SANITIZERS
+// ============================================================================
+
+class _SearchSanitizer {
+  _SearchSanitizer._();
+
+  static String sanitize(String? input, {required int maxLength}) {
+    if (input == null || input.isEmpty) return '';
+    final s = input
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+    return s.length > maxLength ? '${s.substring(0, maxLength)}…' : s;
+  }
+
+  static String? sanitizeImageUrl(String? url) {
+    if (url == null || url.trim().isEmpty) return null;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return null;
+    return url.trim();
+  }
+}
+
+// ============================================================================
+// CATEGORY ICON HELPER
+// ============================================================================
+
+IconData _iconForCategory(String? cat) {
+  if (cat == null) return Icons.inventory_2_rounded;
+  final normalized = cat.toLowerCase().trim();
+  if (normalized.contains('phone') || normalized.contains('tel')) {
+    return Icons.phone_android_rounded;
+  }
+  if (normalized.contains('wallet') || normalized.contains('sac')) {
+    return Icons.account_balance_wallet_rounded;
+  }
+  if (normalized.contains('key') || normalized.contains('cl')) {
+    return Icons.vpn_key_rounded;
+  }
+  if (normalized.contains('backpack')) {
+    return Icons.backpack_rounded;
+  }
+  if (normalized.contains('watch') || normalized.contains('bijou')) {
+    return Icons.watch_rounded;
+  }
+  if (normalized.contains('doc')) {
+    return Icons.description_rounded;
+  }
+  if (normalized.contains('audio') || normalized.contains('ecou')) {
+    return Icons.headphones_rounded;
+  }
+  return Icons.inventory_2_rounded;
+}
+
+// ============================================================================
+// PAGE
+// ============================================================================
 
 class MesRecherchesPage extends ConsumerStatefulWidget {
   const MesRecherchesPage({super.key});
@@ -15,11 +91,19 @@ class MesRecherchesPage extends ConsumerStatefulWidget {
 class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  DateTime? _lastTap;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(() {
+      if (!_tabController.indexIsChanging) {
+        HapticFeedback.selectionClick();
+        debugPrint('[MesRecherches] 📑 Tab changed: ${_tabController.index}');
+      }
+    });
+    debugPrint('[MesRecherches] 🚀 Page initialized');
   }
 
   @override
@@ -30,32 +114,46 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final mesObjetsAsync = ref.watch(mesObjetsProvider);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FC),
+      backgroundColor: ThixPolicy.inkDeep,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: ThixPolicy.card,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 20),
-          onPressed: () => Navigator.pop(context),
+        leading: Semantics(
+          button: true,
+          label: l10n.t('common_back'),
+          child: IconButton(
+            icon: Icon(Icons.arrow_back_ios_new_rounded,
+                color: ThixPolicy.textMain, size: 20),
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              context.pop();
+            },
+          ),
         ),
         title: Text(
-          'Mes recherches',
-          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.black87),
+          l10n.t('searches_title'),
+          style: ThixPolicy.h3Style.copyWith(
+            color: ThixPolicy.textMain,
+            fontWeight: ThixPolicy.bold,
+          ),
         ),
         centerTitle: true,
         bottom: TabBar(
           controller: _tabController,
-          labelColor: const Color(0xFF1E3A8A),
-          unselectedLabelColor: Colors.grey,
-          indicatorColor: const Color(0xFF1E3A8A),
-          labelStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
-          tabs: const [
-            Tab(text: 'Objets perdus'),
-            Tab(text: 'Objets trouvés'),
-            Tab(text: 'Récupérés'),
+          labelColor: ThixPolicy.primary,
+          unselectedLabelColor: ThixPolicy.textMuted,
+          indicatorColor: ThixPolicy.primary,
+          labelStyle: ThixPolicy.labelStyle.copyWith(
+            fontWeight: ThixPolicy.bold,
+          ),
+          tabs: [
+            Tab(text: l10n.t('searches_tab_lost')),
+            Tab(text: l10n.t('searches_tab_found')),
+            Tab(text: l10n.t('searches_tab_recovered')),
           ],
         ),
       ),
@@ -65,76 +163,115 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
           final trouves = objets.where((o) => o.statut == StatutObjet.trouve).toList();
           final recuperes = objets.where((o) => o.statut == StatutObjet.recupere).toList();
 
+          debugPrint('[MesRecherches] ✓ Loaded: ${perdus.length} perdus, '
+              '${trouves.length} trouvés, ${recuperes.length} récupérés');
+
           return TabBarView(
             controller: _tabController,
             children: [
-              _buildList(perdus, emptyMessage: 'Aucun objet perdu déclaré'),
-              _buildList(trouves, emptyMessage: 'Aucun objet trouvé déclaré'),
-              _buildList(recuperes, emptyMessage: 'Aucun objet récupéré'),
+              _buildList(
+                context,
+                l10n,
+                perdus,
+                emptyMessage: l10n.t('searches_empty_lost'),
+              ),
+              _buildList(
+                context,
+                l10n,
+                trouves,
+                emptyMessage: l10n.t('searches_empty_found'),
+              ),
+              _buildList(
+                context,
+                l10n,
+                recuperes,
+                emptyMessage: l10n.t('searches_empty_recovered'),
+              ),
             ],
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, color: Colors.red, size: 40),
-              const SizedBox(height: 12),
-              Text('Erreur de chargement', style: GoogleFonts.inter(color: Colors.red)),
-              TextButton(
-                onPressed: () => ref.invalidate(mesObjetsProvider),
-                child: const Text('Réessayer'),
-              ),
-            ],
-          ),
+        loading: () => const _SkeletonLoader(),
+        error: (e, _) => _buildErrorState(context, l10n, e),
+      ),
+    );
+  }
+
+  // ========================================================================
+  // LIST BUILDER
+  // ========================================================================
+
+  Widget _buildList(
+    BuildContext context,
+    AppLocalizations l10n,
+    List<ObjetModel> items, {
+    required String emptyMessage,
+  }) {
+    if (items.isEmpty) {
+      return _buildEmptyState(l10n, emptyMessage);
+    }
+
+    return RefreshIndicator(
+      color: ThixPolicy.primary,
+      backgroundColor: ThixPolicy.card,
+      onRefresh: () async {
+        HapticFeedback.lightImpact();
+        debugPrint('[MesRecherches] 🔄 Refresh triggered');
+        ref.invalidate(mesObjetsProvider);
+      },
+      child: RepaintBoundary(
+        child: ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: items.length,
+          itemBuilder: (context, index) {
+            final obj = items[index];
+            return _buildObjectCard(context, l10n, obj);
+          },
         ),
       ),
     );
   }
 
-  Widget _buildList(List<ObjetModel> items, {required String emptyMessage}) {
-    if (items.isEmpty) {
-      return Center(
-        child: Text(
-          emptyMessage,
-          style: GoogleFonts.inter(color: Colors.grey[500]),
-        ),
-      );
-    }
+  // ========================================================================
+  // OBJECT CARD
+  // ========================================================================
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final obj = items[index];
-        final isRecovered = obj.statut == StatutObjet.recupere;
+  Widget _buildObjectCard(
+    BuildContext context,
+    AppLocalizations l10n,
+    ObjetModel obj,
+  ) {
+    final isRecovered = obj.statut == StatutObjet.recupere;
+    final statusColor = isRecovered ? ThixPolicy.success : ThixPolicy.warning;
+    final i18n = I18nService.of(context);
 
-        return GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ObjectDetailPage(
-                  title: obj.titre,
-                  status: obj.statutLabel,
-                  location: obj.lieu,
-                  time: _formatDate(obj.date),
-                  description: obj.description,
-                  reward: obj.recompense ?? '',
-                ),
-              ),
-            );
-          },
+    // ✅ Sanitization
+    final safeTitle = _SearchSanitizer.sanitize(obj.titre, maxLength: _kMaxTitleLength);
+    final safeLocation = _SearchSanitizer.sanitize(obj.lieu, maxLength: _kMaxLocationLength);
+    final safeDescription = _SearchSanitizer.sanitize(obj.description, maxLength: 500);
+    final safeReward = _SearchSanitizer.sanitize(obj.recompense ?? '', maxLength: 50);
+    final safeImageUrl = _SearchSanitizer.sanitizeImageUrl(obj.imageUrl);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Semantics(
+        button: true,
+        label: '${safeTitle}. ${obj.statutLabel}. ${safeLocation}',
+        child: GestureDetector(
+          onTap: () => _throttledTap(() {
+            HapticFeedback.selectionClick();
+            debugPrint('[MesRecherches] 📦 Object tapped: '
+                '${safeTitle.substring(0, safeTitle.length.clamp(0, 20))}');
+            context.push('/retrouve/object/${obj.id}');
+          }),
           child: Container(
-            margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
+              color: ThixPolicy.card,
+              borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+              border: Border.all(color: ThixPolicy.border),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
+                  color: Colors.black.withValues(alpha: 0.04),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -142,95 +279,225 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
             ),
             child: Row(
               children: [
+                // ── Icon/Thumbnail ──
                 Container(
                   width: 52,
                   height: 52,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(12),
+                    color: ThixPolicy.surfaceSoft,
+                    borderRadius: BorderRadius.circular(ThixPolicy.rMd),
                   ),
                   child: Icon(
-                    _iconForCategorie(obj.categorie),
+                    _iconForCategory(obj.categorie),
                     size: 26,
-                    color: Colors.grey[700],
+                    color: ThixPolicy.textMuted,
                   ),
                 ),
                 const SizedBox(width: 12),
+
+                // ── Content ──
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        obj.titre,
-                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600),
+                        safeTitle,
+                        style: ThixPolicy.bodyStyle.copyWith(
+                          color: ThixPolicy.textMain,
+                          fontWeight: ThixPolicy.bold,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${obj.statutLabel} • ${_formatDate(obj.date)}',
-                        style: GoogleFonts.inter(fontSize: 12, color: Colors.grey[600]),
+                        '${obj.statutLabel} • ${i18n.relativeTime(obj.date)}',
+                        style: ThixPolicy.captionStyle
+                            .copyWith(color: ThixPolicy.textMuted),
                       ),
                     ],
                   ),
                 ),
+
+                // ── Status Badge ──
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
-                    color: isRecovered
-                        ? const Color(0xFFDCFCE7)
-                        : const Color(0xFFFEF3C7),
+                    color: statusColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    isRecovered ? 'Récupéré' : 'En recherche',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: isRecovered
-                          ? const Color(0xFF16A34A)
-                          : const Color(0xFFD97706),
+                    isRecovered
+                        ? l10n.t('searches_status_recovered')
+                        : l10n.t('searches_status_searching'),
+                    style: ThixPolicy.captionStyle.copyWith(
+                      color: statusColor,
+                      fontWeight: ThixPolicy.bold,
                     ),
                   ),
                 ),
               ],
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
-    String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final dateOnly = DateTime(date.year, date.month, date.day);
-    // CORRECTION ICI : Utilisation de $ au lieu de \( \)
-    final timeStr = '${date.hour}h${date.minute.toString().padLeft(2, '0')}';
+  // ========================================================================
+  // EMPTY STATE
+  // ========================================================================
 
-    if (dateOnly == today) {
-      return 'Aujourd\'hui, $timeStr';
-    }
-    if (dateOnly == today.subtract(const Duration(days: 1))) {
-      return 'Hier, $timeStr';
-    }
-    // CORRECTION ICI AUSSI
-    return '${date.day}/${date.month}/${date.year}';
+  Widget _buildEmptyState(AppLocalizations l10n, String message) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.inventory_2_outlined,
+            size: 64,
+            color: ThixPolicy.textMuted.withValues(alpha: 0.4),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            message,
+            style: ThixPolicy.bodyStyle.copyWith(
+              color: ThixPolicy.textMuted,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            l10n.t('searches_empty_hint'),
+            style: ThixPolicy.captionStyle.copyWith(
+              color: ThixPolicy.textMuted.withValues(alpha: 0.6),
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
   }
 
+  // ========================================================================
+  // ERROR STATE
+  // ========================================================================
 
-  IconData _iconForCategorie(String? cat) {
-    switch (cat?.toLowerCase()) {
-      case 'téléphone':
-        return Icons.phone_android;
-      case 'portefeuille / sac':
-        return Icons.account_balance_wallet;
-      case 'clés':
-        return Icons.vpn_key;
-      case 'sac à dos':
-        return Icons.backpack;
-      case 'bijoux / montre':
-        return Icons.watch;
-      default:
-        return Icons.inventory_2_outlined;
+  Widget _buildErrorState(
+    BuildContext context,
+    AppLocalizations l10n,
+    Object error,
+  ) {
+    debugPrint('[MesRecherches] ❌ Error: $error');
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.error_outline_rounded,
+            color: ThixPolicy.danger,
+            size: 40,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            l10n.t('searches_load_error'),
+            style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.danger),
+          ),
+          const SizedBox(height: 16),
+          Semantics(
+            button: true,
+            label: l10n.t('common_retry'),
+            child: ElevatedButton.icon(
+              onPressed: () {
+                HapticFeedback.mediumImpact();
+                ref.invalidate(mesObjetsProvider);
+              },
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text(l10n.t('common_retry')),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ThixPolicy.primary,
+                foregroundColor: ThixPolicy.textMain,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ========================================================================
+  // THROTTLE HELPER
+  // ========================================================================
+
+  void _throttledTap(VoidCallback callback) {
+    final now = DateTime.now();
+    if (_lastTap != null && now.difference(_lastTap!) < _kTapThrottle) {
+      debugPrint('[MesRecherches] ⏱️ Tap throttled');
+      return;
     }
+    _lastTap = now;
+    callback();
+  }
+}
+
+// ============================================================================
+// SKELETON LOADER
+// ============================================================================
+
+class _SkeletonLoader extends StatefulWidget {
+  const _SkeletonLoader();
+
+  @override
+  State<_SkeletonLoader> createState() => _SkeletonLoaderState();
+}
+
+class _SkeletonLoaderState extends State<_SkeletonLoader>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: 5,
+      itemBuilder: (context, index) => _buildSkeletonCard(),
+    );
+  }
+
+  Widget _buildSkeletonCard() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (_, __) => Opacity(
+          opacity: 0.35 + 0.3 * _ctrl.value,
+          child: Container(
+            height: 76,
+            decoration: BoxDecoration(
+              color: ThixPolicy.border.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
