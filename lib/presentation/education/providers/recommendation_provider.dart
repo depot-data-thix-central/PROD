@@ -1,53 +1,125 @@
-// lib/providers/recommendation_provider.dart
-import 'package:flutter/material.dart';
-import '../services/education_service.dart';
-import '../models/recommendation.dart';
+// lib/presentation/education/providers/recommendation_provider.dart
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-class RecommendationProvider extends ChangeNotifier {
-  final EducationService _service;
+import 'package:thix_id/presentation/education/models/recommendation.dart';
 
-  List<Recommendation> _recommendations = [];
-  bool _isLoading = false;
-  String? _error;
+/// État des recommandations (immutable)
+class RecommendationsState {
+  final List<Recommendation> recommendations;
+  final bool isLoading;
+  final String? error;
+  final bool isInitialized;
 
-  // Getters
-  List<Recommendation> get recommendations => _recommendations;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
+  const RecommendationsState({
+    this.recommendations = const [],
+    this.isLoading = false,
+    this.error,
+    this.isInitialized = false,
+  });
 
-  RecommendationProvider(this._service);
+  RecommendationsState copyWith({
+    List<Recommendation>? recommendations,
+    bool? isLoading,
+    String? error,
+    bool? isInitialized,
+  }) {
+    return RecommendationsState(
+      recommendations: recommendations ?? this.recommendations,
+      isLoading: isLoading ?? this.isLoading,
+      error: error,
+      isInitialized: isInitialized ?? this.isInitialized,
+    );
+  }
+}
 
-  // ─── CHARGEMENT ──────────────────────────────────────────────────
+/// Notifier Riverpod pour gérer les recommandations
+class RecommendationNotifier extends StateNotifier<RecommendationsState> {
+  final SupabaseClient _client;
 
+  RecommendationNotifier({SupabaseClient? client})
+      : _client = client ?? Supabase.instance.client,
+        super(const RecommendationsState());
+
+  /// Charge les recommandations depuis Supabase
   Future<void> loadRecommendations(String userId) async {
-    _setLoading(true);
+    if (state.isLoading) {
+      debugPrint('[Recommendations] ⏳ Already loading, skipping');
+      return;
+    }
+
+    debugPrint('[Recommendations] 🚀 Loading for user '
+        '${userId.substring(0, 8)}...');
+
+    state = state.copyWith(isLoading: true, error: null);
+
     try {
-      _recommendations = await _service.getRecommendations(userId);
-      _error = null;
-    } catch (e) {
-      _error = e.toString();
-      debugPrint('Error loading recommendations: $e');
-    } finally {
-      _setLoading(false);
+      final response = await _client
+          .from('recommendations')
+          .select('''
+            id,
+            user_id,
+            formation_id,
+            reason,
+            score,
+            created_at,
+            formations!inner (
+              id,
+              title,
+              description,
+              duration,
+              level,
+              thumbnail_url
+            )
+          ''')
+          .eq('user_id', userId)
+          .order('score', ascending: false)
+          .limit(50);
+
+      final recommendations = (response as List)
+          .map((row) => Recommendation.fromMap(row))
+          .toList();
+
+      state = state.copyWith(
+        recommendations: recommendations,
+        isLoading: false,
+        isInitialized: true,
+      );
+
+      debugPrint('[Recommendations] ✓ Loaded ${recommendations.length} items');
+    } catch (e, stackTrace) {
+      debugPrint('[Recommendations] ❌ Load failed: $e');
+      if (kDebugMode) {
+        debugPrint('[Recommendations] Stack: '
+            '${stackTrace.toString().split('\n').first}');
+      }
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Impossible de charger les recommandations',
+        isInitialized: true,
+      );
     }
   }
 
-  // ─── UTILITAIRES ──────────────────────────────────────────────────
-
-  void clearError() {
-    _error = null;
-    notifyListeners();
+  /// Rafraîchit les recommandations
+  Future<void> refresh() async {
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) {
+      debugPrint('[Recommendations] ⚠️ No user logged in');
+      return;
+    }
+    await loadRecommendations(userId);
   }
 
+  /// Réinitialise l'état (logout)
   void reset() {
-    _recommendations = [];
-    _error = null;
-    _isLoading = false;
-    notifyListeners();
-  }
-
-  void _setLoading(bool loading) {
-    _isLoading = loading;
-    notifyListeners();
+    state = const RecommendationsState();
   }
 }
+
+/// Provider Riverpod principal
+final recommendationProvider =
+    StateNotifierProvider<RecommendationNotifier, RecommendationsState>(
+  (ref) => RecommendationNotifier(),
+);
