@@ -209,6 +209,21 @@ String _flagForLanguageCode(String languageCode) {
   }
 }
 
+String _nameForLanguageCode(String code) {
+  switch (code) {
+    case 'fr': return 'Français';
+    case 'en': return 'English';
+    case 'es': return 'Español';
+    case 'pt': return 'Português';
+    case 'sw': return 'Kiswahili';
+    case 'ln': return 'Lingála';
+    case 'kg': return 'Kikongo';
+    case 'lu': return 'Tshiluba';
+    case 'ar': return 'العربية';
+    default: return code.toUpperCase();
+  }
+}
+
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
 
@@ -288,7 +303,7 @@ class SettingsPage extends StatelessWidget {
                               return [
                                 _LocaleChip(
                                   flag: _flagForLanguageCode(l.languageCode),
-                                  name: AppLocalizations.localeLabel(l),
+                                  name: _nameForLanguageCode(l.languageCode),
                                   selected: selected?.languageCode == l.languageCode,
                                   onTap: () => localeCtrl.setLocale(l),
                                 ),
