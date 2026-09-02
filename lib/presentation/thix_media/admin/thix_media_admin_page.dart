@@ -146,7 +146,9 @@ class _ThixMediaAdminPageState extends ConsumerState<ThixMediaAdminPage> {
       builder: (_) => AlertDialog(
         backgroundColor: ThixPolicy.card,
         title: Text(
-          l10n.t('admin_confirm_delete_title', args: {'title': item.title}),
+          // ✅ FIX : forcer type Map explicite pour dart2js
+          l10n.t('admin_confirm_delete_title',
+              args: <String, String>{'title': item.title}),
           style: TextStyle(color: ThixPolicy.textMain),
         ),
         content: Text(
@@ -368,7 +370,9 @@ class _ThixMediaAdminPageState extends ConsumerState<ThixMediaAdminPage> {
         child: Center(
           child: Semantics(
             header: true,
-            label: l10n.t('admin_empty_filter', args: {'filter': filter}),
+            // ✅ FIX : forcer type Map explicite pour dart2js
+            label: l10n.t('admin_empty_filter',
+                args: <String, String>{'filter': filter}),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -379,7 +383,9 @@ class _ThixMediaAdminPageState extends ConsumerState<ThixMediaAdminPage> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  l10n.t('admin_empty_filter', args: {'filter': filter}),
+                  // ✅ FIX : forcer type Map explicite pour dart2js
+                  l10n.t('admin_empty_filter',
+                      args: <String, String>{'filter': filter}),
                   style: ThixPolicy.bodyStyle.copyWith(
                     color: ThixPolicy.textMuted,
                   ),
