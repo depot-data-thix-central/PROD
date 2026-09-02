@@ -77,8 +77,9 @@ class RecommendationNotifier extends StateNotifier<RecommendationsState> {
           .order('score', ascending: false)
           .limit(50);
 
-      final recommendations = (response as List)
-          .map((row) => Recommendation.fromMap(row))
+      // ✅ CORRECTION ICI : Cast explicite pour éviter l'erreur List<dynamic>
+      final recommendations = (response as List<dynamic>)
+          .map<Recommendation>((row) => Recommendation.fromMap(row as Map<String, dynamic>))
           .toList();
 
       state = state.copyWith(
