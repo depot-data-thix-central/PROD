@@ -126,7 +126,7 @@ dependencies:
   # ═══════════════════════════════════════════════════════════════════════
   # SÉCURITÉ / CHIFFREMENT
   # ═══════════════════════════════════════════════════════════════════════
-  encrypt: ^6.0.3                      # UPGRADED : 5.0.3 → 6.0.3 (security fixes)
+  encrypt: ^5.0.3                      
   local_auth: ^3.0.2
   flutter_secure_storage: ^9.2.2
   zxcvbn: ^1.0.0                       # Analyse de force des mots de passe
