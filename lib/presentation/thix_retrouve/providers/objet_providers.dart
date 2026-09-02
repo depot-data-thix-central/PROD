@@ -1,11 +1,11 @@
 /// Objet Providers (Production Enterprise)
-/// ✅ Logs structurés + timeouts + error handling
-/// ✅ Providers dérivés pour filtrage par statut
-/// ✅ Documentation complète + validation des données
-/// ✅ Constants extractées + singleton service
+///  Logs structurés + timeouts + error handling
+///  Providers dérivés pour filtrage par statut
+///  Documentation complète + validation des données
+/// Constants extractées + singleton service
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'dart:async';
 import '../models/objet_model.dart';
 import '../services/objet_service.dart';
 
