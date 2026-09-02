@@ -1,4 +1,4 @@
-Name: Build Flutter APK
+name: Build Flutter APK
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ on:
 
 concurrency:
   group: build-apk-${{ github.ref }}
-  cancel-in-progress: false  # ✅ CHANGÉ : true → false (ne pas interrompre production)
+  cancel-in-progress: false  # ✅ Ne pas interrompre production
 
 env:
   FLUTTER_VERSION: "3.24.0"
@@ -27,7 +27,7 @@ jobs:
   test-and-analyze:
     name: Test & Analyze
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # ✅ AJOUTÉ : timeout pour éviter blocage
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -45,7 +45,7 @@ jobs:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
-          cache-key: flutter-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}  # ✅ OPTIMISÉ : cache key spécifique
+          cache-key: flutter-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
 
       - name: Flutter pub get
         run: flutter pub get
@@ -91,7 +91,7 @@ jobs:
           flags: flutter
           name: codecov-umbrella
           fail_ci_if_error: false
-        continue-on-error: true  # ✅ Ne pas bloquer si Codecov down
+        continue-on-error: true
 
   # ═══════════════════════════════════════════════════════════════════════
   # JOB 2 : BUILD APK & AAB
@@ -99,14 +99,14 @@ jobs:
   build:
     name: Build Release
     runs-on: ubuntu-latest
-    needs: test-and-analyze  # ✅ DÉPENDANCE : build seulement si tests passent
-    timeout-minutes: 30      # ✅ AJOUTÉ : timeout pour éviter blocage
+    needs: test-and-analyze
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # ✅ Pour versioning automatique
+          fetch-depth: 0
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -139,44 +139,34 @@ jobs:
             echo "ℹ️ No build_runner — skip"
           fi
 
-      # ✅ AJOUTÉ : Configuration keystore pour signature
       - name: Setup Android keystore
         if: github.event_name != 'pull_request'
         run: |
           echo "🔐 Setting up Android keystore..."
-          
-          # Créer le répertoire android/app si n'existe pas
           mkdir -p android/app
-          
-          # Décoder le keystore depuis secrets
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore.jks
-          
-          # Créer key.properties
           cat > android/key.properties <<EOF
           storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
           keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
           storeFile=keystore.jks
           EOF
-          
           echo "✅ Keystore configured"
 
-      # ✅ AJOUTÉ : Versioning automatique
       - name: Extract version from pubspec
         id: version
         run: |
           VERSION=$(grep "^version:" pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
           BUILD_NUMBER=$(grep "^version:" pubspec.yaml | awk '{print $2}' | cut -d'+' -f2)
-          
-          # Si tag, utiliser le tag
+
           if [[ $GITHUB_REF == refs/tags/* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
           fi
-          
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
           echo "full_version=$VERSION+$BUILD_NUMBER" >> $GITHUB_OUTPUT
-          
+
           echo "📦 Version: $VERSION (build $BUILD_NUMBER)"
 
       - name: Build release App Bundle
@@ -185,7 +175,7 @@ jobs:
           flutter build appbundle --release \
             --build-name=${{ steps.version.outputs.version }} \
             --build-number=${{ steps.version.outputs.build_number }}
-          
+
           if [ $? -ne 0 ]; then
             echo "❌ App Bundle build failed"
             exit 1
@@ -198,47 +188,41 @@ jobs:
           flutter build apk --release --split-per-abi \
             --build-name=${{ steps.version.outputs.version }} \
             --build-number=${{ steps.version.outputs.build_number }}
-          
+
           if [ $? -ne 0 ]; then
             echo "❌ APK build failed"
             exit 1
           fi
           echo "✅ APKs built successfully"
 
-      # ✅ AJOUTÉ : Vérification des artifacts
       - name: Verify artifacts
         run: |
           echo "🔍 Verifying artifacts..."
-          
-          # Vérifier AAB
+
           if [ ! -f "build/app/outputs/bundle/release/app-release.aab" ]; then
             echo "❌ AAB not found"
             exit 1
           fi
-          
-          # Vérifier APKs
+
           APK_COUNT=$(ls -1 build/app/outputs/flutter-apk/*.apk 2>/dev/null | wc -l)
           if [ $APK_COUNT -eq 0 ]; then
             echo "❌ No APKs found"
             exit 1
           fi
-          
+
           echo "✅ Found 1 AAB and $APK_COUNT APKs"
 
-      # ✅ AJOUTÉ : Calcul checksums
       - name: Generate checksums
         run: |
           echo "🔐 Generating checksums..."
-          
+
           cd build/app/outputs
-          
-          # Checksum AAB
+
           sha256sum bundle/release/app-release.aab > bundle/release/app-release.aab.sha256
-          
-          # Checksum APKs
+
           cd flutter-apk
           sha256sum *.apk > checksums.sha256
-          
+
           echo "✅ Checksums generated"
 
       - name: Upload App Bundle
@@ -261,7 +245,6 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # ✅ AJOUTÉ : Build summary
       - name: Build summary
         run: |
           echo "## 📦 Build Summary" >> $GITHUB_STEP_SUMMARY
@@ -272,7 +255,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ App Bundle (AAB)" >> $GITHUB_STEP_SUMMARY
-          
+
           APK_COUNT=$(ls -1 build/app/outputs/flutter-apk/*.apk 2>/dev/null | wc -l)
           echo "- ✅ APKs (split by ABI): $APK_COUNT files" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -358,19 +341,14 @@ jobs:
           echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Failed Jobs" >> $GITHUB_STEP_SUMMARY
-          
+
           if [ "${{ needs.test-and-analyze.result }}" == "failure" ]; then
             echo "- ❌ Test & Analyze" >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           if [ "${{ needs.build.result }}" == "failure" ]; then
             echo "- ❌ Build" >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "🔍 [View logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
-          
-          # TODO: Envoyer notification Slack/Teams/Discord
-          # curl -X POST -H 'Content-type: application/json' \
-          #   --data '{"text":"❌ Build failed: ${{ github.repository }}"}' \
-          #   ${{ secrets.SLACK_WEBHOOK }}
