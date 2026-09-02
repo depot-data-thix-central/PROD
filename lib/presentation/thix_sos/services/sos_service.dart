@@ -770,11 +770,11 @@ class SosService {
             await _serviceRetry(
               () => _client.from(_tableLocations).insert({
                 'incident_id': incident.id,
-                'lat': position.latitude,
-                'lng': position.longitude,
-                'accuracy_m': position.accuracy,
-                'speed_mps': position.speed,
-                'heading_deg': position.heading,
+                'lat': position!.latitude,
+                'lng': position!.longitude,
+                'accuracy_m': position!.accuracy,
+                'speed_mps': position!.speed,
+                'heading_deg': position!.heading,
               }),
               label: 'insertInitialLocation',
             );
@@ -848,11 +848,11 @@ class SosService {
         await _serviceRetry(
           () => _client.from(_tableLocations).insert({
             'incident_id': incidentId,
-            'lat': position.latitude,
-            'lng': position.longitude,
-            'accuracy_m': position.accuracy,
-            'speed_mps': position.speed,
-            'heading_deg': position.heading,
+            'lat': position!.latitude,
+            'lng': position!.longitude,
+            'accuracy_m': position!.accuracy,
+            'speed_mps': position!.speed,
+            'heading_deg': position!.heading,
           }),
           label: 'heartbeatLocation',
         );
