@@ -1,9 +1,9 @@
 /// FilFeedView (Production Enterprise)
-/// ✅ ThixPolicy + i18n 8 langues + Semantics + logs structurés
-/// ✅ Bug fix : tap bande absorbe les taps (n'ouvre pas la vidéo)
-/// ✅ Compte auteur visible dans la bande (avatar + @username)
-/// ✅ AnalyticsBatcher.register déplacé dans onPageChanged (pas dans build)
-/// ✅ Blur réduit sur Web + RepaintBoundary + throttling
+///  ThixPolicy + i18n 8 langues + Semantics + logs structurés
+///  Bug fix : tap bande absorbe les taps (n'ouvre pas la vidéo)
+///  Compte auteur visible dans la bande (avatar + @username)
+///  AnalyticsBatcher.register déplacé dans onPageChanged (pas dans build)
+///  Blur réduit sur Web + RepaintBoundary + throttling
 import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -134,7 +134,6 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
   }
 
   Future<void> _toggleLike(MediaContent item) async {
-    // Throttle
     final now = DateTime.now();
     if (_lastLikeTap != null &&
         now.difference(_lastLikeTap!) < _kLikeThrottle) {
@@ -224,7 +223,6 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
       scrollDirection: Axis.vertical,
       onPageChanged: (index) {
         setState(() => _currentIndex = index);
-        // ✅ Analytics déplacé ici (pas dans build)
         AnalyticsBatcher.register(_shuffledCatalog[index].id);
       },
       itemCount: _shuffledCatalog.length,
@@ -289,11 +287,9 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
       int commentCount, int viewCount) {
     final l10n = AppLocalizations.of(context);
 
-    // ✅ BUG FIX 1 : GestureDetector opaque = absorbe tous les taps
-    // Le tap ne traverse plus vers le handler vidéo
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () {}, // Absorbe volontairement
+      onTap: () {},
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: BackdropFilter(
@@ -307,7 +303,6 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Titre + type (tappable → détail)
                 Semantics(
                   button: true,
                   label: '${l10n.t("feed_open_detail")} ${item.title}',
@@ -376,22 +371,22 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
                   ),
                 ),
 
-                // ✅ BUG FIX 2 : Compte auteur visible (avatar + @username)
-                if (item.userId.isNotEmpty) ...[
+                // ✅ BUG FIX : Vérification de nullabilité sécurisée sur userId
+                if (item.userId != null && item.userId!.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   Semantics(
                     button: true,
-                    label: '${l10n.t("feed_open_creator")} @${item.userName}',
+                    label: '${l10n.t("feed_open_creator")} @${item.userId}',
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () => _openCreatorProfile(item.userId),
                       child: Row(
                         children: [
-                          _CreatorAvatar(url: item.userAvatarUrl),
+                          const _CreatorAvatar(url: null),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              '@${item.userName}',
+                              '@${item.userId}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
@@ -417,7 +412,6 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
                 ),
                 const SizedBox(height: 8),
 
-                // Actions (chaque bouton a son propre recognizer)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
