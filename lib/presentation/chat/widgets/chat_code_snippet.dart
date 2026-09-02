@@ -1,9 +1,8 @@
 // lib/presentation/chat/widgets/chat_code_snippet.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_highlight/flutter_highlight.dart';
-import 'package:flutter_highlight/themes/github.dart';
-import 'package:html/parser.dart' as html_parser;
+import 'package:highlight/highlight.dart' show highlight;
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -20,6 +19,31 @@ const double _kBadgeRadius = 6.0;
 const double _kLanguageFontSize = 9.0;
 const double _kCopyIconSize = 14.0;
 const double _kCopyFontSize = 11.0;
+
+// Couleurs thème GitHub (adaptées au thème THIX)
+const Color _kCodeTextColor = Color(0xFF24292F);
+const Map<String, Color> _kGithubTheme = {
+  'keyword': Color(0xFFCF222E),
+  'string': Color(0xFF0A3069),
+  'number': Color(0xFF0550AE),
+  'comment': Color(0xFF6E7781),
+  'function': Color(0xFF8250DF),
+  'title': Color(0xFF8250DF),
+  'params': Color(0xFF24292F),
+  'built_in': Color(0xFF953800),
+  'literal': Color(0xFF0550AE),
+  'type': Color(0xFFCF222E),
+  'attr': Color(0xFF0550AE),
+  'selector': Color(0xFF116329),
+  'class': Color(0xFF953800),
+  'meta': Color(0xFF6E7781),
+  'regexp': Color(0xFF0A3069),
+  'symbol': Color(0xFF0550AE),
+  'variable': Color(0xFF953800),
+  'tag': Color(0xFF116329),
+  'name': Color(0xFF0550AE),
+  'attribute': Color(0xFF0550AE),
+};
 
 // ============================================================================
 // VALIDATORS
@@ -38,12 +62,9 @@ class _SnippetValidators {
   }
 
   /// Sanitize le code : retire les caractères de contrôle dangereux
-  /// mais GARDE les symboles de code (< > & etc.) car HighlightView les échappe
   static String sanitizeCode(String? code) {
     if (code == null || code.isEmpty) return '';
-    // Retirer seulement les caractères de contrôle (pas les < > & du code)
     var s = code.replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '');
-    // Tronquer si trop long
     if (s.length > _kMaxCodeLength) {
       s = s.substring(0, _kMaxCodeLength);
     }
@@ -63,8 +84,10 @@ class _SnippetValidators {
 
 /// Affiche un snippet de code avec coloration syntaxique et bouton copier.
 ///
-/// Le code est tronqué à [_kMaxCodeLength] caractères pour éviter les freezes.
-/// Un avertissement est affiché si le code a été tronqué.
+/// ✅ Utilise le package `highlight` (core) au lieu de `flutter_highlight` (abandonné)
+/// ✅ Coloration syntaxique custom avec thème GitHub adapté
+/// ✅ Troncature à [_kMaxCodeLength] caractères pour éviter les freezes
+/// ✅ Sanitization des inputs + mounted checks
 class ChatCodeSnippet extends StatelessWidget {
   /// Code source à afficher
   final String code;
@@ -85,7 +108,6 @@ class ChatCodeSnippet extends StatelessWidget {
     final safeCode = _SnippetValidators.sanitizeCode(code);
     final isTruncated = _SnippetValidators.isTruncated(code);
 
-    // Langage pour HighlightView ('text' → 'plaintext')
     final highlightLang = safeLang == 'text' ? 'plaintext' : safeLang;
 
     return RepaintBoundary(
@@ -101,7 +123,8 @@ class ChatCodeSnippet extends StatelessWidget {
           children: [
             // ── Header : badge langage + bouton copier ──
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 color: ThixPolicy.card,
                 borderRadius: const BorderRadius.vertical(
@@ -118,10 +141,10 @@ class ChatCodeSnippet extends StatelessWidget {
                       vertical: 3,
                     ),
                     decoration: BoxDecoration(
-                      color: ThixPolicy.primary.withOpacity(0.1),
+                      color: ThixPolicy.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(_kBadgeRadius),
                       border: Border.all(
-                        color: ThixPolicy.primary.withOpacity(0.15),
+                        color: ThixPolicy.primary.withValues(alpha: 0.15),
                       ),
                     ),
                     child: Text(
@@ -174,18 +197,7 @@ class ChatCodeSnippet extends StatelessWidget {
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.all(12),
-              child: HighlightView(
-                safeCode,
-                language: highlightLang,
-                theme: githubTheme,
-                padding: EdgeInsets.zero,
-                textStyle: TextStyle(
-                  fontSize: _kCodeFontSize,
-                  fontFamily: 'monospace',
-                  height: _kCodeLineHeight,
-                  color: ThixPolicy.textMain,
-                ),
-              ),
+              child: _buildHighlightedCode(safeCode, highlightLang),
             ),
 
             // ── Avertissement de troncature ──
@@ -197,13 +209,13 @@ class ChatCodeSnippet extends StatelessWidget {
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  color: ThixPolicy.warning.withOpacity(0.08),
+                  color: ThixPolicy.warning.withValues(alpha: 0.08),
                   borderRadius: const BorderRadius.vertical(
                     bottom: Radius.circular(_kHeaderRadius),
                   ),
                   border: Border(
                     top: BorderSide(
-                      color: ThixPolicy.warning.withOpacity(0.3),
+                      color: ThixPolicy.warning.withValues(alpha: 0.3),
                     ),
                   ),
                 ),
@@ -234,6 +246,86 @@ class ChatCodeSnippet extends StatelessWidget {
     );
   }
 
+  /// Construit le widget de code avec coloration syntaxique custom
+  Widget _buildHighlightedCode(String code, String lang) {
+    try {
+      final result = highlight.parse(
+        code,
+        language: lang,
+        autoDetection: lang == 'plaintext',
+      );
+
+      final spans = _buildTextSpans(result.nodes ?? []);
+
+      return SelectableText.rich(
+        TextSpan(
+          style: const TextStyle(
+            fontSize: _kCodeFontSize,
+            fontFamily: 'monospace',
+            height: _kCodeLineHeight,
+            color: _kCodeTextColor,
+          ),
+          children: spans.isEmpty
+              ? [TextSpan(text: code)]
+              : spans,
+        ),
+      );
+    } catch (e) {
+      debugPrint('[CodeSnippet] ⚠️ Highlight failed for "$lang": $e');
+      // Fallback : afficher le code brut sans coloration
+      return SelectableText(
+        code,
+        style: const TextStyle(
+          fontSize: _kCodeFontSize,
+          fontFamily: 'monospace',
+          height: _kCodeLineHeight,
+          color: _kCodeTextColor,
+        ),
+      );
+    }
+  }
+
+  /// Convertit les nœuds highlight en TextSpan
+  List<TextSpan> _buildTextSpans(List<dynamic> nodes) {
+    final spans = <TextSpan>[];
+    for (final node in nodes) {
+      if (node.value != null) {
+        spans.add(TextSpan(
+          text: node.value,
+          style: _getStyleForClass(node.className),
+        ));
+      } else if (node.children != null) {
+        spans.addAll(_buildTextSpans(node.children));
+      }
+    }
+    return spans;
+  }
+
+  /// Retourne le style correspondant à une classe highlight
+  TextStyle _getStyleForClass(String? className) {
+    if (className == null) return const TextStyle();
+    
+    // Certaines classes sont composées (ex: "hljs-keyword")
+    final simpleClass = className
+        .split(' ')
+        .firstWhere((c) => _kGithubTheme.containsKey(c), orElse: () => '');
+    
+    final color = _kGithubTheme[simpleClass];
+    if (color != null) {
+      return TextStyle(color: color);
+    }
+    
+    // Pour les commentaires, ajouter italique
+    if (simpleClass == 'comment') {
+      return const TextStyle(
+        color: Color(0xFF6E7781),
+        fontStyle: FontStyle.italic,
+      );
+    }
+    
+    return const TextStyle();
+  }
+
   /// Gère la copie du code dans le presse-papier avec mounted check
   void _handleCopy(
     BuildContext context,
@@ -245,7 +337,6 @@ class ChatCodeSnippet extends StatelessWidget {
 
     Clipboard.setData(ClipboardData(text: codeToCopy));
 
-    // Mounted check avant d'afficher le SnackBar
     if (!context.mounted) {
       debugPrint('[CodeSnippet] ⚠️ Context unmounted, skipping SnackBar');
       return;
