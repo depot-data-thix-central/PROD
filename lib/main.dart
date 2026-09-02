@@ -1,10 +1,18 @@
+// lib/main.dart
+//
+// THIX ID CENTRAL — Point d'entrée (Production Enterprise)
+//  localeControllerProvider injecté via ProviderScope (fix UnimplementedError)
+//  Coexistence Provider (legacy listeners) + Riverpod
+//  Erreurs UI visibles (plus jamais d'écran gris silencieux)
+// Gardes kIsWeb (Firebase/push non supportés sur Web)
+//  Timeouts sur toutes les initialisations
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart' as app_provider; // ✅ coexistence temporaire
+import 'package:provider/provider.dart' as app_provider;
 import 'package:go_router/go_router.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -23,16 +31,27 @@ import 'package:thix_id/presentation/chat/call/global_call_listener.dart';
 import 'package:thix_id/presentation/common/global_notification_listener.dart';
 import 'package:thix_id/presentation/thix_sos/widgets/global_sos_listener.dart';
 
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
 const Duration _kInitTimeout = Duration(seconds: 10);
 
-void _log(String m) => debugPrint('[MAIN] $m');
+void _log(String message) => debugPrint('[MAIN] $message');
+
+//  Instance GLOBALE créée AVANT runApp, injectée dans Riverpod
+late final LocaleController _localeController;
+
+// ============================================================================
+// MAIN
+// ============================================================================
 
 Future<void> main() async {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
 
-      // ✅ ERREURS UI VISIBLES (rouge à l'écran) au lieu d'écran gris/loader infini
+      //  Erreurs de build affichées À L'ÉCRAN (rouge) au lieu d'écran gris
       ErrorWidget.builder = (details) => Material(
         color: const Color(0xFF0A2F5C),
         child: SafeArea(
@@ -40,7 +59,11 @@ Future<void> main() async {
             padding: const EdgeInsets.all(16),
             child: SelectableText(
               '❌ ERREUR UI :\n\n${details.exceptionAsString()}',
-              style: const TextStyle(color: Colors.redAccent, fontSize: 12, height: 1.5),
+              style: const TextStyle(
+                color: Colors.redAccent,
+                fontSize: 12,
+                height: 1.5,
+              ),
             ),
           ),
         ),
@@ -51,15 +74,19 @@ Future<void> main() async {
         _log('❌ FlutterError: ${details.exception}');
       };
 
-      // ✅ WEB : pas de FCM sur Web → skip (évite hang/crash)
+      // WEB : FCM n'existe pas sur Web → skip
       if (!kIsWeb) {
         try {
           await Firebase.initializeApp().timeout(_kInitTimeout);
-          FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+          FirebaseMessaging.onBackgroundMessage(
+            firebaseMessagingBackgroundHandler,
+          );
           _log('✓ Firebase OK');
         } catch (e) {
           _log('⚠️ Firebase: $e');
         }
+      } else {
+        _log('ℹ️ Web: Firebase push skipped');
       }
 
       try {
@@ -70,13 +97,39 @@ Future<void> main() async {
       }
 
       try {
-        await LocalNotificationService.instance.initialize().timeout(_kInitTimeout);
+        await LocalNotificationService.instance
+            .initialize()
+            .timeout(_kInitTimeout);
         _log('✓ LocalNotif OK');
       } catch (e) {
         _log('⚠️ LocalNotif: $e');
       }
 
-      runApp(const ProviderScope(child: ThixApp()));
+      //  CRÉÉ AVANT runApp (c'est ça qui fixe l'UnimplementedError)
+      _localeController = LocaleController();
+      try {
+        await _localeController.init().timeout(_kInitTimeout);
+        _log('✓ Locale OK: ${_localeController.locale.languageCode}');
+      } catch (e) {
+        _log('⚠️ Locale: $e');
+      }
+
+      try {
+        await AuthController.instance.init().timeout(_kInitTimeout);
+        _log('✓ Auth OK');
+      } catch (e) {
+        _log('⚠️ Auth: $e');
+      }
+
+      runApp(
+        ProviderScope(
+          // INJECTION : le provider reçoit la vraie instance
+          overrides: [
+            localeControllerProvider.overrideWithValue(_localeController),
+          ],
+          child: const ThixApp(),
+        ),
+      );
       _log('✓ runApp called');
     },
     (error, stack) {
@@ -99,8 +152,13 @@ Future<void> main() async {
   );
 }
 
+// ============================================================================
+// APP
+// ============================================================================
+
 class ThixApp extends ConsumerStatefulWidget {
   const ThixApp({super.key});
+
   @override
   ConsumerState<ThixApp> createState() => _ThixAppState();
 }
@@ -108,6 +166,7 @@ class ThixApp extends ConsumerStatefulWidget {
 class _ThixAppState extends ConsumerState<ThixApp> {
   late final AuthController _auth;
   late final LocaleController _locale;
+
   GoRouter? _router;
   bool _ready = false;
   bool _pushRegistered = false;
@@ -116,24 +175,13 @@ class _ThixAppState extends ConsumerState<ThixApp> {
   void initState() {
     super.initState();
     _auth = AuthController.instance;
-    _locale = LocaleController();
+    //  LIT l'instance INJECTÉE (plus de `LocaleController()..init()` ici)
+    _locale = ref.read(localeControllerProvider);
     _init();
   }
 
   Future<void> _init() async {
-    // ✅ Timeouts partout : plus jamais de hang silencieux
-    try {
-      await Future.wait([
-        _auth.init().timeout(_kInitTimeout),
-        _locale.init().timeout(_kInitTimeout),
-      ]).timeout(const Duration(seconds: 20));
-      _log('✓ Controllers OK');
-    } catch (e) {
-      _log('⚠️ Controllers dégradés: $e');
-    }
-
-    if (!mounted) return;
-
+    // Router (les controllers sont déjà initialisés dans main)
     try {
       _router = AppRouter.create(
         _auth,
@@ -145,22 +193,30 @@ class _ThixAppState extends ConsumerState<ThixApp> {
       _log('❌ Router: $e');
     }
 
+    // Sync push ↔ auth
     _auth.addListener(_syncPush);
     _syncPush();
 
-    if (mounted) setState(() => _ready = true);
+    if (mounted) {
+      setState(() => _ready = true);
+    }
   }
 
+  /// Enregistre / retire le token FCM selon l'état de connexion.
   Future<void> _syncPush() async {
-    if (kIsWeb) return; // ✅ push non géré sur Web
-    final authed = _auth.isAuthenticated;
+    if (kIsWeb) return; //  push non géré sur Web
+
+    final isAuthenticated = _auth.isAuthenticated;
+
     try {
-      if (authed && !_pushRegistered) {
+      if (isAuthenticated && !_pushRegistered) {
         _pushRegistered = true;
         await PushNotificationService.instance.initialize();
-      } else if (!authed && _pushRegistered) {
+        _log('✓ Push registered');
+      } else if (!isAuthenticated && _pushRegistered) {
         _pushRegistered = false;
         await PushNotificationService.instance.unregisterToken();
+        _log('✓ Push unregistered');
       }
     } catch (e) {
       _log('⚠️ Push: $e');
@@ -177,19 +233,28 @@ class _ThixAppState extends ConsumerState<ThixApp> {
   Widget build(BuildContext context) {
     if (!_ready || _router == null) {
       return MaterialApp(
+        debugShowCheckedModeBanner: false,
         theme: ThixPolicy.lightTheme(),
         darkTheme: ThixPolicy.darkTheme(),
         themeMode: ThemeMode.system,
-        home: const Scaffold(body: Center(child: CircularProgressIndicator())),
+        home: const Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        ),
       );
     }
 
     return app_provider.MultiProvider(
-      // ✅ COMPAT : les 3 listeners globaux (anciens) trouvent leurs providers
+      //  COMPAT : les 3 listeners globaux legacy utilisent package:provider
       providers: [
-        app_provider.ChangeNotifierProvider<AuthController>.value(value: _auth),
-        app_provider.ChangeNotifierProvider<LocaleController>.value(value: _locale),
-        app_provider.Provider<ProfileService>(create: (_) => ProfileService()),
+        app_provider.ChangeNotifierProvider<AuthController>.value(
+          value: _auth,
+        ),
+        app_provider.ChangeNotifierProvider<LocaleController>.value(
+          value: _locale,
+        ),
+        app_provider.Provider<ProfileService>(
+          create: (_) => ProfileService(),
+        ),
       ],
       child: MaterialApp.router(
         title: 'THIX ID CENTRAL',
