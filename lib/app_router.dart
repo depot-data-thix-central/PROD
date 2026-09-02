@@ -520,19 +520,13 @@ class AppRouter {
   ),
 ),
         GoRoute(path: '/thix-retrouve', name: 'thixRetrouve', builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 1), routes: [
-  GoRoute(
-    path: 'detail', 
-    name: 'thixRetrouveDetail', 
-    
-    pageBuilder: (_, __) => const NoTransitionPage(child: ObjectDetailPage(title: 'Détail de l\'objet'))
-  ),
-  GoRoute(path: 'ai-match', name: 'thixRetrouveAiMatch', pageBuilder: (_, __) => const NoTransitionPage(child: AiMatchPage())),
-  GoRoute(path: 'mes-recherches', name: 'thixRetrouveMesRecherches', pageBuilder: (_, __) => const NoTransitionPage(child: MesRecherchesPage())),
-  GoRoute(path: 'declarer-perdu', name: 'thixRetrouveDeclarerPerdu', pageBuilder: (_, __) => const NoTransitionPage(child: DeclarerObjetPage(type: StatutObjet.perdu))),
-  GoRoute(path: 'declarer-trouve', name: 'thixRetrouveDeclarerTrouve', pageBuilder: (_, __) => const NoTransitionPage(child: DeclarerObjetPage(type: StatutObjet.trouve))),
-  GoRoute(path: 'carte', name: 'thixRetrouveCarte', pageBuilder: (_, __) => const NoTransitionPage(child: CarteSignalementsPage())),
-]),
-
+          GoRoute(path: 'detail', name: 'thixRetrouveDetail', pageBuilder: (_, __) => const NoTransitionPage(child: ObjectDetailPage())),
+          GoRoute(path: 'ai-match', name: 'thixRetrouveAiMatch', pageBuilder: (_, __) => const NoTransitionPage(child: AiMatchPage())),
+          GoRoute(path: 'mes-recherches', name: 'thixRetrouveMesRecherches', pageBuilder: (_, __) => const NoTransitionPage(child: MesRecherchesPage())),
+          GoRoute(path: 'declarer-perdu', name: 'thixRetrouveDeclarerPerdu', pageBuilder: (_, __) => const NoTransitionPage(child: DeclarerObjetPage(type: StatutObjet.perdu))),
+          GoRoute(path: 'declarer-trouve', name: 'thixRetrouveDeclarerTrouve', pageBuilder: (_, __) => const NoTransitionPage(child: DeclarerObjetPage(type: StatutObjet.trouve))),
+          GoRoute(path: 'carte', name: 'thixRetrouveCarte', pageBuilder: (_, __) => const NoTransitionPage(child: CarteSignalementsPage())),
+        ]),
         GoRoute(path: '/thix-recherche', name: 'thixRecherche', builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 1), routes: [
           GoRoute(path: 'detail/:id', name: 'thixRechercheDetail', builder: (context, state) => DetailPersonnePage(personneId: state.pathParameters['id']!)),
           GoRoute(path: 'signaler/:id', name: 'thixRechercheSignaler', builder: (context, state) => SignalerPage(personneId: state.pathParameters['id']!)),
