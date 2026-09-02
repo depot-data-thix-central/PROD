@@ -519,7 +519,7 @@ class AppRouter {
     victimUserId: state.uri.queryParameters['victim'],
   ),
 ),
-        GoRoute(path: '/thix-retrouve', name: 'thixRetrouve', builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 1), routes: [
+        GoRoute(path: '/thix-retrouve', name: 'thixRetrouve', builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 2), routes: [
           GoRoute(path: 'detail', name: 'thixRetrouveDetail', pageBuilder: (_, __) => const NoTransitionPage(child: ObjectDetailPage())),
           GoRoute(path: 'ai-match', name: 'thixRetrouveAiMatch', pageBuilder: (_, __) => const NoTransitionPage(child: AiMatchPage())),
           GoRoute(path: 'mes-recherches', name: 'thixRetrouveMesRecherches', pageBuilder: (_, __) => const NoTransitionPage(child: MesRecherchesPage())),
