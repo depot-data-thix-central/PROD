@@ -6,28 +6,35 @@
 //
 // Bottom sheet pour sélectionner la langue de l'application.
 //
+// Langues supportées (8) — synchronisées avec locale_controller.dart :
+//   🇫🇷 Français (fr)
+//   🇬🇧 English (en)
+//   🇪🇸 Español (es)
+//   🇵🇹 Português (pt)
+//   🇨🇩 Lingála (ln)
+//   🇨🇩 Kiswahili (sw)
+//   🇨🇩 Kikongo (kg)
+//   🇨🇩 Tshiluba (lu)
+//
 // Fonctionnalités :
-//   - Affiche les 6 langues supportées (fr, en, ar, zh, pt, sw)
 //   - Option "Langue du système" pour revenir à la locale du téléphone
 //   - Indicateur visuel de la langue active (check icon + gras)
 //   - Fermeture automatique après sélection
-//   - Feedback tactile (HapticFeedback)
-//
-// UX :
-//   - ThixPolicy 100% (0 couleurs hardcodées)
-//   - Semantics VoiceOver complets
-//   - HapticFeedback sur sélection
-//   - RepaintBoundary pour performance
+//   - Feedback tactile (HapticFeedback) différencié
+//   - Gestion d'erreur avec snackbar
+//   - SafeArea + scroll pour petits écrans
 //
 // Architecture :
-//   - Utilise LocaleController pour changer la locale
-//   - Utilise SupportedLanguages.all pour la liste (DRY)
+//   - ConsumerWidget (Riverpod, cohérent avec le reste de l'app)
+//   - Utilise kSupportedLanguages pour la liste (DRY, source unique)
 //   - Logs structurés [LanguageSheet]
 //
 // Usage :
 //   ```dart
 //   showModalBottomSheet(
 //     context: context,
+//     isScrollControlled: true,
+//     backgroundColor: Colors.transparent,
 //     builder: (_) => const LanguageSheet(),
 //   );
 //   ```
@@ -36,11 +43,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/l10n/i18n_service.dart';
 import 'package:thix_id/l10n/locale_controller.dart';
 
 // ============================================================================
@@ -55,92 +61,118 @@ const double _kFlagFontSize = 24.0;
 const double _kTitleFontSize = 18.0;
 const double _kSubtitleFontSize = 13.0;
 const double _kCheckIconSize = 24.0;
+const double _kItemVerticalPadding = 12.0;
 
 // ============================================================================
 // LANGUAGE SHEET WIDGET
 // ============================================================================
 
 /// Bottom sheet pour sélectionner la langue de l'application.
-///
-/// **Langues supportées** (6) :
-/// - 🇫🇷 Français (fr)
-/// - 🇬🇧 English (en)
-/// - 🇸🇦 العربية (ar) — RTL
-/// - 🇨🇳 中文 (zh)
-/// - 🇵🇹 Português (pt)
-/// - 🇹🇿 Kiswahili (sw)
-///
-/// **Fonctionnalités** :
-/// - Option "Langue du système" pour revenir à la locale du téléphone
-/// - Indicateur visuel de la langue active
-/// - Fermeture automatique après sélection
-/// - Feedback tactile (HapticFeedback)
-/// - Accessibilité VoiceOver (Semantics)
-class LanguageSheet extends StatelessWidget {
+class LanguageSheet extends ConsumerWidget {
   const LanguageSheet({super.key});
 
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final controller = context.read<LocaleController>();
-    final currentCode = context.watch<LocaleController>().locale.languageCode;
+  /// Méthode utilitaire pour afficher le sheet avec les bons paramètres.
+  static Future<T?> show<T>(BuildContext context) {
+    return showModalBottomSheet<T>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const LanguageSheet(),
+    );
+  }
 
-    debugPrint('[LanguageSheet] 🚀 Opened (current: $currentCode)');
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final controller = ref.watch(localeControllerProvider);
+    final currentCode = controller.locale.languageCode;
+    final useSystem = controller.useSystem;
+
+    debugPrint('[LanguageSheet] 🚀 Opened (current: $currentCode, '
+        'system: $useSystem)');
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.75,
+      ),
       decoration: BoxDecoration(
         color: ThixPolicy.card,
         borderRadius: const BorderRadius.vertical(
           top: Radius.circular(_kSheetBorderRadius),
         ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildHandle(),
-          const SizedBox(height: 16),
-          _buildTitle(l10n),
-          const SizedBox(height: 12),
-          _buildSystemLanguageOption(context, controller, currentCode, l10n),
-          _buildDivider(),
-          ...SupportedLanguages.all.map((lang) {
-            return _buildLanguageItem(
-              context: context,
-              controller: controller,
-              lang: lang,
-              currentCode: currentCode,
-            );
-          }),
-        ],
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildHandle(),
+              const SizedBox(height: 16),
+              _buildTitle(l10n),
+              const SizedBox(height: 12),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildSystemLanguageOption(
+                        context,
+                        ref,
+                        controller,
+                        currentCode,
+                        useSystem,
+                        l10n,
+                      ),
+                      _buildDivider(),
+                      ...kSupportedLanguages.values.map((info) {
+                        return _buildLanguageItem(
+                          context: context,
+                          ref: ref,
+                          controller: controller,
+                          info: info,
+                          currentCode: currentCode,
+                          useSystem: useSystem,
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
   // ─── HANDLE ─────────────────────────────────────────────────────────
 
-  /// Barre de drag en haut du sheet.
   Widget _buildHandle() {
-    return Container(
-      width: _kHandleWidth,
-      height: _kHandleHeight,
-      decoration: BoxDecoration(
-        color: ThixPolicy.border,
-        borderRadius: BorderRadius.circular(_kHandleBorderRadius),
+    return Semantics(
+      label: 'Drag handle',
+      child: Container(
+        width: _kHandleWidth,
+        height: _kHandleHeight,
+        decoration: BoxDecoration(
+          color: ThixPolicy.border,
+          borderRadius: BorderRadius.circular(_kHandleBorderRadius),
+        ),
       ),
     );
   }
 
   // ─── TITLE ──────────────────────────────────────────────────────────
 
-  /// Titre "Choisir la langue".
   Widget _buildTitle(AppLocalizations l10n) {
     return Align(
       alignment: Alignment.centerLeft,
       child: Semantics(
         header: true,
         child: Text(
-          l10n.t('choose_language'),
+          l10n.t('settings_choose_language'),
           style: TextStyle(
             fontSize: _kTitleFontSize,
             fontWeight: FontWeight.w800,
@@ -153,44 +185,53 @@ class LanguageSheet extends StatelessWidget {
 
   // ─── SYSTEM LANGUAGE OPTION ─────────────────────────────────────────
 
-  /// Option "Langue du système" pour revenir à la locale du téléphone.
   Widget _buildSystemLanguageOption(
     BuildContext context,
+    WidgetRef ref,
     LocaleController controller,
     String currentCode,
+    bool useSystem,
     AppLocalizations l10n,
   ) {
     final systemLocale = controller.getSystemOrDefault();
-    final isSystemActive = !_hasPersistedLocale();
+    final systemInfo = kSupportedLanguages[systemLocale.languageCode];
+    final systemName = systemInfo?.nativeName ?? systemLocale.languageCode;
+    final isSystemActive = useSystem;
 
     return RepaintBoundary(
       child: Semantics(
         button: true,
         selected: isSystemActive,
-        label: '${l10n.t("system_default")} (${systemLocale.languageCode})',
+        label: '${l10n.t("settings_system_default")} ($systemName)',
         child: ListTile(
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: _kItemVerticalPadding / 2,
+          ),
           leading: Container(
-            width: _kFlagFontSize,
-            height: _kFlagFontSize,
+            width: _kFlagFontSize + 8,
+            height: _kFlagFontSize + 8,
             decoration: BoxDecoration(
               color: ThixPolicy.surfaceSoft,
               shape: BoxShape.circle,
             ),
             child: Icon(
               Icons.phone_android_rounded,
-              size: 16,
-              color: ThixPolicy.textMuted,
+              size: 18,
+              color: isSystemActive
+                  ? ThixPolicy.primary
+                  : ThixPolicy.textMuted,
             ),
           ),
           title: Text(
-            l10n.t('system_default'),
+            l10n.t('settings_system_default'),
             style: TextStyle(
               fontWeight: isSystemActive ? FontWeight.bold : FontWeight.w500,
               color: ThixPolicy.textMain,
             ),
           ),
           subtitle: Text(
-            _getSystemLanguageName(systemLocale.languageCode),
+            systemName,
             style: TextStyle(
               fontSize: _kSubtitleFontSize,
               color: ThixPolicy.textMuted,
@@ -199,11 +240,11 @@ class LanguageSheet extends StatelessWidget {
           trailing: isSystemActive
               ? Icon(
                   Icons.check_circle_rounded,
-                  color: ThixPolicy.warning,
+                  color: ThixPolicy.success,
                   size: _kCheckIconSize,
                 )
               : null,
-          onTap: () => _selectSystemLanguage(context, controller),
+          onTap: () => _selectSystemLanguage(context, ref),
         ),
       ),
     );
@@ -212,51 +253,69 @@ class LanguageSheet extends StatelessWidget {
   // ─── DIVIDER ────────────────────────────────────────────────────────
 
   Widget _buildDivider() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Divider(height: 1, color: ThixPolicy.border),
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: Divider(height: 1),
     );
   }
 
   // ─── LANGUAGE ITEM ──────────────────────────────────────────────────
 
-  /// Item de langue individuel.
   Widget _buildLanguageItem({
     required BuildContext context,
+    required WidgetRef ref,
     required LocaleController controller,
-    required Map<String, String> lang,
+    required LanguageInfo info,
     required String currentCode,
+    required bool useSystem,
   }) {
-    final code = lang['code']!;
-    final name = lang['name']!;
-    final flag = lang['flag']!;
-    final isActive = currentCode == code && _hasPersistedLocale();
+    // Active = même code ET pas en mode système
+    final isActive = !useSystem && currentCode == info.code;
 
     return RepaintBoundary(
       child: Semantics(
         button: true,
         selected: isActive,
-        label: name,
+        label: info.nativeName,
         child: ListTile(
-          leading: Text(
-            flag,
-            style: const TextStyle(fontSize: _kFlagFontSize),
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: _kItemVerticalPadding / 2,
+          ),
+          leading: SizedBox(
+            width: _kFlagFontSize + 8,
+            height: _kFlagFontSize + 8,
+            child: Center(
+              child: Text(
+                info.flag ?? '🌐',
+                style: const TextStyle(fontSize: _kFlagFontSize),
+              ),
+            ),
           ),
           title: Text(
-            name,
+            info.nativeName,
             style: TextStyle(
               fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
               color: ThixPolicy.textMain,
             ),
           ),
+          subtitle: info.nativeName != info.englishName
+              ? Text(
+                  info.englishName,
+                  style: TextStyle(
+                    fontSize: _kSubtitleFontSize,
+                    color: ThixPolicy.textMuted,
+                  ),
+                )
+              : null,
           trailing: isActive
               ? Icon(
                   Icons.check_circle_rounded,
-                  color: ThixPolicy.warning,
+                  color: ThixPolicy.success,
                   size: _kCheckIconSize,
                 )
               : null,
-          onTap: () => _selectLanguage(context, controller, code, name),
+          onTap: () => _selectLanguage(context, ref, info.code, info.nativeName),
         ),
       ),
     );
@@ -264,48 +323,80 @@ class LanguageSheet extends StatelessWidget {
 
   // ─── ACTIONS ────────────────────────────────────────────────────────
 
-  /// Sélectionne une langue spécifique.
   Future<void> _selectLanguage(
     BuildContext context,
-    LocaleController controller,
+    WidgetRef ref,
     String code,
     String name,
   ) async {
+    final controller = ref.read(localeControllerProvider);
+    final currentCode = controller.locale.languageCode;
+    final useSystem = controller.useSystem;
+
+    // Déjà active ?
+    if (!useSystem && currentCode == code) {
+      debugPrint('[LanguageSheet] ℹ️ Already active: $name ($code)');
+      HapticFeedback.lightImpact();
+      if (context.mounted) Navigator.pop(context);
+      return;
+    }
+
     HapticFeedback.selectionClick();
     debugPrint('[LanguageSheet] ✓ Selected: $name ($code)');
 
     final success = await controller.setLocale(Locale(code));
 
-    if (success && context.mounted) {
-      Navigator.pop(context);
+    if (!success && context.mounted) {
+      _showError(
+        context,
+        AppLocalizations.of(context).t('settings_language_change_failed'),
+      );
+      return;
     }
+
+    if (context.mounted) Navigator.pop(context);
   }
 
-  /// Sélectionne la langue du système.
   Future<void> _selectSystemLanguage(
     BuildContext context,
-    LocaleController controller,
+    WidgetRef ref,
   ) async {
+    final controller = ref.read(localeControllerProvider);
+
+    if (controller.useSystem) {
+      debugPrint('[LanguageSheet] ℹ️ Already using system language');
+      HapticFeedback.lightImpact();
+      if (context.mounted) Navigator.pop(context);
+      return;
+    }
+
     HapticFeedback.selectionClick();
     debugPrint('[LanguageSheet] ✓ Selected: System language');
 
-    await controller.setSystem();
+    final success = await controller.setSystem();
 
-    if (context.mounted) {
-      Navigator.pop(context);
+    if (!success && context.mounted) {
+      _showError(
+        context,
+        AppLocalizations.of(context).t('settings_language_change_failed'),
+      );
+      return;
     }
+
+    if (context.mounted) Navigator.pop(context);
   }
 
   // ─── HELPERS ────────────────────────────────────────────────────────
 
-  /// Vérifie si une locale est persistée (vs locale système).
-  bool _hasPersistedLocale() {
-    return true; 
-  }
-
-  /// Retourne le nom de la langue système pour affichage.
-  String _getSystemLanguageName(String code) {
-    final lang = SupportedLanguages.forCode(code);
-    return lang?['name'] ?? code;
+  void _showError(BuildContext context, String message) {
+    HapticFeedback.heavyImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: ThixPolicy.danger,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 }
