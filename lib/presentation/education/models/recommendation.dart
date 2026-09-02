@@ -1,4 +1,4 @@
-// models/recommendation.dart
+// lib/presentation/education/models/recommendation.dart
 import 'formation.dart';
 
 class Recommendation {
@@ -22,15 +22,20 @@ class Recommendation {
     this.formation,
   });
 
-  factory Recommendation.fromJson(Map<String, dynamic> json) => Recommendation(
-        id: json['id'],
-        userId: json['user_id'],
-        formationId: json['formation_id'],
-        score: (json['score'] as num?)?.toDouble() ?? 0.0,
-        reason: json['reason'],
-        createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
-        formation: json['formation'] != null ? Formation.fromJson(json['formation']) : null,
+  // ✅ Ajout de fromMap pour satisfaire le RecommendationProvider
+  factory Recommendation.fromMap(Map<String, dynamic> map) => Recommendation(
+        id: map['id'],
+        userId: map['user_id'],
+        formationId: map['formation_id'],
+        score: (map['score'] as num?)?.toDouble() ?? 0.0,
+        reason: map['reason'],
+        createdAt: map['created_at'] != null ? DateTime.parse(map['created_at']) : null,
+        // Assure-toi que Formation possède bien fromJson, sinon remplace par fromMap ici aussi
+        formation: map['formation'] != null ? Formation.fromJson(map['formation']) : null, 
       );
+
+  // Gardé pour la rétrocompatibilité avec le reste du code
+  factory Recommendation.fromJson(Map<String, dynamic> json) => Recommendation.fromMap(json);
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -42,10 +47,10 @@ class Recommendation {
       };
 
   Recommendation copyWith({
-    double? score,
-    String? reason,
-    Formation? formation,
-  }) =>
+        double? score,
+        String? reason,
+        Formation? formation,
+      }) =>
       Recommendation(
         id: id,
         userId: userId,
