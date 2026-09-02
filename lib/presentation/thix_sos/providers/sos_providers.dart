@@ -195,7 +195,7 @@ final sosLocationsProvider =
     FutureProvider.autoDispose.family<List<SosLocationPoint>, String>(
   (ref, incidentId) {
     final sanitized = _ProvidersValidators.sanitizeIncidentId(incidentId);
-    if (sanitized == null) return AsyncValue.data(<SosLocationPoint>[]);
+    if (sanitized == null) return <SosLocationPoint>[];
     return ref.watch(sosServiceProvider).getLocations(sanitized);
   },
 );
