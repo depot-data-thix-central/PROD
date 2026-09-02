@@ -361,13 +361,12 @@ class _VideoPreviewEditorPageState extends State<VideoPreviewEditorPage> {
     return true;
   }
 
-  void _showSnack(String key, {bool isError = false, Map<String, dynamic>? args}) {
+    void _showSnack(String key, {bool isError = false, List<String>? args}) {
     if (!mounted) return;
     final l10n = AppLocalizations.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        // CORRECTION WEB : Typage strict du Map pour éviter les conflits
-        content: Text(l10n.t(key, args: args ?? const <String, dynamic>{})),
+        content: Text(l10n.t(key, args: args ?? const <String>[])),
         backgroundColor: isError ? ThixPolicy.danger : ThixPolicy.primary,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
