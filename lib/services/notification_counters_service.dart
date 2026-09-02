@@ -269,7 +269,8 @@ class NotificationCountersService {
   Stream<SectionBadgeCounts> streamCounts(String uid) {
     if (!_Validators.isValidUid(uid)) {
       debugPrint('[NotifCounters] ⚠️ Invalid UID, returning zero stream');
-      return const Stream<SectionBadgeCounts>.value(SectionBadgeCounts.zero);
+      return Stream<SectionBadgeCounts>.value(SectionBadgeCounts.zero);
+
     }
 
     debugPrint('[NotifCounters] 🚀 Starting stream for ${_Validators.maskUid(uid)}');
