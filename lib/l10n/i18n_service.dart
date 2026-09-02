@@ -4,43 +4,37 @@
 // I18N SERVICE — Production Enterprise
 // ============================================================================
 //
-// Enhanced i18n service providing date/time and number formatting helpers
-// on top of [AppLocalizations].
+// Service i18n avancé offrant des helpers de formatage date/heure/nombre
+// en plus de [AppLocalizations].
 //
-// Supported languages (8):
-//   fr, en, ar, zh, pt, ln, kg, sw
+// Langues supportées (8) — synchronisées avec app_localizations.dart :
+//   fr, en, es, pt, ln, sw, kg, lu
 //
-// How to add a new language:
-//   1. Add the new [Locale] to [LocaleController.supportedLocales].
-//   2. Add the language code with all translation keys to [AppLocalizations._strings].
-//   3. Add the locale label to [AppLocalizations.localeLabel].
-//   4. If the language is RTL, update [AppLocalizations.isRtl].
-//   5. Add a flag + name entry to [LanguageSheet] and the JSON reference file.
-//   6. Add the matching [intl] date/number symbol data if needed.
-//   7. Add the language to [_intlLocaleMap], [_relativeTimeBuiltins], etc.
+// Architecture :
+//   - Singleton partagé (cache des formats partagé entre instances)
+//   - Wraps AppLocalizations avec formatage aware-locale
+//   - Cache DateFormat/NumberFormat pour performance
+//   - Validation robuste des inputs
+//   - Logs structurés [I18nService]
+//   - Fallback intelligent sur FR si clé manquante
 //
-// Architecture:
-//   - Wraps AppLocalizations with locale-aware formatting
-//   - Caches DateFormat/NumberFormat instances for performance
-//   - Validates all inputs (DateTime, numbers)
-//   - Structured logs with [I18nService] prefix
-//   - Full coverage for all 8 supported languages
-//
-// Usage:
+// Usage :
 //   ```dart
-//   final svc = I18nService.of(context);
-//   svc.t('home_premium_member')                    // Simple translation
-//   svc.t('profile_followers', {'count': '5'})      // Parameterized
-//   svc.tp('events_seats', 'events_seats_plural', 3) // Plural
-//   svc.formatDate(DateTime.now())                  // Locale-aware date
-//   svc.formatNumber(12345.6)                       // Locale-aware number
-//   svc.relativeTime(pastDate)                      // "5 min ago"
+//   final svc = context.i18n;                        // extension
+//   svc.t('home_premium_member')                   // Simple
+//   svc.t('sos_pin_enter', args: ['4'])            // Paramétré
+//   svc.plural('contact', 5)                       // Pluriel
+//   svc.formatDate(DateTime.now())                 // Date locale-aware
+//   svc.formatNumber(12345.6)                      // Nombre locale-aware
+//   svc.relativeTime(pastDate)                     // "il y a 5 min"
+//   svc.formatCurrency(1500)                       // "1 500 €" (FR)
 //   ```
 // ============================================================================
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' hide TextDirection;
+
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/l10n/locale_controller.dart';
 
@@ -50,35 +44,36 @@ import 'package:thix_id/l10n/locale_controller.dart';
 
 /// Maps language codes to intl locale strings for formatting.
 ///
-/// Lingála (ln) and Kikongo (kg) fall back to French conventions
-/// as intl doesn't ship dedicated data for these languages.
+/// Les langues nationales RDC (ln, kg, lu) utilisent les conventions FR
+/// car intl ne fournit pas de data dédiée pour ces langues.
 const Map<String, String> _intlLocaleMap = {
   'fr': 'fr_FR',
   'en': 'en_US',
-  'ar': 'ar',
-  'zh': 'zh_CN',
-  'pt': 'pt_BR',
+  'es': 'es_ES',
+  'pt': 'pt_PT',
   'sw': 'sw_TZ',
   'ln': 'fr_FR', // Lingála → French conventions
   'kg': 'fr_CD', // Kikongo → French Congo conventions
+  'lu': 'fr_CD', // Tshiluba → French Congo conventions
 };
 
 /// Default date pattern per language.
 const Map<String, String> _datePatternMap = {
-  'zh': 'yyyy年M月d日',
-  'ar': 'd MMMM yyyy',
+  'en': 'MMM d, yyyy',
+  'es': 'd \'de\' MMM \'de\' yyyy',
+  'pt': 'd \'de\' MMM \'de\' yyyy',
   'default': 'd MMM yyyy',
 };
 
 /// Default datetime pattern per language.
 const Map<String, String> _dateTimePatternMap = {
-  'zh': 'yyyy年M月d日 HH:mm',
-  'ar': 'd MMMM yyyy HH:mm',
-  'default': 'd MMM yyyy HH:mm',
+  'en': 'MMM d, yyyy h:mm a',
+  'es': 'd \'de\' MMM \'de\' yyyy H:mm',
+  'pt': 'd \'de\' MMM \'de\' yyyy H:mm',
+  'default': 'd MMM yyyy H:mm',
 };
 
-/// Relative-time builtin strings per language.
-/// Each entry maps a time unit to a function (int n) → String.
+/// Relative-time builtin strings per language (fallback si clé absente).
 final Map<String, _RelativeTimeBuiltins> _relativeTimeBuiltins = {
   'fr': _RelativeTimeBuiltins(
     justNow: 'À l\'instant',
@@ -92,21 +87,14 @@ final Map<String, _RelativeTimeBuiltins> _relativeTimeBuiltins = {
     minutes: (n) => '$n min${n > 1 ? 's' : ''} ago',
     hours: (n) => '$n hour${n > 1 ? 's' : ''} ago',
     days: (n) => '$n day${n > 1 ? 's' : ''} ago',
-    inTheFuture: 'Just now', // future treated as "now"
+    inTheFuture: 'Just now',
   ),
-  'ar': _RelativeTimeBuiltins(
-    justNow: 'الآن',
-    minutes: (n) => 'منذ $n دقيقة',
-    hours: (n) => 'منذ $n ساعة',
-    days: (n) => 'منذ $n يوم',
-    inTheFuture: 'قريبًا',
-  ),
-  'zh': _RelativeTimeBuiltins(
-    justNow: '刚刚',
-    minutes: (n) => '$n分钟前',
-    hours: (n) => '$n小时前',
-    days: (n) => '$n天前',
-    inTheFuture: '刚刚',
+  'es': _RelativeTimeBuiltins(
+    justNow: 'Ahora mismo',
+    minutes: (n) => 'hace $n min',
+    hours: (n) => 'hace $n hora${n > 1 ? 's' : ''}',
+    days: (n) => 'hace $n día${n > 1 ? 's' : ''}',
+    inTheFuture: 'en un momento',
   ),
   'pt': _RelativeTimeBuiltins(
     justNow: 'Agora',
@@ -136,26 +124,38 @@ final Map<String, _RelativeTimeBuiltins> _relativeTimeBuiltins = {
     days: (n) => 'Bilumbu $n me luta',
     inTheFuture: 'Ntangu yai',
   ),
+  'lu': _RelativeTimeBuiltins(
+    justNow: 'Lelu',
+    minutes: (n) => 'Minute $n iluta',
+    hours: (n) => 'Ngonga $n iluta',
+    days: (n) => 'Bikuva $n biluta',
+    inTheFuture: 'Lelu',
+  ),
 };
 
-/// Default supported currencies per language.
+/// Default currencies per language.
+/// Note : LN, KG, LU utilisent tous CDF (Franc Congolais - RDC).
 const Map<String, String> _defaultCurrencyMap = {
   'fr': 'EUR',
   'en': 'USD',
-  'ar': 'SAR',
-  'zh': 'CNY',
-  'pt': 'BRL',
+  'es': 'EUR',
+  'pt': 'EUR',
   'sw': 'TZS',
   'ln': 'CDF',
   'kg': 'CDF',
+  'lu': 'CDF',
   'default': 'EUR',
 };
+
+/// Limites de validation de dates raisonnables.
+const int _kMinValidYear = 1850;
+const int _kMaxValidYear = 2200;
 
 // ============================================================================
 // HELPER CLASSES
 // ============================================================================
 
-/// Container for relative-time builtin strings of a language.
+/// Container pour les strings builtin relative-time d'une langue.
 class _RelativeTimeBuiltins {
   final String justNow;
   final String Function(int n) minutes;
@@ -172,9 +172,14 @@ class _RelativeTimeBuiltins {
   });
 }
 
-/// Cache for [DateFormat] and [NumberFormat] instances to avoid
-/// expensive re-creation on every formatting call.
+/// Cache partagé pour [DateFormat] et [NumberFormat].
+///
+/// Singleton pour éviter de recréer les formatters coûteux.
 class _FormatCache {
+  _FormatCache._internal();
+  static final _FormatCache _instance = _FormatCache._internal();
+  factory _FormatCache() => _instance;
+
   final Map<String, DateFormat> _dateFormats = {};
   final Map<String, NumberFormat> _numberFormats = {};
 
@@ -201,90 +206,157 @@ class _FormatCache {
       decimalDigits: decimals,
     );
   }
+
+  /// Nettoyage du cache (pour tests).
+  @visibleForTesting
+  void clear() {
+    _dateFormats.clear();
+    _numberFormats.clear();
+  }
 }
 
 // ============================================================================
 // I18N SERVICE
 // ============================================================================
 
-/// A high-level i18n service that wraps [AppLocalizations] and adds
-/// locale-aware date/time and number formatting with caching and validation.
+/// Service i18n de haut niveau qui encapsule [AppLocalizations] et ajoute
+/// le formatage date/heure/nombre aware-locale avec cache et validation.
 class I18nService {
   final AppLocalizations _loc;
   final _FormatCache _cache = _FormatCache();
 
-  I18nService(this._loc) {
-    debugPrint('[I18nService] 🚀 Initialized for locale: ${_loc.locale.languageCode}');
+  I18nService._(this._loc);
+
+  /// Crée un [I18nService] depuis le [AppLocalizations] le plus proche.
+  ///
+  /// ⚠️ Retourne `null` si aucun [AppLocalizations] trouvé dans l'arbre.
+  static I18nService? tryOf(BuildContext context) {
+    final loc = AppLocalizations.of(context);
+    if (loc == null) {
+      debugPrint('[I18nService] ⚠️ No AppLocalizations in widget tree');
+      return null;
+    }
+    return I18nService._(loc);
   }
 
-  /// Creates an [I18nService] from the nearest [AppLocalizations] in the tree.
-  factory I18nService.of(BuildContext context) =>
-      I18nService(AppLocalizations.of(context));
+  /// Crée un [I18nService] depuis le [AppLocalizations] le plus proche.
+  ///
+  /// **Throws** si aucun [AppLocalizations] n'est trouvé.
+  factory I18nService.of(BuildContext context) {
+    final svc = tryOf(context);
+    if (svc == null) {
+      throw StateError(
+        'I18nService.of() called with a context that does not contain '
+        'AppLocalizations. Ensure Localizations delegate is set up.',
+      );
+    }
+    return svc;
+  }
 
   // ── Translation API ────────────────────────────────────────────────────────
 
-  /// Simple translation with fallback chain: lang → fr → en → key.
+  /// Traduction simple avec fallback : lang → fr → key.
   ///
-  /// Supports `{param}` placeholder substitution:
+  /// Supporte la substitution de paramètres `{0}`, `{1}`, ...
+  ///
   /// ```dart
-  /// svc.t('profile_followers', {'count': '42'}) // "42 abonnés"
+  /// svc.t('sos_pin_enter', args: ['4']) // "Entrez votre code à 4 chiffres"
   /// ```
-  String t(String key, [Map<String, String>? params]) {
+  String t(String key, {List<String>? args}) {
     if (key.isEmpty) {
       debugPrint('[I18nService] ⚠️ t() called with empty key');
       return '';
     }
-    return _loc.t(key, params: params);
+    return _loc.t(key, args: args);
   }
 
-  /// Plural-form helper. Returns the singular or plural translation depending
-  /// on [count] and automatically substitutes `{count}`.
+  /// Pluriel simple : utilise les suffixes `_zero`, `_one`, `_many`
+  /// définis dans [AppLocalizations].
   ///
   /// ```dart
-  /// svc.tp('events_seats', 'events_seats_plural', 3) // "3 places disponibles"
+  /// svc.plural('contact', 0) // "Aucun contact"
+  /// svc.plural('contact', 1) // "1 contact"
+  /// svc.plural('contact', 5) // "5 contacts"
+  /// ```
+  String plural(String key, int count, {List<String>? args}) {
+    if (key.isEmpty) {
+      debugPrint('[I18nService] ⚠️ plural() called with empty key');
+      return '';
+    }
+    return _loc.plural(key, count, args: args);
+  }
+
+  /// Pluriel manuel avec deux clés (singulier + pluriel).
+  ///
+  /// Utile pour cas spécifiques non couverts par `plural()`.
+  /// ```dart
+  /// svc.tp('events_seats', 'events_seats_plural', 3)
   /// ```
   String tp(String singularKey, String pluralKey, int count,
-      [Map<String, String>? extra]) {
+      {List<String>? args}) {
     if (singularKey.isEmpty || pluralKey.isEmpty) {
       debugPrint('[I18nService] ⚠️ tp() called with empty key');
       return '';
     }
-    return _loc.tp(singularKey, pluralKey, count, params: extra);
+    final key = count == 1 ? singularKey : pluralKey;
+    final finalArgs = <String>[count.toString(), ...?args];
+    return _loc.t(key, args: finalArgs);
+  }
+
+  /// Traduction avec paramètres nommés `{name}`.
+  String tn(String key, Map<String, String> args) {
+    if (key.isEmpty) {
+      debugPrint('[I18nService] ⚠️ tn() called with empty key');
+      return '';
+    }
+    return _loc.tn(key, args);
   }
 
   // ── RTL / Direction ────────────────────────────────────────────────────────
 
-  /// Whether the active locale uses right-to-left text direction.
-  bool get isRtl => _loc.isRtl;
+  /// La langue active est-elle RTL ?
+  bool get isRtl => _isLanguageRtl(_loc.locale.languageCode);
 
-  /// The [TextDirection] that matches the active locale.
-  TextDirection get textDirection => _loc.textDirection;
+  /// [TextDirection] correspondant à la langue active.
+  TextDirection get textDirection =>
+      isRtl ? TextDirection.rtl : TextDirection.ltr;
+
+  /// Détection RTL basée sur le code de langue.
+  static bool _isLanguageRtl(String code) {
+    const rtlCodes = {'ar', 'he', 'fa', 'ur', 'yi', 'ps', 'sd'};
+    return rtlCodes.contains(code);
+  }
 
   // ── Current locale info ────────────────────────────────────────────────────
 
-  /// The active [Locale].
+  /// La [Locale] active.
   Locale get locale => _loc.locale;
 
-  /// The language code of the active locale (e.g. `'fr'`, `'ar'`).
+  /// Le code de langue (e.g. `'fr'`, `'ln'`).
   String get languageCode => _loc.locale.languageCode;
 
-  /// The intl-compatible locale string (e.g. `'fr_FR'`, `'zh_CN'`).
+  /// Le string intl-compatible (e.g. `'fr_FR'`, `'sw_TZ'`).
   String get intlLocale =>
       _intlLocaleMap[languageCode] ?? _intlLocaleMap['fr']!;
 
+  /// Métadonnées de la langue active (nom, drapeau).
+  LanguageInfo? get currentLanguageInfo =>
+      kSupportedLanguages[languageCode];
+
   // ── Date / Time formatting ─────────────────────────────────────────────────
 
-  /// Returns a locale-aware formatted date string.
+  /// Formatage date aware-locale (ex : "2 août 2025" en FR).
   ///
-  /// Uses abbreviated month names by default (e.g. `"2 août 2025"`).
-  /// Validates the input and falls back to ISO 8601 on error.
+  /// Valide l'input et fallback sur ISO 8601 en cas d'erreur.
   String formatDate(DateTime date, {String? pattern}) {
     if (!_isValidDate(date)) {
       debugPrint('[I18nService] ⚠️ formatDate: invalid date');
       return '—';
     }
 
-    final p = pattern ?? _datePatternMap[languageCode] ?? _datePatternMap['default']!;
+    final p = pattern ??
+        _datePatternMap[languageCode] ??
+        _datePatternMap['default']!;
     try {
       return _cache.dateFormat(p, intlLocale).format(date.toLocal());
     } catch (e) {
@@ -294,7 +366,7 @@ class I18nService {
     }
   }
 
-  /// Returns a locale-aware formatted time string (24-hour by default).
+  /// Formatage heure aware-locale (24h par défaut).
   String formatTime(DateTime time, {bool use24h = true}) {
     if (!_isValidDate(time)) {
       debugPrint('[I18nService] ⚠️ formatTime: invalid date');
@@ -310,7 +382,7 @@ class I18nService {
     }
   }
 
-  /// Returns a locale-aware date + time string.
+  /// Formatage date + heure aware-locale.
   String formatDateTime(DateTime dt, {String? pattern}) {
     if (!_isValidDate(dt)) {
       debugPrint('[I18nService] ⚠️ formatDateTime: invalid date');
@@ -328,16 +400,16 @@ class I18nService {
     }
   }
 
-  /// Returns a relative time label (e.g. "il y a 5 minutes").
+  /// Temps relatif (ex : "il y a 5 min").
   ///
-  /// **Ranges**:
-  /// - < 1 min → "just now" (locale-specific)
-  /// - < 60 min → "n minutes ago"
-  /// - < 24 h → "n hours ago"
-  /// - < 7 days → "n days ago"
-  /// - >= 7 days → formatted absolute date
+  /// **Plages** :
+  /// - < 1 min → "à l'instant" (locale-specific)
+  /// - < 60 min → "il y a n min"
+  /// - < 24 h → "il y a n heures"
+  /// - < 7 jours → "il y a n jours"
+  /// - >= 7 jours → date absolue
   ///
-  /// Future dates are handled gracefully as "just now" / "soon".
+  /// Dates futures traitées comme "à l'instant" / "bientôt".
   String relativeTime(DateTime past) {
     if (!_isValidDate(past)) {
       debugPrint('[I18nService] ⚠️ relativeTime: invalid date');
@@ -346,57 +418,60 @@ class I18nService {
 
     final now = DateTime.now();
     final diff = now.difference(past);
-
-    // Handle future dates gracefully
-    if (diff.isNegative) {
-      return _builtins.inTheFuture;
-    }
-
     final builtins = _builtins;
 
-    // < 1 min → "just now"
+    // Dates futures
+    if (diff.isNegative) {
+      return builtins.inTheFuture;
+    }
+
+    // < 1 min
     if (diff.inSeconds < 60) {
-      final key = t('just_now');
-      return key == 'just_now' ? builtins.justNow : key;
+      // Essayer clé i18n, sinon fallback sur builtin
+      final key = t('common_just_now');
+      return _isKeyMissing(key, 'common_just_now')
+          ? builtins.justNow
+          : key;
     }
 
     // < 60 min
     if (diff.inMinutes < 60) {
-      final key = tp('minutes_ago_one', 'minutes_ago_other', diff.inMinutes);
-      return (key == 'minutes_ago_one' || key == 'minutes_ago_other')
-          ? builtins.minutes(diff.inMinutes)
-          : key;
+      final pluralStr = plural('minute', diff.inMinutes);
+      // Construit "il y a X minutes" si clé relative existe
+      final key = t('time_minutes_ago', args: [diff.inMinutes.toString()]);
+      if (!_isKeyMissing(key, 'time_minutes_ago')) return key;
+      return builtins.minutes(diff.inMinutes);
     }
 
     // < 24 h
     if (diff.inHours < 24) {
-      final key = tp('hours_ago_one', 'hours_ago_other', diff.inHours);
-      return (key == 'hours_ago_one' || key == 'hours_ago_other')
-          ? builtins.hours(diff.inHours)
-          : key;
+      final key = t('time_hours_ago', args: [diff.inHours.toString()]);
+      if (!_isKeyMissing(key, 'time_hours_ago')) return key;
+      return builtins.hours(diff.inHours);
     }
 
-    // < 7 days
+    // < 7 jours
     if (diff.inDays < 7) {
-      final key = tp('days_ago_one', 'days_ago_other', diff.inDays);
-      return (key == 'days_ago_one' || key == 'days_ago_other')
-          ? builtins.days(diff.inDays)
-          : key;
+      final key = t('time_days_ago', args: [diff.inDays.toString()]);
+      if (!_isKeyMissing(key, 'time_days_ago')) return key;
+      return builtins.days(diff.inDays);
     }
 
-    // >= 7 days → absolute date
+    // >= 7 jours → date absolue
     return formatDate(past);
   }
 
-  /// Returns the builtins for the current language (with fallback to FR).
+  /// Vérifie si une clé a retourné sa propre valeur (indique clé manquante).
+  bool _isKeyMissing(String result, String key) =>
+      result == key || result.isEmpty;
+
+  /// Builtin pour la langue courante (fallback FR).
   _RelativeTimeBuiltins get _builtins =>
       _relativeTimeBuiltins[languageCode] ?? _relativeTimeBuiltins['fr']!;
 
   // ── Number formatting ──────────────────────────────────────────────────────
 
-  /// Formats [value] with locale-aware thousands / decimal separators.
-  ///
-  /// [decimalDigits] forces the number of fractional digits.
+  /// Formate un nombre avec séparateurs milliers/décimales aware-locale.
   String formatNumber(num value, {int? decimalDigits}) {
     try {
       final fmt = _cache.numberFormat(intlLocale);
@@ -412,7 +487,7 @@ class I18nService {
     }
   }
 
-  /// Formats [value] as a compact number (e.g. `12k`, `1.2M`).
+  /// Formate un nombre en notation compacte (e.g. `12k`, `1.2M`).
   String formatCompact(num value) {
     try {
       return _cache.compactFormat(intlLocale).format(value);
@@ -423,15 +498,14 @@ class I18nService {
     }
   }
 
-  /// Formats [value] as a currency amount.
+  /// Formate une valeur monétaire.
   ///
-  /// [symbol] defaults to the language's default currency (e.g. EUR for FR,
-  /// CDF for LN/KG). Pass explicitly for cross-border use cases.
+  /// [symbol] défaut = monnaie de la langue (e.g. EUR pour FR, CDF pour LN).
   ///
   /// ```dart
-  /// svc.formatCurrency(1500)                          // "1 500 €" (FR)
-  /// svc.formatCurrency(1500, symbol: 'USD')           // "1 500 $"
-  /// svc.formatCurrency(1500.5, decimals: 2)           // "1 500,50 €"
+  /// svc.formatCurrency(1500)                     // "1 500 €" (FR)
+  /// svc.formatCurrency(1500, symbol: 'USD')      // "1 500 $"
+  /// svc.formatCurrency(1500.5, decimals: 2)      // "1 500,50 €"
   /// ```
   String formatCurrency(num value, {String? symbol, int decimals = 0}) {
     final s = symbol ??
@@ -446,14 +520,33 @@ class I18nService {
     }
   }
 
+  /// Formate un numéro de téléphone (best effort, pas de lib externe).
+  String formatPhone(String? phone) {
+    if (phone == null || phone.isEmpty) return '';
+    // Garde seulement chiffres et +
+    final cleaned = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    if (cleaned.isEmpty) return phone;
+
+    // Format international simple : +XXX XX XX XX XX
+    if (cleaned.startsWith('+') && cleaned.length >= 10) {
+      final cc = cleaned.substring(0, 3);
+      final rest = cleaned.substring(3);
+      final chunks = <String>[];
+      for (var i = 0; i < rest.length; i += 2) {
+        chunks.add(rest.substring(i,
+            i + 2 > rest.length ? rest.length : i + 2));
+      }
+      return '$cc ${chunks.join(' ')}';
+    }
+    return cleaned;
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────────
 
-  /// Validates that [date] is not too far in the past/future.
+  /// Valide qu'une date est dans une plage raisonnable.
   bool _isValidDate(DateTime date) {
-    // Reject absurd dates (before 1900 or after 2200)
     final year = date.year;
-    if (year < 1900 || year > 2200) return false;
-    return true;
+    return year >= _kMinValidYear && year <= _kMaxValidYear;
   }
 }
 
@@ -462,16 +555,21 @@ class I18nService {
 // ---------------------------------------------------------------------------
 
 extension I18nServiceX on BuildContext {
-  /// Returns an [I18nService] for the current build context.
+  /// Retourne un [I18nService] pour le build context courant.
+  ///
+  /// ⚠️ **Ne pas utiliser** si [AppLocalizations] peut être null.
+  /// Préférer [tryI18n] dans ce cas.
   I18nService get i18n => I18nService.of(this);
+
+  /// Retourne un [I18nService] ou null si pas de localisations.
+  I18nService? get tryI18n => I18nService.tryOf(this);
 }
 
 // ---------------------------------------------------------------------------
 // RTL-aware Directionality wrapper
 // ---------------------------------------------------------------------------
 
-/// Wraps [child] in a [Directionality] widget whose direction is derived from
-/// the active locale. Use this at screen/page level when RTL support matters.
+/// Wrappe [child] dans un [Directionality] basé sur la langue active.
 ///
 /// ```dart
 /// return LocaleDirectionality(child: Scaffold(...));
@@ -482,37 +580,50 @@ class LocaleDirectionality extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final loc = AppLocalizations.of(context);
+    final svc = I18nService.tryOf(context);
+    final direction = svc?.textDirection ?? TextDirection.ltr;
     return Directionality(
-      textDirection: loc.textDirection,
+      textDirection: direction,
       child: child,
     );
   }
 }
 
-/// Provides the list of supported language configs for the language picker.
+// ---------------------------------------------------------------------------
+// Language picker helpers — uses kSupportedLanguages from locale_controller
+// ---------------------------------------------------------------------------
+
+/// Helpers pour le language picker UI.
+///
+/// Utilise [kSupportedLanguages] de [locale_controller.dart] comme source
+/// unique de vérité (évite duplication).
 class SupportedLanguages {
   SupportedLanguages._();
 
-  static const List<Map<String, String>> all = [
-    {'code': 'fr', 'name': 'Français', 'flag': '🇫🇷'},
-    {'code': 'en', 'name': 'English', 'flag': '🇬🇧'},
-    {'code': 'ar', 'name': 'العربية', 'flag': '🇸🇦'},
-    {'code': 'zh', 'name': '中文', 'flag': '🇨🇳'},
-    {'code': 'pt', 'name': 'Português', 'flag': '🇵🇹'},
-    {'code': 'ln', 'name': 'Lingála', 'flag': '🇨🇩'},
-    {'code': 'kg', 'name': 'Kikongo', 'flag': '🇨🇩'},
-    {'code': 'sw', 'name': 'Kiswahili', 'flag': '🇹🇿'},
-  ];
+  /// Liste des langues pour affichage UI (avec code, nom natif, drapeau).
+  static List<Map<String, String>> get all => kSupportedLanguages.values
+      .map((info) => {
+            'code': info.code,
+            'name': info.nativeName,
+            'flag': info.flag ?? '',
+          })
+      .toList();
 
+  /// Récupère les infos d'une langue par son code.
   static Map<String, String>? forCode(String code) {
-    for (final lang in all) {
-      if (lang['code'] == code) return lang;
-    }
-    return null;
+    final info = kSupportedLanguages[code];
+    if (info == null) return null;
+    return {
+      'code': info.code,
+      'name': info.nativeName,
+      'flag': info.flag ?? '',
+    };
   }
 
-  /// Returns true if [code] is a supported language.
+  /// Vérifie si [code] est une langue supportée.
   static bool isSupported(String code) =>
-      all.any((l) => l['code'] == code);
+      kSupportedLanguages.containsKey(code);
+
+  /// Nombre de langues supportées.
+  static int get count => kSupportedLanguages.length;
 }
