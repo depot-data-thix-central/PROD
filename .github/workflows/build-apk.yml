@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: false  # ✅ Ne pas interrompre production
 
 env:
-  FLUTTER_VERSION: "3.27.0"
+  # 👇 La version de Flutter a été retirée pour forcer GitHub à prendre la plus récente
   JAVA_VERSION: "17"
 
 jobs:
@@ -43,7 +43,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          # 👇 Ligne flutter-version retirée ici
           cache: true
           cache-key: flutter-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
 
@@ -118,7 +118,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          # 👇 Ligne flutter-version retirée ici
           cache: true
           cache-key: flutter-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
 
