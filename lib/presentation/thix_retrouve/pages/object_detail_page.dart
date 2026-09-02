@@ -1,7 +1,7 @@
 /// Object Detail Page (Production Enterprise)
-/// ✅ ThixPolicy + i18n 8 langues + sanitization
-/// ✅ CachedNetworkImage + Semantics + HapticFeedback
-/// ✅ Logs structurés + validation des props
+///  ThixPolicy + i18n 8 langues + sanitization
+///  CachedNetworkImage + Semantics + HapticFeedback
+/// Logs structurés + validation des props
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -72,7 +72,7 @@ class ObjectDetailPage extends StatelessWidget {
     final isLost = status.toUpperCase() == 'PERDU';
     final accentColor = isLost ? ThixPolicy.danger : ThixPolicy.success;
 
-    // ✅ Sanitization de tous les textes
+    //  Sanitization de tous les textes
     final safeTitle = _DetailSanitizer.sanitize(title, maxLength: _kMaxTitleLength);
     final safeDescription = _DetailSanitizer.sanitize(description, maxLength: _kMaxDescriptionLength);
     final safeLocation = _DetailSanitizer.sanitize(location, maxLength: _kMaxLocationLength);
