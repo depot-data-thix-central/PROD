@@ -1,26 +1,37 @@
-/// Object Detail Page (Production Enterprise)
-///  ThixPolicy + i18n 8 langues + sanitization
-///  CachedNetworkImage + Semantics + HapticFeedback
-/// Logs structurés + validation des props
+/// Object Detail Page — Enterprise Glass Design (Production)
+/// ✅ Cohérent avec THIX RETROUVE : glass monochrome, texte blanc
+/// ✅ Pastilles de statut (pas de badges solides)
+/// ✅ i18n complet + sanitization + Semantics + HapticFeedback
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
+import 'dart:ui';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 
 // ============================================================================
-// CONSTANTS
+// DESIGN TOKENS (identiques à l'écran RETROUVE)
 // ============================================================================
+
+const double _kGlassSurface = 0.05;
+const double _kGlassSurfaceHi = 0.08;
+const double _kGlassBorder = 0.09;
+const double _kRadiusLg = 20.0;
+const double _kRadiusMd = 16.0;
+const double _kRadiusSm = 12.0;
 
 const int _kMaxTitleLength = 100;
 const int _kMaxDescriptionLength = 2000;
 const int _kMaxLocationLength = 150;
 
+// Texte primaire GARANTI blanc sur fond sombre (indépendant du thème)
+const Color _kTextPrimary = Colors.white;
+
 // ============================================================================
-// VALIDATORS & SANITIZERS
+// SANITIZER
 // ============================================================================
 
 class _DetailSanitizer {
@@ -43,6 +54,45 @@ class _DetailSanitizer {
 }
 
 // ============================================================================
+// GLASS CARD
+// ============================================================================
+
+class _GlassCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final double radius;
+
+  const _GlassCard({
+    required this.child,
+    this.padding = const EdgeInsets.all(14),
+    this.radius = _kRadiusMd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.white.withValues(alpha: _kGlassSurfaceHi),
+            Colors.white.withValues(alpha: _kGlassSurface),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: _kGlassBorder),
+          width: 1,
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
+// ============================================================================
 // PAGE
 // ============================================================================
 
@@ -55,46 +105,57 @@ class ObjectDetailPage extends StatelessWidget {
   final String reward;
   final String? imageUrl;
 
-  // CORRECTION : Les 'required' sont retirés. 
-  // Des valeurs par défaut sont fournies pour éviter les erreurs de compilation
-  // lorsque GoRouter appelle la page sans paramètres.
   const ObjectDetailPage({
     super.key,
-    this.title = 'Détail de l\'objet',
-    this.status = 'Inconnu',
-    this.location = 'Lieu non renseigné',
+    this.title = '',
+    this.status = '',
+    this.location = '',
     this.time = '',
-    this.description = 'Aucune description disponible.',
+    this.description = '',
     this.reward = '',
     this.imageUrl,
   });
 
+  Color _statusColor(String status) {
+    final s = status.toUpperCase();
+    if (s.contains('PERDU') || s.contains('LOST')) {
+      return ThixPolicy.domainOpportunity;
+    }
+    if (s.contains('TROUV') || s.contains('FOUND')) {
+      return ThixPolicy.success;
+    }
+    return ThixPolicy.textMuted;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final isLost = status.toUpperCase() == 'PERDU';
-    final accentColor = isLost ? ThixPolicy.danger : ThixPolicy.success;
+    final statusColor = _statusColor(status);
 
-    //  Sanitization de tous les textes
-    final safeTitle = _DetailSanitizer.sanitize(title, maxLength: _kMaxTitleLength);
-    final safeDescription = _DetailSanitizer.sanitize(description, maxLength: _kMaxDescriptionLength);
-    final safeLocation = _DetailSanitizer.sanitize(location, maxLength: _kMaxLocationLength);
+    final safeTitle =
+        _DetailSanitizer.sanitize(title, maxLength: _kMaxTitleLength);
+    final safeDescription = _DetailSanitizer.sanitize(description,
+        maxLength: _kMaxDescriptionLength);
+    final safeLocation =
+        _DetailSanitizer.sanitize(location, maxLength: _kMaxLocationLength);
     final safeReward = _DetailSanitizer.sanitize(reward, maxLength: 50);
     final safeImageUrl = _DetailSanitizer.sanitizeImageUrl(imageUrl);
 
-    debugPrint('[ObjectDetail] 🚀 Page built: ${safeTitle.substring(0, safeTitle.length.clamp(0, 30))}');
+    debugPrint('[ObjectDetail] 🚀 Page built: '
+        '${safeTitle.substring(0, safeTitle.length.clamp(0, 30))}');
 
     return Scaffold(
       backgroundColor: ThixPolicy.inkDeep,
+      // ✅ AppBar transparente, fond unifié
       appBar: AppBar(
-        backgroundColor: ThixPolicy.card,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         leading: Semantics(
           button: true,
           label: l10n.t('common_back'),
           child: IconButton(
-            icon: Icon(Icons.arrow_back_ios_new_rounded,
-                color: ThixPolicy.textMain, size: 20),
+            icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                color: _kTextPrimary, size: 20),
             onPressed: () {
               HapticFeedback.lightImpact();
               Navigator.pop(context);
@@ -103,9 +164,10 @@ class ObjectDetailPage extends StatelessWidget {
         ),
         title: Text(
           l10n.t('object_detail_title'),
-          style: ThixPolicy.h3Style.copyWith(
-            color: ThixPolicy.textMain,
-            fontWeight: ThixPolicy.bold,
+          style: const TextStyle(
+            color: _kTextPrimary,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
           ),
         ),
         centerTitle: true,
@@ -114,98 +176,150 @@ class ObjectDetailPage extends StatelessWidget {
             button: true,
             label: l10n.t('common_more_options'),
             child: IconButton(
-              icon: Icon(Icons.more_vert_rounded, color: ThixPolicy.textMain),
+              icon: const Icon(Icons.more_vert_rounded,
+                  color: _kTextPrimary, size: 20),
               onPressed: () {
                 HapticFeedback.selectionClick();
-                _showOptionsMenu(context, l10n, safeTitle, safeDescription, safeImageUrl);
+                _showOptionsMenu(context, l10n, safeTitle, safeDescription,
+                    safeLocation, safeImageUrl);
               },
             ),
           ),
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Image ──
-            _buildImageSection(
-              context,
-              l10n,
-              safeImageUrl,
-              isLost,
-              accentColor,
-            ),
-            const SizedBox(height: 16),
+            // ── Image (glass card) ──
+            _buildImageSection(l10n, safeImageUrl, statusColor),
+            const SizedBox(height: 18),
 
-            // ── Title ──
+            // ── Title + status pill ──
             Semantics(
               header: true,
               child: Text(
                 safeTitle.isEmpty ? l10n.t('object_no_title') : safeTitle,
-                style: ThixPolicy.h2Style.copyWith(
-                  color: ThixPolicy.textMain,
-                  fontWeight: ThixPolicy.bold,
+                style: const TextStyle(
+                  color: _kTextPrimary,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w800,
+                  height: 1.25,
                 ),
               ),
             ),
-            const SizedBox(height: 6),
-
-            // ── Status + Time ──
-            Semantics(
-              label: '${status}, ${time}',
-              child: Text(
-                '$status • $time',
-                style: ThixPolicy.bodySmallStyle.copyWith(
-                  color: accentColor,
-                  fontWeight: ThixPolicy.bold,
-                ),
-              ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _statusPill(statusColor, status),
+                if (time.isNotEmpty)
+                  Text(
+                    time,
+                    style: TextStyle(
+                      color: ThixPolicy.textMuted,
+                      fontSize: 12,
+                    ),
+                  ),
+              ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 14),
 
-            // ── Location ──
+            // ── Location (chip glass) ──
             if (safeLocation.isNotEmpty)
-              Semantics(
-                label: l10n.t('object_location_label', args: [safeLocation]),
+              _GlassCard(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                radius: _kRadiusSm,
                 child: Row(
                   children: [
-                    Icon(Icons.location_on_rounded,
+                    Icon(Icons.location_on_outlined,
                         size: 14, color: ThixPolicy.textMuted),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         safeLocation,
-                        style: ThixPolicy.captionStyle
-                            .copyWith(color: ThixPolicy.textMuted),
+                        style: TextStyle(
+                          color: ThixPolicy.textMuted,
+                          fontSize: 12.5,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
 
-            // ── Description ──
-            if (safeDescription.isNotEmpty)
-              Semantics(
-                label: l10n.t('object_description_label'),
+            // ── Description (glass card) ──
+            if (safeDescription.isNotEmpty) ...[
+              Text(
+                l10n.t('object_description_label'),
+                style: TextStyle(
+                  color: ThixPolicy.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _GlassCard(
                 child: Text(
                   safeDescription,
-                  style: ThixPolicy.bodyStyle.copyWith(
-                    color: ThixPolicy.textMain,
-                    height: 1.5,
+                  style: const TextStyle(
+                    color: _kTextPrimary,
+                    fontSize: 14,
+                    height: 1.55,
                   ),
                 ),
               ),
-            const SizedBox(height: 20),
+              const SizedBox(height: 14),
+            ],
 
-            // ── Reward ──
-            if (safeReward.isNotEmpty)
-              _buildRewardCard(context, l10n, safeReward),
-            const SizedBox(height: 24),
+            // ── Reward (glass teinté subtil) ──
+            if (safeReward.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: ThixPolicy.warning.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(_kRadiusMd),
+                  border: Border.all(
+                    color: ThixPolicy.warning.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.card_giftcard_rounded,
+                        color: ThixPolicy.warning, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        l10n.t('object_reward'),
+                        style: TextStyle(
+                          color: ThixPolicy.textMuted,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      safeReward,
+                      style: const TextStyle(
+                        color: _kTextPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
 
-            // ── Action Buttons ──
-            _buildActionButtons(context, l10n, safeTitle, safeDescription, safeImageUrl),
+            // ── Actions ──
+            _buildActionButtons(context, l10n, safeTitle, safeDescription,
+                safeLocation, safeImageUrl),
           ],
         ),
       ),
@@ -213,76 +327,139 @@ class ObjectDetailPage extends StatelessWidget {
   }
 
   // ========================================================================
-  // IMAGE SECTION
+  // IMAGE
   // ========================================================================
 
   Widget _buildImageSection(
-    BuildContext context,
     AppLocalizations l10n,
     String? imageUrl,
-    bool isLost,
-    Color accentColor,
+    Color statusColor,
   ) {
     return RepaintBoundary(
-      child: Stack(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(ThixPolicy.rLg),
-            child: Container(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(_kRadiusLg),
+        child: Stack(
+          children: [
+            Container(
               width: double.infinity,
-              height: 240,
-              color: ThixPolicy.surfaceSoft,
+              height: 250,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.white.withValues(alpha: _kGlassSurfaceHi),
+                    Colors.white.withValues(alpha: _kGlassSurface),
+                  ],
+                ),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: _kGlassBorder),
+                ),
+              ),
               child: imageUrl != null
                   ? CachedNetworkImage(
                       imageUrl: imageUrl,
                       fit: BoxFit.cover,
-                      width: double.infinity,
-                      height: 240,
-                      placeholder: (context, url) => Center(
-                        child: CircularProgressIndicator(
-                          color: accentColor,
-                          strokeWidth: 2,
+                      placeholder: (_, __) => const Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: _kTextPrimary,
+                          ),
                         ),
                       ),
-                      errorWidget: (context, url, error) {
-                        debugPrint('[ObjectDetail] ❌ Image load failed: $error');
-                        return Center(
-                          child: Icon(
-                            Icons.broken_image_rounded,
-                            size: 60,
-                            color: ThixPolicy.textMuted,
-                          ),
-                        );
-                      },
+                      errorWidget: (_, __, ___) => Icon(
+                        Icons.broken_image_rounded,
+                        size: 48,
+                        color: _kTextPrimary.withValues(alpha: 0.25),
+                      ),
                     )
                   : Center(
                       child: Icon(
                         Icons.inventory_2_outlined,
-                        size: 70,
-                        color: ThixPolicy.textMuted,
+                        size: 56,
+                        color: _kTextPrimary.withValues(alpha: 0.25),
                       ),
                     ),
             ),
-          ),
-          Positioned(
-            top: 12,
-            left: 12,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: accentColor,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Semantics(
-                label: l10n.t('object_status_label', args: [status]),
-                child: Text(
-                  status,
-                  style: ThixPolicy.captionStyle.copyWith(
-                    color: ThixPolicy.textMain,
-                    fontWeight: ThixPolicy.bold,
+            // ✅ Pastille glass (plus de badge solide)
+            if (status.isNotEmpty)
+              Positioned(
+                top: 12,
+                left: 12,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.inkDeep.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: statusColor.withValues(alpha: 0.4),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: statusColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            status.toUpperCase(),
+                            style: TextStyle(
+                              color: statusColor,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statusPill(Color color, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label.toUpperCase(),
+            style: TextStyle(
+              color: color,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5,
             ),
           ),
         ],
@@ -291,56 +468,7 @@ class ObjectDetailPage extends StatelessWidget {
   }
 
   // ========================================================================
-  // REWARD CARD
-  // ========================================================================
-
-  Widget _buildRewardCard(
-    BuildContext context,
-    AppLocalizations l10n,
-    String reward,
-  ) {
-    return RepaintBoundary(
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: ThixPolicy.warning.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          border: Border.all(color: ThixPolicy.warning.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.card_giftcard_rounded,
-                color: ThixPolicy.warning, size: 24),
-            const SizedBox(width: 10),
-            Semantics(
-              label: l10n.t('object_reward_label'),
-              child: Text(
-                l10n.t('object_reward'),
-                style: ThixPolicy.bodyStyle.copyWith(
-                  color: ThixPolicy.textMain,
-                  fontWeight: ThixPolicy.bold,
-                ),
-              ),
-            ),
-            const Spacer(),
-            Semantics(
-              label: l10n.t('object_reward_amount', args: [reward]),
-              child: Text(
-                reward,
-                style: ThixPolicy.h3Style.copyWith(
-                  color: ThixPolicy.warning,
-                  fontWeight: ThixPolicy.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ========================================================================
-  // ACTION BUTTONS
+  // ACTIONS
   // ========================================================================
 
   Widget _buildActionButtons(
@@ -348,11 +476,12 @@ class ObjectDetailPage extends StatelessWidget {
     AppLocalizations l10n,
     String title,
     String description,
+    String location,
     String? imageUrl,
   ) {
     return Column(
       children: [
-        // ── Contact Button ──
+        // ── Contact (plein, bleu) ──
         Semantics(
           button: true,
           label: l10n.t('object_contact_button'),
@@ -362,9 +491,9 @@ class ObjectDetailPage extends StatelessWidget {
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: ThixPolicy.primary,
-                foregroundColor: ThixPolicy.textMain,
+                foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                  borderRadius: BorderRadius.circular(_kRadiusMd),
                 ),
                 elevation: 0,
               ),
@@ -374,9 +503,10 @@ class ObjectDetailPage extends StatelessWidget {
               },
               child: Text(
                 l10n.t('object_contact_button'),
-                style: ThixPolicy.titleStyle.copyWith(
-                  color: ThixPolicy.textMain,
-                  fontWeight: ThixPolicy.bold,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
@@ -384,30 +514,45 @@ class ObjectDetailPage extends StatelessWidget {
         ),
         const SizedBox(height: 12),
 
-        // ── Share Button ──
+        // ── Share (glass outline) ──
         Semantics(
           button: true,
           label: l10n.t('object_share_button'),
-          child: SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: ThixPolicy.textMain,
-                side: BorderSide(color: ThixPolicy.border),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                ),
-              ),
-              onPressed: () {
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
                 HapticFeedback.mediumImpact();
-                _handleShare(context, l10n, title, description, imageUrl);
+                _handleShare(context, l10n, title, description, location,
+                    imageUrl);
               },
-              child: Text(
-                l10n.t('object_share_button'),
-                style: ThixPolicy.titleStyle.copyWith(
-                  color: ThixPolicy.textMain,
-                  fontWeight: ThixPolicy.bold,
+              borderRadius: BorderRadius.circular(_kRadiusMd),
+              child: Container(
+                width: double.infinity,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: _kGlassSurface),
+                  borderRadius: BorderRadius.circular(_kRadiusMd),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.14),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.share_rounded,
+                        color: _kTextPrimary, size: 17),
+                    const SizedBox(width: 8),
+                    Text(
+                      l10n.t('object_share_button'),
+                      style: const TextStyle(
+                        color: _kTextPrimary,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -418,7 +563,7 @@ class ObjectDetailPage extends StatelessWidget {
   }
 
   // ========================================================================
-  // ACTION HANDLERS
+  // HANDLERS
   // ========================================================================
 
   void _handleContact(
@@ -426,23 +571,12 @@ class ObjectDetailPage extends StatelessWidget {
     AppLocalizations l10n,
     String title,
   ) {
-    debugPrint('[ObjectDetail] 📞 Contact tapped for: ${title.substring(0, title.length.clamp(0, 30))}');
-    
-    // TODO: Implémenter la logique de contact (chat, appel, etc.)
+    debugPrint('[ObjectDetail] 📞 Contact tapped: '
+        '${title.substring(0, title.length.clamp(0, 30))}');
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.info_outline_rounded, color: ThixPolicy.textMain, size: 20),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                l10n.t('object_contact_coming_soon'),
-                style: TextStyle(color: ThixPolicy.textMain, fontSize: 13),
-              ),
-            ),
-          ],
-        ),
+        content: Text(l10n.t('object_contact_coming_soon'),
+            style: const TextStyle(fontSize: 13)),
         backgroundColor: ThixPolicy.primary,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
@@ -455,10 +589,10 @@ class ObjectDetailPage extends StatelessWidget {
     AppLocalizations l10n,
     String title,
     String description,
+    String location,
     String? imageUrl,
   ) async {
-    debugPrint('[ObjectDetail] 📤 Share tapped for: ${title.substring(0, title.length.clamp(0, 30))}');
-    
+    debugPrint('[ObjectDetail] 📤 Share tapped');
     try {
       final shareText = '''
 ${l10n.t('object_share_text')}
@@ -470,30 +604,16 @@ ${imageUrl != null ? '🖼️ $imageUrl' : ''}
 
 ${l10n.t('object_share_via_thix')}
 ''';
-
       await Share.share(shareText, subject: title);
       HapticFeedback.mediumImpact();
       debugPrint('[ObjectDetail] ✓ Share successful');
-    } catch (e, stack) {
+    } catch (e) {
       debugPrint('[ObjectDetail] ❌ Share failed: $e');
-      if (kDebugMode) {
-        debugPrint('[ObjectDetail] Stack: ${stack.toString().split('\n').first}');
-      }
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.error_outline_rounded, color: ThixPolicy.textMain, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    l10n.t('object_share_error'),
-                    style: TextStyle(color: ThixPolicy.textMain, fontSize: 13),
-                  ),
-                ),
-              ],
-            ),
+            content: Text(l10n.t('object_share_error'),
+                style: const TextStyle(fontSize: 13)),
             backgroundColor: ThixPolicy.danger,
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 2),
@@ -508,63 +628,107 @@ ${l10n.t('object_share_via_thix')}
     AppLocalizations l10n,
     String title,
     String description,
+    String location,
     String? imageUrl,
   ) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: ThixPolicy.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(ThixPolicy.rLg)),
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            color: ThixPolicy.inkDeep.withValues(alpha: 0.7),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _menuItem(
+                    sheetCtx,
+                    icon: Icons.flag_rounded,
+                    tint: ThixPolicy.danger,
+                    label: l10n.t('object_report'),
+                    onTap: () {
+                      HapticFeedback.mediumImpact();
+                      debugPrint('[ObjectDetail] 🚩 Report tapped');
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  _menuItem(
+                    sheetCtx,
+                    icon: Icons.share_rounded,
+                    tint: ThixPolicy.primary,
+                    label: l10n.t('object_share_button'),
+                    onTap: () => _handleShare(context, l10n, title,
+                        description, location, imageUrl),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
-      builder: (sheetCtx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 12, bottom: 8),
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: ThixPolicy.border,
-                  borderRadius: BorderRadius.circular(2),
+    );
+  }
+
+  Widget _menuItem(
+    BuildContext sheetCtx, {
+    required IconData icon,
+    required Color tint,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            Navigator.pop(sheetCtx);
+            onTap();
+          },
+          borderRadius: BorderRadius.circular(_kRadiusMd),
+          child: _GlassCard(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: tint.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: tint, size: 18),
                 ),
-              ),
-            ),
-            Semantics(
-              button: true,
-              label: l10n.t('object_report'),
-              child: ListTile(
-                leading: Icon(Icons.flag_rounded, color: ThixPolicy.danger),
-                title: Text(
-                  l10n.t('object_report'),
-                  style: TextStyle(color: ThixPolicy.textMain),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: _kTextPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
-                onTap: () {
-                  Navigator.pop(sheetCtx);
-                  HapticFeedback.mediumImpact();
-                  debugPrint('[ObjectDetail] 🚩 Report tapped');
-                  // TODO: Implémenter le signalement
-                },
-              ),
+                Icon(Icons.chevron_right_rounded,
+                    color: ThixPolicy.textMuted, size: 18),
+              ],
             ),
-            Semantics(
-              button: true,
-              label: l10n.t('object_share_button'),
-              child: ListTile(
-                leading: Icon(Icons.share_rounded, color: ThixPolicy.primary),
-                title: Text(
-                  l10n.t('object_share_button'),
-                  style: TextStyle(color: ThixPolicy.textMain),
-                ),
-                onTap: () {
-                  Navigator.pop(sheetCtx);
-                  _handleShare(context, l10n, title, description, imageUrl);
-                },
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
+          ),
         ),
       ),
     );
