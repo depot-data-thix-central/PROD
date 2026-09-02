@@ -14,16 +14,12 @@ on:
 
 concurrency:
   group: build-apk-${{ github.ref }}
-  cancel-in-progress: false  # ✅ Ne pas interrompre production
+  cancel-in-progress: false
 
 env:
-  # 👇 La version de Flutter a été retirée pour forcer GitHub à prendre la plus récente
   JAVA_VERSION: "17"
 
 jobs:
-  # ═══════════════════════════════════════════════════════════════════════
-  # JOB 1 : TESTS & ANALYSIS
-  # ═══════════════════════════════════════════════════════════════════════
   test-and-analyze:
     name: Test & Analyze
     runs-on: ubuntu-latest
@@ -44,7 +40,7 @@ jobs:
         with:
           channel: stable
           cache: true
-          cache-key: flutter-\( {{ runner.os }}- \){{ hashFiles('**/pubspec.lock') }}
+          cache-key: flutter-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
 
       - name: Flutter pub get
         run: flutter pub get
@@ -52,31 +48,18 @@ jobs:
       - name: Generate code (build_runner)
         run: |
           if grep -q "build_runner" pubspec.yaml; then
-            echo "🔨 Running build_runner..."
             dart run build_runner build --delete-conflicting-outputs
-            if [ $? -ne 0 ]; then
-              echo "❌ build_runner failed"
-              exit 1
-            fi
-            echo "✅ build_runner completed"
           else
-            echo "ℹ️ No build_runner — skip"
+            echo "No build_runner — skip"
           fi
 
-      # ⚠️ Analyze en mode non-bloquant (ne fait plus échouer le CI)
       - name: Analyze code
         continue-on-error: true
-        run: |
-          echo "🔍 Running flutter analyze (non-blocking)..."
-          flutter analyze --no-fatal-infos --no-fatal-warnings || true
-          echo "ℹ️ Analyze terminé (erreurs éventuelles ignorées pour le build)"
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
 
       - name: Run tests
         continue-on-error: true
-        run: |
-          echo "🧪 Running tests (non-blocking)..."
-          flutter test --coverage || true
-          echo "ℹ️ Tests terminés (échecs éventuels ignorés pour le build)"
+        run: flutter test --coverage || true
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -87,9 +70,6 @@ jobs:
           fail_ci_if_error: false
         continue-on-error: true
 
-  # ═══════════════════════════════════════════════════════════════════════
-  # JOB 2 : BUILD APK & AAB
-  # ═══════════════════════════════════════════════════════════════════════
   build:
     name: Build Release
     runs-on: ubuntu-latest
@@ -112,7 +92,6 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          # 👇 Ligne flutter-version retirée ici
           cache: true
           cache-key: flutter-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
 
@@ -122,30 +101,53 @@ jobs:
       - name: Generate code (build_runner)
         run: |
           if grep -q "build_runner" pubspec.yaml; then
-            echo "🔨 Running build_runner..."
             dart run build_runner build --delete-conflicting-outputs
-            if [ $? -ne 0 ]; then
-              echo "❌ build_runner failed"
-              exit 1
-            fi
-            echo "✅ build_runner completed"
           else
-            echo "ℹ️ No build_runner — skip"
+            echo "No build_runner — skip"
           fi
 
       - name: Setup Android keystore
         if: github.event_name != 'pull_request'
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          echo "🔐 Setting up Android keystore..."
+          set -euo pipefail
+          echo "Setting up Android keystore..."
+
+          if [ -z "${KEYSTORE_B64}" ]; then
+            echo "Secret ANDROID_KEYSTORE_BASE64 is empty."
+            exit 1
+          fi
+          if [ -z "${STORE_PASSWORD}" ] || [ -z "${KEY_PASSWORD}" ] || [ -z "${KEY_ALIAS}" ]; then
+            echo "Missing ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_PASSWORD or ANDROID_KEY_ALIAS."
+            exit 1
+          fi
+
           mkdir -p android/app
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore.jks
+
+          # Strip whitespace/newlines then decode (avoids "base64: invalid input")
+          printf '%s' "${KEYSTORE_B64}" | tr -d '\n\r\t ' | base64 --decode > android/app/keystore.jks
+
+          if [ ! -s android/app/keystore.jks ]; then
+            echo "Decoded keystore is empty. Check ANDROID_KEYSTORE_BASE64."
+            exit 1
+          fi
+
+          # No leading spaces in key.properties (they break signing)
           cat > android/key.properties <<EOF
-          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
-          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          storePassword=${STORE_PASSWORD}
+          keyPassword=${KEY_PASSWORD}
+          keyAlias=${KEY_ALIAS}
           storeFile=keystore.jks
           EOF
-          echo "✅ Keystore configured"
+
+          # Remove accidental leading spaces from the heredoc above
+          sed -i 's/^[[:space:]]*//' android/key.properties
+
+          echo "Keystore configured ($(wc -c < android/app/keystore.jks) bytes)"
 
       - name: Extract version from pubspec
         id: version
@@ -157,67 +159,36 @@ jobs:
             VERSION=${GITHUB_REF#refs/tags/v}
           fi
 
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
-          echo "full_version=$VERSION+$BUILD_NUMBER" >> $GITHUB_OUTPUT
-
-          echo "📦 Version: $VERSION (build $BUILD_NUMBER)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "full_version=$VERSION+$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION (build $BUILD_NUMBER)"
 
       - name: Build release App Bundle
         run: |
-          echo "🔨 Building App Bundle..."
           flutter build appbundle --release \
             --build-name=${{ steps.version.outputs.version }} \
             --build-number=${{ steps.version.outputs.build_number }}
 
-          if [ $? -ne 0 ]; then
-            echo "❌ App Bundle build failed"
-            exit 1
-          fi
-          echo "✅ App Bundle built successfully"
-
       - name: Build release APKs (split by ABI)
         run: |
-          echo "🔨 Building APKs (split by ABI)..."
           flutter build apk --release --split-per-abi \
             --build-name=${{ steps.version.outputs.version }} \
             --build-number=${{ steps.version.outputs.build_number }}
 
-          if [ $? -ne 0 ]; then
-            echo "❌ APK build failed"
-            exit 1
-          fi
-          echo "✅ APKs built successfully"
-
       - name: Verify artifacts
         run: |
-          echo "🔍 Verifying artifacts..."
-
-          if [ ! -f "build/app/outputs/bundle/release/app-release.aab" ]; then
-            echo "❌ AAB not found"
-            exit 1
-          fi
-
+          test -f build/app/outputs/bundle/release/app-release.aab
           APK_COUNT=$(ls -1 build/app/outputs/flutter-apk/*.apk 2>/dev/null | wc -l)
-          if [ $APK_COUNT -eq 0 ]; then
-            echo "❌ No APKs found"
-            exit 1
-          fi
-
-          echo "✅ Found 1 AAB and $APK_COUNT APKs"
+          test "$APK_COUNT" -gt 0
+          echo "Found 1 AAB and $APK_COUNT APKs"
 
       - name: Generate checksums
         run: |
-          echo "🔐 Generating checksums..."
-
           cd build/app/outputs
-
           sha256sum bundle/release/app-release.aab > bundle/release/app-release.aab.sha256
-
           cd flutter-apk
           sha256sum *.apk > checksums.sha256
-
-          echo "✅ Checksums generated"
 
       - name: Upload App Bundle
         uses: actions/upload-artifact@v4
@@ -241,27 +212,25 @@ jobs:
 
       - name: Build summary
         run: |
-          echo "## 📦 Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** ${{ steps.version.outputs.full_version }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ App Bundle (AAB)" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Build Summary"
+            echo ""
+            echo "**Version:** ${{ steps.version.outputs.full_version }}"
+            echo "**Commit:** ${{ github.sha }}"
+            echo "**Branch:** ${{ github.ref_name }}"
+            echo ""
+            echo "### Artifacts"
+            echo "- App Bundle (AAB)"
+            APK_COUNT=$(ls -1 build/app/outputs/flutter-apk/*.apk 2>/dev/null | wc -l)
+            echo "- APKs (split by ABI): $APK_COUNT files"
+            echo ""
+            echo "### Checksums"
+            echo '```'
+            cat build/app/outputs/bundle/release/app-release.aab.sha256
+            cat build/app/outputs/flutter-apk/checksums.sha256
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
-          APK_COUNT=$(ls -1 build/app/outputs/flutter-apk/*.apk 2>/dev/null | wc -l)
-          echo "- ✅ APKs (split by ABI): $APK_COUNT files" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Checksums" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          cat build/app/outputs/bundle/release/app-release.aab.sha256 >> $GITHUB_STEP_SUMMARY
-          cat build/app/outputs/flutter-apk/checksums.sha256 >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-  # ═══════════════════════════════════════════════════════════════════════
-  # JOB 3 : RELEASE (optionnel)
-  # ═══════════════════════════════════════════════════════════════════════
   release:
     name: Create Release
     runs-on: ubuntu-latest
@@ -288,7 +257,7 @@ jobs:
           else
             VERSION=$(grep "^version:" pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
           fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -306,18 +275,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Release summary
-        run: |
-          echo "## 🚀 Release Created" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** v${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Release published successfully!" >> $GITHUB_STEP_SUMMARY
-
-  # ═══════════════════════════════════════════════════════════════════════
-  # JOB 4 : NOTIFICATIONS (sur échec)
-  # ═══════════════════════════════════════════════════════════════════════
   notify:
     name: Notify on Failure
     runs-on: ubuntu-latest
@@ -328,21 +285,11 @@ jobs:
     steps:
       - name: Notify failure
         run: |
-          echo "## ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Workflow:** ${{ github.workflow }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Run:** ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Failed Jobs" >> $GITHUB_STEP_SUMMARY
-
-          if [ "${{ needs.test-and-analyze.result }}" == "failure" ]; then
-            echo "- ❌ Test & Analyze" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ "${{ needs.build.result }}" == "failure" ]; then
-            echo "- ❌ Build" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🔍 [View logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Build Failed"
+            echo ""
+            echo "**Workflow:** ${{ github.workflow }}"
+            echo "**Run:** ${{ github.run_id }}"
+            echo ""
+            echo "[View logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          } >> "$GITHUB_STEP_SUMMARY"
