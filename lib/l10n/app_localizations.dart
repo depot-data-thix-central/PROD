@@ -181,6 +181,11 @@ const Map<String, String> _fr = {
   'auth_verify_phone': 'Vérifier le téléphone',
   'auth_biometric': 'Connexion biométrique',
   'auth_biometric_prompt': 'Authentifiez-vous pour continuer',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Choisir la langue',
+  'settings_system_default': 'Langue du système',
+  'settings_language_change_failed': 'Impossible de changer la langue',
+  'settings_language_changed': 'Langue changée',
 
   // ─── ONBOARDING ─────────────────────────────────────────────
   'onboarding_welcome': 'Bienvenue sur THIX',
@@ -782,6 +787,11 @@ const Map<String, String> _en = {
   'common_none': 'None',
   'common_all': 'All',
   'common_unknown': 'Unknown',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Choose language',
+  'settings_system_default': 'System default',
+  'settings_language_change_failed': 'Unable to change language',
+  'settings_language_changed': 'Language changed',
 
   'auth_login': 'Log in',
   'auth_signup': 'Create account',
@@ -1388,6 +1398,11 @@ const Map<String, String> _es = {
   'common_none': 'Ninguno',
   'common_all': 'Todos',
   'common_unknown': 'Desconocido',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Elegir idioma',
+  'settings_system_default': 'Predeterminado del sistema',
+  'settings_language_change_failed': 'No se puede cambiar el idioma',
+  'settings_language_changed': 'Idioma cambiado',
 
   'auth_login': 'Iniciar sesión',
   'auth_signup': 'Crear cuenta',
@@ -1968,6 +1983,11 @@ const Map<String, String> _pt = {
   'common_none': 'Nenhum',
   'common_all': 'Todos',
   'common_unknown': 'Desconhecido',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Escolher idioma',
+  'settings_system_default': 'Padrão do sistema',
+  'settings_language_change_failed': 'Não foi possível alterar o idioma',
+  'settings_language_changed': 'Idioma alterado',
 
   'auth_login': 'Entrar',
   'auth_signup': 'Criar conta',
@@ -2548,6 +2568,11 @@ const Map<String, String> _ln = {
   'common_none': 'Moko te',
   'common_all': 'Nyonso',
   'common_unknown': 'Eyebani te',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Kopona monoko',
+  'settings_system_default': 'Monoko ya système',
+  'settings_language_change_failed': 'Ekoki te kobongola monoko',
+  'settings_language_changed': 'Monoko ebongwani',
 
   'auth_login': 'Kokota',
   'auth_signup': 'Kofungola compte',
@@ -3129,6 +3154,11 @@ const Map<String, String> _sw = {
   'common_none': 'Hakuna',
   'common_all': 'Zote',
   'common_unknown': 'Haijulikani',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Chagua lugha',
+  'settings_system_default': 'Chaguo-msingi la mfumo',
+  'settings_language_change_failed': 'Haiwezi kubadilisha lugha',
+  'settings_language_changed': 'Lugha imebadilishwa',
 
   'auth_login': 'Ingia',
   'auth_signup': 'Tengeneza akaunti',
@@ -3709,6 +3739,11 @@ const Map<String, String> _kg = {
   'common_none': 'Ve ata mosi',
   'common_all': 'Yonso',
   'common_unknown': 'Ke zabakana ve',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Kupona ndinga',
+  'settings_system_default': 'Ndinga ya système',
+  'settings_language_change_failed': 'Ekoki te kusoba ndinga',
+  'settings_language_changed': 'Ndinga esobami',
 
   'auth_login': 'Kota',
   'auth_signup': 'Fungula konti',
@@ -4289,6 +4324,11 @@ const Map<String, String> _lu = {
   'common_none': 'Kudi kamosi',
   'common_all': 'Bionsu',
   'common_unknown': 'Kumanyika bua',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Kusola lulimi',
+  'settings_system_default': 'Lulimi lua système',
+  'settings_language_change_failed': 'Ikoki bua kupandulula lulimi',
+  'settings_language_changed': 'Lulimi lupandululwa',
 
   'auth_login': 'Kukwenda',
   'auth_signup': 'Kufungula konti',
