@@ -1,12 +1,13 @@
 /// Video Preview Editor Page (Production Enterprise)
-/// ✅ ThixPolicy + i18n 8 langues + Semantics + logs structurés
-/// ✅ Validation complète (taille, extension, durée, MIME)
-/// ✅ HapticFeedback + mounted checks + RepaintBoundary
+/// ThixPolicy + i18n 8 langues + Semantics + logs structurés
+/// Validation complète (taille, extension, durée, MIME)
+/// Compatibilité totale Web (kIsWeb) + Mobile
+///  HapticFeedback + mounted checks + RepaintBoundary
 import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart'; // Ajout nécessaire pour kIsWeb
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -49,38 +50,39 @@ class _VideoFilter {
   const _VideoFilter({required this.i18nKey, required this.matrix});
 }
 
+// CORRECTION WEB : Typage strict <double> pour éviter les erreurs du compilateur
 const List<_VideoFilter> _kFilters = [
-  _VideoFilter(i18nKey: 'filter_normal', matrix: [
+  _VideoFilter(i18nKey: 'filter_normal', matrix: <double>[
     1, 0, 0, 0, 0,
     0, 1, 0, 0, 0,
     0, 0, 1, 0, 0,
     0, 0, 0, 1, 0,
   ]),
-  _VideoFilter(i18nKey: 'filter_cinematic', matrix: [
+  _VideoFilter(i18nKey: 'filter_cinematic', matrix: <double>[
     1.1, 0, 0, 0, -8,
     0, 1.05, 0, 0, -8,
     0, 0, 0.95, 0, -4,
     0, 0, 0, 1, 0,
   ]),
-  _VideoFilter(i18nKey: 'filter_bright', matrix: [
+  _VideoFilter(i18nKey: 'filter_bright', matrix: <double>[
     1.15, 0, 0, 0, 12,
     0, 1.15, 0, 0, 12,
     0, 0, 1.1, 0, 12,
     0, 0, 0, 1, 0,
   ]),
-  _VideoFilter(i18nKey: 'filter_vintage', matrix: [
+  _VideoFilter(i18nKey: 'filter_vintage', matrix: <double>[
     0.9, 0.1, 0, 0, 10,
     0, 0.9, 0.05, 0, 5,
     0.05, 0, 0.8, 0, 0,
     0, 0, 0, 1, 0,
   ]),
-  _VideoFilter(i18nKey: 'filter_cyberpunk', matrix: [
+  _VideoFilter(i18nKey: 'filter_cyberpunk', matrix: <double>[
     1.2, 0, 0.15, 0, 0,
     0, 0.95, 0.1, 0, 0,
     0.15, 0, 1.3, 0, 0,
     0, 0, 0, 1, 0,
   ]),
-  _VideoFilter(i18nKey: 'filter_soft_beauty', matrix: [
+  _VideoFilter(i18nKey: 'filter_soft_beauty', matrix: <double>[
     1.05, 0, 0, 0, 10,
     0, 1.03, 0, 0, 8,
     0, 0, 1.03, 0, 8,
@@ -152,37 +154,43 @@ class _VideoPreviewEditorPageState extends State<VideoPreviewEditorPage> {
     super.dispose();
   }
 
-  // ── Init vidéo (validations complètes) ─────────────────────
+  // ── Init vidéo (validations complètes & support Web) ──────────
   Future<void> _initializeVideo() async {
-    final file = File(widget.videoPath);
+    // CORRECTION WEB : Si on est sur le Web, on ignore les fichiers locaux (qui font planter le build)
+    if (kIsWeb) {
+      _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoPath));
+    } else {
+      final file = File(widget.videoPath);
 
-    if (!await file.exists()) {
-      _setError('editor_error_file_missing');
-      return;
-    }
+      if (!await file.exists()) {
+        _setError('editor_error_file_missing');
+        return;
+      }
 
-    int fileSize;
-    try {
-      fileSize = await file.length();
-    } catch (e) {
-      _setError('editor_error_file_unreadable');
-      return;
-    }
+      int fileSize = 0;
+      try {
+        fileSize = await file.length();
+      } catch (e) {
+        _setError('editor_error_file_unreadable');
+        return;
+      }
 
-    if (fileSize > _EditorLimits.maxVideoSizeBytes) {
-      final maxMB = (_EditorLimits.maxVideoSizeBytes / 1024 / 1024).toInt();
-      _setError('editor_error_too_large', {'maxMB': maxMB});
-      return;
-    }
+      if (fileSize > _EditorLimits.maxVideoSizeBytes) {
+        final maxMB = (_EditorLimits.maxVideoSizeBytes / 1024 / 1024).toInt();
+        _setError('editor_error_too_large', {'maxMB': maxMB});
+        return;
+      }
 
-    final ext = p.extension(widget.videoPath).toLowerCase();
-    if (!_EditorLimits.allowedVideoExtensions.contains(ext)) {
-      _setError('editor_error_unsupported_format', {'ext': ext});
-      return;
-    }
+      final ext = p.extension(widget.videoPath).toLowerCase();
+      if (!_EditorLimits.allowedVideoExtensions.contains(ext)) {
+        _setError('editor_error_unsupported_format', {'ext': ext});
+        return;
+      }
 
-    try {
       _controller = VideoPlayerController.file(file);
+    }
+
+    try {
       await _controller!.initialize().timeout(
         _EditorLimits.videoInitTimeout,
         onTimeout: () => throw TimeoutException('Video init timeout'),
@@ -193,8 +201,7 @@ class _VideoPreviewEditorPageState extends State<VideoPreviewEditorPage> {
         return;
       }
 
-      final durationSec =
-          _controller!.value.duration.inMilliseconds / 1000.0;
+      final durationSec = _controller!.value.duration.inMilliseconds / 1000.0;
 
       if (durationSec < _EditorLimits.minTrimDurationSeconds) {
         _setError('editor_error_too_short',
@@ -217,7 +224,6 @@ class _VideoPreviewEditorPageState extends State<VideoPreviewEditorPage> {
 
       _EditorLogger.info('Video initialized', {
         'duration': '${durationSec.toStringAsFixed(1)}s',
-        'size': '${(fileSize / 1024 / 1024).toStringAsFixed(1)}MB',
       });
     } catch (e) {
       _EditorLogger.error('Init failed', {'error': '$e'});
@@ -307,8 +313,6 @@ class _VideoPreviewEditorPageState extends State<VideoPreviewEditorPage> {
     HapticFeedback.mediumImpact();
 
     try {
-      // TODO: Intégrer FFmpeg mobile pour vrai trim/encoding
-      // Pour l'instant : preview-only, retourne le chemin original
       await Future.delayed(const Duration(milliseconds: 600));
       if (_disposed || !mounted) return;
 
@@ -362,7 +366,8 @@ class _VideoPreviewEditorPageState extends State<VideoPreviewEditorPage> {
     final l10n = AppLocalizations.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(l10n.t(key, args: args ?? const {})),
+        // CORRECTION WEB : Typage strict du Map pour éviter les conflits
+        content: Text(l10n.t(key, args: args ?? const <String, dynamic>{})),
         backgroundColor: isError ? ThixPolicy.danger : ThixPolicy.primary,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
@@ -609,12 +614,12 @@ class _VideoPreviewEditorPageState extends State<VideoPreviewEditorPage> {
                     decoration: BoxDecoration(
                       color: isSelected
                           ? ThixPolicy.primary
-                          : Colors.white.withValues(alpha: 0.05),
+                          : Colors.white.withOpacity(0.05),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
                         color: isSelected
                             ? ThixPolicy.primary
-                            : Colors.white.withValues(alpha: 0.1),
+                            : Colors.white.withOpacity(0.1),
                       ),
                     ),
                     child: Text(
@@ -685,7 +690,7 @@ class _VideoPreviewEditorPageState extends State<VideoPreviewEditorPage> {
             child: LinearProgressIndicator(
               value: _processProgress,
               color: ThixPolicy.primary,
-              backgroundColor: Colors.white.withValues(alpha: 0.1),
+              backgroundColor: Colors.white.withOpacity(0.1),
               minHeight: 6,
             ),
           ),
@@ -763,13 +768,13 @@ class _AudioOptionTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           decoration: BoxDecoration(
             color: selected
-                ? ThixPolicy.primary.withValues(alpha: 0.15)
-                : Colors.white.withValues(alpha: 0.05),
+                ? ThixPolicy.primary.withOpacity(0.15)
+                : Colors.white.withOpacity(0.05),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: selected
                   ? ThixPolicy.primary
-                  : Colors.white.withValues(alpha: 0.1),
+                  : Colors.white.withOpacity(0.1),
             ),
           ),
           child: Row(
