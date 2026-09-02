@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/l10n/locale_controller.dart';
+import 'package:thix_id/l10n/i18n_service.dart';
 import 'package:thix_id/presentation/common/notifications_sheet.dart';
 import '../../theme.dart';
 import 'package:thix_id/auth/auth_controller.dart';
@@ -245,7 +246,7 @@ class SettingsPage extends StatelessWidget {
                       },
                     ),
                     Text(
-                      context.loc.t('settings_title'),
+                      context.i18n.t('settings_title'),
                       style: context.textStyles.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: context.theme.colorScheme.onSurface,
@@ -259,14 +260,14 @@ class SettingsPage extends StatelessWidget {
                 ),
               ),
               SettingsGroup(
-                title: context.loc.t('settings_language_group'),
+                title: context.i18n.t('settings_language_group'),
                 child: Padding(
                   padding: const EdgeInsets.all(AppSpacing.md),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        context.loc.t('settings_choose_ui_language'),
+                        context.i18n.t('settings_choose_ui_language'),
                         style: context.textStyles.bodySmall?.copyWith(
                           color: LightModeColors.secondaryText,
                         ),
@@ -278,7 +279,7 @@ class SettingsPage extends StatelessWidget {
                           children: [
                             _LocaleChip(
                               flag: '🌐',
-                              name: context.loc.t('system_default'),
+                              name: context.i18n.t('system_default'),
                               selected: selected == null,
                               onTap: () => localeCtrl.setSystem(),
                             ),
@@ -302,13 +303,13 @@ class SettingsPage extends StatelessWidget {
                 ),
               ),
               SettingsGroup(
-                title: context.loc.t('settings_appearance_group'),
+                title: context.i18n.t('settings_appearance_group'),
                 child: Column(
                   children: [
                     SettingsItem(
                       icon: Icons.dark_mode_rounded,
-                      label: context.loc.t('settings_dark_mode'),
-                      sublabel: context.loc.t('settings_dark_mode_sub'),
+                      label: context.i18n.t('settings_dark_mode'),
+                      sublabel: context.i18n.t('settings_dark_mode_sub'),
                       hasSublabel: true,
                       trailing: Switch(
                         value: true,
@@ -319,8 +320,8 @@ class SettingsPage extends StatelessWidget {
                     Divider(color: context.theme.dividerColor, indent: 56, height: 1),
                     SettingsItem(
                       icon: Icons.contrast_rounded,
-                      label: context.loc.t('settings_high_contrast'),
-                      sublabel: context.loc.t('settings_high_contrast_sub'),
+                      label: context.i18n.t('settings_high_contrast'),
+                      sublabel: context.i18n.t('settings_high_contrast_sub'),
                       hasSublabel: true,
                       trailing: Switch(
                         value: false,
@@ -332,13 +333,13 @@ class SettingsPage extends StatelessWidget {
                 ),
               ),
               SettingsGroup(
-                title: context.loc.t('settings_security_group'),
+                title: context.i18n.t('settings_security_group'),
                 child: Column(
                   children: [
                     SettingsItem(
                       icon: Icons.fingerprint_rounded,
-                      label: context.loc.t('settings_biometrics'),
-                      sublabel: context.loc.t('settings_biometrics_sub'),
+                      label: context.i18n.t('settings_biometrics'),
+                      sublabel: context.i18n.t('settings_biometrics_sub'),
                       hasSublabel: true,
                       trailing: Switch(
                         value: true,
@@ -349,8 +350,8 @@ class SettingsPage extends StatelessWidget {
                     Divider(color: context.theme.dividerColor, indent: 56, height: 1),
                     SettingsItem(
                       icon: Icons.face_rounded,
-                      label: context.loc.t('settings_face_id'),
-                      sublabel: context.loc.t('settings_face_id_sub'),
+                      label: context.i18n.t('settings_face_id'),
+                      sublabel: context.i18n.t('settings_face_id_sub'),
                       hasSublabel: true,
                       trailing: Switch(
                         value: false,
@@ -361,14 +362,14 @@ class SettingsPage extends StatelessWidget {
                     Divider(color: context.theme.dividerColor, indent: 56, height: 1),
                     SettingsItem(
                       icon: Icons.vpn_key_rounded,
-                      label: context.loc.t('settings_change_password'),
+                      label: context.i18n.t('settings_change_password'),
                       trailing: const Icon(Icons.chevron_right_rounded, color: LightModeColors.hint),
                     ),
                     Divider(color: context.theme.dividerColor, indent: 56, height: 1),
                     SettingsItem(
                       icon: Icons.security_rounded,
-                      label: context.loc.t('settings_2fa'),
-                      sublabel: context.loc.t('settings_2fa_sub'),
+                      label: context.i18n.t('settings_2fa'),
+                      sublabel: context.i18n.t('settings_2fa_sub'),
                       hasSublabel: true,
                       trailing: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -377,7 +378,7 @@ class SettingsPage extends StatelessWidget {
                           borderRadius: BorderRadius.circular(AppRadius.full),
                         ),
                         child: Text(
-                          context.loc.t('settings_active'),
+                          context.i18n.t('settings_active'),
                           style: context.textStyles.labelSmall?.copyWith(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
@@ -389,18 +390,18 @@ class SettingsPage extends StatelessWidget {
                 ),
               ),
               SettingsGroup(
-                title: context.loc.t('settings_account_group'),
+                title: context.i18n.t('settings_account_group'),
                 child: Column(
                   children: [
                     SettingsItem(
                       icon: Icons.shield_rounded,
-                      label: context.loc.t('settings_data_privacy'),
+                      label: context.i18n.t('settings_data_privacy'),
                       trailing: const Icon(Icons.open_in_new_rounded, color: LightModeColors.hint, size: 18),
                     ),
                     Divider(color: context.theme.dividerColor, indent: 56, height: 1),
                     SettingsItem(
                       icon: Icons.history_rounded,
-                      label: context.loc.t('settings_activity_log'),
+                      label: context.i18n.t('settings_activity_log'),
                       trailing: const Icon(Icons.chevron_right_rounded, color: LightModeColors.hint),
                     ),
                   ],
@@ -415,7 +416,7 @@ class SettingsPage extends StatelessWidget {
                     context.go(AppRoutes.login);
                   },
                   icon: const Icon(Icons.logout_rounded),
-                  label: Text(context.loc.t('settings_sign_out')),
+                  label: Text(context.i18n.t('settings_sign_out')),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: LightModeColors.error,
                     side: const BorderSide(color: LightModeColors.error),
@@ -432,7 +433,7 @@ class SettingsPage extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.xs),
                   Text(
-                    context.loc.t('settings_tagline'),
+                    context.i18n.t('settings_tagline'),
                     style: context.textStyles.labelSmall?.copyWith(
                       color: LightModeColors.secondaryText,
                       fontStyle: FontStyle.italic,
