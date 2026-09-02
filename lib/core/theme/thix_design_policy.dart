@@ -83,7 +83,8 @@ class ThixPolicy {
   static const Color textDisabled = Color(0xFFCBD5E1);
 
   static const Color onBrand = Colors.white;
-
+  
+  static const Color textOnDark = Colors.white;
   // ══════════════════════════════════════════════════════════════════════════
   // 04. SYSTEM STATES
   // ══════════════════════════════════════════════════════════════════════════
