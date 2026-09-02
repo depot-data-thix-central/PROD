@@ -2619,7 +2619,6 @@ const Map<String, String> _ln = {
   'sos_no_incidents': 'Incident moko te nanu',
   'sos_incidents_appear_here': 'Ba SOS na yo ekobima awa',
   'sos_history_error': 'Ekoki te kokomba histoire',
-
   'sos_circle_1': 'Cercle 1 – Ya liboso',
   'sos_circle_2': 'Cercle 2 – Ya mibale',
   'sos_circle_3': 'Cercle 3 – Ya urgence',
@@ -2637,7 +2636,7 @@ const Map<String, String> _ln = {
   'sos_save_rescuer': 'Kobomba mosauveteur',
   'sos_multiple_rescuers_info': 'Okoki kobakisa basauveteurs ebele na cercle moko.',
   'sos_rescuer_saved': 'Mosauveteur THIX abombami',
-  'sos_search_first': 'Luka d'abord THIX ID ya malamu',
+  'sos_search_first': 'Luka d\'abord THIX ID ya malamu',
   'sos_no_thix_account': 'Compte THIX moko te mpo na ID oyo',
   'sos_enter_thix_id': 'Koma THIX ID',
   'sos_load_error': 'Ekoki te kokomba basauveteurs na yo',
@@ -2646,7 +2645,9 @@ const Map<String, String> _ln = {
   'sos_rescuer_deleted': 'Mosauveteur alongwami malamu',
   'sos_delete_error': 'Libunga na kolongola',
   'sos_circle_priority_title': 'Ordre ya priorité',
-  'sos_circle_priority_info': 'Cercle 1 ebengami d'abord. Réponse te → Cercle 2 → Cercle 3.',
+ 
+  'sos_circle_priority_info': 'Cercle 1 ebengami d\'abord. Réponse te → Cercle 2 → Cercle 3.',
+
 
   'sos_pin_title': 'Code ya sécurité',
   'sos_pin_label': 'Code PIN',
