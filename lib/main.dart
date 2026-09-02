@@ -1,11 +1,11 @@
 /// THIX ID Central — Application Entry Point (Production Enterprise)
 /// SÉCURISÉ : Zone error handling, crash reporting, validation
-///  ROBUSTE : Timeouts, retry, race condition protection
+/// ROBUSTE : Timeouts, retry, race condition protection
 /// ARCHITECTURE : Riverpod pur (pas de Provider), lifecycle propre
-///  OBSERVABLE : Logs structurés, Sentry integration
+/// OBSERVABLE : Logs structurés, Sentry integration
 ///
 /// **Cycle de vie** :
-/// 1. Initialisation Firebase + Supabase + Notifications (avec timeouts)
+/// 1. Initialisation Supabase (critique) + Firebase (optionnel) + Notifications
 /// 2. Création AuthController + LocaleController
 /// 3. Attente auth init + locale init (parallèle)
 /// 4. Création router + listeners
@@ -17,6 +17,7 @@
 /// - Sentry pour crash reporting
 /// - Timeouts sur toutes les initialisations
 /// - Retry sur échecs temporaires
+/// - Firebase est OPTIONNEL (push only) — l'app démarre sans lui
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -46,13 +47,16 @@ import 'package:thix_id/presentation/thix_sos/widgets/global_sos_listener.dart';
 // CONSTANTS
 // ============================================================================
 
-const Duration _kFirebaseTimeout = Duration(seconds: 10);
+const Duration _kFirebaseTimeout = Duration(seconds: 8);
 const Duration _kSupabaseTimeout = Duration(seconds: 10);
 const Duration _kNotificationTimeout = Duration(seconds: 5);
 const Duration _kAuthTimeout = Duration(seconds: 15);
 const Duration _kLocaleTimeout = Duration(seconds: 5);
 const int _kMaxRetries = 3;
 const Duration _kRetryDelay = Duration(seconds: 2);
+
+/// Firebase est optionnel (push / analytics). Supabase est critique.
+bool _firebaseReady = false;
 
 // ============================================================================
 // LOGGING
@@ -61,16 +65,16 @@ const Duration _kRetryDelay = Duration(seconds: 2);
 void _log(String level, String message, [Object? error, StackTrace? stack]) {
   final timestamp = DateTime.now().toIso8601String();
   final logMessage = '[$timestamp] [$level] $message';
-  
+
   if (level == 'ERROR') {
-    debugPrint('$logMessage${error != null ? '\n$error' : ''}');
+    debugPrint('\( logMessage \){error != null ? '\n$error' : ''}');
     if (kDebugMode && stack != null) {
       debugPrint(stack.toString().split('\n').take(5).join('\n'));
     }
   } else if (level == 'WARN') {
-    debugPrint('$logMessage');
+    debugPrint(logMessage);
   } else {
-    debugPrint('$logMessage');
+    debugPrint(logMessage);
   }
 }
 
@@ -78,31 +82,45 @@ void _log(String level, String message, [Object? error, StackTrace? stack]) {
 // INITIALIZATION HELPERS
 // ============================================================================
 
-/// Initialise Firebase avec retry et timeout
+/// Initialise Firebase (OPTIONNEL — push notifications uniquement).
+/// Ne bloque jamais le démarrage de l'app si ça échoue.
+/// Sans firebase_options.dart, Firebase.initializeApp() échoue sur le web :
+/// on capture l'erreur et on continue avec Supabase seul.
 Future<bool> _initFirebase() async {
   for (var attempt = 1; attempt <= _kMaxRetries; attempt++) {
     try {
       _log('INFO', 'Firebase init attempt $attempt/$_kMaxRetries');
+
+      // Si DefaultFirebaseOptions existe un jour, décommenter :
+      // import 'package:thix_id/firebase_options.dart';
+      // await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
       await Firebase.initializeApp().timeout(_kFirebaseTimeout);
+
+      // Handler background UNIQUEMENT si Firebase est bien initialisé
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+      _firebaseReady = true;
       _log('INFO', '✓ Firebase initialized');
       return true;
     } on TimeoutException {
       _log('WARN', 'Firebase init timeout (attempt $attempt)');
     } catch (e, stack) {
+      // Erreur typique web : "Null check operator used on a null value"
+      // faute de firebase_options.dart — non bloquant
       _log('ERROR', 'Firebase init failed (attempt $attempt)', e, stack);
     }
-    
+
     if (attempt < _kMaxRetries) {
       await Future.delayed(_kRetryDelay);
     }
   }
-  
-  _log('ERROR', '❌ Firebase init failed after $_kMaxRetries attempts');
+
+  _log('WARN', '⚠️ Firebase indisponible — push désactivé, app continue (Supabase OK)');
+  _firebaseReady = false;
   return false;
 }
 
-/// Initialise Supabase avec retry et timeout
+/// Initialise Supabase (CRITIQUE — auth + data)
 Future<bool> _initSupabase() async {
   for (var attempt = 1; attempt <= _kMaxRetries; attempt++) {
     try {
@@ -115,12 +133,12 @@ Future<bool> _initSupabase() async {
     } catch (e, stack) {
       _log('ERROR', 'Supabase init failed (attempt $attempt)', e, stack);
     }
-    
+
     if (attempt < _kMaxRetries) {
       await Future.delayed(_kRetryDelay);
     }
   }
-  
+
   _log('ERROR', '❌ Supabase init failed after $_kMaxRetries attempts');
   return false;
 }
@@ -151,12 +169,10 @@ Future<bool> _initLocalNotifications() async {
 // ============================================================================
 
 Future<void> main() async {
-  // Zone error handling pour crashes non catchés
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
 
-      // Flutter error handler
       FlutterError.onError = (details) {
         _log('ERROR', 'Flutter error', details.exception, details.stack);
         // TODO: Envoyer à Sentry/Crashlytics
@@ -164,7 +180,7 @@ Future<void> main() async {
 
       _log('INFO', '🚀 App starting');
 
-      // Initialisations parallèles avec timeouts
+      // Init parallèle : Firebase = optionnel, Supabase = critique
       final results = await Future.wait([
         _initFirebase(),
         _initSupabase(),
@@ -175,13 +191,18 @@ Future<void> main() async {
       final supabaseOk = results[1];
       final notifOk = results[2];
 
-      if (!firebaseOk || !supabaseOk) {
-        _log('ERROR', '❌ Critical initialization failed, app may not work correctly');
-        // TODO: Afficher écran d'erreur utilisateur
+      // Seul Supabase est bloquant pour le métier
+      if (!supabaseOk) {
+        _log('ERROR', '❌ Supabase critique a échoué — l\'app risque de mal fonctionner');
+        // TODO: Afficher écran d'erreur utilisateur dédié
+      }
+
+      if (!firebaseOk) {
+        _log('WARN', '⚠️ Firebase off — notifications push désactivées');
       }
 
       if (!notifOk) {
-        _log('WARN', '⚠️ Notifications disabled');
+        _log('WARN', '⚠️ Notifications locales désactivées');
       }
 
       _log('INFO', '✓ Initialization complete, starting app');
@@ -229,11 +250,9 @@ class _ThixAppState extends ConsumerState<ThixApp> {
   Future<void> _initControllers() async {
     _log('INFO', 'Initializing controllers');
 
-    // Créer les controllers
     _auth = AuthController.instance;
     _locale = LocaleController();
 
-    // Initialiser en parallèle avec timeouts
     try {
       await Future.wait([
         _auth.init().timeout(_kAuthTimeout),
@@ -248,7 +267,6 @@ class _ThixAppState extends ConsumerState<ThixApp> {
 
     if (!mounted) return;
 
-    // Créer le router
     try {
       final merged = Listenable.merge([_auth, _locale]);
       _router = AppRouter.create(
@@ -262,10 +280,7 @@ class _ThixAppState extends ConsumerState<ThixApp> {
       return;
     }
 
-    // Écouter les changements d'auth pour sync push
     _auth.addListener(_syncPushWithAuthState);
-    
-    // Sync initial
     await _syncPushWithAuthState();
 
     if (!mounted) return;
@@ -277,13 +292,14 @@ class _ThixAppState extends ConsumerState<ThixApp> {
     _log('INFO', '✓ App ready');
   }
 
-  /// Synchronise le token FCM avec l'état d'authentification
-  ///
-  /// **Protection race condition** :
-  /// - Debounce 500ms pour éviter appels rapides
-  /// - Flag `_pushRegisteredForCurrentSession` pour état
+  /// Synchronise le token FCM avec l'état d'authentification.
+  /// Ne fait rien si Firebase n'est pas initialisé.
   Future<void> _syncPushWithAuthState() async {
-    // Debounce pour éviter appels rapides
+    if (!_firebaseReady) {
+      _log('INFO', 'Push sync skipped — Firebase not ready');
+      return;
+    }
+
     final now = DateTime.now();
     if (_lastPushSync != null &&
         now.difference(_lastPushSync!) < const Duration(milliseconds: 500)) {
@@ -296,8 +312,10 @@ class _ThixAppState extends ConsumerState<ThixApp> {
 
     final isAuthenticated = _auth.isAuthenticated;
 
-    _log('INFO', 'Syncing push with auth state', 
-        'authenticated=$isAuthenticated, registered=$_pushRegisteredForCurrentSession');
+    _log(
+      'INFO',
+      'Syncing push with auth state: authenticated=$isAuthenticated, registered=$_pushRegisteredForCurrentSession',
+    );
 
     try {
       if (isAuthenticated && !_pushRegisteredForCurrentSession) {
@@ -363,22 +381,30 @@ class _ThixAppState extends ConsumerState<ThixApp> {
     );
   }
 
+  /// Écran de chargement — n'utilise plus Theme.of(context) du parent
+  /// (qui n'a pas encore de MaterialApp → crash potentiel).
   Widget _buildLoadingApp() {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThixPolicy.lightTheme(),
       darkTheme: ThixPolicy.darkTheme(),
       themeMode: ThemeMode.system,
-      home: Scaffold(
+      home: const Scaffold(
+        backgroundColor: Color(0xFF0A1F44),
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
+              CircularProgressIndicator(
+                color: Color(0xFFC9962C),
+              ),
+              SizedBox(height: 16),
               Text(
                 'Chargement...',
-                style: Theme.of(context).textTheme.bodyMedium,
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 16,
+                ),
               ),
             ],
           ),
