@@ -1,8 +1,8 @@
 /// THIX RETROUVE Screen (Production Enterprise)
-/// ✅ i18n complet (8 langues) + sanitization + Semantics
-/// ✅ go_router + mounted checks + logs structurés
-/// ✅ Skeleton loader + CachedNetworkImage + RepaintBoundary
-/// ✅ ThixPolicy uniquement (pas de couleurs custom)
+///  i18n complet (8 langues) + sanitization + Semantics
+///  go_router + mounted checks + logs structurés
+///  Skeleton loader + CachedNetworkImage + RepaintBoundary
+/// ThixPolicy uniquement (pas de couleurs custom)
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:ui';
+import 'dart:async';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
