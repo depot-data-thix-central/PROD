@@ -1,7 +1,7 @@
 /// Notification Service (Production Enterprise)
 ///  SÉCURISÉ : Validation stricte, sanitization, masquage UID (RGPD)
 ///  ROBUSTE : Timeouts, error handling, retry avec backoff
-/// ✅
+/// 
 /// OBSERVABLE : Logs structurés avec emojis et contexte
 ///
 /// Service pour gérer les notifications utilisateur :
@@ -23,10 +23,9 @@
 /// - Collision d'IDs → UUID v4 généré
 /// - Limite mémoire → LRU cache sur `_shownPopIds`
 import 'dart:async';
-
+import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'package:thix_id/services/local_notification_service.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
 
@@ -247,7 +246,8 @@ class NotificationService {
   Stream<List<Map<String, dynamic>>> streamForUser(String uid) {
     if (!_Validators.isValidUid(uid)) {
       debugPrint('[NotifService] ⚠️ Invalid UID, returning empty stream');
-      return const Stream<List<Map<String, dynamic>>>.value([]);
+      return Stream<List<Map<String, dynamic>>>.value(const []);
+
     }
 
     // Vérifier cohérence avec auth actuel
