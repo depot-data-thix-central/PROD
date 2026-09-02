@@ -67,7 +67,7 @@ void _log(String level, String message, [Object? error, StackTrace? stack]) {
   final logMessage = '[$timestamp] [$level] $message';
 
   if (level == 'ERROR') {
-    debugPrint('\( logMessage \){error != null ? '\n$error' : ''}');
+    debugPrint('$logMessage${error != null ? '\n$error' : ''}');
     if (kDebugMode && stack != null) {
       debugPrint(stack.toString().split('\n').take(5).join('\n'));
     }
