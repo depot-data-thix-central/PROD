@@ -166,8 +166,7 @@ class MediaUploadNotifier extends StateNotifier<MediaUploadState> {
     );
 
     try {
-      final service = MediaService(client: Supabase.instance.client, bucket: 'media');
-
+      final service = MediaService(client: Supabase.instance.client);
       state = state.copyWith(
         statusKey: 'upload_status_uploading',
         progress: 0.2,
