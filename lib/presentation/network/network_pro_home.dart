@@ -65,7 +65,7 @@ class _Glass extends StatelessWidget {
   const _Glass({
     required this.child,
     this.radius = 20,
-    this.alpha = 0.65,
+    this.alpha = 0.7,
     this.blur = 12,
     this.padding,
   });
@@ -81,12 +81,12 @@ class _Glass extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: alpha),
             borderRadius: BorderRadius.circular(radius),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.7), width: 1),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.85), width: 1),
             boxShadow: [
               BoxShadow(
-                color: ThixPolicy.inkDeep.withValues(alpha: 0.05),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
+                color: ThixPolicy.inkDeep.withValues(alpha: 0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -125,9 +125,9 @@ class RoundAvatar extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
         color: ThixPolicy.surfaceSoft,
@@ -164,6 +164,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
 
   bool _isLoadingMore = false;
   Timer? _scrollDebounce;
+  Timer? _navStopTimer;
   Timer? _suggestionTimer;
   int _suggestionRefreshCount = 0;
 
@@ -185,7 +186,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     final pos = _scrollController.position;
 
     _scrollDebounce?.cancel();
-    _scrollDebounce = Timer(const Duration(milliseconds: 200), () {
+    _scrollDebounce = Timer(const Duration(milliseconds: 150), () {
       if (pos.pixels >= pos.maxScrollExtent - 700 && !_isLoadingMore) {
         final notifier = ref.read(feedProvider.notifier);
         if (!ref.read(feedProvider).isLoading && notifier.hasMore) {
@@ -198,10 +199,20 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
 
       final dir = pos.userScrollDirection;
       final navVisible = ref.read(_navVisibleProvider.notifier);
-      if (dir == ScrollDirection.reverse && ref.read(_navVisibleProvider)) {
-        navVisible.state = false;
-      } else if (dir == ScrollDirection.forward && !ref.read(_navVisibleProvider)) {
-        navVisible.state = true;
+      
+      if (dir == ScrollDirection.reverse) {
+        if (navVisible.state) navVisible.state = false;
+      } else if (dir == ScrollDirection.forward) {
+        if (!navVisible.state) navVisible.state = true;
+      }
+    });
+
+    // Réapparition automatique de la navbar dès que le scroll s'arrête
+    _navStopTimer?.cancel();
+    _navStopTimer = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) {
+        final navVisible = ref.read(_navVisibleProvider.notifier);
+        if (!navVisible.state) navVisible.state = true;
       }
     });
   }
@@ -297,6 +308,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
   void dispose() {
     _scrollController.dispose();
     _scrollDebounce?.cancel();
+    _navStopTimer?.cancel();
     _suggestionTimer?.cancel();
     super.dispose();
   }
@@ -310,7 +322,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
         gradient: RadialGradient(
           colors: [
             color.withValues(alpha: 0.12),
-            color.withValues(alpha: 0.05),
+            color.withValues(alpha: 0.04),
             Colors.transparent,
           ],
           stops: const [0.0, 0.5, 1.0],
@@ -348,9 +360,9 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
         backgroundColor: ThixPolicy.surfaceSoft,
         body: Stack(
           children: [
-            // Orbes de fond abstraites
-            Positioned(top: -100, right: -50, child: _buildGradientOrb(ThixPolicy.primary, 250)),
-            Positioned(bottom: 200, left: -100, child: _buildGradientOrb(ThixPolicy.primaryDeep, 300)),
+            // Orbes de fond subtiles
+            Positioned(top: -80, right: -40, child: _buildGradientOrb(ThixPolicy.primary, 240)),
+            Positioned(bottom: 180, left: -80, child: _buildGradientOrb(ThixPolicy.primaryDeep, 280)),
 
             RefreshIndicator(
               color: ThixPolicy.primary,
@@ -363,10 +375,13 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                   _buildSliverAppBar(l10n, avatarUrl: currentUser.photoUrl, currentUserId: currentUser.id),
                   
                   SliverToBoxAdapter(
-                    child: _QuickPostEntryCard(
-                      l10n: l10n,
-                      avatarUrl: currentUser.photoUrl,
-                      onTap: () => showDialog(context: context, builder: (_) => const CreatePostDialog()),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      child: _QuickPostEntryCard(
+                        l10n: l10n,
+                        avatarUrl: currentUser.photoUrl,
+                        onTap: () => showDialog(context: context, builder: (_) => const CreatePostDialog()),
+                      ),
                     ),
                   ),
                   
@@ -407,14 +422,14 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                                 onDelete: () => ref.read(feedProvider.notifier).deletePost(post.id),
                                 onRefresh: null,
                               ),
-                              Divider(height: 1, thickness: 0.5, color: ThixPolicy.gold.withValues(alpha: 0.8)),
+                              Divider(height: 1, thickness: 0.5, color: ThixPolicy.gold.withValues(alpha: 0.6)),
                             ],
                           );
                         },
                       );
                     },
                   ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 120)),
+                  const SliverToBoxAdapter(child: SizedBox(height: 100)),
                 ],
               ),
             ),
@@ -443,13 +458,13 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       scrolledUnderElevation: 0,
       floating: true,
       snap: true,
-      toolbarHeight: 64,
+      toolbarHeight: 58,
       titleSpacing: 16,
       flexibleSpace: ClipRRect(
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
           child: Container(
-            color: Colors.white.withValues(alpha: 0.65),
+            color: Colors.white.withValues(alpha: 0.75),
             decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.8), width: 1)),
             ),
@@ -457,21 +472,21 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
         ),
       ),
       title: Text(
-        'THIX PRO', // Nom de la marque, généralement non localisé
-        style: ThixPolicy.h2Style.copyWith(fontWeight: FontWeight.w900, letterSpacing: -0.5, color: ThixPolicy.textMain),
+        'THIX PRO',
+        style: ThixPolicy.h2Style.copyWith(fontWeight: FontWeight.w900, letterSpacing: -0.5, color: ThixPolicy.textMain, fontSize: 18),
       ),
       actions: [
         GestureDetector(
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LivePrepScreen())),
           child: Container(
-            width: 38,
-            height: 38,
+            width: 34,
+            height: 34,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: ThixPolicy.danger.withValues(alpha: 0.1),
               border: Border.all(color: ThixPolicy.danger.withValues(alpha: 0.3), width: 1),
             ),
-            child: const Icon(Icons.sensors_rounded, size: 20, color: ThixPolicy.danger),
+            child: const Icon(Icons.sensors_rounded, size: 18, color: ThixPolicy.danger),
           ),
         ),
         const SizedBox(width: 8),
@@ -483,7 +498,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
           padding: const EdgeInsets.only(right: 16),
           child: GestureDetector(
             onTap: () => _safePush('/network/profile/$currentUserId'),
-            child: RoundAvatar(size: 36, imageUrl: avatarUrl),
+            child: RoundAvatar(size: 34, imageUrl: avatarUrl),
           ),
         ),
       ],
@@ -494,17 +509,17 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 38,
-        height: 38,
+        width: 34,
+        height: 34,
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.8),
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white, width: 1.5),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2)),
+            BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 6, offset: const Offset(0, 2)),
           ],
         ),
-        child: Icon(icon, size: 19, color: ThixPolicy.textMain),
+        child: Icon(icon, size: 17, color: ThixPolicy.textMain),
       ),
     );
   }
@@ -515,15 +530,12 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
 
     if (loadingStories) {
       return Container(
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.6),
-          border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.8))),
-        ),
-        height: 150,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        height: 120,
         alignment: Alignment.center,
         child: const SizedBox(
-          width: 20,
-          height: 20,
+          width: 18,
+          height: 18,
           child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary),
         ),
       );
@@ -538,14 +550,10 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     }
     final otherUsersList = groupedOtherStories.keys.toList();
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.6),
-        border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.8))),
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 16),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: SizedBox(
-        height: 134,
+        height: 120,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -596,12 +604,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       'popular': l10n.t('network_filter_popular'),
     };
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.6),
-        border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.8))),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
@@ -618,22 +622,23 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 margin: const EdgeInsets.only(right: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
                 decoration: BoxDecoration(
-                  color: active ? ThixPolicy.textMain : Colors.white.withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(30), // Forme de pilule très arrondie
-                  border: Border.all(color: active ? ThixPolicy.textMain : Colors.white.withValues(alpha: 0.9), width: 1.2),
+                  color: active ? ThixPolicy.textMain : Colors.white.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: active ? ThixPolicy.textMain : Colors.white.withValues(alpha: 0.9), width: 1),
                   boxShadow: active
                       ? []
                       : [
-                          BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 4, offset: const Offset(0, 2)),
+                          BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 1)),
                         ],
                 ),
                 child: Text(
                   e.value,
                   style: ThixPolicy.bodySmallStyle.copyWith(
-                    fontWeight: active ? FontWeight.w800 : ThixPolicy.semiBold,
+                    fontWeight: active ? FontWeight.w800 : FontWeight.w600,
                     color: active ? Colors.white : ThixPolicy.textSecondary,
+                    fontSize: 12,
                   ),
                 ),
               ),
@@ -648,12 +653,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     final suggestions = ref.watch(_suggestionsProvider);
     final int totalCount = suggestions.length + liveSessions.length;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.6),
-        border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.8))),
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 16),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -662,36 +663,36 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(5),
                   decoration: BoxDecoration(color: ThixPolicy.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
-                  child: const Icon(Icons.explore_rounded, size: 16, color: ThixPolicy.primary),
+                  child: const Icon(Icons.explore_rounded, size: 14, color: ThixPolicy.primary),
                 ),
                 const SizedBox(width: 8),
-                Text(l10n.t('network_discover_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.w800, fontSize: 15, color: ThixPolicy.textMain)),
+                Text(l10n.t('network_discover_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.w800, fontSize: 13.5, color: ThixPolicy.textMain)),
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           SizedBox(
-            height: 94,
+            height: 86,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: totalCount,
-              separatorBuilder: (_, __) => const SizedBox(width: 16),
+              separatorBuilder: (_, __) => const SizedBox(width: 14),
               itemBuilder: (c, i) {
                 if (i < suggestions.length) {
                   final u = suggestions[i];
                   return GestureDetector(
                     onTap: () => context.push('/network/profile/${u.id}'),
                     child: SizedBox(
-                      width: 66,
+                      width: 60,
                       child: Column(
                         children: [
                           Stack(
                             clipBehavior: Clip.none,
                             children: [
-                              RoundAvatar(size: 60, imageUrl: u.avatar),
+                              RoundAvatar(size: 52, imageUrl: u.avatar),
                               Positioned(
                                 bottom: -2,
                                 right: -2,
@@ -706,20 +707,20 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                                     }
                                   },
                                   child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: BoxDecoration(color: ThixPolicy.primary, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2.5)),
-                                    child: const Icon(Icons.add, size: 12, color: Colors.white),
+                                    padding: const EdgeInsets.all(3),
+                                    decoration: BoxDecoration(color: ThixPolicy.primary, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
+                                    child: const Icon(Icons.add, size: 10, color: Colors.white),
                                   ),
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           Text(
                             u.name.split(' ').first,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: ThixPolicy.microStyle.copyWith(fontWeight: FontWeight.w800, color: ThixPolicy.textMain),
+                            style: ThixPolicy.microStyle.copyWith(fontWeight: FontWeight.w700, color: ThixPolicy.textMain, fontSize: 11),
                           ),
                         ],
                       ),
@@ -747,30 +748,30 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                       );
                     },
                     child: SizedBox(
-                      width: 66,
+                      width: 60,
                       child: Column(
                         children: [
                           Stack(
                             clipBehavior: Clip.none,
                             alignment: Alignment.bottomCenter,
                             children: [
-                              RoundAvatar(size: 60, imageUrl: s['host_avatar']?.toString(), isLive: true),
+                              RoundAvatar(size: 52, imageUrl: s['host_avatar']?.toString(), isLive: true),
                               Positioned(
                                 bottom: -6,
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                  decoration: BoxDecoration(color: ThixPolicy.danger, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.white, width: 1.5)),
-                                  child: Text('LIVE', style: ThixPolicy.microStyle.copyWith(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                  decoration: BoxDecoration(color: ThixPolicy.danger, borderRadius: BorderRadius.circular(4), border: Border.all(color: Colors.white, width: 1.2)),
+                                  child: Text('LIVE', style: ThixPolicy.microStyle.copyWith(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w900)),
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           Text(
                             (s['host_name']?.toString() ?? 'Hôte').split(' ').first,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: ThixPolicy.microStyle.copyWith(fontWeight: FontWeight.w800, color: ThixPolicy.textMain),
+                            style: ThixPolicy.microStyle.copyWith(fontWeight: FontWeight.w700, color: ThixPolicy.textMain, fontSize: 11),
                           ),
                         ],
                       ),
@@ -790,11 +791,12 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       children: List.generate(
         3,
         (i) => Container(
+          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.6),
-            border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.8))),
+            color: Colors.white.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(16),
           ),
-          height: 200,
+          height: 180,
         ),
       ),
     );
@@ -802,18 +804,17 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
 
   Widget _buildEmpty(AppLocalizations l10n) {
     return Container(
-      color: Colors.transparent,
-      padding: const EdgeInsets.all(60),
+      padding: const EdgeInsets.all(50),
       child: Column(
         children: [
           Container(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: ThixPolicy.textMuted.withValues(alpha: 0.3))),
-            child: const Icon(Icons.feed_outlined, size: 32, color: ThixPolicy.textSecondary),
+            child: const Icon(Icons.feed_outlined, size: 28, color: ThixPolicy.textSecondary),
           ),
-          const SizedBox(height: 16),
-          Text(l10n.t('network_empty_feed'), style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary, fontWeight: ThixPolicy.semiBold)),
-          const SizedBox(height: 18),
+          const SizedBox(height: 12),
+          Text(l10n.t('network_empty_feed'), style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600, fontSize: 13)),
+          const SizedBox(height: 14),
           OutlinedButton(
             onPressed: _onRefresh,
             style: OutlinedButton.styleFrom(
@@ -843,15 +844,15 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
             mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 10),
-              Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
+              Container(width: 36, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
               const SizedBox(height: 8),
               ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(color: ThixPolicy.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
-                  child: const Icon(Icons.link_rounded, color: ThixPolicy.primary),
+                  child: const Icon(Icons.link_rounded, color: ThixPolicy.primary, size: 20),
                 ),
-                title: Text(l10n.t('network_copy_link'), style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.semiBold)),
+                title: Text(l10n.t('network_copy_link'), style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontWeight: FontWeight.w600, fontSize: 14)),
                 onTap: () async {
                   await Clipboard.setData(ClipboardData(text: link));
                   try {
@@ -867,9 +868,9 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                 leading: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(color: ThixPolicy.textMuted.withValues(alpha: 0.1), shape: BoxShape.circle),
-                  child: const Icon(Icons.close_rounded, color: ThixPolicy.textSecondary),
+                  child: const Icon(Icons.close_rounded, color: ThixPolicy.textSecondary, size: 20),
                 ),
-                title: Text(l10n.t('common_close'), style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain)),
+                title: Text(l10n.t('common_close'), style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontSize: 14)),
                 onTap: () => Navigator.pop(context),
               ),
               const SizedBox(height: 12),
@@ -880,34 +881,35 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
+  // Barre de navigation basse amincie et réactive au scroll stop
   Widget _buildBottomNav(AppLocalizations l10n, bool visible) {
     return AnimatedSlide(
-      duration: const Duration(milliseconds: 260),
+      duration: const Duration(milliseconds: 220),
       curve: Curves.easeInOutCubic,
-      offset: visible ? Offset.zero : const Offset(0, 1.6),
+      offset: visible ? Offset.zero : const Offset(0, 1.5),
       child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 200),
+        duration: const Duration(milliseconds: 180),
         opacity: visible ? 1 : 0,
         child: IgnorePointer(
           ignoring: !visible,
           child: SafeArea(
             top: false,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
               child: _Glass(
-                radius: 36,
-                alpha: 0.85,
-                blur: 16,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
+                radius: 28,
+                alpha: 0.88,
+                blur: 14,
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                 child: SizedBox(
-                  height: 68,
+                  height: 50, // Hauteur réduite et optimisée
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
                       _navBtn(Icons.home_rounded, l10n.t('network_nav_home'), true, () => _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut)),
                       _navBtn(Icons.explore_outlined, l10n.t('network_nav_discover'), false, () => _safePush('/network/discover')),
                       
-                      // FAB Central Rond
+                      // FAB Central compact et élégant
                       Semantics(
                         button: true,
                         label: l10n.t('network_nav_post'),
@@ -917,16 +919,16 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                             showDialog(context: context, builder: (_) => const CreatePostDialog());
                           },
                           child: Container(
-                            width: 52,
-                            height: 52,
+                            width: 42,
+                            height: 42,
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(colors: [ThixPolicy.primary, ThixPolicy.primaryDeep]),
                               shape: BoxShape.circle,
                               boxShadow: [
-                                BoxShadow(color: ThixPolicy.primary.withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4)),
+                                BoxShadow(color: ThixPolicy.primary.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 3)),
                               ],
                             ),
-                            child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+                            child: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
                           ),
                         ),
                       ),
@@ -956,14 +958,14 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
         },
         behavior: HitTestBehavior.opaque,
         child: Container(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: active ? ThixPolicy.primary.withValues(alpha: 0.1) : Colors.transparent,
-            shape: BoxShape.circle, // Tous les boutons sont ronds
+            shape: BoxShape.circle,
           ),
           child: Icon(
             ic,
-            size: 26,
+            size: 21,
             color: active ? ThixPolicy.primary : ThixPolicy.textSecondary.withValues(alpha: 0.8),
           ),
         ),
@@ -982,33 +984,39 @@ class _QuickPostEntryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.6),
-        border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.8))),
+        color: Colors.white.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 6, offset: const Offset(0, 2)),
+        ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-          RoundAvatar(size: 44, imageUrl: avatarUrl),
-          const SizedBox(width: 12),
+          RoundAvatar(size: 38, imageUrl: avatarUrl),
+          const SizedBox(width: 10),
           Expanded(
             child: GestureDetector(
               onTap: onTap,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(30), // Forme pilule
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 2)),
-                  ],
+                  color: Colors.white.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
                 ),
-                child: Text(l10n.t('network_quick_post_hint'), style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary)),
+                child: Text(
+                  l10n.t('network_quick_post_hint'),
+                  style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 13),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Container(
             decoration: BoxDecoration(
               shape: BoxShape.circle,
@@ -1016,7 +1024,9 @@ class _QuickPostEntryCard extends StatelessWidget {
             ),
             child: IconButton(
               onPressed: onTap,
-              icon: const Icon(Icons.image_rounded, color: ThixPolicy.primary, size: 24),
+              icon: const Icon(Icons.image_rounded, color: ThixPolicy.primary, size: 20),
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              padding: EdgeInsets.zero,
             ),
           ),
         ],
@@ -1051,23 +1061,23 @@ class _StoryCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 92,
+        width: 82,
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isLive ? ThixPolicy.danger : Colors.white.withValues(alpha: 0.9),
+            color: isLive ? ThixPolicy.danger : Colors.white.withValues(alpha: 0.85),
             width: isLive ? 1.5 : 1,
           ),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 3)),
+            BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 4, offset: const Offset(0, 2)),
           ],
         ),
         child: Stack(
           children: [
             Positioned.fill(
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(14),
                 child: (coverUrl != null && coverUrl!.isNotEmpty)
                     ? CachedNetworkImage(
                         imageUrl: coverUrl!,
@@ -1081,43 +1091,43 @@ class _StoryCard extends StatelessWidget {
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(14),
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Colors.black.withValues(alpha: 0.6)],
+                    colors: [Colors.transparent, Colors.black.withValues(alpha: 0.55)],
                   ),
                 ),
               ),
             ),
             Positioned(
-              top: 8,
-              left: 8,
-              child: RoundAvatar(size: 30, imageUrl: avatarUrl, isLive: isLive),
+              top: 6,
+              left: 6,
+              child: RoundAvatar(size: 26, imageUrl: avatarUrl, isLive: isLive),
             ),
             if (isMe)
               Positioned(
-                top: 24,
-                left: 24,
+                top: 20,
+                left: 20,
                 child: GestureDetector(
                   onTap: onAdd,
                   child: Container(
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(shape: BoxShape.circle, color: ThixPolicy.primary, border: Border.all(color: Colors.white, width: 2)),
-                    child: const Icon(Icons.add_rounded, size: 14, color: Colors.white),
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: ThixPolicy.primary, border: Border.all(color: Colors.white, width: 1.5)),
+                    child: const Icon(Icons.add_rounded, size: 12, color: Colors.white),
                   ),
                 ),
               ),
             Positioned(
-              bottom: 10,
-              left: 8,
-              right: 8,
+              bottom: 8,
+              left: 6,
+              right: 6,
               child: Text(
                 name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: ThixPolicy.captionStyle.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
+                style: ThixPolicy.captionStyle.copyWith(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 11),
               ),
             ),
           ],
