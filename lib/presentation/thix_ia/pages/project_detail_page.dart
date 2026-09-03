@@ -50,13 +50,17 @@ class _IaLightPalette {
   static const Color textMuted = Color(0xFF94A3B8);
 }
 
-// ============================================================================
+/// ============================================================================
 // CONSTANTS & SANITIZER
 // ============================================================================
 
+const int _kMaxNameLength = 60;
+const int _kMaxCodeLength = 24;
+const int _kMaxSectorLength = 40;
 const Duration _kTapThrottle = Duration(milliseconds: 400);
 
 class _Sanitizer {
+
   _Sanitizer._();
 
   static String text(String? input, {required int maxLength}) {
