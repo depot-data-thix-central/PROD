@@ -205,8 +205,8 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage>
       item,
       ref.read(thixMediaListProvider).valueOrNull ?? const [],
     );
-    );
-    );
+    
+    
   }
 
   void _openAdmin() {
