@@ -20,6 +20,22 @@ const int _kMaxSeenItems = 500;
 const int _kFetchLimit = 24;
 
 // ============================================================================
+// MODELS
+// ============================================================================
+
+class MediaCounts {
+  final int likeCount;
+  final int viewCount;
+  final int commentCount;
+
+  const MediaCounts({
+    required this.likeCount,
+    required this.viewCount,
+    required this.commentCount,
+  });
+}
+
+// ============================================================================
 // LOGGING
 // ============================================================================
 
@@ -31,7 +47,7 @@ class _MediaProviderLogger {
   static void _log(String l, String m, Map<String, dynamic>? d) {
     if (!kDebugMode && l == 'INFO') return;
     final data = d != null
-        ? ' ${d.entries.map((e) => '${e.key}=${e.value}').join(', ')}'
+        ? ' \( {d.entries.map((e) => ' \){e.key}=${e.value}').join(', ')}'
         : '';
     debugPrint('[$_tag] [$l] $m$data');
   }
@@ -55,13 +71,14 @@ class _MediaProviderValidators {
   /// Échappe les caractères spéciaux SQL LIKE pour éviter injection
   static String sanitizeSearchQuery(String? input) {
     if (input == null || input.isEmpty) return '';
-    return input
+    final cleaned = input
         .replaceAll('%', '\\%')
         .replaceAll('_', '\\_')
         .replaceAll(RegExp(r'<[^>]*>'), '')
         .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
-        .trim()
-        .substring(0, input.length.clamp(0, 100));
+        .trim();
+    if (cleaned.isEmpty) return '';
+    return cleaned.substring(0, cleaned.length.clamp(0, 100));
   }
 }
 
@@ -89,7 +106,8 @@ final isMediaAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
 // MEDIA COUNTS POLLING (renommé : c'est du polling, pas un vrai stream)
 // ============================================================================
 
-final mediaCountsPollingProvider = StreamProvider.autoDispose.family<MediaCounts, String>((ref, mediaId) async* {
+final mediaCountsPollingProvider =
+    StreamProvider.autoDispose.family<MediaCounts, String>((ref, mediaId) async* {
   if (!_MediaProviderValidators.isValidUuid(mediaId)) {
     _MediaProviderLogger.warn('Invalid mediaId for polling', {'mediaId': mediaId});
     yield const MediaCounts(likeCount: 0, viewCount: 0, commentCount: 0);
@@ -134,7 +152,8 @@ final mediaCountsStreamProvider = mediaCountsPollingProvider;
 // COMMENT COUNT PROVIDER
 // ============================================================================
 
-final commentCountProvider = FutureProvider.autoDispose.family<int, String>((ref, mediaId) async {
+final commentCountProvider =
+    FutureProvider.autoDispose.family<int, String>((ref, mediaId) async {
   if (!_MediaProviderValidators.isValidUuid(mediaId)) {
     _MediaProviderLogger.warn('Invalid mediaId for commentCount', {'mediaId': mediaId});
     return 0;
@@ -158,7 +177,8 @@ final commentCountProvider = FutureProvider.autoDispose.family<int, String>((ref
 // CREATOR & FOLLOW PROVIDERS
 // ============================================================================
 
-final mediaCreatorIdProvider = FutureProvider.autoDispose.family<String?, String>((ref, mediaId) async {
+final mediaCreatorIdProvider =
+    FutureProvider.autoDispose.family<String?, String>((ref, mediaId) async {
   if (!_MediaProviderValidators.isValidUuid(mediaId)) {
     _MediaProviderLogger.warn('Invalid mediaId for creatorId', {'mediaId': mediaId});
     return null;
@@ -178,7 +198,8 @@ final mediaCreatorIdProvider = FutureProvider.autoDispose.family<String?, String
   }
 });
 
-final userProfileProvider = FutureProvider.autoDispose.family<Map<String, dynamic>?, String>((ref, userId) async {
+final userProfileProvider =
+    FutureProvider.autoDispose.family<Map<String, dynamic>?, String>((ref, userId) async {
   if (!_MediaProviderValidators.isValidUuid(userId)) {
     _MediaProviderLogger.warn('Invalid userId for profile', {'userId': userId});
     return null;
@@ -197,10 +218,11 @@ final userProfileProvider = FutureProvider.autoDispose.family<Map<String, dynami
   }
 });
 
-final isFollowingProvider = FutureProvider.autoDispose.family<bool, String>((ref, targetId) async {
+final isFollowingProvider =
+    FutureProvider.autoDispose.family<bool, String>((ref, targetId) async {
   final uid = Supabase.instance.client.auth.currentUser?.id;
   if (uid == null || !_MediaProviderValidators.isValidUuid(targetId)) return false;
-  
+
   // ✅ FIX : un utilisateur ne peut pas se follow lui-même
   if (uid == targetId) return false;
 
@@ -231,8 +253,8 @@ class ThixMediaNotifier extends StateNotifier<AsyncValue<List<MediaContent>>> {
   }
 
   final Ref ref;
-  Listener? _categoryListener;
-  Listener? _searchListener;
+  ProviderSubscription<String>? _categoryListener;
+  ProviderSubscription<String>? _searchListener;
 
   DateTime? _cursor;
   bool _hasMore = true;
@@ -284,7 +306,10 @@ class ThixMediaNotifier extends StateNotifier<AsyncValue<List<MediaContent>>> {
       }
 
       state = AsyncValue.data([...state.value!, ...moreItems]);
-      _MediaProviderLogger.info('Load more successful', {'count': moreItems.length, 'total': state.value!.length});
+      _MediaProviderLogger.info('Load more successful', {
+        'count': moreItems.length,
+        'total': state.value!.length,
+      });
     } catch (e) {
       _MediaProviderLogger.error('Load more failed', {'error': '$e'});
     } finally {
@@ -365,7 +390,8 @@ class ThixMediaNotifier extends StateNotifier<AsyncValue<List<MediaContent>>> {
   }
 }
 
-final thixMediaListProvider = StateNotifierProvider.autoDispose<ThixMediaNotifier, AsyncValue<List<MediaContent>>>(
+final thixMediaListProvider =
+    StateNotifierProvider.autoDispose<ThixMediaNotifier, AsyncValue<List<MediaContent>>>(
   (ref) => ThixMediaNotifier(ref),
 );
 
