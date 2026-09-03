@@ -8,10 +8,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:thix_id/presentation/thix_media/providers/thix_media_provider.dart';
+
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/l10n/i18n_service.dart';
+import 'package:thix_id/presentation/thix_media/providers/thix_media_provider.dart';
 
 import '../utils/media_constants.dart';
 
@@ -39,9 +40,18 @@ class _CommentsSanitizer {
   }
 }
 
+String _tr(AppLocalizations l10n, String key, [Map<String, String>? args]) {
+  if (args == null || args.isEmpty) return l10n.t(key);
+  return l10n.tn(key, args);
+}
+
 class CommentsSheet extends ConsumerStatefulWidget {
   final String mediaId, mediaTitle;
-  const CommentsSheet({super.key, required this.mediaId, required this.mediaTitle});
+  const CommentsSheet({
+    super.key,
+    required this.mediaId,
+    required this.mediaTitle,
+  });
 
   @override
   ConsumerState<CommentsSheet> createState() => _CommentsSheetState();
@@ -82,20 +92,20 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
     final l10n = AppLocalizations.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(l10n.t(key, args: args ?? {})),
+        content: Text(_tr(l10n, key, args)),
         backgroundColor: ThixPolicy.danger,
         behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
-  // ── Fetch ─────────────────────────────────────────────────
-
   Future<void> _fetchRoots() async {
     try {
       final res = await _client
           .from('media_comments')
-          .select('id,user_id,user_name,avatar_url,content,created_at,parent_id,like_count,reply_count')
+          .select(
+            'id,user_id,user_name,avatar_url,content,created_at,parent_id,like_count,reply_count',
+          )
           .eq('media_id', widget.mediaId)
           .isFilter('parent_id', null)
           .order('created_at', ascending: false)
@@ -105,7 +115,9 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
       if (mounted) {
         setState(() {
           _roots = (res as List)
-              .map((e) => CommentItem.fromMap(Map<String, dynamic>.from(e as Map)))
+              .map(
+                (e) => CommentItem.fromMap(Map<String, dynamic>.from(e as Map)),
+              )
               .toList();
           _loading = false;
         });
@@ -132,8 +144,11 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
           .inFilter('comment_id', ids)
           .timeout(_kQueryTimeout);
       if (mounted) {
-        setState(() => _likedIds
-            .addAll((res as List).map((e) => (e as Map)['comment_id'].toString())));
+        setState(() {
+          _likedIds.addAll(
+            (res as List).map((e) => (e as Map)['comment_id'].toString()),
+          );
+        });
       }
     } catch (e) {
       debugPrint('[Comments] fetchUserLikes failed: $e');
@@ -144,7 +159,9 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
     try {
       final res = await _client
           .from('media_comments')
-          .select('id,user_id,user_name,avatar_url,content,created_at,parent_id,like_count,reply_count')
+          .select(
+            'id,user_id,user_name,avatar_url,content,created_at,parent_id,like_count,reply_count',
+          )
           .eq('parent_id', parentId)
           .order('created_at', ascending: true)
           .timeout(_kQueryTimeout);
@@ -152,7 +169,9 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
       if (mounted) {
         setState(() {
           _replies[parentId] = (res as List)
-              .map((e) => CommentItem.fromMap(Map<String, dynamic>.from(e as Map)))
+              .map(
+                (e) => CommentItem.fromMap(Map<String, dynamic>.from(e as Map)),
+              )
               .toList();
           _expanded.add(parentId);
         });
@@ -162,8 +181,6 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
       _showError('comments_replies_error');
     }
   }
-
-  // ── Submit / edit / delete ────────────────────────────────
 
   Future<void> _submit() async {
     final t = _CommentsSanitizer.content(_controller.text);
@@ -185,7 +202,10 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
       if (_editingComment != null) {
         await _client
             .from('media_comments')
-            .update({'content': t, 'updated_at': DateTime.now().toIso8601String()})
+            .update({
+              'content': t,
+              'updated_at': DateTime.now().toIso8601String(),
+            })
             .eq('id', _editingComment!.id)
             .timeout(_kQueryTimeout);
         setState(() => _editingComment = null);
@@ -206,17 +226,14 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
         }
 
         final parentId = _replyingTo?.parentId ?? _replyingTo?.id;
-        await _client
-            .from('media_comments')
-            .insert({
-              'media_id': widget.mediaId,
-              'user_id': uid,
-              'user_name': _CommentsSanitizer.name(name),
-              'avatar_url': p?['avatar_url'],
-              'content': t,
-              'parent_id': parentId,
-            })
-            .timeout(_kQueryTimeout);
+        await _client.from('media_comments').insert({
+          'media_id': widget.mediaId,
+          'user_id': uid,
+          'user_name': _CommentsSanitizer.name(name),
+          'avatar_url': p?['avatar_url'],
+          'content': t,
+          'parent_id': parentId,
+        }).timeout(_kQueryTimeout);
 
         if (parentId != null) {
           await _fetchReplies(parentId);
@@ -228,7 +245,6 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
       _focusNode.unfocus();
       setState(() => _replyingTo = null);
       ref.invalidate(commentCountProvider(widget.mediaId));
-      debugPrint('[Comments] Submitted');
     } catch (e) {
       debugPrint('[Comments] Submit failed: $e');
       _showError('comments_send_error');
@@ -246,14 +262,17 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
           .timeout(_kQueryTimeout);
       _fetchRoots();
       ref.invalidate(commentCountProvider(widget.mediaId));
-      debugPrint('[Comments] Deleted $id');
     } catch (e) {
       debugPrint('[Comments] Delete failed: $e');
       _showError('comments_delete_error');
     }
   }
 
-  Future<void> _toggleCommentLike(CommentItem c, bool isLiked, int currentLikes) async {
+  Future<void> _toggleCommentLike(
+    CommentItem c,
+    bool isLiked,
+    int currentLikes,
+  ) async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) {
       _showError('comments_login_required');
@@ -307,8 +326,10 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
             if (isAuthor)
               ListTile(
                 leading: const Icon(Icons.edit_rounded, color: ThixPolicy.primary),
-                title: Text(l10n.t('comments_edit'),
-                    style: const TextStyle(color: ThixPolicy.textMain)),
+                title: Text(
+                  l10n.t('comments_edit'),
+                  style: const TextStyle(color: ThixPolicy.textMain),
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   setState(() {
@@ -321,9 +342,12 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
               ),
             if (isAuthor)
               ListTile(
-                leading: const Icon(Icons.delete_rounded, color: ThixPolicy.danger),
-                title: Text(l10n.t('comments_delete'),
-                    style: const TextStyle(color: ThixPolicy.danger)),
+                leading:
+                    const Icon(Icons.delete_rounded, color: ThixPolicy.danger),
+                title: Text(
+                  l10n.t('comments_delete'),
+                  style: const TextStyle(color: ThixPolicy.danger),
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   _delete(c.id);
@@ -331,11 +355,12 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
               ),
             ListTile(
               leading: const Icon(Icons.flag_rounded, color: ThixPolicy.warning),
-              title: Text(l10n.t('comments_report'),
-                  style: const TextStyle(color: ThixPolicy.warning)),
+              title: Text(
+                l10n.t('comments_report'),
+                style: const TextStyle(color: ThixPolicy.warning),
+              ),
               onTap: () {
                 Navigator.pop(context);
-                debugPrint('[Comments] Reported comment ${c.id}');
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(l10n.t('comments_reported')),
@@ -350,8 +375,6 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
       ),
     );
   }
-
-  // ── Build ─────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -388,7 +411,9 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                 Semantics(
                   header: true,
                   child: Text(
-                    l10n.t('comments_count', args: {'count': '${_roots.length}'}),
+                    _tr(l10n, 'comments_count', {
+                      'count': '${_roots.length}',
+                    }),
                     style: const TextStyle(
                       color: ThixPolicy.textMain,
                       fontSize: 14,
@@ -400,12 +425,15 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                 Expanded(
                   child: _loading
                       ? const Center(
-                          child: CircularProgressIndicator(color: ThixPolicy.primary))
+                          child: CircularProgressIndicator(
+                            color: ThixPolicy.primary,
+                          ),
+                        )
                       : _roots.isEmpty
                           ? Center(
                               child: Text(
                                 l10n.t('comments_empty'),
-                                style: TextStyle(
+                                style: const TextStyle(
                                   color: ThixPolicy.textMuted,
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -414,7 +442,8 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                           : ListView.builder(
                               padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                               itemCount: _roots.length,
-                              itemBuilder: (c, i) => _buildCommentTile(_roots[i]),
+                              itemBuilder: (c, i) =>
+                                  _buildCommentTile(_roots[i]),
                             ),
                 ),
                 _buildInputBar(l10n),
@@ -446,10 +475,12 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                     child: Text(
                       _editingComment != null
                           ? l10n.t('comments_editing')
-                          : l10n.t('comments_reply_to', args: {
-                              'name': _CommentsSanitizer.name(_replyingTo!.userName)
+                          : _tr(l10n, 'comments_reply_to', {
+                              'name': _CommentsSanitizer.name(
+                                _replyingTo!.userName,
+                              ),
                             }),
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: ThixPolicy.textMuted,
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -469,8 +500,11 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                         });
                         _controller.clear();
                       },
-                      child: const Icon(Icons.close_rounded,
-                          color: ThixPolicy.textMuted, size: 16),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        color: ThixPolicy.textMuted,
+                        size: 16,
+                      ),
                     ),
                   ),
                 ],
@@ -478,7 +512,11 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
             ),
           Padding(
             padding: EdgeInsets.fromLTRB(
-                16, 12, 16, MediaQuery.of(context).padding.bottom + 12),
+              16,
+              12,
+              16,
+              MediaQuery.of(context).padding.bottom + 12,
+            ),
             child: Row(
               children: [
                 Expanded(
@@ -488,7 +526,8 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                       color: Colors.white.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(24),
                       border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.06)),
+                        color: Colors.white.withValues(alpha: 0.06),
+                      ),
                     ),
                     child: Semantics(
                       textField: true,
@@ -501,7 +540,9 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                         maxLength: _kMaxCommentLength,
                         onSubmitted: (_) => _submit(),
                         style: const TextStyle(
-                            color: ThixPolicy.textMain, fontSize: 14),
+                          color: ThixPolicy.textMain,
+                          fontSize: 14,
+                        ),
                         cursorColor: ThixPolicy.textMain,
                         decoration: InputDecoration(
                           counterText: '',
@@ -511,8 +552,9 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                                   ? l10n.t('comments_hint_reply')
                                   : l10n.t('comments_hint')),
                           hintStyle: TextStyle(
-                              color: ThixPolicy.textMuted.withValues(alpha: 0.6),
-                              fontSize: 14),
+                            color: ThixPolicy.textMuted.withValues(alpha: 0.6),
+                            fontSize: 14,
+                          ),
                           filled: false,
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
@@ -538,7 +580,8 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                         gradient: _sending
                             ? null
                             : const LinearGradient(
-                                colors: [Colors.white, Color(0xFFE2E8F0)]),
+                                colors: [Colors.white, Color(0xFFE2E8F0)],
+                              ),
                         color: _sending
                             ? Colors.white.withValues(alpha: 0.1)
                             : null,
@@ -548,10 +591,15 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                           ? const Padding(
                               padding: EdgeInsets.all(12),
                               child: CircularProgressIndicator(
-                                  color: ThixPolicy.inkDeep, strokeWidth: 2),
+                                color: ThixPolicy.inkDeep,
+                                strokeWidth: 2,
+                              ),
                             )
-                          : const Icon(Icons.send_rounded,
-                              color: ThixPolicy.inkDeep, size: 18),
+                          : const Icon(
+                              Icons.send_rounded,
+                              color: ThixPolicy.inkDeep,
+                              size: 18,
+                            ),
                     ),
                   ),
                 ),
@@ -588,7 +636,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                   children: [
                     Text(
                       safeName,
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: ThixPolicy.textMuted,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -628,7 +676,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                             },
                             child: Text(
                               l10n.t('comments_reply'),
-                              style: TextStyle(
+                              style: const TextStyle(
                                 color: ThixPolicy.textMuted,
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
@@ -678,8 +726,9 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                         button: true,
                         label: _expanded.contains(c.id)
                             ? l10n.t('comments_hide')
-                            : l10n.t('comments_see_replies',
-                                args: {'count': '${c.replyCount}'}),
+                            : _tr(l10n, 'comments_see_replies', {
+                                'count': '${c.replyCount}',
+                              }),
                         child: GestureDetector(
                           onTap: () {
                             HapticFeedback.selectionClick();
@@ -692,16 +741,18 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                           child: Row(
                             children: [
                               Container(
-                                  width: 24,
-                                  height: 1,
-                                  color: Colors.white24),
+                                width: 24,
+                                height: 1,
+                                color: Colors.white24,
+                              ),
                               const SizedBox(width: 8),
                               Text(
                                 _expanded.contains(c.id)
                                     ? l10n.t('comments_hide')
-                                    : l10n.t('comments_see_replies',
-                                        args: {'count': '${c.replyCount}'}),
-                                style: TextStyle(
+                                    : _tr(l10n, 'comments_see_replies', {
+                                        'count': '${c.replyCount}',
+                                      }),
+                                style: const TextStyle(
                                   color: ThixPolicy.textMuted,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
@@ -713,8 +764,9 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                       ),
                     ],
                     if (!isReply && _expanded.contains(c.id))
-                      ...(_replies[c.id] ?? [])
-                          .map((r) => _buildCommentTile(r, isReply: true)),
+                      ...(_replies[c.id] ?? []).map(
+                        (r) => _buildCommentTile(r, isReply: true),
+                      ),
                   ],
                 ),
               ),
@@ -739,8 +791,11 @@ class _Avatar extends StatelessWidget {
       backgroundImage:
           url != null && url!.isNotEmpty ? CachedNetworkImageProvider(url!) : null,
       child: url == null || url!.isEmpty
-          ? Icon(Icons.person,
-              size: small ? 16 : 20, color: ThixPolicy.textMuted)
+          ? Icon(
+              Icons.person,
+              size: small ? 16 : 20,
+              color: ThixPolicy.textMuted,
+            )
           : null,
     );
   }
