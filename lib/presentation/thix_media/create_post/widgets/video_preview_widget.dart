@@ -2,9 +2,9 @@
 ///
 /// Widget de preview vidéo pour la création de post.
 ///
-/// ✅ ThixPolicy + i18n 8 langues + Semantics + HapticFeedback
-/// ✅ Web-safe (bytes au lieu de path) + mounted checks + throttling
-/// ✅ Validation fichier + error state + logs structurés
+/// ThixPolicy + i18n 8 langues + Semantics + HapticFeedback
+///  Web-safe (bytes au lieu de path) + mounted checks + throttling
+///  Validation fichier + error state + logs structurés
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -300,7 +300,8 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
               top: 12,
               left: 12,
               child: Semantics(
-                label: l10n.t('create_series_part_n', args: {'n': '1'}),
+                // CORRECTION : args passe en liste
+                label: l10n.t('create_series_part_n', args: ['1']),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 10, vertical: 5),
@@ -309,7 +310,8 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    l10n.t('create_series_part_n', args: {'n': '1'}),
+                    // CORRECTION : args passe en liste
+                    l10n.t('create_series_part_n', args: ['1']),
                     style: TextStyle(
                       color: ThixPolicy.textMain,
                       fontSize: 11,
@@ -394,7 +396,8 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
         const SizedBox(height: 16),
         Text(
           widget.isSeries
-              ? l10n.t('create_series_no_video', args: {'n': '1'})
+              // CORRECTION : args passe en liste
+              ? l10n.t('create_series_no_video', args: ['1'])
               : l10n.t('create_select_video'),
           style: TextStyle(
             color: ThixPolicy.textMuted,
