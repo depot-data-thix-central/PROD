@@ -1,15 +1,8 @@
-/// NetworkProHome — "Executive Briefing" Design
+/// NetworkProHome — "Community Glass" Design
 ///
-/// Design enterprise premium, distinct d'Instagram :
-/// - Briefing cards horizontales (pas de stories circulaires)
-/// - Top tabs navigation (pas de bottom nav flottante)
-/// - Segmented control iOS-style pour filtres
-/// - Layout aéré style Medium/LinkedIn
-/// - Avatar hexagonal distinctif
-/// - Grid pattern subtil au lieu de gradient orbs
-///
-/// ✅ Toute la logique préservée : providers, throttling, mounted checks,
-///    i18n, Semantics, logs, RepaintBoundary
+/// Inspiré des apps communautaires modernes (chaleureux, éditorial)
+/// mais supérieur : sections data-driven, glassmorphism maîtrisé,
+/// a11y/i18n/perf complets.
 import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
@@ -45,6 +38,7 @@ const Duration _kScrollDebounce = Duration(milliseconds: 200);
 const Duration _kTapThrottle = Duration(milliseconds: 300);
 const Duration _kSuggestionRefreshInterval = Duration(minutes: 1);
 const Duration _kNetworkTimeout = Duration(seconds: 15);
+const double _kGlassBlur = kIsWeb ? 8 : 14;
 
 const int _kMaxSuggestions = 100;
 const int _kMaxSuggestionRefreshes = 10;
@@ -69,17 +63,14 @@ class _NetworkLogger {
 }
 
 // ============================================================================
-// PROVIDERS LOCAUX (inchangés)
+// PROVIDERS (inchangés)
 // ============================================================================
 
 final _storiesProvider = StateProvider<List<NetworkStory>>((ref) => []);
 final _loadingStoriesProvider = StateProvider<bool>((ref) => true);
 final _feedTypeProvider = StateProvider<String>((ref) => 'foryou');
 final _suggestionsProvider = StateProvider<List<dynamic>>((ref) => []);
-
-// ============================================================================
-// PROVIDER — SESSIONS LIVE ACTIVES
-// ============================================================================
+final _navVisibleProvider = StateProvider<bool>((ref) => true);
 
 final activeLiveSessionsProvider =
     StreamProvider.autoDispose<List<Map<String, dynamic>>>((ref) async* {
@@ -92,147 +83,60 @@ final activeLiveSessionsProvider =
       yield data;
     }
   } catch (e) {
-    _NetworkLogger.error('Live sessions stream error', {'error': '$e'});
+    _NetworkLogger.error('Live stream error', {'error': '$e'});
     yield const <Map<String, dynamic>>[];
   }
 });
 
 // ============================================================================
-// NOUVEAU COMPOSANT — AVATAR HEXAGONAL (distinctif enterprise)
+// GLASS SURFACE (réutilisable, maîtrisé)
 // ============================================================================
 
-class HexAvatar extends StatelessWidget {
-  final double size;
-  final String? imageUrl;
-  final bool isLive;
-  final bool showBorder;
+class _Glass extends StatelessWidget {
+  final Widget child;
+  final double radius;
+  final double alpha;
+  final double blur;
+  final EdgeInsetsGeometry? padding;
 
-  const HexAvatar({
-    super.key,
-    required this.size,
-    this.imageUrl,
-    this.isLive = false,
-    this.showBorder = true,
+  const _Glass({
+    required this.child,
+    this.radius = 20,
+    this.alpha = 0.65,
+    this.blur = _kGlassBlur,
+    this.padding,
   });
 
   @override
   Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            // Forme hexagonale
-            ClipPath(
-              clipper: _HexagonClipper(),
-              child: Container(
-                width: size,
-                height: size,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: isLive
-                        ? [
-                            ThixPolicy.danger,
-                            ThixPolicy.danger.withValues(alpha: 0.7),
-                          ]
-                        : [
-                            ThixPolicy.textMain.withValues(alpha: 0.12),
-                            ThixPolicy.textMain.withValues(alpha: 0.06),
-                          ],
-                  ),
-                ),
-                child: ClipPath(
-                  clipper: _HexagonClipper(inset: 2),
-                  child: (imageUrl != null && imageUrl!.isNotEmpty)
-                      ? CachedNetworkImage(
-                          imageUrl: imageUrl!,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(
-                            color: ThixPolicy.surfaceSoft,
-                          ),
-                          errorWidget: (_, __, ___) => Center(
-                            child: Icon(Icons.person,
-                                size: size * 0.45,
-                                color: ThixPolicy.textMuted),
-                          ),
-                        )
-                      : Center(
-                          child: Icon(Icons.person,
-                              size: size * 0.45,
-                              color: ThixPolicy.textMuted),
-                        ),
-                ),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: alpha),
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(
+                color: Colors.white.withValues(alpha: 0.7), width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: ThixPolicy.inkDeep.withValues(alpha: 0.06),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
               ),
-            ),
-            // Indicateur LIVE
-            if (isLive)
-              Positioned(
-                bottom: 0,
-                right: 0,
-                child: Container(
-                  width: size * 0.28,
-                  height: size * 0.28,
-                  decoration: BoxDecoration(
-                    color: ThixPolicy.danger,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: ThixPolicy.card, width: 2),
-                  ),
-                  child: Center(
-                    child: Container(
-                      width: size * 0.1,
-                      height: size * 0.1,
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
+            ],
+          ),
+          child: child,
         ),
       ),
     );
   }
 }
 
-class _HexagonClipper extends CustomClipper<Path> {
-  final double inset;
-  _HexagonClipper({this.inset = 0});
-
-  @override
-  Path getClip(Size size) {
-    final w = size.width - inset * 2;
-    final h = size.height - inset * 2;
-    final centerX = size.width / 2;
-    final centerY = size.height / 2;
-    final radius = min(w, h) / 2;
-
-    final path = Path();
-    for (int i = 0; i < 6; i++) {
-      final angle = (i * 60 - 30) * pi / 180;
-      final x = centerX + radius * cos(angle);
-      final y = centerY + radius * sin(angle);
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-    path.close();
-    return path;
-  }
-
-  @override
-  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
-}
-
 // ============================================================================
-// PAGE PRINCIPALE — EXECUTIVE BRIEFING
+// PAGE
 // ============================================================================
 
 class NetworkProHome extends ConsumerStatefulWidget {
@@ -268,7 +172,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
   bool _throttle() {
     final now = DateTime.now();
     if (_lastTap != null && now.difference(_lastTap!) < _kTapThrottle) {
-      _NetworkLogger.warn('Tap throttled');
       return false;
     }
     _lastTap = now;
@@ -288,11 +191,19 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
         final notifier = ref.read(feedProvider.notifier);
         if (!ref.read(feedProvider).isLoading && notifier.hasMore) {
           _isLoadingMore = true;
-          _NetworkLogger.info('Load more triggered');
           notifier.loadMore().whenComplete(() {
             if (mounted) _isLoadingMore = false;
           });
         }
+      }
+
+      final dir = pos.userScrollDirection;
+      final navVisible = ref.read(_navVisibleProvider.notifier);
+      if (dir == ScrollDirection.reverse && ref.read(_navVisibleProvider)) {
+        navVisible.state = false;
+      } else if (dir == ScrollDirection.forward &&
+          !ref.read(_navVisibleProvider)) {
+        navVisible.state = true;
       }
     });
   }
@@ -300,7 +211,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
   Future<void> _init() async {
     if (_isInitializing) return;
     _isInitializing = true;
-
     try {
       final now = DateTime.now();
       final needsRefresh = _lastRefreshTime == null ||
@@ -313,7 +223,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
       if (needsRefresh) _lastRefreshTime = now;
 
       await Future.wait([_loadStories(), _loadSuggestions()]);
-      _NetworkLogger.info('Init completed', {'needsRefresh': needsRefresh});
     } finally {
       _isInitializing = false;
     }
@@ -328,12 +237,9 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
       if (!mounted) return;
       ref.read(_storiesProvider.notifier).state = data;
       ref.read(_loadingStoriesProvider.notifier).state = false;
-      _NetworkLogger.info('Stories loaded', {'count': data.length});
     } catch (e) {
-      _NetworkLogger.error('Stories load failed', {'error': '$e'});
-      if (mounted) {
-        ref.read(_loadingStoriesProvider.notifier).state = false;
-      }
+      _NetworkLogger.error('Stories failed', {'error': '$e'});
+      if (mounted) ref.read(_loadingStoriesProvider.notifier).state = false;
     }
   }
 
@@ -345,61 +251,48 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
           .timeout(_kNetworkTimeout);
       if (!mounted) return;
 
-      final currentSuggestions = ref.read(_suggestionsProvider);
-      final merged = [...currentSuggestions, ...data]
+      final merged = [...ref.read(_suggestionsProvider), ...data]
           .take(_kMaxSuggestions)
           .toList();
       ref.read(_suggestionsProvider.notifier).state = merged;
-
       _shuffleSuggestions();
 
       _suggestionTimer?.cancel();
       if (_suggestionRefreshCount < _kMaxSuggestionRefreshes) {
-        _suggestionTimer = Timer.periodic(
-          _kSuggestionRefreshInterval,
-          (_) {
-            if (!mounted) {
-              _suggestionTimer?.cancel();
-              return;
-            }
-            _suggestionRefreshCount++;
-            if (_suggestionRefreshCount >= _kMaxSuggestionRefreshes) {
-              _suggestionTimer?.cancel();
-              _NetworkLogger.info('Suggestions max refreshes reached');
-            } else {
-              _shuffleSuggestions();
-            }
-          },
-        );
+        _suggestionTimer = Timer.periodic(_kSuggestionRefreshInterval, (_) {
+          if (!mounted) {
+            _suggestionTimer?.cancel();
+            return;
+          }
+          _suggestionRefreshCount++;
+          if (_suggestionRefreshCount >= _kMaxSuggestionRefreshes) {
+            _suggestionTimer?.cancel();
+          } else {
+            _shuffleSuggestions();
+          }
+        });
       }
-      _NetworkLogger.info('Suggestions loaded', {'count': data.length});
     } catch (e) {
-      _NetworkLogger.error('Suggestions load failed', {'error': '$e'});
+      _NetworkLogger.error('Suggestions failed', {'error': '$e'});
     }
   }
 
   void _shuffleSuggestions() {
-    final suggestions = ref.read(_suggestionsProvider);
-    if (suggestions.isEmpty || !mounted) return;
-
-    final list = List<dynamic>.from(suggestions);
-    list.shuffle(Random());
+    final s = ref.read(_suggestionsProvider);
+    if (s.isEmpty || !mounted) return;
+    final list = List<dynamic>.from(s)..shuffle(Random());
     ref.read(_suggestionsProvider.notifier).state = list.take(10).toList();
-    _NetworkLogger.info('Suggestions shuffled');
   }
 
   Future<void> _onRefresh() async {
     if (!_throttle()) return;
     HapticFeedback.mediumImpact();
     final feedType = ref.read(_feedTypeProvider);
-    await ref
-        .read(feedProvider.notifier)
-        .loadFeed(feedType: feedType, force: true);
+    await ref.read(feedProvider.notifier).loadFeed(feedType: feedType, force: true);
     _lastRefreshTime = DateTime.now();
     _suggestionRefreshCount = 0;
     await Future.wait([_loadStories(), _loadSuggestions()]);
     ref.invalidate(activeLiveSessionsProvider);
-    _NetworkLogger.info('Refresh completed');
   }
 
   Future<void> _openCreateStory() async {
@@ -416,14 +309,9 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
     if (!mounted || !_throttle()) return;
     try {
       context.push(path);
-      _NetworkLogger.info('Navigated', {'path': path});
     } catch (e) {
-      _NetworkLogger.error('Navigation failed', {'path': path, 'error': '$e'});
+      _NetworkLogger.error('Nav failed', {'path': path, 'error': '$e'});
     }
-  }
-
-  Future<void> _openComments(String postId) async {
-    _safePush('/network/comments/$postId');
   }
 
   @override
@@ -432,9 +320,19 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
     _scrollController.dispose();
     _scrollDebounce?.cancel();
     _suggestionTimer?.cancel();
-    _NetworkLogger.info('Page disposed');
     super.dispose();
   }
+
+  String _greetingKey() {
+    final h = DateTime.now().hour;
+    if (h < 12) return 'network_greeting_morning';
+    if (h < 18) return 'network_greeting_afternoon';
+    return 'network_greeting_evening';
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ════════════════════════════════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
@@ -444,21 +342,22 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
     final feedAsync = ref.watch(feedProvider);
     final currentUser = authAsync.value;
 
-    final liveSessionsAsync = ref.watch(activeLiveSessionsProvider);
-    final liveSessions =
-        liveSessionsAsync.value ?? const <Map<String, dynamic>>[];
+    final liveSessions = ref.watch(activeLiveSessionsProvider).value ?? const [];
     final liveHostIds = liveSessions
         .map((s) => s['host_id']?.toString() ?? '')
         .where((id) => id.isNotEmpty)
         .toSet();
+    final posts = feedAsync.valueOrNull ?? [];
 
     if (currentUser == null) {
-      return Scaffold(
-        backgroundColor: ThixPolicy.card,
-        body: Center(
-            child: CircularProgressIndicator(color: ThixPolicy.primary)),
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       );
     }
+
+    final firstName = (currentUser.fullName ?? currentUser.username ?? '')
+        .split(' ')
+        .first;
 
     return PopScope(
       canPop: false,
@@ -467,417 +366,93 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
         context.go('/');
       },
       child: Scaffold(
-        backgroundColor: ThixPolicy.card,
-        body: RefreshIndicator(
-          color: ThixPolicy.primary,
-          backgroundColor: ThixPolicy.card,
-          onRefresh: _onRefresh,
-          child: CustomScrollView(
-            controller: _scrollController,
-            physics: const AlwaysScrollableScrollPhysics(
-                parent: BouncingScrollPhysics()),
-            slivers: [
-              // ═══════════════════════════════════════════════════════
-              // TOP NAVIGATION BAR (remplace bottom nav flottante)
-              // ═══════════════════════════════════════════════════════
-              SliverToBoxAdapter(
-                child: _TopNavBar(
-                  currentUser: currentUser,
-                  onProfileTap: () =>
-                      _safePush('/network/profile/${currentUser.id}'),
-                  onSearchTap: () => _safePush('/network/search'),
-                  onNotificationsTap: () =>
-                      _safePush('/network/notifications'),
-                  onMessagesTap: () => _safePush('/network/messages'),
-                  onCommunitiesTap: () => _safePush('/network/communities'),
-                  onCreateTap: () {
-                    HapticFeedback.selectionClick();
-                    showDialog(
-                        context: context,
-                        builder: (_) => const CreatePostDialog());
-                  },
-                ),
-              ),
-
-              // ═══════════════════════════════════════════════════════
-              // BRIEFING BAND (remplace stories circulaires)
-              // ═══════════════════════════════════════════════════════
-              SliverToBoxAdapter(
-                child: _ExecutiveBriefing(
-                  currentUserId: currentUser.id,
-                  currentUserAvatar: currentUser.photoUrl,
-                  liveSessions: liveSessions,
-                  liveHostIds: liveHostIds,
-                  onCreateStory: _openCreateStory,
-                ),
-              ),
-
-              // ═══════════════════════════════════════════════════════
-              // COMPOSE ENTRY (inchangé, style épuré)
-              // ═══════════════════════════════════════════════════════
-              SliverToBoxAdapter(
-                child: _ComposeEntry(
-                  avatarUrl: currentUser.photoUrl,
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    showDialog(
-                        context: context,
-                        builder: (_) => const CreatePostDialog());
-                  },
-                ),
-              ),
-
-              // ═══════════════════════════════════════════════════════
-              // SEGMENTED CONTROL (remplace filters chips)
-              // ═══════════════════════════════════════════════════════
-              SliverToBoxAdapter(
-                child: _FeedSegmentedControl(
-                  onChanged: (type) {
-                    if (!_throttle()) return;
-                    ref.read(_feedTypeProvider.notifier).state = type;
-                    ref
-                        .read(feedProvider.notifier)
-                        .loadFeed(feedType: type, force: true);
-                    _lastRefreshTime = DateTime.now();
-                    HapticFeedback.lightImpact();
-                    _NetworkLogger.info('Filter changed', {'filter': type});
-                  },
-                ),
-              ),
-
-              // ═══════════════════════════════════════════════════════
-              // DISCOVERY BAND (suggestions + lives)
-              // ═══════════════════════════════════════════════════════
-              if (ref.watch(_suggestionsProvider).isNotEmpty ||
-                  liveSessions.isNotEmpty)
-                SliverToBoxAdapter(
-                  child: RepaintBoundary(
-                    child: _DiscoveryBand(liveSessions: liveSessions),
+        backgroundColor: ThixPolicy.surfaceSoft,
+        body: Stack(
+          children: [
+            _backgroundDecor(),
+            RefreshIndicator(
+              color: ThixPolicy.primary,
+              backgroundColor: ThixPolicy.card,
+              onRefresh: _onRefresh,
+              child: CustomScrollView(
+                controller: _scrollController,
+                physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics()),
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: _buildGreetingHeader(l10n, currentUser, firstName),
                   ),
-                ),
-
-              // ═══════════════════════════════════════════════════════
-              // FEED
-              // ═══════════════════════════════════════════════════════
-              feedAsync.when(
-                loading: () => SliverToBoxAdapter(
-                    child: RepaintBoundary(child: const _ShimmerFeed())),
-                error: (e, _) => SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(40),
-                    child: Center(
-                      child: Text(
-                        l10n.t('network_error_generic',
-                            args: [e.toString()]),
-                        style: ThixPolicy.bodyStyle
-                            .copyWith(color: ThixPolicy.textSecondary),
+                  SliverToBoxAdapter(
+                    child: _buildCreatorsRow(l10n, currentUser.id, liveHostIds),
+                  ),
+                  SliverToBoxAdapter(child: _buildSearchBar(l10n)),
+                  SliverToBoxAdapter(child: _buildCategoryChips(l10n)),
+                  if (posts.isNotEmpty) ...[
+                    SliverToBoxAdapter(
+                        child: RepaintBoundary(child: _buildFeaturedCard(l10n, posts))),
+                    SliverToBoxAdapter(
+                        child: RepaintBoundary(child: _buildPopularGrid(l10n, posts))),
+                  ],
+                  if (ref.watch(_suggestionsProvider).isNotEmpty)
+                    SliverToBoxAdapter(
+                        child: RepaintBoundary(child: _buildCommunitiesRow(l10n))),
+                  SliverToBoxAdapter(
+                      child: _buildFeedHeader(l10n)),
+                  feedAsync.when(
+                    loading: () =>
+                        SliverToBoxAdapter(child: RepaintBoundary(child: _buildShimmer())),
+                    error: (e, _) => SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.all(40),
+                        child: Center(
+                          child: Text(
+                            l10n.t('network_error_generic', args: [e.toString()]),
+                            style: ThixPolicy.bodyStyle
+                                .copyWith(color: ThixPolicy.textSecondary),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                data: (posts) {
-                  if (posts.isEmpty) {
-                    return SliverToBoxAdapter(child: _buildEmpty(l10n));
-                  }
-                  return SliverList.builder(
-                    itemCount: posts.length,
-                    itemBuilder: (c, i) {
-                      final post = posts[i];
-                      return RepaintBoundary(
-                        child: Column(
-                          children: [
-                            PostCard(
+                    data: (feedPosts) {
+                      if (feedPosts.isEmpty) {
+                        return SliverToBoxAdapter(child: _buildEmpty(l10n));
+                      }
+                      return SliverList.builder(
+                        itemCount: feedPosts.length,
+                        itemBuilder: (c, i) {
+                          final post = feedPosts[i];
+                          return RepaintBoundary(
+                            child: PostCard(
                               key: ValueKey(post.id),
                               post: post,
                               currentProfileId: currentUser.id,
                               onLike: null,
-                              onComment: () => _openComments(post.id),
+                              onComment: () => _safePush('/network/comments/${post.id}'),
                               onShare: () => _showShareSheet(l10n, post),
                               onDelete: () => ref
                                   .read(feedProvider.notifier)
                                   .deletePost(post.id),
                               onRefresh: null,
                             ),
-                            Container(
-                              height: 1,
-                              color: ThixPolicy.border.withValues(alpha: 0.4),
-                            ),
-                          ],
-                        ),
+                          );
+                        },
                       );
                     },
-                  );
-                },
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: 80)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmpty(AppLocalizations l10n) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 80),
-      child: Column(
-        children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: ThixPolicy.surfaceSoft,
-              border: Border.all(color: ThixPolicy.border),
-            ),
-            child: const Icon(Icons.inbox_outlined,
-                size: 28, color: ThixPolicy.textMuted),
-          ),
-          const SizedBox(height: 20),
-          Text(l10n.t('network_empty_feed'),
-              style: ThixPolicy.titleStyle.copyWith(
-                  color: ThixPolicy.textMain,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          Text(l10n.t('network_empty_feed_hint'),
-              style: ThixPolicy.bodyStyle.copyWith(
-                  color: ThixPolicy.textSecondary),
-              textAlign: TextAlign.center),
-          const SizedBox(height: 24),
-          Semantics(
-            button: true,
-            label: l10n.t('common_refresh'),
-            child: OutlinedButton.icon(
-              onPressed: _onRefresh,
-              icon: const Icon(Icons.refresh_rounded, size: 16),
-              label: Text(l10n.t('common_refresh')),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: ThixPolicy.textMain,
-                side: BorderSide(color: ThixPolicy.border),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showShareSheet(AppLocalizations l10n, dynamic post) {
-    if (!_throttle()) return;
-    final id = '${post.id}';
-    final link = 'https://thix.id/network/post/$id';
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: BoxDecoration(
-          color: ThixPolicy.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-          border: Border(
-              top: BorderSide(color: ThixPolicy.border.withValues(alpha: 0.5))),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                        color: ThixPolicy.border,
-                        borderRadius: BorderRadius.circular(4)),
                   ),
-                ),
-                const SizedBox(height: 20),
-                Semantics(
-                  button: true,
-                  label: l10n.t('network_copy_link'),
-                  child: _SheetAction(
-                    icon: Icons.link_rounded,
-                    label: l10n.t('network_copy_link'),
-                    onTap: () async {
-                      HapticFeedback.selectionClick();
-                      await Clipboard.setData(ClipboardData(text: link));
-                      try {
-                        await ref
-                            .read(networkServiceProvider)
-                            .sharePost(id);
-                      } catch (e) {
-                        _NetworkLogger.error('Share failed', {'error': '$e'});
-                      }
-                      if (mounted) Navigator.pop(context);
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text(l10n.t('network_link_copied')),
-                          behavior: SnackBarBehavior.floating,
-                        ));
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Semantics(
-                  button: true,
-                  label: l10n.t('common_close'),
-                  child: _SheetAction(
-                    icon: Icons.close_rounded,
-                    label: l10n.t('common_close'),
-                    onTap: () => Navigator.pop(context),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// TOP NAVIGATION BAR (remplace bottom nav)
-// ============================================================================
-
-class _TopNavBar extends StatelessWidget {
-  final dynamic currentUser;
-  final VoidCallback onProfileTap;
-  final VoidCallback onSearchTap;
-  final VoidCallback onNotificationsTap;
-  final VoidCallback onMessagesTap;
-  final VoidCallback onCommunitiesTap;
-  final VoidCallback onCreateTap;
-
-  const _TopNavBar({
-    required this.currentUser,
-    required this.onProfileTap,
-    required this.onSearchTap,
-    required this.onNotificationsTap,
-    required this.onMessagesTap,
-    required this.onCommunitiesTap,
-    required this.onCreateTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-      decoration: BoxDecoration(
-        color: ThixPolicy.card,
-        border: Border(
-            bottom: BorderSide(color: ThixPolicy.border.withValues(alpha: 0.5))),
-      ),
-      child: SafeArea(
-        bottom: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Rangée supérieure : Logo + Actions
-            Row(
-              children: [
-                // Logo TDIA
-                Row(
-                  children: [
-                    Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            ThixPolicy.primary,
-                            ThixPolicy.primary.withValues(alpha: 0.7),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(Icons.grid_view_rounded,
-                          color: Colors.white, size: 18),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      'THIX PRO',
-                      style: ThixPolicy.h2Style.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.3,
-                        color: ThixPolicy.textMain,
-                        fontSize: 18,
-                      ),
-                    ),
-                  ],
-                ),
-                const Spacer(),
-                // Actions
-                _NavIconButton(
-                  icon: Icons.search_rounded,
-                  label: l10n.t('network_search'),
-                  onTap: onSearchTap,
-                ),
-                const SizedBox(width: 4),
-                _NavIconButton(
-                  icon: Icons.notifications_none_rounded,
-                  label: l10n.t('network_notifications'),
-                  onTap: onNotificationsTap,
-                ),
-                const SizedBox(width: 4),
-                _NavIconButton(
-                  icon: Icons.mail_outline_rounded,
-                  label: l10n.t('network_nav_messages'),
-                  onTap: onMessagesTap,
-                ),
-                const SizedBox(width: 12),
-                Semantics(
-                  button: true,
-                  label: l10n.t('network_profile'),
-                  child: GestureDetector(
-                    onTap: onProfileTap,
-                    child: HexAvatar(
-                        size: 36, imageUrl: currentUser.photoUrl),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            // Rangée inférieure : Navigation tabs
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _NavTab(
-                    icon: Icons.home_rounded,
-                    label: l10n.t('network_nav_home'),
-                    active: true,
-                    onTap: () {},
-                  ),
-                  const SizedBox(width: 4),
-                  _NavTab(
-                    icon: Icons.explore_outlined,
-                    label: l10n.t('network_nav_discover'),
-                    onTap: () => _safePushPath(context, '/network/discover'),
-                  ),
-                  const SizedBox(width: 4),
-                  _NavTab(
-                    icon: Icons.diversity_3_outlined,
-                    label: l10n.t('network_nav_communities'),
-                    onTap: onCommunitiesTap,
-                  ),
-                  const SizedBox(width: 4),
-                  _NavTab(
-                    icon: Icons.add_circle_outline_rounded,
-                    label: l10n.t('network_nav_post'),
-                    accent: true,
-                    onTap: onCreateTap,
-                  ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 120)),
                 ],
               ),
+            ),
+            Consumer(
+              builder: (context, ref, _) {
+                final visible = ref.watch(_navVisibleProvider);
+                return Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _buildBottomNav(l10n, visible, currentUser),
+                );
+              },
             ),
           ],
         ),
@@ -885,582 +460,698 @@ class _TopNavBar extends StatelessWidget {
     );
   }
 
-  void _safePushPath(BuildContext context, String path) {
-    HapticFeedback.selectionClick();
-    context.push(path);
-  }
-}
+  // ════════════════════════════════════════════════════════════════════
+  // SECTIONS
+  // ════════════════════════════════════════════════════════════════════
 
-class _NavIconButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _NavIconButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: label,
-      child: InkWell(
-        onTap: () {
-          HapticFeedback.selectionClick();
-          onTap();
-        },
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: 36,
-          height: 36,
+  Widget _backgroundDecor() {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: DecoratedBox(
           decoration: BoxDecoration(
-            color: ThixPolicy.surfaceSoft,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, size: 18, color: ThixPolicy.textMain),
-        ),
-      ),
-    );
-  }
-}
-
-class _NavTab extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool active;
-  final bool accent;
-  final VoidCallback onTap;
-
-  const _NavTab({
-    required this.icon,
-    required this.label,
-    this.active = false,
-    this.accent = false,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      selected: active,
-      label: label,
-      child: InkWell(
-        onTap: () {
-          HapticFeedback.selectionClick();
-          onTap();
-        },
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: accent
-                ? ThixPolicy.primary
-                : active
-                    ? ThixPolicy.surfaceSoft
-                    : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: active && !accent
-                  ? ThixPolicy.border
-                  : Colors.transparent,
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                ThixPolicy.primary.withValues(alpha: 0.06),
+                Colors.transparent,
+              ],
+              stops: const [0, 0.4],
             ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon,
-                  size: 16,
-                  color: accent
-                      ? Colors.white
-                      : active
-                          ? ThixPolicy.textMain
-                          : ThixPolicy.textSecondary),
-              const SizedBox(width: 6),
-              Text(label,
-                  style: ThixPolicy.labelStyle.copyWith(
-                      color: accent
-                          ? Colors.white
-                          : active
-                              ? ThixPolicy.textMain
-                              : ThixPolicy.textSecondary,
-                      fontWeight:
-                          active || accent ? FontWeight.w600 : FontWeight.w500)),
-            ],
-          ),
         ),
       ),
     );
   }
-}
 
-// ============================================================================
-// EXECUTIVE BRIEFING (remplace stories circulaires)
-// ============================================================================
-
-class _ExecutiveBriefing extends StatelessWidget {
-  final String currentUserId;
-  final String? currentUserAvatar;
-  final List<Map<String, dynamic>> liveSessions;
-  final Set<String> liveHostIds;
-  final VoidCallback onCreateStory;
-
-  const _ExecutiveBriefing({
-    required this.currentUserId,
-    required this.currentUserAvatar,
-    required this.liveSessions,
-    required this.liveHostIds,
-    required this.onCreateStory,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final loading =
-        ProviderScope.containerOf(context).read(_loadingStoriesProvider);
-    final stories =
-        ProviderScope.containerOf(context).read(_storiesProvider);
-
-    final myStories = stories.where((s) => s.userId == currentUserId).toList();
-    final otherStories =
-        stories.where((s) => s.userId != currentUserId).toList();
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Titre de section
-          Row(
-            children: [
-              Container(
-                width: 3,
-                height: 14,
-                decoration: BoxDecoration(
-                  color: ThixPolicy.primary,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(l10n.t('network_briefing_title'),
-                  style: ThixPolicy.labelStyle.copyWith(
-                    color: ThixPolicy.textMain,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
-                  )),
-              const Spacer(),
-              if (!loading && otherStories.isNotEmpty)
-                Text(
-                  '${otherStories.length} ${l10n.t("network_briefing_updates")}',
-                  style: ThixPolicy.captionStyle.copyWith(
-                    color: ThixPolicy.textSecondary,
+  Widget _buildGreetingHeader(l10n, currentUser, String firstName) {
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+        child: Row(
+          children: [
+            GestureDetector(
+              onTap: () => _safePush('/network/profile/${currentUser.id}'),
+              child: _ringAvatar(
+                  url: currentUser.photoUrl, isLive: false, size: 44),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${l10n.t(_greetingKey())}, $firstName 👋',
+                    style: ThixPolicy.h2Style.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: ThixPolicy.textMain,
+                      fontSize: 20,
+                    ),
                   ),
-                ),
-            ],
+                  const SizedBox(height: 2),
+                  Text(
+                    l10n.t('network_greeting_subtitle'),
+                    style: ThixPolicy.captionStyle.copyWith(
+                        color: ThixPolicy.textSecondary, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            _glassIconButton(
+              icon: Icons.notifications_none_rounded,
+              label: l10n.t('network_notifications'),
+              onTap: () => _safePush('/network/notifications'),
+              badge: true,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCreatorsRow(l10n, String currentUserId, Set<String> liveHostIds) {
+    final loading = ref.watch(_loadingStoriesProvider);
+    final stories = ref.watch(_storiesProvider);
+    final myStories = stories.where((s) => s.userId == currentUserId).toList();
+    final others = stories.where((s) => s.userId != currentUserId).toList();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        children: [
+          _sectionHeader(
+            l10n.t('network_creators_follow'),
+            l10n.t('network_see_all'),
+            () => _safePush('/network/creators'),
           ),
           const SizedBox(height: 12),
-
-          // Cartes briefing horizontales
-          if (loading)
-            const _BriefingSkeleton()
-          else
-            SizedBox(
-              height: 108,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: 1 + otherStories.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
-                itemBuilder: (c, i) {
-                  if (i == 0) {
-                    return _BriefingCard(
-                      type: _BriefingType.me,
-                      hasStory: myStories.isNotEmpty,
-                      isLive: liveHostIds.contains(currentUserId),
-                      avatar: currentUserAvatar,
-                      title: myStories.isNotEmpty
-                          ? l10n.t('network_briefing_my_update')
-                          : l10n.t('network_briefing_create_update'),
-                      subtitle: myStories.isNotEmpty
-                          ? l10n.t('network_briefing_view')
-                          : l10n.t('network_briefing_tap_to_share'),
-                      onTap: myStories.isNotEmpty
-                          ? () {
-                              HapticFeedback.selectionClick();
-                              context.push('/network/stories/view',
-                                  extra: {
-                                    'stories': myStories,
-                                    'initialIndex': 0
-                                  });
-                            }
-                          : onCreateStory,
-                    );
-                  }
-                  final story = otherStories[i - 1];
-                  return _BriefingCard(
-                    type: _BriefingType.other,
-                    hasStory: true,
-                    isLive: liveHostIds.contains(story.userId),
-                    avatar: story.userAvatar,
-                    title: story.userName.split(' ').first,
-                    subtitle: l10n.t('network_briefing_new_update'),
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      context.push('/network/stories/view',
-                          extra: {'stories': [story], 'initialIndex': 0});
+          SizedBox(
+            height: 92,
+            child: loading
+                ? const Center(child: SizedBox(
+                    width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2)))
+                : ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    itemCount: others.length + 1,
+                    separatorBuilder: (_, __) => const SizedBox(width: 16),
+                    itemBuilder: (c, i) {
+                      if (i == 0) {
+                        return _creatorItem(
+                          name: l10n.t('network_your_story'),
+                          url: myStories.isNotEmpty
+                              ? myStories.first.userAvatar
+                              : null,
+                          isMe: true,
+                          isLive: liveHostIds.contains(currentUserId),
+                          onTap: myStories.isNotEmpty
+                              ? () => _safePush('/network/stories/view')
+                              : _openCreateStory,
+                        );
+                      }
+                      final s = others[i - 1];
+                      return _creatorItem(
+                        name: s.userName.split(' ').first,
+                        url: s.userAvatar,
+                        isLive: liveHostIds.contains(s.userId),
+                        onTap: () => _safePush('/network/stories/view'),
+                      );
                     },
-                  );
-                },
-              ),
-            ),
+                  ),
+          ),
         ],
       ),
     );
   }
-}
 
-enum _BriefingType { me, other }
-
-class _BriefingCard extends StatelessWidget {
-  final _BriefingType type;
-  final bool hasStory;
-  final bool isLive;
-  final String? avatar;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _BriefingCard({
-    required this.type,
-    required this.hasStory,
-    required this.isLive,
-    required this.avatar,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _creatorItem({
+    required String name,
+    String? url,
+    bool isMe = false,
+    bool isLive = false,
+    required VoidCallback onTap,
+  }) {
     return Semantics(
       button: true,
-      label: '$title. $subtitle',
+      label: name,
       child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 180,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: ThixPolicy.card,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isLive
-                  ? ThixPolicy.danger.withValues(alpha: 0.4)
-                  : ThixPolicy.border,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: ThixPolicy.inkDeep.withValues(alpha: 0.04),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: SizedBox(
+          width: 68,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
+              Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  HexAvatar(size: 36, imageUrl: avatar, isLive: isLive),
-                  const Spacer(),
-                  if (type == _BriefingType.me && !hasStory)
-                    Container(
-                      width: 24,
-                      height: 24,
-                      decoration: BoxDecoration(
-                        color: ThixPolicy.primary,
-                        borderRadius: BorderRadius.circular(6),
+                  _ringAvatar(url: url, isLive: isLive, size: 58),
+                  if (isMe)
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          color: ThixPolicy.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: const Icon(Icons.add_rounded,
+                            size: 12, color: Colors.white),
                       ),
-                      child: const Icon(Icons.add_rounded,
-                          color: Colors.white, size: 14),
-                    )
-                  else if (isLive)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: ThixPolicy.danger,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text('LIVE',
-                          style: ThixPolicy.captionStyle.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 9,
-                              letterSpacing: 0.5)),
                     ),
                 ],
               ),
-              const SizedBox(height: 10),
-              Text(title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: ThixPolicy.bodyStyle.copyWith(
-                      color: ThixPolicy.textMain,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13)),
-              const SizedBox(height: 2),
-              Text(subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: ThixPolicy.captionStyle.copyWith(
-                      color: ThixPolicy.textSecondary, fontSize: 11)),
+              const SizedBox(height: 6),
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: ThixPolicy.captionStyle.copyWith(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: ThixPolicy.textMain),
+              ),
             ],
           ),
         ),
       ),
     );
   }
-}
 
-class _BriefingSkeleton extends StatelessWidget {
-  const _BriefingSkeleton();
+  Widget _ringAvatar({String? url, required bool isLive, required double size}) {
+    return Container(
+      padding: const EdgeInsets.all(2.5),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isLive
+              ? [ThixPolicy.danger, ThixPolicy.warning]
+              : [ThixPolicy.primary, ThixPolicy.gold],
+        ),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+            shape: BoxShape.circle, color: ThixPolicy.card),
+        child: CircleAvatar(
+          radius: size / 2,
+          backgroundColor: ThixPolicy.surfaceSoft,
+          backgroundImage:
+              (url != null && url.isNotEmpty) ? CachedNetworkImageProvider(url) : null,
+          child: (url == null || url.isEmpty)
+              ? Icon(Icons.person_rounded,
+                  size: size * 0.5, color: ThixPolicy.textMuted)
+              : null,
+        ),
+      ),
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 108,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: 3,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (_, __) => Container(
-          width: 180,
-          decoration: BoxDecoration(
-            color: ThixPolicy.surfaceSoft,
-            borderRadius: BorderRadius.circular(12),
+  Widget _glassIconButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool badge = false,
+  }) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: _Glass(
+          radius: 14,
+          alpha: 0.6,
+          blur: 10,
+          padding: const EdgeInsets.all(10),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(icon, size: 20, color: ThixPolicy.textMain),
+              if (badge)
+                Positioned(
+                  top: -2,
+                  right: -2,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: ThixPolicy.danger,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
     );
   }
-}
 
-// ============================================================================
-// COMPOSE ENTRY
-// ============================================================================
-
-class _ComposeEntry extends StatelessWidget {
-  final String? avatarUrl;
-  final VoidCallback onTap;
-
-  const _ComposeEntry({required this.avatarUrl, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: ThixPolicy.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: ThixPolicy.border),
-      ),
-      child: Row(
-        children: [
-          HexAvatar(size: 40, imageUrl: avatarUrl),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Semantics(
-              button: true,
-              label: l10n.t('network_create_post'),
-              child: GestureDetector(
-                onTap: onTap,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: ThixPolicy.surfaceSoft,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(l10n.t('network_create_post_hint'),
-                      style: ThixPolicy.bodyStyle.copyWith(
-                          color: ThixPolicy.textMuted)),
-                ),
+  Widget _buildSearchBar(l10n) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: _Glass(
+        radius: 16,
+        alpha: 0.6,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Icon(Icons.search_rounded, size: 18, color: ThixPolicy.textMuted),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                l10n.t('network_search_hint'),
+                style: ThixPolicy.bodyStyle.copyWith(
+                    color: ThixPolicy.textMuted, fontSize: 13.5),
               ),
             ),
+          ],
+        ),
+      ),
+    ).addGestureRecognizer?.call ?? GestureDetector(
+      onTap: () => _safePush('/network/search'),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+        child: _Glass(
+          radius: 16,
+          alpha: 0.6,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              Icon(Icons.search_rounded, size: 18, color: ThixPolicy.textMuted),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  l10n.t('network_search_hint'),
+                  style: ThixPolicy.bodyStyle.copyWith(
+                      color: ThixPolicy.textMuted, fontSize: 13.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategoryChips(l10n) {
+    final feedType = ref.watch(_feedTypeProvider);
+    final filters = {
+      'foryou': l10n.t('network_filter_foryou'),
+      'network': l10n.t('network_filter_network'),
+      'recent': l10n.t('network_filter_recent'),
+      'popular': l10n.t('network_filter_popular'),
+    };
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: SizedBox(
+        height: 40,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          itemCount: filters.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (c, i) {
+            final e = filters.entries.elementAt(i);
+            final active = feedType == e.key;
+            return Semantics(
+              button: true,
+              selected: active,
+              label: e.value,
+              child: GestureDetector(
+                onTap: () {
+                  if (active || !_throttle()) return;
+                  HapticFeedback.lightImpact();
+                  ref.read(_feedTypeProvider.notifier).state = e.key;
+                  ref.read(feedProvider.notifier).loadFeed(feedType: e.key, force: true);
+                  _lastRefreshTime = DateTime.now();
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: active ? ThixPolicy.danger : Colors.white.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: active ? ThixPolicy.danger : Colors.white.withValues(alpha: 0.8)),
+                  ),
+                  child: Text(
+                    e.value,
+                    style: ThixPolicy.labelStyle.copyWith(
+                      color: active ? Colors.white : ThixPolicy.textSecondary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeaturedCard(l10n, List posts) {
+    final featured = posts.firstWhere(
+      (p) => p.hasImages || p.hasVideos,
+      orElse: () => posts.first,
+    );
+    final cover = featured.imageUrls.isNotEmpty ? featured.imageUrls.first : null;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      child: _Glass(
+        radius: 24,
+        alpha: 0.0,
+        blur: 0,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Stack(
+            children: [
+              if (cover != null)
+                CachedNetworkImage(
+                  imageUrl: cover,
+                  height: 240,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                )
+              else
+                Container(height: 240, color: ThixPolicy.primary.withValues(alpha: 0.2)),
+              // Overlay gradient
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        ThixPolicy.inkDeep.withValues(alpha: 0.85),
+                      ],
+                      stops: const [0.4, 1],
+                    ),
+                  ),
+                ),
+              ),
+              // Badge À LA UNE (glass)
+              Positioned(
+                top: 14,
+                left: 14,
+                child: _Glass(
+                  radius: 20,
+                  alpha: 0.25,
+                  blur: 10,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  child: Text(
+                    l10n.t('network_featured'),
+                    style: ThixPolicy.captionStyle.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5),
+                  ),
+                ),
+              ),
+              // Contenu bas
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 16,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      featured.content.isNotEmpty
+                          ? featured.content.split('\n').first
+                          : featured.authorName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: ThixPolicy.titleStyle.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        // CTA Explorer (glass)
+                        GestureDetector(
+                          onTap: () => _safePush('/network/comments/${featured.id}'),
+                          child: _Glass(
+                            radius: 20,
+                            alpha: 0.25,
+                            blur: 10,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  l10n.t('network_explore_cta'),
+                                  style: ThixPolicy.labelStyle.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(width: 6),
+                                const Icon(Icons.arrow_forward_rounded,
+                                    size: 14, color: Colors.white),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        Row(
+                          children: [
+                            const Icon(Icons.remove_red_eye_outlined,
+                                size: 14, color: Colors.white70),
+                            const SizedBox(width: 4),
+                            Text(
+                              _formatCount(featured.viewCount),
+                              style: ThixPolicy.captionStyle.copyWith(
+                                  color: Colors.white70,
+                                  fontWeight: FontWeight.w700),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPopularGrid(l10n, List posts) {
+    final popular = [...posts]
+      ..sort((a, b) => b.viewCount.compareTo(a.viewCount));
+    final top = popular.take(4).toList();
+    if (top.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      child: Column(
+        children: [
+          _sectionHeader(
+            l10n.t('network_popular_now'),
+            l10n.t('network_see_all'),
+            () => _safePush('/network/discover'),
+          ),
+          const SizedBox(height: 12),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 0.85,
+            ),
+            itemCount: top.length,
+            itemBuilder: (c, i) {
+              final p = top[i];
+              final cover = p.imageUrls.isNotEmpty ? p.imageUrls.first : null;
+              return Semantics(
+                button: true,
+                label: p.authorName,
+                child: GestureDetector(
+                  onTap: () => _safePush('/network/comments/${p.id}'),
+                  child: _Glass(
+                    radius: 18,
+                    alpha: 0.0,
+                    blur: 0,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (cover != null)
+                            CachedNetworkImage(
+                                imageUrl: cover, fit: BoxFit.cover)
+                          else
+                            Container(color: ThixPolicy.surfaceSoft),
+                          Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.transparent,
+                                    ThixPolicy.inkDeep.withValues(alpha: 0.8),
+                                  ],
+                                  stops: const [0.5, 1],
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            left: 10,
+                            right: 10,
+                            bottom: 10,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  p.authorName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: ThixPolicy.captionStyle.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(height: 2),
+                                Row(
+                                  children: [
+                                    const Icon(Icons.remove_red_eye_outlined,
+                                        size: 12, color: Colors.white70),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${_formatCount(p.viewCount)} ${l10n.t("network_views")}',
+                                      style: ThixPolicy.captionStyle.copyWith(
+                                          color: Colors.white70, fontSize: 10),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ],
       ),
     );
   }
-}
 
-// ============================================================================
-// SEGMENTED CONTROL (iOS-style, remplace filters chips)
-// ============================================================================
-
-class _FeedSegmentedControl extends ConsumerWidget {
-  final ValueChanged<String> onChanged;
-
-  const _FeedSegmentedControl({required this.onChanged});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final l10n = AppLocalizations.of(context);
-    final feedType = ref.watch(_feedTypeProvider);
-
-    final segments = [
-      {'key': 'foryou', 'label': l10n.t('network_filter_foryou')},
-      {'key': 'network', 'label': l10n.t('network_filter_network')},
-      {'key': 'recent', 'label': l10n.t('network_filter_recent')},
-      {'key': 'popular', 'label': l10n.t('network_filter_popular')},
-    ];
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: ThixPolicy.surfaceSoft,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: ThixPolicy.border),
-      ),
-      child: Row(
-        children: segments.map((s) {
-          final active = feedType == s['key'];
-          return Expanded(
-            child: Semantics(
-              button: true,
-              selected: active,
-              label: s['label'],
-              child: GestureDetector(
-                onTap: () => onChanged(s['key']!),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    color: active ? ThixPolicy.card : Colors.transparent,
-                    borderRadius: BorderRadius.circular(7),
-                    boxShadow: active
-                        ? [
-                            BoxShadow(
-                              color: ThixPolicy.inkDeep.withValues(alpha: 0.06),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ]
-                        : [],
-                  ),
-                  child: Center(
-                    child: Text(
-                      s['label']!,
-                      style: ThixPolicy.labelStyle.copyWith(
-                        color: active
-                            ? ThixPolicy.textMain
-                            : ThixPolicy.textSecondary,
-                        fontWeight:
-                            active ? FontWeight.w600 : FontWeight.w500,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// DISCOVERY BAND (suggestions + lives)
-// ============================================================================
-
-class _DiscoveryBand extends ConsumerWidget {
-  final List<Map<String, dynamic>> liveSessions;
-
-  const _DiscoveryBand({required this.liveSessions});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final l10n = AppLocalizations.of(context);
+  Widget _buildCommunitiesRow(l10n) {
     final suggestions = ref.watch(_suggestionsProvider);
-    final totalCount = suggestions.length + liveSessions.length;
-
-    return Container(
-      margin: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      decoration: BoxDecoration(
-        color: ThixPolicy.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: ThixPolicy.border),
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 3,
-                height: 14,
-                decoration: BoxDecoration(
-                  color: ThixPolicy.warning,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(l10n.t('network_discover'),
-                  style: ThixPolicy.labelStyle.copyWith(
-                    color: ThixPolicy.textMain,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
-                  )),
-              const Spacer(),
-              Text('$totalCount ${l10n.t("network_discover_count")}',
-                  style: ThixPolicy.captionStyle.copyWith(
-                    color: ThixPolicy.textSecondary,
-                  )),
-            ],
+          _sectionHeader(
+            l10n.t('network_communities'),
+            l10n.t('network_see_all'),
+            () => _safePush('/network/communities'),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           SizedBox(
-            height: 92,
+            height: 96,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              itemCount: totalCount,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: suggestions.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
               itemBuilder: (c, i) {
-                if (i < suggestions.length) {
-                  final u = suggestions[i];
-                  return _DiscoveryUserCard(
-                    user: u,
-                    onConnect: () async {
-                      HapticFeedback.selectionClick();
-                      ref.read(_suggestionsProvider.notifier).state =
-                          suggestions.where((s) => s.id != u.id).toList();
-                      try {
-                        await ref
-                            .read(networkServiceProvider)
-                            .sendConnectionRequest(u.id);
-                      } catch (e) {
-                        _NetworkLogger.error('Connection failed',
-                            {'error': '$e'});
-                      }
-                    },
-                    onViewProfile: () {
-                      HapticFeedback.selectionClick();
-                      context.push('/network/profile/${u.id}');
-                    },
-                  );
-                } else {
-                  final live = liveSessions[i - suggestions.length];
-                  return _DiscoveryLiveCard(session: live);
-                }
+                final u = suggestions[i];
+                return _Glass(
+                  radius: 16,
+                  alpha: 0.6,
+                  padding: const EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: 150,
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: ThixPolicy.surfaceSoft,
+                          backgroundImage: u.avatar != null
+                              ? CachedNetworkImageProvider(u.avatar)
+                              : null,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                u.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: ThixPolicy.captionStyle.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                    color: ThixPolicy.textMain),
+                              ),
+                              const SizedBox(height: 6),
+                              GestureDetector(
+                                onTap: () async {
+                                  HapticFeedback.selectionClick();
+                                  ref.read(_suggestionsProvider.notifier).state =
+                                      suggestions.where((s) => s.id != u.id).toList();
+                                  try {
+                                    await ref
+                                        .read(networkServiceProvider)
+                                        .sendConnectionRequest(u.id);
+                                  } catch (e) {
+                                    _NetworkLogger.error('Connect failed',
+                                        {'error': '$e'});
+                                  }
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: ThixPolicy.danger,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '+ ${l10n.t("network_connect")}',
+                                    style: ThixPolicy.captionStyle.copyWith(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
               },
             ),
           ),
@@ -1468,248 +1159,186 @@ class _DiscoveryBand extends ConsumerWidget {
       ),
     );
   }
-}
 
-class _DiscoveryUserCard extends StatelessWidget {
-  final dynamic user;
-  final VoidCallback onConnect;
-  final VoidCallback onViewProfile;
-
-  const _DiscoveryUserCard({
-    required this.user,
-    required this.onConnect,
-    required this.onViewProfile,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return Semantics(
-      button: true,
-      label: user.name,
-      child: GestureDetector(
-        onTap: onViewProfile,
-        child: Container(
-          width: 140,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: ThixPolicy.surfaceSoft,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: ThixPolicy.border),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  HexAvatar(size: 32, imageUrl: user.avatar),
-                  const Spacer(),
-                  Semantics(
-                    button: true,
-                    label: l10n.t('network_connect'),
-                    child: GestureDetector(
-                      onTap: onConnect,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: ThixPolicy.primary,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Icon(Icons.person_add_alt_1_rounded,
-                            size: 12, color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const Spacer(),
-              Text(user.name.split(' ').first,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: ThixPolicy.bodyStyle.copyWith(
-                      color: ThixPolicy.textMain,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12.5)),
-              const SizedBox(height: 2),
-              Text(user.title ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: ThixPolicy.captionStyle.copyWith(
-                      color: ThixPolicy.textSecondary, fontSize: 10.5)),
-            ],
-          ),
-        ),
-      ),
+  Widget _buildFeedHeader(l10n) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 4),
+      child: _sectionHeader(l10n.t('network_feed_title'), null, null),
     );
   }
-}
 
-class _DiscoveryLiveCard extends StatelessWidget {
-  final Map<String, dynamic> session;
-
-  const _DiscoveryLiveCard({required this.session});
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return Semantics(
-      button: true,
-      label:
-          '${l10n.t("network_live")} ${(session['host_name']?.toString() ?? "Hôte")}',
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.selectionClick();
-          final liveSession = LiveSession(
-            id: session['id']?.toString() ?? '',
-            channelName: session['channel_name']?.toString() ?? '',
-            title: session['title']?.toString() ?? 'Live',
-            hostId: session['host_id']?.toString() ?? '',
-            hostName: session['host_name']?.toString() ?? 'Hôte THIX',
-            hostAvatarUrl: session['host_avatar']?.toString(),
-          );
-          context.push('/network/live/view', extra: liveSession);
-        },
-        child: Container(
-          width: 140,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                ThixPolicy.danger.withValues(alpha: 0.08),
-                ThixPolicy.danger.withValues(alpha: 0.02),
-              ],
+  Widget _sectionHeader(String title, String? action, VoidCallback? onAction) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: ThixPolicy.titleStyle.copyWith(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                  color: ThixPolicy.textMain),
             ),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-                color: ThixPolicy.danger.withValues(alpha: 0.25)),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  HexAvatar(
-                    size: 32,
-                    imageUrl: session['host_avatar']?.toString(),
-                    isLive: true,
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: ThixPolicy.danger,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 5,
-                          height: 5,
-                          decoration: const BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 3),
-                        Text('LIVE',
-                            style: ThixPolicy.captionStyle.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 9,
-                                letterSpacing: 0.5)),
-                      ],
-                    ),
-                  ),
-                ],
+          if (action != null && onAction != null)
+            GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                onAction();
+              },
+              child: Text(
+                action,
+                style: ThixPolicy.labelStyle.copyWith(
+                    color: ThixPolicy.danger, fontWeight: FontWeight.w700),
               ),
-              const Spacer(),
-              Text(
-                (session['host_name']?.toString() ?? 'Hôte').split(' ').first,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: ThixPolicy.bodyStyle.copyWith(
-                    color: ThixPolicy.textMain,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12.5),
-              ),
-              const SizedBox(height: 2),
-              Text(session['title']?.toString() ?? 'Live',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: ThixPolicy.captionStyle.copyWith(
-                      color: ThixPolicy.textSecondary, fontSize: 10.5)),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
     );
   }
-}
 
-// ============================================================================
-// SHIMMER FEED
-// ============================================================================
-
-class _ShimmerFeed extends StatefulWidget {
-  const _ShimmerFeed();
-
-  @override
-  State<_ShimmerFeed> createState() => _ShimmerFeedState();
-}
-
-class _ShimmerFeedState extends State<_ShimmerFeed>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat();
+  Widget _buildEmpty(l10n) {
+    return Padding(
+      padding: const EdgeInsets.all(60),
+      child: Column(
+        children: [
+          Icon(Icons.inbox_outlined, size: 40, color: ThixPolicy.textMuted),
+          const SizedBox(height: 16),
+          Text(l10n.t('network_empty_feed'),
+              style: ThixPolicy.bodyStyle.copyWith(
+                  color: ThixPolicy.textSecondary,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 18),
+          OutlinedButton(
+            onPressed: _onRefresh,
+            child: Text(l10n.t('common_refresh')),
+          ),
+        ],
+      ),
+    );
   }
 
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildShimmer() {
     return Column(
       children: List.generate(
         3,
-        (i) => AnimatedBuilder(
-          animation: _ctrl,
-          builder: (_, __) => Container(
-            margin: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-            height: 220,
-            decoration: BoxDecoration(
-              color: ThixPolicy.surfaceSoft,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [
-                    ThixPolicy.card.withValues(alpha: 0.0),
-                    ThixPolicy.card.withValues(alpha: 0.4),
-                    ThixPolicy.card.withValues(alpha: 0.0),
-                  ],
-                  stops: [
-                    (_ctrl.value - 0.3).clamp(0.0, 1.0),
-                    _ctrl.value,
-                    (_ctrl.value + 0.3).clamp(0.0, 1.0),
-                  ],
+        (i) => Container(
+          margin: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          height: 200,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(20),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showShareSheet(l10n, dynamic post) {
+    if (!_throttle()) return;
+    final link = 'https://thix.id/network/post/${post.id}';
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _Glass(
+        radius: 24,
+        alpha: 0.95,
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.link, color: ThixPolicy.textMain),
+                title: Text(l10n.t('network_copy_link')),
+                onTap: () async {
+                  await Clipboard.setData(ClipboardData(text: link));
+                  if (mounted) Navigator.pop(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.close, color: ThixPolicy.textSecondary),
+                title: Text(l10n.t('common_close')),
+                onTap: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomNav(l10n, bool visible, currentUser) {
+    return AnimatedSlide(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeInOutCubic,
+      offset: visible ? Offset.zero : const Offset(0, 1.6),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: visible ? 1 : 0,
+        child: IgnorePointer(
+          ignoring: !visible,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: _Glass(
+                radius: 32,
+                alpha: 0.85,
+                blur: _kGlassBlur,
+                child: SizedBox(
+                  height: 64,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _navBtn(Icons.home_rounded, l10n.t('network_nav_home'), true,
+                          () => _scrollController.animateTo(0,
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOut)),
+                      _navBtn(Icons.explore_outlined,
+                          l10n.t('network_nav_discover'), false,
+                          () => _safePush('/network/discover')),
+                      // FAB central
+                      Semantics(
+                        button: true,
+                        label: l10n.t('network_nav_post'),
+                        child: GestureDetector(
+                          onTap: () {
+                            HapticFeedback.mediumImpact();
+                            showDialog(
+                                context: context,
+                                builder: (_) => const CreatePostDialog());
+                          },
+                          child: Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [ThixPolicy.danger, ThixPolicy.warning],
+                              ),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: ThixPolicy.danger.withValues(alpha: 0.4),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(Icons.add_rounded,
+                                color: Colors.white, size: 26),
+                          ),
+                        ),
+                      ),
+                      _navBtn(Icons.mail_outline_rounded,
+                          l10n.t('network_nav_messages'), false,
+                          () => _safePush('/network/messages')),
+                      _navBtn(Icons.person_outline_rounded,
+                          l10n.t('network_nav_profile'), false,
+                          () => _safePush('/network/profile/${currentUser.id}')),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1718,40 +1347,47 @@ class _ShimmerFeedState extends State<_ShimmerFeed>
       ),
     );
   }
-}
 
-// ============================================================================
-// SHEET ACTION (utilitaire)
-// ============================================================================
-
-class _SheetAction extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _SheetAction({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: ThixPolicy.textMain),
-            const SizedBox(width: 14),
-            Text(label,
-                style: ThixPolicy.bodyStyle.copyWith(
-                    color: ThixPolicy.textMain, fontWeight: FontWeight.w500)),
-          ],
+  Widget _navBtn(IconData ic, String label, bool active, VoidCallback tap) {
+    return Semantics(
+      button: true,
+      selected: active,
+      label: label,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          tap();
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(ic,
+                  size: 22,
+                  color: active
+                      ? ThixPolicy.primary
+                      : ThixPolicy.textSecondary.withValues(alpha: 0.7)),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: ThixPolicy.microStyle.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: active
+                        ? ThixPolicy.primary
+                        : ThixPolicy.textSecondary.withValues(alpha: 0.7)),
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  String _formatCount(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return '$n';
   }
 }
