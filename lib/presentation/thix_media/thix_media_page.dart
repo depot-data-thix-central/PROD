@@ -23,7 +23,7 @@ import 'media_routes.dart';
 import 'utils/media_constants.dart';
 import 'widgets/fil_feed_view.dart';
 import 'widgets/media_poster_card.dart';
-import 'package:thix_id/presentation/thix_media/widgets/tdia_logo.dart
+import 'package:thix_id/presentation/thix_media/widgets/tdia_logo.dart';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
