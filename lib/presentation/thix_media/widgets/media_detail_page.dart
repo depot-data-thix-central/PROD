@@ -203,7 +203,6 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
   void _openCreatorProfile(String creatorId) {
     if (!_throttle()) return;
     HapticFeedback.selectionClick();
-    // ✅ go_router au lieu de Navigator.push
     context.pushNamed(AppRoutes.profile, extra: creatorId);
     _DetailLogger.info('Creator profile opened', {'creatorId': creatorId});
   }
@@ -211,9 +210,9 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
   void _openSuggestion(MediaContent suggestion) {
     if (!_throttle()) return;
     HapticFeedback.mediumImpact();
-    // ✅ go_router push (PAS pushReplacement qui casse la stack)
+    // CORRECTION : Route texte statique
     context.push(
-      '${AppRoutes.mediaDetail}/${suggestion.id}',
+      '/media/detail/${suggestion.id}',
       extra: {'item': suggestion, 'catalog': widget.catalog},
     );
     _DetailLogger.info('Suggestion opened', {'id': suggestion.id});
@@ -245,8 +244,9 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
           style: TextStyle(color: ThixPolicy.textMain),
         ),
         content: Text(
+          // CORRECTION : args passe en liste
           l10n.t('detail_confirm_unlock_message',
-              args: {'price': _formatPrice(l10n)}),
+              args: [_formatPrice(l10n)]),
           style: TextStyle(color: ThixPolicy.textMuted),
         ),
         actions: [
@@ -446,7 +446,8 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
             runSpacing: 8,
             children: List.generate(_episodes.length, (i) {
               final active = i == _currentEpisode;
-              final label = l10n.t('detail_part_n', args: {'n': '${i + 1}'});
+              // CORRECTION : args passe en liste
+              final label = l10n.t('detail_part_n', args: ['${i + 1}']);
               return Semantics(
                 button: true,
                 selected: active,
@@ -510,7 +511,8 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
             button: !creatorIsOfficial,
             label: creatorIsOfficial
                 ? 'TDIA'
-                : l10n.t('detail_open_creator', args: {'name': displayName}),
+                // CORRECTION : args passe en liste
+                : l10n.t('detail_open_creator', args: [displayName]),
             child: GestureDetector(
               onTap: !creatorIsOfficial && creatorId.isNotEmpty
                   ? () => _openCreatorProfile(creatorId)
@@ -768,8 +770,9 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 36),
                 child: Text(
+                  // CORRECTION : args passe en liste
                   l10n.t('detail_premium_message',
-                      args: {'price': _formatPrice(l10n)}),
+                      args: [_formatPrice(l10n)]),
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: ThixPolicy.textMuted,
@@ -781,8 +784,9 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
               const SizedBox(height: 28),
               Semantics(
                 button: true,
+                // CORRECTION : args passe en liste
                 label: l10n.t('detail_unlock_button',
-                    args: {'price': _formatPrice(l10n)}),
+                    args: [_formatPrice(l10n)]),
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ThixPolicy.warning,
@@ -794,8 +798,9 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
                   ),
                   onPressed: _unlockPremium,
                   child: Text(
+                    // CORRECTION : args passe en liste
                     l10n.t('detail_unlock_button',
-                        args: {'price': _formatPrice(l10n)}),
+                        args: [_formatPrice(l10n)]),
                     style: const TextStyle(
                         fontSize: 16, fontWeight: FontWeight.w900),
                   ),
