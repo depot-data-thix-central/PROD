@@ -39,7 +39,7 @@ class _FormLogger {
   static void _log(String l, String m, Map<String, dynamic>? d) {
     if (!kDebugMode && l == 'INFO') return;
     final data = d != null
-        ? ' ${d.entries.map((e) => '${e.key}=${e.value}').join(', ')}'
+        ? ' \( {d.entries.map((e) => ' \){e.key}=${e.value}').join(', ')}'
         : '';
     debugPrint('[$_tag] [$l] $m$data');
   }
@@ -58,6 +58,11 @@ class _FormSanitizer {
         .trim();
     return s.length > maxLength ? s.substring(0, maxLength) : s;
   }
+}
+
+String _tr(AppLocalizations l10n, String key, [Map<String, String>? args]) {
+  if (args == null || args.isEmpty) return l10n.t(key);
+  return l10n.tn(key, args);
 }
 
 // ============================================================================
@@ -96,7 +101,7 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
     _isNew = e?.isNewRelease ?? true;
     _isTrending = e?.rankPosition != null;
     _rank = e?.rankPosition ?? 1;
-    _isFeedOnly = false; // TODO: e?.isFeedOnly ?? false;
+    _isFeedOnly = e?.isFeedOnly ?? false;
 
     _title.addListener(_markDirty);
     _subtitle.addListener(_markDirty);
@@ -253,7 +258,6 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
   }
 
   Future<void> _save() async {
-    // Throttle
     final now = DateTime.now();
     if (_lastSubmit != null && now.difference(_lastSubmit!) < _kSubmitThrottle) {
       _FormLogger.warn('Submit throttled');
@@ -286,6 +290,7 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
       isNewRelease: _isNew,
       isRecommended: !_isFeedOnly,
       isPublished: _isPublished,
+      isFeedOnly: _isFeedOnly,
       createdAt: widget.existing?.createdAt ?? DateTime.now(),
       updatedAt: DateTime.now(),
     );
@@ -312,7 +317,7 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(l10n.t('upload_error_generic', args: {'error': e.toString()})),
+            content: Text(_tr(l10n, 'upload_error_generic', {'error': e.toString()})),
             backgroundColor: ThixPolicy.danger,
             behavior: SnackBarBehavior.floating,
           ),
@@ -326,8 +331,13 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
     final l10n = AppLocalizations.of(context);
     final upload = ref.watch(mediaFormUploadProvider);
 
-    return WillPopScope(
-      onWillPop: _confirmDiscard,
+    return PopScope(
+      canPop: !_isDirty,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final ok = await _confirmDiscard();
+        if (ok && mounted) Navigator.pop(context);
+      },
       child: Container(
         height: MediaQuery.of(context).size.height * 0.94,
         decoration: BoxDecoration(
@@ -374,7 +384,7 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
                             10,
                             (i) => DropdownMenuItem(
                               value: i + 1,
-                              child: Text(l10n.t('form_top_n', args: {'n': '${i + 1}'})),
+                              child: Text(_tr(l10n, 'form_top_n', {'n': '${i + 1}'})),
                             ),
                           ),
                           onChanged: (v) {
@@ -387,7 +397,10 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
                 ),
                 const SizedBox(height: 14),
                 if (upload.saving) ...[
-                  UploadProgress(progress: upload.progress, statusKey: upload.statusKey, statusArgs: upload.statusArgs),
+                  UploadProgress(
+                    progress: upload.progress,
+                    status: _tr(l10n, upload.statusKey, upload.statusArgs),
+                  ),
                   const SizedBox(height: 14),
                 ],
                 if (upload.errorKey != null)
@@ -399,7 +412,7 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      l10n.t(upload.errorKey!, args: upload.errorArgs),
+                      _tr(l10n, upload.errorKey!, upload.errorArgs),
                       style: TextStyle(
                         color: ThixPolicy.danger,
                         fontSize: 12,
@@ -585,7 +598,7 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
               child: Semantics(
                 label: l10n.t('form_type'),
                 child: DropdownButtonFormField<String>(
-                  value: _type,
+                  initialValue: _type,
                   items: ['Films', 'Séries', 'Vidéos', 'Musique', 'En direct', 'Playlists']
                       .map((e) => DropdownMenuItem(value: e, child: Text(e)))
                       .toList(),
@@ -636,7 +649,7 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
                 color: ThixPolicy.textMain,
               ),
             ),
-            activeColor: ThixPolicy.primary,
+            activeThumbColor: ThixPolicy.primary,
             contentPadding: EdgeInsets.zero,
             onChanged: (v) {
               HapticFeedback.selectionClick();
@@ -660,7 +673,7 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
               l10n.t('form_switch_feed_only_hint'),
               style: TextStyle(fontSize: 11, color: ThixPolicy.textMuted),
             ),
-            activeColor: ThixPolicy.success,
+            activeThumbColor: ThixPolicy.success,
             contentPadding: EdgeInsets.zero,
             onChanged: (v) {
               HapticFeedback.selectionClick();
@@ -687,7 +700,7 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
                 color: _isFeedOnly ? ThixPolicy.textMuted : ThixPolicy.textMain,
               ),
             ),
-            activeColor: ThixPolicy.primary,
+            activeThumbColor: ThixPolicy.primary,
             contentPadding: EdgeInsets.zero,
             onChanged: _isFeedOnly
                 ? null
@@ -710,7 +723,7 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
                 color: _isFeedOnly ? ThixPolicy.textMuted : ThixPolicy.textMain,
               ),
             ),
-            activeColor: ThixPolicy.primary,
+            activeThumbColor: ThixPolicy.primary,
             contentPadding: EdgeInsets.zero,
             onChanged: _isFeedOnly
                 ? null
