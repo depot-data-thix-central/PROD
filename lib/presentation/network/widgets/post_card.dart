@@ -519,7 +519,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           text: '@$username',
           style: baseStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.bold),
           recognizer: recognizer,
-          semanticsLabel: l10n.t('post_mention', args: {'user': username}),
+          semanticsLabel: l10n.t('post_mention', args: [username]
         ));
       } else if (match.group(6) != null) {
         final tag = match.group(6)!;
@@ -534,7 +534,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           text: '#$tag',
           style: baseStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.bold),
           recognizer: recognizer,
-          semanticsLabel: l10n.t('post_hashtag', args: {'tag': tag}),
+          semanticsLabel: l10n.t('post_hashtag', args: [tag]
         ));
       } else if (match.group(7) != null) {
         final url = match.group(7)!;
@@ -925,7 +925,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
               Expanded(
                   child: Text(l10n.t('post_challenge_title'),
                       style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14, color: ThixPolicy.textMain))),
-              Text(l10n.t('post_challenge_participants', args: {'count': '$participantsCount'}),
+              Text(l10n.t('post_challenge_participants', args: ['$participantsCount']
                   style: ThixPolicy.captionStyle.copyWith(fontSize: 11, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.textMuted)),
             ],
           ),
@@ -1350,7 +1350,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       children: [
         Semantics(
           button: true,
-          label: l10n.t('post_open_profile', args: {'name': _PostCardValidators.sanitize(post.authorName)}),
+          label: l10n.t('post_open_profile', args: [_PostCardValidators.sanitize(post.authorName)]
           child: GestureDetector(
             onTap: () => _openProfile(post.userId),
             child: Stack(
@@ -1494,7 +1494,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
             onTap: () {
               HapticFeedback.selectionClick();
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(l10n.t('post_impressions', args: {'count': '$impressions'})),
+                  content: Text(l10n.t('post_impressions', args: ['$impressions']
                   behavior: SnackBarBehavior.floating));
             },
             semanticsLabel: l10n.t('post_impressions_label'),
@@ -2212,8 +2212,8 @@ class _LikersStackState extends State<_LikersStack> {
     final text = widget.isLikedByMe
         ? (widget.count == 1
             ? widget.l10n.t('post_liked_by_you')
-            : widget.l10n.t('post_liked_by_you_and_others', args: {'count': '${widget.count - 1}'}))
-        : widget.l10n.t('post_liked_by_others', args: {'count': '${widget.count}'});
+            : widget.l10n.t('post_liked_by_you_and_others', args: ['${widget.count - 1}']
+        : widget.l10n.t('post_liked_by_others', args: ['${widget.count}']
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
