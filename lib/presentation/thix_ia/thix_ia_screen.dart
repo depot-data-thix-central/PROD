@@ -18,7 +18,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 
-import '../../services/ai/ai_service.dart';
+import 'package:thix_id/presentation/thix_ia/services/ai_service.dart';
 
 // ============================================================================
 // PALETTE MONOCHROME (2 couleurs : blanc + encre)
