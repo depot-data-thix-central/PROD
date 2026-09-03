@@ -33,9 +33,10 @@ class _MediaProviderLogger {
 
   static void _log(String l, String m, Map<String, dynamic>? d) {
     if (!kDebugMode && l == 'INFO') return;
+    // CORRECTION : Syntaxe de l'interpolation de chaîne réparée
     final data = d == null
         ? ''
-        : ' \( {d.entries.map((e) => " \){e.key}=${e.value}").join(", ")}';
+        : ' ${d.entries.map((e) => '${e.key}=${e.value}').join(', ')}';
     debugPrint('[$_tag] [$l] $m$data');
   }
 }
@@ -220,7 +221,8 @@ final isFollowingProvider =
   }
 });
 
-class ThixMediaNotifier extends AsyncNotifier<List<MediaContent>> {
+// CORRECTION : Remplacement de AsyncNotifier par AutoDisposeAsyncNotifier
+class ThixMediaNotifier extends AutoDisposeAsyncNotifier<List<MediaContent>> {
   DateTime? _cursor;
   bool _hasMore = true;
   bool _loading = false;
