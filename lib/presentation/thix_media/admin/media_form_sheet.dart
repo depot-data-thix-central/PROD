@@ -1,7 +1,4 @@
-/// Media Form Sheet (Production Enterprise)
-/// ✅ ThixPolicy + i18n 8 langues + Semantics + logs structurés
-/// ✅ CachedNetworkImage + sanitization + maxLength + mounted checks
-/// ✅ HapticFeedback + throttling + confirmation fermeture
+/// Media Form Sheet — Riverpod (Production Enterprise)
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -16,10 +13,6 @@ import 'package:thix_id/models/media_content.dart';
 import 'media_upload_notifier.dart';
 import 'upload_progress.dart';
 
-// ============================================================================
-// CONSTANTS
-// ============================================================================
-
 const int _kMaxTitleLength = 100;
 const int _kMaxSubtitleLength = 120;
 const int _kMinTitleLength = 3;
@@ -27,27 +20,21 @@ const int _kMinYear = 1900;
 const int _kMaxYear = 2035;
 const Duration _kSubmitThrottle = Duration(seconds: 2);
 
-// ============================================================================
-// LOGGING
-// ============================================================================
-
 class _FormLogger {
   static const _tag = 'MediaForm';
+
   static void info(String m, [Map<String, dynamic>? d]) => _log('INFO', m, d);
   static void warn(String m, [Map<String, dynamic>? d]) => _log('WARN', m, d);
   static void error(String m, [Map<String, dynamic>? d]) => _log('ERROR', m, d);
+
   static void _log(String l, String m, Map<String, dynamic>? d) {
     if (!kDebugMode && l == 'INFO') return;
-    final data = d != null
-        ? ' \( {d.entries.map((e) => ' \){e.key}=${e.value}').join(', ')}'
-        : '';
+    final data = d == null
+        ? ''
+        : ' \( {d.entries.map((e) => " \){e.key}=${e.value}").join(", ")}';
     debugPrint('[$_tag] [$l] $m$data');
   }
 }
-
-// ============================================================================
-// SANITIZER
-// ============================================================================
 
 class _FormSanitizer {
   static String sanitize(String? input, {required int maxLength}) {
@@ -65,10 +52,6 @@ String _tr(AppLocalizations l10n, String key, [Map<String, String>? args]) {
   return l10n.tn(key, args);
 }
 
-// ============================================================================
-// FORM SHEET
-// ============================================================================
-
 class MediaFormSheet extends ConsumerStatefulWidget {
   final MediaContent? existing;
   final VoidCallback onSaved;
@@ -81,11 +64,17 @@ class MediaFormSheet extends ConsumerStatefulWidget {
 
 class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
   final _formKey = GlobalKey<FormState>();
-  late TextEditingController _title, _subtitle, _year;
+  late final TextEditingController _title;
+  late final TextEditingController _subtitle;
+  late final TextEditingController _year;
   String _type = 'Films';
-  bool _isPublished = true, _isNew = true, _isTrending = false, _isFeedOnly = false;
+  bool _isPublished = true;
+  bool _isNew = true;
+  bool _isTrending = false;
+  bool _isFeedOnly = false;
   int _rank = 1;
-  PlatformFile? _coverFile, _videoFile;
+  PlatformFile? _coverFile;
+  PlatformFile? _videoFile;
   DateTime? _lastSubmit;
   bool _isDirty = false;
 
@@ -95,18 +84,18 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
     final e = widget.existing;
     _title = TextEditingController(text: e?.title ?? '');
     _subtitle = TextEditingController(text: e?.subtitle ?? '');
-    _year = TextEditingController(text: e?.year ?? DateTime.now().year.toString());
+    _year = TextEditingController(
+      text: e?.year ?? DateTime.now().year.toString(),
+    );
     _type = e?.type ?? 'Films';
     _isPublished = e?.isPublished ?? true;
     _isNew = e?.isNewRelease ?? true;
     _isTrending = e?.rankPosition != null;
     _rank = e?.rankPosition ?? 1;
     _isFeedOnly = e?.isFeedOnly ?? false;
-
     _title.addListener(_markDirty);
     _subtitle.addListener(_markDirty);
     _year.addListener(_markDirty);
-
     _FormLogger.info('Form initialized', {'isEdit': e != null});
   }
 
@@ -124,7 +113,6 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
     _title.dispose();
     _subtitle.dispose();
     _year.dispose();
-    _FormLogger.info('Form disposed');
     super.dispose();
   }
 
@@ -165,46 +153,39 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
     if (!mounted) return;
     final l10n = AppLocalizations.of(context);
     HapticFeedback.selectionClick();
-
     try {
       final res = await FilePicker.platform.pickFiles(
         type: FileType.image,
         withData: true,
       );
-
       if (res != null && res.files.isNotEmpty) {
         final file = res.files.first;
         if (file.bytes == null) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(l10n.t('upload_cover_too_large_browser')),
-                backgroundColor: ThixPolicy.danger,
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(l10n.t('upload_cover_too_large_browser')),
+              backgroundColor: ThixPolicy.danger,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
           return;
         }
         setState(() {
           _coverFile = file;
           _isDirty = true;
         });
-        _FormLogger.info('Cover picked', {
-          'size': '${(file.size / 1024 / 1024).toStringAsFixed(1)}MB',
-        });
       }
     } catch (e) {
       _FormLogger.error('Pick cover failed', {'error': '$e'});
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.t('upload_memory_error')),
-            backgroundColor: ThixPolicy.danger,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.t('upload_memory_error')),
+          backgroundColor: ThixPolicy.danger,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -212,76 +193,66 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
     if (!mounted) return;
     final l10n = AppLocalizations.of(context);
     HapticFeedback.selectionClick();
-
     try {
       final res = await FilePicker.platform.pickFiles(
         type: FileType.video,
         withData: true,
       );
-
       if (res != null && res.files.isNotEmpty) {
         final file = res.files.first;
         if (file.bytes == null) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(l10n.t('upload_video_too_large_browser')),
-                backgroundColor: ThixPolicy.danger,
-                behavior: SnackBarBehavior.floating,
-                duration: const Duration(seconds: 4),
-              ),
-            );
-          }
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(l10n.t('upload_video_too_large_browser')),
+              backgroundColor: ThixPolicy.danger,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 4),
+            ),
+          );
           return;
         }
         setState(() {
           _videoFile = file;
           _isDirty = true;
         });
-        _FormLogger.info('Video picked', {
-          'size': '${(file.size / 1024 / 1024).toStringAsFixed(1)}MB',
-        });
       }
     } catch (e) {
       _FormLogger.error('Pick video failed', {'error': '$e'});
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(l10n.t('upload_memory_error')),
-            backgroundColor: ThixPolicy.danger,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.t('upload_memory_error')),
+          backgroundColor: ThixPolicy.danger,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
   }
 
   Future<void> _save() async {
     final now = DateTime.now();
-    if (_lastSubmit != null && now.difference(_lastSubmit!) < _kSubmitThrottle) {
-      _FormLogger.warn('Submit throttled');
+    if (_lastSubmit != null &&
+        now.difference(_lastSubmit!) < _kSubmitThrottle) {
       return;
     }
     _lastSubmit = now;
-
     if (!_formKey.currentState!.validate()) {
       HapticFeedback.heavyImpact();
       return;
     }
 
     final l10n = AppLocalizations.of(context);
-
-    final sanitizedTitle = _FormSanitizer.sanitize(_title.text, maxLength: _kMaxTitleLength);
-    final sanitizedSubtitle = _FormSanitizer.sanitize(_subtitle.text, maxLength: _kMaxSubtitleLength);
-    final sanitizedYear = _FormSanitizer.sanitize(_year.text, maxLength: 4);
-
     final baseItem = MediaContent(
       id: widget.existing?.id ?? '',
-      title: sanitizedTitle,
-      subtitle: sanitizedSubtitle,
+      title: _FormSanitizer.sanitize(_title.text, maxLength: _kMaxTitleLength),
+      subtitle: _FormSanitizer.sanitize(
+        _subtitle.text,
+        maxLength: _kMaxSubtitleLength,
+      ),
       type: _type,
-      year: sanitizedYear,
+      year: _FormSanitizer.sanitize(_year.text, maxLength: 4),
       coverUrl: widget.existing?.coverUrl ?? '',
       videoUrl: widget.existing?.videoUrl ?? '',
       viewCount: widget.existing?.viewCount ?? 0,
@@ -296,7 +267,6 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
     );
 
     HapticFeedback.mediumImpact();
-
     try {
       await ref.read(mediaFormUploadProvider.notifier).save(
             base: baseItem,
@@ -305,7 +275,6 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
             isNew: widget.existing == null,
             onSaved: widget.onSaved,
           );
-
       final uploadState = ref.read(mediaFormUploadProvider);
       if (uploadState.errorKey == null && mounted) {
         HapticFeedback.heavyImpact();
@@ -314,15 +283,16 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
       }
     } catch (e) {
       _FormLogger.error('Save failed', {'error': '$e'});
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_tr(l10n, 'upload_error_generic', {'error': e.toString()})),
-            backgroundColor: ThixPolicy.danger,
-            behavior: SnackBarBehavior.floating,
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _tr(l10n, 'upload_error_generic', {'error': e.toString()}),
           ),
-        );
-      }
+          backgroundColor: ThixPolicy.danger,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -340,12 +310,16 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
       },
       child: Container(
         height: MediaQuery.of(context).size.height * 0.94,
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           color: ThixPolicy.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
         ),
         padding: EdgeInsets.fromLTRB(
-            18, 10, 18, MediaQuery.of(context).viewInsets.bottom + 18),
+          18,
+          10,
+          18,
+          MediaQuery.of(context).viewInsets.bottom + 18,
+        ),
         child: Form(
           key: _formKey,
           child: SingleChildScrollView(
@@ -380,11 +354,13 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
                         label: l10n.t('form_rank'),
                         child: DropdownButton<int>(
                           value: _rank,
-                          items: List.generate(
+                          items: List<DropdownMenuItem<int>>.generate(
                             10,
-                            (i) => DropdownMenuItem(
+                            (i) => DropdownMenuItem<int>(
                               value: i + 1,
-                              child: Text(_tr(l10n, 'form_top_n', {'n': '${i + 1}'})),
+                              child: Text(
+                                _tr(l10n, 'form_top_n', {'n': '${i + 1}'}),
+                              ),
                             ),
                           ),
                           onChanged: (v) {
@@ -413,7 +389,7 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
                     ),
                     child: Text(
                       _tr(l10n, upload.errorKey!, upload.errorArgs),
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: ThixPolicy.danger,
                         fontSize: 12,
                       ),
@@ -435,133 +411,146 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
   }
 
   Widget _buildFilePickers(AppLocalizations l10n, bool saving) {
-    return RepaintBoundary(
-      child: Row(
-        children: [
-          Expanded(
-            child: Semantics(
-              button: true,
-              label: l10n.t('form_pick_cover'),
-              child: InkWell(
-                onTap: saving ? null : _pickCover,
-                child: Container(
-                  height: 110,
-                  decoration: BoxDecoration(
-                    color: ThixPolicy.surfaceSoft,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: _coverFile != null ? ThixPolicy.success : ThixPolicy.border,
-                      width: _coverFile != null ? 2 : 1,
-                    ),
+    return Row(
+      children: [
+        Expanded(
+          child: Semantics(
+            button: true,
+            label: l10n.t('form_pick_cover'),
+            child: InkWell(
+              onTap: saving ? null : _pickCover,
+              child: Container(
+                height: 110,
+                decoration: BoxDecoration(
+                  color: ThixPolicy.surfaceSoft,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: _coverFile != null
+                        ? ThixPolicy.success
+                        : ThixPolicy.border,
+                    width: _coverFile != null ? 2 : 1,
                   ),
-                  child: _coverFile != null
-                      ? Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.check_circle_rounded, color: ThixPolicy.success),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${(_coverFile!.size / 1024 / 1024).toStringAsFixed(1)} MB',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: ThixPolicy.textMain,
-                              ),
-                            ),
-                          ],
-                        )
-                      : widget.existing != null && widget.existing!.coverUrl.isNotEmpty
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(14),
-                              child: CachedNetworkImage(
-                                imageUrl: widget.existing!.coverUrl,
-                                fit: BoxFit.cover,
-                                width: double.infinity,
-                                height: 110,
-                                placeholder: (_, __) => const Center(
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                ),
-                                errorWidget: (_, __, ___) => Icon(
-                                  Icons.broken_image_rounded,
-                                  color: ThixPolicy.textMuted,
-                                ),
-                              ),
-                            )
-                          : Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.image_rounded, color: ThixPolicy.primary),
-                                const SizedBox(height: 4),
-                                Text(
-                                  l10n.t('form_cover_optional'),
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: ThixPolicy.textMain,
-                                  ),
-                                ),
-                              ],
-                            ),
                 ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Semantics(
-              button: true,
-              label: l10n.t('form_pick_video'),
-              child: InkWell(
-                onTap: saving ? null : _pickVideo,
-                child: Container(
-                  height: 110,
-                  decoration: BoxDecoration(
-                    color: ThixPolicy.surfaceSoft,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: _videoFile != null ? ThixPolicy.success : ThixPolicy.border,
-                      width: _videoFile != null ? 2 : 1,
-                    ),
-                  ),
-                  child: _videoFile != null
-                      ? Center(
-                          child: Column(
+                child: _coverFile != null
+                    ? Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.check_circle_rounded,
+                            color: ThixPolicy.success,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${(_coverFile!.size / 1024 / 1024).toStringAsFixed(1)} MB',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: ThixPolicy.textMain,
+                            ),
+                          ),
+                        ],
+                      )
+                    : (widget.existing != null &&
+                            widget.existing!.coverUrl.isNotEmpty)
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: CachedNetworkImage(
+                              imageUrl: widget.existing!.coverUrl,
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              height: 110,
+                              placeholder: (_, __) => const Center(
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                              errorWidget: (_, __, ___) => const Icon(
+                                Icons.broken_image_rounded,
+                                color: ThixPolicy.textMuted,
+                              ),
+                            ),
+                          )
+                        : Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(Icons.check_circle_rounded, color: ThixPolicy.success),
+                              const Icon(
+                                Icons.image_rounded,
+                                color: ThixPolicy.primary,
+                              ),
                               const SizedBox(height: 4),
                               Text(
-                                '${(_videoFile!.size / 1024 / 1024).toStringAsFixed(1)} MB',
-                                style: TextStyle(
-                                  fontSize: 10,
+                                l10n.t('form_cover_optional'),
+                                style: const TextStyle(
+                                  fontSize: 11,
                                   fontWeight: FontWeight.w700,
                                   color: ThixPolicy.textMain,
                                 ),
                               ),
                             ],
                           ),
-                        )
-                      : Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.video_library_rounded, color: ThixPolicy.primary),
-                            const SizedBox(height: 4),
-                            Text(
-                              l10n.t('form_video_optional'),
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: ThixPolicy.textMain,
-                              ),
-                            ),
-                          ],
-                        ),
-                ),
               ),
             ),
           ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Semantics(
+            button: true,
+            label: l10n.t('form_pick_video'),
+            child: InkWell(
+              onTap: saving ? null : _pickVideo,
+              child: Container(
+                height: 110,
+                decoration: BoxDecoration(
+                  color: ThixPolicy.surfaceSoft,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: _videoFile != null
+                        ? ThixPolicy.success
+                        : ThixPolicy.border,
+                    width: _videoFile != null ? 2 : 1,
+                  ),
+                ),
+                child: _videoFile != null
+                    ? Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.check_circle_rounded,
+                            color: ThixPolicy.success,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${(_videoFile!.size / 1024 / 1024).toStringAsFixed(1)} MB',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: ThixPolicy.textMain,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(
+                            Icons.video_library_rounded,
+                            color: ThixPolicy.primary,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            l10n.t('form_video_optional'),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: ThixPolicy.textMain,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -575,8 +564,12 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
             maxLength: _kMaxTitleLength,
             textCapitalization: TextCapitalization.sentences,
             validator: (v) {
-              if (v == null || v.trim().isEmpty) return l10n.t('form_title_required');
-              if (v.trim().length < _kMinTitleLength) return l10n.t('form_title_min');
+              if (v == null || v.trim().isEmpty) {
+                return l10n.t('form_title_required');
+              }
+              if (v.trim().length < _kMinTitleLength) {
+                return l10n.t('form_title_min');
+              }
               return null;
             },
             decoration: _dec(l10n.t('form_title')),
@@ -599,12 +592,24 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
                 label: l10n.t('form_type'),
                 child: DropdownButtonFormField<String>(
                   initialValue: _type,
-                  items: ['Films', 'Séries', 'Vidéos', 'Musique', 'En direct', 'Playlists']
-                      .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                  items: const [
+                    'Films',
+                    'Séries',
+                    'Vidéos',
+                    'Musique',
+                    'En direct',
+                    'Playlists',
+                  ]
+                      .map(
+                        (e) => DropdownMenuItem<String>(
+                          value: e,
+                          child: Text(e),
+                        ),
+                      )
                       .toList(),
                   onChanged: (v) {
                     HapticFeedback.selectionClick();
-                    setState(() => _type = v!);
+                    setState(() => _type = v ?? _type);
                   },
                   decoration: _dec(l10n.t('form_type')),
                 ),
@@ -637,140 +642,129 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
   Widget _buildSwitches(AppLocalizations l10n) {
     return Column(
       children: [
-        Semantics(
-          label: l10n.t('form_switch_published'),
-          child: SwitchListTile(
-            value: _isPublished,
-            title: Text(
-              l10n.t('form_switch_published'),
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-                color: ThixPolicy.textMain,
-              ),
+        SwitchListTile(
+          value: _isPublished,
+          title: Text(
+            l10n.t('form_switch_published'),
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+              color: ThixPolicy.textMain,
             ),
-            activeThumbColor: ThixPolicy.primary,
-            contentPadding: EdgeInsets.zero,
-            onChanged: (v) {
-              HapticFeedback.selectionClick();
-              setState(() => _isPublished = v);
-            },
           ),
+          activeThumbColor: ThixPolicy.primary,
+          contentPadding: EdgeInsets.zero,
+          onChanged: (v) {
+            HapticFeedback.selectionClick();
+            setState(() => _isPublished = v);
+          },
         ),
-        Semantics(
-          label: l10n.t('form_switch_feed_only'),
-          child: SwitchListTile(
-            value: _isFeedOnly,
-            title: Text(
-              l10n.t('form_switch_feed_only'),
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-                color: ThixPolicy.textMain,
-              ),
+        SwitchListTile(
+          value: _isFeedOnly,
+          title: Text(
+            l10n.t('form_switch_feed_only'),
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+              color: ThixPolicy.textMain,
             ),
-            subtitle: Text(
-              l10n.t('form_switch_feed_only_hint'),
-              style: TextStyle(fontSize: 11, color: ThixPolicy.textMuted),
-            ),
-            activeThumbColor: ThixPolicy.success,
-            contentPadding: EdgeInsets.zero,
-            onChanged: (v) {
-              HapticFeedback.selectionClick();
-              setState(() {
-                _isFeedOnly = v;
-                if (v) {
-                  _isNew = false;
-                  _isTrending = false;
-                }
-              });
-            },
           ),
+          subtitle: Text(
+            l10n.t('form_switch_feed_only_hint'),
+            style: const TextStyle(fontSize: 11, color: ThixPolicy.textMuted),
+          ),
+          activeThumbColor: ThixPolicy.success,
+          contentPadding: EdgeInsets.zero,
+          onChanged: (v) {
+            HapticFeedback.selectionClick();
+            setState(() {
+              _isFeedOnly = v;
+              if (v) {
+                _isNew = false;
+                _isTrending = false;
+              }
+            });
+          },
         ),
-        Semantics(
-          label: l10n.t('form_switch_new'),
-          enabled: !_isFeedOnly,
-          child: SwitchListTile(
-            value: _isNew,
-            title: Text(
-              l10n.t('form_switch_new'),
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-                color: _isFeedOnly ? ThixPolicy.textMuted : ThixPolicy.textMain,
-              ),
+        SwitchListTile(
+          value: _isNew,
+          title: Text(
+            l10n.t('form_switch_new'),
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+              color: _isFeedOnly ? ThixPolicy.textMuted : ThixPolicy.textMain,
             ),
-            activeThumbColor: ThixPolicy.primary,
-            contentPadding: EdgeInsets.zero,
-            onChanged: _isFeedOnly
-                ? null
-                : (v) {
-                    HapticFeedback.selectionClick();
-                    setState(() => _isNew = v);
-                  },
           ),
+          activeThumbColor: ThixPolicy.primary,
+          contentPadding: EdgeInsets.zero,
+          onChanged: _isFeedOnly
+              ? null
+              : (v) {
+                  HapticFeedback.selectionClick();
+                  setState(() => _isNew = v);
+                },
         ),
-        Semantics(
-          label: l10n.t('form_switch_trending'),
-          enabled: !_isFeedOnly,
-          child: SwitchListTile(
-            value: _isTrending,
-            title: Text(
-              l10n.t('form_switch_trending'),
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 14,
-                color: _isFeedOnly ? ThixPolicy.textMuted : ThixPolicy.textMain,
-              ),
+        SwitchListTile(
+          value: _isTrending,
+          title: Text(
+            l10n.t('form_switch_trending'),
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+              color: _isFeedOnly ? ThixPolicy.textMuted : ThixPolicy.textMain,
             ),
-            activeThumbColor: ThixPolicy.primary,
-            contentPadding: EdgeInsets.zero,
-            onChanged: _isFeedOnly
-                ? null
-                : (v) {
-                    HapticFeedback.selectionClick();
-                    setState(() => _isTrending = v);
-                  },
           ),
+          activeThumbColor: ThixPolicy.primary,
+          contentPadding: EdgeInsets.zero,
+          onChanged: _isFeedOnly
+              ? null
+              : (v) {
+                  HapticFeedback.selectionClick();
+                  setState(() => _isTrending = v);
+                },
         ),
       ],
     );
   }
 
   Widget _buildSubmitButton(AppLocalizations l10n, bool saving) {
-    return Semantics(
-      button: true,
-      label: widget.existing == null ? l10n.t('form_create') : l10n.t('form_save'),
-      child: SizedBox(
-        width: double.infinity,
-        height: 52,
-        child: ElevatedButton(
-          onPressed: saving ? null : _save,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: ThixPolicy.primary,
-            foregroundColor: Colors.white,
-            disabledBackgroundColor: ThixPolicy.border,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton(
+        onPressed: saving ? null : _save,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: ThixPolicy.primary,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: ThixPolicy.border,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(30),
           ),
-          child: saving
-              ? SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                    value: ref.watch(mediaFormUploadProvider).progress > 0
-                        ? ref.watch(mediaFormUploadProvider).progress
-                        : null,
-                  ),
-                )
-              : Text(
-                  widget.existing == null ? l10n.t('form_create') : l10n.t('form_save'),
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
         ),
+        child: saving
+            ? SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                  value: uploadProgressOrNull(),
+                ),
+              )
+            : Text(
+                widget.existing == null
+                    ? l10n.t('form_create')
+                    : l10n.t('form_save'),
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
       ),
     );
+  }
+
+  double? uploadProgressOrNull() {
+    final p = ref.read(mediaFormUploadProvider).progress;
+    return p > 0 ? p : null;
   }
 
   InputDecoration _dec(String label) => InputDecoration(
@@ -788,7 +782,7 @@ class _MediaFormSheetState extends ConsumerState<MediaFormSheet> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: ThixPolicy.primary, width: 1.5),
+          borderSide: const BorderSide(color: ThixPolicy.primary, width: 1.5),
         ),
       );
 }
