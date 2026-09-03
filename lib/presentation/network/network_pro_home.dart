@@ -469,7 +469,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
                         child: Center(
                           child: Text(
                             l10n.t('network_error_generic',
-                                args: {'error': e.toString()}),
+                                args: [e.toString()]
                             style: ThixPolicy.bodyStyle
                                 .copyWith(color: ThixPolicy.textSecondary),
                           ),
