@@ -241,8 +241,9 @@ class _MediaPosterCardState extends State<MediaPosterCard> {
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(
+          // CORRECTION : args passe en liste
           l10n.t('media_episodes_count',
-              args: {'count': '${_episodesCount + 1}'}),
+              args: ['${_episodesCount + 1}']),
           style: const TextStyle(
             color: Colors.white,
             fontSize: 9,
