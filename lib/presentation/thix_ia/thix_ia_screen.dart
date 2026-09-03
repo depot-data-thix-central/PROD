@@ -1,15 +1,122 @@
 // lib/presentation/ai/thix_ia_screen.dart
-import 'dart:ui'; // ✅ NÉCESSAIRE POUR LE GLASSMORPHISM
+//
+// THIX IA — "Monochrome Glass" (Production Enterprise)
+//
+// ✅ Design 100% refait : 2 couleurs seulement (blanc + encre)
+// ✅ Glassmorphism pur : surfaces blanches translucides sur fond encre
+// ✅ Barre du bas SUPPRIMÉE : composer flottant intégré au flux
+// ✅ Logique 100% préservée : AiService, Tavily, historique, retry, copie
+// ✅ i18n + Semantics + throttling + mounted checks + logs structurés
+import 'dart:ui';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// ✅ Design System THIX v1
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
 
-// 🌟 Ton vrai service IA
-import '../../services/ai/ai_service.dart'; 
+import '../../services/ai/ai_service.dart';
+
+// ============================================================================
+// PALETTE MONOCHROME (2 couleurs : blanc + encre)
+// ============================================================================
+
+class _IaPalette {
+  _IaPalette._();
+
+  static const Color ink = Color(0xFF0B1220); // Encre profonde (fond)
+  static const Color white = Color(0xFFFFFFFF);
+
+  // Surfaces glass (blanc translucide)
+  static Color get glassStrong => white.withValues(alpha: 0.14);
+  static Color get glass => white.withValues(alpha: 0.08);
+  static Color get glassSoft => white.withValues(alpha: 0.05);
+  static Color get glassBorder => white.withValues(alpha: 0.16);
+  static Color get glassBorderSoft => white.withValues(alpha: 0.10);
+
+  // Texte (blanc + opacités)
+  static Color get textPrimary => white;
+  static Color get textSecondary => white.withValues(alpha: 0.62);
+  static Color get textMuted => white.withValues(alpha: 0.40);
+}
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const Duration _kSendThrottle = Duration(milliseconds: 500);
+const Duration _kProfileTimeout = Duration(seconds: 8);
+const int _kMaxMessageLength = 4000;
+const double _kGlassBlur = kIsWeb ? 8 : 14;
+const double _kOrbBlur = kIsWeb ? 40 : 70;
+
+// ============================================================================
+// LOGGING
+// ============================================================================
+
+class _IaLogger {
+  static const _tag = 'ThixIA';
+  static void info(String m, [Map<String, dynamic>? d]) => _log('INFO', m, d);
+  static void warn(String m, [Map<String, dynamic>? d]) => _log('WARN', m, d);
+  static void error(String m, [Map<String, dynamic>? d]) => _log('ERROR', m, d);
+  static void _log(String l, String m, Map<String, dynamic>? d) {
+    if (!kDebugMode && l == 'INFO') return;
+    final data = d != null
+        ? ' ${d.entries.map((e) => '${e.key}=${e.value}').join(', ')}'
+        : '';
+    debugPrint('[$_tag] [$l] $m$data');
+  }
+}
+
+// ============================================================================
+// GLASS SURFACE (réutilisable, monochrome)
+// ============================================================================
+
+class _Glass extends StatelessWidget {
+  final Widget child;
+  final double radius;
+  final double alpha;
+  final double blur;
+  final EdgeInsetsGeometry? padding;
+  final bool bordered;
+
+  const _Glass({
+    required this.child,
+    this.radius = 24,
+    this.alpha = 0.08,
+    this.blur = _kGlassBlur,
+    this.padding,
+    this.bordered = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: Container(
+          padding: padding,
+          decoration: BoxDecoration(
+            color: _IaPalette.white.withValues(alpha: alpha),
+            borderRadius: BorderRadius.circular(radius),
+            border: bordered
+                ? Border.all(color: _IaPalette.glassBorderSoft, width: 1)
+                : null,
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// PAGE
+// ============================================================================
 
 class ThixIaScreen extends ConsumerStatefulWidget {
   const ThixIaScreen({super.key});
@@ -21,19 +128,19 @@ class ThixIaScreen extends ConsumerStatefulWidget {
 class _ThixIaScreenState extends ConsumerState<ThixIaScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final FocusNode _messageFocusNode = FocusNode();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  
-  // 🌟 Vrai service activé
+
   late final AiService _aiService;
-  final AiProvider _selectedProvider = AiProvider.mistral; 
-  
+  final AiProvider _selectedProvider = AiProvider.mistral;
+
   final List<Map<String, dynamic>> _messages = [];
   bool _isLoading = false;
-  bool _useTavilyWebSearch = true; 
-  
+  bool _useTavilyWebSearch = true;
   String _userName = "Partenaire";
+  DateTime? _lastSendTime;
 
-  // 🌟 PROMPT ENTREPRISE (Focus RDC, OHADA, Afrique)
+  // PROMPT ENTREPRISE (Focus RDC, OHADA, Afrique) — logique préservée
   final String _enterpriseSystemPrompt = """
 Tu es THIX IA, un assistant exécutif et conseiller stratégique d'entreprise de haut niveau. 
 Ton expertise principale couvre le marché de la République Démocratique du Congo (RDC), 
@@ -47,49 +154,84 @@ N'utilise JAMAIS d'astérisques (*) dans tes réponses. Utilise des tirets (-), 
     super.initState();
     _aiService = AiService(Supabase.instance.client);
     _loadUserName();
-  }
-
-  Future<void> _loadUserName() async {
-    try {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user != null) {
-        final profile = await Supabase.instance.client
-            .from('profiles')
-            .select('full_name, display_name')
-            .eq('id', user.id)
-            .maybeSingle();
-        if (profile != null && mounted) {
-          setState(() {
-            _userName = profile['display_name'] ?? profile['full_name'] ?? "Partenaire";
-            _userName = _userName.split(' ').first; 
-          });
-        }
-      }
-    } catch (_) {}
+    _IaLogger.info('Screen initialized');
   }
 
   @override
   void dispose() {
     _messageController.dispose();
+    _messageFocusNode.dispose();
     _scrollController.dispose();
+    _IaLogger.info('Screen disposed');
     super.dispose();
   }
 
-  // 🌟 VRAIE FONCTION D'ENVOI (Sans Mocks)
+  bool _canSend() {
+    final now = DateTime.now();
+    if (_lastSendTime != null &&
+        now.difference(_lastSendTime!) < _kSendThrottle) {
+      _IaLogger.warn('Send throttled');
+      return false;
+    }
+    _lastSendTime = now;
+    return true;
+  }
+
+  Future<void> _loadUserName() async {
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) return;
+      final profile = await Supabase.instance.client
+          .from('profiles')
+          .select('full_name, display_name')
+          .eq('id', user.id)
+          .maybeSingle()
+          .timeout(_kProfileTimeout, onTimeout: () => null);
+      if (profile != null && mounted) {
+        setState(() {
+          _userName =
+              profile['display_name'] ?? profile['full_name'] ?? "Partenaire";
+          _userName = _userName.split(' ').first;
+        });
+      }
+    } catch (e) {
+      _IaLogger.warn('Load user name failed', {'error': '$e'});
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // ENVOI (logique préservée)
+  // ════════════════════════════════════════════════════════════════════
+
   Future<void> _sendMessage({String? textOverride}) async {
+    if (!_canSend()) return;
+
     final text = textOverride ?? _messageController.text.trim();
     if (text.isEmpty) return;
+
+    final l10n = AppLocalizations.of(context);
+    if (text.length > _kMaxMessageLength) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(l10n.t('ai_message_too_long',
+            args: {'max': '$_kMaxMessageLength'})),
+        backgroundColor: _IaPalette.white,
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
 
     setState(() {
       _messages.add({'role': 'user', 'text': text, 'time': DateTime.now()});
       _isLoading = true;
     });
-    
+
     _messageController.clear();
+    _messageFocusNode.unfocus();
     _scrollToBottom();
 
     try {
-      final String currentPrompt = _useTavilyWebSearch
+      final currentPrompt = _useTavilyWebSearch
           ? "$_enterpriseSystemPrompt\nIMPORTANT : Effectue une recherche web (Live Search) pour obtenir des données d'actualité en temps réel avant de formuler ta réponse."
           : _enterpriseSystemPrompt;
 
@@ -104,20 +246,23 @@ N'utilise JAMAIS d'astérisques (*) dans tes réponses. Utilise des tirets (-), 
       if (mounted) {
         setState(() {
           _messages.add({
-            'role': 'ai', 
+            'role': 'ai',
             'text': cleanResponse,
             'time': DateTime.now(),
             'usedWeb': _useTavilyWebSearch,
           });
         });
+        _IaLogger.info('AI response received',
+            {'length': cleanResponse.length, 'usedWeb': _useTavilyWebSearch});
       }
     } catch (e) {
-      debugPrint("Erreur THIX IA: $e");
+      _IaLogger.error('AI request failed', {'error': '$e'});
       if (mounted) {
         setState(() {
           _messages.add({
-            'role': 'ai', 
-            'text': 'Erreur de connexion sécurisée au serveur THIX. Veuillez vérifier votre connexion.',
+            'role': 'ai',
+            'text':
+                'Erreur de connexion sécurisée au serveur THIX. Veuillez vérifier votre connexion.',
             'isError': true,
             'time': DateTime.now(),
           });
@@ -131,6 +276,7 @@ N'utilise JAMAIS d'astérisques (*) dans tes réponses. Utilise des tirets (-), 
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
@@ -141,21 +287,60 @@ N'utilise JAMAIS d'astérisques (*) dans tes réponses. Utilise des tirets (-), 
     });
   }
 
-  // Helper pour les orbes de fond
-  Widget _buildBlurOrb(Color color, double size) {
-    return Container(
-      width: size, height: size,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
-      child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 70, sigmaY: 70), child: Container(color: Colors.transparent)),
+  Future<void> _confirmNewSession(AppLocalizations l10n) async {
+    if (_messages.isEmpty) {
+      HapticFeedback.selectionClick();
+      setState(() => _messages.clear());
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => _Glass(
+        radius: 24,
+        alpha: 0.12,
+        child: AlertDialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          title: Text(l10n.t('ai_confirm_new_title'),
+              style: const TextStyle(
+                  color: _IaPalette.textPrimary,
+                  fontWeight: FontWeight.w800)),
+          content: Text(l10n.t('ai_confirm_new_message'),
+              style: const TextStyle(color: _IaPalette.textSecondary)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.t('common_cancel'),
+                  style: const TextStyle(color: _IaPalette.textSecondary)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.t('ai_confirm_new_confirm'),
+                  style: const TextStyle(color: _IaPalette.textPrimary)),
+            ),
+          ],
+        ),
+      ),
     );
+    if (ok == true && mounted) {
+      HapticFeedback.mediumImpact();
+      setState(() => _messages.clear());
+      _IaLogger.info('New session started');
+    }
   }
+
+  // ════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ════════════════════════════════════════════════════════════════════
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: const Color(0xFFF4F7FB),
-      drawer: _buildHistoryDrawer(),
+      backgroundColor: _IaPalette.ink,
+      drawer: _buildHistoryDrawer(l10n),
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -163,61 +348,87 @@ N'utilise JAMAIS d'astérisques (*) dans tes réponses. Utilise des tirets (-), 
         centerTitle: true,
         flexibleSpace: ClipRRect(
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+            filter: ImageFilter.blur(sigmaX: _kGlassBlur, sigmaY: _kGlassBlur),
             child: Container(
-              color: Colors.white.withValues(alpha: 0.65),
+              color: _IaPalette.ink.withValues(alpha: 0.55),
               decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.8), width: 1.2))
+                border: Border(
+                  bottom: BorderSide(color: _IaPalette.glassBorderSoft),
+                ),
               ),
             ),
           ),
         ),
-        leading: IconButton(
-          icon: const Icon(Icons.menu_open_rounded, color: ThixPolicy.textMain),
-          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+        leading: Semantics(
+          button: true,
+          label: l10n.t('common_menu'),
+          child: IconButton(
+            icon: const Icon(Icons.menu_open_rounded,
+                color: _IaPalette.textPrimary),
+            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+          ),
         ),
         title: Column(
           children: [
             Row(
               mainAxisSize: MainAxisSize.min,
               children: const [
-                Icon(Icons.graphic_eq_rounded, color: ThixPolicy.primary, size: 18),
+                Icon(Icons.graphic_eq_rounded,
+                    color: _IaPalette.textPrimary, size: 18),
                 SizedBox(width: 8),
-                Text('THIX IA', style: TextStyle(fontWeight: FontWeight.w900, color: ThixPolicy.textMain, fontSize: 16, letterSpacing: -0.5)),
+                Text('THIX IA',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        color: _IaPalette.textPrimary,
+                        fontSize: 16,
+                        letterSpacing: -0.5)),
               ],
             ),
-            const Text('Expertise RDC & Afrique', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: ThixPolicy.textSecondary)),
+            Text(l10n.t('ai_expertise_subtitle'),
+                style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: _IaPalette.textSecondary)),
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add_box_rounded, color: ThixPolicy.primary),
-            tooltip: 'Nouvelle session',
-            onPressed: () {
-              HapticFeedback.selectionClick();
-              setState(() => _messages.clear());
-            },
+          Semantics(
+            button: true,
+            label: l10n.t('ai_new_session'),
+            child: IconButton(
+              icon: const Icon(Icons.add_box_rounded,
+                  color: _IaPalette.textPrimary),
+              tooltip: l10n.t('ai_new_session'),
+              onPressed: () => _confirmNewSession(l10n),
+            ),
           ),
         ],
       ),
       body: Stack(
         children: [
-          // 🌟 ARRIÈRE-PLAN IMMERSIF (Orbes)
-          Positioned(top: -50, right: -100, child: _buildBlurOrb(ThixPolicy.primary.withValues(alpha: 0.08), 350)),
-          Positioned(bottom: 200, left: -100, child: _buildBlurOrb(ThixPolicy.primaryDeep.withValues(alpha: 0.06), 300)),
-          Positioned(top: 300, right: -50, child: _buildBlurOrb(ThixPolicy.gold.withValues(alpha: 0.05), 250)),
+          // Orbes monochromes (blanc sur encre)
+          Positioned(
+              top: -60,
+              right: -110,
+              child: _buildOrb(_IaPalette.white.withValues(alpha: 0.10), 340)),
+          Positioned(
+              bottom: 180,
+              left: -120,
+              child: _buildOrb(_IaPalette.white.withValues(alpha: 0.07), 300)),
 
           Column(
             children: [
               Expanded(
-                child: _messages.isEmpty 
-                    ? _buildEnterpriseWelcome()
-                    : _buildChatList(),
+                child: _messages.isEmpty
+                    ? _buildWelcome(l10n)
+                    : _buildChatList(l10n),
               ),
-              
-              if (_isLoading) _buildTypingIndicator(),
 
-              _buildPremiumInputArea(),
+              if (_isLoading)
+                RepaintBoundary(child: _buildTypingIndicator(l10n)),
+
+              // ✅ COMPOSER FLOTTANT (pas une barre) — intégré au flux
+              _buildFloatingComposer(l10n),
             ],
           ),
         ],
@@ -225,32 +436,58 @@ N'utilise JAMAIS d'astérisques (*) dans tes réponses. Utilise des tirets (-), 
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // DRAWER HISTORIQUE
-  // ─────────────────────────────────────────────────────────────
-  Widget _buildHistoryDrawer() {
+  Widget _buildOrb(Color color, double size) {
+    return RepaintBoundary(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Stack(
+          children: [
+            Container(
+              decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+            ),
+            BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: _kOrbBlur, sigmaY: _kOrbBlur),
+              child: Container(color: Colors.transparent),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // DRAWER HISTORIQUE (glass monochrome)
+  // ════════════════════════════════════════════════════════════════════
+
+  Widget _buildHistoryDrawer(AppLocalizations l10n) {
     return Drawer(
-      backgroundColor: const Color(0xFFF4F7FB),
+      backgroundColor: _IaPalette.ink,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.all(ThixPolicy.s20),
+              padding: const EdgeInsets.all(20),
               child: Row(
                 children: const [
-                  Icon(Icons.history_rounded, color: ThixPolicy.textMain),
-                  SizedBox(width: ThixPolicy.s12),
-                  Text('Historique', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: ThixPolicy.textMain)),
+                  Icon(Icons.history_rounded, color: _IaPalette.textPrimary),
+                  SizedBox(width: 12),
+                  Text('Historique',
+                      style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                          color: _IaPalette.textPrimary)),
                 ],
               ),
             ),
-            const Divider(height: 1, color: ThixPolicy.border),
+            Divider(height: 1, color: _IaPalette.glassBorderSoft),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: ThixPolicy.s12),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 children: [
-                  _historyItem('Session Actuelle', 'Discussion en cours', true),
+                  _historyItem(l10n.t('ai_history_now'),
+                      l10n.t('ai_history_current'), true),
                 ],
               ),
             ),
@@ -262,87 +499,130 @@ N'utilise JAMAIS d'astérisques (*) dans tes réponses. Utilise des tirets (-), 
 
   Widget _historyItem(String date, String title, bool isActive) {
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
-      leading: Icon(Icons.chat_bubble_outline_rounded, size: 18, color: isActive ? ThixPolicy.primary : ThixPolicy.textSecondary),
-      title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: isActive ? FontWeight.w800 : FontWeight.w500, color: isActive ? ThixPolicy.primaryDeep : ThixPolicy.textMain)),
-      subtitle: Text(date, style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary)),
-      tileColor: isActive ? ThixPolicy.tint.withValues(alpha: 0.5) : Colors.transparent,
-      onTap: () {
-        Navigator.pop(context);
-      },
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+      leading: Icon(Icons.chat_bubble_outline_rounded,
+          size: 18,
+          color: isActive ? _IaPalette.textPrimary : _IaPalette.textSecondary),
+      title: Text(title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+              fontSize: 13,
+              fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
+              color:
+                  isActive ? _IaPalette.textPrimary : _IaPalette.textSecondary)),
+      subtitle:
+          Text(date, style: const TextStyle(fontSize: 11, color: _IaPalette.textMuted)),
+      tileColor: isActive ? _IaPalette.glass : Colors.transparent,
+      onTap: () => Navigator.pop(context),
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // ÉCRAN D'ACCUEIL EXPERT RDC/AFRIQUE (Glassmorphism)
-  // ─────────────────────────────────────────────────────────────
-  Widget _buildEnterpriseWelcome() {
+  // ════════════════════════════════════════════════════════════════════
+  // ACCUEIL (glass monochrome)
+  // ════════════════════════════════════════════════════════════════════
+
+  Widget _buildWelcome(AppLocalizations l10n) {
     final actions = [
-      {"icon": Icons.gavel_rounded, "title": "Droit OHADA", "desc": "Quels sont les avantages de créer une SAS en RDC selon le droit OHADA ?"},
-      {"icon": Icons.trending_up_rounded, "title": "Marché RDC", "desc": "Donne-moi une analyse sectorielle des opportunités Tech à Kinshasa en 2026."},
-      {"icon": Icons.language_rounded, "title": "Tech Afrique", "desc": "Quelles sont les grandes tendances de la Fintech en Afrique de l'Est cette année ?"},
-      {"icon": Icons.lightbulb_outline_rounded, "title": "Stratégie", "desc": "Comment structurer un Business Plan pour lever des fonds auprès d'investisseurs africains ?"},
+      {
+        "icon": Icons.gavel_rounded,
+        "title": l10n.t('ai_action_ohada'),
+        "desc": l10n.t('ai_action_ohada_prompt'),
+      },
+      {
+        "icon": Icons.trending_up_rounded,
+        "title": l10n.t('ai_action_market'),
+        "desc": l10n.t('ai_action_market_prompt'),
+      },
+      {
+        "icon": Icons.language_rounded,
+        "title": l10n.t('ai_action_tech'),
+        "desc": l10n.t('ai_action_tech_prompt'),
+      },
+      {
+        "icon": Icons.lightbulb_outline_rounded,
+        "title": l10n.t('ai_action_strategy'),
+        "desc": l10n.t('ai_action_strategy_prompt'),
+      },
     ];
 
     return Center(
       child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(24, MediaQuery.paddingOf(context).top + 70, 24, 24),
+        padding: EdgeInsets.fromLTRB(
+            24, MediaQuery.paddingOf(context).top + 70, 24, 24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.8), 
-                shape: BoxShape.circle, 
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12, offset: const Offset(0, 4))], 
-                border: Border.all(color: Colors.white, width: 2)
-              ),
-              child: const Icon(Icons.graphic_eq_rounded, color: ThixPolicy.primaryDeep, size: 40),
+            _Glass(
+              radius: 60,
+              alpha: 0.12,
+              padding: const EdgeInsets.all(22),
+              child: const Icon(Icons.graphic_eq_rounded,
+                  color: _IaPalette.textPrimary, size: 40),
             ),
-            const SizedBox(height: ThixPolicy.s24),
-            Text('Bonjour, $_userName.', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: ThixPolicy.inkDeep, letterSpacing: -0.5)),
-            const SizedBox(height: ThixPolicy.s8),
-            const Text('Votre conseiller stratégique est prêt.\nComment puis-je vous assister aujourd\'hui ?', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: ThixPolicy.textSecondary, height: 1.4)),
-            const SizedBox(height: ThixPolicy.s32),
-            
+            const SizedBox(height: 24),
+            Text('${l10n.t('ai_greeting')}, $_userName.',
+                style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    color: _IaPalette.textPrimary,
+                    letterSpacing: -0.5)),
+            const SizedBox(height: 8),
+            Text(l10n.t('ai_welcome_subtitle'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 14,
+                    color: _IaPalette.textSecondary,
+                    height: 1.4)),
+            const SizedBox(height: 32),
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
-                crossAxisSpacing: ThixPolicy.s12,
-                mainAxisSpacing: ThixPolicy.s12,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
                 childAspectRatio: 1.4,
               ),
               itemCount: actions.length,
               itemBuilder: (ctx, i) {
                 final a = actions[i];
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                return Semantics(
+                  button: true,
+                  label: a["title"] as String,
+                  child: _Glass(
+                    radius: 20,
+                    alpha: 0.08,
                     child: Material(
                       color: Colors.transparent,
                       child: InkWell(
-                        onTap: () => _sendMessage(textOverride: a["desc"] as String),
-                        child: Container(
-                          padding: const EdgeInsets.all(ThixPolicy.s12),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.65), 
-                            borderRadius: BorderRadius.circular(20), 
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.2),
-                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 6, offset: const Offset(0, 2))]
-                          ),
+                        borderRadius: BorderRadius.circular(20),
+                        onTap: () =>
+                            _sendMessage(textOverride: a["desc"] as String),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(a["icon"] as IconData, color: ThixPolicy.primary, size: 20),
+                              Icon(a["icon"] as IconData,
+                                  color: _IaPalette.textPrimary, size: 20),
                               const SizedBox(height: 8),
-                              Text(a["title"] as String, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: ThixPolicy.textMain)),
+                              Text(a["title"] as String,
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      color: _IaPalette.textPrimary)),
                               const SizedBox(height: 4),
-                              Expanded(child: Text(a["desc"] as String, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: ThixPolicy.textSecondary, height: 1.3))),
+                              Expanded(
+                                child: Text(a["desc"] as String,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontSize: 10,
+                                        color: _IaPalette.textSecondary,
+                                        height: 1.3)),
+                              ),
                             ],
                           ),
                         ),
@@ -358,13 +638,15 @@ N'utilise JAMAIS d'astérisques (*) dans tes réponses. Utilise des tirets (-), 
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // LISTE DES MESSAGES
-  // ─────────────────────────────────────────────────────────────
-  Widget _buildChatList() {
+  // ════════════════════════════════════════════════════════════════════
+  // LISTE DES MESSAGES (bulles monochromes)
+  // ════════════════════════════════════════════════════════════════════
+
+  Widget _buildChatList(AppLocalizations l10n) {
     return ListView.builder(
       controller: _scrollController,
-      padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 70, 16, 24),
+      padding: EdgeInsets.fromLTRB(
+          16, MediaQuery.paddingOf(context).top + 70, 16, 16),
       itemCount: _messages.length,
       itemBuilder: (context, index) {
         final msg = _messages[index];
@@ -373,97 +655,165 @@ N'utilise JAMAIS d'astérisques (*) dans tes réponses. Utilise des tirets (-), 
         final usedWeb = msg['usedWeb'] == true;
 
         if (isUser) {
+          // Bulle utilisateur : blanc plein, texte encre
           return Align(
             alignment: Alignment.centerRight,
             child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.85),
+              constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.85),
               child: Container(
-                margin: const EdgeInsets.only(bottom: ThixPolicy.s16),
-                padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s12),
+                margin: const EdgeInsets.only(bottom: 16),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: ThixPolicy.primaryDeep,
+                  color: _IaPalette.white,
                   borderRadius: BorderRadius.circular(20),
-                  boxShadow: [BoxShadow(color: ThixPolicy.primaryDeep.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 3))],
                 ),
-                child: SelectableText(msg['text']!, style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.4, fontWeight: FontWeight.w500)),
-              ),
-            ),
-          );
-        } else {
-          return Align(
-            alignment: Alignment.centerLeft,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.92),
-              child: Container(
-                margin: const EdgeInsets.only(bottom: ThixPolicy.s24),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 28, height: 28,
-                      margin: const EdgeInsets.only(right: ThixPolicy.s12, top: 4),
-                      decoration: BoxDecoration(color: isError ? ThixPolicy.danger : Colors.white.withValues(alpha: 0.8), shape: BoxShape.circle, border: Border.all(color: Colors.white)),
-                      child: Icon(isError ? Icons.error_outline : Icons.graphic_eq_rounded, color: isError ? Colors.white : ThixPolicy.primaryDeep, size: 14),
-                    ),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(isError ? "Erreur" : "THIX IA", style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: ThixPolicy.textMain)),
-                              if (usedWeb) ...[
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(color: ThixPolicy.tint, borderRadius: BorderRadius.circular(6)),
-                                  child: Row(
-                                    children: const [
-                                      Icon(Icons.travel_explore_rounded, size: 10, color: ThixPolicy.primary),
-                                      SizedBox(width: 4),
-                                      Text("Tavily Live", style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: ThixPolicy.primary)),
-                                    ],
-                                  ),
-                                ),
-                              ]
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: BackdropFilter(
-                              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                              child: Container(
-                                padding: const EdgeInsets.all(ThixPolicy.s16),
-                                decoration: BoxDecoration(
-                                  color: isError ? ThixPolicy.danger.withValues(alpha: 0.08) : Colors.white.withValues(alpha: 0.65),
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: isError ? ThixPolicy.danger.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.9), width: 1.2),
-                                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 8, offset: const Offset(0, 3))],
-                                ),
-                                child: SelectableText(msg['text']!, style: TextStyle(color: isError ? ThixPolicy.danger : ThixPolicy.textMain, fontSize: 14, height: 1.6)),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          if (!isError)
-                            Row(
-                              children: [
-                                _bubbleAction(Icons.copy_rounded, "Copier", () {
-                                  Clipboard.setData(ClipboardData(text: msg['text']));
-                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Texte de l\'IA copié')));
-                                }),
-                              ],
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                child: SelectableText(msg['text']!,
+                    style: const TextStyle(
+                        color: _IaPalette.ink,
+                        fontSize: 14,
+                        height: 1.4,
+                        fontWeight: FontWeight.w500)),
               ),
             ),
           );
         }
+
+        // Bulle IA : glass blanc, texte blanc
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.92),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 20),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    margin: const EdgeInsets.only(right: 10, top: 4),
+                    decoration: BoxDecoration(
+                      color: isError
+                          ? _IaPalette.white.withValues(alpha: 0.25)
+                          : _IaPalette.glass,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _IaPalette.glassBorder),
+                    ),
+                    child: Icon(
+                        isError ? Icons.error_outline : Icons.graphic_eq_rounded,
+                        color: _IaPalette.textPrimary,
+                        size: 14),
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(isError ? l10n.t('ai_error_label') : "THIX IA",
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                    color: _IaPalette.textPrimary)),
+                            if (usedWeb) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: _IaPalette.glass,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                      color: _IaPalette.glassBorderSoft),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: const [
+                                    Icon(Icons.travel_explore_rounded,
+                                        size: 10,
+                                        color: _IaPalette.textSecondary),
+                                    SizedBox(width: 4),
+                                    Text("Tavily Live",
+                                        style: TextStyle(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w700,
+                                            color: _IaPalette.textSecondary)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        _Glass(
+                          radius: 20,
+                          alpha: isError ? 0.20 : 0.08,
+                          padding: const EdgeInsets.all(16),
+                          child: SelectableText(msg['text']!,
+                              style: TextStyle(
+                                  color: isError
+                                      ? _IaPalette.textPrimary
+                                      : _IaPalette.textPrimary,
+                                  fontSize: 14,
+                                  height: 1.6)),
+                        ),
+                        const SizedBox(height: 4),
+                        if (!isError)
+                          Row(
+                            children: [
+                              Semantics(
+                                button: true,
+                                label: l10n.t('ai_action_copy'),
+                                child: _bubbleAction(
+                                  Icons.copy_rounded,
+                                  l10n.t('ai_action_copy'),
+                                  () {
+                                    HapticFeedback.selectionClick();
+                                    Clipboard.setData(
+                                        ClipboardData(text: msg['text']));
+                                    ScaffoldMessenger.of(context)
+                                        .showSnackBar(SnackBar(
+                                      content:
+                                          Text(l10n.t('ai_copied_success')),
+                                      backgroundColor: _IaPalette.white,
+                                      behavior: SnackBarBehavior.floating,
+                                    ));
+                                  },
+                                ),
+                              ),
+                              Semantics(
+                                button: true,
+                                label: l10n.t('ai_action_retry'),
+                                child: _bubbleAction(
+                                  Icons.refresh_rounded,
+                                  l10n.t('ai_action_retry'),
+                                  () {
+                                    final userIndex = _messages.lastIndexWhere(
+                                        (m) =>
+                                            m['role'] == 'user' &&
+                                            _messages.indexOf(m) < index);
+                                    if (userIndex >= 0) {
+                                      setState(
+                                          () => _messages.removeAt(index));
+                                      _sendMessage(textOverride:
+                                          _messages[userIndex]['text']);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
       },
     );
   }
@@ -476,132 +826,162 @@ N'utilise JAMAIS d'astérisques (*) dans tes réponses. Utilise des tirets (-), 
         padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
         child: Row(
           children: [
-            Icon(icon, size: 12, color: ThixPolicy.textSecondary),
+            Icon(icon, size: 12, color: _IaPalette.textSecondary),
             const SizedBox(width: 4),
-            Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: ThixPolicy.textSecondary)),
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: _IaPalette.textSecondary)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTypingIndicator() {
+  Widget _buildTypingIndicator(AppLocalizations l10n) {
     return Padding(
-      padding: const EdgeInsets.only(left: 56, bottom: 16),
+      padding: const EdgeInsets.only(left: 56, bottom: 12),
       child: Row(
         children: const [
-          SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2.5, color: ThixPolicy.primary)),
+          SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2.5, color: _IaPalette.textPrimary)),
           SizedBox(width: 12),
-          Text("Génération de l'analyse...", style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 13, fontWeight: FontWeight.w600, fontStyle: FontStyle.italic)),
+          Text("Génération de l'analyse...",
+              style: TextStyle(
+                  color: _IaPalette.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  fontStyle: FontStyle.italic)),
         ],
       ),
     );
   }
 
-  // ─────────────────────────────────────────────────────────────
-  // BARRE DE SAISIE GLASSMORPHISM
-  // ─────────────────────────────────────────────────────────────
-  Widget _buildPremiumInputArea() {
-    return ClipRRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: EdgeInsets.fromLTRB(ThixPolicy.s16, ThixPolicy.s12, ThixPolicy.s16, MediaQuery.paddingOf(context).bottom + ThixPolicy.s12),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.7),
-            border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.8), width: 1.2)),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, -4))],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8.0, left: 4),
+  // ════════════════════════════════════════════════════════════════════
+  // COMPOSER FLOTTANT (barre du bas SUPPRIMÉE)
+  // ════════════════════════════════════════════════════════════════════
+
+  Widget _buildFloatingComposer(AppLocalizations l10n) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+          16, 4, 16, MediaQuery.paddingOf(context).bottom + 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Chip Tavily (flottant, pas une barre)
+          Semantics(
+            button: true,
+            toggled: _useTavilyWebSearch,
+            label: l10n.t('ai_tavily_toggle'),
+            child: GestureDetector(
+              onTap: () {
+                HapticFeedback.lightImpact();
+                setState(() => _useTavilyWebSearch = !_useTavilyWebSearch);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.only(bottom: 8, left: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _useTavilyWebSearch
+                      ? _IaPalette.white
+                      : _IaPalette.glassSoft,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: _useTavilyWebSearch
+                          ? _IaPalette.white
+                          : _IaPalette.glassBorderSoft),
+                ),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    GestureDetector(
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        setState(() => _useTavilyWebSearch = !_useTavilyWebSearch);
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: _useTavilyWebSearch ? ThixPolicy.primary.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: _useTavilyWebSearch ? ThixPolicy.primary.withValues(alpha: 0.3) : Colors.white),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.language_rounded, size: 14, color: _useTavilyWebSearch ? ThixPolicy.primary : ThixPolicy.textSecondary),
-                            const SizedBox(width: 6),
-                            Text('Recherche Live (Tavily)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _useTavilyWebSearch ? ThixPolicy.primary : ThixPolicy.textSecondary)),
-                          ],
-                        ),
-                      ),
-                    ),
+                    Icon(Icons.language_rounded,
+                        size: 13,
+                        color: _useTavilyWebSearch
+                            ? _IaPalette.ink
+                            : _IaPalette.textSecondary),
+                    const SizedBox(width: 6),
+                    Text(l10n.t('ai_tavily_label'),
+                        style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: _useTavilyWebSearch
+                                ? _IaPalette.ink
+                                : _IaPalette.textSecondary)),
                   ],
                 ),
               ),
-              
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.attach_file_rounded, color: ThixPolicy.textSecondary),
-                    onPressed: () {
-                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pièces jointes bientôt disponibles')));
-                    },
-                  ),
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.2),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Expanded(
-                            child: Scrollbar(
-                              child: TextField(
-                                controller: _messageController,
-                                maxLines: 7,
-                                minLines: 1,
-                                style: const TextStyle(fontSize: 14, color: ThixPolicy.textMain),
-                                textCapitalization: TextCapitalization.sentences,
-                                decoration: const InputDecoration(
-                                  hintText: 'Demandez à l\'expert THIX...',
-                                  hintStyle: TextStyle(color: ThixPolicy.textSecondary, fontSize: 14),
-                                  border: InputBorder.none,
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                ),
-                              ),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.all(6.0),
-                            child: CircleAvatar(
-                              radius: 18,
-                              backgroundColor: _isLoading ? ThixPolicy.surfaceStrong : ThixPolicy.primaryDeep,
-                              child: IconButton(
-                                padding: EdgeInsets.zero,
-                                icon: const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 18),
-                                onPressed: _isLoading ? null : () => _sendMessage(),
-                              ),
-                            ),
-                          ),
-                        ],
+            ),
+          ),
+
+          // Pilule de saisie flottante (glass)
+          _Glass(
+            radius: 28,
+            alpha: 0.10,
+            blur: _kGlassBlur,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 120),
+                    child: Scrollbar(
+                      child: TextField(
+                        controller: _messageController,
+                        focusNode: _messageFocusNode,
+                        maxLines: 5,
+                        minLines: 1,
+                        maxLength: _kMaxMessageLength,
+                        style: const TextStyle(
+                            fontSize: 14, color: _IaPalette.textPrimary),
+                        textCapitalization: TextCapitalization.sentences,
+                        cursorColor: _IaPalette.white,
+                        decoration: InputDecoration(
+                          hintText: l10n.t('ai_input_hint'),
+                          counterText: '',
+                          hintStyle: const TextStyle(
+                              color: _IaPalette.textMuted, fontSize: 14),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 14),
+                        ),
                       ),
                     ),
                   ),
-                ],
-              ),
-            ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Semantics(
+                    button: true,
+                    label: l10n.t('ai_send'),
+                    child: GestureDetector(
+                      onTap: _isLoading ? null : () => _sendMessage(),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: _isLoading
+                              ? _IaPalette.white.withValues(alpha: 0.25)
+                              : _IaPalette.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.arrow_upward_rounded,
+                            color: _IaPalette.ink, size: 18),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
