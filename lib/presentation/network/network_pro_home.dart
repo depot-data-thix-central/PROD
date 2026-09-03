@@ -458,7 +458,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       ),
       title: Text(
         'THIX PRO', // Nom de la marque, généralement non localisé
-        style: ThixPolicy.h2Style.copyWith(fontWeight: ThixPolicy.w900, letterSpacing: -0.5, color: ThixPolicy.textMain),
+        style: ThixPolicy.h2Style.copyWith(fontWeight: FontWeight.w900, letterSpacing: -0.5, color: ThixPolicy.textMain),
       ),
       actions: [
         GestureDetector(
@@ -632,7 +632,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                 child: Text(
                   e.value,
                   style: ThixPolicy.bodySmallStyle.copyWith(
-                    fontWeight: active ? ThixPolicy.w800 : ThixPolicy.semiBold,
+                    fontWeight: active ? FontWeight.w800 : ThixPolicy.semiBold,
                     color: active ? Colors.white : ThixPolicy.textSecondary,
                   ),
                 ),
@@ -667,7 +667,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                   child: const Icon(Icons.explore_rounded, size: 16, color: ThixPolicy.primary),
                 ),
                 const SizedBox(width: 8),
-                Text(l10n.t('network_discover_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.w800, fontSize: 15, color: ThixPolicy.textMain)),
+                Text(l10n.t('network_discover_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.w800, fontSize: 15, color: ThixPolicy.textMain)),
               ],
             ),
           ),
@@ -719,7 +719,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                             u.name.split(' ').first,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: ThixPolicy.microStyle.copyWith(fontWeight: ThixPolicy.w800, color: ThixPolicy.textMain),
+                            style: ThixPolicy.microStyle.copyWith(fontWeight: FontWeight.w800, color: ThixPolicy.textMain),
                           ),
                         ],
                       ),
@@ -760,7 +760,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                                   decoration: BoxDecoration(color: ThixPolicy.danger, borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.white, width: 1.5)),
-                                  child: Text('LIVE', style: ThixPolicy.microStyle.copyWith(color: Colors.white, fontSize: 8, fontWeight: ThixPolicy.w900)),
+                                  child: Text('LIVE', style: ThixPolicy.microStyle.copyWith(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900)),
                                 ),
                               ),
                             ],
@@ -770,7 +770,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                             (s['host_name']?.toString() ?? 'Hôte').split(' ').first,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: ThixPolicy.microStyle.copyWith(fontWeight: ThixPolicy.w800, color: ThixPolicy.textMain),
+                            style: ThixPolicy.microStyle.copyWith(fontWeight: FontWeight.w800, color: ThixPolicy.textMain),
                           ),
                         ],
                       ),
@@ -1117,7 +1117,7 @@ class _StoryCard extends StatelessWidget {
                 name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: ThixPolicy.captionStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.w800),
+                style: ThixPolicy.captionStyle.copyWith(color: Colors.white, fontWeight: FontWeight.w800),
               ),
             ),
           ],
