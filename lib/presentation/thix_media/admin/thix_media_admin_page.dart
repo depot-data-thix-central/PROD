@@ -359,7 +359,7 @@ class _ThixMediaAdminPageState extends ConsumerState<ThixMediaAdminPage> {
     );
   }
 
-  Widget _buildEmptyState(
+    Widget _buildEmptyState(
     BuildContext context,
     AppLocalizations l10n,
     String filter,
@@ -370,8 +370,8 @@ class _ThixMediaAdminPageState extends ConsumerState<ThixMediaAdminPage> {
         child: Center(
           child: Semantics(
             header: true,
-            // ✅ FIX : forcer type Map explicite pour dart2js
-            label: l10n.tn('admin_empty_filter', {'filter': filter}),
+            // CORRECTION : On utilise l10n.t et une liste [filter] ici aussi !
+            label: l10n.t('admin_empty_filter', args: [filter]),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -382,20 +382,17 @@ class _ThixMediaAdminPageState extends ConsumerState<ThixMediaAdminPage> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-  l10n.t('admin_empty_filter', args: [filter]), 
-  style: ThixPolicy.bodyStyle.copyWith(         
-    color: ThixPolicy.textMuted,
-  ),
-)
-
+                  l10n.t('admin_empty_filter', args: [filter]), 
+                  style: ThixPolicy.bodyStyle.copyWith(         
+                    color: ThixPolicy.textMuted,
                   ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+                ), 
+              ], 
+            ), 
+          ), 
+        ), 
+      ), 
+    ); 
   }
 
   Widget _buildGrid(List<MediaContent> filtered) {
