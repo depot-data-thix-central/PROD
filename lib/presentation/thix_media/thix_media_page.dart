@@ -293,14 +293,18 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage>
       ),
     );
   }
-
   Widget _buildMainContent(
     AppLocalizations l10n,
     List<MediaContent> catalog,
     bool isAdmin,
     String selectedCategory,
   ) {
-    if (selectedCategory == 'Fil') {
+    // On récupère les traductions pour pouvoir les comparer
+    final strFil = l10n.t('category_feed');
+    final strTous = l10n.t('category_all');
+
+    // ✅ CORRECTION : On vérifie à la fois le mot en dur (pour l'init) et le mot traduit
+    if (selectedCategory == 'Fil' || selectedCategory == strFil) {
       return Stack(
         children: [
           RepaintBoundary(
@@ -316,9 +320,11 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage>
       );
     }
 
-    final filtered = selectedCategory == 'Tous'
+    // ✅ CORRECTION : Même chose pour la catégorie "Tous"
+    final filtered = (selectedCategory == 'Tous' || selectedCategory == strTous)
         ? catalog
         : catalog.where((e) => e.type == selectedCategory).toList();
+        
     final series = catalog.where((e) => e.episodesUrls.isNotEmpty).toList();
     final categories = _computeCategories(catalog, l10n);
 
@@ -355,7 +361,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage>
                 child: Semantics(
                   header: true,
                   child: Text(
-                    selectedCategory == 'Tous'
+                    (selectedCategory == 'Tous' || selectedCategory == strTous)
                         ? l10n.t('media_catalog')
                         : selectedCategory,
                     style: TextStyle(
