@@ -13,14 +13,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/l10n/i18n_service.dart';
 import 'package:thix_id/models/media_content.dart';
 import 'package:thix_id/nav.dart' show AppRoutes;
 import 'package:thix_id/presentation/thix_media/providers/thix_media_provider.dart';
-
 import 'utils/media_constants.dart';
 import 'widgets/media_poster_card.dart';
 import 'widgets/media_detail_page.dart';
@@ -28,7 +26,8 @@ import 'widgets/fil_feed_view.dart';
 import 'admin/thix_media_admin_page.dart';
 import 'create_post_page.dart';
 import 'user_profile_page.dart';
-
+import 'package:thix_id/nav.dart' show AppRoutes;
+import 'media_routes.dart';
 // ============================================================================
 // DESIGN TOKENS (cohérents avec le reste de l'app)
 // ============================================================================
@@ -201,9 +200,12 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage>
     }
     AnalyticsBatcher.register(safeId);
     debugPrint('[ThixMedia] Detail: ${item.title.substring(0, item.title.length.clamp(0, 30))}');
-    context.pushNamed(
-      AppRoutes.mediaDetail,
-      extra: {'item': item, 'catalog': ref.read(thixMediaListProvider).valueOrNull ?? []},
+    MediaRoutes.goToMediaDetail(
+      context,
+      item,
+      ref.read(thixMediaListProvider).valueOrNull ?? const [],
+    );
+    );
     );
   }
 
@@ -688,7 +690,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage>
                           letterSpacing: -0.5,
                           shadows: [
                             Shadow(
-                              color: Colors.black.withValues(alpha: 0.6),
+                              color: Color(0x99000000),
                               blurRadius: 8,
                             ),
                           ],
