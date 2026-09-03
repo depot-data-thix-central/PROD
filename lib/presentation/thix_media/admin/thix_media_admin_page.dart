@@ -37,9 +37,10 @@ class _AdminLogger {
   static void error(String m, [Map<String, dynamic>? d]) => _log('ERROR', m, d);
   static void _log(String l, String m, Map<String, dynamic>? d) {
     if (!kDebugMode && l == 'INFO') return;
-    final data = d != null
-        ? ' ${d.entries.map((e) => '${e.key}=${e.value}').join(', ')}'
-        : '';
+    final data = d == null
+        ? ''
+        : ' ' + d.entries.map((e) => e.key + '=' + e.value.toString()).join(', ');
+        
     debugPrint('[$_tag] [$l] $m$data');
   }
 }
