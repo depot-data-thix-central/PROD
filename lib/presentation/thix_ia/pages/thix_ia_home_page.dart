@@ -208,17 +208,17 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
             backgroundColor: Colors.transparent,
             elevation: 0,
             title: Text(l10n.t('ia_home_no_project_title'),
-                style: const TextStyle(
+                style: TextStyle(
                     color: _IaPalette.textPrimary,
                     fontWeight: FontWeight.w800)),
             content: Text(l10n.t('ia_home_no_project_message'),
-                style: const TextStyle(color: _IaPalette.textSecondary)),
+                style: TextStyle(color: _IaPalette.textSecondary)),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
                 child: Text(l10n.t('common_cancel'),
                     style:
-                        const TextStyle(color: _IaPalette.textSecondary)),
+                        TextStyle(color: _IaPalette.textSecondary)),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(ctx, true),
@@ -292,7 +292,7 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(l10n.t('ia_home_analysis_started',
-              args: {'code': _Sanitizer.text(selected.projectCode, maxLength: _kMaxCodeLength)})),
+              args: [_Sanitizer.text(selected.projectCode, maxLength: _kMaxCodeLength)])),
           backgroundColor: ThixPolicy.success,
           behavior: SnackBarBehavior.floating,
         ));
@@ -307,7 +307,7 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(l10n.t('ia_home_analysis_error',
-              args: {'error': _Sanitizer.errorMessage(e)})),
+              args: [_Sanitizer.errorMessage(e)])),
           backgroundColor: ThixPolicy.danger,
           behavior: SnackBarBehavior.floating,
         ));
@@ -471,7 +471,7 @@ class _LoadingDialog extends StatelessWidget {
         radius: 24,
         alpha: 0.14,
         padding: const EdgeInsets.all(24),
-        child: const SizedBox(
+        child: SizedBox(
           width: 40,
           height: 40,
           child: CircularProgressIndicator(
@@ -508,7 +508,7 @@ class _TopBar extends StatelessWidget {
           Expanded(
             child: Row(
               children: [
-                const Icon(Icons.location_on_rounded,
+                Icon(Icons.location_on_rounded,
                     size: 14, color: _IaPalette.textSecondary),
                 const SizedBox(width: 2),
                 Flexible(
@@ -529,7 +529,7 @@ class _TopBar extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.auto_awesome,
+                  Icon(Icons.auto_awesome,
                       size: 14, color: _IaPalette.textPrimary),
                   const SizedBox(width: 3),
                   Text('THIX IA',
@@ -556,7 +556,7 @@ class _TopBar extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.language_rounded,
+                      Icon(Icons.language_rounded,
                           size: 12, color: _IaPalette.textPrimary),
                       const SizedBox(width: 3),
                       Text('FR',
@@ -569,7 +569,7 @@ class _TopBar extends StatelessWidget {
                 Semantics(
                   button: true,
                   label: l10n.t('network_notifications'),
-                  child: const Icon(Icons.notifications_none_rounded,
+                  child: Icon(Icons.notifications_none_rounded,
                       size: 20, color: _IaPalette.textPrimary),
                 ),
               ],
@@ -872,7 +872,7 @@ class _SectionTitle extends StatelessWidget {
                         style: ThixPolicy.microStyle.copyWith(
                             color: _IaPalette.textSecondary,
                             fontWeight: FontWeight.w600)),
-                    const Icon(Icons.arrow_forward_rounded,
+                    Icon(Icons.arrow_forward_rounded,
                         size: 12, color: _IaPalette.textSecondary),
                   ],
                 ),
@@ -1029,8 +1029,8 @@ class _RecentAnalyses extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return projectsAsync.when(
-      loading: () => const Padding(
-        padding: EdgeInsets.all(16),
+      loading: () => Padding(
+        padding: const EdgeInsets.all(16),
         child: Center(
             child: SizedBox(
                 width: 24,
@@ -1046,13 +1046,13 @@ class _RecentAnalyses extends StatelessWidget {
             padding: const EdgeInsets.all(14),
             child: Row(
               children: [
-                const Icon(Icons.error_outline_rounded,
+                Icon(Icons.error_outline_rounded,
                     color: _IaPalette.textPrimary, size: 18),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                       l10n.t('ia_home_error_generic',
-                          args: {'error': _Sanitizer.errorMessage(e)}),
+                          args: [_Sanitizer.errorMessage(e)]),
                       style: ThixPolicy.bodySmallStyle.copyWith(
                           color: _IaPalette.textSecondary)),
                 ),
@@ -1126,7 +1126,7 @@ class _RecentAnalyses extends StatelessWidget {
                               border: Border.all(
                                   color: _IaPalette.glassBorderSoft),
                             ),
-                            child: const Icon(Icons.insert_chart_rounded,
+                            child: Icon(Icons.insert_chart_rounded,
                                 color: _IaPalette.textPrimary, size: 16),
                           ),
                           const SizedBox(width: 10),
@@ -1201,7 +1201,7 @@ class _QuickStats extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return projectsAsync.when(
-      loading: () => const SizedBox(
+      loading: () => SizedBox(
         height: 70,
         child: Center(
             child: SizedBox(
@@ -1393,21 +1393,21 @@ class _ProjectPickerSheet extends StatelessWidget {
                             border: Border.all(
                                 color: _IaPalette.glassBorderSoft),
                           ),
-                          child: const Icon(Icons.folder_rounded,
+                          child: Icon(Icons.folder_rounded,
                               color: _IaPalette.textPrimary, size: 16),
                         ),
                         title: Text(name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                                 color: _IaPalette.textPrimary)),
                         subtitle: Text('$code • $pct%',
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 11,
                                 color: _IaPalette.textSecondary)),
-                        trailing: const Icon(Icons.play_arrow_rounded,
+                        trailing: Icon(Icons.play_arrow_rounded,
                             color: _IaPalette.textPrimary, size: 22),
                         onTap: () => Navigator.pop(context, p),
                       );
