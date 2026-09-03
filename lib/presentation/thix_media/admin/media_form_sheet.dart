@@ -31,7 +31,7 @@ class _FormLogger {
     if (!kDebugMode && l == 'INFO') return;
     final data = d == null
         ? ''
-        : ' \( {d.entries.map((e) => " \){e.key}=${e.value}").join(", ")}';
+        : ' ' + d.entries.map((e) => e.key + '=' + e.value.toString()).join(', ');
     debugPrint('[$_tag] [$l] $m$data');
   }
 }
