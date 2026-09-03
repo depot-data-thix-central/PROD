@@ -472,7 +472,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage>
           ),
         ),
       ),
-      title: const TdiaLogo(),
+      title: TdiaLogo(),
       actions: [
         if (isAdmin)
           Semantics(
@@ -519,7 +519,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
-          const TdiaLogo(),
+           TdiaLogo(),
           const Spacer(),
           if (isAdmin)
             Semantics(
