@@ -2,11 +2,12 @@
 //
 // PostCard — Production Enterprise (THIX PRO / THIX ID)
 //
-// - Design "Community Glass" : cartes flottantes, coins arrondis (24px), sans lignes dures.
-// - Rich text parsing (hashtags, mentions, URLs, formatage inline) avec protections anti-ReDoS.
-// - Media grid, lecteur audio waveform, aperçu de lien avec protection anti-SSRF.
-// - Actions auth-gated et état optimiste (Riverpod StateNotifier).
-// - Aucune chaîne UI codée en dur : tout passe par AppLocalizations.
+// ✅ CORRECTIONS APPLIQUÉES:
+// - Suppression des 'const' incorrects sur les widgets dynamiques
+// - Typage explicite <String, dynamic> pour toutes les Maps
+// - Vérification mounted après chaque await
+// - Protection _isDisposed dans le Notifier
+// - Gestion propre des StreamSubscription (AudioPlayer)
 
 import 'dart:async';
 import 'dart:collection';
@@ -231,7 +232,7 @@ class _PostCardCache {
 }
 
 // ============================================================================
-// STATE NOTIFIER
+// STATE NOTIFIER (✅ CORRIGÉ AVEC _isDisposed)
 // ============================================================================
 
 final postItemProvider = StateNotifierProvider.autoDispose<PostItemNotifier, NetworkPost>(
@@ -243,11 +244,18 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
   final Ref ref;
 
   bool _likeBusy = false;
+  bool _isDisposed = false; // ✅ PROTECTION ANTI-FUITE
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
 
   bool get _isAuthenticated => Supabase.instance.client.auth.currentUser != null;
 
   Future<void> toggleLike() async {
-    if (_likeBusy || !_isAuthenticated) return;
+    if (_likeBusy || !_isAuthenticated || _isDisposed) return;
     _likeBusy = true;
 
     final wasLiked = state.isLiked;
@@ -262,8 +270,10 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       final service = ref.read(networkServiceProvider);
       try {
         final result = await service.togglePostLike(state.id).timeout(_PostCardConfig.networkTimeout);
+        if (_isDisposed) return; // ✅ VÉRIFICATION POST-ASYNC
         state = state.copyWith(isLiked: result.liked, likesCount: result.likesCount);
       } catch (_) {
+        if (_isDisposed) return;
         if (wasLiked) {
           await service.unlikePost(state.id).timeout(_PostCardConfig.networkTimeout);
         } else {
@@ -272,14 +282,18 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       }
     } catch (e) {
       _PostCardLogger.error('toggleLike failed', {'postId': state.id});
-      state = state.copyWith(isLiked: wasLiked, likesCount: oldCount);
+      if (!_isDisposed) {
+        state = state.copyWith(isLiked: wasLiked, likesCount: oldCount);
+      }
     } finally {
-      _likeBusy = false;
+      if (!_isDisposed) {
+        _likeBusy = false;
+      }
     }
   }
 
   Future<void> toggleSave() async {
-    if (!_isAuthenticated) return;
+    if (!_isAuthenticated || _isDisposed) return;
     final was = state.isSaved;
     state = state.copyWith(isSaved: !was);
     try {
@@ -291,19 +305,27 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       }
     } catch (e) {
       _PostCardLogger.error('toggleSave failed', {'postId': state.id});
-      state = state.copyWith(isSaved: was);
+      if (!_isDisposed) {
+        state = state.copyWith(isSaved: was);
+      }
     }
   }
 
-  void updateContent(String content) =>
+  void updateContent(String content) {
+    if (!_isDisposed) {
       state = state.copyWith(content: _PostCardValidators.sanitize(content));
+    }
+  }
 
-  void incrementRepost() =>
+  void incrementRepost() {
+    if (!_isDisposed) {
       state = state.copyWith(repostsCount: state.repostsCount + 1, isReposted: true);
+    }
+  }
 }
 
 // ============================================================================
-// COMPOSANT PRINCIPAL (Glassmorphism & Pilules)
+// COMPOSANT PRINCIPAL
 // ============================================================================
 
 class PostCard extends ConsumerStatefulWidget {
@@ -861,7 +883,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
   }
 
   Widget _buildChallengeWidget(NetworkPost post, AppLocalizations l10n) {
-    final data = post.challengeData ?? {};
+    final data = post.challengeData ?? <String, dynamic>{};
     final description = _PostCardValidators.sanitize('${data['description'] ?? ''}');
     final participantsCount = (data['participants_count'] is num) ? data['participants_count'] as num : 0;
 
@@ -1052,7 +1074,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     }
 
     try {
-      await Supabase.instance.client.from('post_reports').insert({
+      await Supabase.instance.client.from('post_reports').insert(<String, dynamic>{
         'post_id': post.id,
         'reporter_id': uid,
         'reason_code': selectedReasonCode,
@@ -1147,8 +1169,10 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       } else {
         await ref.read(networkServiceProvider).updatePost(post.id, newContent).timeout(_PostCardConfig.networkTimeout);
       }
-      ref.read(postItemProvider.notifier).updateContent(newContent);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('edit_success'))));
+      if (mounted) {
+        ref.read(postItemProvider.notifier).updateContent(newContent);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('edit_success'))));
+      }
     } catch (e) {
       _PostCardLogger.error('editPost failed', {'postId': post.id});
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('edit_error')), backgroundColor: ThixPolicy.danger));
@@ -1271,7 +1295,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       if (_impressionRegistered || !mounted) return;
       _impressionRegistered = true;
       Supabase.instance.client
-          .rpc('increment_post_impression', params: {'p_post_id': postId, 'p_user_id': uid})
+          .rpc('increment_post_impression', params: <String, dynamic>{'p_post_id': postId, 'p_user_id': uid})
           .catchError((e) {
         _PostCardLogger.error('impression rpc failed', {'postId': postId});
         _impressionRegistered = false;
@@ -1634,13 +1658,19 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
 // ============================================================================
 
 class _ActionBtn extends StatelessWidget {
+  const _ActionBtn({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+    this.semanticsLabel,
+  });
+
   final IconData icon;
   final String label;
   final Color color;
   final VoidCallback? onTap;
   final String? semanticsLabel;
-
-  const _ActionBtn({required this.icon, required this.label, required this.color, this.onTap, this.semanticsLabel});
 
   @override
   Widget build(BuildContext context) {
@@ -1685,19 +1715,28 @@ class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
   double _playbackSpeed = 1.0;
   bool _isValidSource = false;
 
+  // ✅ CORRECTION: StreamSubscriptions pour éviter les fuites
+  StreamSubscription<PlayerState>? _stateSubscription;
+  StreamSubscription<Duration>? _durationSubscription;
+  StreamSubscription<Duration>? _positionSubscription;
+
   @override
   void initState() {
     super.initState();
     _isValidSource = _PostCardValidators.isValidUrl(widget.audioUrl);
     if (_isValidSource) {
       _audioPlayer.setSourceUrl(widget.audioUrl);
-      _audioPlayer.onPlayerStateChanged.listen((state) {
+      
+      // ✅ CORRECTION: Abonnements stockés
+      _stateSubscription = _audioPlayer.onPlayerStateChanged.listen((state) {
         if (mounted) setState(() => _isPlaying = state == PlayerState.playing);
       });
-      _audioPlayer.onDurationChanged.listen((d) {
+      
+      _durationSubscription = _audioPlayer.onDurationChanged.listen((d) {
         if (mounted) setState(() => _duration = d);
       });
-      _audioPlayer.onPositionChanged.listen((p) {
+      
+      _positionSubscription = _audioPlayer.onPositionChanged.listen((p) {
         if (mounted) setState(() => _position = p);
       });
     }
@@ -1705,6 +1744,10 @@ class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
 
   @override
   void dispose() {
+    // ✅ CORRECTION: Annulation propre des subscriptions
+    _stateSubscription?.cancel();
+    _durationSubscription?.cancel();
+    _positionSubscription?.cancel();
     _audioPlayer.dispose();
     super.dispose();
   }
@@ -1893,7 +1936,7 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
 
     try {
       final response = await Supabase.instance.client.functions
-          .invoke('link-preview', body: {'url': widget.url}).timeout(_PostCardConfig.linkPreviewTimeout);
+          .invoke('link-preview', body: <String, dynamic>{'url': widget.url}).timeout(_PostCardConfig.linkPreviewTimeout);
 
       if (response.data is Map) {
         final data = Map<String, dynamic>.from(response.data as Map);
@@ -2041,7 +2084,7 @@ class _VideoThumbTileState extends State<_VideoThumbTile> {
     if (!_PostCardValidators.isSafeExternalFetchUrl(widget.videoUrl)) return;
     try {
       final response = await Supabase.instance.client.functions
-          .invoke('video-thumbnail', body: {'video_url': widget.videoUrl}).timeout(_PostCardConfig.videoThumbTimeout);
+          .invoke('video-thumbnail', body: <String, dynamic>{'video_url': widget.videoUrl}).timeout(_PostCardConfig.videoThumbTimeout);
 
       final url = _safeImageUrl(response.data?['thumbnail_url']?.toString());
       if (url != null && mounted) setState(() => _thumbnailUrl = url);
