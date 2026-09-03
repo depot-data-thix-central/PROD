@@ -148,8 +148,7 @@ class _ThixMediaAdminPageState extends ConsumerState<ThixMediaAdminPage> {
         backgroundColor: ThixPolicy.card,
         title: Text(
           // ✅ FIX : forcer type Map explicite pour dart2js
-          l10n.t('admin_confirm_delete_title',
-              args: <String, String>{'title': item.title}),
+          l10n.tn('admin_confirm_delete_title', {'title': item.title}),
           style: TextStyle(color: ThixPolicy.textMain),
         ),
         content: Text(
@@ -372,8 +371,7 @@ class _ThixMediaAdminPageState extends ConsumerState<ThixMediaAdminPage> {
           child: Semantics(
             header: true,
             // ✅ FIX : forcer type Map explicite pour dart2js
-            label: l10n.t('admin_empty_filter',
-                args: <String, String>{'filter': filter}),
+            label: l10n.tn('admin_empty_filter', {'filter': filter}),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
