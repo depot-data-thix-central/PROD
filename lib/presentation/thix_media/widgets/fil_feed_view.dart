@@ -1,9 +1,4 @@
 /// FilFeedView (Production Enterprise)
-///  ThixPolicy + i18n 8 langues + Semantics + logs structurés
-///  Bug fix : tap bande absorbe les taps (n'ouvre pas la vidéo)
-///  Compte auteur visible dans la bande (avatar + @username)
-///  AnalyticsBatcher.register déplacé dans onPageChanged (pas dans build)
-///  Blur réduit sur Web + RepaintBoundary + throttling
 import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -17,24 +12,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/media_content.dart';
-import 'package:thix_id/services/media_service.dart';
 import 'package:thix_id/presentation/thix_media/providers/thix_media_provider.dart';
+import 'package:thix_id/services/media_service.dart';
 
 import '../utils/media_constants.dart';
-import 'feed_video_player.dart';
 import 'comments_sheet.dart';
-
-// ============================================================================
-// CONSTANTS
-// ============================================================================
+import 'feed_video_player.dart';
 
 const Duration _kLikeThrottle = Duration(milliseconds: 400);
 const double _kBackgroundBlur = kIsWeb ? 8 : 20;
 const double _kOverlayBlur = kIsWeb ? 6 : 15;
-
-// ============================================================================
-// LOGGING
-// ============================================================================
 
 class _FeedLogger {
   static const _tag = 'FilFeed';
@@ -43,14 +30,15 @@ class _FeedLogger {
   static void error(String m, [Map<String, dynamic>? d]) => _log('ERROR', m, d);
   static void _log(String l, String m, Map<String, dynamic>? d) {
     if (!kDebugMode && l == 'INFO') return;
-    final data = d != null ? ' ${d.entries.map((e) => '${e.key}=${e.value}').join(', ')}' : '';
+    final data = d == null
+        ? ''
+        : ' ' +
+            d.entries
+                .map((e) => e.key + '=' + e.value.toString())
+                .join(', ');
     debugPrint('[$_tag] [$l] $m$data');
   }
 }
-
-// ============================================================================
-// FEED VIEW
-// ============================================================================
 
 class FilFeedView extends ConsumerStatefulWidget {
   final List<MediaContent> catalog;
@@ -76,7 +64,7 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
   @override
   void initState() {
     super.initState();
-    _shuffledCatalog = List.from(widget.catalog)..shuffle();
+    _shuffledCatalog = List<MediaContent>.from(widget.catalog)..shuffle();
     _initLikes();
     _FeedLogger.info('Feed initialized', {'items': _shuffledCatalog.length});
   }
@@ -91,23 +79,16 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
         ..shuffle();
       if (newItems.isNotEmpty) {
         _shuffledCatalog.addAll(newItems);
-        for (var item in newItems) {
+        for (final item in newItems) {
           _localLikeCounts[item.id] = item.likeCount;
         }
         _syncLikedStatus();
-        _FeedLogger.info('Catalog updated', {'newItems': newItems.length});
       }
     }
   }
 
-  @override
-  void dispose() {
-    _FeedLogger.info('Feed disposed');
-    super.dispose();
-  }
-
   void _initLikes() {
-    for (var item in _shuffledCatalog) {
+    for (final item in _shuffledCatalog) {
       _localLikeCounts[item.id] = item.likeCount;
     }
     _syncLikedStatus();
@@ -116,18 +97,15 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
   Future<void> _syncLikedStatus() async {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null || _shuffledCatalog.isEmpty) return;
-
     try {
       final ids = _shuffledCatalog.map((e) => e.id).toList();
       final res = await MediaService().getLikedMediaIds(ids);
-      if (mounted) {
-        setState(() {
-          for (var id in res) {
-            _localLikes[id] = true;
-          }
-        });
-        _FeedLogger.info('Synced liked status', {'liked': res.length});
-      }
+      if (!mounted) return;
+      setState(() {
+        for (final id in res) {
+          _localLikes[id] = true;
+        }
+      });
     } catch (e) {
       _FeedLogger.error('Sync liked status failed', {'error': '$e'});
     }
@@ -137,7 +115,6 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
     final now = DateTime.now();
     if (_lastLikeTap != null &&
         now.difference(_lastLikeTap!) < _kLikeThrottle) {
-      _FeedLogger.warn('Like tap throttled');
       return;
     }
     _lastLikeTap = now;
@@ -157,30 +134,21 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
     }
 
     HapticFeedback.selectionClick();
-    final isCurrentlyLiked = _localLikes[item.id] ?? false;
+    final wasLiked = _localLikes[item.id] ?? false;
     final currentCount = _localLikeCounts[item.id] ?? item.likeCount;
-
     setState(() {
-      _localLikes[item.id] = !isCurrentlyLiked;
-      _localLikeCounts[item.id] = isCurrentlyLiked
-          ? (currentCount - 1).clamp(0, 999999)
-          : currentCount + 1;
+      _localLikes[item.id] = !wasLiked;
+      _localLikeCounts[item.id] =
+          wasLiked ? (currentCount - 1).clamp(0, 999999) : currentCount + 1;
     });
-
     try {
       await MediaService().toggleLike(item.id);
-      _FeedLogger.info('Like toggled', {
-        'id': item.id,
-        'liked': !isCurrentlyLiked,
-      });
     } catch (e) {
-      _FeedLogger.error('Toggle like failed', {'id': item.id, 'error': '$e'});
-      if (mounted) {
-        setState(() {
-          _localLikes[item.id] = isCurrentlyLiked;
-          _localLikeCounts[item.id] = currentCount;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _localLikes[item.id] = wasLiked;
+        _localLikeCounts[item.id] = currentCount;
+      });
     }
   }
 
@@ -193,18 +161,16 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
       isScrollControlled: true,
       builder: (_) => CommentsSheet(mediaId: item.id, mediaTitle: item.title),
     ).then((_) {
-      if (mounted) {
-        ref.invalidate(commentCountProvider(item.id));
-      }
+      if (mounted) ref.invalidate(commentCountProvider(item.id));
     });
-    _FeedLogger.info('Comments opened', {'id': item.id});
   }
 
-  void _openCreatorProfile(String? userId) {
-    if (userId == null || userId.isEmpty || !mounted) return;
-    HapticFeedback.selectionClick();
-    context.push('/profile/$userId');
-    _FeedLogger.info('Creator profile opened', {'userId': userId});
+  void _onPageChanged(int index) {
+    setState(() => _currentIndex = index);
+    AnalyticsBatcher.register(_shuffledCatalog[index].id);
+    if (index >= _shuffledCatalog.length - 3) {
+      ref.read(thixMediaListProvider.notifier).loadMore();
+    }
   }
 
   @override
@@ -221,20 +187,24 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
 
     return PageView.builder(
       scrollDirection: Axis.vertical,
-      onPageChanged: (index) {
-        setState(() => _currentIndex = index);
-        AnalyticsBatcher.register(_shuffledCatalog[index].id);
-      },
+      allowImplicitScrolling: true,
+      onPageChanged: _onPageChanged,
       itemCount: _shuffledCatalog.length,
-      itemBuilder: (context, index) =>
-          _buildFeedItem(_shuffledCatalog[index], index == _currentIndex),
+      itemBuilder: (context, index) {
+        final isNear = (index - _currentIndex).abs() <= 1;
+        return _buildFeedItem(
+          _shuffledCatalog[index],
+          index == _currentIndex,
+          warmup: isNear,
+        );
+      },
     );
   }
 
-  Widget _buildFeedItem(MediaContent item, bool isCurrent) {
+  Widget _buildFeedItem(MediaContent item, bool isCurrent, {required bool warmup}) {
     final isLiked = _localLikes[item.id] ?? false;
     final likeCount = _localLikeCounts[item.id] ?? item.likeCount;
-    final live = ref.watch(mediaCountsStreamProvider(item.id)).valueOrNull;
+    final live = ref.watch(mediaCountsPollingProvider(item.id)).valueOrNull;
     final commentCount = live?.commentCount ?? item.commentCount;
     final viewCount = live?.viewCount ?? item.viewCount;
 
@@ -256,7 +226,12 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
             right: 16,
             bottom: 24,
             child: _buildInfoOverlay(
-                item, isLiked, likeCount, commentCount, viewCount),
+              item,
+              isLiked,
+              likeCount,
+              commentCount,
+              viewCount,
+            ),
           ),
         ],
       ),
@@ -264,9 +239,7 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
   }
 
   Widget _buildBackgroundImage(String url) {
-    if (url.trim().isEmpty) {
-      return Container(color: ThixPolicy.inkDeep);
-    }
+    if (url.trim().isEmpty) return Container(color: ThixPolicy.inkDeep);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -276,142 +249,98 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
           errorWidget: (_, __, ___) => Container(color: ThixPolicy.inkDeep),
         ),
         BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: _kBackgroundBlur, sigmaY: _kBackgroundBlur),
+          filter: ImageFilter.blur(
+            sigmaX: _kBackgroundBlur,
+            sigmaY: _kBackgroundBlur,
+          ),
           child: Container(color: Colors.black.withValues(alpha: 0.6)),
         ),
       ],
     );
   }
 
-  Widget _buildInfoOverlay(MediaContent item, bool isLiked, int likeCount,
-      int commentCount, int viewCount) {
+  Widget _buildInfoOverlay(
+    MediaContent item,
+    bool isLiked,
+    int likeCount,
+    int commentCount,
+    int viewCount,
+  ) {
     final l10n = AppLocalizations.of(context);
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {},
+    return Material(
+      color: Colors.transparent,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: _kOverlayBlur, sigmaY: _kOverlayBlur),
           child: Container(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.15),
               border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
             ),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Semantics(
-                  button: true,
-                  label: '${l10n.t("feed_open_detail")} ${item.title}',
-                  child: GestureDetector(
-                    onTap: () => widget.onOpenDetail(item),
-                    behavior: HitTestBehavior.opaque,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: ThixPolicy.primary,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                item.type.toUpperCase(),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            if (item.isPaid) ...[
-                              const SizedBox(width: 6),
-                              Semantics(
-                                label: l10n.t('feed_premium'),
-                                child: Icon(Icons.lock_rounded,
-                                    size: 12, color: ThixPolicy.warning),
-                              ),
-                            ],
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                item.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (item.subtitle != null &&
-                            item.subtitle!.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            item.subtitle!,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.7),
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-
-                // ✅ BUG FIX : Vérification de nullabilité sécurisée sur userId
-                if (item.userId != null && item.userId!.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Semantics(
-                    button: true,
-                    label: '${l10n.t("feed_open_creator")} @${item.userId}',
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => _openCreatorProfile(item.userId),
-                      child: Row(
-                        children: [
-                          const _CreatorAvatar(url: null),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              '@${item.userId}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.75),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          Icon(Icons.chevron_right_rounded,
-                              size: 16,
-                              color: Colors.white.withValues(alpha: 0.4)),
-                        ],
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
                       ),
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.primary,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        item.type.toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    if (item.isPaid) ...[
+                      const SizedBox(width: 6),
+                      Icon(Icons.lock_rounded, size: 12, color: ThixPolicy.warning),
+                    ],
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        item.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (item.subtitle != null && item.subtitle!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    item.subtitle!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      fontSize: 12,
                     ),
                   ),
                 ],
-
-                const SizedBox(height: 12),
-                Container(
-                  height: 1,
-                  color: Colors.white.withValues(alpha: 0.2),
-                ),
+                if (item.userId != null && item.userId!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _CreatorRow(userId: item.userId!),
+                ],
                 const SizedBox(height: 8),
-
+                Container(height: 1, color: Colors.white.withValues(alpha: 0.2)),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
@@ -466,25 +395,25 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
       button: true,
       label: text.isNotEmpty ? '$label $text' : label,
       child: GestureDetector(
-        onTap: onTap != null
-            ? () {
+        onTap: onTap == null
+            ? null
+            : () {
                 HapticFeedback.selectionClick();
                 onTap();
-              }
-            : null,
+              },
         behavior: HitTestBehavior.opaque,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           child: Row(
             children: [
-              Icon(icon, color: color, size: 22),
+              Icon(icon, color: color, size: 20),
               if (text.isNotEmpty) ...[
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 Text(
                   text,
                   style: TextStyle(
                     color: color,
-                    fontSize: 13,
+                    fontSize: 12,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -497,9 +426,84 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
   }
 }
 
-// ============================================================================
-// CREATOR AVATAR
-// ============================================================================
+class _CreatorRow extends ConsumerWidget {
+  final String userId;
+  const _CreatorRow({required this.userId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(userProfileProvider(userId)).valueOrNull;
+    final following = ref.watch(isFollowingProvider(userId)).valueOrNull ?? false;
+    final me = Supabase.instance.client.auth.currentUser?.id;
+    final rawName =
+        (profile?['username'] ?? profile?['full_name'] ?? '').toString().trim();
+    final name = rawName.isEmpty ? 'Créateur' : rawName;
+    final avatar = profile?['avatar_url']?.toString();
+    final showFollow = me != null && me != userId && !following;
+
+    return Row(
+      children: [
+        Expanded(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              context.push('/profile/$userId');
+            },
+            child: Row(
+              children: [
+                _CreatorAvatar(url: avatar),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    name.startsWith('@') ? name : '@$name',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (showFollow)
+          GestureDetector(
+            onTap: () async {
+              HapticFeedback.mediumImpact();
+              try {
+                await MediaService().toggleFollow(userId);
+                ref.invalidate(isFollowingProvider(userId));
+              } catch (e) {
+                _FeedLogger.error('Follow failed', {'error': '$e'});
+              }
+            },
+            child: Container(
+              width: 28,
+              height: 28,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: const Text(
+                '+',
+                style: TextStyle(
+                  color: Colors.black,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                  height: 1,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
 
 class _CreatorAvatar extends StatelessWidget {
   final String? url;
@@ -508,8 +512,8 @@ class _CreatorAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 28,
-      height: 28,
+      width: 26,
+      height: 26,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
@@ -519,10 +523,13 @@ class _CreatorAvatar extends StatelessWidget {
             ? CachedNetworkImage(
                 imageUrl: url!,
                 fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => Icon(Icons.person,
-                    size: 16, color: ThixPolicy.textMuted),
+                errorWidget: (_, __, ___) => Icon(
+                  Icons.person,
+                  size: 14,
+                  color: ThixPolicy.textMuted,
+                ),
               )
-            : Icon(Icons.person, size: 16, color: ThixPolicy.textMuted),
+            : Icon(Icons.person, size: 14, color: ThixPolicy.textMuted),
       ),
     );
   }
