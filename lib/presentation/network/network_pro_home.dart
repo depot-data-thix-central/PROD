@@ -199,7 +199,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
 
       final dir = pos.userScrollDirection;
       final navVisible = ref.read(_navVisibleProvider.notifier);
-      
+
       if (dir == ScrollDirection.reverse) {
         if (navVisible.state) navVisible.state = false;
       } else if (dir == ScrollDirection.forward) {
@@ -373,7 +373,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                 physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
                 slivers: [
                   _buildSliverAppBar(l10n, avatarUrl: currentUser.photoUrl, currentUserId: currentUser.id),
-                  
+
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -384,7 +384,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                       ),
                     ),
                   ),
-                  
+
                   SliverToBoxAdapter(child: _buildStories(l10n, currentUser.id, liveHostIds)),
                   SliverToBoxAdapter(child: _buildFilters(l10n)),
 
@@ -406,24 +406,26 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                     ),
                     data: (posts) {
                       if (posts.isEmpty) return SliverToBoxAdapter(child: _buildEmpty(l10n));
+                      // ✅ ESPACEMENT : le Divider doré qui suivait chaque
+                      // PostCard a été retiré — PostCard dessine désormais
+                      // lui-même sa bordure or de séparation en bas (voir
+                      // post_card.dart). Le garder ici aurait doublé la
+                      // ligne et rajouté de l'espace vertical entre cartes.
+                      // `isFirst: i == 0` marque la coupure avec le haut du feed.
                       return SliverList.builder(
                         itemCount: posts.length,
                         itemBuilder: (c, i) {
                           final post = posts[i];
-                          return Column(
-                            children: [
-                              PostCard(
-                                key: ValueKey(post.id),
-                                post: post,
-                                currentProfileId: currentUser.id,
-                                onLike: null,
-                                onComment: () => _openComments(post.id),
-                                onShare: () => _showShareSheet(l10n, post),
-                                onDelete: () => ref.read(feedProvider.notifier).deletePost(post.id),
-                                onRefresh: null,
-                              ),
-                              Divider(height: 1, thickness: 0.5, color: ThixPolicy.gold.withValues(alpha: 0.6)),
-                            ],
+                          return PostCard(
+                            key: ValueKey(post.id),
+                            post: post,
+                            currentProfileId: currentUser.id,
+                            isFirst: i == 0,
+                            onLike: null,
+                            onComment: () => _openComments(post.id),
+                            onShare: () => _showShareSheet(l10n, post),
+                            onDelete: () => ref.read(feedProvider.notifier).deletePost(post.id),
+                            onRefresh: null,
                           );
                         },
                       );
@@ -908,7 +910,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                     children: [
                       _navBtn(Icons.home_rounded, l10n.t('network_nav_home'), true, () => _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut)),
                       _navBtn(Icons.explore_outlined, l10n.t('network_nav_discover'), false, () => _safePush('/network/discover')),
-                      
+
                       // FAB Central compact et élégant
                       Semantics(
                         button: true,
@@ -932,7 +934,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                           ),
                         ),
                       ),
-                      
+
                       _navBtn(Icons.mail_outline_rounded, l10n.t('network_nav_messages'), false, () => _safePush('/network/messages')),
                       _navBtn(Icons.diversity_3_outlined, l10n.t('network_nav_communities'), false, () => _safePush('/network/communities')),
                     ],
