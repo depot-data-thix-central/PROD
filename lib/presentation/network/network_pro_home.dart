@@ -460,7 +460,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
                             child:
                                 _buildUnifiedDiscoveryBand(l10n, liveSessions))),
 
-                  feedAsync.when(
+                                    feedAsync.when(
                     loading: () => SliverToBoxAdapter(
                         child: RepaintBoundary(child: _buildShimmerFeed())),
                     error: (e, _) => SliverToBoxAdapter(
@@ -469,7 +469,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
                         child: Center(
                           child: Text(
                             l10n.t('network_error_generic',
-                                args: [e.toString()]
+                                args: [e.toString()]), // <-- CORRECTION : Virgule ajoutée ici
                             style: ThixPolicy.bodyStyle
                                 .copyWith(color: ThixPolicy.textSecondary),
                           ),
@@ -477,8 +477,9 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
                       ),
                     ),
                     data: (posts) {
-                      if (posts.isEmpty)
+                      if (posts.isEmpty) { // <-- CORRECTION : Accolades recommandées pour la propreté
                         return SliverToBoxAdapter(child: _buildEmpty(l10n));
+                      }
                       return SliverList.builder(
                         itemCount: posts.length,
                         itemBuilder: (c, i) {
@@ -514,6 +515,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
                 ],
               ),
             ),
+
 
             Consumer(
               builder: (context, ref, _) {
