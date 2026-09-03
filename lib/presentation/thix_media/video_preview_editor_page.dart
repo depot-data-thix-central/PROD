@@ -254,12 +254,12 @@ class _VideoPreviewEditorPageState extends State<VideoPreviewEditorPage> {
       final file = result.files.first;
       final ext = p.extension(file.name).toLowerCase();
       if (!_EditorLimits.allowedAudioExtensions.contains(ext)) {
-        _showSnack('editor_error_audio_unsupported', isError: true, args: {'ext': ext});
+        _showSnack('editor_error_audio_unsupported', isError: true, args: [ext]);
         return;
       }
       if (file.size > _EditorLimits.maxAudioSizeBytes) {
         final maxMB = (_EditorLimits.maxAudioSizeBytes / 1024 / 1024).toInt();
-        _showSnack('editor_error_audio_too_large', isError: true, args: {'maxMB': maxMB});
+        _showSnack('editor_error_audio_too_large', isError: true, args: ['$maxMB']);
         return;
       }
 
