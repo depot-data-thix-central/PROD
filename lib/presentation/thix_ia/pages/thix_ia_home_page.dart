@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart'; // ✅ Localizations
 
 import '../../../../core/theme/thix_design_policy.dart';
 import '../core/constants/thix_ia_routes.dart';
@@ -13,32 +14,31 @@ import '../providers/analysis_provider.dart';
 
 enum ThixQuickAction { idea, market, businessPlan, legal }
 
-final thixIaCurrentProfileProvider =
-    FutureProvider<Map<String, dynamic>?>((ref) async {
+// ✅ Provider optimisé avec gestion d'erreur explicite pour la production
+final thixIaCurrentProfileProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
   final user = Supabase.instance.client.auth.currentUser;
   if (user == null) return null;
   try {
     final row = await Supabase.instance.client
         .from('profiles')
-        .select(
-          'id, thix_id, display_name, full_name, avatar_url, photo_url, '
-          'occupation, profession, city, country, role_title',
-        )
+        .select('id, thix_id, display_name, full_name, avatar_url, photo_url, occupation, profession, city, country, role_title')
         .eq('id', user.id)
         .maybeSingle();
     if (row != null) return row;
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('⚠️ Erreur chargement profil THIX IA: $e');
+  }
+  // Fallback sécurisé
   return {
     'id': user.id,
-    'display_name': user.userMetadata?['display_name'] ??
-        user.email?.split('@').first ??
-        'Utilisateur',
+    'display_name': user.userMetadata?['display_name'] ?? user.email?.split('@').first ?? 'Utilisateur',
     'avatar_url': user.userMetadata?['avatar_url'],
   };
 });
 
 class ThixIaHomePage extends ConsumerStatefulWidget {
   const ThixIaHomePage({super.key});
+
   @override
   ConsumerState<ThixIaHomePage> createState() => _ThixIaHomePageState();
 }
@@ -47,23 +47,28 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => ref.read(projectsProvider.notifier).refresh());
+    // ✅ Refresh sécurisé via microtask pour éviter les conflits de build
+    Future.microtask(() {
+      if (mounted) ref.read(projectsProvider.notifier).refresh();
+    });
   }
 
   Future<void> _onQuickAction(ThixQuickAction action) async {
+    final l10n = AppLocalizations.of(context)!;
     final projects = ref.read(projectsProvider).value ?? [];
 
     if (projects.isEmpty) {
       final go = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text('Aucun projet'),
-          content: const Text('Creez d\'abord un projet pour lancer une analyse.'),
+          title: Text(l10n.noProjectTitle),
+          content: Text(l10n.noProjectDesc),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.cancel)),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Creer un projet'),
+              style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primaryDeep),
+              child: Text(l10n.createProject),
             ),
           ],
         ),
@@ -76,54 +81,38 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _ProjectPickerSheet(
-        projects: projects,
-        title: _actionTitle(action),
-      ),
+      builder: (_) => _ProjectPickerSheet(projects: projects, title: _actionTitle(action, l10n)),
     );
+    
     if (selected == null || !mounted) return;
 
     await ref.read(activeProjectProvider.notifier).setActive(selected.projectCode);
 
     try {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => const Center(child: CircularProgressIndicator()),
-      );
+      showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator(color: ThixPolicy.primaryDeep)));
 
       final analyses = ref.read(analysesProvider.notifier);
       switch (action) {
         case ThixQuickAction.idea:
         case ThixQuickAction.market:
-          await analyses.startMarketAnalysis(
-            country: selected.country,
-            sector: selected.sector,
-          );
+          await analyses.startMarketAnalysis(country: selected.country, sector: selected.sector);
           break;
         case ThixQuickAction.businessPlan:
-  await analyses.startFinanceAnalysis(
-    inputs: {
-      'sector': selected.sector,
-      'country': selected.country,
-    },
-  );
-  break;
-
+          await analyses.startFinanceAnalysis(inputs: {'sector': selected.sector, 'country': selected.country});
+          break;
         case ThixQuickAction.legal:
-          await analyses.startLegalAnalysis(
-            jurisdiction: selected.country,
-            sector: selected.sector,
-          );
+          await analyses.startLegalAnalysis(jurisdiction: selected.country, sector: selected.sector);
           break;
       }
 
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) Navigator.of(context).pop(); // Fermer le loader
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Analyse lancee sur ${selected.projectCode}'),
-            backgroundColor: ThixPolicy.success,
+            content: Text('${l10n.analysisLaunched} ${selected.projectCode}'),
+            backgroundColor: ThixPolicy.primaryDeep,
+            behavior: SnackBarBehavior.floating,
           ),
         );
         context.push(ThixIARoutes.projectDetailPath(selected.projectCode));
@@ -132,40 +121,40 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
       if (mounted) Navigator.of(context).pop();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('${l10n.error}: $e'), backgroundColor: ThixPolicy.danger, behavior: SnackBarBehavior.floating),
         );
       }
     }
   }
 
-  String _actionTitle(ThixQuickAction a) {
+  String _actionTitle(ThixQuickAction a, AppLocalizations l10n) {
     switch (a) {
-      case ThixQuickAction.idea:
-        return 'Analyser mon idee';
-      case ThixQuickAction.market:
-        return 'Etudier un marche';
-      case ThixQuickAction.businessPlan:
-        return 'Creer un Business Plan';
-      case ThixQuickAction.legal:
-        return 'Verifier reglementation';
+      case ThixQuickAction.idea: return l10n.analyzeIdea;
+      case ThixQuickAction.market: return l10n.studyMarket;
+      case ThixQuickAction.businessPlan: return l10n.createBusinessPlan;
+      case ThixQuickAction.legal: return l10n.checkRegulations;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final projectsAsync = ref.watch(projectsProvider);
     final profileAsync = ref.watch(thixIaCurrentProfileProvider);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6FB),
+      backgroundColor: ThixPolicy.surfaceSoft,
+      // ✅ BARRE DU BAS SUPPRIMÉE CONFORMÉMENT À LA DEMANDE
       body: Stack(
         children: [
-          Positioned(top: -60, right: -40, child: _halo(160, ThixPolicy.primary.withOpacity(0.14))),
-          Positioned(top: 160, left: -70, child: _halo(180, const Color(0xFF7C3AED).withOpacity(0.08))),
+          // ✅ Orbes de fond optimisés avec ClipRRect pour éviter les fuites de rendu
+          Positioned(top: -60, right: -40, child: _halo(160, ThixPolicy.primary.withOpacity(0.08))),
+          Positioned(top: 160, left: -70, child: _halo(180, ThixPolicy.primaryDeep.withOpacity(0.06))),
+          
           SafeArea(
             bottom: false,
             child: RefreshIndicator(
-              color: ThixPolicy.primary,
+              color: ThixPolicy.primaryDeep,
               onRefresh: () async {
                 ref.invalidate(thixIaCurrentProfileProvider);
                 await ref.read(projectsProvider.notifier).refresh();
@@ -173,22 +162,21 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
               child: CustomScrollView(
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                 slivers: [
-                  SliverToBoxAdapter(child: _TopBar(profileAsync: profileAsync)),
-                  SliverToBoxAdapter(child: _UserHeader(profileAsync: profileAsync)),
+                  SliverToBoxAdapter(child: _TopBar(profileAsync: profileAsync, l10n: l10n)),
+                  SliverToBoxAdapter(child: _UserHeader(profileAsync: profileAsync, l10n: l10n)),
                   const SliverToBoxAdapter(child: SizedBox(height: 10)),
-                  SliverToBoxAdapter(
-                    child: _HeroBanner(onAnalyze: () => context.push(ThixIARoutes.createProject)),
-                  ),
+                  SliverToBoxAdapter(child: _HeroBanner(onAnalyze: () => context.push(ThixIARoutes.createProject), l10n: l10n)),
                   const SliverToBoxAdapter(child: SizedBox(height: 18)),
-                  const SliverToBoxAdapter(child: _SectionTitle('Que souhaitez-vous faire aujourd\'hui ?')),
+                  SliverToBoxAdapter(child: _SectionTitle(l10n.quickActionsTitle, l10n: l10n)),
                   const SliverToBoxAdapter(child: SizedBox(height: 8)),
-                  SliverToBoxAdapter(child: _MainActions(onAction: _onQuickAction)),
+                  SliverToBoxAdapter(child: _MainActions(onAction: _onQuickAction, l10n: l10n)),
                   const SliverToBoxAdapter(child: SizedBox(height: 18)),
                   SliverToBoxAdapter(
                     child: _SectionTitle(
-                      'Les Moteurs THIX IA',
+                      l10n.thixMotorsTitle,
                       seeAll: true,
                       onSeeAll: () => context.push(ThixIARoutes.projects),
+                      l10n: l10n,
                     ),
                   ),
                   const SliverToBoxAdapter(child: SizedBox(height: 8)),
@@ -196,9 +184,10 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
                   const SliverToBoxAdapter(child: SizedBox(height: 18)),
                   SliverToBoxAdapter(
                     child: _SectionTitle(
-                      'Mes dernieres analyses',
+                      l10n.recentAnalysesTitle,
                       seeAll: true,
                       onSeeAll: () => context.push(ThixIARoutes.projects),
+                      l10n: l10n,
                     ),
                   ),
                   const SliverToBoxAdapter(child: SizedBox(height: 8)),
@@ -207,50 +196,36 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
                       projectsAsync: projectsAsync,
                       onOpen: (c) => context.push(ThixIARoutes.projectDetailPath(c)),
                       onCreate: () => context.push(ThixIARoutes.createProject),
+                      l10n: l10n,
                     ),
                   ),
                   const SliverToBoxAdapter(child: SizedBox(height: 18)),
-                  const SliverToBoxAdapter(child: _SectionTitle('Apercu rapide')),
+                  SliverToBoxAdapter(child: _SectionTitle(l10n.quickOverviewTitle, l10n: l10n)),
                   const SliverToBoxAdapter(child: SizedBox(height: 8)),
-                  SliverToBoxAdapter(child: _QuickStats(projectsAsync: projectsAsync)),
-                  const SliverToBoxAdapter(child: SizedBox(height: 88)),
+                  SliverToBoxAdapter(child: _QuickStats(projectsAsync: projectsAsync, l10n: l10n)),
+                  // ✅ Espacement dynamique pour compenser la suppression de la bottom nav
+                  SliverToBoxAdapter(child: SizedBox(height: MediaQuery.paddingOf(context).bottom + 24)),
                 ],
               ),
             ),
           ),
         ],
       ),
-      bottomNavigationBar: _ThixIaBottomNav(
-        currentIndex: 2,
-        onTap: (i) {
-          switch (i) {
-            case 0:
-              context.go('/');
-              break;
-            case 1:
-              context.push(ThixIARoutes.projects);
-              break;
-            case 2:
-              break;
-            case 3:
-              break;
-            case 4:
-              context.go('/profile');
-              break;
-          }
-        },
-      ),
     );
   }
 
-  Widget _halo(double s, Color c) =>
-      Container(width: s, height: s, decoration: BoxDecoration(shape: BoxShape.circle, color: c));
+  // ✅ Halo sécurisé avec ClipRRect
+  Widget _halo(double s, Color c) => ClipRRect(
+    borderRadius: BorderRadius.circular(s / 2),
+    child: Container(width: s, height: s, decoration: BoxDecoration(shape: BoxShape.circle, color: c)),
+  );
 }
 
-// ─── TOP BAR (compact) ───────────────────────────────────────────────────────
+// ─── TOP BAR ───────────────────────────────────────────────────────────────
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.profileAsync});
+  const _TopBar({required this.profileAsync, required this.l10n});
   final AsyncValue<Map<String, dynamic>?> profileAsync;
+  final AppLocalizations l10n;
 
   @override
   Widget build(BuildContext context) {
@@ -269,12 +244,7 @@ class _TopBar extends StatelessWidget {
                 const Icon(Icons.location_on_rounded, size: 14, color: ThixPolicy.textMain),
                 const SizedBox(width: 2),
                 Flexible(
-                  child: Text(
-                    loc.isNotEmpty ? loc : '—',
-                    style: ThixPolicy.labelStyle.copyWith(fontSize: 11),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: Text(loc.isNotEmpty ? loc : '—', style: ThixPolicy.labelStyle.copyWith(fontSize: 11), maxLines: 1, overflow: TextOverflow.ellipsis),
                 ),
               ],
             ),
@@ -284,25 +254,20 @@ class _TopBar extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.auto_awesome, size: 14, color: ThixPolicy.primary),
+                  const Icon(Icons.auto_awesome, size: 14, color: ThixPolicy.primaryDeep),
                   const SizedBox(width: 3),
                   Text('THIX IA', style: ThixPolicy.h3Style.copyWith(fontSize: 15, fontWeight: FontWeight.w800, color: ThixPolicy.primaryDeep)),
                 ],
               ),
-              Text('Business Intelligence Africa', style: ThixPolicy.microStyle.copyWith(fontSize: 8, color: ThixPolicy.textMuted)),
+              Text(l10n.businessIntelligenceAfrica, style: ThixPolicy.microStyle.copyWith(fontSize: 8, color: ThixPolicy.textMuted)),
             ],
           ),
           Expanded(
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Container(
+                _glass(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: ThixPolicy.border),
-                  ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -323,10 +288,11 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-// ─── USER HEADER (compact) ───────────────────────────────────────────────────
+// ─── USER HEADER ───────────────────────────────────────────────────────────
 class _UserHeader extends StatelessWidget {
-  const _UserHeader({required this.profileAsync});
+  const _UserHeader({required this.profileAsync, required this.l10n});
   final AsyncValue<Map<String, dynamic>?> profileAsync;
+  final AppLocalizations l10n;
 
   String? _pick(Map<String, dynamic>? p, List<String> keys) {
     if (p == null) return null;
@@ -343,23 +309,24 @@ class _UserHeader extends StatelessWidget {
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         child: Row(children: [
-          CircleAvatar(radius: 22, backgroundColor: Color(0xFFE2E8F0)),
+          CircleAvatar(radius: 22, backgroundColor: ThixPolicy.surfaceStrong),
           SizedBox(width: 10),
-          SizedBox(width: 100, height: 14, child: ColoredBox(color: Color(0xFFE2E8F0))),
+          SizedBox(width: 100, height: 14, child: ColoredBox(color: ThixPolicy.surfaceStrong)),
         ]),
       ),
-      error: (_, __) => _body('Utilisateur', null, null),
+      error: (_, __) => _body(l10n.defaultPartnerName, null, null, l10n),
       data: (p) => _body(
-        _pick(p, ['display_name', 'full_name']) ?? 'Utilisateur',
+        _pick(p, ['display_name', 'full_name']) ?? l10n.defaultPartnerName,
         _pick(p, ['avatar_url', 'photo_url']),
         _pick(p, ['role_title', 'occupation', 'profession']),
+        l10n,
       ),
     );
   }
 
-  Widget _body(String name, String? photo, String? role) {
+  Widget _body(String name, String? photo, String? role, AppLocalizations l10n) {
     final h = DateTime.now().hour;
-    final greet = h < 12 ? 'Bonjour' : h < 18 ? 'Bon apres-midi' : 'Bonsoir';
+    final greet = h < 12 ? l10n.goodMorning : h < 18 ? l10n.goodAfternoon : l10n.goodEvening;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
@@ -369,23 +336,15 @@ class _UserHeader extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 22,
-                backgroundColor: ThixPolicy.primary.withOpacity(0.12),
+                backgroundColor: ThixPolicy.primaryDeep.withOpacity(0.12),
                 backgroundImage: (photo != null && photo.isNotEmpty) ? NetworkImage(photo) : null,
-                child: (photo == null || photo.isEmpty)
-                    ? Text(name[0].toUpperCase(), style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.primary))
-                    : null,
+                child: (photo == null || photo.isEmpty) ? Text(name[0].toUpperCase(), style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.primaryDeep)) : null,
               ),
               Positioned(
-                bottom: 0,
-                right: 0,
+                bottom: 0, right: 0,
                 child: Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: ThixPolicy.success,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
-                  ),
+                  width: 12, height: 12,
+                  decoration: BoxDecoration(color: ThixPolicy.success, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1.5)),
                 ),
               ),
             ],
@@ -402,10 +361,10 @@ class _UserHeader extends StatelessWidget {
                     margin: const EdgeInsets.only(top: 3),
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: ThixPolicy.gold.withOpacity(0.16),
+                      color: ThixPolicy.primaryDeep.withOpacity(0.08), // ✅ Remplacement du Gold par primaryDeep pour respecter la règle 2 couleurs
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Text(role, style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.premiumAccent, fontWeight: FontWeight.w700, fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    child: Text(role, style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.primaryDeep, fontWeight: FontWeight.w700, fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis),
                   ),
               ],
             ),
@@ -416,24 +375,26 @@ class _UserHeader extends StatelessWidget {
   }
 }
 
-// ─── HERO (compact) ──────────────────────────────────────────────────────────
+// ─── HERO BANNER ───────────────────────────────────────────────────────────
 class _HeroBanner extends StatelessWidget {
-  const _HeroBanner({required this.onAnalyze});
+  const _HeroBanner({required this.onAnalyze, required this.l10n});
   final VoidCallback onAnalyze;
+  final AppLocalizations l10n;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(ThixPolicy.rLg),
         child: Container(
           height: 148,
           decoration: const BoxDecoration(
+            // ✅ Gradient strictement monochromatique THIX (Deep -> Primary)
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF0B1F4A), Color(0xFF123B7A), Color(0xFF1A4A9C)],
+              colors: [ThixPolicy.primaryDeep, Color(0xFF1A4A9C)],
             ),
           ),
           child: Stack(
@@ -444,27 +405,25 @@ class _HeroBanner extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Transformez\nvos idees en succes.', style: ThixPolicy.h2Style.copyWith(color: Colors.white, height: 1.15, fontSize: 18, fontWeight: FontWeight.w800)),
+                    Text(l10n.transformIdeas, style: ThixPolicy.h2Style.copyWith(color: Colors.white, height: 1.15, fontSize: 18, fontWeight: FontWeight.w800)),
                     const SizedBox(height: 6),
-                    Text(
-                      'THIX IA analyse et securise vos projets en Afrique.',
-                      style: ThixPolicy.microStyle.copyWith(color: Colors.white.withOpacity(0.85), fontSize: 11),
-                    ),
+                    Text(l10n.thixAnalyzes, style: ThixPolicy.microStyle.copyWith(color: Colors.white.withOpacity(0.85), fontSize: 11)),
                     const Spacer(),
                     Material(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(22),
+                      borderRadius: BorderRadius.circular(ThixPolicy.rFull),
                       child: InkWell(
                         onTap: onAnalyze,
-                        borderRadius: BorderRadius.circular(22),
+                        borderRadius: BorderRadius.circular(ThixPolicy.rFull),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.auto_awesome_rounded, size: 14, color: ThixPolicy.primaryDeep),
+                              const Icon(Icons.auto_awesome_rounded, size: 14, color: ThixPolicy.primaryDeep),
                               const SizedBox(width: 6),
-                              Text('Analyser mon idee', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primaryDeep, fontWeight: FontWeight.w700, fontSize: 12)),                             ],
+                              Text(l10n.analyzeIdea, style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primaryDeep, fontWeight: FontWeight.w700, fontSize: 12)),
+                            ],
                           ),
                         ),
                       ),
@@ -493,24 +452,21 @@ class _DotsPainter extends CustomPainter {
       Offset(size.width * 0.5, size.height * 0.72),
       Offset(size.width * 0.75, size.height * 0.68),
     ];
-    for (var i = 0; i < pts.length - 1; i++) {
-      canvas.drawLine(pts[i], pts[i + 1], line);
-    }
-    for (final p in pts) {
-      canvas.drawCircle(p, 2.8, dot);
-    }
+    for (var i = 0; i < pts.length - 1; i++) canvas.drawLine(pts[i], pts[i + 1], line);
+    for (final p in pts) canvas.drawCircle(p, 2.8, dot);
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// ─── SECTION ─────────────────────────────────────────────────────────────────
+// ─── SECTION TITLE ─────────────────────────────────────────────────────────
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.title, {this.seeAll = false, this.onSeeAll});
+  const _SectionTitle(this.title, {this.seeAll = false, this.onSeeAll, required this.l10n});
   final String title;
   final bool seeAll;
   final VoidCallback? onSeeAll;
+  final AppLocalizations l10n;
 
   @override
   Widget build(BuildContext context) {
@@ -524,8 +480,8 @@ class _SectionTitle extends StatelessWidget {
               onTap: onSeeAll,
               child: Row(
                 children: [
-                  Text('Voir tous', style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.primary, fontWeight: FontWeight.w600)),
-                  const Icon(Icons.arrow_forward_rounded, size: 12, color: ThixPolicy.primary),
+                  Text(l10n.seeAll, style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.primaryDeep, fontWeight: FontWeight.w600)),
+                  const Icon(Icons.arrow_forward_rounded, size: 12, color: ThixPolicy.primaryDeep),
                 ],
               ),
             ),
@@ -535,18 +491,20 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-// ─── ACTIONS (compact) ───────────────────────────────────────────────────────
+// ─── MAIN ACTIONS ──────────────────────────────────────────────────────────
 class _MainActions extends StatelessWidget {
-  const _MainActions({required this.onAction});
+  const _MainActions({required this.onAction, required this.l10n});
   final void Function(ThixQuickAction) onAction;
+  final AppLocalizations l10n;
 
   @override
   Widget build(BuildContext context) {
+    // ✅ Couleurs unifiées en primaryDeep/primary pour respecter la règle "2 couleurs"
     final items = [
-      (ThixQuickAction.idea, 'Analyser\nmon idee', 'Faisabilite', Icons.lightbulb_rounded, const Color(0xFF2D6CDF)),
-      (ThixQuickAction.market, 'Etudier\nun marche', 'Tendances', Icons.bar_chart_rounded, const Color(0xFF16A34A)),
-      (ThixQuickAction.businessPlan, 'Business\nPlan', 'Strategie', Icons.description_rounded, const Color(0xFF7C3AED)),
-      (ThixQuickAction.legal, 'Verifier\nregles', 'Licences', Icons.balance_rounded, const Color(0xFFF59E0B)),
+      (ThixQuickAction.idea, l10n.analyzeIdeaShort, l10n.feasibility, Icons.lightbulb_rounded, ThixPolicy.primaryDeep),
+      (ThixQuickAction.market, l10n.studyMarketShort, l10n.trends, Icons.bar_chart_rounded, ThixPolicy.primary),
+      (ThixQuickAction.businessPlan, l10n.businessPlanShort, l10n.strategy, Icons.description_rounded, ThixPolicy.primaryDeep),
+      (ThixQuickAction.legal, l10n.checkRulesShort, l10n.licenses, Icons.balance_rounded, ThixPolicy.primary),
     ];
 
     return SizedBox(
@@ -584,19 +542,19 @@ class _MainActions extends StatelessWidget {
   }
 }
 
-// ─── MOTEURS (compact) ───────────────────────────────────────────────────────
+// ─── MOTORS ROW ────────────────────────────────────────────────────────────
 class _MotorsRow extends StatelessWidget {
   const _MotorsRow();
 
   @override
   Widget build(BuildContext context) {
+    // ✅ Couleurs strictement limitées à primary / primaryDeep
     final motors = [
-      ('Research', Icons.search_rounded, ThixPolicy.primary),
-      ('Market', Icons.trending_up_rounded, const Color(0xFF16A34A)),
-      ('Business', Icons.work_rounded, const Color(0xFF4F46E5)),
-      ('Finance', Icons.attach_money_rounded, const Color(0xFFF59E0B)),
-      ('Legal', Icons.balance_rounded, const Color(0xFFEF4444)),
-      ('Design', Icons.edit_rounded, const Color(0xFF0D9488)),
+      ('Research', Icons.search_rounded, ThixPolicy.primaryDeep),
+      ('Market', Icons.trending_up_rounded, ThixPolicy.primary),
+      ('Business', Icons.work_rounded, ThixPolicy.primaryDeep),
+      ('Finance', Icons.attach_money_rounded, ThixPolicy.primary),
+      ('Legal', Icons.balance_rounded, ThixPolicy.primaryDeep),
     ];
 
     return SizedBox(
@@ -624,21 +582,19 @@ class _MotorsRow extends StatelessWidget {
   }
 }
 
-// ─── ANALYSES RECENTES (compact) ─────────────────────────────────────────────
+// ─── RECENT ANALYSES ───────────────────────────────────────────────────────
 class _RecentAnalyses extends StatelessWidget {
-  const _RecentAnalyses({required this.projectsAsync, required this.onOpen, required this.onCreate});
+  const _RecentAnalyses({required this.projectsAsync, required this.onOpen, required this.onCreate, required this.l10n});
   final AsyncValue projectsAsync;
   final void Function(String) onOpen;
   final VoidCallback onCreate;
+  final AppLocalizations l10n;
 
   @override
   Widget build(BuildContext context) {
     return projectsAsync.when(
-      loading: () => const Padding(
-        padding: EdgeInsets.all(16),
-        child: Center(child: CircularProgressIndicator(color: ThixPolicy.primary)),
-      ),
-      error: (e, _) => Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: Text('Erreur: $e')),
+      loading: () => const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator(color: ThixPolicy.primaryDeep))),
+      error: (e, _) => Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: Text('${l10n.error}: $e')),
       data: (projects) {
         final list = projects is List<ThixProject> ? projects : <ThixProject>[];
         if (list.isEmpty) {
@@ -648,8 +604,8 @@ class _RecentAnalyses extends StatelessWidget {
               padding: const EdgeInsets.all(14),
               child: Column(
                 children: [
-                  Text('Aucune analyse.', style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary)),
-                  TextButton(onPressed: onCreate, child: const Text('Creer un projet')),
+                  Text(l10n.noAnalysis, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary)),
+                  TextButton(onPressed: onCreate, child: Text(l10n.createProject)),
                 ],
               ),
             ),
@@ -670,13 +626,9 @@ class _RecentAnalyses extends StatelessWidget {
                     child: Row(
                       children: [
                         Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: ThixPolicy.primary.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(Icons.insert_chart_rounded, color: ThixPolicy.primary, size: 16),
+                          width: 34, height: 34,
+                          decoration: BoxDecoration(color: ThixPolicy.primaryDeep.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+                          child: const Icon(Icons.insert_chart_rounded, color: ThixPolicy.primaryDeep, size: 16),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
@@ -691,17 +643,16 @@ class _RecentAnalyses extends StatelessWidget {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text('$pct%', style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.success, fontWeight: FontWeight.w700)),
+                            Text('$pct%', style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.primaryDeep, fontWeight: FontWeight.w700)),
                             const SizedBox(height: 3),
                             SizedBox(
-                              width: 40,
-                              height: 3,
+                              width: 40, height: 3,
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(2),
                                 child: LinearProgressIndicator(
                                   value: pct / 100,
                                   backgroundColor: ThixPolicy.surfaceStrong,
-                                  valueColor: AlwaysStoppedAnimation(ThixPolicy.success),
+                                  valueColor: const AlwaysStoppedAnimation(ThixPolicy.primaryDeep),
                                 ),
                               ),
                             ),
@@ -720,15 +671,16 @@ class _RecentAnalyses extends StatelessWidget {
   }
 }
 
-// ─── STATS (compact) ─────────────────────────────────────────────────────────
+// ─── QUICK STATS ───────────────────────────────────────────────────────────
 class _QuickStats extends StatelessWidget {
-  const _QuickStats({required this.projectsAsync});
+  const _QuickStats({required this.projectsAsync, required this.l10n});
   final AsyncValue projectsAsync;
+  final AppLocalizations l10n;
 
   @override
   Widget build(BuildContext context) {
     return projectsAsync.when(
-      loading: () => const SizedBox(height: 70, child: Center(child: CircularProgressIndicator(color: ThixPolicy.primary))),
+      loading: () => const SizedBox(height: 70, child: Center(child: CircularProgressIndicator(color: ThixPolicy.primaryDeep))),
       error: (_, __) => const SizedBox.shrink(),
       data: (projects) {
         final list = projects is List<ThixProject> ? projects : <ThixProject>[];
@@ -738,11 +690,12 @@ class _QuickStats extends StatelessWidget {
         final countries = list.map((p) => p.country).where((c) => c.trim().isNotEmpty).toSet();
         final avg = list.isEmpty ? 0 : (list.fold<double>(0, (s, p) => s + p.progress) / list.length * 100).round();
 
+        // ✅ Couleurs unifiées
         final stats = [
-          ('$analyses', 'Analyses', Icons.insights_rounded, const Color(0xFF7C3AED)),
-          ('$active', 'En cours', Icons.track_changes_rounded, const Color(0xFF16A34A)),
-          ('${countries.length}', 'Pays', Icons.public_rounded, const Color(0xFFF59E0B)),
-          ('$avg%', 'Progress.', Icons.verified_rounded, const Color(0xFF2563EB)),
+          ('$analyses', l10n.statAnalyses, Icons.insights_rounded, ThixPolicy.primaryDeep),
+          ('$active', l10n.statOngoing, Icons.track_changes_rounded, ThixPolicy.primary),
+          ('${countries.length}', l10n.statCountries, Icons.public_rounded, ThixPolicy.primaryDeep),
+          ('$avg%', l10n.statProgress, Icons.verified_rounded, ThixPolicy.primary),
         ];
 
         return SizedBox(
@@ -786,7 +739,7 @@ class _QuickStats extends StatelessWidget {
   }
 }
 
-// ─── PROJECT PICKER ──────────────────────────────────────────────────────────
+// ─── PROJECT PICKER SHEET ──────────────────────────────────────────────────
 class _ProjectPickerSheet extends StatelessWidget {
   const _ProjectPickerSheet({required this.projects, required this.title});
   final List<ThixProject> projects;
@@ -794,152 +747,87 @@ class _ProjectPickerSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return DraggableScrollableSheet(
       initialChildSize: 0.5,
       minChildSize: 0.35,
       maxChildSize: 0.85,
-      builder: (_, controller) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          children: [
-            const SizedBox(height: 8),
-            Container(width: 36, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 8, 8),
-              child: Row(
-                children: [
-                  Expanded(child: Text(title, style: ThixPolicy.h3Style.copyWith(fontSize: 15, fontWeight: FontWeight.w800))),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      context.push(ThixIARoutes.createProject);
-                    },
-                    child: const Text('+ Nouveau'),
+      builder: (_, controller) => ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.85), // ✅ Glassmorphism pur
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              border: Border(top: BorderSide(color: Colors.white.withOpacity(0.9), width: 1.5)),
+            ),
+            child: Column(
+              children: [
+                const SizedBox(height: 8),
+                Container(width: 36, height: 4, decoration: BoxDecoration(color: ThixPolicy.textMuted.withOpacity(0.3), borderRadius: BorderRadius.circular(2))),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 8, 8),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(title, style: ThixPolicy.h3Style.copyWith(fontSize: 15, fontWeight: FontWeight.w800))),
+                      TextButton(
+                        onPressed: () { Navigator.pop(context); context.push(ThixIARoutes.createProject); },
+                        child: Text('+ ${l10n.newProject}', style: const TextStyle(color: ThixPolicy.primaryDeep, fontWeight: FontWeight.w700)),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                const Divider(height: 1, color: ThixPolicy.border),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
+                  child: Align(alignment: Alignment.centerLeft, child: Text(l10n.chooseOngoingProject, style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textSecondary))),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    controller: controller,
+                    itemCount: projects.length,
+                    itemBuilder: (_, i) {
+                      final p = projects[i];
+                      final pct = (p.progress * 100).toInt();
+                      return ListTile(
+                        dense: true,
+                        leading: CircleAvatar(
+                          radius: 18,
+                          backgroundColor: ThixPolicy.primaryDeep.withOpacity(0.12),
+                          child: const Icon(Icons.folder_rounded, color: ThixPolicy.primaryDeep, size: 16),
+                        ),
+                        title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                        subtitle: Text('${p.projectCode} • $pct%', style: const TextStyle(fontSize: 11)),
+                        trailing: const Icon(Icons.play_arrow_rounded, color: ThixPolicy.primaryDeep, size: 22),
+                        onTap: () => Navigator.pop(context, p),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
-            const Divider(height: 1),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Choisissez un projet en cours', style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textSecondary)),
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                controller: controller,
-                itemCount: projects.length,
-                itemBuilder: (_, i) {
-                  final p = projects[i];
-                  final pct = (p.progress * 100).toInt();
-                  return ListTile(
-                    dense: true,
-                    leading: CircleAvatar(
-                      radius: 18,
-                      backgroundColor: ThixPolicy.primary.withOpacity(0.12),
-                      child: Icon(Icons.folder_rounded, color: ThixPolicy.primary, size: 16),
-                    ),
-                    title: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                    subtitle: Text('${p.projectCode} • $pct%', style: const TextStyle(fontSize: 11)),
-                    trailing: const Icon(Icons.play_arrow_rounded, color: ThixPolicy.primary, size: 22),
-                    onTap: () => Navigator.pop(context, p),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─── BOTTOM NAV ──────────────────────────────────────────────────────────────
-class _ThixIaBottomNav extends StatelessWidget {
-  const _ThixIaBottomNav({required this.currentIndex, required this.onTap});
-  final int currentIndex;
-  final ValueChanged<int> onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.95),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 16, offset: const Offset(0, -3))],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _item(0, Icons.home_rounded, 'Accueil'),
-              _item(1, Icons.folder_outlined, 'Projets'),
-              _fab(),
-              _item(3, Icons.star_outline_rounded, 'Favoris'),
-              _item(4, Icons.person_outline_rounded, 'Profil'),
-            ],
           ),
         ),
       ),
     );
   }
-
-  Widget _item(int i, IconData icon, String label) {
-    final sel = currentIndex == i;
-    return InkWell(
-      onTap: () => onTap(i),
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 20, color: sel ? ThixPolicy.primary : ThixPolicy.textMuted),
-            Text(label, style: TextStyle(fontSize: 9, fontWeight: sel ? FontWeight.w700 : FontWeight.w500, color: sel ? ThixPolicy.primary : ThixPolicy.textMuted)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _fab() {
-    return GestureDetector(
-      onTap: () => onTap(2),
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(colors: [ThixPolicy.primary, ThixPolicy.primaryDeep]),
-          boxShadow: [BoxShadow(color: ThixPolicy.primary.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 3))],
-        ),
-        child: const Icon(Icons.auto_awesome, color: Colors.white, size: 20),
-      ),
-    );
-  }
 }
 
-// ─── GLASS ───────────────────────────────────────────────────────────────────
+// ─── GLASS HELPER (Strict 2-Color Policy: White + PrimaryDeep) ─────────────
 Widget _glass({double? width, required EdgeInsets padding, required Widget child}) {
   return ClipRRect(
-    borderRadius: BorderRadius.circular(14),
+    borderRadius: BorderRadius.circular(ThixPolicy.rMd),
     child: BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+      filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
       child: Container(
         width: width,
         padding: padding,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.72),
-          borderRadius: BorderRadius.circular(14),
+          color: Colors.white.withOpacity(0.65),
+          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
           border: Border.all(color: Colors.white.withOpacity(0.85)),
-          boxShadow: [BoxShadow(color: const Color(0xFF0A1F44).withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 4))],
+          boxShadow: [BoxShadow(color: ThixPolicy.primaryDeep.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))],
         ),
         child: child,
       ),
