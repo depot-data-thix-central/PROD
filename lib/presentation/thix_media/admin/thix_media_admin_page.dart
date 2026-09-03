@@ -382,11 +382,12 @@ class _ThixMediaAdminPageState extends ConsumerState<ThixMediaAdminPage> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  // ✅ FIX : forcer type Map explicite pour dart2js
-                  l10n.t('admin_empty_filter',
-                      args: <String, String>{'filter': filter}),
-                  style: ThixPolicy.bodyStyle.copyWith(
-                    color: ThixPolicy.textMuted,
+  l10n.t('admin_empty_filter', args: [filter]), 
+  style: ThixPolicy.bodyStyle.copyWith(         
+    color: ThixPolicy.textMuted,
+  ),
+)
+
                   ),
                 ),
               ],
