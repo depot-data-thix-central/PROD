@@ -7,7 +7,7 @@
 //
 // ANTI-ERREURS APPLIQUÉES :
 // - Pas de `const` sur widgets utilisant _IaPalette (getters non-const)
-// - `<String, String>{...}` sur tous args: de l10n.t()
+// - `[...]` sur tous args: de l10n.t() pour correspondre au type List<String>
 // - Pas de strings FR hardcodés
 import 'dart:ui';
 
@@ -32,9 +32,6 @@ class _IaPalette {
 
   static const Color ink = Color(0xFF0B1220);
   static const Color white = Color(0xFFFFFFFF);
-
-  // Couleurs const acceptées par dart2js (pas de .withValues)
-  static const int _whiteARGB = 0xFFFFFFFF;
 
   static Color get glassStrong => white.withValues(alpha: 0.14);
   static Color get glass => white.withValues(alpha: 0.08);
@@ -167,7 +164,7 @@ class _AnalysisPageState extends ConsumerState<AnalysisPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(_errorSnack(
             AppLocalizations.of(context).t('analysis_error_generic',
-                args: <String, String>{'error': '$e'})));
+                args: ['$e'])));
       }
     }
   }
@@ -190,7 +187,7 @@ class _AnalysisPageState extends ConsumerState<AnalysisPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(_errorSnack(
             AppLocalizations.of(context).t('analysis_error_generic',
-                args: <String, String>{'error': '$e'})));
+                args: ['$e'])));
       }
     }
   }
@@ -215,7 +212,7 @@ class _AnalysisPageState extends ConsumerState<AnalysisPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(_errorSnack(
             AppLocalizations.of(context).t('analysis_error_generic',
-                args: <String, String>{'error': '$e'})));
+                args: ['$e'])));
       }
     }
   }
@@ -238,7 +235,7 @@ class _AnalysisPageState extends ConsumerState<AnalysisPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(_errorSnack(
             AppLocalizations.of(context).t('analysis_error_generic',
-                args: <String, String>{'error': '$e'})));
+                args: ['$e'])));
       }
     }
   }
@@ -251,7 +248,7 @@ class _AnalysisPageState extends ConsumerState<AnalysisPage> {
 
   SnackBar _errorSnack(String text) => SnackBar(
         content: Text(text,
-            style: const TextStyle(color: _IaPalette.white)),
+            style: TextStyle(color: _IaPalette.white)),
         backgroundColor: _IaPalette.ink,
         behavior: SnackBarBehavior.floating,
       );
