@@ -8,6 +8,12 @@
 // - Vérification mounted après chaque await
 // - Protection _isDisposed dans le Notifier
 // - Gestion propre des StreamSubscription (AudioPlayer)
+//
+// ✅ AJUSTEMENTS UI (espacement) :
+// - Marges horizontales/verticales supprimées entre les cartes
+// - Cartes jointes par une fine bordure or (au lieu de coins arrondis + ombre)
+// - Paramètre `isFirst` pour marquer la séparation avec le haut du feed
+// - Icône "pulse" (like) plus contrastée/visible
 
 import 'dart:async';
 import 'dart:collection';
@@ -68,6 +74,10 @@ class _PostCardConfig {
 
   static const int maxLikersFetched = 5;
   static const int avatarFallbackSize = 256;
+
+  // ✅ Bordures de séparation (remplacent les marges entre cartes)
+  static const double cardBottomBorderWidth = 1.2;
+  static const double cardFirstTopBorderWidth = 2.0;
 }
 
 // ============================================================================
@@ -232,7 +242,7 @@ class _PostCardCache {
 }
 
 // ============================================================================
-// STATE NOTIFIER (✅ CORRIGÉ AVEC _isDisposed)
+// STATE NOTIFIER (✅ AVEC _isDisposed)
 // ============================================================================
 
 final postItemProvider = StateNotifierProvider.autoDispose<PostItemNotifier, NetworkPost>(
@@ -244,7 +254,7 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
   final Ref ref;
 
   bool _likeBusy = false;
-  bool _isDisposed = false; // ✅ PROTECTION ANTI-FUITE
+  bool _isDisposed = false;
 
   @override
   void dispose() {
@@ -270,7 +280,7 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       final service = ref.read(networkServiceProvider);
       try {
         final result = await service.togglePostLike(state.id).timeout(_PostCardConfig.networkTimeout);
-        if (_isDisposed) return; // ✅ VÉRIFICATION POST-ASYNC
+        if (_isDisposed) return;
         state = state.copyWith(isLiked: result.liked, likesCount: result.likesCount);
       } catch (_) {
         if (_isDisposed) return;
@@ -343,6 +353,12 @@ class PostCard extends ConsumerStatefulWidget {
   final bool isFollowingAuthor;
   final VoidCallback? onFollow;
 
+  /// ✅ NOUVEAU : à passer à `true` uniquement pour la toute première
+  /// carte du feed (ex: `isFirst: index == 0` dans votre ListView.builder).
+  /// Ajoute une bordure or plus marquée en haut pour séparer le feed
+  /// de l'en-tête au-dessus, sans affecter les autres cartes.
+  final bool isFirst;
+
   const PostCard({
     super.key,
     required this.post,
@@ -358,6 +374,7 @@ class PostCard extends ConsumerStatefulWidget {
     this.onSave,
     this.isFollowingAuthor = false,
     this.onFollow,
+    this.isFirst = false,
   });
 
   @override
@@ -1424,7 +1441,9 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           _ActionBtn(
             icon: isLiked ? Icons.bolt_rounded : Icons.bolt_outlined,
             label: '',
-            color: isLiked ? ThixPolicy.danger : ThixPolicy.textSecondary.withValues(alpha: 0.8),
+            // ✅ "pulse" (like) plus visible : contraste relevé (0.8 → 0.95)
+            // pour l'état non-liké ; couleur pleine pour l'état liké.
+            color: isLiked ? ThixPolicy.danger : ThixPolicy.textSecondary.withValues(alpha: 0.95),
             onTap: () async {
               if (!_isAuthenticated) return;
               HapticFeedback.selectionClick();
@@ -1574,71 +1593,78 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
 
           WidgetsBinding.instance.addPostFrameCallback((_) => _registerImpression(post.id));
 
+          // ✅ ESPACEMENT : plus de margin horizontal/vertical, plus de
+          // coins arrondis ni d'ombre — les cartes sont désormais jointes
+          // (edge-to-edge) et séparées uniquement par une fine bande or.
+          // La toute première carte du feed (isFirst: true) reçoit en plus
+          // une bordure or plus marquée en haut, pour se distinguer de
+          // l'en-tête au-dessus sans casser l'empilement des suivantes.
           return RepaintBoundary(
             child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              margin: EdgeInsets.zero,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.65),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.85), width: 1.2),
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 12, offset: const Offset(0, 4)),
-                ],
+                border: Border(
+                  top: widget.isFirst
+                      ? const BorderSide(color: ThixPolicy.gold, width: _PostCardConfig.cardFirstTopBorderWidth)
+                      : BorderSide.none,
+                  bottom: const BorderSide(color: ThixPolicy.gold, width: _PostCardConfig.cardBottomBorderWidth),
+                ),
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
+              child: ClipRect(
                 child: BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: _PostCardConfig.postBlurSigma, sigmaY: _PostCardConfig.postBlurSigma),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: widget.onTap ?? () => _openPostDetails(post.id),
-                      borderRadius: BorderRadius.circular(24),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _buildHeader(post, isOwner, isFollowing, isCertified, tier, status, isLegacyVerified, l10n),
-                            if (post.isRepostCard)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 8, bottom: 4),
-                                child: Row(children: [
-                                  const Icon(Icons.repeat_rounded, size: 14, color: ThixPolicy.textMuted),
-                                  const SizedBox(width: 6),
-                                  Text(l10n.t('reposted_label'),
-                                      style: ThixPolicy.captionStyle
-                                          .copyWith(fontSize: 11.5, fontWeight: FontWeight.w600, color: ThixPolicy.textMuted)),
-                                ]),
-                              ),
-                            const SizedBox(height: 12),
-                            if (post.content.isNotEmpty) _buildPostContent(post, l10n),
-                            if (post.isRepostCard && _PostCardValidators.isValidId(post.repostOfId)) ...[
+                  child: Container(
+                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.65)),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: widget.onTap ?? () => _openPostDetails(post.id),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _buildHeader(post, isOwner, isFollowing, isCertified, tier, status, isLegacyVerified, l10n),
+                              if (post.isRepostCard)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 8, bottom: 4),
+                                  child: Row(children: [
+                                    const Icon(Icons.repeat_rounded, size: 14, color: ThixPolicy.textMuted),
+                                    const SizedBox(width: 6),
+                                    Text(l10n.t('reposted_label'),
+                                        style: ThixPolicy.captionStyle
+                                            .copyWith(fontSize: 11.5, fontWeight: FontWeight.w600, color: ThixPolicy.textMuted)),
+                                  ]),
+                                ),
                               const SizedBox(height: 12),
-                              _OriginalPostEmbed(postId: post.repostOfId!),
+                              if (post.content.isNotEmpty) _buildPostContent(post, l10n),
+                              if (post.isRepostCard && _PostCardValidators.isValidId(post.repostOfId)) ...[
+                                const SizedBox(height: 12),
+                                _OriginalPostEmbed(postId: post.repostOfId!),
+                              ],
+                              if (!post.isRepostCard && (post.hasImages || post.hasVideos)) ...[
+                                const SizedBox(height: 12),
+                                RepaintBoundary(child: _buildMediaGrid([...post.imageUrls, ...post.videoUrls])),
+                              ],
+                              if (post.hasAudio && post.audioUrls.isNotEmpty) ...[
+                                const SizedBox(height: 12),
+                                RepaintBoundary(
+                                    child: _PremiumAudioPlayer(audioUrl: post.audioUrls.first, duration: post.audioDurationSeconds)),
+                              ],
+                              if (post.postType == 'poll' && _PostCardValidators.isValidPollData(post.pollData)) ...[
+                                const SizedBox(height: 12),
+                                _buildPollWidget(post, l10n),
+                              ] else if (post.postType == 'challenge') ...[
+                                const SizedBox(height: 12),
+                                _buildChallengeWidget(post, l10n),
+                              ],
+                              const SizedBox(height: 16),
+                              if (likesCount > 0)
+                                RepaintBoundary(child: _LikersStack(count: likesCount, postId: post.id, isLikedByMe: isLiked, l10n: l10n)),
+                              const SizedBox(height: 8),
+                              _buildActionRow(post, isLiked, isOwner, isCurrentUserFree, ref, l10n),
                             ],
-                            if (!post.isRepostCard && (post.hasImages || post.hasVideos)) ...[
-                              const SizedBox(height: 12),
-                              RepaintBoundary(child: _buildMediaGrid([...post.imageUrls, ...post.videoUrls])),
-                            ],
-                            if (post.hasAudio && post.audioUrls.isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              RepaintBoundary(
-                                  child: _PremiumAudioPlayer(audioUrl: post.audioUrls.first, duration: post.audioDurationSeconds)),
-                            ],
-                            if (post.postType == 'poll' && _PostCardValidators.isValidPollData(post.pollData)) ...[
-                              const SizedBox(height: 12),
-                              _buildPollWidget(post, l10n),
-                            ] else if (post.postType == 'challenge') ...[
-                              const SizedBox(height: 12),
-                              _buildChallengeWidget(post, l10n),
-                            ],
-                            const SizedBox(height: 16),
-                            if (likesCount > 0)
-                              RepaintBoundary(child: _LikersStack(count: likesCount, postId: post.id, isLikedByMe: isLiked, l10n: l10n)),
-                            const SizedBox(height: 8),
-                            _buildActionRow(post, isLiked, isOwner, isCurrentUserFree, ref, l10n),
-                          ],
+                          ),
                         ),
                       ),
                     ),
@@ -1715,7 +1741,6 @@ class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
   double _playbackSpeed = 1.0;
   bool _isValidSource = false;
 
-  // ✅ CORRECTION: StreamSubscriptions pour éviter les fuites
   StreamSubscription<PlayerState>? _stateSubscription;
   StreamSubscription<Duration>? _durationSubscription;
   StreamSubscription<Duration>? _positionSubscription;
@@ -1726,16 +1751,15 @@ class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
     _isValidSource = _PostCardValidators.isValidUrl(widget.audioUrl);
     if (_isValidSource) {
       _audioPlayer.setSourceUrl(widget.audioUrl);
-      
-      // ✅ CORRECTION: Abonnements stockés
+
       _stateSubscription = _audioPlayer.onPlayerStateChanged.listen((state) {
         if (mounted) setState(() => _isPlaying = state == PlayerState.playing);
       });
-      
+
       _durationSubscription = _audioPlayer.onDurationChanged.listen((d) {
         if (mounted) setState(() => _duration = d);
       });
-      
+
       _positionSubscription = _audioPlayer.onPositionChanged.listen((p) {
         if (mounted) setState(() => _position = p);
       });
@@ -1744,7 +1768,6 @@ class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
 
   @override
   void dispose() {
-    // ✅ CORRECTION: Annulation propre des subscriptions
     _stateSubscription?.cancel();
     _durationSubscription?.cancel();
     _positionSubscription?.cancel();
