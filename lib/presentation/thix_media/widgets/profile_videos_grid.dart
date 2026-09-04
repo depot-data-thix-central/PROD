@@ -1,7 +1,11 @@
+// lib/presentation/thix_media/widgets/profile_videos_grid.dart
 /// ProfileVideosGrid (Production Enterprise)
-/// ThixPolicy + i18n 8 langues + Semantics + logs structurés
-/// Debounce 200ms + throttle refresh + mounted checks
-/// Error sanitization + RepaintBoundary + empty state accessible
+///
+/// - Design : Modern Sleek Light (Clair, adapté au nouveau profil)
+/// - Robustesse : Debounce 200ms + throttle refresh + mounted checks
+/// - i18n : Fallbacks automatiques (anti-clés brutes)
+/// - UX : RepaintBoundary + error sanitization
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -11,8 +15,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/models/media_content.dart';
 
+import '../thix_media_page.dart' show MediaLightPalette;
 import 'profile_video_card.dart';
 import '../providers/user_profile_providers.dart';
 
@@ -46,7 +50,6 @@ class _GridLogger {
 // GRID
 // ============================================================================
 
-/// Grille de vidéos avec pagination infinite scroll + debounce
 class ProfileVideosGrid extends ConsumerStatefulWidget {
   final String userId;
 
@@ -77,7 +80,14 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
     super.dispose();
   }
 
-  /// Debounce 200ms pour éviter déclenchements multiples
+  // ✅ TEXTES DE SECOURS (ANTI CLÉS BRUTES)
+  String _safeTr(AppLocalizations l10n, String key, String fallback) {
+    final val = l10n.t(key);
+    if (val.isEmpty || val == key || val.contains(key)) return fallback;
+    return val;
+  }
+
+  /// Debounce 200ms pour éviter les déclenchements multiples
   void _onScroll() {
     _scrollDebounce?.cancel();
     _scrollDebounce = Timer(_kScrollDebounce, () {
@@ -158,50 +168,54 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
 
   Widget _buildEmptyState(BuildContext context, {bool loading = false}) {
     final l10n = AppLocalizations.of(context);
+    final title = loading ? _safeTr(l10n, 'profile_loading', 'Chargement...') : _safeTr(l10n, 'profile_no_posts', 'Aucune publication');
+    
     return Padding(
       padding: const EdgeInsets.only(top: 60),
       child: Center(
         child: Semantics(
           header: true,
-          label: loading ? l10n.t('profile_loading') : l10n.t('profile_no_posts'),
+          label: title,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
                 padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   shape: BoxShape.circle,
-                  color: ThixPolicy.surfaceSoft.withValues(alpha: 0.05),
+                  color: MediaLightPalette.border,
                 ),
                 child: loading
                     ? const SizedBox(
                         width: 48,
                         height: 48,
                         child: CircularProgressIndicator(
-                          color: ThixPolicy.textMuted,
+                          color: ThixPolicy.primary,
                           strokeWidth: 2,
                         ),
                       )
-                    : Icon(
+                    : const Icon(
                         Icons.video_library_rounded,
                         size: 48,
-                        color: ThixPolicy.textMuted.withValues(alpha: 0.4),
+                        color: MediaLightPalette.textSecondary,
                       ),
               ),
               const SizedBox(height: 16),
               Text(
-                loading ? l10n.t('profile_loading') : l10n.t('profile_no_posts'),
-                style: ThixPolicy.h3Style.copyWith(
-                  color: ThixPolicy.textMain,
-                  fontWeight: FontWeight.bold,
+                title,
+                style: const TextStyle(
+                  color: MediaLightPalette.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
               if (!loading) ...[
                 const SizedBox(height: 8),
                 Text(
-                  l10n.t('profile_no_posts_hint'),
-                  style: ThixPolicy.bodySmallStyle.copyWith(
-                    color: ThixPolicy.textMuted,
+                  _safeTr(l10n, 'profile_no_posts_hint', 'Cet utilisateur n\'a pas encore publié de vidéo.'),
+                  style: const TextStyle(
+                    color: MediaLightPalette.textSecondary,
+                    fontSize: 13,
                     height: 1.4,
                   ),
                   textAlign: TextAlign.center,
@@ -216,17 +230,20 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
 
   Widget _buildErrorState(BuildContext context, Object error) {
     final l10n = AppLocalizations.of(context);
-    // Sanitize error message
+    
+    // Nettoyage de l'erreur pour l'affichage
     final errorMessage = error.toString().length > 200
         ? '${error.toString().substring(0, 200)}...'
         : error.toString();
+
+    final title = _safeTr(l10n, 'profile_load_error', 'Erreur de chargement');
 
     return Padding(
       padding: const EdgeInsets.only(top: 60),
       child: Center(
         child: Semantics(
           header: true,
-          label: l10n.t('profile_load_error'),
+          label: title,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -237,10 +254,11 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
               ),
               const SizedBox(height: 16),
               Text(
-                l10n.t('profile_load_error'),
-                style: ThixPolicy.h3Style.copyWith(
-                  color: ThixPolicy.textMain,
-                  fontWeight: FontWeight.bold,
+                title,
+                style: const TextStyle(
+                  color: MediaLightPalette.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
               const SizedBox(height: 8),
@@ -248,8 +266,9 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
                 padding: const EdgeInsets.symmetric(horizontal: 32),
                 child: Text(
                   errorMessage,
-                  style: ThixPolicy.captionStyle.copyWith(
-                    color: ThixPolicy.textMuted,
+                  style: const TextStyle(
+                    color: MediaLightPalette.textMuted,
+                    fontSize: 12,
                     height: 1.4,
                   ),
                   textAlign: TextAlign.center,
@@ -260,14 +279,15 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
               const SizedBox(height: 16),
               Semantics(
                 button: true,
-                label: l10n.t('common_retry'),
+                label: _safeTr(l10n, 'common_retry', 'Réessayer'),
                 child: ElevatedButton.icon(
                   onPressed: _refresh,
                   icon: const Icon(Icons.refresh_rounded),
-                  label: Text(l10n.t('common_retry')),
+                  label: Text(_safeTr(l10n, 'common_retry', 'Réessayer')),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ThixPolicy.primary,
                     foregroundColor: Colors.white,
+                    elevation: 0,
                   ),
                 ),
               ),
@@ -288,9 +308,9 @@ class _LoadingIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    return const Center(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(16),
         child: CircularProgressIndicator(
           color: ThixPolicy.primary,
           strokeWidth: 2,
