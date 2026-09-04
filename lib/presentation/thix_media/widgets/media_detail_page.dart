@@ -1,3 +1,4 @@
+// lib/presentation/thix_media/widgets/media_detail_page.dart
 /// MediaDetailPage (Production Enterprise)
 ///
 /// Page de détail média avec :
@@ -10,6 +11,7 @@
 ///
 /// ✅ ThixPolicy + i18n 8 langues + go_router + Semantics + HapticFeedback
 /// ✅ Logs structurés + mounted checks + RepaintBoundary + throttling
+/// ✅ Aligné sur le design "Modern Sleek Light" (Sleek Glassmorphism clair)
 import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -33,14 +35,30 @@ import 'feed_video_player.dart';
 import 'media_poster_card.dart';
 
 // ============================================================================
+// PALETTE CLAIRE (Light Mode Premium — Cohérente avec ThixMediaPage)
+// ============================================================================
+
+class _MediaLightPalette {
+  _MediaLightPalette._();
+
+  static const Color background = Color(0xFFF8FAFC);
+  static const Color surface = Color(0xFFFFFFFF);
+  static const Color border = Color(0xFFE2E8F0);
+
+  static const Color textPrimary = Color(0xFF0F172A);
+  static const Color textSecondary = Color(0xFF475569);
+  static const Color textMuted = Color(0xFF94A3B8);
+}
+
+// ============================================================================
 // CONSTANTS
 // ============================================================================
 
 const int _kPreviewSeconds = 30;
 const int _kMaxSuggestions = 4;
 const Duration _kTapThrottle = Duration(milliseconds: 400);
-const double _kAppBarBlur = kIsWeb ? 6 : 10;
-const double _kPaywallBlur = kIsWeb ? 10 : 20;
+const double _kAppBarBlur = kIsWeb ? 8 : 16;
+const double _kPaywallBlur = kIsWeb ? 15 : 25;
 
 // ============================================================================
 // LOGGING
@@ -156,7 +174,9 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     if (uid == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(l10n.t('detail_login_required')),
+          content: Text(l10n.t('detail_login_required').isNotEmpty
+              ? l10n.t('detail_login_required')
+              : 'Veuillez vous connecter'),
           backgroundColor: ThixPolicy.danger,
           behavior: SnackBarBehavior.floating,
         ),
@@ -170,7 +190,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
       _DetailLogger.info('Like toggled', {'liked': _liked});
     } catch (e) {
       _DetailLogger.error('Toggle like failed', {'error': '$e'});
-      if (mounted) setState(() => _liked = !_liked); // rollback
+      if (mounted) setState(() => _liked = !_liked);
     }
   }
 
@@ -194,7 +214,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
       ),
     ).then((_) {
       if (mounted) {
-        ref.invalidate(commentCountProvider(widget.item.id));
+        ref.invalidate(mediaCommentCountProvider(widget.item.id));
       }
     });
     _DetailLogger.info('Comments opened');
@@ -210,7 +230,6 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
   void _openSuggestion(MediaContent suggestion) {
     if (!_throttle()) return;
     HapticFeedback.mediumImpact();
-    // CORRECTION : Route texte statique
     context.push(
       '/media/detail/${suggestion.id}',
       extra: {'item': suggestion, 'catalog': widget.catalog},
@@ -218,48 +237,45 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     _DetailLogger.info('Suggestion opened', {'id': suggestion.id});
   }
 
-  Future<void> _followCreator(String creatorId) async {
-    if (!_throttle()) return;
-    HapticFeedback.mediumImpact();
-    setState(() => _newlyFollowed.add(creatorId));
-    try {
-      await MediaService().toggleFollow(creatorId);
-      _DetailLogger.info('Follow toggled', {'creatorId': creatorId});
-    } catch (e) {
-      _DetailLogger.error('Follow failed', {'error': '$e'});
-    }
-  }
-
   Future<void> _unlockPremium() async {
     if (!_throttle()) return;
     final l10n = AppLocalizations.of(context);
 
-    // Confirmation avant unlock payant
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: ThixPolicy.card,
+        backgroundColor: _MediaLightPalette.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
-          l10n.t('detail_confirm_unlock_title'),
-          style: TextStyle(color: ThixPolicy.textMain),
+          l10n.t('detail_confirm_unlock_title').isNotEmpty
+              ? l10n.t('detail_confirm_unlock_title')
+              : 'Débloquer le contenu',
+          style: const TextStyle(
+              color: _MediaLightPalette.textPrimary, fontWeight: FontWeight.w800),
         ),
         content: Text(
-          // CORRECTION : args passe en liste
           l10n.t('detail_confirm_unlock_message',
-              args: [_formatPrice(l10n)]),
-          style: TextStyle(color: ThixPolicy.textMuted),
+              args: [_formatPrice(l10n)]).isNotEmpty
+              ? l10n.t('detail_confirm_unlock_message',
+                  args: [_formatPrice(l10n)])
+              : 'Voulez-vous débloquer ce contenu pour ${_formatPrice(l10n)} ?',
+          style: const TextStyle(color: _MediaLightPalette.textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.t('common_cancel')),
+            child: Text(l10n.t('common_cancel').isNotEmpty ? l10n.t('common_cancel') : 'Annuler',
+                style: const TextStyle(color: _MediaLightPalette.textSecondary)),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              l10n.t('detail_unlock'),
-              style: TextStyle(color: ThixPolicy.warning),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ThixPolicy.primary,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.t('detail_unlock').isNotEmpty ? l10n.t('detail_unlock') : 'Débloquer'),
           ),
         ],
       ),
@@ -268,7 +284,6 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     if (confirmed != true || !mounted) return;
 
     HapticFeedback.heavyImpact();
-    // TODO: Intégrer avec le système de paiement réel
     setState(() {
       _unlocked = true;
       _previewExpired = false;
@@ -276,7 +291,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(l10n.t('detail_unlocked')),
+        content: Text(l10n.t('detail_unlocked').isNotEmpty ? l10n.t('detail_unlocked') : 'Contenu débloqué avec succès !'),
         backgroundColor: ThixPolicy.success,
         behavior: SnackBarBehavior.floating,
       ),
@@ -286,7 +301,6 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
 
   String _formatPrice(AppLocalizations l10n) {
     final price = _DetailSanitizer.price(widget.item.price);
-    // TODO: format selon locale (USD, EUR, FC...)
     return '\$${price.toStringAsFixed(2)}';
   }
 
@@ -301,11 +315,11 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     final live = ref.watch(mediaCountsStreamProvider(item.id)).valueOrNull;
     final creatorId = item.userId ?? '';
     final creatorProfile = creatorId.isNotEmpty
-        ? ref.watch(userProfileProvider(creatorId)).valueOrNull
+        ? ref.watch(mediaUserProfileProvider(creatorId)).valueOrNull
         : null;
     final currentUid = Supabase.instance.client.auth.currentUser?.id;
     final isFollowing = creatorId.isNotEmpty
-        ? (ref.watch(isFollowingProvider(creatorId)).valueOrNull ?? true)
+        ? (ref.watch(mediaIsFollowingProvider(creatorId)).valueOrNull ?? true)
         : true;
     final creatorIsOfficial = creatorId.isEmpty;
     final showFollowBtn = !creatorIsOfficial &&
@@ -317,20 +331,23 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
         ? 'TDIA'
         : (creatorProfile?['full_name'] ??
             creatorProfile?['username'] ??
-            l10n.t('detail_creator_default'));
+            (l10n.t('detail_creator_default').isNotEmpty
+                ? l10n.t('detail_creator_default')
+                : 'Créateur'));
 
     return Scaffold(
-      backgroundColor: ThixPolicy.inkDeep,
+      backgroundColor: _MediaLightPalette.background,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
         leading: Semantics(
           button: true,
-          label: l10n.t('common_back'),
+          label: l10n.t('common_back').isNotEmpty ? l10n.t('common_back') : 'Retour',
           child: IconButton(
-            icon: Icon(Icons.arrow_back_ios_rounded,
-                color: ThixPolicy.textMain),
+            icon: const Icon(Icons.arrow_back_ios_rounded,
+                color: _MediaLightPalette.textPrimary, size: 20),
             onPressed: () {
               HapticFeedback.lightImpact();
               context.pop();
@@ -342,15 +359,15 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
             filter: ImageFilter.blur(
                 sigmaX: _kAppBarBlur, sigmaY: _kAppBarBlur),
             child: Container(
-                color: ThixPolicy.inkDeep.withValues(alpha: 0.6)),
+                color: _MediaLightPalette.surface.withValues(alpha: 0.8)),
           ),
         ),
         title: Text(
           _DetailSanitizer.title(item.title),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: ThixPolicy.textMain,
+          style: const TextStyle(
+            color: _MediaLightPalette.textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w800,
           ),
@@ -374,11 +391,11 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
             RepaintBoundary(child: _buildActionsBar(l10n, live)),
             if (item.subtitle != null && item.subtitle!.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
                 child: Text(
                   item.subtitle!,
-                  style: TextStyle(
-                    color: ThixPolicy.textMuted,
+                  style: const TextStyle(
+                    color: _MediaLightPalette.textSecondary,
                     fontSize: 14,
                     height: 1.5,
                   ),
@@ -387,8 +404,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
             else
               const SizedBox(height: 24),
             if (_suggestions.isNotEmpty)
-              RepaintBoundary(
-                  child: _buildSuggestionsSection(l10n)),
+              RepaintBoundary(child: _buildSuggestionsSection(l10n)),
             const SizedBox(height: 40),
           ],
         ),
@@ -400,8 +416,8 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
       bool enforcePreview, AppLocalizations l10n) {
     return Container(
       constraints:
-          BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.55),
-      color: ThixPolicy.inkDeep,
+          BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.50),
+      color: Colors.black,
       child: Center(
         child: requiresPayment
             ? _buildPaywall(item, l10n)
@@ -425,29 +441,30 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
 
   Widget _buildEpisodesSection(AppLocalizations l10n) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Semantics(
             header: true,
             child: Text(
-              l10n.t('detail_episodes'),
-              style: TextStyle(
-                color: ThixPolicy.textMain,
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
+              l10n.t('detail_episodes').isNotEmpty ? l10n.t('detail_episodes') : 'Épisodes',
+              style: const TextStyle(
+                color: _MediaLightPalette.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
               ),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: List.generate(_episodes.length, (i) {
               final active = i == _currentEpisode;
-              // CORRECTION : args passe en liste
-              final label = l10n.t('detail_part_n', args: ['${i + 1}']);
+              final label = l10n.t('detail_part_n', args: ['${i + 1}']).isNotEmpty
+                  ? l10n.t('detail_part_n', args: ['${i + 1}'])
+                  : 'Partie ${i + 1}';
               return Semantics(
                 button: true,
                 selected: active,
@@ -465,21 +482,31 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
                         const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     decoration: BoxDecoration(
                       color: active
-                          ? ThixPolicy.textMain
-                          : ThixPolicy.textMain.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
+                          ? _MediaLightPalette.textPrimary
+                          : _MediaLightPalette.surface,
+                      borderRadius: BorderRadius.circular(20),
                       border: Border.all(
                         color: active
-                            ? ThixPolicy.textMain
-                            : Colors.transparent,
+                            ? _MediaLightPalette.textPrimary
+                            : _MediaLightPalette.border,
+                        width: 1.2,
                       ),
+                      boxShadow: active
+                          ? []
+                          : [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.02),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              )
+                            ],
                     ),
                     child: Text(
                       label,
                       style: TextStyle(
-                        color: active ? ThixPolicy.inkDeep : ThixPolicy.textMain,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
+                        color: active ? Colors.white : _MediaLightPalette.textSecondary,
+                        fontSize: 13,
+                        fontWeight: active ? FontWeight.w800 : FontWeight.w600,
                       ),
                     ),
                   ),
@@ -504,28 +531,36 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     final avatarUrl = creatorProfile?['avatar_url'] as String?;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
       child: Row(
         children: [
           Semantics(
             button: !creatorIsOfficial,
             label: creatorIsOfficial
                 ? 'TDIA'
-                // CORRECTION : args passe en liste
-                : l10n.t('detail_open_creator', args: [displayName]),
+                : (l10n.t('detail_open_creator', args: [displayName]).isNotEmpty
+                    ? l10n.t('detail_open_creator', args: [displayName])
+                    : 'Voir profil de $displayName'),
             child: GestureDetector(
               onTap: !creatorIsOfficial && creatorId.isNotEmpty
                   ? () => _openCreatorProfile(creatorId)
                   : null,
               child: Container(
-                width: 46,
-                height: 46,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: ThixPolicy.textMain.withValues(alpha: 0.8),
+                    color: _MediaLightPalette.border,
                     width: 1.6,
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    )
+                  ],
                   image: avatarUrl != null
                       ? DecorationImage(
                           image: CachedNetworkImageProvider(avatarUrl),
@@ -534,30 +569,32 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
                       : null,
                 ),
                 child: avatarUrl == null
-                    ? Icon(Icons.person,
-                        size: 24, color: ThixPolicy.textMuted)
+                    ? const Icon(Icons.person,
+                        size: 24, color: _MediaLightPalette.textMuted)
                     : null,
               ),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   '@$displayName',
-                  style: TextStyle(
-                    color: ThixPolicy.textMain,
-                    fontSize: 15,
+                  style: const TextStyle(
+                    color: _MediaLightPalette.textPrimary,
+                    fontSize: 16,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
                   item.type,
-                  style: TextStyle(
-                    color: ThixPolicy.textMuted,
+                  style: const TextStyle(
+                    color: _MediaLightPalette.textSecondary,
                     fontSize: 12,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],
@@ -566,22 +603,30 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
           if (showFollowBtn)
             Semantics(
               button: true,
-              label: l10n.t('detail_follow'),
+              label: l10n.t('detail_follow').isNotEmpty ? l10n.t('detail_follow') : 'Suivre',
               child: GestureDetector(
-                onTap: () => _followCreator(creatorId),
+                onTap: () async {
+                  if (!_throttle()) return;
+                  HapticFeedback.mediumImpact();
+                  setState(() => _newlyFollowed.add(creatorId));
+                  try {
+                    await MediaService().toggleFollow(creatorId);
+                    ref.invalidate(mediaIsFollowingProvider(creatorId));
+                  } catch (_) {}
+                },
                 child: Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                   decoration: BoxDecoration(
-                    color: ThixPolicy.textMain,
+                    color: _MediaLightPalette.textPrimary,
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    l10n.t('detail_follow'),
-                    style: TextStyle(
-                      color: ThixPolicy.inkDeep,
+                    l10n.t('detail_follow').isNotEmpty ? l10n.t('detail_follow') : 'Suivre',
+                    style: const TextStyle(
+                      color: Colors.white,
                       fontSize: 13,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
@@ -595,57 +640,57 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
   Widget _buildActionsBar(AppLocalizations l10n, dynamic live) {
     final item = widget.item;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: _kAppBarBlur, sigmaY: _kAppBarBlur),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            decoration: BoxDecoration(
-              color: ThixPolicy.textMain.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                  color: ThixPolicy.textMain.withValues(alpha: 0.15)),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: _MediaLightPalette.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _MediaLightPalette.border),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            )
+          ],
+        ),
+        child: Row(
+          children: [
+            _detailActionBtn(
+              icon: _liked
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+              label: formatMediaNumber(live?.likeCount ?? item.likeCount),
+              color: _liked ? ThixPolicy.danger : _MediaLightPalette.textPrimary,
+              labelL10n: l10n.t('detail_likes').isNotEmpty ? l10n.t('detail_likes') : 'J\'aime',
+              onTap: _toggleLike,
             ),
-            child: Row(
-              children: [
-                _detailActionBtn(
-                  icon: _liked
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_border_rounded,
-                  label: formatMediaNumber(live?.likeCount ?? item.likeCount),
-                  color: _liked ? ThixPolicy.danger : ThixPolicy.textMain,
-                  labelL10n: l10n.t('detail_likes'),
-                  onTap: _toggleLike,
-                ),
-                _detailActionBtn(
-                  icon: Icons.chat_bubble_outline_rounded,
-                  label:
-                      formatMediaNumber(live?.commentCount ?? item.commentCount),
-                  color: ThixPolicy.textMain,
-                  labelL10n: l10n.t('detail_comments'),
-                  onTap: _openComments,
-                ),
-                _detailActionBtn(
-                  icon: Icons.remove_red_eye_outlined,
-                  label: formatMediaNumber(live?.viewCount ?? item.viewCount),
-                  color: ThixPolicy.textMuted,
-                  labelL10n: l10n.t('detail_views'),
-                  onTap: () {},
-                ),
-                _detailActionBtn(
-                  icon: _saved
-                      ? Icons.bookmark_rounded
-                      : Icons.bookmark_border_rounded,
-                  label: l10n.t('detail_save'),
-                  color: _saved ? ThixPolicy.textMain : ThixPolicy.textMuted,
-                  labelL10n: l10n.t('detail_save'),
-                  onTap: _toggleSave,
-                ),
-              ],
+            _detailActionBtn(
+              icon: Icons.chat_bubble_outline_rounded,
+              label:
+                  formatMediaNumber(live?.commentCount ?? item.commentCount),
+              color: _MediaLightPalette.textPrimary,
+              labelL10n: l10n.t('detail_comments').isNotEmpty ? l10n.t('detail_comments') : 'Commentaires',
+              onTap: _openComments,
             ),
-          ),
+            _detailActionBtn(
+              icon: Icons.remove_red_eye_outlined,
+              label: formatMediaNumber(live?.viewCount ?? item.viewCount),
+              color: _MediaLightPalette.textSecondary,
+              labelL10n: l10n.t('detail_views').isNotEmpty ? l10n.t('detail_views') : 'Vues',
+              onTap: () {},
+            ),
+            _detailActionBtn(
+              icon: _saved
+                  ? Icons.bookmark_rounded
+                  : Icons.bookmark_border_rounded,
+              label: l10n.t('detail_save').isNotEmpty ? l10n.t('detail_save') : 'Sauver',
+              color: _saved ? ThixPolicy.primary : _MediaLightPalette.textSecondary,
+              labelL10n: l10n.t('detail_save').isNotEmpty ? l10n.t('detail_save') : 'Sauver',
+              onTap: _toggleSave,
+            ),
+          ],
         ),
       ),
     );
@@ -675,7 +720,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
                   label,
                   style: TextStyle(
                     color: color,
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -692,15 +737,16 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Semantics(
             header: true,
             child: Text(
-              l10n.t('detail_suggestions'),
-              style: TextStyle(
-                color: ThixPolicy.textMain,
+              l10n.t('detail_suggestions').isNotEmpty ? l10n.t('detail_suggestions') : 'À découvrir aussi',
+              style: const TextStyle(
+                color: _MediaLightPalette.textPrimary,
                 fontSize: 18,
                 fontWeight: FontWeight.w900,
+                letterSpacing: -0.3,
               ),
             ),
           ),
@@ -709,12 +755,12 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 14,
-            childAspectRatio: 0.68,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            childAspectRatio: 0.70,
           ),
           itemCount: _suggestions.length,
           itemBuilder: (c, i) => MediaPosterCard(
@@ -727,40 +773,43 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
   }
 
   Widget _buildPaywall(MediaContent item, AppLocalizations l10n) {
+    final cover = _MediaSanitizer.imageUrl(item.coverUrl);
     return Container(
-      decoration: item.coverUrl.isNotEmpty
+      decoration: cover != null
           ? BoxDecoration(
               image: DecorationImage(
-                image: CachedNetworkImageProvider(item.coverUrl),
+                image: CachedNetworkImageProvider(cover),
                 fit: BoxFit.cover,
               ),
             )
-          : BoxDecoration(color: ThixPolicy.card),
+          : const BoxDecoration(color: Colors.black),
       child: BackdropFilter(
         filter: ImageFilter.blur(
             sigmaX: _kPaywallBlur, sigmaY: _kPaywallBlur),
         child: Container(
-          color: ThixPolicy.inkDeep.withValues(alpha: 0.75),
+          color: Colors.black.withValues(alpha: 0.75),
           alignment: Alignment.center,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
                 padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   shape: BoxShape.circle,
-                  color: ThixPolicy.warning,
+                  color: Colors.white,
                 ),
-                child: Icon(Icons.lock_rounded,
-                    size: 40, color: ThixPolicy.inkDeep),
+                child: const Icon(Icons.lock_rounded,
+                    size: 40, color: Colors.black87),
               ),
               const SizedBox(height: 20),
               Semantics(
                 header: true,
                 child: Text(
-                  l10n.t('detail_premium_title'),
-                  style: TextStyle(
-                    color: ThixPolicy.textMain,
+                  l10n.t('detail_premium_title').isNotEmpty
+                      ? l10n.t('detail_premium_title')
+                      : 'Contenu Premium',
+                  style: const TextStyle(
+                    color: Colors.white,
                     fontSize: 22,
                     fontWeight: FontWeight.w900,
                   ),
@@ -770,12 +819,15 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 36),
                 child: Text(
-                  // CORRECTION : args passe en liste
                   l10n.t('detail_premium_message',
-                      args: [_formatPrice(l10n)]),
+                          args: [_formatPrice(l10n)])
+                      .isNotEmpty
+                      ? l10n.t('detail_premium_message',
+                          args: [_formatPrice(l10n)])
+                      : "Fin de l'aperçu gratuit. Débloquez la suite pour ${_formatPrice(l10n)}.",
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: ThixPolicy.textMuted,
+                  style: const TextStyle(
+                    color: Colors.white70,
                     fontSize: 14,
                     height: 1.5,
                   ),
@@ -784,23 +836,30 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
               const SizedBox(height: 28),
               Semantics(
                 button: true,
-                // CORRECTION : args passe en liste
                 label: l10n.t('detail_unlock_button',
-                    args: [_formatPrice(l10n)]),
+                        args: [_formatPrice(l10n)])
+                    .isNotEmpty
+                    ? l10n.t('detail_unlock_button',
+                        args: [_formatPrice(l10n)])
+                    : 'Débloquer (${_formatPrice(l10n)})',
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: ThixPolicy.warning,
-                    foregroundColor: ThixPolicy.inkDeep,
+                    backgroundColor: ThixPolicy.gold,
+                    foregroundColor: Colors.black87,
                     padding:
                         const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                    elevation: 0,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30)),
                   ),
                   onPressed: _unlockPremium,
                   child: Text(
-                    // CORRECTION : args passe en liste
                     l10n.t('detail_unlock_button',
-                        args: [_formatPrice(l10n)]),
+                            args: [_formatPrice(l10n)])
+                        .isNotEmpty
+                        ? l10n.t('detail_unlock_button',
+                            args: [_formatPrice(l10n)])
+                        : 'Débloquer (${_formatPrice(l10n)})',
                     style: const TextStyle(
                         fontSize: 16, fontWeight: FontWeight.w900),
                   ),
