@@ -56,9 +56,10 @@ class AudioSpaceService {
   bool get isAuthenticated => _live.isAuthenticated;
 
   String _newChannel(String userId) {
-    final short = userId.replaceAll('-', '');
-    final head = short.length >= 12 ? short.substring(0, 12) : short.padRight(12, '0');
-    return 'space_\( {head}_ \){DateTime.now().millisecondsSinceEpoch}';
+    final raw = userId.replaceAll('-', '');
+    final head = raw.length >= 12 ? raw.substring(0, 12) : raw.padRight(12, '0');
+    final ts = DateTime.now().millisecondsSinceEpoch.toString();
+    return 'space_' + head + '_' + ts;
   }
 
   bool _isDuplicateChannel(Object e) {
@@ -87,7 +88,14 @@ class AudioSpaceService {
           .timeout(_kFnTimeout);
 
       if (res.status != 200 || res.data == null) {
-        throw Exception('Token salon audio refusé (${res.status}).');
+        throw Exception(
+          'Token salon audio refusé (' +
+              res.status.toString() +
+              ') channel=' +
+              channelName +
+              ' data=' +
+              res.data.toString(),
+        );
       }
 
       final data = res.data is Map
@@ -100,9 +108,9 @@ class AudioSpaceService {
       }
 
       return AgoraCredentials(appId: appId, token: token);
-    } on FunctionException catch (e) {
-      debugPrint('[AudioSpace] token-space ${e.status} ${e.details}');
-      throw Exception('Token salon audio refusé (${e.status}).');
+    } catch (e) {
+      debugPrint('[AudioSpace] token-space error: ' + e.toString());
+      rethrow;
     }
   }
 
@@ -133,6 +141,7 @@ class AudioSpaceService {
 
     for (var attempt = 0; attempt < 3; attempt++) {
       final channel = _newChannel(uid);
+      debugPrint('[AudioSpace] channel=' + channel);
       try {
         final row = await _client
             .from('audio_spaces')
@@ -171,7 +180,7 @@ class AudioSpaceService {
         return space;
       } catch (e) {
         lastError = e;
-        debugPrint('[AudioSpace] create attempt ${attempt + 1} failed: $e');
+        debugPrint('[AudioSpace] create attempt failed: ' + e.toString());
         if (!_isDuplicateChannel(e)) rethrow;
         await Future<void>.delayed(Duration(milliseconds: 80 * (attempt + 1)));
       }
@@ -304,7 +313,7 @@ class AudioSpaceService {
             p.role == AudioSpaceRole.speaker)
         .length;
     if (speakers >= space.maxSpeakers) {
-      throw Exception('Nombre maximum d\'intervenants atteint (${space.maxSpeakers}).');
+      throw Exception('Nombre maximum d\'intervenants atteint (' + space.maxSpeakers.toString() + ').');
     }
     await _client
         .from('audio_space_participants')
@@ -368,7 +377,7 @@ class AudioSpaceService {
     required void Function(String targetUserId, String role) onRoleChanged,
     required void Function(String targetUserId) onBanned,
   }) {
-    final channel = _client.channel('audio_space_$spaceId');
+    final channel = _client.channel('audio_space_' + spaceId);
     channel
         .onBroadcast(
           event: 'chat',
@@ -384,7 +393,7 @@ class AudioSpaceService {
                 sentAt: DateTime.tryParse(payload['sentAt']?.toString() ?? '') ?? DateTime.now(),
               ));
             } catch (e) {
-              debugPrint('[AudioSpace] chat parse error: $e');
+              debugPrint('[AudioSpace] chat parse error: ' + e.toString());
             }
           },
         )
