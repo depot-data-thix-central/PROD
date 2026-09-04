@@ -1,3 +1,5 @@
+// lib/presentation/thix_sos/services/sos_call_bridge.dart
+
 /// Pont SOS → THIX Chat + Call (Agora) + fallback tel — Production Enterprise
 /// ✅ SÉCURISÉ : timeouts, race-condition, RGPD (hash logs), kIsWeb guards
 /// ✅ ROBUSTE : retry, parallel calls, cleanup on error, validation
@@ -195,7 +197,6 @@ class SosCallBridge {
           }
         } catch (e) {
           debugPrint('[SosBridge] ❌ Camera broadcast failed: $e');
-          // ✅ FIX P0 : sanitize error message (pas de stack trace)
           await _sos.logEventPublic(
             incident.id,
             'CAMERA_CHANNEL_FAILED',
@@ -229,7 +230,7 @@ class SosCallBridge {
       return SosActivationResult(
         incident: incident,
         conversationId: conversationId,
-        calls: calls.calls,
+        calls: calls, // Correction : calls au lieu de calls.calls
       );
     } catch (e, stack) {
       // ✅ FIX P0 : cleanup on error
@@ -240,6 +241,21 @@ class SosCallBridge {
     } finally {
       _isActivating = false;
     }
+  }
+
+  /// Appelle tous les secours d'un cercle en parallèle (performance)
+  Future<List<SosCallAttempt>> callCircle({
+    required SosIncident incident,
+    required int circle,
+    required List<SosContact> contacts,
+  }) async {
+    // Lancement de tous les appels simultanément
+    final futures = contacts.map((contact) => _callOneContact(
+          incident: incident,
+          circle: circle,
+          contact: contact,
+        ));
+    return await Future.wait(futures);
   }
 
   /// ✅ Cleanup si activateProtocol échoue
@@ -273,113 +289,6 @@ class SosCallBridge {
     } catch (e) {
       debugPrint('[SosBridge] ⚠️ Camera permission check failed: $e');
       return false;
-    }
-  }
-
-  /// Appelle tous les secours d'un cercle en **parallèle** (performance)
-  Future<SosActivationResult> activateProtocol(SosIncident incident) async {
-    if (_isActivating) {
-      debugPrint('[SosBridge] Activation already in progress');
-      return SosActivationResult(
-        incident: incident,
-        conversationId: null,
-        calls: const [],
-      );
-    }
-    _isActivating = true;
-
-    String? conversationId;
-    bool cameraStarted = false;
-
-    try {
-      const circle = 1;
-      final contacts = await _sos.getContactsByCircle(circle);
-      debugPrint(
-        '[SosBridge] Activating — ' +
-            contacts.length.toString() +
-            ' contacts circle 1',
-      );
-
-      final userIds = <String>{};
-      if (incident.victimId.isNotEmpty) {
-        userIds.add(incident.victimId);
-      }
-      for (final c in contacts) {
-        final id = await _sos.resolveContactUserId(c);
-        if (id != null && id.isNotEmpty) userIds.add(id);
-      }
-
-      conversationId = await _bridgeRetry(
-        () => _sos.createSosChat(
-          incidentId: incident.id,
-          publicId: incident.publicId,
-          participantUserIds: userIds.toList(),
-        ),
-        label: 'createSosChat',
-        timeout: _kChatTimeout,
-      );
-      debugPrint('[SosBridge] Chat SOS created: ' + conversationId.toString());
-
-      final calls = await callCircle(
-        incident: incident,
-        circle: circle,
-        contacts: contacts,
-      );
-
-      if (!kIsWeb) {
-        try {
-          final hasCam = await _ensureCameraPermission();
-          if (hasCam) {
-            await _bridgeRetry(
-              () => SosCrisisMediaService.instance
-                  .startVictimBroadcast(incident.id),
-              label: 'startVictimBroadcast',
-              timeout: _kCameraTimeout,
-            );
-            cameraStarted = true;
-            await _sos.logEventPublic(incident.id, 'CAMERA_CHANNEL_READY', {
-              'channel': SosCrisisMediaService.channelFor(incident.id),
-              'mode': 'victim_broadcast',
-            });
-          }
-        } catch (e) {
-          debugPrint('[SosBridge] Camera failed: ' + e.toString());
-        }
-      }
-
-      try {
-        await _sos.logEventPublic(incident.id, 'SOS_STARTED', {
-          'incident_id': incident.id,
-          'circle1_user_ids': userIds.toList(),
-          'victim_id': incident.victimId,
-          'public_id': incident.publicId,
-          'conversation_id': conversationId,
-        });
-      } catch (e) {
-        debugPrint('[SosBridge] SOS_STARTED log failed: ' + e.toString());
-      }
-
-      try {
-        await SosVictimCaptureDaemon.instance.start(
-          incidentId: incident.id,
-          conversationId: conversationId,
-        );
-      } catch (e) {
-        debugPrint('[SosBridge] Daemon failed: ' + e.toString());
-      }
-
-      return SosActivationResult(
-        incident: incident,
-        conversationId: conversationId,
-        calls: calls.calls,
-      );
-    } catch (e, stack) {
-      debugPrint('[SosBridge] activateProtocol failed: ' + e.toString());
-      debugPrint('[SosBridge] Stack: ' + stack.toString());
-      await _cleanupOnError(incident.id, conversationId, cameraStarted);
-      rethrow;
-    } finally {
-      _isActivating = false;
     }
   }
 
