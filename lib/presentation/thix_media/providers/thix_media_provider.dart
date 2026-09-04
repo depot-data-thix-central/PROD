@@ -76,21 +76,12 @@ final isMediaAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
   final u = Supabase.instance.client.auth.currentUser;
   if (u == null) return false;
   final role = u.appMetadata['role'] ?? u.userMetadata?['role'];
-  final isAdmin = role == 'admin' || role == 'superadmin';
-  _MediaProviderLogger.info('Admin check', {
-    'userId': u.id,
-    'isAdmin': isAdmin,
-  });
-  return isAdmin;
+  return role == 'admin' || role == 'superadmin';
 });
 
-// ✅ CORRECTION DU NOM : Remplacé "mediaCountsPollingProvider" par "mediaCountsStreamProvider"
 final mediaCountsStreamProvider =
     StreamProvider.autoDispose.family<MediaCounts, String>((ref, mediaId) async* {
   if (!_MediaProviderValidators.isValidUuid(mediaId)) {
-    _MediaProviderLogger.warn('Invalid mediaId for polling', {
-      'mediaId': mediaId,
-    });
     yield const MediaCounts(likeCount: 0, viewCount: 0, commentCount: 0);
     return;
   }
@@ -113,26 +104,15 @@ final mediaCountsStreamProvider =
       consecutiveErrors = 0;
     } catch (e) {
       consecutiveErrors++;
-      _MediaProviderLogger.warn('Polling error', {
-        'mediaId': mediaId,
-        'consecutiveErrors': consecutiveErrors,
-        'error': '$e',
-      });
       if (consecutiveErrors >= _kMaxPollingErrors) break;
     }
     await Future<void>.delayed(_kPollingInterval);
   }
 });
 
-// ✅ CORRECTION DU NOM : Remplacé "commentCountProvider" par "mediaCommentCountProvider"
 final mediaCommentCountProvider =
     FutureProvider.autoDispose.family<int, String>((ref, mediaId) async {
-  if (!_MediaProviderValidators.isValidUuid(mediaId)) {
-    _MediaProviderLogger.warn('Invalid mediaId for commentCount', {
-      'mediaId': mediaId,
-    });
-    return 0;
-  }
+  if (!_MediaProviderValidators.isValidUuid(mediaId)) return 0;
   try {
     final r = await Supabase.instance.client
         .from('media_stats')
@@ -142,22 +122,13 @@ final mediaCommentCountProvider =
         .timeout(_kQueryTimeout);
     return (r?['comment_count'] as int?) ?? 0;
   } catch (e) {
-    _MediaProviderLogger.error('commentCount failed', {
-      'mediaId': mediaId,
-      'error': '$e',
-    });
     return 0;
   }
 });
 
 final mediaCreatorIdProvider =
     FutureProvider.autoDispose.family<String?, String>((ref, mediaId) async {
-  if (!_MediaProviderValidators.isValidUuid(mediaId)) {
-    _MediaProviderLogger.warn('Invalid mediaId for creatorId', {
-      'mediaId': mediaId,
-    });
-    return null;
-  }
+  if (!_MediaProviderValidators.isValidUuid(mediaId)) return null;
   try {
     final res = await Supabase.instance.client
         .from('media_content')
@@ -167,21 +138,13 @@ final mediaCreatorIdProvider =
         .timeout(_kQueryTimeout);
     return res?['user_id'] as String?;
   } catch (e) {
-    _MediaProviderLogger.error('creatorId failed', {
-      'mediaId': mediaId,
-      'error': '$e',
-    });
     return null;
   }
 });
 
-// ✅ CORRECTION DU NOM : Remplacé "userProfileProvider" par "mediaUserProfileProvider"
 final mediaUserProfileProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>?, String>((ref, userId) async {
-  if (!_MediaProviderValidators.isValidUuid(userId)) {
-    _MediaProviderLogger.warn('Invalid userId for profile', {'userId': userId});
-    return null;
-  }
+  if (!_MediaProviderValidators.isValidUuid(userId)) return null;
   try {
     return await Supabase.instance.client
         .from('profiles')
@@ -190,21 +153,14 @@ final mediaUserProfileProvider = FutureProvider.autoDispose
         .maybeSingle()
         .timeout(_kQueryTimeout);
   } catch (e) {
-    _MediaProviderLogger.error('userProfile failed', {
-      'userId': userId,
-      'error': '$e',
-    });
     return null;
   }
 });
 
-// ✅ CORRECTION DU NOM : Remplacé "isFollowingProvider" par "mediaIsFollowingProvider"
 final mediaIsFollowingProvider =
     FutureProvider.autoDispose.family<bool, String>((ref, targetId) async {
   final uid = Supabase.instance.client.auth.currentUser?.id;
-  if (uid == null || !_MediaProviderValidators.isValidUuid(targetId)) {
-    return false;
-  }
+  if (uid == null || !_MediaProviderValidators.isValidUuid(targetId)) return false;
   if (uid == targetId) return false;
   try {
     final res = await Supabase.instance.client
@@ -216,18 +172,10 @@ final mediaIsFollowingProvider =
         .timeout(_kQueryTimeout);
     return res != null;
   } catch (e) {
-    _MediaProviderLogger.error('isFollowing failed', {
-      'targetId': targetId,
-      'error': '$e',
-    });
     return false;
   }
 });
 
-
-// ══════════════════════════════════════════════════════════════════════════
-// GESTIONNAIRE DE LISTE (Maintient la pagination et la logique)
-// ══════════════════════════════════════════════════════════════════════════
 class ThixMediaNotifier extends AutoDisposeAsyncNotifier<List<MediaContent>> {
   DateTime? _cursor;
   bool _hasMore = true;
@@ -257,16 +205,9 @@ class ThixMediaNotifier extends AutoDisposeAsyncNotifier<List<MediaContent>> {
     _hasMore = true;
     _seenSet.clear();
     _seenList.clear();
-    state = const AsyncLoading();
+    
+    // ✅ CORRECTION : L'écran ne clignote plus au chargement (Plus de state = AsyncLoading)
     state = await AsyncValue.guard(() => _fetch(null));
-    state.whenOrNull(
-      data: (list) => _MediaProviderLogger.info('Refresh successful', {
-        'count': list.length,
-      }),
-      error: (e, _) => _MediaProviderLogger.error('Refresh failed', {
-        'error': '$e',
-      }),
-    );
   }
 
   Future<void> loadMore() async {
@@ -279,10 +220,6 @@ class ThixMediaNotifier extends AutoDisposeAsyncNotifier<List<MediaContent>> {
       }
       final current = state.value ?? <MediaContent>[];
       state = AsyncData(<MediaContent>[...current, ...moreItems]);
-      _MediaProviderLogger.info('Load more successful', {
-        'count': moreItems.length,
-        'total': state.value!.length,
-      });
     } catch (e) {
       _MediaProviderLogger.error('Load more failed', {'error': '$e'});
     } finally {
@@ -294,19 +231,6 @@ class ThixMediaNotifier extends AutoDisposeAsyncNotifier<List<MediaContent>> {
     final category = ref.read(selectedCategoryProvider);
     final searchRaw = ref.read(searchQueryProvider);
     final search = _MediaProviderValidators.sanitizeSearchQuery(searchRaw);
-    final service = MediaService();
-
-    if (category == 'Fil' && search.isEmpty) {
-      final page = await service.fetchShuffledFeed(
-        seenIds: _seenList,
-        limit: _kFetchLimit,
-      );
-      _addToSeen(page.items.map((e) => e.id));
-      if (page.items.isNotEmpty) {
-        _cursor = page.items.last.createdAt;
-      }
-      return page.items;
-    }
 
     var query = Supabase.instance.client
         .from('media_content')
@@ -318,29 +242,31 @@ class ThixMediaNotifier extends AutoDisposeAsyncNotifier<List<MediaContent>> {
 
     if (search.isNotEmpty) {
       query = query.ilike('title', '%$search%');
-    } else if (category == 'Tous') {
-      query = query.neq('type', 'Fil');
-    } else if (category != 'Fil') {
+    } 
+    // ✅ CORRECTION : Requête directe pour le Fil, pas de RPC complexe qui échoue
+    else if (category != 'Tous' && category != 'Fil' && category != 'category_feed' && category != 'category_all') {
       query = query.eq('type', category);
     }
 
-    final result = await query
-        .order('created_at', ascending: false)
-        .limit(_kFetchLimit)
-        .timeout(_kQueryTimeout);
+    try {
+      final result = await query
+          .order('created_at', ascending: false)
+          .limit(_kFetchLimit)
+          .timeout(_kQueryTimeout);
 
-    var list = (result as List)
-        .map((it) => MediaContent.fromJson(Map<String, dynamic>.from(it as Map)))
-        .toList();
+      var list = (result as List)
+          .map((it) => MediaContent.fromJson(Map<String, dynamic>.from(it as Map)))
+          .toList();
 
-    if (search.isEmpty && category == 'Tous') {
-      list.shuffle();
+      if (list.isNotEmpty) {
+        _cursor = list.last.createdAt;
+      }
+      _addToSeen(list.map((e) => e.id));
+      return list;
+    } catch (e) {
+      _MediaProviderLogger.error('Fetch failed', {'error': '$e'});
+      return [];
     }
-    if (list.isNotEmpty) {
-      _cursor = list.last.createdAt;
-    }
-    _addToSeen(list.map((e) => e.id));
-    return list;
   }
 
   void _addToSeen(Iterable<String> ids) {
