@@ -189,7 +189,7 @@ class _CreateAudioSpaceSheetState extends ConsumerState<CreateAudioSpaceSheet> {
               child: FilledButton(
                 onPressed: _busy ? null : _submit,
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF7C4DFF),
+                  backgroundColor: ThixPolicy.domainMedia, // Utilisation propre du ThixPolicy
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
