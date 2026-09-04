@@ -44,6 +44,14 @@ class MediaConfig {
   static const Duration analyticsFlushDelay = Duration(seconds: 8);
   static const Duration networkTimeout = Duration(seconds: 10);
   static const Duration heartPopDuration = Duration(milliseconds: 550);
+  static const int previewSeconds = 30;
+  static const int commentsPageSize = 50;
+  static const double likeWeight = 2.0;
+  static const double commentWeight = 3.0;
+  static const double viewWeight = 0.05;
+  static const double explorationMin = 0.65;
+  static const double explorationRange = 0.7;
+
 }
 
 class MediaLightPalette {
