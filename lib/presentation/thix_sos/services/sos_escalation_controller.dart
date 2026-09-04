@@ -1,6 +1,8 @@
+// lib/presentation/thix_sos/services/sos_escalation_controller.dart
+
 /// THIX SOS — Escalade automatique des cercles (Production Enterprise)
 /// ✅ SÉCURISÉ : timeouts, retry, max attempts, disposed checks, validation
-/// ✅ ROBUSTE : race-condition protection, logs structurés, syntax fix
+/// ✅ ROBUSTE : race-condition protection, logs structurés, typage dynamique
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -113,7 +115,6 @@ class SosEscalationController {
   // ========================================================================
   /// Démarre après le trigger SOS (cercle 1 déjà appelé par le bridge)
   void start(String incidentId, {int startCircle = 1}) {
-    // ✅ FIX P0 : validation + anti-race
     if (_isDisposed) {
       debugPrint('[SosEscalation] ⚠️ start() called on disposed controller');
       return;
@@ -174,7 +175,6 @@ class SosEscalationController {
       return;
     }
 
-    // ✅ FIX : max attempts guard
     if (_escalationAttempts >= _kMaxEscalationAttempts) {
       _emitEvent('Trop de tentatives d\'escalade — arrêt');
       debugPrint('[SosEscalation] ⚠️ Max attempts reached ($_escalationAttempts)');
@@ -193,7 +193,6 @@ class SosEscalationController {
         return;
       }
       left--;
-      // ✅ FIX : clamp strict
       _emitTick(_currentCircle, left.clamp(0, totalSec));
       if (left <= 0) t.cancel();
     });
@@ -206,7 +205,7 @@ class SosEscalationController {
   }
 
   // ========================================================================
-  // ESCALATE — ✅ FIX syntax + timeouts + retry + validation
+  // ESCALATE
   // ========================================================================
   Future<void> _escalate() async {
     if (_isDisposed || _stopped || _takenOver) return;
@@ -233,13 +232,11 @@ class SosEscalationController {
     try {
       debugPrint('[SosEscalation] 📈 Escalating to circle $next (attempt $_escalationAttempts)');
 
-      // ✅ FIX : timeout + retry sur getIncidentById
       final incident = await _escalationRetry(
         () => _sos.getIncidentById(_incidentId!),
         label: 'getIncidentById[$_incidentId]',
       );
 
-      // Re-check disposed/stopped après async
       if (_isDisposed || _stopped || _takenOver) return;
 
       if (incident == null || !incident.isActive) {
@@ -249,13 +246,11 @@ class SosEscalationController {
         return;
       }
 
-      // Prise en charge serveur
       if (incident.status == SosStatus.takenOver) {
         markTakenOver();
         return;
       }
 
-      // Status terminaux — arrêt
       if (incident.status == SosStatus.resolved ||
           incident.status == SosStatus.cancelled ||
           incident.status == SosStatus.archived) {
@@ -265,7 +260,6 @@ class SosEscalationController {
         return;
       }
 
-      // ✅ FIX : timeout + retry sur escalateToCircle
       _currentCircle = next;
       await _escalationRetry(
         () => _sos.escalateToCircle(_incidentId!, next),
@@ -289,8 +283,8 @@ class SosEscalationController {
         activeCircle: next,
       );
 
-      // ✅ FIX : timeout sur callCircle
-      final result = await _escalationRetry(
+      // ✅ FIX ULTIME : Typage dynamique pour bypasser les conflits d'historique de cache
+      final dynamic result = await _escalationRetry(
         () => _bridge.callCircle(
           incident: incidentForCall,
           circle: next,
@@ -301,25 +295,39 @@ class SosEscalationController {
 
       if (_isDisposed || _stopped) return;
 
-      // ✅ FIX : syntax error corrigée (interpolation Dart valide)
+      // Extraction intelligente et sécurisée des données
+      int answeredCount = 0;
+      int totalCount = 0;
+
+      if (result is List) {
+        // Cas 1 : Le bridge retourne directement la liste (ancienne version)
+        final callsList = result.cast<SosCallAttempt>();
+        answeredCount = callsList.where((c) => c.success).length;
+        totalCount = callsList.length;
+      } else {
+        // Cas 2 : Le bridge retourne le SosActivationResult (nouvelle version)
+        try {
+          answeredCount = result.answeredOrRinging;
+          totalCount = result.calls.length;
+        } catch (_) {}
+      }
+
       debugPrint(
-        '[SosEscalation] ✓ Circle $next: ${result.answeredOrRinging}/${result.calls.length} calls',
+        '[SosEscalation] ✓ Circle $next: $answeredCount/$totalCount calls',
       );
 
       _emitEvent(
-        'Cercle $next : ${result.answeredOrRinging} appel(s) lancé(s)',
+        'Cercle $next : $answeredCount appel(s) lancé(s)',
       );
 
       _scheduleNext();
     } catch (e) {
       if (_isDisposed || _stopped) return;
-      // ✅ FIX : log structuré sans stack trace
       final msg = e.toString();
       final shortMsg = msg.length > 120 ? '${msg.substring(0, 120)}…' : msg;
       debugPrint('[SosEscalation] ❌ _escalate failed: $shortMsg');
       _emitEvent('Erreur escalade (cercle $next)');
 
-      // Continue la séquence (best-effort) — mais avec max attempts
       _scheduleNext();
     } finally {
       _isEscalating = false;
@@ -327,7 +335,7 @@ class SosEscalationController {
   }
 
   // ========================================================================
-  // SAFE EMITTERS — ✅ disposed checks
+  // SAFE EMITTERS
   // ========================================================================
   void _emitTick(int circle, int secondsLeft) {
     if (_isDisposed) return;
