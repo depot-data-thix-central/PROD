@@ -92,9 +92,7 @@ class AudioSpaceService {
           'Token salon audio refusé (' +
               res.status.toString() +
               ') channel=' +
-              channelName +
-              ' data=' +
-              res.data.toString(),
+              channelName,
         );
       }
 
@@ -106,7 +104,6 @@ class AudioSpaceService {
       if (token.isEmpty || appId.isEmpty) {
         throw Exception('Réponse token salon invalide.');
       }
-
       return AgoraCredentials(appId: appId, token: token);
     } catch (e) {
       debugPrint('[AudioSpace] token-space error: ' + e.toString());
@@ -313,7 +310,9 @@ class AudioSpaceService {
             p.role == AudioSpaceRole.speaker)
         .length;
     if (speakers >= space.maxSpeakers) {
-      throw Exception('Nombre maximum d\'intervenants atteint (' + space.maxSpeakers.toString() + ').');
+      throw Exception(
+        'Nombre maximum d\'intervenants atteint (' + space.maxSpeakers.toString() + ').',
+      );
     }
     await _client
         .from('audio_space_participants')
@@ -376,6 +375,7 @@ class AudioSpaceService {
     required void Function(String targetUserId, bool muted) onForceMute,
     required void Function(String targetUserId, String role) onRoleChanged,
     required void Function(String targetUserId) onBanned,
+    void Function(String userId, String emoji)? onReaction,
   }) {
     final channel = _client.channel('audio_space_' + spaceId);
     channel
@@ -383,17 +383,34 @@ class AudioSpaceService {
           event: 'chat',
           callback: (payload) {
             try {
-              final body = AudioSpaceSanitizer.sanitize(payload['body']?.toString(), maxLength: _kMaxChat);
+              final body = AudioSpaceSanitizer.sanitize(
+                payload['body']?.toString(),
+                maxLength: _kMaxChat,
+              );
               if (body.isEmpty) return;
-              final name = AudioSpaceSanitizer.sanitize(payload['displayName']?.toString(), maxLength: _kMaxName);
+              final name = AudioSpaceSanitizer.sanitize(
+                payload['displayName']?.toString(),
+                maxLength: _kMaxName,
+              );
               onChat(AudioSpaceChatMessage(
                 userId: payload['userId']?.toString() ?? '',
                 displayName: name.isEmpty ? 'Membre' : name,
                 body: body,
-                sentAt: DateTime.tryParse(payload['sentAt']?.toString() ?? '') ?? DateTime.now(),
+                sentAt: DateTime.tryParse(payload['sentAt']?.toString() ?? '') ??
+                    DateTime.now(),
               ));
             } catch (e) {
               debugPrint('[AudioSpace] chat parse error: ' + e.toString());
+            }
+          },
+        )
+        .onBroadcast(
+          event: 'reaction',
+          callback: (payload) {
+            final emoji = payload['emoji']?.toString() ?? '';
+            final userId = payload['userId']?.toString() ?? '';
+            if (emoji.isNotEmpty && userId.isNotEmpty) {
+              onReaction?.call(userId, emoji);
             }
           },
         )
@@ -427,7 +444,11 @@ class AudioSpaceService {
     return channel;
   }
 
-  Future<void> broadcast(RealtimeChannel channel, String event, Map<String, dynamic> payload) {
+  Future<void> broadcast(
+    RealtimeChannel channel,
+    String event,
+    Map<String, dynamic> payload,
+  ) {
     return channel.sendBroadcastMessage(event: event, payload: payload);
   }
 }
