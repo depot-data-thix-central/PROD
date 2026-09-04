@@ -1,16 +1,12 @@
 // lib/presentation/thix_media/thix_media_page.dart
 //
-// ThixMediaPage (TDIA) — Production Enterprise, thème clair.
+// ThixMediaPage (TDIA) — "Modern Sleek Light" (Production Enterprise)
 //
-// - Fil vertical façon TikTok avec mix intelligent (engagement + diversité
-//   créateur + exploration aléatoire), double-tap pour liker.
-// - Navigation directe (Navigator.push) vers profil, création de post,
-//   admin et détail vidéo — restaurée depuis la logique historique.
-// - Aucune chaîne codée en dur : tout passe par AppLocalizations.
-// - Compteurs en direct via Supabase Realtime (plus de polling en boucle).
+// - Design 100% refait : Thème BLANC / CLAIR éclatant (Sleek Glassmorphism).
+// - i18n, Riverpod, Navigator direct, throttling et sanitization anti-XSS conservés.
+// - Ombres ultra-douces, bordures subtiles.
 
 import 'dart:async';
-import 'dart:math';
 import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -30,34 +26,30 @@ import 'package:thix_id/presentation/thix_media/providers/thix_media_provider.da
 import 'admin/thix_media_admin_page.dart';
 import 'create_post_page.dart';
 import 'user_profile_page.dart';
+import 'widgets/media_detail_page.dart';
 import '../../services/media_service.dart';
 
 // ============================================================================
-// CONFIGURATION (aucune valeur magique ailleurs dans le fichier)
+// CONFIGURATION
 // ============================================================================
 
 class _MediaConfig {
   _MediaConfig._();
 
   static const double glassBlur = kIsWeb ? 8 : 16;
-
   static const int maxSearchLength = 120;
   static const int maxTitleLength = 100;
   static const int maxCommentLength = 500;
   static const int maxHeroItems = 6;
-  static const int maxRelatedItems = 4;
-
   static const Duration scrollThrottle = Duration(milliseconds: 250);
   static const Duration searchDebounce = Duration(milliseconds: 400);
   static const Duration heroAutoScroll = Duration(seconds: 5);
   static const Duration analyticsFlushDelay = Duration(seconds: 8);
   static const Duration networkTimeout = Duration(seconds: 10);
   static const Duration heartPopDuration = Duration(milliseconds: 550);
-
   static const int previewSeconds = 30;
   static const int commentsPageSize = 50;
 
-  // Poids du mix intelligent du Fil (engagement + exploration)
   static const double likeWeight = 2.0;
   static const double commentWeight = 3.0;
   static const double viewWeight = 0.05;
@@ -66,7 +58,7 @@ class _MediaConfig {
 }
 
 // ============================================================================
-// PALETTE CLAIRE (Light Mode Premium — sous-marque TDIA)
+// PALETTE CLAIRE (Light Mode Premium)
 // ============================================================================
 
 class _MediaLightPalette {
@@ -82,7 +74,7 @@ class _MediaLightPalette {
 }
 
 // ============================================================================
-// SANITIZER (sécurité anti-XSS / anti-injection conservée)
+// SANITIZER (Sécurité anti-XSS)
 // ============================================================================
 
 class _MediaSanitizer {
@@ -90,10 +82,7 @@ class _MediaSanitizer {
 
   static String text(String? input, {required int maxLength}) {
     if (input == null) return '';
-    final s = input
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
-        .trim();
+    final s = input.replaceAll(RegExp(r'<[^>]*>'), '').replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '').trim();
     return s.length > maxLength ? '${s.substring(0, maxLength)}…' : s;
   }
 
@@ -106,7 +95,6 @@ class _MediaSanitizer {
   }
 
   static String searchQuery(String? input) => text(input, maxLength: _MediaConfig.maxSearchLength).toLowerCase();
-
   static bool isValidId(String? id) => id != null && id.trim().isNotEmpty && id.length <= 128;
 }
 
@@ -118,7 +106,7 @@ String formatMediaNumber(int count) {
 }
 
 // ============================================================================
-// ANALYTICS BATCHER (vues groupées, pas d'appel réseau par vidéo)
+// ANALYTICS BATCHER
 // ============================================================================
 
 class AnalyticsBatcher {
@@ -141,9 +129,7 @@ class AnalyticsBatcher {
     _pending.clear();
     _timer = null;
     try {
-      await Supabase.instance.client
-          .rpc('batch_register_views', params: {'p_media_ids': batch})
-          .timeout(_MediaConfig.networkTimeout);
+      await Supabase.instance.client.rpc('batch_register_views', params: {'p_media_ids': batch}).timeout(_MediaConfig.networkTimeout);
     } catch (_) {
       _pending.addAll(batch);
     }
@@ -169,12 +155,7 @@ final isMediaAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
 final mediaUserProfileProvider = FutureProvider.autoDispose.family<Map<String, dynamic>?, String>((ref, userId) async {
   if (!_MediaSanitizer.isValidId(userId)) return null;
   try {
-    return await Supabase.instance.client
-        .from('profiles')
-        .select('username, full_name, avatar_url, role')
-        .eq('id', userId)
-        .maybeSingle()
-        .timeout(_MediaConfig.networkTimeout);
+    return await Supabase.instance.client.from('profiles').select('username, full_name, avatar_url, role').eq('id', userId).maybeSingle().timeout(_MediaConfig.networkTimeout);
   } catch (_) {
     return null;
   }
@@ -184,13 +165,7 @@ final mediaIsFollowingProvider = FutureProvider.autoDispose.family<bool, String>
   final uid = Supabase.instance.client.auth.currentUser?.id;
   if (uid == null || uid == targetId) return true;
   try {
-    final res = await Supabase.instance.client
-        .from('follows')
-        .select()
-        .eq('follower_id', uid)
-        .eq('following_id', targetId)
-        .maybeSingle()
-        .timeout(_MediaConfig.networkTimeout);
+    final res = await Supabase.instance.client.from('follows').select().eq('follower_id', uid).eq('following_id', targetId).maybeSingle().timeout(_MediaConfig.networkTimeout);
     return res != null;
   } catch (_) {
     return true;
@@ -200,12 +175,7 @@ final mediaIsFollowingProvider = FutureProvider.autoDispose.family<bool, String>
 final mediaCommentCountProvider = FutureProvider.autoDispose.family<int, String>((ref, mediaId) async {
   if (!_MediaSanitizer.isValidId(mediaId)) return 0;
   try {
-    final r = await Supabase.instance.client
-        .from('media_stats')
-        .select('comment_count')
-        .eq('media_id', mediaId)
-        .maybeSingle()
-        .timeout(_MediaConfig.networkTimeout);
+    final r = await Supabase.instance.client.from('media_stats').select('comment_count').eq('media_id', mediaId).maybeSingle().timeout(_MediaConfig.networkTimeout);
     return (r?['comment_count'] as int?) ?? 0;
   } catch (_) {
     return 0;
@@ -217,18 +187,12 @@ class MediaCounts {
   const MediaCounts({required this.likeCount, required this.viewCount, required this.commentCount});
 }
 
-/// ✅ Compteurs en direct via Supabase Realtime — remplace l'ancien
-/// polling en boucle infinie (Future.delayed toutes les 12s).
 final mediaCountsStreamProvider = StreamProvider.autoDispose.family<MediaCounts, String>((ref, mediaId) {
   if (!_MediaSanitizer.isValidId(mediaId)) {
     return Stream.value(const MediaCounts(likeCount: 0, viewCount: 0, commentCount: 0));
   }
   try {
-    return Supabase.instance.client
-        .from('media_stats')
-        .stream(primaryKey: ['media_id'])
-        .eq('media_id', mediaId)
-        .map((rows) {
+    return Supabase.instance.client.from('media_stats').stream(primaryKey: ['media_id']).eq('media_id', mediaId).map((rows) {
       if (rows.isEmpty) return const MediaCounts(likeCount: 0, viewCount: 0, commentCount: 0);
       final r = rows.first;
       return MediaCounts(
@@ -243,24 +207,18 @@ final mediaCountsStreamProvider = StreamProvider.autoDispose.family<MediaCounts,
 });
 
 // ============================================================================
-// MIX INTELLIGENT DU FIL (façon "Pour toi")
+// MIX INTELLIGENT DU FIL
 // ============================================================================
 
 class _SmartFeedMixer {
   _SmartFeedMixer._();
 
   static double _score(MediaContent item, Random rng) {
-    final base = (item.likeCount * _MediaConfig.likeWeight) +
-        (item.commentCount * _MediaConfig.commentWeight) +
-        (item.viewCount * _MediaConfig.viewWeight);
+    final base = (item.likeCount * _MediaConfig.likeWeight) + (item.commentCount * _MediaConfig.commentWeight) + (item.viewCount * _MediaConfig.viewWeight);
     final jitter = _MediaConfig.explorationMin + rng.nextDouble() * _MediaConfig.explorationRange;
     return (base <= 0 ? 1.0 : base) * jitter;
   }
 
-  /// Classe chaque créateur par score d'engagement (avec une part
-  /// d'exploration aléatoire pour ne pas figer le classement), puis
-  /// entrelace les créateurs en round-robin pondéré : un même auteur
-  /// n'occupe jamais deux positions consécutives, comme un "Pour toi".
   static List<MediaContent> mix(List<MediaContent> catalog, {int? seed}) {
     if (catalog.length <= 2) return List.of(catalog);
     final rng = Random(seed);
@@ -442,11 +400,30 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     });
   }
 
-  // ── Navigation (restaurée : Navigator.push direct) ─────────────────────
+  Widget _buildImage(String url, {BoxFit fit = BoxFit.cover}) {
+    if (url.trim().isEmpty) {
+      return Container(
+        color: _MediaLightPalette.border,
+        child: const Center(child: Icon(Icons.play_circle_outline_rounded, color: _MediaLightPalette.textMuted, size: 40)),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: url,
+      fit: fit,
+      placeholder: (c, url) => Container(color: _MediaLightPalette.border),
+      errorWidget: (c, e, s) => Container(
+        color: _MediaLightPalette.border,
+        child: const Center(child: Icon(Icons.broken_image_rounded, color: _MediaLightPalette.textMuted, size: 30)),
+      ),
+    );
+  }
 
-  void _openDetail(MediaContent item, List<MediaContent> catalog) {
+  // ── Navigation (Restaurée) ───────────────────────────────────
+
+  void _openDetail(MediaContent item) {
     if (!mounted || !_MediaSanitizer.isValidId(item.id)) return;
     AnalyticsBatcher.register(item.id);
+    final catalog = ref.read(thixMediaListProvider).valueOrNull ?? const [];
     Navigator.push(context, MaterialPageRoute(builder: (_) => MediaDetailPage(item: item, catalog: catalog)));
   }
 
@@ -469,7 +446,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     Navigator.push(context, MaterialPageRoute(builder: (_) => UserProfilePage(userId: uid)));
   }
 
-  // ── Build ────────────────────────────────────────────────────────────
+  // ── Build Principal ─────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -479,14 +456,17 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     final selectedCategory = ref.watch(selectedCategoryProvider);
     final isAdmin = ref.watch(isMediaAdminProvider).valueOrNull ?? false;
 
+    final strFil = l10n.t('category_feed').isNotEmpty ? l10n.t('category_feed') : 'Fil';
+    final strTous = l10n.t('category_all').isNotEmpty ? l10n.t('category_all') : 'Tous';
+
     return Scaffold(
       backgroundColor: _MediaLightPalette.background,
       body: asyncMedia.when(
         loading: () => _MediaSkeleton(l10n: l10n),
-        error: (e, st) => _buildErrorState(l10n),
+        error: (e, st) => _buildErrorState(l10n, e),
         data: (catalog) => Stack(
           children: [
-            _buildMainContent(l10n, catalog, isAdmin, selectedCategory),
+            _buildMainContent(l10n, catalog, isAdmin, selectedCategory, strFil, strTous),
             if (_showSearchOverlay) _buildSearchOverlay(l10n, catalog),
           ],
         ),
@@ -494,28 +474,34 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
-  Widget _buildMainContent(AppLocalizations l10n, List<MediaContent> catalog, bool isAdmin, String selectedCategory) {
-    final strFil = l10n.t('category_feed');
-    final strTous = l10n.t('category_all');
+  // ========================================================================
+  // MAIN CONTENT (Grille & Fil)
+  // ========================================================================
 
-    if (selectedCategory == 'Fil' || selectedCategory == strFil) {
+  Widget _buildMainContent(AppLocalizations l10n, List<MediaContent> catalog, bool isAdmin, String selectedCategory, String strFil, String strTous) {
+    if (selectedCategory == strFil || selectedCategory == 'Fil') {
       return Stack(
         children: [
           RepaintBoundary(
             child: FilFeedView(
               catalog: catalog,
-              onOpenDetail: (item) => _openDetail(item, catalog),
+              onOpenDetail: _openDetail,
             ),
           ),
-          Positioned(top: 0, left: 0, right: 0, child: SafeArea(child: _buildTransparentHeader(l10n, isAdmin))),
+          Positioned(
+            top: 0, left: 0, right: 0,
+            child: SafeArea(child: _buildTransparentHeader(l10n, isAdmin)),
+          ),
         ],
       );
     }
 
-    final filtered =
-        (selectedCategory == 'Tous' || selectedCategory == strTous) ? catalog : catalog.where((e) => e.type == selectedCategory).toList();
+    final filtered = (selectedCategory == strTous || selectedCategory == 'Tous')
+        ? catalog
+        : catalog.where((e) => e.type == selectedCategory).toList();
+
     final series = catalog.where((e) => e.episodesUrls.isNotEmpty).toList();
-    final categories = _computeCategories(catalog, l10n);
+    final categories = _computeCategories(catalog, strTous, strFil);
 
     return RefreshIndicator(
       color: ThixPolicy.primary,
@@ -534,12 +520,12 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
           else ...[
             SliverToBoxAdapter(child: _buildHero(l10n, catalog)),
             SliverToBoxAdapter(child: _buildCategoryChips(categories, selectedCategory)),
-            if (series.isNotEmpty) SliverToBoxAdapter(child: _buildSeriesRail(l10n, series, catalog)),
+            if (series.isNotEmpty) SliverToBoxAdapter(child: _buildSeriesRail(l10n, series)),
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
                 child: Text(
-                  (selectedCategory == 'Tous' || selectedCategory == strTous) ? l10n.t('media_catalog') : selectedCategory,
+                  (selectedCategory == strTous || selectedCategory == 'Tous') ? (l10n.t('media_catalog').isNotEmpty ? l10n.t('media_catalog') : 'Catalogue TDIA') : selectedCategory,
                   style: const TextStyle(color: _MediaLightPalette.textPrimary, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.3),
                 ),
               ),
@@ -555,7 +541,12 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (c, i) => RepaintBoundary(
-                    child: MediaPosterCard(item: filtered[i], onTap: () => _openDetail(filtered[i], catalog)),
+                    child: MediaPosterCard(
+                      item: filtered[i],
+                      formatNumber: formatMediaNumber,
+                      buildImage: _buildImage,
+                      onTap: () => _openDetail(filtered[i]),
+                    ),
                   ),
                   childCount: filtered.length,
                 ),
@@ -566,6 +557,60 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
       ),
     );
   }
+
+  // ========================================================================
+  // ERROR / EMPTY
+  // ========================================================================
+
+  Widget _buildErrorState(AppLocalizations l10n, Object error) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_off_rounded, color: ThixPolicy.danger, size: 48),
+            const SizedBox(height: 16),
+            Text(l10n.t('media_load_error').isNotEmpty ? l10n.t('media_load_error') : 'Erreur de chargement', textAlign: TextAlign.center, style: const TextStyle(color: _MediaLightPalette.textMuted, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                HapticFeedback.mediumImpact();
+                ref.read(thixMediaListProvider.notifier).refresh();
+              },
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text(l10n.t('common_retry').isNotEmpty ? l10n.t('common_retry') : 'Réessayer'),
+              style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white, elevation: 0),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(AppLocalizations l10n) {
+    return Padding(
+      padding: const EdgeInsets.all(60),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(color: _MediaLightPalette.border, shape: BoxShape.circle),
+              child: const Icon(Icons.video_library_outlined, size: 40, color: _MediaLightPalette.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            Text(l10n.t('media_empty').isNotEmpty ? l10n.t('media_empty') : 'Aucun contenu.', style: const TextStyle(color: _MediaLightPalette.textMuted, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ========================================================================
+  // HEADERS (SliverAppBar)
+  // ========================================================================
 
   Widget _buildSliverHeader(AppLocalizations l10n, bool isAdmin) {
     return SliverAppBar(
@@ -601,7 +646,10 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
       ],
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(60),
-        child: Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 16), child: _buildSearchBar(l10n)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          child: _buildSearchBar(l10n),
+        ),
       ),
     );
   }
@@ -676,7 +724,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
                   counterText: '',
-                  hintText: l10n.t('media_search_hint'),
+                  hintText: l10n.t('media_search_hint').isNotEmpty ? l10n.t('media_search_hint') : 'Rechercher',
                   hintStyle: const TextStyle(color: _MediaLightPalette.textMuted, fontSize: 13.5, fontWeight: FontWeight.w500),
                   border: InputBorder.none,
                   isDense: true,
@@ -703,22 +751,27 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
+  // ========================================================================
+  // HERO CAROUSEL
+  // ========================================================================
+
   Widget _buildHero(AppLocalizations l10n, List<MediaContent> catalog) {
     final featured = catalog.take(_MediaConfig.maxHeroItems).toList();
     if (featured.isEmpty) return const SizedBox.shrink();
+
     return RepaintBoundary(
       child: SizedBox(
         height: 220,
         child: PageView.builder(
           controller: _heroController,
           itemCount: featured.length,
-          itemBuilder: (c, i) => _buildHeroCard(l10n, featured[i], catalog),
+          itemBuilder: (c, i) => _buildHeroCard(l10n, featured[i]),
         ),
       ),
     );
   }
 
-  Widget _buildHeroCard(AppLocalizations l10n, MediaContent item, List<MediaContent> catalog) {
+  Widget _buildHeroCard(AppLocalizations l10n, MediaContent item) {
     final safeTitle = _MediaSanitizer.text(item.title, maxLength: _MediaConfig.maxTitleLength);
     final coverUrl = _MediaSanitizer.imageUrl(item.coverUrl);
 
@@ -728,7 +781,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
         button: true,
         label: safeTitle,
         child: GestureDetector(
-          onTap: () => _openDetail(item, catalog),
+          onTap: () => _openDetail(item),
           child: Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),
@@ -739,7 +792,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  _buildCoverImage(coverUrl),
+                  _buildImage(coverUrl ?? ''),
                   const DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -756,10 +809,10 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                     top: 16,
                     child: Row(
                       children: [
-                        _heroBadge(ThixPolicy.primary, l10n.t('media_featured')),
+                        _heroBadge(ThixPolicy.primary, l10n.t('media_featured').isNotEmpty ? l10n.t('media_featured') : 'À LA UNE'),
                         if (item.isPaid) ...[
                           const SizedBox(width: 8),
-                          _heroBadge(ThixPolicy.warning, l10n.t('media_premium'), icon: Icons.lock_rounded),
+                          _heroBadge(ThixPolicy.warning, l10n.t('media_premium').isNotEmpty ? l10n.t('media_premium') : 'Premium', icon: Icons.lock_rounded),
                         ],
                       ],
                     ),
@@ -771,16 +824,23 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(safeTitle,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+                        Text(
+                          safeTitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5),
+                        ),
                         const SizedBox(height: 8),
-                        Row(children: [
-                          const Icon(Icons.play_circle_fill_rounded, color: Colors.white70, size: 14),
-                          const SizedBox(width: 6),
-                          Text(formatMediaNumber(item.viewCount), style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
-                        ]),
+                        Row(
+                          children: [
+                            const Icon(Icons.play_circle_fill_rounded, color: Colors.white70, size: 14),
+                            const SizedBox(width: 6),
+                            Text(
+                              formatMediaNumber(item.viewCount),
+                              style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -797,33 +857,26 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(20)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        if (icon != null) ...[Icon(icon, size: 11, color: Colors.white), const SizedBox(width: 4)],
-        Text(label, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
-      ]),
-    );
-  }
-
-  Widget _buildCoverImage(String? url) {
-    if (url == null) {
-      return Container(decoration: BoxDecoration(gradient: LinearGradient(colors: [ThixPolicy.primary.withValues(alpha: 0.6), ThixPolicy.primaryDeep])));
-    }
-    return CachedNetworkImage(
-      imageUrl: url,
-      fit: BoxFit.cover,
-      memCacheHeight: 400,
-      fadeInDuration: const Duration(milliseconds: 200),
-      placeholder: (_, __) => Container(color: _MediaLightPalette.border),
-      errorWidget: (_, __, ___) => Container(
-        color: _MediaLightPalette.border,
-        child: const Icon(Icons.broken_image_rounded, color: _MediaLightPalette.textMuted, size: 32),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 11, color: Colors.white),
+            const SizedBox(width: 4),
+          ],
+          Text(label, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+        ],
       ),
     );
   }
 
-  List<String> _computeCategories(List<MediaContent> catalog, AppLocalizations l10n) {
+  // ========================================================================
+  // CATEGORY CHIPS
+  // ========================================================================
+
+  List<String> _computeCategories(List<MediaContent> catalog, String strTous, String strFil) {
     final types = catalog.map((e) => e.type).where((t) => t.isNotEmpty).toSet().toList()..sort();
-    return [l10n.t('category_all'), l10n.t('category_feed'), ...types];
+    return [strTous, strFil, ...types];
   }
 
   Widget _buildCategoryChips(List<String> categories, String selected) {
@@ -857,9 +910,14 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                     border: Border.all(color: sel ? _MediaLightPalette.textPrimary : _MediaLightPalette.border, width: 1.2),
                     boxShadow: sel ? [] : [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 2))],
                   ),
-                  child: Text(cat,
-                      style: TextStyle(
-                          color: sel ? Colors.white : _MediaLightPalette.textSecondary, fontSize: 13, fontWeight: sel ? FontWeight.w800 : FontWeight.w600)),
+                  child: Text(
+                    cat,
+                    style: TextStyle(
+                      color: sel ? Colors.white : _MediaLightPalette.textSecondary,
+                      fontSize: 13,
+                      fontWeight: sel ? FontWeight.w800 : FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             );
@@ -869,7 +927,11 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
-  Widget _buildSeriesRail(AppLocalizations l10n, List<MediaContent> series, List<MediaContent> catalog) {
+  // ========================================================================
+  // SERIES RAIL
+  // ========================================================================
+
+  Widget _buildSeriesRail(AppLocalizations l10n, List<MediaContent> series) {
     return Padding(
       padding: const EdgeInsets.only(top: 24),
       child: Column(
@@ -877,15 +939,17 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(color: ThixPolicy.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
-                child: const Icon(Icons.video_library_rounded, size: 16, color: ThixPolicy.primary),
-              ),
-              const SizedBox(width: 8),
-              Text(l10n.t('media_series'), style: const TextStyle(color: _MediaLightPalette.textPrimary, fontSize: 16, fontWeight: FontWeight.w900)),
-            ]),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(color: ThixPolicy.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
+                  child: const Icon(Icons.video_library_rounded, size: 16, color: ThixPolicy.primary),
+                ),
+                const SizedBox(width: 8),
+                Text(l10n.t('media_series').isNotEmpty ? l10n.t('media_series') : 'Séries', style: const TextStyle(color: _MediaLightPalette.textPrimary, fontSize: 16, fontWeight: FontWeight.w900)),
+              ],
+            ),
           ),
           const SizedBox(height: 14),
           SizedBox(
@@ -896,7 +960,16 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
               itemCount: series.length,
               separatorBuilder: (_, __) => const SizedBox(width: 14),
               itemBuilder: (c, i) => RepaintBoundary(
-                child: SizedBox(width: 130, child: MediaPosterCard(item: series[i], onTap: () => _openDetail(series[i], catalog), compact: true)),
+                child: SizedBox(
+                  width: 130,
+                  child: MediaPosterCard(
+                    item: series[i],
+                    formatNumber: formatMediaNumber,
+                    buildImage: _buildImage,
+                    onTap: () => _openDetail(series[i]),
+                    compact: true,
+                  ),
+                ),
               ),
             ),
           ),
@@ -904,6 +977,10 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
       ),
     );
   }
+
+  // ========================================================================
+  // SEARCH OVERLAY
+  // ========================================================================
 
   Widget _buildSearchOverlay(AppLocalizations l10n, List<MediaContent> catalog) {
     final results = _lowerQuery.isEmpty ? const <MediaContent>[] : catalog.where((e) => e.title.toLowerCase().contains(_lowerQuery)).toList();
@@ -920,43 +997,59 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
               padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top + 140, left: 20, right: 20),
               child: results.isEmpty
                   ? Center(
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: const BoxDecoration(color: _MediaLightPalette.border, shape: BoxShape.circle),
-                          child: const Icon(Icons.search_off_rounded, size: 40, color: _MediaLightPalette.textSecondary),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(l10n.t('media_no_results'), style: const TextStyle(color: _MediaLightPalette.textSecondary, fontWeight: FontWeight.w600)),
-                      ]),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: const BoxDecoration(color: _MediaLightPalette.border, shape: BoxShape.circle),
+                            child: const Icon(Icons.search_off_rounded, size: 40, color: _MediaLightPalette.textSecondary),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(l10n.t('media_no_results').isNotEmpty ? l10n.t('media_no_results') : 'Aucun résultat.', style: const TextStyle(color: _MediaLightPalette.textSecondary, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
                     )
                   : GridView.builder(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 0.7),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 0.7,
+                      ),
                       itemCount: results.length,
                       itemBuilder: (context, i) {
                         final item = results[i];
                         return GestureDetector(
                           onTap: () {
                             _clearSearch();
-                            _openDetail(item, catalog);
+                            _openDetail(item);
                           },
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(12),
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
-                                _buildCoverImage(_MediaSanitizer.imageUrl(item.coverUrl)),
+                                _buildImage(_MediaSanitizer.imageUrl(item.coverUrl) ?? ''),
                                 const DecoratedBox(
                                   decoration: BoxDecoration(
-                                    gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black87, Colors.transparent]),
+                                    gradient: LinearGradient(
+                                      begin: Alignment.bottomCenter,
+                                      end: Alignment.topCenter,
+                                      colors: [Colors.black87, Colors.transparent],
+                                    ),
                                   ),
                                 ),
                                 Positioned(
                                   left: 8,
                                   right: 8,
                                   bottom: 8,
-                                  child: Text(_MediaSanitizer.text(item.title, maxLength: _MediaConfig.maxTitleLength),
-                                      maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
+                                  child: Text(
+                                    _MediaSanitizer.text(item.title, maxLength: _MediaConfig.maxTitleLength),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800),
+                                  ),
                                 ),
                               ],
                             ),
@@ -970,47 +1063,11 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
       ),
     );
   }
-
-  Widget _buildErrorState(AppLocalizations l10n) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.cloud_off_rounded, color: ThixPolicy.danger, size: 48),
-          const SizedBox(height: 16),
-          Text(l10n.t('media_load_error'), textAlign: TextAlign.center, style: const TextStyle(color: _MediaLightPalette.textSecondary, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: () {
-              HapticFeedback.mediumImpact();
-              ref.read(thixMediaListProvider.notifier).refresh();
-            },
-            icon: const Icon(Icons.refresh_rounded),
-            label: Text(l10n.t('common_retry')),
-            style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white, elevation: 0),
-          ),
-        ]),
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(AppLocalizations l10n) {
-    return Padding(
-      padding: const EdgeInsets.all(60),
-      child: Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(color: _MediaLightPalette.border, shape: BoxShape.circle),
-            child: const Icon(Icons.video_library_rounded, size: 40, color: _MediaLightPalette.textSecondary),
-          ),
-          const SizedBox(height: 16),
-          Text(l10n.t('media_empty'), style: const TextStyle(color: _MediaLightPalette.textSecondary, fontWeight: FontWeight.w600)),
-        ]),
-      ),
-    );
-  }
 }
+
+// ============================================================================
+// SKELETON
+// ============================================================================
 
 class _MediaSkeleton extends StatelessWidget {
   final AppLocalizations l10n;
@@ -1019,11 +1076,14 @@ class _MediaSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const CircularProgressIndicator(color: ThixPolicy.primary),
-        const SizedBox(height: 16),
-        Text(l10n.t('media_loading'), style: const TextStyle(color: _MediaLightPalette.textSecondary, fontWeight: FontWeight.w600)),
-      ]),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(color: ThixPolicy.primary),
+          const SizedBox(height: 16),
+          Text(l10n.t('media_loading').isNotEmpty ? l10n.t('media_loading') : 'Chargement du catalogue…', style: const TextStyle(color: _MediaLightPalette.textSecondary, fontWeight: FontWeight.w600)),
+        ],
+      ),
     );
   }
 }
@@ -1034,16 +1094,24 @@ class _MediaSkeleton extends StatelessWidget {
 
 class MediaPosterCard extends StatelessWidget {
   final MediaContent item;
+  final String Function(int) formatNumber;
+  final Widget Function(String, {BoxFit fit}) buildImage;
   final VoidCallback onTap;
   final bool compact;
 
-  const MediaPosterCard({super.key, required this.item, required this.onTap, this.compact = false});
+  const MediaPosterCard({
+    super.key,
+    required this.item,
+    required this.formatNumber,
+    required this.buildImage,
+    required this.onTap,
+    this.compact = false,
+  });
 
   bool get _isSeries => item.episodesUrls.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final title = _MediaSanitizer.text(item.title, maxLength: _MediaConfig.maxTitleLength);
     final cover = _MediaSanitizer.imageUrl(item.coverUrl);
 
@@ -1059,25 +1127,22 @@ class MediaPosterCard extends StatelessWidget {
               child: Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(16),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 4))],
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))],
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(16),
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      cover == null
-                          ? Container(color: _MediaLightPalette.border, child: const Icon(Icons.play_circle_outline_rounded, color: _MediaLightPalette.textMuted, size: 32))
-                          : CachedNetworkImage(
-                              imageUrl: cover,
-                              fit: BoxFit.cover,
-                              memCacheWidth: 400,
-                              placeholder: (_, __) => Container(color: _MediaLightPalette.border),
-                              errorWidget: (_, __, ___) => Container(color: _MediaLightPalette.border, child: const Icon(Icons.broken_image_rounded, color: _MediaLightPalette.textMuted)),
-                            ),
+                      buildImage(cover ?? ''),
                       const DecoratedBox(
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87], stops: [0.4, 1]),
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [Colors.transparent, Colors.black87],
+                            stops: [0.4, 1],
+                          ),
                         ),
                       ),
                       if (item.isPaid)
@@ -1086,8 +1151,8 @@ class MediaPosterCard extends StatelessWidget {
                           right: 8,
                           child: Container(
                             padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5), shape: BoxShape.circle),
-                            child: const Icon(Icons.lock_rounded, size: 12, color: ThixPolicy.gold),
+                            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), shape: BoxShape.circle),
+                            child: const Icon(Icons.lock_rounded, size: 12, color: ThixPolicy.warning),
                           ),
                         ),
                       if (_isSeries)
@@ -1097,8 +1162,7 @@ class MediaPosterCard extends StatelessWidget {
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                             decoration: BoxDecoration(color: ThixPolicy.primary.withValues(alpha: 0.85), borderRadius: BorderRadius.circular(6)),
-                            child: Text(l10n.t('media_parts_count', args: ['${item.episodesUrls.length + 1}']),
-                                style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+                            child: Text('${item.episodesUrls.length + 1} pts', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
                           ),
                         ),
                       Positioned(
@@ -1108,7 +1172,7 @@ class MediaPosterCard extends StatelessWidget {
                         child: Row(children: [
                           const Icon(Icons.play_circle_fill_rounded, color: Colors.white70, size: 14),
                           const SizedBox(width: 4),
-                          Text(formatMediaNumber(item.viewCount), style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                          Text(formatNumber(item.viewCount), style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
                         ]),
                       ),
                     ],
@@ -1199,7 +1263,7 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
   Future<void> _toggleLike(MediaContent item, AppLocalizations l10n) async {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('media_login_to_like'))));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('media_login_to_like').isNotEmpty ? l10n.t('media_login_to_like') : 'Veuillez vous connecter')));
       return;
     }
     HapticFeedback.selectionClick();
@@ -1241,7 +1305,7 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     if (_mixedFeed.isEmpty) {
-      return Center(child: Text(l10n.t('media_feed_empty'), style: const TextStyle(color: Colors.white54)));
+      return Center(child: Text(l10n.t('media_feed_empty').isNotEmpty ? l10n.t('media_feed_empty') : 'Aucun contenu', style: const TextStyle(color: Colors.white54)));
     }
 
     return PageView.builder(
@@ -1260,7 +1324,7 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
         final creatorProfile = creatorId.isNotEmpty ? ref.watch(mediaUserProfileProvider(creatorId)).valueOrNull : null;
         final currentUid = Supabase.instance.client.auth.currentUser?.id;
         final isFollowing = creatorId.isEmpty ? true : (ref.watch(mediaIsFollowingProvider(creatorId)).valueOrNull ?? true);
-        final displayName = creatorId.isEmpty ? 'TDIA' : (creatorProfile?['full_name'] ?? creatorProfile?['username'] ?? l10n.t('media_creator_default'));
+        final displayName = creatorId.isEmpty ? 'TDIA' : (creatorProfile?['full_name'] ?? creatorProfile?['username'] ?? 'Créateur');
         final showFollow = creatorId.isNotEmpty && creatorId != currentUid && !isFollowing;
 
         return _FilVideoCard(
@@ -1345,7 +1409,6 @@ class _FilVideoCardState extends State<_FilVideoCard> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final cover = _MediaSanitizer.imageUrl(widget.item.coverUrl);
     final avatar = _MediaSanitizer.imageUrl(widget.creatorAvatar);
 
@@ -1644,331 +1707,7 @@ class _FeedVideoPlayerState extends State<FeedVideoPlayer> {
 }
 
 // ============================================================================
-// PAGE DE DÉTAIL
-// ============================================================================
-
-class MediaDetailPage extends ConsumerStatefulWidget {
-  final MediaContent item;
-  final List<MediaContent> catalog;
-  const MediaDetailPage({super.key, required this.item, required this.catalog});
-
-  @override
-  ConsumerState<MediaDetailPage> createState() => _MediaDetailPageState();
-}
-
-class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
-  late List<String> _episodes;
-  int _currentEpisode = 0;
-  bool _liked = false;
-  bool _saved = false;
-  bool _previewExpired = false;
-  bool _unlocked = false;
-  final Set<String> _newlyFollowed = {};
-  List<MediaContent> _suggestions = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _episodes = [widget.item.videoUrl, ...widget.item.episodesUrls].where((u) => u.isNotEmpty).toList();
-    _syncLiked();
-    _loadSuggestions();
-  }
-
-  void _loadSuggestions() {
-    final others = widget.catalog.where((e) => e.id != widget.item.id).toList();
-    final mixed = _SmartFeedMixer.mix(others);
-    _suggestions = mixed.take(_MediaConfig.maxRelatedItems).toList();
-  }
-
-  Future<void> _syncLiked() async {
-    final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null) return;
-    try {
-      final res = await Supabase.instance.client.rpc('get_liked_media_ids', params: {'p_media_ids': [widget.item.id]}).timeout(_MediaConfig.networkTimeout);
-      if (mounted && (res as List).contains(widget.item.id)) setState(() => _liked = true);
-    } catch (_) {}
-  }
-
-  Future<void> _toggleLike(AppLocalizations l10n) async {
-    final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('media_login_to_like'))));
-      return;
-    }
-    HapticFeedback.selectionClick();
-    setState(() => _liked = !_liked);
-    try {
-      await Supabase.instance.client.rpc('toggle_media_like', params: {'p_media_id': widget.item.id}).timeout(_MediaConfig.networkTimeout);
-    } catch (_) {}
-  }
-
-  void _toggleSave() {
-    HapticFeedback.lightImpact();
-    setState(() => _saved = !_saved);
-  }
-
-  void _openComments() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => CommentsSheet(mediaId: widget.item.id, mediaTitle: widget.item.title),
-    ).then((_) => ref.invalidate(mediaCommentCountProvider(widget.item.id)));
-  }
-
-  void _openCreatorProfile(String creatorId) {
-    if (!_MediaSanitizer.isValidId(creatorId) || !mounted) return;
-    Navigator.push(context, MaterialPageRoute(builder: (_) => UserProfilePage(userId: creatorId)));
-  }
-
-  String _formatPrice() => '\$${widget.item.price}';
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final item = widget.item;
-    final isSeries = _episodes.length > 1;
-    final requiresPayment = item.isPaid && !_unlocked && _previewExpired;
-    final enforcePreview = item.isPaid && !_unlocked;
-
-    final live = ref.watch(mediaCountsStreamProvider(item.id)).valueOrNull;
-    final creatorId = item.userId ?? '';
-    final creatorProfile = creatorId.isNotEmpty ? ref.watch(mediaUserProfileProvider(creatorId)).valueOrNull : null;
-    final currentUid = Supabase.instance.client.auth.currentUser?.id;
-    final isFollowing = creatorId.isNotEmpty ? (ref.watch(mediaIsFollowingProvider(creatorId)).valueOrNull ?? true) : true;
-    final creatorIsOfficial = creatorId.isEmpty;
-    final showFollowBtn = !creatorIsOfficial && creatorId != currentUid && !isFollowing && !_newlyFollowed.contains(creatorId);
-    final displayName = creatorIsOfficial ? 'TDIA' : (creatorProfile?['full_name'] ?? creatorProfile?['username'] ?? l10n.t('media_creator_default'));
-
-    return Scaffold(
-      backgroundColor: _MediaLightPalette.background,
-      appBar: AppBar(
-        backgroundColor: _MediaLightPalette.surface,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        iconTheme: const IconThemeData(color: _MediaLightPalette.textPrimary),
-        title: Text(_MediaSanitizer.text(item.title, maxLength: _MediaConfig.maxTitleLength),
-            maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _MediaLightPalette.textPrimary, fontSize: 16, fontWeight: FontWeight.w800)),
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.42),
-              color: Colors.black,
-              child: Center(
-                child: requiresPayment
-                    ? _buildPaywall(l10n, item)
-                    : FeedVideoPlayer(
-                        key: ValueKey('${item.id}_$_currentEpisode'),
-                        videoUrl: _episodes.isEmpty ? item.videoUrl : _episodes[_currentEpisode.clamp(0, _episodes.length - 1)],
-                        coverUrl: item.coverUrl,
-                        isPlaying: true,
-                        enforcePreviewLimit: enforcePreview,
-                        onPreviewLimitReached: () {
-                          if (mounted) setState(() => _previewExpired = true);
-                        },
-                        onPlayStateChanged: (_) {},
-                      ),
-              ),
-            ),
-            if (isSeries && !requiresPayment)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(l10n.t('media_episodes'), style: const TextStyle(color: _MediaLightPalette.textPrimary, fontSize: 15, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: List.generate(_episodes.length, (i) {
-                        final active = i == _currentEpisode;
-                        return GestureDetector(
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            setState(() => _currentEpisode = i);
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 160),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: active ? ThixPolicy.primary : _MediaLightPalette.border.withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(l10n.t('media_episode_part', args: ['${i + 1}']),
-                                style: TextStyle(color: active ? Colors.white : _MediaLightPalette.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w800)),
-                          ),
-                        );
-                      }),
-                    ),
-                  ],
-                ),
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: creatorIsOfficial ? null : () => _openCreatorProfile(creatorId),
-                    child: Container(
-                      width: 46,
-                      height: 46,
-                      decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: _MediaLightPalette.border, width: 1.6)),
-                      child: ClipOval(
-                        child: _MediaSanitizer.imageUrl(creatorProfile?['avatar_url'] as String?) != null
-                            ? CachedNetworkImage(imageUrl: _MediaSanitizer.imageUrl(creatorProfile?['avatar_url'] as String?)!, fit: BoxFit.cover)
-                            : Container(color: _MediaLightPalette.border, child: const Icon(Icons.person, size: 24, color: _MediaLightPalette.textMuted)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('@$displayName', style: const TextStyle(color: _MediaLightPalette.textPrimary, fontSize: 15, fontWeight: FontWeight.w900)),
-                        Text(item.type, style: const TextStyle(color: _MediaLightPalette.textMuted, fontSize: 12)),
-                      ],
-                    ),
-                  ),
-                  if (showFollowBtn)
-                    GestureDetector(
-                      onTap: () {
-                        setState(() => _newlyFollowed.add(creatorId));
-                        MediaService().toggleFollow(creatorId);
-                        ref.invalidate(mediaIsFollowingProvider(creatorId));
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                        decoration: BoxDecoration(color: ThixPolicy.primary, borderRadius: BorderRadius.circular(20)),
-                        child: Text(l10n.t('common_follow'), style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w900)),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                decoration: BoxDecoration(color: _MediaLightPalette.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: _MediaLightPalette.border)),
-                child: Row(
-                  children: [
-                    _detailActionBtn(
-                        icon: _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                        label: formatMediaNumber(live?.likeCount ?? item.likeCount),
-                        color: _liked ? ThixPolicy.danger : _MediaLightPalette.textPrimary,
-                        onTap: () => _toggleLike(l10n)),
-                    _detailActionBtn(icon: Icons.chat_bubble_outline_rounded, label: formatMediaNumber(live?.commentCount ?? item.commentCount), color: _MediaLightPalette.textPrimary, onTap: _openComments),
-                    _detailActionBtn(icon: Icons.remove_red_eye_outlined, label: formatMediaNumber(live?.viewCount ?? item.viewCount), color: _MediaLightPalette.textSecondary, onTap: () {}),
-                    _detailActionBtn(
-                        icon: _saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                        label: l10n.t('common_save'),
-                        color: _saved ? ThixPolicy.primary : _MediaLightPalette.textSecondary,
-                        onTap: _toggleSave),
-                  ],
-                ),
-              ),
-            ),
-            if (item.subtitle != null && item.subtitle!.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-                child: Text(_MediaSanitizer.text(item.subtitle, maxLength: 500), style: const TextStyle(color: _MediaLightPalette.textSecondary, fontSize: 14, height: 1.5)),
-              )
-            else
-              const SizedBox(height: 24),
-            if (_suggestions.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Text(l10n.t('media_discover_more'), style: const TextStyle(color: _MediaLightPalette.textPrimary, fontSize: 18, fontWeight: FontWeight.w900)),
-              ),
-              const SizedBox(height: 16),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 16, mainAxisSpacing: 16, childAspectRatio: 0.70),
-                itemCount: _suggestions.length,
-                itemBuilder: (c, i) => MediaPosterCard(
-                  item: _suggestions[i],
-                  onTap: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => MediaDetailPage(item: _suggestions[i], catalog: widget.catalog))),
-                ),
-              ),
-              const SizedBox(height: 40),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _detailActionBtn({required IconData icon, required String label, required Color color, required VoidCallback onTap}) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Column(children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 4),
-            Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800)),
-          ]),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPaywall(AppLocalizations l10n, MediaContent item) {
-    final cover = _MediaSanitizer.imageUrl(item.coverUrl);
-    return Container(
-      decoration: cover != null ? BoxDecoration(image: DecorationImage(image: CachedNetworkImageProvider(cover), fit: BoxFit.cover)) : const BoxDecoration(color: Colors.black),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-        child: Container(
-          color: Colors.black.withValues(alpha: 0.75),
-          alignment: Alignment.center,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(padding: const EdgeInsets.all(20), decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white), child: const Icon(Icons.lock_rounded, size: 40, color: Colors.black87)),
-              const SizedBox(height: 20),
-              Text(l10n.t('media_premium_title'), style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900)),
-              const SizedBox(height: 10),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 36),
-                child: Text(l10n.t('media_preview_ended', args: [_formatPrice()]), textAlign: TextAlign.center, style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5)),
-              ),
-              const SizedBox(height: 28),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ThixPolicy.gold,
-                  foregroundColor: Colors.black87,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                ),
-                onPressed: () {
-                  setState(() {
-                    _unlocked = true;
-                    _previewExpired = false;
-                  });
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('media_unlock_success')), backgroundColor: ThixPolicy.success));
-                },
-                child: Text(l10n.t('media_unlock_cta', args: [_formatPrice()]), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// COMMENTAIRES
+// BOTTOM SHEET COMMENTAIRES
 // ============================================================================
 
 class CommentsSheet extends ConsumerStatefulWidget {
@@ -2035,7 +1774,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
     } catch (_) {
       if (mounted) {
         setState(() => _loading = false);
-        _showError(l10n.t('media_load_comments_error'));
+        _showError(l10n.t('media_load_comments_error').isNotEmpty ? l10n.t('media_load_comments_error') : "Erreur de chargement");
       }
     }
   }
@@ -2056,7 +1795,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
         });
       }
     } catch (_) {
-      _showError(l10n.t('media_load_replies_error'));
+      _showError(l10n.t('media_load_replies_error').isNotEmpty ? l10n.t('media_load_replies_error') : "Erreur des réponses");
     }
   }
 
@@ -2066,7 +1805,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
     if (t.isEmpty || _sending) return;
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) {
-      _showError(l10n.t('media_login_required'));
+      _showError(l10n.t('media_login_required').isNotEmpty ? l10n.t('media_login_required') : "Connectez-vous.");
       return;
     }
 
@@ -2111,7 +1850,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
       setState(() => _replyingTo = null);
       ref.invalidate(mediaCommentCountProvider(widget.mediaId));
     } catch (e) {
-      _showError(l10n.t('media_send_error'));
+      _showError(l10n.t('media_send_error').isNotEmpty ? l10n.t('media_send_error') : "Erreur d'envoi");
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -2124,7 +1863,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
       _fetchRoots();
       ref.invalidate(mediaCommentCountProvider(widget.mediaId));
     } catch (_) {
-      _showError(l10n.t('media_load_comments_error'));
+      _showError(l10n.t('media_load_comments_error').isNotEmpty ? l10n.t('media_load_comments_error') : "Erreur");
     }
   }
 
@@ -2142,7 +1881,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
             if (isAuthor)
               ListTile(
                 leading: const Icon(Icons.edit, color: _MediaLightPalette.textPrimary),
-                title: Text(l10n.t('media_edit'), style: const TextStyle(color: _MediaLightPalette.textPrimary)),
+                title: Text(l10n.t('media_edit').isNotEmpty ? l10n.t('media_edit') : "Modifier", style: const TextStyle(color: _MediaLightPalette.textPrimary)),
                 onTap: () {
                   Navigator.pop(context);
                   setState(() {
@@ -2156,7 +1895,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
             if (isAuthor)
               ListTile(
                 leading: const Icon(Icons.delete, color: ThixPolicy.danger),
-                title: Text(l10n.t('media_delete'), style: const TextStyle(color: ThixPolicy.danger)),
+                title: Text(l10n.t('media_delete').isNotEmpty ? l10n.t('media_delete') : "Supprimer", style: const TextStyle(color: ThixPolicy.danger)),
                 onTap: () {
                   Navigator.pop(context);
                   _delete(c.id);
@@ -2164,10 +1903,10 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
               ),
             ListTile(
               leading: const Icon(Icons.flag, color: ThixPolicy.warning),
-              title: Text(l10n.t('media_report'), style: const TextStyle(color: ThixPolicy.warning)),
+              title: Text(l10n.t('media_report').isNotEmpty ? l10n.t('media_report') : "Signaler", style: const TextStyle(color: ThixPolicy.warning)),
               onTap: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('media_reported_confirmation'))));
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('media_reported_confirmation').isNotEmpty ? l10n.t('media_reported_confirmation') : "Signalé")));
               },
             ),
           ],
@@ -2219,14 +1958,14 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                         });
                         _focusNode.requestFocus();
                       },
-                      child: Text(l10n.t('post_reply'), style: const TextStyle(color: _MediaLightPalette.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
+                      child: Text(l10n.t('post_reply').isNotEmpty ? l10n.t('post_reply') : "Répondre", style: const TextStyle(color: _MediaLightPalette.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
                     ),
                     const Spacer(),
                     GestureDetector(
                       onTap: () async {
                         final uid = Supabase.instance.client.auth.currentUser?.id;
                         if (uid == null) {
-                          _showError(l10n.t('media_login_to_like'));
+                          _showError(l10n.t('media_login_to_like').isNotEmpty ? l10n.t('media_login_to_like') : "Connectez-vous");
                           return;
                         }
                         setState(() {
@@ -2273,7 +2012,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                       child: Row(children: [
                         Container(width: 24, height: 1, color: _MediaLightPalette.border),
                         const SizedBox(width: 8),
-                        Text(_expanded.contains(c.id) ? l10n.t('media_hide_replies') : l10n.t('media_view_replies', args: ['${c.replyCount}']),
+                        Text(_expanded.contains(c.id) ? (l10n.t('media_hide_replies').isNotEmpty ? l10n.t('media_hide_replies') : "Masquer") : (l10n.t('media_view_replies', args: ['${c.replyCount}']).isNotEmpty ? l10n.t('media_view_replies', args: ['${c.replyCount}']) : "Voir les réponses"),
                             style: const TextStyle(color: _MediaLightPalette.textSecondary, fontSize: 12, fontWeight: FontWeight.w700)),
                       ]),
                     ),
@@ -2308,13 +2047,13 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                 const SizedBox(height: 12),
                 Container(width: 40, height: 4, decoration: BoxDecoration(color: _MediaLightPalette.border, borderRadius: BorderRadius.circular(4))),
                 const SizedBox(height: 16),
-                Text(l10n.t('media_comments_count', args: ['${_roots.length}']), style: const TextStyle(color: _MediaLightPalette.textPrimary, fontSize: 14, fontWeight: FontWeight.w800)),
+                Text(l10n.t('media_comments_count', args: ['${_roots.length}']).isNotEmpty ? l10n.t('media_comments_count', args: ['${_roots.length}']) : "${_roots.length} commentaires", style: const TextStyle(color: _MediaLightPalette.textPrimary, fontSize: 14, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 12),
                 Expanded(
                   child: _loading
                       ? const Center(child: CircularProgressIndicator(color: ThixPolicy.primary))
                       : _roots.isEmpty
-                          ? Center(child: Text(l10n.t('media_first_comment'), style: const TextStyle(color: _MediaLightPalette.textMuted, fontWeight: FontWeight.w500)))
+                          ? Center(child: Text(l10n.t('media_first_comment').isNotEmpty ? l10n.t('media_first_comment') : "Soyez le premier à commenter", style: const TextStyle(color: _MediaLightPalette.textMuted, fontWeight: FontWeight.w500)))
                           : ListView.builder(
                               padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                               itemCount: _roots.length,
@@ -2329,7 +2068,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                           child: Row(children: [
-                            Text(_editingComment != null ? l10n.t('media_editing_label') : l10n.t('media_reply_to', args: [_replyingTo!.userName]),
+                            Text(_editingComment != null ? (l10n.t('media_editing_label').isNotEmpty ? l10n.t('media_editing_label') : "Modification") : (l10n.t('media_reply_to', args: [_replyingTo!.userName]).isNotEmpty ? l10n.t('media_reply_to', args: [_replyingTo!.userName]) : "Réponse"),
                                 style: const TextStyle(color: _MediaLightPalette.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
                             const Spacer(),
                             GestureDetector(
@@ -2362,7 +2101,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                                   style: const TextStyle(color: _MediaLightPalette.textPrimary, fontSize: 14),
                                   cursorColor: ThixPolicy.primary,
                                   decoration: InputDecoration(
-                                    hintText: _editingComment != null ? l10n.t('media_edit_hint') : (_replyingTo != null ? l10n.t('media_reply_hint') : l10n.t('media_add_comment_hint')),
+                                    hintText: _editingComment != null ? (l10n.t('media_edit_hint').isNotEmpty ? l10n.t('media_edit_hint') : "Modifier") : (_replyingTo != null ? (l10n.t('media_reply_hint').isNotEmpty ? l10n.t('media_reply_hint') : "Répondre") : (l10n.t('media_add_comment_hint').isNotEmpty ? l10n.t('media_add_comment_hint') : "Ajouter un commentaire")),
                                     hintStyle: const TextStyle(color: _MediaLightPalette.textMuted, fontSize: 14),
                                     border: InputBorder.none,
                                     isDense: true,
