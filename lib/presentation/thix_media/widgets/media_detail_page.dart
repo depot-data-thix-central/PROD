@@ -274,7 +274,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
   }
 
   // ✅ CORRECTION DE L'AFFICHAGE DE LA VIDÉO (Taille adaptée + Fond Noir pour les bords)
-  Widget _buildVideoSection(MediaContent item, bool requiresPayment, bool enforcePreview, AppLocalizations l10n) {
+    Widget _buildVideoSection(MediaContent item, bool requiresPayment, bool enforcePreview, AppLocalizations l10n) {
     return Container(
       width: double.infinity,
       color: Colors.black, // Le fond noir masque les bandes blanches
@@ -289,7 +289,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
                 isPlaying: true,
                 enforcePreviewLimit: enforcePreview,
                 previewSeconds: MediaConfig.previewSeconds,
-                enforceCoverFit: false, // Respecte le ratio originel de la vidéo sans zoomer ni déformer
+                
                 onPreviewLimitReached: () {
                   if (mounted) setState(() => _previewExpired = true);
                 },
@@ -298,6 +298,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
       ),
     );
   }
+
 
   Widget _buildEpisodesSection(AppLocalizations l10n) {
     return Padding(
