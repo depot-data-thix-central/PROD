@@ -1,6 +1,10 @@
 enum AudioSpaceStatus { scheduled, live, ended, cancelled }
+
 enum AudioSpaceVisibility { public, followers, enterprise }
+
 enum AudioSpaceRole { host, cohost, speaker, listener }
+
+enum AudioSpaceScreenStatus { loading, ready, error, permissionDenied, banned }
 
 class AudioSpace {
   final String id;
@@ -125,7 +129,6 @@ class AudioSpaceParticipant {
 
   bool get canSpeak =>
       !isBanned &&
-      !isMuted &&
       (role == AudioSpaceRole.host ||
           role == AudioSpaceRole.cohost ||
           role == AudioSpaceRole.speaker);
@@ -174,48 +177,66 @@ class AudioSpaceChatMessage {
   });
 }
 
-enum AudioSpaceScreenStatus { loading, ready, error, permissionDenied, banned }
-
 class AudioSpaceState {
+  final AudioSpace space;
   final AudioSpaceScreenStatus status;
   final String? errorMessage;
-  final bool isMuted;
-  final bool handRaised;
-  final int listenerCount;
-  final AudioSpaceRole myRole;
+  final AudioSpaceParticipant? me;
   final List<AudioSpaceParticipant> participants;
   final List<AudioSpaceChatMessage> messages;
+  final bool connected;
+  final bool ended;
 
   const AudioSpaceState({
+    required this.space,
     this.status = AudioSpaceScreenStatus.loading,
     this.errorMessage,
-    this.isMuted = true,
-    this.handRaised = false,
-    this.listenerCount = 0,
-    this.myRole = AudioSpaceRole.listener,
+    this.me,
     this.participants = const [],
     this.messages = const [],
+    this.connected = false,
+    this.ended = false,
   });
 
+  AudioSpaceRole get myRole => me?.role ?? AudioSpaceRole.listener;
+
+  bool get isMuted => me?.isMuted ?? true;
+
+  bool get handRaised => me?.handRaised ?? false;
+
+  int get listenerCount =>
+      participants.where((p) => p.role == AudioSpaceRole.listener).length;
+
+  List<AudioSpaceParticipant> get speakers =>
+      participants.where((p) => p.role != AudioSpaceRole.listener).toList();
+
   AudioSpaceState copyWith({
+    AudioSpace? space,
     AudioSpaceScreenStatus? status,
     String? errorMessage,
-    bool? isMuted,
-    bool? handRaised,
-    int? listenerCount,
-    AudioSpaceRole? myRole,
+    AudioSpaceParticipant? me,
     List<AudioSpaceParticipant>? participants,
     List<AudioSpaceChatMessage>? messages,
+    bool? connected,
+    bool? ended,
+    bool? loading,
+    String? error,
   }) {
+    AudioSpaceScreenStatus nextStatus = status ?? this.status;
+    if (loading == true) nextStatus = AudioSpaceScreenStatus.loading;
+    if (loading == false && status == null && this.status == AudioSpaceScreenStatus.loading) {
+      nextStatus = AudioSpaceScreenStatus.ready;
+    }
+
     return AudioSpaceState(
-      status: status ?? this.status,
-      errorMessage: errorMessage,
-      isMuted: isMuted ?? this.isMuted,
-      handRaised: handRaised ?? this.handRaised,
-      listenerCount: listenerCount ?? this.listenerCount,
-      myRole: myRole ?? this.myRole,
+      space: space ?? this.space,
+      status: nextStatus,
+      errorMessage: errorMessage ?? error ?? this.errorMessage,
+      me: me ?? this.me,
       participants: participants ?? this.participants,
       messages: messages ?? this.messages,
+      connected: connected ?? this.connected,
+      ended: ended ?? this.ended,
     );
   }
 }
