@@ -58,6 +58,18 @@ class AudioSpaceService {
     return _live.fetchAgoraCredentials(channelName);
   }
 
+  String _newChannel(String userId) {
+    final safe = userId.replaceAll(RegExp(r'[^a-zA-Z0-9-]'), '');
+    final ts = DateTime.now().microsecondsSinceEpoch;
+    final salt = DateTime.now().millisecondsSinceEpoch.remainder(99991);
+    return 'live_\( {safe}_ \){ts}_$salt';
+  }
+
+  bool _isDuplicateChannel(Object e) {
+    final msg = e.toString();
+    return msg.contains('23505') || msg.contains('audio_spaces_channel_name_key');
+  }
+
   Future<AudioSpace> createSpace({
     required String title,
     String description = '',
@@ -81,43 +93,55 @@ class AudioSpaceService {
     }
 
     final uid = currentUserId;
-    final channel = 'as_\( {uid.substring(0, 8)}_ \){DateTime.now().millisecondsSinceEpoch}';
+    Object? lastError;
 
-    final row = await _client
-        .from('audio_spaces')
-        .insert({
-          'channel_name': channel,
-          'title': cleanTitle,
-          'description': AudioSpaceSanitizer.sanitize(description, maxLength: _kMaxDesc),
-          'topic': AudioSpaceSanitizer.sanitize(topic, maxLength: _kMaxTopic).isEmpty
-              ? 'general'
-              : AudioSpaceSanitizer.sanitize(topic, maxLength: _kMaxTopic),
-          'host_id': uid,
-          'host_name': AudioSpaceSanitizer.sanitize(hostName, maxLength: _kMaxName),
-          'host_avatar_url': hostAvatarUrl,
-          'enterprise_id': enterpriseId,
-          'status': 'live',
-          'visibility': visibility.name,
-          'require_verified_speakers': requireVerifiedSpeakers,
-          'recording_enabled': recordingEnabled,
-          'recording_consent': recordingConsent,
-          'max_speakers': maxSpeakers.clamp(1, 16),
-          'speaker_count': 1,
-          'started_at': DateTime.now().toUtc().toIso8601String(),
-        })
-        .select()
-        .single()
-        .timeout(_kDbTimeout);
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final channel = _newChannel(uid);
+      try {
+        final row = await _client
+            .from('audio_spaces')
+            .insert({
+              'channel_name': channel,
+              'title': cleanTitle,
+              'description': AudioSpaceSanitizer.sanitize(description, maxLength: _kMaxDesc),
+              'topic': AudioSpaceSanitizer.sanitize(topic, maxLength: _kMaxTopic).isEmpty
+                  ? 'general'
+                  : AudioSpaceSanitizer.sanitize(topic, maxLength: _kMaxTopic),
+              'host_id': uid,
+              'host_name': AudioSpaceSanitizer.sanitize(hostName, maxLength: _kMaxName),
+              'host_avatar_url': hostAvatarUrl,
+              'enterprise_id': enterpriseId,
+              'status': 'live',
+              'visibility': visibility.name,
+              'require_verified_speakers': requireVerifiedSpeakers,
+              'recording_enabled': recordingEnabled,
+              'recording_consent': recordingConsent,
+              'max_speakers': maxSpeakers.clamp(1, 16),
+              'speaker_count': 1,
+              'started_at': DateTime.now().toUtc().toIso8601String(),
+            })
+            .select()
+            .single()
+            .timeout(_kDbTimeout);
 
-    final space = AudioSpace.fromMap(row);
-    await joinSpace(
-      space,
-      displayName: hostName,
-      avatarUrl: hostAvatarUrl,
-      role: AudioSpaceRole.host,
-      isMuted: false,
-    );
-    return space;
+        final space = AudioSpace.fromMap(Map<String, dynamic>.from(row));
+        await joinSpace(
+          space,
+          displayName: hostName,
+          avatarUrl: hostAvatarUrl,
+          role: AudioSpaceRole.host,
+          isMuted: false,
+        );
+        return space;
+      } catch (e) {
+        lastError = e;
+        debugPrint('[AudioSpace] create attempt ${attempt + 1} failed: $e');
+        if (!_isDuplicateChannel(e)) rethrow;
+        await Future<void>.delayed(Duration(milliseconds: 80 * (attempt + 1)));
+      }
+    }
+
+    throw Exception(lastError.toString());
   }
 
   Future<void> endSpace(String spaceId) async {
@@ -176,7 +200,7 @@ class AudioSpaceService {
         .single()
         .timeout(_kDbTimeout);
 
-    return AudioSpaceParticipant.fromMap(row);
+    return AudioSpaceParticipant.fromMap(Map<String, dynamic>.from(row));
   }
 
   Future<void> leaveSpace(String spaceId) async {
