@@ -695,7 +695,7 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
                   Navigator.pop(context);
                   if (!_throttleAction()) return;
                   ctrl.demote(p);
-                  _snack(_tx(l10n, 'audio_space_removed', 'Micro retiré')),
+                  _snack(_tx(l10n, 'audio_space_removed', 'Micro retiré'));
                 },
               ),
             ListTile(
