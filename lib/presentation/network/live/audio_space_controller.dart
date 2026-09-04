@@ -30,6 +30,12 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
         r == AudioSpaceRole.cohost ||
         r == AudioSpaceRole.speaker;
   }
+  final audioSpaceControllerProvider = StateNotifierProvider.autoDispose
+    .family<AudioSpaceController, AudioSpaceState, AudioSpace>((ref, space) {
+  final c = AudioSpaceController(ref.read(audioSpaceServiceProvider), space);
+  ref.onDispose(c.disposeEngine);
+  return c;
+});
 
   Future<void> bootstrap({
     required String displayName,
