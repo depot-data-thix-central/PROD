@@ -130,104 +130,234 @@ class NetworkService extends ChangeNotifier {
   static const Set<String> _allowedVideoExts = {'.mp4', '.mov', '.avi', '.mkv', 'mp4', 'mov', 'avi', 'mkv'};
   static const Set<String> _allowedAudioExts = {'.m4a', '.mp3', '.wav', 'm4a', 'mp3', 'wav'};
   static const Duration _requestTimeout = Duration(seconds: 15);
+  
 
-  // ─────────────────────────────────────────────────────────────
-  // FEED
-  // ─────────────────────────────────────────────────────────────
+  // ════════════════════════════════════════════════════════════════════
+// FEED (avec retry, fallback, validation)
+// ════════════════════════════════════════════════════════════════════
 
-  String _normalizeFeedType(String feedType) {
-    final t = feedType.trim().toLowerCase();
-    if (t == 'pour vous' || t == 'pourvous' || t == 'smart') return 'all';
-    if (t == 'réseau' || t == 'reseau') return 'network';
-    if (t == 'tendance' || t == 'trending') return 'popular';
-    return t;
+String _normalizeFeedType(String feedType) {
+  final t = feedType.trim().toLowerCase();
+  if (t == 'pour vous' || t == 'pourvous' || t == 'smart') return 'all';
+  if (t == 'réseau' || t == 'reseau') return 'network';
+  if (t == 'tendance' || t == 'trending') return 'popular';
+  return t;
+}
+
+/// Valide et normalise le seed pour le smart feed
+int _validateSeed(int seed) {
+  if (seed < 0) return 0;
+  if (seed > 2147483647) return 2147483647; // Max int32
+  return seed;
+}
+
+Future<List<NetworkPost>> getFeedPosts({
+  int limit = 20,
+  int? offset,
+  DateTime? lastCreatedAt,
+  String feedType = 'all',
+  int seed = 0,
+}) async {
+  final uid = currentUserId;
+  if (uid.isEmpty) {
+    _NetworkServiceLogger.warn('getFeedPosts: user not authenticated');
+    return [];
   }
 
-  Future<List<NetworkPost>> getFeedPosts({
-    int limit = 20,
-    int? offset,
-    DateTime? lastCreatedAt,
-    String feedType = 'all',
-    int seed = 0,
-  }) async {
-    final uid = currentUserId;
-    if (uid.isEmpty) return [];
+  // ── Validation des inputs ──
+  limit = limit.clamp(1, 100);
+  final safeOffset = (offset ?? 0) < 0 ? 0 : (offset ?? 0);
+  final type = _normalizeFeedType(feedType);
+  final safeSeed = _validateSeed(seed);
 
-    limit = limit.clamp(1, 100);
-    final safeOffset = (offset ?? 0) < 0 ? 0 : (offset ?? 0);
-    final type = _normalizeFeedType(feedType);
+  try {
+    if (type == 'all') {
+      return await _fetchSmartFeed(
+        uid: uid,
+        limit: limit,
+        offset: safeOffset,
+        seed: safeSeed,
+      );
+    }
 
+    // ── Abonnements ──
+    if (type == 'network') {
+      return await _fetchNetworkFeed(uid: uid, limit: limit, offset: safeOffset);
+    }
+
+    // ── Tendances ──
+    if (type == 'popular') {
+      return await _fetchPopularFeed(limit: limit, offset: safeOffset);
+    }
+
+    // ── Récents ──
+    return await _fetchRecentFeed(limit: limit, offset: safeOffset);
+  } on TimeoutException {
+    _NetworkServiceLogger.error('getFeedPosts timeout',
+        {'type': type, 'offset': safeOffset});
+    return [];
+  } catch (e, stack) {
+    _NetworkServiceLogger.error('getFeedPosts failed',
+        {'type': type, 'error': '$e', 'stack': stack.toString()});
+    return [];
+  }
+}
+
+/// ✅ SMART FEED avec retry + fallback
+Future<List<NetworkPost>> _fetchSmartFeed({
+  required String uid,
+  required int limit,
+  required int offset,
+  required int seed,
+}) async {
+  const maxRetries = 2;
+  Object? lastError;
+
+  for (int attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      if (type == 'all') {
-        final res = await _supabase.rpc('get_smart_feed', params: {
-          'p_user_id': uid,
-          'p_limit': limit,
-          'p_offset': safeOffset,
-          'p_seed': seed,
-        }).timeout(_requestTimeout);
-
-        return (res as List)
-            .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
+      if (attempt > 0) {
+        final delay = Duration(milliseconds: 500 * attempt);
+        _NetworkServiceLogger.info('Smart feed retry',
+            {'attempt': attempt, 'delay': '$delay'});
+        await Future.delayed(delay);
       }
 
-      // ── Abonnements : uniquement les personnes suivies ──
-      if (type == 'network') {
-        final connIds = await getMyConnectionIds();
-        connIds.add(uid);
-        if (connIds.isEmpty) return [];
-
-        final res = await _supabase
-            .from('posts_view')
-            .select()
-            .inFilter('user_id', connIds.toList())
-            .isFilter('community_id', null)
-            .order('created_at', ascending: false)
-            .range(safeOffset, safeOffset + limit - 1)
-            .timeout(_requestTimeout);
-
-        return (res as List)
-            .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
-      }
-
-      // ── Tendances : tri par engagement ──
-      if (type == 'popular') {
-        final res = await _supabase
-            .from('posts_view')
-            .select()
-            .eq('is_public', true)
-            .isFilter('community_id', null)
-            .order('likes_count', ascending: false)
-            .range(safeOffset, safeOffset + limit - 1)
-            .timeout(_requestTimeout);
-
-        return (res as List)
-            .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
-      }
-
-      // ── Récents : tri chronologique ──
       final res = await _supabase
-          .from('posts_view')
-          .select()
-          .eq('is_public', true)
-          .isFilter('community_id', null)
-          .order('created_at', ascending: false)
-          .range(safeOffset, safeOffset + limit - 1)
+          .rpc('get_smart_feed', params: {
+            'p_user_id': uid,
+            'p_limit': limit,
+            'p_offset': offset,
+            'p_seed': seed,
+          })
           .timeout(_requestTimeout);
 
-      return (res as List)
-          .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map)))
-          .toList();
-    } on TimeoutException {
-      debugPrint('[FeedService] Timeout getFeedPosts');
-      return [];
+      // Validation du résultat
+      if (res == null) {
+        throw Exception('RPC returned null');
+      }
+      if (res is! List) {
+        throw Exception('RPC returned invalid type: ${res.runtimeType}');
+      }
+
+      final posts = _parsePostsSafely(res);
+      _NetworkServiceLogger.info('Smart feed loaded',
+          {'count': posts.length, 'attempt': attempt, 'seed': seed});
+
+      return posts;
     } catch (e) {
-      debugPrint('[FeedService] Error getFeedPosts: $e');
-      return [];
+      lastError = e;
+      _NetworkServiceLogger.warn('Smart feed attempt failed',
+          {'attempt': attempt, 'error': '$e'});
+
+      // Pas de retry sur erreurs client (4xx)
+      if (e.toString().contains('400') ||
+          e.toString().contains('401') ||
+          e.toString().contains('403')) {
+        break;
+      }
     }
   }
+
+  // ✅ FALLBACK : si smart feed échoue, retourner feed récent
+  _NetworkServiceLogger.warn('Smart feed failed, falling back to recent',
+      {'error': '$lastError'});
+  return await _fetchRecentFeed(limit: limit, offset: offset);
+}
+
+/// Parse les posts avec validation stricte
+List<NetworkPost> _parsePostsSafely(List<dynamic> data) {
+  final posts = <NetworkPost>[];
+  int invalidCount = 0;
+
+  for (final item in data) {
+    try {
+      if (item is! Map) {
+        invalidCount++;
+        continue;
+      }
+      final map = Map<String, dynamic>.from(item);
+
+      // Validation minimale
+      if (map['id'] == null || map['user_id'] == null) {
+        invalidCount++;
+        continue;
+      }
+
+      posts.add(NetworkPost.fromJson(map));
+    } catch (e) {
+      invalidCount++;
+      _NetworkServiceLogger.warn('Invalid post skipped', {'error': '$e'});
+    }
+  }
+
+  if (invalidCount > 0) {
+    _NetworkServiceLogger.warn('Invalid posts filtered',
+        {'invalid': invalidCount, 'valid': posts.length});
+  }
+
+  return posts;
+}
+
+/// ✅ FALLBACK : Feed récent (chronologique)
+Future<List<NetworkPost>> _fetchRecentFeed({
+  required int limit,
+  required int offset,
+}) async {
+  try {
+    final res = await _supabase
+        .from('posts_view')
+        .select()
+        .eq('is_public', true)
+        .isFilter('community_id', null)
+        .order('created_at', ascending: false)
+        .range(offset, offset + limit - 1)
+        .timeout(_requestTimeout);
+
+    return _parsePostsSafely(res as List);
+  } catch (e) {
+    _NetworkServiceLogger.error('Recent feed fallback failed', {'error': '$e'});
+    return [];
+  }
+}
+
+/// Feed abonnements
+Future<List<NetworkPost>> _fetchNetworkFeed({
+  required String uid,
+  required int limit,
+  required int offset,
+}) async {
+  final connIds = await getMyConnectionIds();
+  connIds.add(uid);
+  if (connIds.isEmpty) return [];
+
+  final res = await _supabase
+      .from('posts_view')
+      .select()
+      .inFilter('user_id', connIds.toList())
+      .isFilter('community_id', null)
+      .order('created_at', ascending: false)
+      .range(offset, offset + limit - 1)
+      .timeout(_requestTimeout);
+
+  return _parsePostsSafely(res as List);
+}
+
+/// Feed populaire
+Future<List<NetworkPost>> _fetchPopularFeed({
+  required int limit,
+  required int offset,
+}) async {
+  final res = await _supabase
+      .from('posts_view')
+      .select()
+      .eq('is_public', true)
+      .isFilter('community_id', null)
+      .order('likes_count', ascending: false)
+      .range(offset, offset + limit - 1)
+      .timeout(_requestTimeout);
+
+  return _parsePostsSafely(res as List);
+}
 
   // ─────────────────────────────────────────────────────────────
   // COMMUNITIES
@@ -593,69 +723,36 @@ class NetworkService extends ChangeNotifier {
     } catch (e) {
       debugPrint('[PostService] Error unlikePost: $e');
       rethrow;
+// ─────────────────────────────────────────────────────────────
+  // LIKE / SHARE / REPOST (Production Enterprise)
+  // ─────────────────────────────────────────────────────────────
+
+  // ══════════════════════════════════════════════════════════════
+  // LIKE (avec protection race condition)
+  // ══════════════════════════════════════════════════════════════
+
+  /// Cache des opérations like en cours pour éviter les double-like
+  final Set<String> _pendingLikes = {};
+
+  Future<({bool liked, int likesCount})> togglePostLike(String postId) async {
+    if (currentUserId.isEmpty) throw Exception('Non authentifié');
+    if (postId.trim().isEmpty) throw Exception('PostId invalide');
+
+    // Protection contre les appels concurrents
+    if (_pendingLikes.contains(postId)) {
+      _NetworkServiceLogger.warn('Like already pending', {'postId': postId});
+      throw Exception('Opération déjà en cours');
     }
-    notifyListeners();
-  }
 
-  Future<void> sharePost(String id) async {
-    try {
-      await _supabase.rpc('increment_share', params: {'p_post_id': id}).timeout(_requestTimeout);
-    } catch (e) {
-      debugPrint('[PostService] Fallback sharePost: $e');
-      try {
-        await _supabase.rpc('rpc_increment_share', params: {'p_post_id': id}).timeout(_requestTimeout);
-      } catch (e2) {
-        debugPrint('[PostService] Error sharePost: $e2');
-      }
-    }
-  }
+    _pendingLikes.add(postId);
 
-  Future<void> savePost(String postId) async {
-    await _supabase.from('saved_posts').upsert({
-      'post_id': postId,
-      'user_id': currentUserId,
-      'saved_at': DateTime.now().toUtc().toIso8601String(),
-    }, onConflict: 'post_id,user_id').timeout(_requestTimeout);
-    notifyListeners();
-  }
-
-  Future<void> unsavePost(String postId) async {
-    await _supabase
-        .from('saved_posts')
-        .delete()
-        .eq('post_id', postId)
-        .eq('user_id', currentUserId)
-        .timeout(_requestTimeout);
-    notifyListeners();
-  }
-
-  Future<List<NetworkPost>> getSavedPosts() async {
     try {
       final res = await _supabase
-          .from('saved_posts')
-          .select('post:post_id(*, profiles:user_id(display_name, avatar_url, profession))')
-          .eq('user_id', currentUserId)
-          .order('saved_at', ascending: false)
+          .rpc(
+            'rpc_toggle_post_like',
+            params: {'p_post_id': postId},
+          )
           .timeout(_requestTimeout);
-      return (res as List)
-          .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e['post'] as Map)))
-          .toList();
-    } catch (e) {
-      debugPrint('[PostService] Error getSavedPosts: $e');
-      return [];
-    }
-  }
-
-  Future<NetworkPost?> repostPost(String originalPostId, {String? quote}) async {
-    if (currentUserId.isEmpty) throw Exception('Non authentifié');
-
-    final sanitizedQuote = quote != null ? _NetworkValidators.sanitizeText(quote, maxLength: 1000) : null;
-
-    try {
-      final res = await _supabase.rpc(
-        'rpc_repost',
-        params: {'p_original_post_id': originalPostId, 'p_quote': sanitizedQuote},
-      ).timeout(_requestTimeout);
 
       Map<String, dynamic> row;
       if (res is List && res.isNotEmpty) {
@@ -666,34 +763,367 @@ class NetworkService extends ChangeNotifier {
         throw Exception('Réponse RPC invalide');
       }
 
+      final liked = row['liked'] == true;
+      final count = (row['likes_count'] as num?)?.toInt() ?? 0;
+
+      if (liked) {
+        final owner = await _getPostOwnerId(postId);
+        if (owner.isNotEmpty && owner != currentUserId) {
+          unawaited(_createNotification(userId: owner, type: 'like', postId: postId));
+        }
+      }
+
       notifyListeners();
+      _NetworkServiceLogger.info('Like toggled',
+          {'postId': postId, 'liked': liked, 'count': count});
 
-      final feedPostId = row['feed_post_id']?.toString();
-      if (feedPostId == null || feedPostId.isEmpty) return null;
-
-      return await getPostById(feedPostId);
+      return (liked: liked, likesCount: count);
+    } on TimeoutException {
+      _NetworkServiceLogger.error('Like timeout', {'postId': postId});
+      rethrow;
     } catch (e) {
-      debugPrint('[PostService] Fallback repostPost: $e');
+      _NetworkServiceLogger.warn('Like RPC failed, using fallback',
+          {'postId': postId, 'error': '$e'});
+
+      // Fallback manuel : vérifier état actuel puis basculer
       try {
-        await _supabase.from('reposts').insert({
-          'original_post_id': originalPostId,
-          'user_id': currentUserId,
-          'quote': sanitizedQuote,
-        }).timeout(_requestTimeout);
-        notifyListeners();
-      } catch (e2) {
-        debugPrint('[PostService] Error repostPost: $e2');
+        final existing = await _supabase
+            .from('post_likes')
+            .select('post_id')
+            .eq('post_id', postId)
+            .eq('user_id', currentUserId)
+            .maybeSingle();
+
+        if (existing != null) {
+          await unlikePost(postId);
+          final c = await _countLikes(postId);
+          return (liked: false, likesCount: c);
+        } else {
+          await likePost(postId);
+          final c = await _countLikes(postId);
+          return (liked: true, likesCount: c);
+        }
+      } catch (fallbackError) {
+        _NetworkServiceLogger.error('Like fallback failed',
+            {'postId': postId, 'error': '$fallbackError'});
         rethrow;
       }
-      return null;
+    } finally {
+      _pendingLikes.remove(postId);
     }
   }
 
+  Future<int> _countLikes(String postId) async {
+    try {
+      final res = await _supabase
+          .from('post_likes')
+          .select('post_id')
+          .eq('post_id', postId)
+          .timeout(_requestTimeout);
+      return (res as List).length;
+    } catch (e) {
+      _NetworkServiceLogger.error('_countLikes failed',
+          {'postId': postId, 'error': '$e'});
+      return 0;
+    }
+  }
+
+  Future<void> likePost(String id) async {
+    if (currentUserId.isEmpty) return;
+    if (id.trim().isEmpty) {
+      _NetworkServiceLogger.warn('likePost: empty id');
+      return;
+    }
+    try {
+      await _supabase.from('post_likes').upsert(
+        {'post_id': id, 'user_id': currentUserId},
+        onConflict: 'post_id,user_id',
+        ignoreDuplicates: true,
+      ).timeout(_requestTimeout);
+
+      final owner = await _getPostOwnerId(id);
+      if (owner.isNotEmpty && owner != currentUserId) {
+        unawaited(_createNotification(userId: owner, type: 'like', postId: id));
+      }
+
+      notifyListeners();
+      _NetworkServiceLogger.info('Post liked', {'postId': id});
+    } on TimeoutException {
+      _NetworkServiceLogger.error('likePost timeout', {'postId': id});
+      rethrow;
+    } catch (e) {
+      _NetworkServiceLogger.error('likePost failed',
+          {'postId': id, 'error': '$e'});
+      rethrow;
+    }
+  }
+
+  Future<void> unlikePost(String id) async {
+    if (currentUserId.isEmpty) return;
+    if (id.trim().isEmpty) {
+      _NetworkServiceLogger.warn('unlikePost: empty id');
+      return;
+    }
+    try {
+      await _supabase
+          .from('post_likes')
+          .delete()
+          .eq('post_id', id)
+          .eq('user_id', currentUserId)
+          .timeout(_requestTimeout);
+
+      notifyListeners();
+      _NetworkServiceLogger.info('Post unliked', {'postId': id});
+    } on TimeoutException {
+      _NetworkServiceLogger.error('unlikePost timeout', {'postId': id});
+      rethrow;
+    } catch (e) {
+      _NetworkServiceLogger.error('unlikePost failed',
+          {'postId': id, 'error': '$e'});
+      rethrow;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // SHARE (avec retry et validation)
+  // ══════════════════════════════════════════════════════════════
+
+  Future<void> sharePost(String id) async {
+    if (id.trim().isEmpty) {
+      _NetworkServiceLogger.warn('sharePost: empty id');
+      return;
+    }
+
+    // Tentative 1 : RPC increment_share
+    try {
+      await _supabase
+          .rpc('increment_share', params: {'p_post_id': id})
+          .timeout(_requestTimeout);
+      _NetworkServiceLogger.info('Share incremented', {'postId': id});
+      return;
+    } catch (e) {
+      _NetworkServiceLogger.warn('increment_share failed, trying fallback',
+          {'postId': id, 'error': '$e'});
+    }
+
+    // Tentative 2 : RPC rpc_increment_share (nom alternatif)
+    try {
+      await _supabase
+          .rpc('rpc_increment_share', params: {'p_post_id': id})
+          .timeout(_requestTimeout);
+      _NetworkServiceLogger.info('Share incremented (fallback)',
+          {'postId': id});
+      return;
+    } catch (e2) {
+      _NetworkServiceLogger.error('sharePost failed (all attempts)',
+          {'postId': id, 'error': '$e2'});
+      // Ne pas rethrow : le partage n'est pas critique, silencieux
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // SAVE / UNSAVE (avec validation)
+  // ══════════════════════════════════════════════════════════════
+
+  Future<void> savePost(String postId) async {
+    if (currentUserId.isEmpty) {
+      throw Exception('Non authentifié');
+    }
+    if (postId.trim().isEmpty) {
+      throw Exception('PostId invalide');
+    }
+
+    try {
+      await _supabase.from('saved_posts').upsert({
+        'post_id': postId,
+        'user_id': currentUserId,
+        'saved_at': DateTime.now().toUtc().toIso8601String(),
+      }, onConflict: 'post_id,user_id').timeout(_requestTimeout);
+
+      notifyListeners();
+      _NetworkServiceLogger.info('Post saved', {'postId': postId});
+    } on TimeoutException {
+      _NetworkServiceLogger.error('savePost timeout', {'postId': postId});
+      rethrow;
+    } catch (e) {
+      _NetworkServiceLogger.error('savePost failed',
+          {'postId': postId, 'error': '$e'});
+      rethrow;
+    }
+  }
+
+  Future<void> unsavePost(String postId) async {
+    if (currentUserId.isEmpty) {
+      throw Exception('Non authentifié');
+    }
+    if (postId.trim().isEmpty) {
+      throw Exception('PostId invalide');
+    }
+
+    try {
+      await _supabase
+          .from('saved_posts')
+          .delete()
+          .eq('post_id', postId)
+          .eq('user_id', currentUserId)
+          .timeout(_requestTimeout);
+
+      notifyListeners();
+      _NetworkServiceLogger.info('Post unsaved', {'postId': postId});
+    } on TimeoutException {
+      _NetworkServiceLogger.error('unsavePost timeout', {'postId': postId});
+      rethrow;
+    } catch (e) {
+      _NetworkServiceLogger.error('unsavePost failed',
+          {'postId': postId, 'error': '$e'});
+      rethrow;
+    }
+  }
+
+  Future<List<NetworkPost>> getSavedPosts() async {
+    if (currentUserId.isEmpty) {
+      _NetworkServiceLogger.warn('getSavedPosts: user not authenticated');
+      return [];
+    }
+
+    try {
+      final res = await _supabase
+          .from('saved_posts')
+          .select('post:post_id(*, profiles:user_id(display_name, avatar_url, profession))')
+          .eq('user_id', currentUserId)
+          .order('saved_at', ascending: false)
+          .timeout(_requestTimeout);
+
+      if (res == null || res is! List) {
+        _NetworkServiceLogger.warn('getSavedPosts: invalid response type',
+            {'type': res.runtimeType.toString()});
+        return [];
+      }
+
+      final posts = <NetworkPost>[];
+      int invalidCount = 0;
+
+      for (final item in res) {
+        try {
+          if (item is! Map) {
+            invalidCount++;
+            continue;
+          }
+          final postMap = item['post'];
+          if (postMap == null || postMap is! Map) {
+            invalidCount++;
+            continue;
+          }
+          posts.add(NetworkPost.fromJson(
+              Map<String, dynamic>.from(postMap as Map)));
+        } catch (e) {
+          invalidCount++;
+          _NetworkServiceLogger.warn('Invalid saved post skipped',
+              {'error': '$e'});
+        }
+      }
+
+      if (invalidCount > 0) {
+        _NetworkServiceLogger.warn('Saved posts: invalid items filtered',
+            {'invalid': invalidCount, 'valid': posts.length});
+      }
+
+      _NetworkServiceLogger.info('Saved posts loaded',
+          {'count': posts.length});
+      return posts;
+    } on TimeoutException {
+      _NetworkServiceLogger.error('getSavedPosts timeout');
+      return [];
+    } catch (e) {
+      _NetworkServiceLogger.error('getSavedPosts failed', {'error': '$e'});
+      return [];
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // REPOST (avec retry + fallback manuel)
+  // ══════════════════════════════════════════════════════════════
+
+  Future<NetworkPost?> repostPost(String originalPostId, {String? quote}) async {
+    if (currentUserId.isEmpty) throw Exception('Non authentifié');
+    if (originalPostId.trim().isEmpty) throw Exception('PostId invalide');
+
+    final sanitizedQuote = quote != null
+        ? _NetworkValidators.sanitizeText(quote, maxLength: 1000)
+        : null;
+
+    // Tentative 1 : RPC centralisé (préféré car atomique + notifications)
+    try {
+      final res = await _supabase.rpc(
+        'rpc_repost',
+        params: {
+          'p_original_post_id': originalPostId,
+          'p_quote': sanitizedQuote,
+        },
+      ).timeout(_requestTimeout);
+
+      Map<String, dynamic> row;
+      if (res is List && res.isNotEmpty) {
+        row = Map<String, dynamic>.from(res.first as Map);
+      } else if (res is Map) {
+        row = Map<String, dynamic>.from(res);
+      } else {
+        throw Exception('Réponse RPC invalide: ${res.runtimeType}');
+      }
+
+      notifyListeners();
+
+      final feedPostId = row['feed_post_id']?.toString();
+      if (feedPostId == null || feedPostId.isEmpty) {
+        _NetworkServiceLogger.warn('Repost RPC returned no feed_post_id',
+            {'originalPostId': originalPostId});
+        return null;
+      }
+
+      final repost = await getPostById(feedPostId);
+      _NetworkServiceLogger.info('Repost created (RPC)',
+          {'originalId': originalPostId, 'repostId': feedPostId});
+      return repost;
+    } catch (e) {
+      _NetworkServiceLogger.warn('Repost RPC failed, using fallback',
+          {'originalPostId': originalPostId, 'error': '$e'});
+    }
+
+    // Tentative 2 : Insertion manuelle dans la table reposts
+    try {
+      await _supabase.from('reposts').insert({
+        'original_post_id': originalPostId,
+        'user_id': currentUserId,
+        'quote': sanitizedQuote,
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      }).timeout(_requestTimeout);
+
+      notifyListeners();
+      _NetworkServiceLogger.info('Repost created (fallback)',
+          {'originalId': originalPostId});
+      return null; // Pas de post complet disponible via fallback
+    } on TimeoutException {
+      _NetworkServiceLogger.error('Repost fallback timeout',
+          {'originalPostId': originalPostId});
+      rethrow;
+    } catch (e2) {
+      _NetworkServiceLogger.error('Repost failed (all attempts)',
+          {'originalPostId': originalPostId, 'error': '$e2'});
+      rethrow;
+    }
+  }
+
+  /// Alias pour compatibilité ascendante
   Future<void> repost(String originalPostId, String? quote) async {
     await repostPost(originalPostId, quote: quote);
   }
 
   Future<List<NetworkPost>> getUserReposts(String userId) async {
+    if (userId.trim().isEmpty) {
+      _NetworkServiceLogger.warn('getUserReposts: empty userId');
+      return [];
+    }
+
     try {
       final res = await _supabase
           .from('reposts')
@@ -701,15 +1131,54 @@ class NetworkService extends ChangeNotifier {
           .eq('user_id', userId)
           .order('created_at', ascending: false)
           .timeout(_requestTimeout);
-      return (res as List)
-          .map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e['post'] as Map)))
-          .toList();
+
+      if (res == null || res is! List) {
+        _NetworkServiceLogger.warn('getUserReposts: invalid response type',
+            {'type': res.runtimeType.toString()});
+        return [];
+      }
+
+      final posts = <NetworkPost>[];
+      int invalidCount = 0;
+
+      for (final item in res) {
+        try {
+          if (item is! Map) {
+            invalidCount++;
+            continue;
+          }
+          final postMap = item['post'];
+          if (postMap == null || postMap is! Map) {
+            invalidCount++;
+            continue;
+          }
+          posts.add(NetworkPost.fromJson(
+              Map<String, dynamic>.from(postMap as Map)));
+        } catch (e) {
+          invalidCount++;
+          _NetworkServiceLogger.warn('Invalid repost skipped',
+              {'error': '$e'});
+        }
+      }
+
+      if (invalidCount > 0) {
+        _NetworkServiceLogger.warn('User reposts: invalid items filtered',
+            {'userId': userId, 'invalid': invalidCount, 'valid': posts.length});
+      }
+
+      _NetworkServiceLogger.info('User reposts loaded',
+          {'userId': userId, 'count': posts.length});
+      return posts;
+    } on TimeoutException {
+      _NetworkServiceLogger.error('getUserReposts timeout',
+          {'userId': userId});
+      return [];
     } catch (e) {
-      debugPrint('[PostService] Error getUserReposts: $e');
+      _NetworkServiceLogger.error('getUserReposts failed',
+          {'userId': userId, 'error': '$e'});
       return [];
     }
   }
-
   // ─────────────────────────────────────────────────────────────
   // COMMENTS
   // ─────────────────────────────────────────────────────────────
