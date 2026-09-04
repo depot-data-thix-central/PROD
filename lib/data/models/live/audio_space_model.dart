@@ -186,6 +186,8 @@ class AudioSpaceState {
   final List<AudioSpaceChatMessage> messages;
   final bool connected;
   final bool ended;
+  final String? latestReactionEmoji;
+  final int reactionTimestamp;
 
   const AudioSpaceState({
     required this.space,
@@ -196,6 +198,8 @@ class AudioSpaceState {
     this.messages = const [],
     this.connected = false,
     this.ended = false,
+    this.latestReactionEmoji,
+    this.reactionTimestamp = 0,
   });
 
   AudioSpaceRole get myRole => me?.role ?? AudioSpaceRole.listener;
@@ -221,10 +225,14 @@ class AudioSpaceState {
     bool? ended,
     bool? loading,
     String? error,
+    String? latestReactionEmoji,
+    int? reactionTimestamp,
   }) {
     AudioSpaceScreenStatus nextStatus = status ?? this.status;
     if (loading == true) nextStatus = AudioSpaceScreenStatus.loading;
-    if (loading == false && status == null && this.status == AudioSpaceScreenStatus.loading) {
+    if (loading == false &&
+        status == null &&
+        this.status == AudioSpaceScreenStatus.loading) {
       nextStatus = AudioSpaceScreenStatus.ready;
     }
 
@@ -237,6 +245,8 @@ class AudioSpaceState {
       messages: messages ?? this.messages,
       connected: connected ?? this.connected,
       ended: ended ?? this.ended,
+      latestReactionEmoji: latestReactionEmoji ?? this.latestReactionEmoji,
+      reactionTimestamp: reactionTimestamp ?? this.reactionTimestamp,
     );
   }
 }
