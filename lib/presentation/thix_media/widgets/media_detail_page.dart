@@ -773,7 +773,8 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
   }
 
   Widget _buildPaywall(MediaContent item, AppLocalizations l10n) {
-    final cover = _MediaSanitizer.imageUrl(item.coverUrl);
+    final cover = MediaSanitizer.imageUrl(item.coverUrl);
+
     return Container(
       decoration: cover != null
           ? BoxDecoration(
