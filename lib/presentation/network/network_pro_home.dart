@@ -23,22 +23,18 @@ import 'widgets/create_post_dialog.dart';
 import 'widgets/create_story_dialog.dart';
 import 'widgets/post_card.dart';
 import 'widgets/story_viewer.dart';
+import 'widgets/audio_spaces_strip.dart';
 
 import 'package:thix_id/presentation/network/live/live_prep_screen.dart';
 import 'package:thix_id/presentation/network/live/live_viewer_screen.dart';
+import 'package:thix_id/presentation/network/live/create_audio_space_sheet.dart';
 
-// ============================================================================
-// PROVIDERS LOCAUX
-// ============================================================================
 final _storiesProvider = StateProvider<List<NetworkStory>>((ref) => []);
 final _loadingStoriesProvider = StateProvider<bool>((ref) => true);
 final _feedTypeProvider = StateProvider<String>((ref) => 'foryou');
 final _suggestionsProvider = StateProvider<List<dynamic>>((ref) => []);
 final _navVisibleProvider = StateProvider<bool>((ref) => true);
 
-// ============================================================================
-// PROVIDER — SESSIONS LIVE ACTIVES
-// ============================================================================
 final activeLiveSessionsProvider = StreamProvider.autoDispose<List<Map<String, dynamic>>>((ref) {
   try {
     return Supabase.instance.client
@@ -52,9 +48,6 @@ final activeLiveSessionsProvider = StreamProvider.autoDispose<List<Map<String, d
   }
 });
 
-// ============================================================================
-// GLASS SURFACE (Design "Community Glass" Premium)
-// ============================================================================
 class _Glass extends StatelessWidget {
   final Widget child;
   final double radius;
@@ -97,9 +90,6 @@ class _Glass extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// COMPOSANT — AVATAR ROND ÉPURÉ
-// ============================================================================
 class RoundAvatar extends StatelessWidget {
   final double size;
   final String? imageUrl;
@@ -146,9 +136,6 @@ class RoundAvatar extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// PAGE PRINCIPALE — THIX PRO
-// ============================================================================
 class NetworkProHome extends ConsumerStatefulWidget {
   const NetworkProHome({super.key});
 
@@ -207,7 +194,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       }
     });
 
-    // Réapparition automatique de la navbar dès que le scroll s'arrête
     _navStopTimer?.cancel();
     _navStopTimer = Timer(const Duration(milliseconds: 250), () {
       if (mounted) {
@@ -281,6 +267,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     _lastRefreshTime = DateTime.now();
     await Future.wait([_loadStories(), _loadSuggestions()]);
     ref.invalidate(activeLiveSessionsProvider);
+    ref.invalidate(activeAudioSpacesProvider);
   }
 
   Future<void> _openCreateStory() async {
@@ -289,6 +276,14 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       HapticFeedback.mediumImpact();
       await _loadStories();
     }
+  }
+
+  void _openCreateAudioSpace() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const CreateAudioSpaceSheet(),
+    );
   }
 
   void _safePush(String path) {
@@ -360,7 +355,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
         backgroundColor: ThixPolicy.surfaceSoft,
         body: Stack(
           children: [
-            // Orbes de fond subtiles
             Positioned(top: -80, right: -40, child: _buildGradientOrb(ThixPolicy.primary, 240)),
             Positioned(bottom: 180, left: -80, child: _buildGradientOrb(ThixPolicy.primaryDeep, 280)),
 
@@ -386,6 +380,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                   ),
 
                   SliverToBoxAdapter(child: _buildStories(l10n, currentUser.id, liveHostIds)),
+                  const SliverToBoxAdapter(child: AudioSpacesStrip()),
                   SliverToBoxAdapter(child: _buildFilters(l10n)),
 
                   if (ref.watch(_suggestionsProvider).isNotEmpty || liveSessions.isNotEmpty)
@@ -406,12 +401,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                     ),
                     data: (posts) {
                       if (posts.isEmpty) return SliverToBoxAdapter(child: _buildEmpty(l10n));
-                      // ✅ ESPACEMENT : le Divider doré qui suivait chaque
-                      // PostCard a été retiré — PostCard dessine désormais
-                      // lui-même sa bordure or de séparation en bas (voir
-                      // post_card.dart). Le garder ici aurait doublé la
-                      // ligne et rajouté de l'espace vertical entre cartes.
-                      // `isFirst: i == 0` marque la coupure avec le haut du feed.
                       return SliverList.builder(
                         itemCount: posts.length,
                         itemBuilder: (c, i) {
@@ -478,6 +467,20 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
         style: ThixPolicy.h2Style.copyWith(fontWeight: FontWeight.w900, letterSpacing: -0.5, color: ThixPolicy.textMain, fontSize: 18),
       ),
       actions: [
+        GestureDetector(
+          onTap: _openCreateAudioSpace,
+          child: Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF7C4DFF).withValues(alpha: 0.12),
+              border: Border.all(color: const Color(0xFF7C4DFF).withValues(alpha: 0.35), width: 1),
+            ),
+            child: const Icon(Icons.mic_none_rounded, size: 18, color: Color(0xFF7C4DFF)),
+          ),
+        ),
+        const SizedBox(width: 8),
         GestureDetector(
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LivePrepScreen())),
           child: Container(
@@ -883,7 +886,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // Barre de navigation basse amincie et réactive au scroll stop
   Widget _buildBottomNav(AppLocalizations l10n, bool visible) {
     return AnimatedSlide(
       duration: const Duration(milliseconds: 220),
@@ -904,14 +906,12 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                 blur: 14,
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                 child: SizedBox(
-                  height: 50, // Hauteur réduite et optimisée
+                  height: 50,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
                       _navBtn(Icons.home_rounded, l10n.t('network_nav_home'), true, () => _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut)),
                       _navBtn(Icons.explore_outlined, l10n.t('network_nav_discover'), false, () => _safePush('/network/discover')),
-
-                      // FAB Central compact et élégant
                       Semantics(
                         button: true,
                         label: l10n.t('network_nav_post'),
@@ -934,7 +934,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                           ),
                         ),
                       ),
-
                       _navBtn(Icons.mail_outline_rounded, l10n.t('network_nav_messages'), false, () => _safePush('/network/messages')),
                       _navBtn(Icons.diversity_3_outlined, l10n.t('network_nav_communities'), false, () => _safePush('/network/communities')),
                     ],
