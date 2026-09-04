@@ -1,3 +1,4 @@
+// lib/presentation/thix_media/widgets/feed_video_player.dart
 /// FeedVideoPlayer (Production Enterprise)
 /// 
 /// Lecteur vidéo pour le feed avec :
@@ -5,6 +6,7 @@
 /// - Barre de progression draggable
 /// - Auto-play/pause selon visibilité
 /// - Placeholder cover pendant chargement
+/// - Support du plein écran (enforceCoverFit) pour le mode Fil
 /// 
 /// ✅ ThixPolicy + Semantics + HapticFeedback + RepaintBoundary
 /// ✅ Logs structurés + throttling + mounted checks + error handling
@@ -56,6 +58,7 @@ class FeedVideoPlayer extends StatefulWidget {
   final int previewSeconds;
   final VoidCallback? onPreviewLimitReached;
   final ValueChanged<bool> onPlayStateChanged;
+  final bool enforceCoverFit; // ✅ AJOUT DU PARAMÈTRE FULL SCREEN
 
   const FeedVideoPlayer({
     super.key,
@@ -66,6 +69,7 @@ class FeedVideoPlayer extends StatefulWidget {
     this.enforcePreviewLimit = false,
     this.previewSeconds = 30,
     this.onPreviewLimitReached,
+    this.enforceCoverFit = false, // ✅ PAR DÉFAUT À FALSE
   });
 
   @override
@@ -215,6 +219,28 @@ class _FeedVideoPlayerState extends State<FeedVideoPlayer> {
       return _buildPlaceholder();
     }
 
+    // ✅ LOGIQUE DE DIMENSIONNEMENT : Full Screen vs Standard
+    Widget videoWidget;
+    if (widget.enforceCoverFit) {
+      videoWidget = SizedBox.expand(
+        child: FittedBox(
+          fit: BoxFit.cover, // Remplit tout l'écran sans marges
+          child: SizedBox(
+            width: _controller!.value.size.width,
+            height: _controller!.value.size.height,
+            child: VideoPlayer(_controller!),
+          ),
+        ),
+      );
+    } else {
+      videoWidget = Center(
+        child: AspectRatio(
+          aspectRatio: _controller!.value.aspectRatio,
+          child: VideoPlayer(_controller!),
+        ),
+      );
+    }
+
     return RepaintBoundary(
       child: Semantics(
         button: true,
@@ -226,12 +252,7 @@ class _FeedVideoPlayerState extends State<FeedVideoPlayer> {
             children: [
               Container(
                 color: ThixPolicy.inkDeep,
-                child: Center(
-                  child: AspectRatio(
-                    aspectRatio: _controller!.value.aspectRatio,
-                    child: VideoPlayer(_controller!),
-                  ),
-                ),
+                child: videoWidget, // ✅ Affichage dynamique (Cover ou AspectRatio)
               ),
               if (_paused)
                 Center(
@@ -255,7 +276,7 @@ class _FeedVideoPlayerState extends State<FeedVideoPlayer> {
     }
     return CachedNetworkImage(
       imageUrl: widget.coverUrl,
-      fit: BoxFit.cover,
+      fit: widget.enforceCoverFit ? BoxFit.cover : BoxFit.contain, // ✅ Le placeholder s'adapte aussi
       placeholder: (_, __) => Container(color: ThixPolicy.inkDeep),
       errorWidget: (_, __, ___) => Container(
         color: ThixPolicy.inkDeep,
