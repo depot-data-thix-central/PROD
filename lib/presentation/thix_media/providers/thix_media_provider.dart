@@ -1,4 +1,7 @@
+// lib/presentation/thix_media/providers/thix_media_provider.dart
 /// Thix Media Providers — Riverpod (Production Enterprise)
+
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -33,7 +36,6 @@ class _MediaProviderLogger {
 
   static void _log(String l, String m, Map<String, dynamic>? d) {
     if (!kDebugMode && l == 'INFO') return;
-    // CORRECTION : Syntaxe de l'interpolation de chaîne réparée
     final data = d == null
         ? ''
         : ' ${d.entries.map((e) => '${e.key}=${e.value}').join(', ')}';
@@ -82,7 +84,8 @@ final isMediaAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
   return isAdmin;
 });
 
-final mediaCountsPollingProvider =
+// ✅ CORRECTION DU NOM : Remplacé "mediaCountsPollingProvider" par "mediaCountsStreamProvider"
+final mediaCountsStreamProvider =
     StreamProvider.autoDispose.family<MediaCounts, String>((ref, mediaId) async* {
   if (!_MediaProviderValidators.isValidUuid(mediaId)) {
     _MediaProviderLogger.warn('Invalid mediaId for polling', {
@@ -121,10 +124,8 @@ final mediaCountsPollingProvider =
   }
 });
 
-@Deprecated('Use mediaCountsPollingProvider instead')
-final mediaCountsStreamProvider = mediaCountsPollingProvider;
-
-final commentCountProvider =
+// ✅ CORRECTION DU NOM : Remplacé "commentCountProvider" par "mediaCommentCountProvider"
+final mediaCommentCountProvider =
     FutureProvider.autoDispose.family<int, String>((ref, mediaId) async {
   if (!_MediaProviderValidators.isValidUuid(mediaId)) {
     _MediaProviderLogger.warn('Invalid mediaId for commentCount', {
@@ -174,7 +175,8 @@ final mediaCreatorIdProvider =
   }
 });
 
-final userProfileProvider = FutureProvider.autoDispose
+// ✅ CORRECTION DU NOM : Remplacé "userProfileProvider" par "mediaUserProfileProvider"
+final mediaUserProfileProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>?, String>((ref, userId) async {
   if (!_MediaProviderValidators.isValidUuid(userId)) {
     _MediaProviderLogger.warn('Invalid userId for profile', {'userId': userId});
@@ -196,7 +198,8 @@ final userProfileProvider = FutureProvider.autoDispose
   }
 });
 
-final isFollowingProvider =
+// ✅ CORRECTION DU NOM : Remplacé "isFollowingProvider" par "mediaIsFollowingProvider"
+final mediaIsFollowingProvider =
     FutureProvider.autoDispose.family<bool, String>((ref, targetId) async {
   final uid = Supabase.instance.client.auth.currentUser?.id;
   if (uid == null || !_MediaProviderValidators.isValidUuid(targetId)) {
@@ -221,7 +224,10 @@ final isFollowingProvider =
   }
 });
 
-// CORRECTION : Remplacement de AsyncNotifier par AutoDisposeAsyncNotifier
+
+// ══════════════════════════════════════════════════════════════════════════
+// GESTIONNAIRE DE LISTE (Maintient la pagination et la logique)
+// ══════════════════════════════════════════════════════════════════════════
 class ThixMediaNotifier extends AutoDisposeAsyncNotifier<List<MediaContent>> {
   DateTime? _cursor;
   bool _hasMore = true;
