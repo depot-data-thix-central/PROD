@@ -313,11 +313,12 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     final selectedCategory = ref.watch(selectedCategoryProvider);
     final isAdmin = ref.watch(isMediaAdminProvider).valueOrNull ?? false;
 
-    return Scaffold(
+        return Scaffold(
       backgroundColor: _MediaLightPalette.background,
       body: asyncMedia.when(
-        loading: () => _buildSkeleton(tSearchHint),
+        loading: () => const _MediaSkeleton(), 
         error: (e, st) => _buildErrorState(context, tError, tRetry, e),
+
         data: (catalog) => Stack(
           children: [
             _buildMainContent(context, catalog, isAdmin, selectedCategory),
