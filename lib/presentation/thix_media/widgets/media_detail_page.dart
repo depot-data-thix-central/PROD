@@ -92,11 +92,21 @@ class _DetailSanitizer {
     return s.length > 100 ? s.substring(0, 100) : s;
   }
 
+  
+  static String? imageUrl(String? url) {
+    if (url == null) return null;
+    final u = url.trim();
+    if (u.isEmpty) return null;
+    if (!u.startsWith('http://') && !u.startsWith('https://')) return null;
+    return u;
+  }
+
   static double price(num? input) {
     if (input == null || input < 0 || !input.isFinite) return 0.0;
     return input.toDouble();
   }
 }
+
 
 // ============================================================================
 // PAGE
@@ -773,7 +783,8 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
   }
 
   Widget _buildPaywall(MediaContent item, AppLocalizations l10n) {
-    final cover = MediaSanitizer.imageUrl(item.coverUrl);
+    final cover = _DetailSanitizer.imageUrl(item.coverUrl);
+
 
     return Container(
       decoration: cover != null
