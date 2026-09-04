@@ -355,3 +355,9 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
     super.dispose();
   }
 }
+final audioSpaceControllerProvider = StateNotifierProvider.autoDispose
+    .family<AudioSpaceController, AudioSpaceState, AudioSpace>((ref, space) {
+  final c = AudioSpaceController(ref.read(audioSpaceServiceProvider), space);
+  ref.onDispose(c.disposeEngine);
+  return c;
+});
