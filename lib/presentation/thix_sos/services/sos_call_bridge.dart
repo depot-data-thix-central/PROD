@@ -277,48 +277,110 @@ class SosCallBridge {
   }
 
   /// Appelle tous les secours d'un cercle en **parallèle** (performance)
-  Future<SosActivationResult> callCircle({
-    required SosIncident incident,
-    required int circle,
-    required List<SosContact> contacts,
-  }) async {
-    if (contacts.isEmpty) {
-      debugPrint('[SosBridge] ⚠️ callCircle: empty list for circle $circle');
-      await _sos.logEventPublic(incident.id, 'CALL_CIRCLE_EMPTY', {
-        'circle': circle,
-      });
+  Future<SosActivationResult> activateProtocol(SosIncident incident) async {
+    if (_isActivating) {
+      debugPrint('[SosBridge] Activation already in progress');
       return SosActivationResult(
         incident: incident,
         conversationId: null,
         calls: const [],
       );
     }
+    _isActivating = true;
 
-    // ✅ FIX : log structuré au lieu de catch silencieux
+    String? conversationId;
+    bool cameraStarted = false;
+
     try {
-      await _sos.escalateToCircle(incident.id, circle);
-      debugPrint('[SosBridge] ✓ Escalated to circle $circle');
-    } catch (e) {
-      debugPrint('[SosBridge] ⚠️ escalateToCircle failed: $e');
-    }
+      const circle = 1;
+      final contacts = await _sos.getContactsByCircle(circle);
+      debugPrint(
+        '[SosBridge] Activating — ' +
+            contacts.length.toString() +
+            ' contacts circle 1',
+      );
 
-    // ✅ FIX P1 : appels parallèles avec timeout global
-    final futures = contacts.map(
-      (c) => _callOneContact(
+      final userIds = <String>{};
+      if (incident.victimId.isNotEmpty) {
+        userIds.add(incident.victimId);
+      }
+      for (final c in contacts) {
+        final id = await _sos.resolveContactUserId(c);
+        if (id != null && id.isNotEmpty) userIds.add(id);
+      }
+
+      conversationId = await _bridgeRetry(
+        () => _sos.createSosChat(
+          incidentId: incident.id,
+          publicId: incident.publicId,
+          participantUserIds: userIds.toList(),
+        ),
+        label: 'createSosChat',
+        timeout: _kChatTimeout,
+      );
+      debugPrint('[SosBridge] Chat SOS created: ' + conversationId.toString());
+
+      final calls = await callCircle(
         incident: incident,
         circle: circle,
-        contact: c,
-      ),
-    );
-    final callResults = await Future.wait(futures);
+        contacts: contacts,
+      );
 
-    debugPrint('[SosBridge] ✓ callCircle: ${callResults.where((c) => c.success).length}/${callResults.length} success');
+      if (!kIsWeb) {
+        try {
+          final hasCam = await _ensureCameraPermission();
+          if (hasCam) {
+            await _bridgeRetry(
+              () => SosCrisisMediaService.instance
+                  .startVictimBroadcast(incident.id),
+              label: 'startVictimBroadcast',
+              timeout: _kCameraTimeout,
+            );
+            cameraStarted = true;
+            await _sos.logEventPublic(incident.id, 'CAMERA_CHANNEL_READY', {
+              'channel': SosCrisisMediaService.channelFor(incident.id),
+              'mode': 'victim_broadcast',
+            });
+          }
+        } catch (e) {
+          debugPrint('[SosBridge] Camera failed: ' + e.toString());
+        }
+      }
 
-    return SosActivationResult(
-      incident: incident,
-      conversationId: null,
-      calls: callResults,
-    );
+      try {
+        await _sos.logEventPublic(incident.id, 'SOS_STARTED', {
+          'incident_id': incident.id,
+          'circle1_user_ids': userIds.toList(),
+          'victim_id': incident.victimId,
+          'public_id': incident.publicId,
+          'conversation_id': conversationId,
+        });
+      } catch (e) {
+        debugPrint('[SosBridge] SOS_STARTED log failed: ' + e.toString());
+      }
+
+      try {
+        await SosVictimCaptureDaemon.instance.start(
+          incidentId: incident.id,
+          conversationId: conversationId,
+        );
+      } catch (e) {
+        debugPrint('[SosBridge] Daemon failed: ' + e.toString());
+      }
+
+      return SosActivationResult(
+        incident: incident,
+        conversationId: conversationId,
+        calls: calls.calls,
+      );
+    } catch (e, stack) {
+      debugPrint('[SosBridge] activateProtocol failed: ' + e.toString());
+      debugPrint('[SosBridge] Stack: ' + stack.toString());
+      await _cleanupOnError(incident.id, conversationId, cameraStarted);
+      rethrow;
+    } finally {
+      _isActivating = false;
+    }
   }
 
   Future<SosCallAttempt> _callOneContact({
