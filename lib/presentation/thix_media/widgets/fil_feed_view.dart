@@ -254,7 +254,6 @@ class _FilVideoCardState extends State<_FilVideoCard> {
 
   @override
   Widget build(BuildContext context) {
-    final cover = MediaSanitizer.imageUrl(widget.item.coverUrl);
     final avatar = MediaSanitizer.imageUrl(widget.creatorAvatar);
 
     return GestureDetector(
@@ -262,32 +261,30 @@ class _FilVideoCardState extends State<_FilVideoCard> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Fallback image
-          if (cover != null) CachedNetworkImage(imageUrl: cover, fit: BoxFit.cover) else Container(color: Colors.black),
-          
-          // ✅ VIDÉO FULL SCREEN RÉELLE (BoxFit.cover pour s'étendre partout)
+          // ✅ LE LECTEUR VIDÉO GÈRE LUI-MÊME SON AFFICHAGE
           Container(
             color: Colors.black,
             child: FeedVideoPlayer(
               videoUrl: widget.item.videoUrl,
               coverUrl: widget.item.coverUrl,
               isPlaying: widget.isCurrent,
-              enforceCoverFit: true, // Demande le plein écran au lecteur
               onPlayStateChanged: (_) {},
             ),
           ),
           
-          // Ombre légère en bas pour rendre le texte lisible sur les vidéos claires
+          // Ombre légère en bas pour rendre le texte lisible
           Positioned(
             left: 0, right: 0, bottom: 0,
             height: 180,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter, end: Alignment.topCenter,
-                  colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter, end: Alignment.topCenter,
+                    colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
+                  )
                 )
-              )
+              ),
             )
           ),
 
@@ -305,38 +302,38 @@ class _FilVideoCardState extends State<_FilVideoCard> {
             ),
           ),
 
-          // ✅ NOUVELLE DISPOSITION : Horizontale en bas
+          // ✅ NOUVELLE DISPOSITION COMPACTE (Texte + Boutons alignés)
           Positioned(
             left: 16,
             right: 16,
-            bottom: 24, // Espace par rapport au bas de l'écran
+            bottom: 24, // Légèrement au-dessus de la barre de progression
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 1. Ligne Créateur & Titre
+                // Ligne Créateur & Titre
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     GestureDetector(
                       onTap: widget.onOpenProfile,
                       child: Container(
-                        width: 44, height: 44,
+                        width: 42, height: 42,
                         decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1.5)),
                         child: ClipOval(
                           child: avatar != null
                               ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover)
-                              : Container(color: Colors.white24, child: const Icon(Icons.person, color: Colors.white)),
+                              : Container(color: Colors.white24, child: const Icon(Icons.person, color: Colors.white, size: 20)),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: GestureDetector(
                         onTap: widget.onOpenProfile,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('@${widget.displayName}', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, shadows: [Shadow(color: Colors.black45, blurRadius: 4)])),
+                            Text('@${widget.displayName}', style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900, shadows: [Shadow(color: Colors.black45, blurRadius: 4)])),
                             const SizedBox(height: 2),
                             Text(
                               MediaSanitizer.text(widget.item.title, maxLength: MediaConfig.maxTitleLength),
@@ -358,8 +355,8 @@ class _FilVideoCardState extends State<_FilVideoCard> {
                       ),
                   ],
                 ),
-                const SizedBox(height: 20),
-                // 2. Ligne des Boutons d'Action Horizontale
+                const SizedBox(height: 12), // ✅ Espace réduit
+                // Ligne des Boutons d'Action Horizontale
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
@@ -377,13 +374,13 @@ class _FilVideoCardState extends State<_FilVideoCard> {
                     ),
                     _actionBtn(
                       icon: Icons.remove_red_eye_outlined,
-                      text: formatMediaNumber(widget.viewCount), // Retour des vues
+                      text: formatMediaNumber(widget.viewCount), // ✅ Vues bien présentes
                       color: Colors.white,
-                      onTap: () {}, // Info visuelle
+                      onTap: () {}, 
                     ),
                     _actionBtn(
                       icon: Icons.fullscreen_rounded,
-                      text: '', // Pas de texte, juste l'icône
+                      text: '', 
                       color: Colors.white,
                       onTap: widget.onOpenDetail,
                     ),
@@ -404,10 +401,10 @@ class _FilVideoCardState extends State<_FilVideoCard> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 26, shadows: const [Shadow(color: Colors.black45, blurRadius: 6)]),
+          Icon(icon, color: color, size: 24, shadows: const [Shadow(color: Colors.black45, blurRadius: 6)]),
           if (text.isNotEmpty) ...[
-            const SizedBox(width: 6),
-            Text(text, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold, shadows: [Shadow(color: Colors.black45, blurRadius: 4)])),
+            const SizedBox(width: 4),
+            Text(text, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold, shadows: [Shadow(color: Colors.black45, blurRadius: 4)])),
           ]
         ],
       ),
