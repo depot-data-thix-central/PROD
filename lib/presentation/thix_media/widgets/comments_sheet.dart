@@ -244,7 +244,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
       _controller.clear();
       _focusNode.unfocus();
       setState(() => _replyingTo = null);
-      ref.invalidate(commentCountProvider(widget.mediaId));
+      ref.invalidate(mediaCommentCountProvider(widget.mediaId));
     } catch (e) {
       debugPrint('[Comments] Submit failed: $e');
       _showError('comments_send_error');
@@ -261,7 +261,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
           .eq('id', id)
           .timeout(_kQueryTimeout);
       _fetchRoots();
-      ref.invalidate(commentCountProvider(widget.mediaId));
+      ref.invalidate(mediaCommentCountProvider(widget.mediaId));
     } catch (e) {
       debugPrint('[Comments] Delete failed: $e');
       _showError('comments_delete_error');
