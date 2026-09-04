@@ -17,7 +17,7 @@ import 'package:thix_id/presentation/thix_media/providers/thix_media_provider.da
 import 'package:thix_id/services/media_service.dart';
 
 // ✅ Imports de ton fichier parent
-import '../thix_media_page.dart' show MediaConfig, MediaSanitizer, formatMediaNumber;
+import '../thix_media_page.dart';
 import '../user_profile_page.dart';
 import 'feed_video_player.dart';
 import 'comments_sheet.dart';
