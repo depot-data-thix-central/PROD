@@ -11,31 +11,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/media_content.dart';
 import 'package:thix_id/presentation/thix_media/providers/thix_media_provider.dart';
 import 'package:thix_id/services/media_service.dart';
 
-// ✅ Imports de ton fichier parent
-import '../thix_media_page.dart';
+import '../thix_media_page.dart' show MediaConfig, MediaSanitizer, formatMediaNumber;
 import '../user_profile_page.dart';
 import 'feed_video_player.dart';
 import 'comments_sheet.dart';
 
-// ============================================================================
-// MIX INTELLIGENT DU FIL
-// ============================================================================
-
 class SmartFeedMixer {
   SmartFeedMixer._();
 
-  static double _score(MediaContent item, Random rng) {
-    final base = (item.likeCount * MediaConfig.likeWeight) + (item.commentCount * MediaConfig.commentWeight) + (item.viewCount * MediaConfig.viewWeight);
-    final jitter = MediaConfig.explorationMin + rng.nextDouble() * MediaConfig.explorationRange;
-    return (base <= 0 ? 1.0 : base) * jitter;
-  }
-
   static List<MediaContent> mix(List<MediaContent> catalog, {int? seed}) {
+    if (catalog.isEmpty) return [];
     if (catalog.length <= 2) return List.of(catalog);
     final rng = Random(seed);
 
@@ -44,32 +33,21 @@ class SmartFeedMixer {
       final key = (item.userId?.isNotEmpty ?? false) ? item.userId! : 'solo_${item.id}';
       buckets.putIfAbsent(key, () => []).add(item);
     }
-    for (final bucket in buckets.values) {
-      bucket.sort((a, b) => _score(b, rng).compareTo(_score(a, rng)));
-    }
 
     final result = <MediaContent>[];
     final keys = buckets.keys.toList();
     while (keys.any((k) => buckets[k]!.isNotEmpty)) {
       final available = keys.where((k) => buckets[k]!.isNotEmpty).toList();
-      final weights = available.map((k) => _score(buckets[k]!.first, rng)).toList();
-      final total = weights.fold<double>(0, (a, b) => a + b);
-      var pick = total <= 0 ? 0.0 : rng.nextDouble() * total;
-      var chosen = 0;
-      for (var i = 0; i < weights.length; i++) {
-        pick -= weights[i];
-        chosen = i;
-        if (pick <= 0) break;
+      available.shuffle(rng);
+      for (final k in available) {
+        if (buckets[k]!.isNotEmpty) {
+          result.add(buckets[k]!.removeAt(0));
+        }
       }
-      result.add(buckets[available[chosen]]!.removeAt(0));
     }
     return result;
   }
 }
-
-// ============================================================================
-// WIDGET PRINCIPAL
-// ============================================================================
 
 class FilFeedView extends ConsumerStatefulWidget {
   final List<MediaContent> catalog;
@@ -99,17 +77,19 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
   @override
   void didUpdateWidget(covariant FilFeedView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final newItems = widget.catalog.where((e) => !_seenIds.contains(e.id)).toList();
-    if (newItems.isNotEmpty) {
-      final mixedNew = SmartFeedMixer.mix(newItems);
-      setState(() {
-        _mixedFeed.addAll(mixedNew);
-        _seenIds.addAll(mixedNew.map((e) => e.id));
-      });
-      for (final item in mixedNew) {
-        _localLikeCounts[item.id] = item.likeCount;
+    if (widget.catalog.length != oldWidget.catalog.length) {
+      final newItems = widget.catalog.where((e) => !_seenIds.contains(e.id)).toList();
+      if (newItems.isNotEmpty) {
+        final mixedNew = SmartFeedMixer.mix(newItems);
+        setState(() {
+          _mixedFeed.addAll(mixedNew);
+          _seenIds.addAll(mixedNew.map((e) => e.id));
+        });
+        for (final item in mixedNew) {
+          _localLikeCounts[item.id] = item.likeCount;
+        }
+        _syncLikedStatus(mixedNew.map((e) => e.id).toList());
       }
-      _syncLikedStatus(mixedNew.map((e) => e.id).toList());
     }
   }
 
@@ -135,10 +115,10 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
     } catch (_) {}
   }
 
-  Future<void> _toggleLike(MediaContent item, AppLocalizations l10n) async {
+  Future<void> _toggleLike(MediaContent item) async {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('media_login_to_like').isNotEmpty ? l10n.t('media_login_to_like') : 'Veuillez vous connecter')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Veuillez vous connecter pour aimer')));
       return;
     }
     HapticFeedback.selectionClick();
@@ -178,9 +158,17 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     if (_mixedFeed.isEmpty) {
-      return Center(child: Text(l10n.t('media_feed_empty').isNotEmpty ? l10n.t('media_feed_empty') : 'Aucun contenu', style: const TextStyle(color: Colors.white54)));
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32.0),
+          child: Text(
+            'Aucune vidéo disponible dans le fil pour le moment.\nAjoutez des contenus via l\'admin.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+        ),
+      );
     }
 
     return PageView.builder(
@@ -211,9 +199,9 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
           displayName: '$displayName',
           creatorAvatar: creatorProfile?['avatar_url'] as String?,
           showFollow: showFollow,
-          onLike: () => _toggleLike(item, l10n),
+          onLike: () => _toggleLike(item),
           onDoubleTapLike: () {
-            if (!(_localLikes[item.id] ?? false)) _toggleLike(item, l10n);
+            if (!(_localLikes[item.id] ?? false)) _toggleLike(item);
           },
           onComment: () => _openComments(item),
           onOpenDetail: () => widget.onOpenDetail(item),
@@ -274,16 +262,36 @@ class _FilVideoCardState extends State<_FilVideoCard> {
       child: Stack(
         fit: StackFit.expand,
         children: [
+          // Fallback image
           if (cover != null) CachedNetworkImage(imageUrl: cover, fit: BoxFit.cover) else Container(color: Colors.black),
-          BackdropFilter(filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30), child: Container(color: Colors.black.withValues(alpha: 0.5))),
-          Center(
+          
+          // ✅ VIDÉO FULL SCREEN RÉELLE (BoxFit.cover pour s'étendre partout)
+          Container(
+            color: Colors.black,
             child: FeedVideoPlayer(
               videoUrl: widget.item.videoUrl,
               coverUrl: widget.item.coverUrl,
               isPlaying: widget.isCurrent,
+              enforceCoverFit: true, // Demande le plein écran au lecteur
               onPlayStateChanged: (_) {},
             ),
           ),
+          
+          // Ombre légère en bas pour rendre le texte lisible sur les vidéos claires
+          Positioned(
+            left: 0, right: 0, bottom: 0,
+            height: 180,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter, end: Alignment.topCenter,
+                  colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
+                )
+              )
+            )
+          ),
+
+          // Animation du cœur (Double tap)
           AnimatedOpacity(
             opacity: _showHeart ? 1 : 0,
             duration: const Duration(milliseconds: 150),
@@ -296,73 +304,92 @@ class _FilVideoCardState extends State<_FilVideoCard> {
               ),
             ),
           ),
+
+          // ✅ NOUVELLE DISPOSITION : Horizontale en bas
           Positioned(
-            right: 12,
-            bottom: 110,
+            left: 16,
+            right: 16,
+            bottom: 24, // Espace par rapport au bas de l'écran
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                GestureDetector(
-                  onTap: widget.onOpenProfile,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Container(
-                        width: 46, height: 46,
-                        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
+                // 1. Ligne Créateur & Titre
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    GestureDetector(
+                      onTap: widget.onOpenProfile,
+                      child: Container(
+                        width: 44, height: 44,
+                        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1.5)),
                         child: ClipOval(
                           child: avatar != null
                               ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover)
                               : Container(color: Colors.white24, child: const Icon(Icons.person, color: Colors.white)),
                         ),
                       ),
-                      if (widget.showFollow)
-                        Positioned(
-                          bottom: -6, left: 13,
-                          child: GestureDetector(
-                            onTap: widget.onFollow,
-                            child: Container(
-                              width: 20, height: 20,
-                              decoration: BoxDecoration(shape: BoxShape.circle, color: ThixPolicy.primary, border: Border.all(color: Colors.white, width: 2)),
-                              child: const Icon(Icons.add_rounded, size: 13, color: Colors.white),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 18),
-                _sideAction(icon: widget.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded, label: formatMediaNumber(widget.likeCount), color: widget.isLiked ? ThixPolicy.danger : Colors.white, onTap: widget.onLike),
-                const SizedBox(height: 16),
-                _sideAction(icon: Icons.chat_bubble_rounded, label: formatMediaNumber(widget.commentCount), color: Colors.white, onTap: widget.onComment),
-                const SizedBox(height: 16),
-                _sideAction(icon: Icons.fullscreen_rounded, label: '', color: Colors.white, onTap: widget.onOpenDetail),
-              ],
-            ),
-          ),
-          Positioned(
-            left: 16,
-            right: 88,
-            bottom: 28,
-            child: GestureDetector(
-              onTap: widget.onOpenProfile,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('@${widget.displayName}', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 4),
-                  Row(children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(color: ThixPolicy.primary, borderRadius: BorderRadius.circular(6)),
-                      child: Text(widget.item.type.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 12),
                     Expanded(
-                        child: Text(MediaSanitizer.text(widget.item.title, maxLength: MediaConfig.maxTitleLength),
-                            maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700))),
-                  ]),
-                ],
-              ),
+                      child: GestureDetector(
+                        onTap: widget.onOpenProfile,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('@${widget.displayName}', style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, shadows: [Shadow(color: Colors.black45, blurRadius: 4)])),
+                            const SizedBox(height: 2),
+                            Text(
+                              MediaSanitizer.text(widget.item.title, maxLength: MediaConfig.maxTitleLength),
+                              maxLines: 2, overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500, shadows: [Shadow(color: Colors.black45, blurRadius: 4)]),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (widget.showFollow)
+                      GestureDetector(
+                        onTap: widget.onFollow,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(color: ThixPolicy.primary, borderRadius: BorderRadius.circular(16)),
+                          child: const Text('Suivre', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                // 2. Ligne des Boutons d'Action Horizontale
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _actionBtn(
+                      icon: widget.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                      text: formatMediaNumber(widget.likeCount),
+                      color: widget.isLiked ? ThixPolicy.danger : Colors.white,
+                      onTap: widget.onLike,
+                    ),
+                    _actionBtn(
+                      icon: Icons.chat_bubble_outline_rounded,
+                      text: formatMediaNumber(widget.commentCount),
+                      color: Colors.white,
+                      onTap: widget.onComment,
+                    ),
+                    _actionBtn(
+                      icon: Icons.remove_red_eye_outlined,
+                      text: formatMediaNumber(widget.viewCount), // Retour des vues
+                      color: Colors.white,
+                      onTap: () {}, // Info visuelle
+                    ),
+                    _actionBtn(
+                      icon: Icons.fullscreen_rounded,
+                      text: '', // Pas de texte, juste l'icône
+                      color: Colors.white,
+                      onTap: widget.onOpenDetail,
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
@@ -370,17 +397,18 @@ class _FilVideoCardState extends State<_FilVideoCard> {
     );
   }
 
-  Widget _sideAction({required IconData icon, required String label, required Color color, required VoidCallback onTap}) {
+  Widget _actionBtn({required IconData icon, required String text, required Color color, required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Column(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 30),
-          if (label.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-          ],
+          Icon(icon, color: color, size: 26, shadows: const [Shadow(color: Colors.black45, blurRadius: 6)]),
+          if (text.isNotEmpty) ...[
+            const SizedBox(width: 6),
+            Text(text, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold, shadows: [Shadow(color: Colors.black45, blurRadius: 4)])),
+          ]
         ],
       ),
     );
