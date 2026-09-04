@@ -50,7 +50,6 @@ class MediaLightPalette {
   static const Color textPrimary = Color(0xFF0F172A);
   static const Color textSecondary = Color(0xFF475569);
   static const Color textMuted = Color(0xFF94A3B8);
-  static const Color accentAudio = Color(0xFF8B5CF6);
 }
 
 class MediaSanitizer {
@@ -113,7 +112,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   Timer? _scrollThrottle;
   Timer? _heroAutoScroll;
   
-  // ✅ Gestion de l'Auto-Hide pour le mode Fil
   bool _showFilUI = true;
   Timer? _filUITimer;
 
@@ -149,7 +147,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     super.dispose();
   }
 
-  // ✅ Méthode pour afficher et faire disparaître le haut de l'écran après 3s
   void _wakeUpFilUI() {
     if (!mounted) return;
     setState(() => _showFilUI = true);
@@ -253,7 +250,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     final strFil = _safeTr(l10n, 'category_feed', 'Fil');
     final strTous = _safeTr(l10n, 'category_all', 'Tous');
 
-    // Surveille les changements vers la catégorie "Fil" pour déclencher l'auto-hide
     ref.listen<String>(selectedCategoryProvider, (prev, next) {
       if (next == 'Fil' || next == strFil) {
         _wakeUpFilUI();
@@ -278,13 +274,11 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   Widget _buildMainContent(BuildContext context, AppLocalizations l10n, List<MediaContent> catalog, bool isAdmin, String selectedCategory, String strFil, String strTous) {
     final categories = _computeCategories(catalog, strTous, strFil);
 
-    // ── MODE FIL (TIKTOK FULL SCREEN + AUTO-HIDE) ─────────────────────────
     if (selectedCategory == strFil || selectedCategory == 'Fil') {
       return Container(
         color: Colors.black,
         child: Stack(
           children: [
-            // Le Listener réveille l'interface si l'utilisateur touche/swipe l'écran
             Listener(
               onPointerDown: (_) => _wakeUpFilUI(),
               child: Positioned.fill(
@@ -296,14 +290,13 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                 ),
               ),
             ),
-            // ✅ Le Header et les Categories disparaissent automatiquement
             Positioned(
               top: 0, left: 0, right: 0,
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 300),
                 opacity: _showFilUI ? 1.0 : 0.0,
                 child: IgnorePointer(
-                  ignoring: !_showFilUI, // Rend la barre incliquable quand elle est invisible
+                  ignoring: !_showFilUI,
                   child: SafeArea(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -321,7 +314,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
       );
     }
 
-    // ── MODE GRILLE (CATALOGUE) ──────────────────────────────────────────
     final filtered = (selectedCategory == strTous || selectedCategory == 'Tous')
         ? catalog
         : catalog.where((e) => e.type == selectedCategory).toList();
@@ -344,12 +336,11 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
             SliverFillRemaining(hasScrollBody: false, child: _buildEmptyState(l10n))
           else ...[
             SliverToBoxAdapter(child: _buildHero(l10n, catalog)),
-            SliverToBoxAdapter(child: _buildAudioRoomsRail(l10n)), 
             SliverToBoxAdapter(child: _buildCategoryChips(categories, selectedCategory, isDarkBg: false)),
             if (series.isNotEmpty) SliverToBoxAdapter(child: _buildSeriesRail(l10n, series)),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12), // ✅ Espaces réduits ici
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
                 child: Text(
                   (selectedCategory == strTous || selectedCategory == 'Tous') ? _safeTr(l10n, 'media_catalog', 'Catalogue TDIA') : selectedCategory,
                   style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.3),
@@ -383,7 +374,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
 
   Widget _buildCategoryChips(List<String> categories, String selected, {bool isDarkBg = false}) {
     return Padding(
-      padding: const EdgeInsets.only(top: 8), // ✅ Espace réduit
+      padding: const EdgeInsets.only(top: 8),
       child: SizedBox(
         height: 38,
         child: ListView.separated(
@@ -693,86 +684,9 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
-  Widget _buildAudioRoomsRail(AppLocalizations l10n) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 8), // ✅ Espaces réduits ici
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(color: MediaLightPalette.accentAudio.withValues(alpha: 0.1), shape: BoxShape.circle),
-                  child: const Icon(Icons.mic_rounded, size: 16, color: MediaLightPalette.accentAudio),
-                ),
-                const SizedBox(width: 8),
-                Text(_safeTr(l10n, 'media_audio_rooms', 'Salons Audio en direct'), style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 16, fontWeight: FontWeight.w900)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 110,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              itemCount: 3,
-              separatorBuilder: (_, __) => const SizedBox(width: 14),
-              itemBuilder: (c, i) => Container(
-                width: 220,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: MediaLightPalette.surface,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: MediaLightPalette.accentAudio.withValues(alpha: 0.3), width: 1.5),
-                  boxShadow: [BoxShadow(color: MediaLightPalette.accentAudio.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.graphic_eq_rounded, color: MediaLightPalette.accentAudio, size: 14),
-                        const SizedBox(width: 6),
-                        const Expanded(child: Text('L\'entrepreneuriat en RDC', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: MediaLightPalette.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                      ],
-                    ),
-                    const Spacer(),
-                    Row(
-                      children: [
-                        SizedBox(
-                          width: 50, height: 24,
-                          child: Stack(
-                            children: const [
-                              Positioned(left: 0, child: CircleAvatar(radius: 12, backgroundColor: MediaLightPalette.border, child: Icon(Icons.person, size: 12))),
-                              Positioned(left: 14, child: CircleAvatar(radius: 12, backgroundColor: MediaLightPalette.border, child: Icon(Icons.person, size: 12))),
-                            ],
-                          ),
-                        ),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(color: MediaLightPalette.accentAudio, borderRadius: BorderRadius.circular(10)),
-                          child: Text(_safeTr(l10n, 'common_join', 'Rejoindre'), style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                        )
-                      ],
-                    )
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSeriesRail(AppLocalizations l10n, List<MediaContent> series) {
     return Padding(
-      padding: const EdgeInsets.only(top: 16), // ✅ Espace réduit
+      padding: const EdgeInsets.only(top: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
