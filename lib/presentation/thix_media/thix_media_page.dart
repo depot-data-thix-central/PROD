@@ -363,8 +363,8 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                   (c, i) => RepaintBoundary(
                     child: MediaPosterCard(
                       item: filtered[i],
-                      formatNumber: formatMediaNumber,
-                      buildImage: _buildImage,
+                     //formatNumber: formatMediaNumber,
+                      //buildImage: _buildImage,
                       onTap: () => _openDetail(filtered[i]),
                     ),
                   ),
@@ -815,8 +815,8 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                   width: 130,
                   child: MediaPosterCard(
                     item: series[i],
-                    formatNumber: formatMediaNumber,
-                    buildImage: _buildImage,
+                    //formatNumber: formatMediaNumber,
+                    //buildImage: _buildImage,
                     onTap: () => _openDetail(series[i]),
                     compact: true,
                   ),
