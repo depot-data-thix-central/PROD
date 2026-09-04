@@ -114,6 +114,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   
   bool _showFilUI = true;
   Timer? _filUITimer;
+  DateTime _lastTimerReset = DateTime.now();
 
   bool _showSearchOverlay = false;
   String _searchQuery = '';
@@ -147,13 +148,24 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     super.dispose();
   }
 
+  // ✅ CORRECTION DU FREEZE : Gestion intelligente de l'apparition des menus
   void _wakeUpFilUI() {
     if (!mounted) return;
-    setState(() => _showFilUI = true);
-    _filUITimer?.cancel();
-    _filUITimer = Timer(const Duration(seconds: 3), () {
-      if (mounted) setState(() => _showFilUI = false);
-    });
+    
+    // N'appelle setState que si c'est vraiment nécessaire (Évite la boucle infinie)
+    if (!_showFilUI) {
+      setState(() => _showFilUI = true);
+    }
+    
+    final now = DateTime.now();
+    // Ne recrée le timer que toutes les 500ms pour ne pas surcharger le processeur
+    if (_filUITimer == null || !_filUITimer!.isActive || now.difference(_lastTimerReset).inMilliseconds > 500) {
+      _lastTimerReset = now;
+      _filUITimer?.cancel();
+      _filUITimer = Timer(const Duration(seconds: 3), () {
+        if (mounted && _showFilUI) setState(() => _showFilUI = false);
+      });
+    }
   }
 
   String _safeTr(AppLocalizations l10n, String key, String fallback) {
@@ -253,6 +265,9 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     ref.listen<String>(selectedCategoryProvider, (prev, next) {
       if (next == 'Fil' || next == strFil) {
         _wakeUpFilUI();
+      } else {
+        _filUITimer?.cancel();
+        _showFilUI = true;
       }
     });
 
@@ -274,19 +289,20 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   Widget _buildMainContent(BuildContext context, AppLocalizations l10n, List<MediaContent> catalog, bool isAdmin, String selectedCategory, String strFil, String strTous) {
     final categories = _computeCategories(catalog, strTous, strFil);
 
+    // ── MODE FIL (TIKTOK FULL SCREEN + AUTO-HIDE FIXÉ) ─────────────────────────
     if (selectedCategory == strFil || selectedCategory == 'Fil') {
       return Container(
         color: Colors.black,
         child: Stack(
           children: [
-            Listener(
-              onPointerDown: (_) => _wakeUpFilUI(),
-              child: Positioned.fill(
+            // ✅ CORRECTION DU FREEZE : Suppression de NotificationListener
+            Positioned.fill(
+              child: Listener(
+                onPointerDown: (_) => _wakeUpFilUI(),
+                onPointerMove: (_) => _wakeUpFilUI(),
+                behavior: HitTestBehavior.translucent, // Capte les touchés sur la vidéo
                 child: RepaintBoundary(
-                  child: NotificationListener<ScrollNotification>(
-                    onNotification: (_) { _wakeUpFilUI(); return false; },
-                    child: FilFeedView(catalog: catalog, onOpenDetail: _openDetail),
-                  ),
+                  child: FilFeedView(catalog: catalog, onOpenDetail: _openDetail),
                 ),
               ),
             ),
@@ -314,6 +330,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
       );
     }
 
+    // ── MODE GRILLE (CATALOGUE) ──────────────────────────────────────────
     final filtered = (selectedCategory == strTous || selectedCategory == 'Tous')
         ? catalog
         : catalog.where((e) => e.type == selectedCategory).toList();
@@ -367,8 +384,11 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
+  // ✅ CORRECTION DU DOUBLE BOUTON FIL ET OPPORTUNITÉS
   List<String> _computeCategories(List<MediaContent> catalog, String strTous, String strFil) {
-    final types = catalog.map((e) => e.type).where((t) => t.isNotEmpty).toSet().toList()..sort();
+    final types = catalog.map((e) => e.type)
+        .where((t) => t.isNotEmpty && t != 'Fil' && t != strFil && t != 'Opportunités')
+        .toSet().toList()..sort();
     return [strTous, strFil, 'Opportunités', ...types]; 
   }
 
