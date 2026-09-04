@@ -1,11 +1,4 @@
 // lib/presentation/thix_media/thix_media_page.dart
-//
-// ThixMediaPage (TDIA) — "Modern Sleek Light" (Production Enterprise)
-//
-// - Design 100% refait : Thème BLANC / CLAIR éclatant (Sleek Glassmorphism).
-// - Fichier allégé : Le Fil (TikTok) est déporté dans /widgets.
-// - Navigation gérée classiquement via Navigator.push.
-// - i18n Safe : Disparition totale des clés brutes (category_all, etc.) via fallback.
 
 import 'dart:async';
 import 'dart:ui';
@@ -22,16 +15,12 @@ import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/media_content.dart';
 import 'package:thix_id/presentation/thix_media/providers/thix_media_provider.dart';
 
-// ✅ IMPORTS DE TES WIDGETS ET PAGES
 import 'widgets/fil_feed_view.dart';
 import 'widgets/media_detail_page.dart';
 import 'admin/thix_media_admin_page.dart';
 import 'create_post_page.dart';
 import 'user_profile_page.dart';
 
-// ============================================================================
-// CONFIGURATION GLOBALE
-// ============================================================================
 class MediaConfig {
   MediaConfig._();
   static const double glassBlur = kIsWeb ? 8 : 16;
@@ -51,7 +40,6 @@ class MediaConfig {
   static const double viewWeight = 0.05;
   static const double explorationMin = 0.65;
   static const double explorationRange = 0.7;
-
 }
 
 class MediaLightPalette {
@@ -94,13 +82,11 @@ class AnalyticsBatcher {
   AnalyticsBatcher._();
   static final Set<String> _pending = {};
   static Timer? _timer;
-
   static void register(String id) {
     if (!MediaSanitizer.isValidId(id)) return;
     _pending.add(id);
     _timer ??= Timer(MediaConfig.analyticsFlushDelay, _flush);
   }
-
   static Future<void> _flush() async {
     if (_pending.isEmpty) { _timer = null; return; }
     final batch = _pending.toList();
@@ -108,13 +94,8 @@ class AnalyticsBatcher {
     _timer = null;
     try { await Supabase.instance.client.rpc('batch_register_views', params: {'p_media_ids': batch}).timeout(MediaConfig.networkTimeout); } catch (_) { _pending.addAll(batch); }
   }
-
   static void dispose() { _timer?.cancel(); _timer = null; }
 }
-
-// ============================================================================
-// PAGE PRINCIPALE THIX MEDIA
-// ============================================================================
 
 class ThixMediaPage extends ConsumerStatefulWidget {
   const ThixMediaPage({super.key});
@@ -131,6 +112,10 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   Timer? _searchDebounce;
   Timer? _scrollThrottle;
   Timer? _heroAutoScroll;
+  
+  // ✅ Gestion de l'Auto-Hide pour le mode Fil
+  bool _showFilUI = true;
+  Timer? _filUITimer;
 
   bool _showSearchOverlay = false;
   String _searchQuery = '';
@@ -159,11 +144,21 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     _searchDebounce?.cancel();
     _scrollThrottle?.cancel();
     _heroAutoScroll?.cancel();
+    _filUITimer?.cancel();
     AnalyticsBatcher.dispose();
     super.dispose();
   }
 
-  // ✅ HELPER DE SÉCURITÉ POUR LES TRADUCTIONS (Évite les clés brutes)
+  // ✅ Méthode pour afficher et faire disparaître le haut de l'écran après 3s
+  void _wakeUpFilUI() {
+    if (!mounted) return;
+    setState(() => _showFilUI = true);
+    _filUITimer?.cancel();
+    _filUITimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _showFilUI = false);
+    });
+  }
+
   String _safeTr(AppLocalizations l10n, String key, String fallback) {
     final val = l10n.t(key);
     if (val.isEmpty || val == key) return fallback;
@@ -221,8 +216,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     });
   }
 
-  // ── Navigation (Navigator.push classique pour éviter l'erreur Route non trouvée) ──
-
   void _openDetail(MediaContent item) {
     if (!mounted || !MediaSanitizer.isValidId(item.id)) return;
     AnalyticsBatcher.register(item.id);
@@ -260,6 +253,13 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     final strFil = _safeTr(l10n, 'category_feed', 'Fil');
     final strTous = _safeTr(l10n, 'category_all', 'Tous');
 
+    // Surveille les changements vers la catégorie "Fil" pour déclencher l'auto-hide
+    ref.listen<String>(selectedCategoryProvider, (prev, next) {
+      if (next == 'Fil' || next == strFil) {
+        _wakeUpFilUI();
+      }
+    });
+
     return Scaffold(
       backgroundColor: MediaLightPalette.background,
       body: asyncMedia.when(
@@ -278,29 +278,41 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   Widget _buildMainContent(BuildContext context, AppLocalizations l10n, List<MediaContent> catalog, bool isAdmin, String selectedCategory, String strFil, String strTous) {
     final categories = _computeCategories(catalog, strTous, strFil);
 
-    // ── MODE FIL (TIKTOK) ────────────────────────────────────────────────
+    // ── MODE FIL (TIKTOK FULL SCREEN + AUTO-HIDE) ─────────────────────────
     if (selectedCategory == strFil || selectedCategory == 'Fil') {
       return Container(
-        color: Colors.black, // Fond noir forcé pour la vidéo
+        color: Colors.black,
         child: Stack(
           children: [
-            Positioned.fill(
-              child: RepaintBoundary(
-                child: FilFeedView(
-                  catalog: catalog,
-                  onOpenDetail: _openDetail,
+            // Le Listener réveille l'interface si l'utilisateur touche/swipe l'écran
+            Listener(
+              onPointerDown: (_) => _wakeUpFilUI(),
+              child: Positioned.fill(
+                child: RepaintBoundary(
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: (_) { _wakeUpFilUI(); return false; },
+                    child: FilFeedView(catalog: catalog, onOpenDetail: _openDetail),
+                  ),
                 ),
               ),
             ),
+            // ✅ Le Header et les Categories disparaissent automatiquement
             Positioned(
               top: 0, left: 0, right: 0,
-              child: SafeArea(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildTransparentHeader(l10n, isAdmin),
-                    _buildCategoryChips(categories, selectedCategory, isDarkBg: true),
-                  ],
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 300),
+                opacity: _showFilUI ? 1.0 : 0.0,
+                child: IgnorePointer(
+                  ignoring: !_showFilUI, // Rend la barre incliquable quand elle est invisible
+                  child: SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildTransparentHeader(l10n, isAdmin),
+                        _buildCategoryChips(categories, selectedCategory, isDarkBg: true),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -337,7 +349,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
             if (series.isNotEmpty) SliverToBoxAdapter(child: _buildSeriesRail(l10n, series)),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12), // ✅ Espaces réduits ici
                 child: Text(
                   (selectedCategory == strTous || selectedCategory == 'Tous') ? _safeTr(l10n, 'media_catalog', 'Catalogue TDIA') : selectedCategory,
                   style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.3),
@@ -364,10 +376,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
-  // ========================================================================
-  // CATEGORY CHIPS
-  // ========================================================================
-
   List<String> _computeCategories(List<MediaContent> catalog, String strTous, String strFil) {
     final types = catalog.map((e) => e.type).where((t) => t.isNotEmpty).toSet().toList()..sort();
     return [strTous, strFil, 'Opportunités', ...types]; 
@@ -375,7 +383,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
 
   Widget _buildCategoryChips(List<String> categories, String selected, {bool isDarkBg = false}) {
     return Padding(
-      padding: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.only(top: 8), // ✅ Espace réduit
       child: SizedBox(
         height: 38,
         child: ListView.separated(
@@ -421,10 +429,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
-  // ========================================================================
-  // HEADERS (SliverAppBar & Transparent)
-  // ========================================================================
-
   Widget _buildSliverHeader(AppLocalizations l10n, bool isAdmin) {
     return SliverAppBar(
       pinned: true,
@@ -434,7 +438,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
       toolbarHeight: 70,
       leading: IconButton(
         icon: const Icon(Icons.arrow_back, color: MediaLightPalette.textPrimary),
-        onPressed: () => Navigator.of(context).pop(), // Bouton retour visible sur la capture
+        onPressed: () => Navigator.of(context).pop(),
       ),
       flexibleSpace: ClipRRect(
         child: BackdropFilter(
@@ -473,7 +477,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
 
   Widget _buildTransparentHeader(AppLocalizations l10n, bool isAdmin) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Row(
         children: [
           IconButton(
@@ -573,10 +577,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
       ),
     );
   }
-
-  // ========================================================================
-  // HERO CAROUSEL
-  // ========================================================================
 
   Widget _buildHero(AppLocalizations l10n, List<MediaContent> catalog) {
     final featured = catalog.take(MediaConfig.maxHeroItems).toList();
@@ -693,13 +693,9 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
-  // ========================================================================
-  // AUDIO ROOMS RAIL
-  // ========================================================================
-
   Widget _buildAudioRoomsRail(AppLocalizations l10n) {
     return Padding(
-      padding: const EdgeInsets.only(top: 24, bottom: 8),
+      padding: const EdgeInsets.only(top: 16, bottom: 8), // ✅ Espaces réduits ici
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -774,13 +770,9 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
-  // ========================================================================
-  // SERIES RAIL
-  // ========================================================================
-
   Widget _buildSeriesRail(AppLocalizations l10n, List<MediaContent> series) {
     return Padding(
-      padding: const EdgeInsets.only(top: 24),
+      padding: const EdgeInsets.only(top: 16), // ✅ Espace réduit
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -822,10 +814,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
       ),
     );
   }
-
-  // ========================================================================
-  // SEARCH OVERLAY
-  // ========================================================================
 
   Widget _buildSearchOverlay(BuildContext context, AppLocalizations l10n, List<MediaContent> catalog) {
     final results = _lowerQuery.isEmpty ? const <MediaContent>[] : catalog.where((e) => e.title.toLowerCase().contains(_lowerQuery)).toList();
@@ -910,10 +898,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
-  // ========================================================================
-  // ERROR / EMPTY STATES
-  // ========================================================================
-
   Widget _buildErrorState(AppLocalizations l10n, Object error) {
     return Center(
       child: Padding(
@@ -961,10 +945,6 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   }
 }
 
-// ============================================================================
-// SKELETON
-// ============================================================================
-
 class _MediaSkeleton extends StatelessWidget {
   final AppLocalizations l10n;
   const _MediaSkeleton({required this.l10n});
@@ -989,10 +969,6 @@ class _MediaSkeleton extends StatelessWidget {
     );
   }
 }
-
-// ============================================================================
-// POSTER CARD
-// ============================================================================
 
 class MediaPosterCard extends StatelessWidget {
   final MediaContent item;
