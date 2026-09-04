@@ -30,19 +30,16 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
         r == AudioSpaceRole.cohost ||
         r == AudioSpaceRole.speaker;
   }
-  final audioSpaceControllerProvider = StateNotifierProvider.autoDispose
-    .family<AudioSpaceController, AudioSpaceState, AudioSpace>((ref, space) {
-  final c = AudioSpaceController(ref.read(audioSpaceServiceProvider), space);
-  ref.onDispose(c.disposeEngine);
-  return c;
-});
 
   Future<void> bootstrap({
     required String displayName,
     String? avatarUrl,
     bool isVerified = false,
   }) async {
-    state = state.copyWith(status: AudioSpaceScreenStatus.loading, errorMessage: null);
+    state = state.copyWith(
+      status: AudioSpaceScreenStatus.loading,
+      errorMessage: null,
+    );
     try {
       final meRow = await _service.joinSpace(
         _space,
@@ -55,18 +52,25 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
 
       await _loadRoster();
       await _loadChat();
-      await _startAgora(meRow);
       _listenRealtime();
       _listenChatTable();
-      _rosterTick = Timer.periodic(const Duration(seconds: 8), (_) => _loadRoster());
+      _rosterTick?.cancel();
+      _rosterTick =
+          Timer.periodic(const Duration(seconds: 8), (_) => _loadRoster());
 
       state = state.copyWith(
         status: AudioSpaceScreenStatus.ready,
         me: meRow,
         connected: true,
       );
+
+      try {
+        await _startAgora(meRow);
+      } catch (e) {
+        debugPrint('[AudioSpace] Agora: ' + e.toString());
+      }
     } catch (e) {
-      debugPrint('[AudioSpace] bootstrap: $e');
+      debugPrint('[AudioSpace] bootstrap: ' + e.toString());
       final msg = e.toString();
       final denied = msg.contains('Permission') || msg.contains('mic');
       state = state.copyWith(
@@ -80,35 +84,54 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
 
   Future<void> _startAgora(AudioSpaceParticipant meRow) async {
     final creds = await _service.fetchCredentials(_space.channelName);
+    if (creds.appId.isEmpty || creds.token.isEmpty) {
+      throw Exception('Token Agora incomplet');
+    }
+
+    if (_engine != null) {
+      try {
+        await _engine!.leaveChannel();
+        await _engine!.release();
+      } catch (_) {}
+      _engine = null;
+    }
+
     _engine = createAgoraRtcEngine();
     await _engine!.initialize(RtcEngineContext(
       appId: creds.appId,
       channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
     ));
     await _engine!.enableAudio();
-    await _engine!.disableVideo();
-    await _engine!.setEnableSpeakerphone(true);
+
+    if (!kIsWeb) {
+      try {
+        await _engine!.disableVideo();
+      } catch (_) {}
+      try {
+        await _engine!.setEnableSpeakerphone(true);
+      } catch (_) {}
+    }
 
     final talk = meRow.role == AudioSpaceRole.host ||
         meRow.role == AudioSpaceRole.cohost ||
         meRow.role == AudioSpaceRole.speaker;
+    final role = talk
+        ? ClientRoleType.clientRoleBroadcaster
+        : ClientRoleType.clientRoleAudience;
 
-    await _engine!.setClientRole(
-      role: talk
-          ? ClientRoleType.clientRoleBroadcaster
-          : ClientRoleType.clientRoleAudience,
-    );
+    await _engine!.setClientRole(role: role);
     await _engine!.muteLocalAudioStream(!talk || meRow.isMuted);
 
     await _engine!.joinChannel(
       token: creds.token,
       channelId: _space.channelName,
       uid: 0,
-      options: const ChannelMediaOptions(
-        publishMicrophoneTrack: true,
+      options: ChannelMediaOptions(
+        channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
+        clientRoleType: role,
+        publishMicrophoneTrack: talk,
         autoSubscribeAudio: true,
         autoSubscribeVideo: false,
-        clientRoleType: ClientRoleType.clientRoleBroadcaster,
       ),
     );
   }
@@ -129,14 +152,15 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
         .eq('space_id', _space.id)
         .order('created_at', ascending: true)
         .limit(80);
-        
+
     final msgs = (rows as List).map((e) {
       final m = Map<String, dynamic>.from(e as Map);
       return AudioSpaceChatMessage(
         userId: m['user_id']?.toString() ?? '',
         displayName: m['display_name']?.toString() ?? 'Membre',
         body: m['body']?.toString() ?? '',
-        sentAt: DateTime.tryParse(m['created_at']?.toString() ?? '') ?? DateTime.now(),
+        sentAt: DateTime.tryParse(m['created_at']?.toString() ?? '') ??
+            DateTime.now(),
       );
     }).toList();
     state = state.copyWith(messages: msgs);
@@ -144,7 +168,7 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
 
   void _listenChatTable() {
     _pg = Supabase.instance.client
-        .channel('audio_space_msgs_${_space.id}')
+        .channel('audio_space_msgs_' + _space.id)
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
           schema: 'public',
@@ -183,13 +207,11 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
     _rt = _service.openChannel(
       spaceId: _space.id,
       onChat: (_) {},
-      // NOUVEAU : Écoute des événements de réaction diffusés (Broadcast)
       onReaction: (userId, emoji) {
-        if (userId == me) return; // Ignore nos propres réactions (déjà animées localement)
-        // Mettre à jour l'état pour déclencher l'animation chez les autres
+        if (userId == me) return;
         state = state.copyWith(
-            latestReactionEmoji: emoji,
-            reactionTimestamp: DateTime.now().millisecondsSinceEpoch,
+          latestReactionEmoji: emoji,
+          reactionTimestamp: DateTime.now().millisecondsSinceEpoch,
         );
       },
       onEnded: () => state = state.copyWith(
@@ -229,8 +251,6 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
     );
   }
 
-  // --- ACTIONS ---
-
   Future<void> sendChat(String raw, [String? displayName]) async {
     final body = AudioSpaceSanitizer.sanitize(raw, maxLength: 300);
     if (body.isEmpty) return;
@@ -242,7 +262,6 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
     );
   }
 
-  // NOUVEAU : Envoi d'une réaction éphémère (Broadcast sans Base de données)
   Future<void> sendReaction(String emoji) async {
     await _rtBroadcast('reaction', {'emoji': emoji, 'userId': me});
   }
@@ -283,14 +302,16 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
 
   Future<void> demote(dynamic target) async {
     if (!isHost) return;
-    final userId = target is AudioSpaceParticipant ? target.userId : target.toString();
+    final userId =
+        target is AudioSpaceParticipant ? target.userId : target.toString();
     await _service.demoteToListener(spaceId: _space.id, targetUserId: userId);
     await _rtBroadcast('role', {'targetUserId': userId, 'role': 'listener'});
     await _loadRoster();
   }
 
   Future<void> kick(dynamic target) async {
-    final userId = target is AudioSpaceParticipant ? target.userId : target.toString();
+    final userId =
+        target is AudioSpaceParticipant ? target.userId : target.toString();
     if (!isHost || userId == me) return;
     await _service.banUser(spaceId: _space.id, targetUserId: userId);
     await _rtBroadcast('banned', {'targetUserId': userId});
@@ -309,8 +330,7 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
     for (final p in state.participants) {
       if (p.userId == me) continue;
       if (p.role == AudioSpaceRole.listener) continue;
-      // Coupe le micro, mais ne les expulse pas du stage (demote)
-      await hostMute(p.userId, true); 
+      await hostMute(p.userId, true);
     }
   }
 
@@ -355,6 +375,7 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
     super.dispose();
   }
 }
+
 final audioSpaceControllerProvider = StateNotifierProvider.autoDispose
     .family<AudioSpaceController, AudioSpaceState, AudioSpace>((ref, space) {
   final c = AudioSpaceController(ref.read(audioSpaceServiceProvider), space);
