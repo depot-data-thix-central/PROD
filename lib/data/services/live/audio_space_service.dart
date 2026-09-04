@@ -13,6 +13,7 @@ const int _kMaxTopic = 40;
 const int _kMaxName = 50;
 const int _kMaxChat = 300;
 const Duration _kDbTimeout = Duration(seconds: 10);
+const Duration _kFnTimeout = Duration(seconds: 12);
 
 class AudioSpaceSanitizer {
   AudioSpaceSanitizer._();
@@ -54,20 +55,55 @@ class AudioSpaceService {
   String get currentUserId => _live.currentUserId;
   bool get isAuthenticated => _live.isAuthenticated;
 
-  Future<AgoraCredentials> fetchCredentials(String channelName) {
-    return _live.fetchAgoraCredentials(channelName);
-  }
-
   String _newChannel(String userId) {
-    final safe = userId.replaceAll(RegExp(r'[^a-zA-Z0-9-]'), '');
-    final ts = DateTime.now().microsecondsSinceEpoch;
-    final salt = DateTime.now().millisecondsSinceEpoch.remainder(99991);
-    return 'live_\( {safe}_ \){ts}_$salt';
+    final short = userId.replaceAll('-', '');
+    final head = short.length >= 12 ? short.substring(0, 12) : short.padRight(12, '0');
+    return 'space_\( {head}_ \){DateTime.now().millisecondsSinceEpoch}';
   }
 
   bool _isDuplicateChannel(Object e) {
     final msg = e.toString();
     return msg.contains('23505') || msg.contains('audio_spaces_channel_name_key');
+  }
+
+  Future<AgoraCredentials> fetchCredentials(String channelName) async {
+    if (channelName.trim().isEmpty) {
+      throw Exception('Canal salon audio manquant.');
+    }
+    if (_client.auth.currentSession == null) {
+      throw Exception('Session expirée. Reconnectez-vous.');
+    }
+
+    try {
+      final res = await _client.functions
+          .invoke(
+            'agora-token-space',
+            body: {
+              'channelName': channelName,
+              'uid': 0,
+              'role': 'publisher',
+            },
+          )
+          .timeout(_kFnTimeout);
+
+      if (res.status != 200 || res.data == null) {
+        throw Exception('Token salon audio refusé (${res.status}).');
+      }
+
+      final data = res.data is Map
+          ? Map<String, dynamic>.from(res.data as Map)
+          : <String, dynamic>{};
+      final token = data['token']?.toString() ?? '';
+      final appId = data['appId']?.toString() ?? '';
+      if (token.isEmpty || appId.isEmpty) {
+        throw Exception('Réponse token salon invalide.');
+      }
+
+      return AgoraCredentials(appId: appId, token: token);
+    } on FunctionException catch (e) {
+      debugPrint('[AudioSpace] token-space ${e.status} ${e.details}');
+      throw Exception('Token salon audio refusé (${e.status}).');
+    }
   }
 
   Future<AudioSpace> createSpace({
