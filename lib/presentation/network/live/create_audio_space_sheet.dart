@@ -25,6 +25,22 @@ class _CreateAudioSpaceSheetState extends ConsumerState<CreateAudioSpaceSheet> {
   bool _busy = false;
   String? _error;
 
+  String _tx(AppLocalizations l10n, String key, String fallback) {
+    final v = l10n.t(key);
+    return (v.isEmpty || v == key) ? fallback : v;
+  }
+
+  String _humanError(Object e) {
+    final msg = e.toString();
+    if (msg.contains('23505') || msg.contains('audio_spaces_channel_name_key')) {
+      return 'Un salon utilise déjà ce canal. Réessaie — un nouveau canal va être généré.';
+    }
+    if (msg.contains('JWT') || msg.contains('auth') || msg.contains('Session')) {
+      return 'Session expirée. Reconnecte-toi.';
+    }
+    return msg.replaceFirst('Exception: ', '').replaceFirst('PostgrestException', 'Erreur serveur');
+  }
+
   @override
   void dispose() {
     _title.dispose();
@@ -40,12 +56,12 @@ class _CreateAudioSpaceSheetState extends ConsumerState<CreateAudioSpaceSheet> {
       return;
     }
     if (_recording && !_consent) {
-      setState(() => _error = l10n.t('audio_space_consent_required'));
+      setState(() => _error = _tx(l10n, 'audio_space_consent_required', 'Le consentement d\'enregistrement est obligatoire.'));
       return;
     }
     final user = ref.read(authControllerProvider).value;
     if (user == null) {
-      setState(() => _error = l10n.t('audio_space_auth_required'));
+      setState(() => _error = _tx(l10n, 'audio_space_auth_required', 'Connecte-toi avec ton THIX ID.'));
       return;
     }
     setState(() {
@@ -73,7 +89,7 @@ class _CreateAudioSpaceSheetState extends ConsumerState<CreateAudioSpaceSheet> {
       if (mounted) {
         setState(() {
           _busy = false;
-          _error = e.toString().replaceFirst('Exception: ', '');
+          _error = _humanError(e);
         });
       }
     }
@@ -101,14 +117,17 @@ class _CreateAudioSpaceSheetState extends ConsumerState<CreateAudioSpaceSheet> {
                 ),
               ),
             ),
-            Text(l10n.t('audio_space_create_title'), style: ThixPolicy.h2Style.copyWith(fontSize: 18)),
+            Text(
+              _tx(l10n, 'audio_space_create_title', 'Nouveau salon audio THIX'),
+              style: ThixPolicy.h2Style.copyWith(fontSize: 18),
+            ),
             const SizedBox(height: 16),
             TextField(
               controller: _title,
               maxLength: 100,
               inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'[<>]'))],
               decoration: InputDecoration(
-                labelText: l10n.t('audio_space_title_label'),
+                labelText: _tx(l10n, 'audio_space_title_label', 'Titre du salon'),
                 filled: true,
                 fillColor: ThixPolicy.surfaceSoft,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
@@ -121,7 +140,7 @@ class _CreateAudioSpaceSheetState extends ConsumerState<CreateAudioSpaceSheet> {
               maxLines: 3,
               inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'[<>]'))],
               decoration: InputDecoration(
-                labelText: l10n.t('audio_space_desc_label'),
+                labelText: _tx(l10n, 'audio_space_desc_label', 'Description'),
                 filled: true,
                 fillColor: ThixPolicy.surfaceSoft,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
@@ -140,13 +159,13 @@ class _CreateAudioSpaceSheetState extends ConsumerState<CreateAudioSpaceSheet> {
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: Text(l10n.t('audio_space_verified_only')),
+              title: Text(_tx(l10n, 'audio_space_verified_only', 'Intervenants vérifiés uniquement')),
               value: _verifiedOnly,
               onChanged: (v) => setState(() => _verifiedOnly = v),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: Text(l10n.t('audio_space_recording')),
+              title: Text(_tx(l10n, 'audio_space_recording', 'Enregistrer le salon')),
               value: _recording,
               onChanged: (v) => setState(() {
                 _recording = v;
@@ -158,7 +177,7 @@ class _CreateAudioSpaceSheetState extends ConsumerState<CreateAudioSpaceSheet> {
                 contentPadding: EdgeInsets.zero,
                 value: _consent,
                 onChanged: (v) => setState(() => _consent = v ?? false),
-                title: Text(l10n.t('audio_space_consent')),
+                title: Text(_tx(l10n, 'audio_space_consent', 'Je confirme le consentement d\'enregistrement')),
               ),
             if (_error != null)
               Padding(
@@ -180,7 +199,7 @@ class _CreateAudioSpaceSheetState extends ConsumerState<CreateAudioSpaceSheet> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
-                    : Text(l10n.t('audio_space_start')),
+                    : Text(_tx(l10n, 'audio_space_start', 'Démarrer')),
               ),
             ),
           ],
