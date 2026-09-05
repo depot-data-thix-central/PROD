@@ -84,6 +84,7 @@ dependencies:
   flutter_audio_waveforms: ^1.2.1+8
   cached_network_image: ^3.4.1
   wakelock_plus: ^1.2.8
+  connectivity_plus: ^6.1.0
   # ═══════════════════════════════════════════════════════════════════════
   # IDENTIFICATION & SCANNING
   # ═══════════════════════════════════════════════════════════════════════
