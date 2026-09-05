@@ -1,11 +1,5 @@
 /// ProfileVideoCard (Production Enterprise)
-/// 
-/// Carte vidéo individuelle pour la grille de profil.
-/// 
-/// ✅ SANS Stream.periodic (utilise le provider existant)
-/// ✅ Navigation type-safe via MediaRoutes + guard videoUrl
-/// ✅ ThixPolicy + i18n + Semantics + HapticFeedback + RepaintBoundary
-/// ✅ Throttling sur taps + logs structurés + mémoïsation coverUrl
+/// Menu ⋮ : Modifier · Privé/Public · Supprimer (uniquement si isOwner)
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -17,42 +11,24 @@ import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/media_content.dart';
 import 'package:thix_id/presentation/thix_media/media_routes.dart';
 import 'package:thix_id/presentation/thix_media/providers/thix_media_provider.dart';
-
-// ============================================================================
-// CONSTANTS
-// ============================================================================
+import 'package:thix_id/presentation/thix_media/providers/user_profile_providers.dart';
+import 'package:thix_id/services/media_service.dart';
 
 const Duration _kTapThrottle = Duration(milliseconds: 500);
 
-// ============================================================================
-// LOGGING
-// ============================================================================
-
-class _CardLogger {
-  static const _tag = 'ProfileVideoCard';
-  static void info(String m, [Map<String, dynamic>? d]) => _log('INFO', m, d);
-  static void warn(String m, [Map<String, dynamic>? d]) => _log('WARN', m, d);
-  static void _log(String l, String m, Map<String, dynamic>? d) {
-    if (!kDebugMode) return;
-    final data = d != null
-        ? ' ${d.entries.map((e) => '${e.key}=${e.value}').join(', ')}'
-        : '';
-    debugPrint('[$_tag] [$l] $m$data');
-  }
-}
-
-// ============================================================================
-// CARD
-// ============================================================================
-
-/// Carte vidéo individuelle pour la grille de profil.
-///
-/// ✅ SANS Stream.periodic (utilise le provider existant)
-/// ✅ Navigation type-safe via MediaRoutes
 class ProfileVideoCard extends ConsumerStatefulWidget {
   final MediaContent post;
+  final bool isOwner;
+  final String ownerUserId; // pour invalider userPostsProvider
+  final VoidCallback? onChanged; // refresh optionnel après edit/delete
 
-  const ProfileVideoCard({super.key, required this.post});
+  const ProfileVideoCard({
+    super.key,
+    required this.post,
+    this.isOwner = false,
+    required this.ownerUserId,
+    this.onChanged,
+  });
 
   @override
   ConsumerState<ProfileVideoCard> createState() => _ProfileVideoCardState();
@@ -60,10 +36,9 @@ class ProfileVideoCard extends ConsumerStatefulWidget {
 
 class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
   DateTime? _lastTap;
-
-  /// CoverUrl trimmé et mis en cache (évite allocation à chaque build)
   late String _trimmedCoverUrl;
   late bool _hasCover;
+  bool _busy = false;
 
   @override
   void initState() {
@@ -81,31 +56,19 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
     }
   }
 
+  String _safeTr(AppLocalizations l10n, String key, String fallback) {
+    final val = l10n.t(key);
+    if (val.isEmpty || val == key || val.contains(key)) return fallback;
+    return val;
+  }
+
   void _handleTap() {
-    // Throttle anti-double-tap
     final now = DateTime.now();
-    if (_lastTap != null && now.difference(_lastTap!) < _kTapThrottle) {
-      _CardLogger.warn('Tap throttled', {'id': widget.post.id});
-      return;
-    }
+    if (_lastTap != null && now.difference(_lastTap!) < _kTapThrottle) return;
     _lastTap = now;
 
     HapticFeedback.selectionClick();
-
-    // Guard : pas de navigation si videoUrl vide
-    if (widget.post.videoUrl.trim().isEmpty) {
-      _CardLogger.warn('Video URL empty, skipping navigation', {
-        'id': widget.post.id,
-        'title': widget.post.title,
-      });
-      return;
-    }
-
-    _CardLogger.info('Card tapped', {
-      'id': widget.post.id,
-      'title': widget.post.title.substring(
-          0, widget.post.title.length.clamp(0, 30)),
-    });
+    if (widget.post.videoUrl.trim().isEmpty) return;
 
     MediaRoutes.goToVideoPlayer(
       context,
@@ -114,18 +77,216 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
     );
   }
 
+  // ── MENU ACTIONS ──────────────────────────────────────────
+
+  Future<void> _onMenuSelected(String action) async {
+    if (_busy || !widget.isOwner) return;
+    HapticFeedback.selectionClick();
+
+    switch (action) {
+      case 'edit':
+        await _editTitleDescription();
+        break;
+      case 'toggle_private':
+        await _togglePublished();
+        break;
+      case 'delete':
+        await _confirmAndDelete();
+        break;
+    }
+  }
+
+  Future<void> _editTitleDescription() async {
+    final l10n = AppLocalizations.of(context);
+    final titleCtrl = TextEditingController(text: widget.post.title);
+    final descCtrl = TextEditingController(text: widget.post.subtitle ?? '');
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(_safeTr(l10n, 'profile_edit_video', 'Modifier la vidéo')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleCtrl,
+              maxLength: 100,
+              decoration: InputDecoration(
+                labelText: _safeTr(l10n, 'create_title', 'Titre'),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: descCtrl,
+              maxLength: 300,
+              maxLines: 3,
+              decoration: InputDecoration(
+                labelText: _safeTr(l10n, 'create_description', 'Description'),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(_safeTr(l10n, 'common_cancel', 'Annuler')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(_safeTr(l10n, 'common_save', 'Enregistrer')),
+          ),
+        ],
+      ),
+    );
+
+    if (saved != true || !mounted) return;
+    final newTitle = titleCtrl.text.trim();
+    if (newTitle.isEmpty) return;
+
+    setState(() => _busy = true);
+    try {
+      // À brancher sur ton updateMedia (ou RPC)
+      await MediaService().updateMediaMeta(
+        widget.post.id,
+        title: newTitle,
+        subtitle: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+      );
+      widget.onChanged?.call();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_safeTr(l10n, 'profile_edit_success', 'Vidéo mise à jour')),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_safeTr(l10n, 'profile_edit_error', 'Échec de la modification')),
+            backgroundColor: ThixPolicy.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _togglePublished() async {
+    final l10n = AppLocalizations.of(context);
+    final makePrivate = widget.post.isPublished; // si publié → on le rend privé
+
+    setState(() => _busy = true);
+    try {
+      await MediaService().updateMediaMeta(
+        widget.post.id,
+        isPublished: !widget.post.isPublished,
+      );
+      widget.onChanged?.call();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              makePrivate
+                  ? _safeTr(l10n, 'profile_now_private', 'Vidéo en privé')
+                  : _safeTr(l10n, 'profile_now_public', 'Vidéo publiée'),
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_safeTr(l10n, 'profile_edit_error', 'Échec de la modification')),
+            backgroundColor: ThixPolicy.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _confirmAndDelete() async {
+    final l10n = AppLocalizations.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(_safeTr(l10n, 'profile_delete_title', 'Supprimer la vidéo ?')),
+        content: Text(
+          _safeTr(
+            l10n,
+            'profile_delete_confirm',
+            'Cette action est définitive. La vidéo sera supprimée pour tout le monde.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(_safeTr(l10n, 'common_cancel', 'Annuler')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: ThixPolicy.danger),
+            child: Text(_safeTr(l10n, 'common_delete', 'Supprimer')),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _busy = true);
+    try {
+      HapticFeedback.mediumImpact();
+      await MediaService().deleteMedia(widget.post);
+
+      ref
+          .read(userPostsProvider(widget.ownerUserId).notifier)
+          .removePost(widget.post.id);
+      widget.onChanged?.call();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_safeTr(l10n, 'profile_delete_success', 'Vidéo supprimée')),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_safeTr(l10n, 'profile_delete_error', 'Impossible de supprimer')),
+            backgroundColor: ThixPolicy.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   String _formatNumber(int num) {
     if (num < 0) return '0';
     if (num >= 1000000) return '${(num / 1000000).toStringAsFixed(1)}M';
     if (num >= 1000) return '${(num / 1000).toStringAsFixed(1)}K';
-    return num.toString();
+    return '$num';
   }
+
+  // ── BUILD ─────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-
-    // Utilise le stream provider partagé (auto-dispose + cleanup automatique)
     final liveStats = ref.watch(mediaCountsStreamProvider(widget.post.id));
     final views = liveStats.valueOrNull?.viewCount ?? widget.post.viewCount;
 
@@ -133,20 +294,97 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
       child: Semantics(
         button: true,
         label: '${widget.post.title}. ${_formatNumber(views)} vues.',
-        child: GestureDetector(
-          onTap: _handleTap,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                _buildCover(),
-                _buildGradient(),
-                if (widget.post.isPaid) _buildPaidBadge(l10n),
-                _buildViewsOverlay(views),
-              ],
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            GestureDetector(
+              onTap: _handleTap,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _buildCover(),
+                    _buildGradient(),
+                    if (widget.post.isPaid) _buildPaidBadge(l10n),
+                    if (!widget.post.isPublished) _buildPrivateBadge(l10n),
+                    _buildViewsOverlay(views),
+                  ],
+                ),
+              ),
             ),
-          ),
+
+            // ⋮ MENU (uniquement propriétaire)
+            if (widget.isOwner)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Material(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(20),
+                  child: PopupMenuButton<String>(
+                    enabled: !_busy,
+                    icon: _busy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.more_vert, color: Colors.white, size: 20),
+                    padding: EdgeInsets.zero,
+                    onSelected: _onMenuSelected,
+                    itemBuilder: (ctx) => [
+                      PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.edit_outlined, size: 20),
+                            const SizedBox(width: 12),
+                            Text(_safeTr(l10n, 'profile_menu_edit', 'Modifier')),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'toggle_private',
+                        child: Row(
+                          children: [
+                            Icon(
+                              widget.post.isPublished
+                                  ? Icons.lock_outline
+                                  : Icons.public,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              widget.post.isPublished
+                                  ? _safeTr(l10n, 'profile_menu_private', 'Mettre en privé')
+                                  : _safeTr(l10n, 'profile_menu_public', 'Publier'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_outline, size: 20, color: ThixPolicy.danger),
+                            const SizedBox(width: 12),
+                            Text(
+                              _safeTr(l10n, 'profile_menu_delete', 'Supprimer'),
+                              style: TextStyle(color: ThixPolicy.danger),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -172,11 +410,7 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
       placeholder: (_, __) => Container(color: ThixPolicy.surfaceSoft),
       errorWidget: (_, __, ___) => Container(
         color: ThixPolicy.surfaceSoft,
-        child: Icon(
-          Icons.broken_image_rounded,
-          color: ThixPolicy.textMuted,
-          size: 24,
-        ),
+        child: Icon(Icons.broken_image_rounded, color: ThixPolicy.textMuted, size: 24),
       ),
     );
   }
@@ -187,11 +421,7 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            Colors.transparent,
-            Color(0x1A000000), // 10% black
-            Color(0xCC000000), // 80% black
-          ],
+          colors: [Colors.transparent, Color(0x1A000000), Color(0xCC000000)],
           stops: [0.5, 0.7, 1.0],
         ),
       ),
@@ -201,20 +431,31 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
   Widget _buildPaidBadge(AppLocalizations l10n) {
     return Positioned(
       top: 6,
-      right: 6,
-      child: Semantics(
-        label: l10n.t('feed_premium'),
-        child: Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: ThixPolicy.warning,
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(
-            Icons.lock_rounded,
-            size: 10,
-            color: ThixPolicy.inkDeep,
-          ),
+      left: 6,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: const BoxDecoration(
+          color: ThixPolicy.warning,
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(Icons.lock_rounded, size: 10, color: ThixPolicy.inkDeep),
+      ),
+    );
+  }
+
+  Widget _buildPrivateBadge(AppLocalizations l10n) {
+    return Positioned(
+      top: 6,
+      left: widget.post.isPaid ? 28 : 6,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.black87,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          _safeTr(l10n, 'profile_badge_private', 'Privé'),
+          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
         ),
       ),
     );
@@ -222,28 +463,18 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
 
   Widget _buildViewsOverlay(int views) {
     return Positioned(
-      bottom: 6,
       left: 6,
+      bottom: 6,
       child: Row(
         children: [
-          const Icon(
-            Icons.play_arrow_rounded,
-            color: Colors.white,
-            size: 16,
-          ),
+          const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 14),
           const SizedBox(width: 2),
           Text(
             _formatNumber(views),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 11,
-              fontWeight: FontWeight.bold,
-              shadows: [
-                Shadow(
-                  color: Color(0x80000000),
-                  blurRadius: 2,
-                ),
-              ],
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
