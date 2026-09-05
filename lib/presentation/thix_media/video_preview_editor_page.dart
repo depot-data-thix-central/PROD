@@ -834,4 +834,24 @@ class _AudioOptionTile extends StatelessWidget {
       ),
     );
   }
+
+class VideoEditResult {
+  final String videoPath;
+  final String filterDisplayName;
+  final double trimStart;
+  final double trimEnd;
+  final bool muteOriginalAudio;
+  final String? musicPath;
+  final String? voicePath;
+
+  VideoEditResult({
+    required this.videoPath,
+    required this.filterDisplayName,
+    required this.trimStart,
+    required this.trimEnd,
+    required this.muteOriginalAudio,
+    this.musicPath,
+    this.voicePath,
+  });
+}
 }
