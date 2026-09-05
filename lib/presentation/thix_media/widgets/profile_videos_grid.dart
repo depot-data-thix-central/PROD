@@ -52,12 +52,12 @@ class _GridLogger {
 
 class ProfileVideosGrid extends ConsumerStatefulWidget {
   final String userId;
-  final bool isOwner; // ✅ AJOUT DE LA PROPRIÉTÉ ISOWNER
+  final bool isOwner;
 
   const ProfileVideosGrid({
     super.key, 
     required this.userId,
-    this.isOwner = false, // ✅ VALEUR PAR DÉFAUT
+    this.isOwner = false,
   });
 
   @override
@@ -143,7 +143,6 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
 
         final itemCount = state.posts.length + (state.hasMore ? 1 : 0);
 
-        // ✅ CORRECTION ICI : Le RepaintBoundary externe a été supprimé
         return SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           sliver: SliverGrid(
@@ -158,11 +157,12 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
                 if (index == state.posts.length) {
                   return const _LoadingIndicator();
                 }
-                // Les RepaintBoundary sur les éléments individuels restent
+                
                 return RepaintBoundary(
                   child: ProfileVideoCard(
                     post: state.posts[index],
-                    ownerUserId: widget.userId, // ✅ AJOUT DU PARAMÈTRE MANQUANT
+                    ownerUserId: widget.userId,
+                    isOwner: widget.isOwner, // ✅ LA CORRECTION EST ICI
                   ),
                 );
               },
