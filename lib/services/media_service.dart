@@ -815,6 +815,11 @@ class MediaService {
     PlatformFile? coverFile,
     PlatformFile? videoFile,
     List<PlatformFile>? episodeFiles,
+    double trimStart = 0.0,
+    double trimEnd = 0.0,
+    bool muteOriginal = false,
+    String? musicPath,
+    String? voicePath,
     ProgressCallback? onProgress,
   }) async {
     final user = _client.auth.currentUser;
@@ -867,7 +872,7 @@ class MediaService {
       }
       bump();
 
-      // 4. Insertion DB
+      // 4. Insertion DB avec ajout des métadonnées d'édition
       final ins = item
           .copyWith(
             id: nid,
@@ -879,6 +884,12 @@ class MediaService {
             updatedAt: DateTime.now(),
           )
           .toJson();
+
+      ins['trim_start'] = trimStart;
+      ins['trim_end'] = trimEnd;
+      ins['mute_original'] = muteOriginal;
+      if (musicPath != null) ins['music_path'] = musicPath;
+      if (voicePath != null) ins['voice_path'] = voicePath;
 
       final res = await _client
           .from('media_content')
@@ -907,6 +918,11 @@ class MediaService {
     PlatformFile? newCoverFile,
     PlatformFile? newVideoFile,
     List<PlatformFile>? newEpisodeFiles,
+    double? trimStart,
+    double? trimEnd,
+    bool? muteOriginal,
+    String? musicPath,
+    String? voicePath,
     ProgressCallback? onProgress,
   }) async {
     _MediaValidators.requireValidUuid(ex.id, 'mediaId');
@@ -959,9 +975,16 @@ class MediaService {
         updatedAt: DateTime.now(),
       );
 
+      final updateData = updated.toJson();
+      if (trimStart != null) updateData['trim_start'] = trimStart;
+      if (trimEnd != null) updateData['trim_end'] = trimEnd;
+      if (muteOriginal != null) updateData['mute_original'] = muteOriginal;
+      if (musicPath != null) updateData['music_path'] = musicPath;
+      if (voicePath != null) updateData['voice_path'] = voicePath;
+
       await _client
           .from('media_content')
-          .update(updated.toJson())
+          .update(updateData)
           .eq('id', ex.id)
           .timeout(_supabaseTimeout);
 
