@@ -210,6 +210,15 @@ class UserPostsNotifier extends StateNotifier<AsyncValue<UserPostsState>> {
       _ProviderLogger.error('Initial load failed', {'error': '$e'});
       if (!mounted) return;
       state = AsyncValue.error(e, st);
+      void removePost(String postId) {
+  final current = state.valueOrNull;
+  if (current == null) return;
+  state = AsyncValue.data(
+    current.copyWith(
+      posts: current.posts.where((p) => p.id != postId).toList(),
+    ),
+  );
+}
     }
   }
 
