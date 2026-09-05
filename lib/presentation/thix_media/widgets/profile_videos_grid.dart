@@ -52,8 +52,13 @@ class _GridLogger {
 
 class ProfileVideosGrid extends ConsumerStatefulWidget {
   final String userId;
+  final bool isOwner; // ✅ AJOUT DE LA PROPRIÉTÉ ISOWNER
 
-  const ProfileVideosGrid({super.key, required this.userId});
+  const ProfileVideosGrid({
+    super.key, 
+    required this.userId,
+    this.isOwner = false, // ✅ VALEUR PAR DÉFAUT
+  });
 
   @override
   ConsumerState<ProfileVideosGrid> createState() => _ProfileVideosGridState();
@@ -68,7 +73,7 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    _GridLogger.info('Grid initialized', {'userId': widget.userId});
+    _GridLogger.info('Grid initialized', {'userId': widget.userId, 'isOwner': widget.isOwner});
   }
 
   @override
@@ -155,7 +160,10 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
                 }
                 // Les RepaintBoundary sur les éléments individuels restent
                 return RepaintBoundary(
-                  child: ProfileVideoCard(post: state.posts[index]),
+                  child: ProfileVideoCard(
+                    post: state.posts[index],
+                    ownerUserId: widget.userId, // ✅ AJOUT DU PARAMÈTRE MANQUANT
+                  ),
                 );
               },
               childCount: itemCount,
