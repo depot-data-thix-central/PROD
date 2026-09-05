@@ -31,6 +31,13 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
         r == AudioSpaceRole.speaker;
   }
 
+  /// Génère un UID Agora (int 32-bit) stable à partir du user_id Supabase (UUID)
+  int _stableUid(String userId) {
+    final clean = userId.replaceAll('-', '');
+    // Prend les 8 premiers caractères hexadécimaux et les convertit en entier positif
+    return int.parse(clean.substring(0, 8), radix: 16) & 0x7FFFFFFF;
+  }
+
   Future<void> bootstrap({
     required String displayName,
     String? avatarUrl,
@@ -83,7 +90,21 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
   }
 
   Future<void> _startAgora(AudioSpaceParticipant meRow) async {
-    final creds = await _service.fetchCredentials(_space.channelName);
+    // 1. Définir le rôle exact (doit-il publier ou non ?)
+    final talk = meRow.role == AudioSpaceRole.host ||
+        meRow.role == AudioSpaceRole.cohost ||
+        meRow.role == AudioSpaceRole.speaker;
+
+    // 2. Générer l'UID Agora
+    final int agoraUid = _stableUid(me);
+
+    // 3. Récupérer le token avec les bons paramètres pour la Edge Function
+    final creds = await _service.fetchCredentials(
+      _space.channelName,
+      uid: agoraUid,
+      isPublisher: talk,
+    );
+    
     if (creds.appId.isEmpty || creds.token.isEmpty) {
       throw Exception('Token Agora incomplet');
     }
@@ -101,6 +122,23 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
       appId: creds.appId,
       channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
     ));
+
+    // Ajout des Event Handlers pour traquer les connexions des autres
+    _engine!.registerEventHandler(RtcEngineEventHandler(
+      onJoinChannelSuccess: (connection, elapsed) {
+        debugPrint('[Agora] Joined → channel=${connection.channelId} localUid=${connection.localUid}');
+      },
+      onUserJoined: (connection, remoteUid, elapsed) {
+        debugPrint('[Agora] Remote joined → $remoteUid');
+      },
+      onUserOffline: (connection, remoteUid, reason) {
+        debugPrint('[Agora] Remote offline → $remoteUid');
+      },
+      onError: (err, msg) {
+        debugPrint('[Agora] ERROR $err : $msg');
+      },
+    ));
+
     await _engine!.enableAudio();
 
     if (!kIsWeb) {
@@ -112,9 +150,6 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
       } catch (_) {}
     }
 
-    final talk = meRow.role == AudioSpaceRole.host ||
-        meRow.role == AudioSpaceRole.cohost ||
-        meRow.role == AudioSpaceRole.speaker;
     final role = talk
         ? ClientRoleType.clientRoleBroadcaster
         : ClientRoleType.clientRoleAudience;
@@ -122,10 +157,11 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
     await _engine!.setClientRole(role: role);
     await _engine!.muteLocalAudioStream(!talk || meRow.isMuted);
 
+    // 4. Rejoindre le salon avec l'UID unique généré
     await _engine!.joinChannel(
       token: creds.token,
       channelId: _space.channelName,
-      uid: 0,
+      uid: agoraUid,
       options: ChannelMediaOptions(
         channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
         clientRoleType: role,
@@ -230,14 +266,19 @@ class AudioSpaceController extends StateNotifier<AudioSpaceState> {
           await _loadRoster();
           return;
         }
-        final talk = role == 'host' || role == 'cohost' || role == 'speaker';
-        await _engine?.setClientRole(
-          role: talk
-              ? ClientRoleType.clientRoleBroadcaster
-              : ClientRoleType.clientRoleAudience,
-        );
-        await _engine?.muteLocalAudioStream(!talk);
+        
+        // Mise à jour de l'état local pour récupérer le nouveau rôle de me
         await _loadRoster();
+        
+        // On quitte et on rejoint proprement avec le nouveau token (Publisher/Subscriber)
+        if (state.me != null) {
+          debugPrint('[AudioSpace] Changement de rôle détecté. Régénération du token...');
+          try {
+            await _engine?.leaveChannel();
+          } catch (_) {}
+          
+          await _startAgora(state.me!);
+        }
       },
       onBanned: (target) {
         if (target == me) {
