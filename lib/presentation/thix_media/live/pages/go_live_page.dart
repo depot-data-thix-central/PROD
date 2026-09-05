@@ -518,7 +518,7 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
         );
       } else if (next is GoLiveError) {
         // ✅ CORRECTION : Utilisation de next.error.toString()
-        _snack(next.error.toString(), error: true);
+       _snack("Erreur : ${next.toString()}", error: true);
         ref.read(goLiveNotifierProvider.notifier).reset();
         if (mounted) setState(() => _isCountingDown = false);
       }
