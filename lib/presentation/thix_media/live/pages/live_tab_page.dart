@@ -183,7 +183,7 @@ class _LiveTabPageState extends ConsumerState<LiveTabPage> {
     final currentUid = Supabase.instance.client.auth.currentUser?.id;
 
     return Scaffold(
-      backgroundColor: ThixPolicy.background,
+      backgroundColor: Colors.black, // Ou Color(0xFF0B0B0F)
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
