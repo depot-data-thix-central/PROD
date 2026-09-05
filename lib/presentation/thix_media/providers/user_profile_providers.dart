@@ -210,16 +210,19 @@ class UserPostsNotifier extends StateNotifier<AsyncValue<UserPostsState>> {
       _ProviderLogger.error('Initial load failed', {'error': '$e'});
       if (!mounted) return;
       state = AsyncValue.error(e, st);
-      void removePost(String postId) {
-  final current = state.valueOrNull;
-  if (current == null) return;
-  state = AsyncValue.data(
-    current.copyWith(
-      posts: current.posts.where((p) => p.id != postId).toList(),
-    ),
-  );
-}
     }
+  }
+
+  // ✅ CORRECTION ICI : Sortie du catch et placée dans le corps de la classe
+  void removePost(String postId) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncValue.data(
+      current.copyWith(
+        posts: current.posts.where((p) => p.id != postId).toList(),
+      ),
+    );
+    _ProviderLogger.info('Post removed from UI', {'postId': postId});
   }
 
   Future<void> refresh() async {
