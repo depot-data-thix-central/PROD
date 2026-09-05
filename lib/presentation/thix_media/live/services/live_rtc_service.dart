@@ -128,20 +128,21 @@ extension RtcNetworkQualityX on RtcNetworkQuality {
       this == RtcNetworkQuality.poor;
 }
 
-RtcNetworkQuality _fromAgoraQuality(int q) {
+RtcNetworkQuality _fromAgoraQuality(QualityType q) {
   switch (q) {
-    case 1:
+    case QualityType.qualityExcellent:
       return RtcNetworkQuality.excellent;
-    case 2:
+    case QualityType.qualityGood:
       return RtcNetworkQuality.good;
-    case 3:
+    case QualityType.qualityPoor:
       return RtcNetworkQuality.poor;
-    case 4:
+    case QualityType.qualityBad:
       return RtcNetworkQuality.bad;
-    case 5:
+    case QualityType.qualityVbad:
       return RtcNetworkQuality.veryBad;
-    case 6:
+    case QualityType.qualityDown:
       return RtcNetworkQuality.down;
+    case QualityType.qualityUnknown:
     default:
       return RtcNetworkQuality.unknown;
   }
@@ -357,9 +358,11 @@ class LiveRtcService {
         onRemoteVideoStateChanged:
             (connection, remoteUid, state, reason, elapsed) {
           if (remoteUid == remoteHostUid) {
-            final enabled = state == RemoteVideoState.remoteVideoStateRunning;
+            // Agora 6.5.x : "Decoding" = stream en lecture normale
+            final enabled =
+                state == RemoteVideoState.remoteVideoStateDecoding;
             _RtcLogger.info('Remote video state',
-                {'uid': remoteUid, 'enabled': enabled});
+                {'uid': remoteUid, 'enabled': enabled, 'state': state.name});
             _updateRemoteState(videoEnabled: enabled);
           }
         },
@@ -367,18 +370,19 @@ class LiveRtcService {
         onRemoteAudioStateChanged:
             (connection, remoteUid, state, reason, elapsed) {
           if (remoteUid == remoteHostUid) {
-            final enabled = state == RemoteAudioState.remoteAudioStateRunning;
+            final enabled =
+                state == RemoteAudioState.remoteAudioStateDecoding;
             _RtcLogger.info('Remote audio state',
-                {'uid': remoteUid, 'enabled': enabled});
+                {'uid': remoteUid, 'enabled': enabled, 'state': state.name});
             _updateRemoteState(audioEnabled: enabled);
           }
         },
 
         // ── NETWORK QUALITY ──
-        onNetworkQuality:
-            (connection, remoteUid, txQuality, rxQuality) {
-          // txQuality = upload, rxQuality = download
-          final q = _fromAgoraQuality(remoteUid == 0 ? txQuality : rxQuality);
+        onNetworkQuality: (connection, remoteUid, txQuality, rxQuality) {
+          final q = _fromAgoraQuality(
+            remoteUid == 0 ? txQuality : rxQuality,
+          );
           _safeAdd(_networkQualityController, q);
           onNetworkQuality?.call(q);
         },
@@ -386,27 +390,31 @@ class LiveRtcService {
         // ── STATS ──
         onRtcStats: (connection, stats) {
           final s = RtcStats(
-            bitrateKbps: stats.txKBitRate + stats.rxKBitRate,
-            cpuUsagePercent: stats.cpuTotalUsage.toInt(),
-            memoryUsageMb: stats.memoryTotalUsageRatio * 100 ~/ 1,
+            bitrateKbps:
+                (stats.txKBitRate ?? 0) + (stats.rxKBitRate ?? 0),
+            cpuUsagePercent: (stats.cpuTotalUsage ?? 0).toInt(),
+            memoryUsageMb:
+                ((stats.memoryTotalUsageRatio ?? 0) * 100).toInt(),
+            rttMs: stats.gatewayRtt ?? 0,
+            packetLossPercent:
+                (stats.txPacketLossRate ?? 0).toDouble(),
           );
           _safeAdd(_statsController, s);
           onStats?.call(s);
         },
 
-                onLocalVideoStats: (connection, stats) {
-          // Stats spécifiques host (publish)
+        onLocalVideoStats: (connection, stats) {
           if (_isHost) {
             final s = RtcStats(
-              bitrateKbps: stats.txKBitRate ?? 0,
-              fps: stats.sentFrameRate?.toDouble() ?? 0.0, 
-              packetLossPercent: stats.txPacketLossRate?.toDouble() ?? 0.0,
+              bitrateKbps: stats.sentBitrate ?? 0,
+              fps: (stats.sentFrameRate ?? 0).toDouble(),
+              packetLossPercent:
+                  (stats.txPacketLossRate ?? 0).toDouble(),
             );
             _safeAdd(_statsController, s);
             onStats?.call(s);
           }
         },
-
 
         // ── ERRORS ──
         onError: (err, msg) {
@@ -515,7 +523,6 @@ class LiveRtcService {
         throw RtcTimeoutException('startPreview');
       });
 
-      // ✅ CORRECTION ICI : Suppression de `audioScenario`
       await _engine!
           .joinChannel(
             token: creds.token,
@@ -573,7 +580,6 @@ class LiveRtcService {
           .setClientRole(role: ClientRoleType.clientRoleAudience)
           .timeout(_kRtcTimeout);
 
-      // ✅ CORRECTION ICI : Suppression de `audioScenario`
       await _engine!
           .joinChannel(
             token: creds.token,
