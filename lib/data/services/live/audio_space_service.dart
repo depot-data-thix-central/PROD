@@ -67,7 +67,12 @@ class AudioSpaceService {
     return msg.contains('23505') || msg.contains('audio_spaces_channel_name_key');
   }
 
-  Future<AgoraCredentials> fetchCredentials(String channelName) async {
+  // ✅ CORRECTION ICI : Ajout de uid et isPublisher
+  Future<AgoraCredentials> fetchCredentials(
+    String channelName, {
+    required int uid,
+    required bool isPublisher,
+  }) async {
     if (channelName.trim().isEmpty) {
       throw Exception('Canal salon audio manquant.');
     }
@@ -81,8 +86,8 @@ class AudioSpaceService {
             'agora-token-space',
             body: {
               'channelName': channelName,
-              'uid': 0,
-              'role': 'publisher',
+              'uid': uid, // ✅ Passe le vrai UID
+              'role': isPublisher ? 'publisher' : 'subscriber', // ✅ Passe le bon rôle
             },
           )
           .timeout(_kFnTimeout);
