@@ -343,14 +343,13 @@ void _removeVoice() {
     await Future.delayed(const Duration(milliseconds: 200));
     if (!mounted || _disposed) return;
 
-    final result = VideoEditResult(
+        final result = VideoEditResult(
       videoPath: widget.videoPath,
       trimStart: _trimStart,
       trimEnd: _trimEnd,
-      filterKey: _kFilters[_selectedFilterIndex].i18nKey,
+      filterDisplayName: _kFilters[_selectedFilterIndex].i18nKey, 
       muteOriginalAudio: _muteOriginalAudio,
       musicPath: _selectedMusic?.path,
-      // voicePath: _selectedVoice?.path,  // quand tu ajouteras la voix
     );
 
     _EditorLogger.info('Export successful', {
