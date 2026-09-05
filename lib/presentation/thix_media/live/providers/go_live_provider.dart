@@ -130,6 +130,10 @@ class GoLiveError extends GoLiveState {
         return 'error_generic';
     }
   }
+
+  // ✅ NOUVEAU : Override de toString pour faciliter le debug
+  @override
+  String toString() => 'GoLiveError($code): $rawMessage';
 }
 
 class GoLiveCancelling extends GoLiveState {
