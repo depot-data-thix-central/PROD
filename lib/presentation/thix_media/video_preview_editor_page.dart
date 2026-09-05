@@ -292,81 +292,80 @@ class _VideoPreviewEditorPageState extends State<VideoPreviewEditorPage> {
     _EditorLogger.info('Mute toggled', {'mute': _muteOriginalAudio});
   }
 
-  
   Future<void> _pickVoice() async {
-  final result = await FilePicker.platform.pickFiles(
-    type: FileType.audio,
-    allowedExtensions: ['mp3', 'wav', 'm4a', 'aac'],
-  );
-  if (result == null || result.files.isEmpty) return;
-  setState(() {
-    _selectedVoice = result.files.first;
-    _muteOriginalAudio = true;
-  });
-}
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+      allowedExtensions: ['mp3', 'wav', 'm4a', 'aac'],
+    );
+    if (result == null || result.files.isEmpty) return;
+    setState(() {
+      _selectedVoice = result.files.first;
+      _muteOriginalAudio = true;
+    });
+  }
 
-void _removeVoice() {
-  setState(() => _selectedVoice = null);
-}
+  void _removeVoice() {
+    setState(() => _selectedVoice = null);
+  }
 
   // ── Export ─────────────────────────────────────────────────
   Future<void> _exportAndFinish() async {
-  if (!_throttle()) return;
+    if (!_throttle()) return;
 
-  final trimDuration = _trimEnd - _trimStart;
-  if (trimDuration < _EditorLimits.minTrimDurationSeconds) {
-    _showSnack('editor_error_trim_too_short', isError: true);
-    return;
-  }
-  if (_controller == null || !_controller!.value.isInitialized) {
-    _showSnack('editor_error_not_ready', isError: true);
-    return;
-  }
-
-  setState(() {
-    _isProcessing = true;
-    _processProgress = 0.3;
-    _processLabelKey = 'editor_processing';
-  });
-  HapticFeedback.mediumImpact();
-
-  try {
-    // TODO: vrai processing (ffmpeg) ici plus tard
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (_disposed || !mounted) return;
+    final trimDuration = _trimEnd - _trimStart;
+    if (trimDuration < _EditorLimits.minTrimDurationSeconds) {
+      _showSnack('editor_error_trim_too_short', isError: true);
+      return;
+    }
+    if (_controller == null || !_controller!.value.isInitialized) {
+      _showSnack('editor_error_not_ready', isError: true);
+      return;
+    }
 
     setState(() {
-      _processProgress = 1.0;
-      _processLabelKey = 'editor_done';
+      _isProcessing = true;
+      _processProgress = 0.3;
+      _processLabelKey = 'editor_processing';
     });
-    HapticFeedback.heavyImpact();
-    await Future.delayed(const Duration(milliseconds: 200));
-    if (!mounted || _disposed) return;
+    HapticFeedback.mediumImpact();
 
-        final result = VideoEditResult(
-      videoPath: widget.videoPath,
-      trimStart: _trimStart,
-      trimEnd: _trimEnd,
-      filterDisplayName: _kFilters[_selectedFilterIndex].i18nKey, 
-      muteOriginalAudio: _muteOriginalAudio,
-      musicPath: _selectedMusic?.path,
-    );
+    try {
+      // TODO: vrai processing (ffmpeg) ici plus tard
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (_disposed || !mounted) return;
 
-    _EditorLogger.info('Export successful', {
-      'trimStart': result.trimStart.toStringAsFixed(1),
-      'trimEnd': result.trimEnd.toStringAsFixed(1),
-      'filter': result.filterKey,
-      'mute': result.muteOriginalAudio,
-      'hasMusic': result.musicPath != null,
-    });
+      setState(() {
+        _processProgress = 1.0;
+        _processLabelKey = 'editor_done';
+      });
+      HapticFeedback.heavyImpact();
+      await Future.delayed(const Duration(milliseconds: 200));
+      if (!mounted || _disposed) return;
 
-    Navigator.pop(context, result);   // ← objet complet au lieu du path
-  } catch (e) {
-    
+      final result = VideoEditResult(
+        videoPath: widget.videoPath,
+        trimStart: _trimStart,
+        trimEnd: _trimEnd,
+        filterDisplayName: _kFilters[_selectedFilterIndex].i18nKey,
+        muteOriginalAudio: _muteOriginalAudio,
+        musicPath: _selectedMusic?.path,
+      );
+
+      _EditorLogger.info('Export successful', {
+        'trimStart': result.trimStart.toStringAsFixed(1),
+        'trimEnd': result.trimEnd.toStringAsFixed(1),
+        'filter': result.filterDisplayName,
+        'mute': result.muteOriginalAudio,
+        'hasMusic': result.musicPath != null,
+      });
+
+      Navigator.pop(context, result);
+    } catch (e) {
+      _EditorLogger.error('Export failed', {'error': '$e'});
+    }
   }
-}
-  // ── Helpers ────────────────────────────────────────────────
 
+  // ── Helpers ────────────────────────────────────────────────
   String _fmt(double seconds) {
     final d = Duration(milliseconds: (seconds * 1000).round());
     final m = d.inMinutes.toString().padLeft(2, '0');
@@ -384,7 +383,7 @@ void _removeVoice() {
     return true;
   }
 
-    void _showSnack(String key, {bool isError = false, List<String>? args}) {
+  void _showSnack(String key, {bool isError = false, List<String>? args}) {
     if (!mounted) return;
     final l10n = AppLocalizations.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -398,7 +397,6 @@ void _removeVoice() {
   }
 
   // ── Build ──────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -482,7 +480,7 @@ void _removeVoice() {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline_rounded,
+            const Icon(Icons.error_outline_rounded,
                 color: ThixPolicy.danger, size: 64),
             const SizedBox(height: 16),
             Text(
@@ -834,6 +832,11 @@ class _AudioOptionTile extends StatelessWidget {
     );
   }
 }
+
+// ============================================================================
+// RESULT MODEL
+// ============================================================================
+
 class VideoEditResult {
   final String videoPath;
   final String filterDisplayName;
@@ -853,5 +856,3 @@ class VideoEditResult {
     this.voicePath,
   });
 }
-
-
