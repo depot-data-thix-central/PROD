@@ -186,7 +186,7 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
   // BOOTSTRAP
   // ════════════════════════════════════════════════════════════
 
-  Future<void> _bootstrap() async {
+    Future<void> _bootstrap() async {
     try {
       await _rtc.startAsHost(widget.creds);
       if (!mounted) return;
@@ -200,13 +200,14 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
       _LiveHostLogger.error('Bootstrap failed',
           {'error': '$e', 'stack': stack.toString()});
       if (!mounted) return;
+      
+      // ✅ La ligne est maintenant propre et sans restes de code en dessous
       _snack(AppLocalizations.of(context).t('live_error_generic'), error: true);
-
-              args: {'error': '$e'}),
-          error: true);
+      
       Navigator.of(context).pop();
     }
   }
+
 
   // ════════════════════════════════════════════════════════════
   // REALTIME CHAT (Supabase)
