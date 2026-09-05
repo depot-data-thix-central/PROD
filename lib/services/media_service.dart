@@ -998,6 +998,22 @@ class MediaService {
       throw MediaUploadException('Échec de la mise à jour', e);
     }
   }
+  Future<void> updateMediaMeta(String mediaId, Map<String, dynamic> updates) async {
+    _MediaValidators.requireValidUuid(mediaId, 'mediaId');
+    await _checkPermissions(mediaId); // Vérifie que l'utilisateur est bien le propriétaire
+
+    try {
+      await _client
+          .from('media_content')
+          .update(updates)
+          .eq('id', mediaId)
+          .timeout(_supabaseTimeout);
+      _MediaLogger.info('Media metadata updated', {'id': mediaId});
+    } catch (e) {
+      _MediaLogger.error('updateMediaMeta failed', {'id': mediaId, 'error': '$e'});
+      throw MediaException('UPDATE_FAILED', 'Impossible de mettre à jour le média', e);
+    }
+  }
 
   // ============================================================================
   // DELETE
