@@ -854,5 +854,5 @@ class VideoEditResult {
     this.voicePath,
   });
 }
-}
+
 
