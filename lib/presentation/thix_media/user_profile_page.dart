@@ -297,3 +297,5 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
       ),
     );
   }
+}
+
