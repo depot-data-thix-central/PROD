@@ -66,23 +66,36 @@ class _ProfileHeaderWidgetState extends State<ProfileHeaderWidget> {
   }
 
   Future<void> _handleFollowToggle(AppLocalizations l10n) async {
-    if (_busy) return;
-    HapticFeedback.mediumImpact();
+  if (_busy) return;
+  HapticFeedback.mediumImpact();
 
-    final wasFollowing = _isFollowing;
-    final previousCount = _stats['followers'] ?? 0;
+  final targetId = widget.profile['id'] as String?;
+  if (targetId == null || targetId.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(_safeTr(l10n, 'profile_follow_error', 'Erreur : profil invalide.')),
+        backgroundColor: ThixPolicy.danger,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    return;
+  }
 
-    // ✅ Optimistic UI
-    setState(() {
-      _isFollowing = !_isFollowing;
-      _stats['followers'] = _isFollowing ? previousCount + 1 : (previousCount > 0 ? previousCount - 1 : 0);
-      _busy = true;
-    });
+  final wasFollowing = _isFollowing;
+  final previousCount = _stats['followers'] ?? 0;
 
-    try {
-      await MediaService().toggleFollow(widget.profile['id'] as String);
-    } catch (e) {
-      // ✅ Rollback en cas d'échec
+  // ✅ Optimistic UI
+  setState(() {
+    _isFollowing = !_isFollowing;
+    _stats['followers'] = _isFollowing ? previousCount + 1 : (previousCount > 0 ? previousCount - 1 : 0);
+    _busy = true;
+  });
+
+  try {
+    final success = await MediaService().toggleFollow(targetId);
+
+    if (!success) {
+      // Rollback explicite quand le service retourne false
       if (mounted) {
         setState(() {
           _isFollowing = wasFollowing;
@@ -99,10 +112,27 @@ class _ProfileHeaderWidgetState extends State<ProfileHeaderWidget> {
       }
       return;
     }
-
-    if (mounted) setState(() => _busy = false);
+  } catch (e) {
+    // Rollback en cas d’exception inattendue
+    if (mounted) {
+      setState(() {
+        _isFollowing = wasFollowing;
+        _stats['followers'] = previousCount;
+        _busy = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_safeTr(l10n, 'profile_follow_error', 'Erreur réseau. Impossible de modifier l\'abonnement.')),
+          backgroundColor: ThixPolicy.danger,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+    return;
   }
 
+  if (mounted) setState(() => _busy = false);
+}
   String _getDisplayName(AppLocalizations l10n) {
     final uname = widget.profile['username'] as String?;
     final fname = widget.profile['full_name'] as String?;
