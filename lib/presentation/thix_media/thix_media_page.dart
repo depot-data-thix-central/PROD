@@ -1,3 +1,4 @@
+
 // lib/presentation/thix_media/thix_media_page.dart
 
 import 'dart:async';
@@ -44,12 +45,14 @@ class MediaConfig {
 
 class MediaLightPalette {
   MediaLightPalette._();
-  static const Color background = Color(0xFFF8FAFC);
+  static const Color background = Color(0xFFFFFFFF);
   static const Color surface = Color(0xFFFFFFFF);
-  static const Color border = Color(0xFFE2E8F0);
-  static const Color textPrimary = Color(0xFF0F172A);
-  static const Color textSecondary = Color(0xFF475569);
-  static const Color textMuted = Color(0xFF94A3B8);
+  static const Color surfaceAlt = Color(0xFFF7F8FA);
+  static const Color border = Color(0xFFE5E7EB);
+  static const Color textPrimary = Color(0xFF0F0F0F);
+  static const Color textSecondary = Color(0xFF606060);
+  static const Color textMuted = Color(0xFF909090);
+  static const Color chipBg = Color(0xFFF2F2F2);
 }
 
 class MediaSanitizer {
@@ -96,6 +99,27 @@ class AnalyticsBatcher {
   static void dispose() { _timer?.cancel(); _timer = null; }
 }
 
+// ── Raccourcis "Films" : mapping icône / label par catégorie ─────────────
+class MediaShortcut {
+  final String label;
+  final IconData icon;
+  const MediaShortcut(this.label, this.icon);
+}
+
+IconData _iconForCategory(String cat) {
+  final c = cat.toLowerCase();
+  if (c.contains('tous')) return Icons.apps_rounded;
+  if (c.contains('fil')) return Icons.play_circle_outline_rounded;
+  if (c.contains('film')) return Icons.local_movies_rounded;
+  if (c.contains('série') || c.contains('serie')) return Icons.video_library_rounded;
+  if (c.contains('clip')) return Icons.bolt_rounded;
+  if (c.contains('live') || c.contains('direct')) return Icons.sensors_rounded;
+  if (c.contains('musique') || c.contains('music')) return Icons.music_note_rounded;
+  if (c.contains('formation')) return Icons.school_rounded;
+  if (c.contains('opportunit')) return Icons.work_outline_rounded;
+  return Icons.category_rounded;
+}
+
 class ThixMediaPage extends ConsumerStatefulWidget {
   const ThixMediaPage({super.key});
   @override
@@ -111,7 +135,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   Timer? _searchDebounce;
   Timer? _scrollThrottle;
   Timer? _heroAutoScroll;
-  
+
   bool _showFilUI = true;
   Timer? _filUITimer;
   DateTime _lastTimerReset = DateTime.now();
@@ -148,17 +172,12 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     super.dispose();
   }
 
-  // ✅ CORRECTION DU FREEZE : Gestion intelligente de l'apparition des menus
   void _wakeUpFilUI() {
     if (!mounted) return;
-    
-    // N'appelle setState que si c'est vraiment nécessaire (Évite la boucle infinie)
     if (!_showFilUI) {
       setState(() => _showFilUI = true);
     }
-    
     final now = DateTime.now();
-    // Ne recrée le timer que toutes les 500ms pour ne pas surcharger le processeur
     if (_filUITimer == null || !_filUITimer!.isActive || now.difference(_lastTimerReset).inMilliseconds > 500) {
       _lastTimerReset = now;
       _filUITimer?.cancel();
@@ -186,27 +205,32 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
 
   void _onSearchFocusChanged() {
     if (!mounted) return;
-    setState(() => _showSearchOverlay = _searchFocusNode.hasFocus && _searchQuery.isNotEmpty);
+    setState(() => _showSearchOverlay = _searchFocusNode.hasFocus && _lowerQuery.isNotEmpty);
   }
 
+  // ✅ CORRECTION RECHERCHE : plus de "cassure" à la 1ère lettre.
+  // L'affichage (overlay + filtrage local) est instantané à chaque frappe ;
+  // seul l'écriture vers le provider global est débouncée (évite le spam réseau).
   void _onSearchChanged(String v) {
-    final sanitized = MediaSanitizer.searchQuery(v);
-    if (sanitized == _lowerQuery) return;
+    final sanitizedLower = MediaSanitizer.searchQuery(v);
+
+    setState(() {
+      _searchQuery = MediaSanitizer.text(v, maxLength: MediaConfig.maxSearchLength);
+      _lowerQuery = sanitizedLower;
+      _showSearchOverlay = _searchFocusNode.hasFocus && sanitizedLower.isNotEmpty;
+    });
+
     _searchDebounce?.cancel();
     _searchDebounce = Timer(MediaConfig.searchDebounce, () {
       if (!mounted) return;
-      setState(() {
-        _lowerQuery = sanitized;
-        _searchQuery = MediaSanitizer.text(v, maxLength: MediaConfig.maxSearchLength);
-        _showSearchOverlay = _searchFocusNode.hasFocus && sanitized.isNotEmpty;
-      });
-      ref.read(searchQueryProvider.notifier).state = sanitized;
+      ref.read(searchQueryProvider.notifier).state = sanitizedLower;
     });
   }
 
   void _clearSearch() {
     _searchFocusNode.unfocus();
     _searchController.clear();
+    _searchDebounce?.cancel();
     setState(() {
       _searchQuery = ''; _lowerQuery = ''; _showSearchOverlay = false;
     });
@@ -289,18 +313,17 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   Widget _buildMainContent(BuildContext context, AppLocalizations l10n, List<MediaContent> catalog, bool isAdmin, String selectedCategory, String strFil, String strTous) {
     final categories = _computeCategories(catalog, strTous, strFil);
 
-    // ── MODE FIL (TIKTOK FULL SCREEN + AUTO-HIDE FIXÉ) ─────────────────────────
+    // ── MODE FIL (TIKTOK FULL SCREEN + AUTO-HIDE) ─────────────────────────
     if (selectedCategory == strFil || selectedCategory == 'Fil') {
       return Container(
         color: Colors.black,
         child: Stack(
           children: [
-            // ✅ CORRECTION DU FREEZE : Suppression de NotificationListener
             Positioned.fill(
               child: Listener(
                 onPointerDown: (_) => _wakeUpFilUI(),
                 onPointerMove: (_) => _wakeUpFilUI(),
-                behavior: HitTestBehavior.translucent, // Capte les touchés sur la vidéo
+                behavior: HitTestBehavior.translucent,
                 child: RepaintBoundary(
                   child: FilFeedView(catalog: catalog, onOpenDetail: _openDetail),
                 ),
@@ -352,15 +375,16 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
           if (catalog.isEmpty)
             SliverFillRemaining(hasScrollBody: false, child: _buildEmptyState(l10n))
           else ...[
+            SliverToBoxAdapter(child: _buildShortcutsRow(categories, selectedCategory)),
             SliverToBoxAdapter(child: _buildHero(l10n, catalog)),
             SliverToBoxAdapter(child: _buildCategoryChips(categories, selectedCategory, isDarkBg: false)),
             if (series.isNotEmpty) SliverToBoxAdapter(child: _buildSeriesRail(l10n, series)),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
                 child: Text(
                   (selectedCategory == strTous || selectedCategory == 'Tous') ? _safeTr(l10n, 'media_catalog', 'Catalogue TDIA') : selectedCategory,
-                  style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.3),
+                  style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.2),
                 ),
               ),
             ),
@@ -368,7 +392,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 120),
               sliver: SliverGrid(
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2, crossAxisSpacing: 16, mainAxisSpacing: 16, childAspectRatio: 0.70,
+                  crossAxisCount: 2, crossAxisSpacing: 16, mainAxisSpacing: 20, childAspectRatio: 0.66,
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (c, i) => RepaintBoundary(
@@ -384,12 +408,77 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
-  // ✅ CORRECTION DU DOUBLE BOUTON FIL ET OPPORTUNITÉS
   List<String> _computeCategories(List<MediaContent> catalog, String strTous, String strFil) {
     final types = catalog.map((e) => e.type)
         .where((t) => t.isNotEmpty && t != 'Fil' && t != strFil && t != 'Opportunités')
         .toSet().toList()..sort();
-    return [strTous, strFil, 'Opportunités', ...types]; 
+    return [strTous, strFil, 'Opportunités', ...types];
+  }
+
+  // ── NOUVEAU : rail de raccourcis type "Films / Séries / Live / ..." ────
+  Widget _buildShortcutsRow(List<String> categories, String selected) {
+    // On garde une sélection courte et pertinente (max 8) pour rester épuré.
+    final shortcuts = categories.take(8).toList();
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 4),
+      child: SizedBox(
+        height: 76,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          itemCount: shortcuts.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 14),
+          itemBuilder: (c, i) {
+            final cat = shortcuts[i];
+            final sel = selected == cat;
+            return Semantics(
+              button: true,
+              selected: sel,
+              label: cat,
+              child: GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  ref.read(selectedCategoryProvider.notifier).state = cat;
+                },
+                child: SizedBox(
+                  width: 64,
+                  child: Column(
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: sel ? ThixPolicy.primary : MediaLightPalette.chipBg,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _iconForCategory(cat),
+                          color: sel ? Colors.white : MediaLightPalette.textSecondary,
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        cat,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: sel ? FontWeight.w800 : FontWeight.w600,
+                          color: sel ? MediaLightPalette.textPrimary : MediaLightPalette.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
   }
 
   Widget _buildCategoryChips(List<String> categories, String selected, {bool isDarkBg = false}) {
@@ -406,8 +495,8 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
             final cat = categories[i];
             final sel = selected == cat;
 
-            final unselectedBg = isDarkBg ? Colors.black.withValues(alpha: 0.4) : MediaLightPalette.surface;
-            final unselectedBorder = isDarkBg ? Colors.white.withValues(alpha: 0.2) : MediaLightPalette.border;
+            final unselectedBg = isDarkBg ? Colors.black.withValues(alpha: 0.4) : MediaLightPalette.chipBg;
+            final unselectedBorder = isDarkBg ? Colors.white.withValues(alpha: 0.2) : Colors.transparent;
             final unselectedText = isDarkBg ? Colors.white70 : MediaLightPalette.textSecondary;
             final selectedBg = isDarkBg ? Colors.white : MediaLightPalette.textPrimary;
             final selectedText = isDarkBg ? Colors.black : Colors.white;
@@ -427,8 +516,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                   decoration: BoxDecoration(
                     color: sel ? selectedBg : unselectedBg,
                     borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: sel ? selectedBg : unselectedBorder, width: 1.2),
-                    boxShadow: sel ? [] : [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 2))],
+                    border: Border.all(color: sel ? selectedBg : unselectedBorder, width: 1),
                   ),
                   child: Text(cat, style: TextStyle(color: sel ? selectedText : unselectedText, fontSize: 13, fontWeight: sel ? FontWeight.w800 : FontWeight.w600)),
                 ),
@@ -443,7 +531,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
   Widget _buildSliverHeader(AppLocalizations l10n, bool isAdmin) {
     return SliverAppBar(
       pinned: true,
-      backgroundColor: Colors.transparent,
+      backgroundColor: MediaLightPalette.surface,
       elevation: 0,
       scrolledUnderElevation: 0,
       toolbarHeight: 70,
@@ -451,23 +539,18 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
         icon: const Icon(Icons.arrow_back, color: MediaLightPalette.textPrimary),
         onPressed: () => Navigator.of(context).pop(),
       ),
-      flexibleSpace: ClipRRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: MediaConfig.glassBlur, sigmaY: MediaConfig.glassBlur),
-          child: Container(
-            decoration: BoxDecoration(
-              color: MediaLightPalette.surface.withValues(alpha: 0.85),
-              border: const Border(bottom: BorderSide(color: MediaLightPalette.border)),
-            ),
-          ),
+      flexibleSpace: Container(
+        decoration: const BoxDecoration(
+          color: MediaLightPalette.surface,
+          border: Border(bottom: BorderSide(color: MediaLightPalette.border)),
         ),
       ),
       title: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.play_circle_filled_rounded, color: ThixPolicy.primary, size: 28),
+          const Icon(Icons.play_circle_filled_rounded, color: ThixPolicy.primary, size: 26),
           const SizedBox(width: 8),
-          const Text('TDIA', style: TextStyle(color: MediaLightPalette.textPrimary, fontWeight: FontWeight.w900, fontSize: 20, letterSpacing: -0.5)),
+          const Text('TDIA', style: TextStyle(color: MediaLightPalette.textPrimary, fontWeight: FontWeight.w800, fontSize: 19, letterSpacing: -0.3)),
         ],
       ),
       actions: [
@@ -523,7 +606,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: isLight ? MediaLightPalette.border.withValues(alpha: 0.5) : Colors.black.withValues(alpha: 0.3),
+            color: isLight ? MediaLightPalette.chipBg : Colors.black.withValues(alpha: 0.3),
             shape: BoxShape.circle,
           ),
           child: Icon(icon, color: isLight ? MediaLightPalette.textPrimary : Colors.white, size: 20),
@@ -532,15 +615,16 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     );
   }
 
+  // ── Recherche : champ stable, filtrage instantané (voir _onSearchChanged) ──
   Widget _buildSearchBar(AppLocalizations l10n) {
     final hint = _safeTr(l10n, 'media_search_hint', 'Rechercher des vidéos...');
     return Container(
+      key: const ValueKey('media_search_bar'),
       height: 44,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: MediaLightPalette.border.withValues(alpha: 0.4),
+        color: MediaLightPalette.chipBg,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: MediaLightPalette.border),
       ),
       child: Row(
         children: [
@@ -551,6 +635,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
               textField: true,
               label: hint,
               child: TextField(
+                key: const ValueKey('media_search_field'),
                 controller: _searchController,
                 focusNode: _searchFocusNode,
                 onChanged: _onSearchChanged,
@@ -595,7 +680,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
 
     return RepaintBoundary(
       child: SizedBox(
-        height: 220,
+        height: 210,
         child: PageView.builder(
           controller: _heroController,
           itemCount: featured.length,
@@ -618,35 +703,34 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
           onTap: () => _openDetail(item),
           child: Container(
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 15, offset: const Offset(0, 8))],
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 12, offset: const Offset(0, 6))],
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(18),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  coverUrl != null ? CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover) : Container(color: MediaLightPalette.border),
+                  coverUrl != null ? CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover) : Container(color: MediaLightPalette.chipBg),
                   const DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Colors.black87],
-                        stops: [0.4, 1],
+                        colors: [Colors.transparent, Colors.black54],
+                        stops: [0.55, 1],
                       ),
                     ),
                   ),
                   Positioned(
-                    left: 16,
-                    right: 16,
-                    top: 16,
+                    left: 14,
+                    top: 14,
                     child: Row(
                       children: [
                         _heroBadge(ThixPolicy.primary, _safeTr(l10n, 'media_featured', 'À LA UNE')),
                         if (item.isPaid) ...[
                           const SizedBox(width: 8),
-                          _heroBadge(ThixPolicy.warning, _safeTr(l10n, 'media_premium', 'Premium'), icon: Icons.lock_rounded),
+                          _heroBadge(Colors.black.withValues(alpha: 0.55), _safeTr(l10n, 'media_premium', 'Premium'), icon: Icons.lock_rounded),
                         ],
                       ],
                     ),
@@ -654,7 +738,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                   Positioned(
                     left: 16,
                     right: 16,
-                    bottom: 16,
+                    bottom: 14,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -662,16 +746,16 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
                           safeTitle,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: -0.5),
+                          style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800, letterSpacing: -0.3),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Row(
                           children: [
-                            const Icon(Icons.play_circle_fill_rounded, color: Colors.white70, size: 14),
-                            const SizedBox(width: 6),
+                            const Icon(Icons.play_circle_fill_rounded, color: Colors.white70, size: 13),
+                            const SizedBox(width: 5),
                             Text(
-                              formatMediaNumber(item.viewCount),
-                              style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+                              '${formatMediaNumber(item.viewCount)} vues',
+                              style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
                             ),
                           ],
                         ),
@@ -689,7 +773,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
 
   Widget _heroBadge(Color color, String label, {IconData? icon}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(20)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -698,7 +782,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
             Icon(icon, size: 11, color: Colors.white),
             const SizedBox(width: 4),
           ],
-          Text(label, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+          Text(label, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.4)),
         ],
       ),
     );
@@ -706,7 +790,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
 
   Widget _buildSeriesRail(AppLocalizations l10n, List<MediaContent> series) {
     return Padding(
-      padding: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.only(top: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -714,19 +798,15 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(color: ThixPolicy.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
-                  child: const Icon(Icons.video_library_rounded, size: 16, color: ThixPolicy.primary),
-                ),
+                const Icon(Icons.video_library_rounded, size: 18, color: MediaLightPalette.textPrimary),
                 const SizedBox(width: 8),
-                Text(_safeTr(l10n, 'media_series', 'Séries'), style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 16, fontWeight: FontWeight.w900)),
+                Text(_safeTr(l10n, 'media_series', 'Séries'), style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 16, fontWeight: FontWeight.w800)),
               ],
             ),
           ),
           const SizedBox(height: 14),
           SizedBox(
-            height: 190,
+            height: 195,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -755,78 +835,45 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     return Positioned.fill(
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: _clearSearch,
-        child: ClipRRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: Container(
-              color: MediaLightPalette.surface.withValues(alpha: 0.85),
-              padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top + 140, left: 20, right: 20),
-              child: results.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: const BoxDecoration(color: MediaLightPalette.border, shape: BoxShape.circle),
-                            child: const Icon(Icons.search_off_rounded, size: 40, color: MediaLightPalette.textSecondary),
-                          ),
-                          const SizedBox(height: 16),
-                          Text(_safeTr(l10n, 'media_no_results', 'Aucun résultat.'), style: const TextStyle(color: MediaLightPalette.textSecondary, fontWeight: FontWeight.w600)),
-                        ],
+        onTap: () => _searchFocusNode.unfocus(),
+        child: Container(
+          color: MediaLightPalette.surface,
+          padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top + 140, left: 20, right: 20),
+          child: results.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: const BoxDecoration(color: MediaLightPalette.chipBg, shape: BoxShape.circle),
+                        child: const Icon(Icons.search_off_rounded, size: 36, color: MediaLightPalette.textSecondary),
                       ),
-                    )
-                  : GridView.builder(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                        childAspectRatio: 0.7,
-                      ),
-                      itemCount: results.length,
-                      itemBuilder: (context, i) {
-                        final item = results[i];
-                        final coverUrl = MediaSanitizer.imageUrl(item.coverUrl);
-                        return GestureDetector(
-                          onTap: () {
-                            _clearSearch();
-                            _openDetail(item);
-                          },
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                coverUrl != null ? CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover) : Container(color: Colors.black87),
-                                const DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.bottomCenter,
-                                      end: Alignment.topCenter,
-                                      colors: [Colors.black87, Colors.transparent],
-                                    ),
-                                  ),
-                                ),
-                                Positioned(
-                                  left: 8,
-                                  right: 8,
-                                  bottom: 8,
-                                  child: Text(
-                                    MediaSanitizer.text(item.title, maxLength: MediaConfig.maxTitleLength),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
+                      const SizedBox(height: 16),
+                      Text(_safeTr(l10n, 'media_no_results', 'Aucun résultat.'), style: const TextStyle(color: MediaLightPalette.textSecondary, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                )
+              : GridView.builder(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 0.68,
+                  ),
+                  itemCount: results.length,
+                  itemBuilder: (context, i) {
+                    final item = results[i];
+                    return MediaPosterCard(
+                      item: item,
+                      compact: true,
+                      onTap: () {
+                        _clearSearch();
+                        _openDetail(item);
                       },
-                    ),
-            ),
-          ),
+                    );
+                  },
+                ),
         ),
       ),
     );
@@ -867,7 +914,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
           children: [
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(color: MediaLightPalette.border, shape: BoxShape.circle),
+              decoration: const BoxDecoration(color: MediaLightPalette.chipBg, shape: BoxShape.circle),
               child: const Icon(Icons.video_library_outlined, size: 40, color: MediaLightPalette.textSecondary),
             ),
             const SizedBox(height: 16),
@@ -904,6 +951,9 @@ class _MediaSkeleton extends StatelessWidget {
   }
 }
 
+// ── CARTE VIDÉO — refonte épurée façon YouTube ─────────────────────────
+// Miniature propre (pas de gradient plein cadre), badges discrets,
+// titre + vues en dessous sur fond blanc, légende sur 2 lignes max.
 class MediaPosterCard extends StatelessWidget {
   final MediaContent item;
   final VoidCallback onTap;
@@ -933,69 +983,107 @@ class MediaPosterCard extends StatelessWidget {
           children: [
             Expanded(
               child: Container(
+                clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))],
+                  color: MediaLightPalette.chipBg,
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      cover != null ? CachedNetworkImage(imageUrl: cover, fit: BoxFit.cover) : Container(color: MediaLightPalette.border),
-                      const DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Colors.transparent, Colors.black87],
-                            stops: [0.4, 1],
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    cover != null
+                        ? CachedNetworkImage(imageUrl: cover, fit: BoxFit.cover)
+                        : Container(
+                            color: MediaLightPalette.chipBg,
+                            child: const Icon(Icons.movie_creation_outlined, color: MediaLightPalette.textMuted, size: 28),
                           ),
-                        ),
-                      ),
-                      if (item.isPaid)
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), shape: BoxShape.circle),
-                            child: const Icon(Icons.lock_rounded, size: 12, color: ThixPolicy.warning),
-                          ),
-                        ),
-                      if (_isSeries)
-                        Positioned(
-                          top: 8,
-                          left: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                            decoration: BoxDecoration(color: ThixPolicy.primary.withValues(alpha: 0.85), borderRadius: BorderRadius.circular(6)),
-                            child: Text('${item.episodesUrls.length + 1} parties', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
-                          ),
-                        ),
+
+                    // Badge série (haut-gauche, discret)
+                    if (_isSeries)
                       Positioned(
+                        top: 8,
                         left: 8,
-                        right: 8,
-                        bottom: 8,
-                        child: Row(children: [
-                          const Icon(Icons.play_circle_fill_rounded, color: Colors.white70, size: 14),
-                          const SizedBox(width: 4),
-                          Text(formatMediaNumber(item.viewCount), style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-                        ]),
+                        child: _miniBadge('${item.episodesUrls.length + 1} parties'),
                       ),
-                    ],
-                  ),
+
+                    // Badge premium (haut-droit, discret)
+                    if (item.isPaid)
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.55), shape: BoxShape.circle),
+                          child: const Icon(Icons.lock_rounded, size: 11, color: Colors.white),
+                        ),
+                      ),
+
+                    // Vues (bas-droit, mini chip sombre — style durée YouTube)
+                    Positioned(
+                      right: 6,
+                      bottom: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.65),
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.visibility_rounded, color: Colors.white, size: 10),
+                            const SizedBox(width: 3),
+                            Text(
+                              formatMediaNumber(item.viewCount),
+                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
             const SizedBox(height: 8),
-            Text(title,
-                maxLines: compact ? 1 : 2,
+            Text(
+              title,
+              maxLines: compact ? 1 : 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: MediaLightPalette.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                height: 1.25,
+              ),
+            ),
+            if (!compact) ...[
+              const SizedBox(height: 2),
+              Text(
+                item.type,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 13, fontWeight: FontWeight.w800, height: 1.2)),
+                style: const TextStyle(
+                  color: MediaLightPalette.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ],
         ),
       ),
+    );
+  }
+
+  Widget _miniBadge(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: ThixPolicy.primary,
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Text(label, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
     );
   }
 }
