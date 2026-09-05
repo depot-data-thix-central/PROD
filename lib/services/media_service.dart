@@ -901,11 +901,16 @@ class MediaService {
       bump();
       _MediaLogger.info('Media created', {'id': nid});
       return MediaContent.fromJson(Map<String, dynamic>.from(res as Map));
-    } catch (e) {
+    } catch (e, stack) {
       await _cleanupFiles(uploadedPaths);
-      _MediaLogger.error('insertWithFiles failed', {'id': nid, 'rolledBack': uploadedPaths.length, 'error': '$e'});
+      _MediaLogger.error('insertWithFiles failed with details', {
+        'id': nid,
+        'rolledBack': uploadedPaths.length,
+        'error': e.toString(),
+        'stack': stack.toString(),
+      });
       if (e is MediaException) rethrow;
-      throw MediaUploadException('Échec de la publication', e);
+      throw MediaUploadException('Échec de la publication : ${e.toString()}', e);
     }
   }
 
@@ -991,11 +996,15 @@ class MediaService {
       bump();
       _MediaLogger.info('Media updated', {'id': ex.id});
       return updated;
-    } catch (e) {
+    } catch (e, stack) {
       await _cleanupFiles(uploadedPaths);
-      _MediaLogger.error('updateWithFiles failed', {'id': ex.id, 'error': '$e'});
+      _MediaLogger.error('updateWithFiles failed with details', {
+        'id': ex.id,
+        'error': e.toString(),
+        'stack': stack.toString(),
+      });
       if (e is MediaException) rethrow;
-      throw MediaUploadException('Échec de la mise à jour', e);
+      throw MediaUploadException('Échec de la mise à jour : ${e.toString()}', e);
     }
   }
   Future<void> updateMediaMeta(String mediaId, Map<String, dynamic> updates) async {
