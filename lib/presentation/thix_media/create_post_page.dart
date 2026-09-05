@@ -30,7 +30,15 @@ class _CreatePostPageState extends State<CreatePostPage> {
   String _selectedContentType = 'Fil';
   bool _isPaid = false;
   String _priceText = '';
+  
+  // Variables d'état pour la synchronisation de l'édition
   String _selectedFilter = 'Normal';
+  double _trimStart = 0;
+  double _trimEnd = 0;
+  bool _muteOriginal = false;
+  String? _musicPath;
+  String? _voicePath;
+  
   bool _isUploading = false;
   double _progress = 0.0;
 
@@ -56,6 +64,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
     setState(() => _subtitleError = error);
   }
 
+  // Utilisé par la caméra qui retourne pour l'instant un simple String (chemin)
   Future<void> _setProcessedVideo(String path) async {
     final file = File(path);
     final bytes = await file.readAsBytes();
@@ -82,14 +91,49 @@ class _CreatePostPageState extends State<CreatePostPage> {
     final result = await FilePicker.platform.pickFiles(type: FileType.video, withData: false);
     if (result != null && result.files.isNotEmpty && result.files.first.path != null) {
       final rawPath = result.files.first.path!;
-      final edited = await Navigator.push<String>(
+
+      // On attend désormais un objet VideoEditResult de l'éditeur
+      final edited = await Navigator.push<VideoEditResult>(
         context,
-        MaterialPageRoute(builder: (_) => VideoPreviewEditorPage(videoPath: rawPath)),
+        MaterialPageRoute(
+          builder: (_) => VideoPreviewEditorPage(videoPath: rawPath),
+        ),
       );
+
       if (edited != null) {
-        await _setProcessedVideo(edited);
+        await _applyEditResult(edited);
       }
     }
+  }
+
+  Future<void> _applyEditResult(VideoEditResult edited) async {
+    final file = File(edited.videoPath);
+    final bytes = await file.readAsBytes();
+
+    final platformFile = PlatformFile(
+      name: edited.videoPath.split('/').last,
+      size: file.lengthSync(),
+      path: edited.videoPath,
+      bytes: bytes,
+    );
+
+    final error = CreatePostValidators.validateVideoFile(platformFile);
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: CreatePostColors.danger),
+      );
+      return;
+    }
+
+    setState(() {
+      _selectedVideo = platformFile;
+      _selectedFilter = edited.filterDisplayName;
+      _trimStart = edited.trimStart;
+      _trimEnd = edited.trimEnd;
+      _muteOriginal = edited.muteOriginalAudio;
+      _musicPath = edited.musicPath;
+      _voicePath = edited.voicePath;
+    });
   }
 
   Future<void> _pickEpisodes() async {
@@ -178,16 +222,23 @@ class _CreatePostPageState extends State<CreatePostPage> {
         type: _selectedContentType,
         isPaid: _isPaid,
         price: _isPaid ? double.parse(_priceText) : 0.0,
-        filterApplied: _selectedFilter,
+        filterApplied: _selectedFilter, // <-- Synchronisé
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
 
+      // Envoi des fichiers avec les nouvelles propriétés d'édition si ton backend/MediaService les gère
       await MediaService().insertWithFiles(
         newContent,
         videoFile: _selectedVideo,
         coverFile: null,
         episodeFiles: _isSeries && _episodeFiles.isNotEmpty ? _episodeFiles : null,
+        // Paramètres d'édition supplémentaires à gérer dans ton MediaService si nécessaire :
+        trimStart: _trimStart,
+        trimEnd: _trimEnd,
+        muteOriginal: _muteOriginal,
+        musicPath: _musicPath,
+        voicePath: _voicePath,
         onProgress: (p) => setState(() => _progress = p),
       );
 
