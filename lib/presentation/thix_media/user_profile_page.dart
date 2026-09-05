@@ -227,7 +227,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     );
   }
 
-  Widget _buildProfileContent(UserProfileBundle bundle, AppLocalizations l10n) {
+    Widget _buildProfileContent(UserProfileBundle bundle, AppLocalizations l10n) {
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
     final isMe = currentUserId == widget.userId;
 
@@ -289,13 +289,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
             ),
           ),
 
-          RepaintBoundary(
-            child: ProfileVideosGrid(userId: widget.userId),
-          ),
+          
+          ProfileVideosGrid(userId: widget.userId),
 
           const SliverToBoxAdapter(child: SizedBox(height: 40)),
         ],
       ),
     );
   }
-}
