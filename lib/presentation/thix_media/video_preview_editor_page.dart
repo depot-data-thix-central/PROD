@@ -834,7 +834,7 @@ class _AudioOptionTile extends StatelessWidget {
       ),
     );
   }
-
+}
 class VideoEditResult {
   final String videoPath;
   final String filterDisplayName;
@@ -855,3 +855,4 @@ class VideoEditResult {
   });
 }
 }
+
