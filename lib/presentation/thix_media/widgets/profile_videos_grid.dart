@@ -138,27 +138,27 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
 
         final itemCount = state.posts.length + (state.hasMore ? 1 : 0);
 
-        return RepaintBoundary(
-          child: SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: _kGridCrossAxisCount,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-                childAspectRatio: _kGridChildAspectRatio,
-              ),
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  if (index == state.posts.length) {
-                    return const _LoadingIndicator();
-                  }
-                  return RepaintBoundary(
-                    child: ProfileVideoCard(post: state.posts[index]),
-                  );
-                },
-                childCount: itemCount,
-              ),
+        // ✅ CORRECTION ICI : Le RepaintBoundary externe a été supprimé
+        return SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: _kGridCrossAxisCount,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: _kGridChildAspectRatio,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                if (index == state.posts.length) {
+                  return const _LoadingIndicator();
+                }
+                // Les RepaintBoundary sur les éléments individuels restent
+                return RepaintBoundary(
+                  child: ProfileVideoCard(post: state.posts[index]),
+                );
+              },
+              childCount: itemCount,
             ),
           ),
         );
