@@ -394,18 +394,19 @@ class LiveRtcService {
           onStats?.call(s);
         },
 
-        onLocalVideoStats: (connection, stats) {
+                onLocalVideoStats: (connection, stats) {
           // Stats spécifiques host (publish)
           if (_isHost) {
             final s = RtcStats(
-              bitrateKbps: stats.txKBitRate,
-              fps: stats.encodedFrameRate?.toDouble() ?? 0.0,
+              bitrateKbps: stats.txKBitRate ?? 0,
+              fps: stats.sentFrameRate?.toDouble() ?? 0.0, 
               packetLossPercent: stats.txPacketLossRate?.toDouble() ?? 0.0,
             );
             _safeAdd(_statsController, s);
             onStats?.call(s);
           }
         },
+
 
         // ── ERRORS ──
         onError: (err, msg) {
