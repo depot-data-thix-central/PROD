@@ -39,10 +39,9 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
   DateTime? _lastRefresh;
 
   // Détermine quel provider utiliser
-  AutoDisposeStateNotifierProvider<UserPostsNotifier, AsyncValue<UserPostsState>, String> get _provider {
+  AutoDisposeStateNotifierProviderFamily<UserPostsNotifier, AsyncValue<UserPostsState>, String> get _provider {
     return widget.showPrivate ? userPrivatePostsProvider : userPostsProvider;
   }
-
   @override
   void initState() {
     super.initState();
