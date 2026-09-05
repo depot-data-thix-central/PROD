@@ -131,6 +131,7 @@ class _VideoPreviewEditorPageState extends State<VideoPreviewEditorPage> {
   int _selectedFilterIndex = 0;
   bool _muteOriginalAudio = false;
   PlatformFile? _selectedMusic;
+  PlatformFile? _selectedVoice;
 
   bool _isProcessing = false;
   double _processProgress = 0;
@@ -290,6 +291,23 @@ class _VideoPreviewEditorPageState extends State<VideoPreviewEditorPage> {
     HapticFeedback.selectionClick();
     _EditorLogger.info('Mute toggled', {'mute': _muteOriginalAudio});
   }
+
+  
+  Future<void> _pickVoice() async {
+  final result = await FilePicker.platform.pickFiles(
+    type: FileType.audio,
+    allowedExtensions: ['mp3', 'wav', 'm4a', 'aac'],
+  );
+  if (result == null || result.files.isEmpty) return;
+  setState(() {
+    _selectedVoice = result.files.first;
+    _muteOriginalAudio = true;
+  });
+}
+
+void _removeVoice() {
+  setState(() => _selectedVoice = null);
+}
 
   // ── Export ─────────────────────────────────────────────────
   Future<void> _exportAndFinish() async {
