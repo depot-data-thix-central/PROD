@@ -200,7 +200,8 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
       _LiveHostLogger.error('Bootstrap failed',
           {'error': '$e', 'stack': stack.toString()});
       if (!mounted) return;
-      _snack(ref.read(appLocalizationsProvider).t('live_error_generic',
+      _snack(AppLocalizations.of(context).t('live_error_generic',
+
               args: {'error': '$e'}),
           error: true);
       Navigator.of(context).pop();
