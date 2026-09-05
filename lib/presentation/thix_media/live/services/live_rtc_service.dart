@@ -399,8 +399,8 @@ class LiveRtcService {
           if (_isHost) {
             final s = RtcStats(
               bitrateKbps: stats.txKBitRate,
-              fps: stats.sentFrameRate.toDouble(),
-              packetLossPercent: stats.captureFrameLossRate.toDouble(),
+              fps: stats.encodedFrameRate?.toDouble() ?? 0.0,
+              packetLossPercent: stats.txPacketLossRate?.toDouble() ?? 0.0,
             );
             _safeAdd(_statsController, s);
             onStats?.call(s);
@@ -463,7 +463,9 @@ class LiveRtcService {
   }
 
   void _handleAgoraError(ErrorCodeType err, String msg) {
-    final code = err.value;
+    // ✅ CORRECTION ICI : Ajout des parenthèses à .value()
+    final int code = err.value();
+    
     _RtcLogger.error('Agora error', {'code': code, 'msg': msg});
 
     // Classification : certaines erreurs sont non-fatales
@@ -512,6 +514,7 @@ class LiveRtcService {
         throw RtcTimeoutException('startPreview');
       });
 
+      // ✅ CORRECTION ICI : Suppression de `audioScenario`
       await _engine!
           .joinChannel(
             token: creds.token,
@@ -525,8 +528,6 @@ class LiveRtcService {
               publishMicrophoneTrack: true,
               autoSubscribeAudio: true,
               autoSubscribeVideo: true,
-              // Low-latency pour live interactif
-              audioScenario: AudioScenarioType.audioScenarioGameStreaming,
             ),
           )
           .timeout(_kRtcTimeout, onTimeout: () {
@@ -571,6 +572,7 @@ class LiveRtcService {
           .setClientRole(role: ClientRoleType.clientRoleAudience)
           .timeout(_kRtcTimeout);
 
+      // ✅ CORRECTION ICI : Suppression de `audioScenario`
       await _engine!
           .joinChannel(
             token: creds.token,
@@ -584,7 +586,6 @@ class LiveRtcService {
               publishMicrophoneTrack: false,
               autoSubscribeAudio: true,
               autoSubscribeVideo: true,
-              audioScenario: AudioScenarioType.audioScenarioGameStreaming,
             ),
           )
           .timeout(_kRtcTimeout, onTimeout: () {
