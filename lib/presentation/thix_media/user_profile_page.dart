@@ -29,11 +29,19 @@ import 'providers/user_profile_providers.dart';
 
 class _ProfileLogger {
   static const _tag = 'UserProfile';
+
   static void info(String m, [Map<String, dynamic>? d]) => _log('INFO', m, d);
   static void error(String m, [Map<String, dynamic>? d]) => _log('ERROR', m, d);
+
   static void _log(String l, String m, Map<String, dynamic>? d) {
     if (!kDebugMode && l == 'INFO') return;
-    final data = d != null ? ' \( {d.entries.map((e) => ' \){e.key}=${e.value}').join(', ')}' : '';
+    final data = d == null
+        ? ''
+        : ' \( {d.entries.map((e) => ' \){e.key}=${e.value}').join(', ')}';
+    // Si ça plante encore, utilise celle-ci :
+    // final data = d == null
+    //     ? ''
+    //     : ' \( {d.entries.map((e) => " \){e.key}=${e.value}").join(', ')}';
     debugPrint('[$_tag] [$l] $m$data');
   }
 }
