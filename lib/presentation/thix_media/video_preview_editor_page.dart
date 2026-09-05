@@ -293,55 +293,61 @@ class _VideoPreviewEditorPageState extends State<VideoPreviewEditorPage> {
 
   // ── Export ─────────────────────────────────────────────────
   Future<void> _exportAndFinish() async {
-    if (!_throttle()) return;
+  if (!_throttle()) return;
 
-    final trimDuration = _trimEnd - _trimStart;
-    if (trimDuration < _EditorLimits.minTrimDurationSeconds) {
-      _showSnack('editor_error_trim_too_short', isError: true);
-      return;
-    }
-    if (_controller == null || !_controller!.value.isInitialized) {
-      _showSnack('editor_error_not_ready', isError: true);
-      return;
-    }
-
-    setState(() {
-      _isProcessing = true;
-      _processProgress = 0.3;
-      _processLabelKey = 'editor_processing';
-    });
-    HapticFeedback.mediumImpact();
-
-    try {
-      await Future.delayed(const Duration(milliseconds: 600));
-      if (_disposed || !mounted) return;
-
-      setState(() {
-        _processProgress = 1.0;
-        _processLabelKey = 'editor_done';
-      });
-      HapticFeedback.heavyImpact();
-      await Future.delayed(const Duration(milliseconds: 200));
-      if (!mounted || _disposed) return;
-
-      _EditorLogger.info('Export successful', {
-        'trimStart': _trimStart.toStringAsFixed(1),
-        'trimEnd': _trimEnd.toStringAsFixed(1),
-        'filter': _kFilters[_selectedFilterIndex].i18nKey,
-      });
-      Navigator.pop(context, widget.videoPath);
-    } catch (e) {
-      _EditorLogger.error('Export failed', {'error': '$e'});
-      if (!mounted || _disposed) return;
-      setState(() {
-        _isProcessing = false;
-        _processProgress = 0;
-        _processLabelKey = '';
-      });
-      _showSnack('editor_error_export_failed', isError: true);
-    }
+  final trimDuration = _trimEnd - _trimStart;
+  if (trimDuration < _EditorLimits.minTrimDurationSeconds) {
+    _showSnack('editor_error_trim_too_short', isError: true);
+    return;
+  }
+  if (_controller == null || !_controller!.value.isInitialized) {
+    _showSnack('editor_error_not_ready', isError: true);
+    return;
   }
 
+  setState(() {
+    _isProcessing = true;
+    _processProgress = 0.3;
+    _processLabelKey = 'editor_processing';
+  });
+  HapticFeedback.mediumImpact();
+
+  try {
+    // TODO: vrai processing (ffmpeg) ici plus tard
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (_disposed || !mounted) return;
+
+    setState(() {
+      _processProgress = 1.0;
+      _processLabelKey = 'editor_done';
+    });
+    HapticFeedback.heavyImpact();
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (!mounted || _disposed) return;
+
+    final result = VideoEditResult(
+      videoPath: widget.videoPath,
+      trimStart: _trimStart,
+      trimEnd: _trimEnd,
+      filterKey: _kFilters[_selectedFilterIndex].i18nKey,
+      muteOriginalAudio: _muteOriginalAudio,
+      musicPath: _selectedMusic?.path,
+      // voicePath: _selectedVoice?.path,  // quand tu ajouteras la voix
+    );
+
+    _EditorLogger.info('Export successful', {
+      'trimStart': result.trimStart.toStringAsFixed(1),
+      'trimEnd': result.trimEnd.toStringAsFixed(1),
+      'filter': result.filterKey,
+      'mute': result.muteOriginalAudio,
+      'hasMusic': result.musicPath != null,
+    });
+
+    Navigator.pop(context, result);   // ← objet complet au lieu du path
+  } catch (e) {
+    
+  }
+}
   // ── Helpers ────────────────────────────────────────────────
 
   String _fmt(double seconds) {
