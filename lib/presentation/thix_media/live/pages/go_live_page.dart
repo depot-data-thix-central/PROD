@@ -426,13 +426,15 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
     // Validation
     final title = _LiveSanitizer.title(_titleCtrl.text);
     if (title.isEmpty) {
-      _snack(ref.read(appLocalizationsProvider).t('live_error_title_required'),
+      // ✅ CORRECTION : Utilisation de AppLocalizations.of(context)
+      _snack(AppLocalizations.of(context).t('live_error_title_required'),
           error: true);
       return;
     }
 
     if (_networkQuality == _NetworkQuality.offline) {
-      _snack(ref.read(appLocalizationsProvider).t('live_error_offline'),
+      // ✅ CORRECTION : Utilisation de AppLocalizations.of(context)
+      _snack(AppLocalizations.of(context).t('live_error_offline'),
           error: true);
       return;
     }
@@ -515,7 +517,8 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
           ),
         );
       } else if (next is GoLiveError) {
-        _snack(next.message, error: true);
+        // ✅ CORRECTION : Utilisation de next.error.toString()
+        _snack(next.error.toString(), error: true);
         ref.read(goLiveNotifierProvider.notifier).reset();
         if (mounted) setState(() => _isCountingDown = false);
       }
