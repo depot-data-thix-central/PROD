@@ -145,11 +145,13 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
 
     setState(() => _busy = true);
     try {
-      // À brancher sur ton updateMedia (ou RPC)
+      // ✅ CORRECTION ICI : Paramètres enveloppés dans un dictionnaire {}
       await MediaService().updateMediaMeta(
         widget.post.id,
-        title: newTitle,
-        subtitle: descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+        {
+          'title': newTitle,
+          'subtitle': descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+        },
       );
       widget.onChanged?.call();
       if (mounted) {
@@ -181,9 +183,12 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
 
     setState(() => _busy = true);
     try {
+      // ✅ CORRECTION ICI : Paramètres enveloppés dans un dictionnaire {} avec le nom de colonne DB
       await MediaService().updateMediaMeta(
         widget.post.id,
-        isPublished: !widget.post.isPublished,
+        {
+          'is_published': !widget.post.isPublished,
+        },
       );
       widget.onChanged?.call();
       if (mounted) {
