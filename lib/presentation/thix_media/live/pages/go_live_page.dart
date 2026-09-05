@@ -423,24 +423,21 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
   Future<void> _onStart() async {
     if (!_throttle()) return;
 
+    final l10n = AppLocalizations.of(context);
+
     // Validation
     final title = _LiveSanitizer.title(_titleCtrl.text);
     if (title.isEmpty) {
-      // ✅ CORRECTION : Utilisation de AppLocalizations.of(context)
-      _snack(AppLocalizations.of(context).t('live_error_title_required'),
-          error: true);
+      _snack(l10n.t('live_error_title_required'), error: true);
       return;
     }
 
     if (_networkQuality == _NetworkQuality.offline) {
-      // ✅ CORRECTION : Utilisation de AppLocalizations.of(context)
-      _snack(AppLocalizations.of(context).t('live_error_offline'),
-          error: true);
+      _snack(l10n.t('live_error_offline'), error: true);
       return;
     }
 
     if (_networkQuality == _NetworkQuality.poor) {
-      final l10n = AppLocalizations.of(context);
       final proceed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -517,8 +514,19 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
           ),
         );
       } else if (next is GoLiveError) {
-        // ✅ CORRECTION : Utilisation de next.error.toString()
-       _snack("Erreur : ${next.toString()}", error: true);
+        // ✅ NOUVEAU BLOC DE GESTION DES ERREURS
+        final msg = next.rawMessage.isNotEmpty
+            ? next.rawMessage
+            : l10n.t(next.i18nKey);
+
+        _snack('Erreur : $msg', error: true);
+
+        // Option : proposer de reprendre un live déjà actif
+        if (next.code == GoLiveErrorCode.alreadyActive &&
+            next.alreadyActiveSession != null) {
+          // TODO: Afficher une dialog pour reprendre
+        }
+
         ref.read(goLiveNotifierProvider.notifier).reset();
         if (mounted) setState(() => _isCountingDown = false);
       }
