@@ -358,14 +358,14 @@ class _SeatSelectionPageState extends ConsumerState<SeatSelectionPage> {
     final l10n = AppLocalizations.of(context);
     
     return Scaffold(
-      backgroundColor: ThixPolicy.background,
+      backgroundColor: ThixPolicy.inkDeep,
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(52),
         child: ClipRRect(
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: AppBar(
-              backgroundColor: ThixPolicy.background.withOpacity(0.85),
+              backgroundColor: ThixPolicy.inkDeep.withOpacity(0.85),
               elevation: 0,
               leading: Padding(
                 padding: const EdgeInsets.all(8),
@@ -457,7 +457,7 @@ class _SeatSelectionPageState extends ConsumerState<SeatSelectionPage> {
                               Container(
                                 padding: const EdgeInsets.all(6),
                                 decoration: BoxDecoration(
-                                  color: ThixPolicy.surfaceAlt,
+                                  color: ThixPolicy.surfaceStrong,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Icon(
@@ -551,7 +551,7 @@ class _SeatSelectionPageState extends ConsumerState<SeatSelectionPage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _leg(ThixPolicy.surfaceAlt, l10n.t('event_seat_available'), false),
+          _leg(ThixPolicy.surfaceStrong, l10n.t('event_seat_available'), false),
           _leg(ThixPolicy.primary, l10n.t('event_seat_selected'), true),
           _leg(ThixPolicy.warning, l10n.t('event_seat_reserved'), true),
           _leg(ThixPolicy.danger, l10n.t('event_seat_sold'), true),
@@ -743,7 +743,7 @@ class _SeatSelectionPageState extends ConsumerState<SeatSelectionPage> {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       decoration: BoxDecoration(
-        color: ThixPolicy.surfaceAlt.withOpacity(0.96),
+        color: ThixPolicy.surfaceStrong.withOpacity(0.96),
         border: Border(top: BorderSide(color: ThixPolicy.border)),
       ),
       child: SafeArea(
@@ -789,7 +789,7 @@ class _SeatSelectionPageState extends ConsumerState<SeatSelectionPage> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.white,
                       foregroundColor: Colors.black,
-                      disabledBackgroundColor: ThixPolicy.surfaceAlt,
+                      disabledBackgroundColor: ThixPolicy.surfaceStrong,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(23),
                       ),
