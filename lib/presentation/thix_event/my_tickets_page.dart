@@ -141,7 +141,7 @@ class _MyTicketsPageState extends ConsumerState<MyTicketsPage> {
 
   void _navigateToTicket(String ticketId) {
     if (!_throttle()) {
-      _TicketLogger.warn('Navigation throttled');
+      _TicketLogger.error('Navigation throttled'); // CORRIGÉ (warn -> error)
       return;
     }
     
@@ -237,7 +237,7 @@ class _MyTicketsPageState extends ConsumerState<MyTicketsPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
+            const Icon(
               Icons.error_outline_rounded,
               size: 48,
               color: EventTheme.textMuted,
@@ -250,7 +250,7 @@ class _MyTicketsPageState extends ConsumerState<MyTicketsPage> {
                 color: EventTheme.textSecondary,
               ),
             ),
-            const SizedBox(height: ThixPolicy.s18),
+            const SizedBox(height: ThixPolicy.s16), // CORRIGÉ (s18 -> s16)
             Semantics(
               button: true,
               label: l10n.t('common_retry'),
@@ -281,8 +281,8 @@ class _MyTicketsPageState extends ConsumerState<MyTicketsPage> {
     final dateFormatter = DateFormat('dd MMMM yyyy • HH:mm', locale);
     final formattedDate = dateFormatter.format(ticket.eventDate);
     
-    // Use ticket currency or fallback
-    final currency = ticket.currency ?? 'FC';
+    // Use fallback currency
+    const currency = 'FC'; // CORRIGÉ (retrait de ticket.currency)
     
     return Semantics(
       button: true,
@@ -321,7 +321,7 @@ class _MyTicketsPageState extends ConsumerState<MyTicketsPage> {
                                     width: 80,
                                     height: 80,
                                     color: EventTheme.surfaceAlt,
-                                    child: Icon(
+                                    child: const Icon(
                                       Icons.confirmation_num_rounded,
                                       color: EventTheme.textMuted,
                                     ),
@@ -334,7 +334,7 @@ class _MyTicketsPageState extends ConsumerState<MyTicketsPage> {
                                     color: EventTheme.primary.withOpacity(0.12),
                                     borderRadius: BorderRadius.circular(ThixPolicy.rSm),
                                   ),
-                                  child: Icon(
+                                  child: const Icon(
                                     Icons.confirmation_num_rounded,
                                     color: EventTheme.primary,
                                   ),
@@ -417,7 +417,7 @@ class _MyTicketsPageState extends ConsumerState<MyTicketsPage> {
                       horizontal: ThixPolicy.s16,
                       vertical: ThixPolicy.s12,
                     ),
-                    decoration: BoxDecoration(
+                    decoration: const BoxDecoration(
                       color: EventTheme.surfaceAlt,
                       border: Border(top: BorderSide(color: EventTheme.border)),
                     ),
@@ -426,7 +426,7 @@ class _MyTicketsPageState extends ConsumerState<MyTicketsPage> {
                       children: [
                         Row(
                           children: [
-                            Icon(
+                            const Icon(
                               Icons.sell_rounded,
                               size: 14,
                               color: EventTheme.accent,
@@ -472,7 +472,7 @@ class _MyTicketsPageState extends ConsumerState<MyTicketsPage> {
               shape: BoxShape.circle,
               border: Border.all(color: EventTheme.border),
             ),
-            child: Icon(
+            child: const Icon(
               Icons.local_activity_rounded,
               size: 40,
               color: EventTheme.primary,
