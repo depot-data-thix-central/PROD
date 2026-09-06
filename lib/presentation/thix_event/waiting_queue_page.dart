@@ -327,7 +327,8 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
       barrierDismissible: false,
       context: context,
       builder: (_) => Semantics(
-        dialog: true,
+        namesRoute: true,
+        scopesRoute: true,
         child: Dialog(
           backgroundColor: ThixPolicy.surface,
           shape: RoundedRectangleBorder(
@@ -541,14 +542,14 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
     final l10n = AppLocalizations.of(context);
     
     return Scaffold(
-      backgroundColor: ThixPolicy.background,
+      backgroundColor: ThixPolicy.bg,
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(52),
         child: ClipRRect(
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: AppBar(
-              backgroundColor: ThixPolicy.background.withOpacity(0.85),
+              backgroundColor: ThixPolicy.bg.withOpacity(0.85),
               elevation: 0,
               leading: Semantics(
                 button: true,
@@ -600,7 +601,8 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
     showDialog(
       context: context,
       builder: (_) => Semantics(
-        dialog: true,
+        namesRoute: true,
+        scopesRoute: true,
         child: Dialog(
           backgroundColor: ThixPolicy.surface,
           shape: RoundedRectangleBorder(
