@@ -129,46 +129,44 @@ class _EventTicketPageState extends State<EventTicketPage>
     super.dispose();
   }
 
-  Future<void> _fetch() async {
-    setState(() => _loading = true);
-    try {
-      final res = await Supabase.instance.client
-          .from('event_bookings')
-          .select('*, events(*)')
-          .eq('id', widget.bookingId)
-          .single()
-          .timeout(const Duration(seconds: 15));
+  Future<void> _fetch({int attempt = 1}) async {
+  setState(() => _loading = true);
+  try {
+    final res = await Supabase.instance.client
+        .from('event_bookings')
+        .select('*, events(*)')
+        .eq('id', widget.bookingId)
+        .single()
+        .timeout(const Duration(seconds: 8));
 
-      if (!mounted) return;
-      
-      // Extraction sécurisée des données de l'événement (gère les Map et les List)
-      Map<String, dynamic>? eventData;
-      final rawEvents = res['events'];
-      if (rawEvents is List && rawEvents.isNotEmpty) {
-        eventData = rawEvents.first as Map<String, dynamic>?;
-      } else if (rawEvents is Map) {
-        eventData = rawEvents as Map<String, dynamic>?;
-      }
+    if (!mounted) return;
 
-      setState(() {
-        _booking = res;
-        _event = eventData;
-        _loading = false;
-      });
-      _TicketLogger.info('Ticket loaded', {
-        'title': _event?['title'],
-      });
-    } on TimeoutException {
-      _TicketLogger.error('Fetch timeout');
-      if (mounted) setState(() => _loading = false);
-    } catch (e, stack) {
-      _TicketLogger.error('Fetch failed', {
-        'error': '$e',
-        'stack': stack.toString(),
-      });
-      if (mounted) setState(() => _loading = false);
+    // ✅ Extraction sûre : gère Map, List et null (plus de cast TypeError)
+    Map<String, dynamic>? eventData;
+    final raw = res['events'];
+    if (raw is Map) {
+      eventData = Map<String, dynamic>.from(raw);
+    } else if (raw is List && raw.isNotEmpty && raw.first is Map) {
+      eventData = Map<String, dynamic>.from(raw.first as Map);
     }
+
+    setState(() {
+      _booking = Map<String, dynamic>.from(res);
+      _event = eventData;
+      _loading = false;
+    });
+  } on TimeoutException {
+    _TicketLogger.error('Fetch timeout', {'attempt': attempt});
+    if (mounted && attempt < 2) {
+      _fetch(attempt: attempt + 1); // 1 retry automatique
+    } else if (mounted) {
+      setState(() => _loading = false);
+    }
+  } catch (e, stack) {
+    _TicketLogger.error('Fetch failed', {'error': '$e', 'stack': '$stack'});
+    if (mounted) setState(() => _loading = false); // → écran "introuvable" + retry, jamais de spinner infini
   }
+}
 
   bool _canAttemptPin() {
     if (_pinAttempts >= _maxPinAttempts) return false;
