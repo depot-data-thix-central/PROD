@@ -192,7 +192,8 @@ class _EventTicketPageState extends State<EventTicketPage>
     showDialog(
       context: context,
       builder: (ctx) => Semantics(
-        dialog: true,
+        namesRoute: true,
+        scopesRoute: true,
         child: Dialog(
           backgroundColor: EventTheme.surface,
           shape: RoundedRectangleBorder(
