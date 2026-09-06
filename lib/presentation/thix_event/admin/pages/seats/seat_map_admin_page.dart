@@ -20,7 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
+import 'package:thix_id/models/event_seat.dart';
 import '../../../../core/admin_constants.dart';
 import '../../../../core/admin_guards.dart';
 import '../../../../core/theme/thix_design_policy.dart';
