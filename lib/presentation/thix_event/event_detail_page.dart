@@ -375,7 +375,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     
     if (_isLoading) {
       return Scaffold(
-        backgroundColor: ThixPolicy.background, 
+        backgroundColor: ThixPolicy.inkDeep, 
         body: Center(
           child: CircularProgressIndicator(color: ThixPolicy.primary)
         )
@@ -383,7 +383,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     }
 
     return Scaffold(
-      backgroundColor: ThixPolicy.background,
+      backgroundColor: ThixPolicy.inkDeep,
       extendBodyBehindAppBar: true,
       extendBody: true,
       body: CustomScrollView(
@@ -432,7 +432,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                     child: Container(
                       decoration: const BoxDecoration(
                         gradient: RadialGradient(
-                          colors: [ThixPolicy.accent, ThixPolicy.background],
+                          colors: [ThixPolicy.domainEvents, ThixPolicy.inkDeep],
                           radius: 1.5,
                           center: Alignment(0, -0.5),
                         ),
@@ -446,11 +446,11 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                           child: Image.network(
                             _event.imageUrl!, 
                             fit: BoxFit.cover, 
-                            errorBuilder: (_, __, ___) => Container(color: ThixPolicy.surface)
+                            errorBuilder: (_, __, ___) => Container(color: ThixPolicy.surfaceStrong)
                           )
                         )
                       : Container(
-                          color: ThixPolicy.surfaceAlt, 
+                          color: ThixPolicy.surfaceStrong, 
                           child: Icon(
                             Icons.confirmation_num_rounded, 
                             size: 80, 
@@ -464,10 +464,10 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                         begin: Alignment.topCenter, 
                         end: Alignment.bottomCenter, 
                         colors: [
-                          ThixPolicy.background.withOpacity(0.4), 
+                          ThixPolicy.inkDeep.withOpacity(0.4), 
                           Colors.transparent, 
-                          ThixPolicy.background.withOpacity(0.9),
-                          ThixPolicy.background
+                          ThixPolicy.inkDeep.withOpacity(0.9),
+                          ThixPolicy.inkDeep
                         ],
                         stops: const [0.0, 0.3, 0.8, 1.0],
                       )
@@ -486,7 +486,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6), 
                               decoration: BoxDecoration(
-                                gradient: const LinearGradient(colors: [ThixPolicy.primary, ThixPolicy.gradientEnd]), 
+                                gradient: const LinearGradient(colors: [ThixPolicy.primary, ThixPolicy.primaryDeep]), 
                                 borderRadius: BorderRadius.circular(20)
                               ), 
                               child: Text(
@@ -529,7 +529,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            const Icon(Icons.calendar_month_rounded, size: 16, color: ThixPolicy.primaryLight), 
+                            const Icon(Icons.calendar_month_rounded, size: 16, color: ThixPolicy.tint), 
                             const SizedBox(width: 8), 
                             Text(
                               _event.formattedDate, 
@@ -699,7 +699,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                 if (_event.contactPhone != null && _event.contactPhone!.isNotEmpty) 
                   Text(
                     _event.contactPhone!, 
-                    style: TextStyle(color: ThixPolicy.primaryLight, fontSize: 12, fontWeight: FontWeight.w700, height: 1.4)
+                    style: TextStyle(color: ThixPolicy.tint, fontSize: 12, fontWeight: FontWeight.w700, height: 1.4)
                   )
               ]
             )
@@ -763,7 +763,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                       style: TextStyle(
                         fontSize: 12, 
                         fontWeight: FontWeight.w800, 
-                        color: soldOut ? Colors.redAccent : ThixPolicy.primaryLight
+                        color: soldOut ? Colors.redAccent : ThixPolicy.tint
                       )
                     ),
                 ]
@@ -856,7 +856,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                       style: TextStyle(
                         fontSize: 12, 
                         fontWeight: FontWeight.w800, 
-                        color: soldOut ? Colors.redAccent : ThixPolicy.primaryLight
+                        color: soldOut ? Colors.redAccent : ThixPolicy.tint
                       )
                     )
                 ]
@@ -926,7 +926,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
             children: [
               Icon(
                 Icons.event_seat_rounded, 
-                color: soldOut ? ThixPolicy.textMuted : ThixPolicy.primaryLight, 
+                color: soldOut ? ThixPolicy.textMuted : ThixPolicy.tint, 
                 size: 22
               ), 
               const SizedBox(width: 12), 
@@ -1022,7 +1022,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                       height: 52, 
                       padding: const EdgeInsets.symmetric(horizontal: 28), 
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(colors: [ThixPolicy.primary, ThixPolicy.gradientEnd]),
+                        gradient: const LinearGradient(colors: [ThixPolicy.primary, ThixPolicy.primaryDeep]),
                         borderRadius: BorderRadius.circular(26),
                         boxShadow: [BoxShadow(color: ThixPolicy.primary.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))]
                       ), 
