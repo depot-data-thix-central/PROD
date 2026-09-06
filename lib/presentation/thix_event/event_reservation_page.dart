@@ -321,7 +321,7 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
     
     try {
       // Check rate limit
-      final limitService = ref.read(eventBookingLimitServiceProvider);
+      final limitService = EventBookingLimitService(Supabase.instance.client);
       final canBook = await limitService.canBook(widget.eventId);
       
       if (!canBook) {
