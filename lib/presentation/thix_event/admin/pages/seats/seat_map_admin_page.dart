@@ -776,7 +776,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                 borderRadius: BorderRadius.circular(3),
               ),
             ),
-            SizedBox(width: ThixPolicy.s5 ?? 5),
+            const SizedBox(width: 5),
             Text(
               l,
               style: ThixPolicy.microStyle.copyWith(
