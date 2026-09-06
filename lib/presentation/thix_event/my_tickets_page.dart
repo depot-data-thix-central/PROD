@@ -11,6 +11,7 @@
 // - Logging structuré (_TicketLogger)
 // - Gestion erreurs robuste avec timeout et retry
 // - Throttling anti-spam (500ms)
+// - Monnaie / Devise 100% dynamique (USD, FC, etc.)
 import 'dart:async';
 import 'dart:ui';
 
@@ -28,14 +29,13 @@ import '../../providers/event_provider.dart';
 // ============================================================================
 // EVENT THEME ADAPTER (Mappe vers ThixPolicy)
 // ============================================================================
-// Utilise les tokens officiels de ThixPolicy pour le thème sombre Events.
 class EventTheme {
-  static const Color bg = ThixPolicy.inkDeep; // 0xFF0A1F44
-  static const Color surface = Color(0xFF101B30); // darkSurface
-  static const Color surfaceAlt = Color(0xFF14213A); // darkCard
-  static const Color border = Color(0xFF243451); // darkBorder
-  static const Color primary = ThixPolicy.domainEvents; // 0xFFEF4444
-  static const Color accent = ThixPolicy.gold; // 0xFFE3B23C
+  static const Color bg = ThixPolicy.inkDeep;
+  static const Color surface = Color(0xFF101B30);
+  static const Color surfaceAlt = Color(0xFF14213A);
+  static const Color border = Color(0xFF243451);
+  static const Color primary = ThixPolicy.domainEvents;
+  static const Color accent = ThixPolicy.gold;
   static const Color textMain = ThixPolicy.textOnDark;
   static const Color textSecondary = Color(0xFFA8B6CC);
   static const Color textMuted = Color(0xFF64748B);
@@ -141,7 +141,7 @@ class _MyTicketsPageState extends ConsumerState<MyTicketsPage> {
 
   void _navigateToTicket(String ticketId) {
     if (!_throttle()) {
-      _TicketLogger.error('Navigation throttled'); // CORRIGÉ (warn -> error)
+      _TicketLogger.error('Navigation throttled');
       return;
     }
     
@@ -250,7 +250,7 @@ class _MyTicketsPageState extends ConsumerState<MyTicketsPage> {
                 color: EventTheme.textSecondary,
               ),
             ),
-            const SizedBox(height: ThixPolicy.s16), // CORRIGÉ (s18 -> s16)
+            const SizedBox(height: ThixPolicy.s16),
             Semantics(
               button: true,
               label: l10n.t('common_retry'),
@@ -281,8 +281,13 @@ class _MyTicketsPageState extends ConsumerState<MyTicketsPage> {
     final dateFormatter = DateFormat('dd MMMM yyyy • HH:mm', locale);
     final formattedDate = dateFormatter.format(ticket.eventDate);
     
-    // Use fallback currency
-    const currency = 'FC'; // CORRIGÉ (retrait de ticket.currency)
+    // Devise dynamique depuis le modèle (gère USD, $, FC, CDF, etc.)
+    final String currency = (ticket.currency ?? '').trim();
+    final String formattedPrice = currency.isNotEmpty
+        ? (currency == r'$'
+            ? '\$${ticket.totalPrice.toStringAsFixed(0)}'
+            : '${ticket.totalPrice.toStringAsFixed(0)} $currency')
+        : ticket.totalPrice.toStringAsFixed(0);
     
     return Semantics(
       button: true,
@@ -442,7 +447,7 @@ class _MyTicketsPageState extends ConsumerState<MyTicketsPage> {
                           ],
                         ),
                         Text(
-                          '${ticket.totalPrice.toStringAsFixed(0)} $currency',
+                          formattedPrice,
                           style: ThixPolicy.titleStyle.copyWith(
                             color: EventTheme.accent,
                             fontWeight: FontWeight.w900,
@@ -575,7 +580,7 @@ class _SecurityWatermarkState extends State<_SecurityWatermark>
                   colors: [
                     Colors.white.withOpacity(0.0),
                     Colors.white.withOpacity(0.03),
-                    ThixPolicy.gold.withOpacity(0.04), // Utilise le Gold officiel
+                    ThixPolicy.gold.withOpacity(0.04),
                     Colors.white.withOpacity(0.03),
                     Colors.white.withOpacity(0.0),
                   ],
