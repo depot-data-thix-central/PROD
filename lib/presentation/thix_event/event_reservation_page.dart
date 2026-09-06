@@ -29,7 +29,7 @@ import '../../core/theme/thix_design_policy.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/event_model.dart';
 import '../../models/event_seat.dart';
-import '../../providers/event_provider.dart';
+import 'package:thix_id/providers/event_provider.dart';
 import '../../services/event_booking_limit_service.dart';
 import '../../services/event_seat_service.dart';
 
