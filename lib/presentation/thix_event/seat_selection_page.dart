@@ -766,7 +766,7 @@ class _SeatSelectionPageState extends ConsumerState<SeatSelectionPage> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${_total.toInt()} ${widget.event?.priceCurrency ?? 'FC'}',
+                    '${_total.toInt()} ${widget.event?.priceCurrency ?? ''}',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 18,
