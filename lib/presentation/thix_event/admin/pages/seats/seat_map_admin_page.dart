@@ -2,16 +2,6 @@
 //
 // SeatMapAdminPage — Production Enterprise (i18n + Design System + A11y)
 //
-// LOGIQUE 100% PRÉSERVÉE :
-// - AdminGuard.getCurrentRole() + canWrite(role) pour _generate()
-// - AdminConstants.maxSeatGeneration comme plafond
-// - adminEventServiceProvider.generateSeatMap() avec tous les paramètres
-// - adminEventServiceProvider.getSeatMapForAdmin(eventId)
-// - _catByRow avec rotation cyclique (standard → vip → gold → family)
-// - _prices par SeatCategory (standard/vip/gold/family)
-// - _hasAisle avec split au centre (half = seats.length ~/ 2)
-// - _buildMap() avec byRow + sort par number
-// lib/presentation/thix_event/admin/pages/seats/seat_map_admin_page.dart
 import 'dart:ui';
 
 import 'package:fl_chart/fl_chart.dart';  
@@ -20,13 +10,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
+// === IMPORTS ABSOLUS (Sécurisés pour les modèles, le design et les traductions) ===
 import 'package:thix_id/models/event_seat.dart';
-import '../../../../core/admin_constants.dart';
-import '../../../../core/admin_guards.dart';
-import '../../../../core/theme/thix_design_policy.dart';
-import '../../../../l10n/app_localizations.dart';
-import '../../../../models/event_seat.dart';        
-import '../../../../providers/admin_event_provider.dart';
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
+
+// === IMPORTS LOCAUX (Basés sur votre ancienne structure qui fonctionne) ===
+import '../../core/admin_constants.dart';
+import '../../core/admin_guards.dart';
+import '../../providers/admin_event_provider.dart';
+
 // ============================================================================
 // EVENT THEME (adapté depuis ThixPolicy — Admin Seats)
 // ============================================================================
@@ -142,7 +136,6 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
   Future<void> _generate() async {
     final l10n = AppLocalizations.of(context);
 
-    // Garde : événement sélectionné
     if (_eventId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -153,7 +146,6 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
       return;
     }
 
-    // Garde : plafond AdminConstants
     final total = _rows * _perRow;
     if (total > AdminConstants.maxSeatGeneration) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -168,7 +160,6 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
       return;
     }
 
-    // Garde : permissions
     final role = await AdminGuard.getCurrentRole();
     if (!AdminGuard.canWrite(role)) {
       _SeatMapAdminLogger.warn('Generate denied', {'role': role.toString()});
@@ -221,12 +212,14 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
     }
   }
 
-  Color _catColor(SeatCategory c) => switch (c) {
-        SeatCategory.vip => EventTheme.seatVip,
-        SeatCategory.gold => EventTheme.seatGold,
-        SeatCategory.family => EventTheme.seatFamily,
-        _ => EventTheme.seatStandard,
-      };
+  Color _catColor(SeatCategory c) {
+    switch (c) {
+      case SeatCategory.vip: return EventTheme.seatVip;
+      case SeatCategory.gold: return EventTheme.seatGold;
+      case SeatCategory.family: return EventTheme.seatFamily;
+      default: return EventTheme.seatStandard;
+    }
+  }
 
   Color _statusColor(EventSeat s) {
     if (s.status == SeatStatus.sold) return EventTheme.seatSold;
@@ -283,7 +276,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
         ),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(ThixPolicy.s16),
+        padding: EdgeInsets.all(ThixPolicy.s16),
         children: [
           // ── SÉLECTEUR D'ÉVÉNEMENT ──
           Semantics(
@@ -291,8 +284,8 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
             child: DropdownButtonFormField<String>(
               value: _eventId,
               dropdownColor: EventTheme.surface,
-              style: TextStyle(
-                color: EventTheme.textMain,
+              style: const TextStyle(
+                color: Colors.white,
                 fontSize: 12,
               ),
               decoration: _deco(l10n.t('admin_seat_target_event')),
@@ -313,11 +306,11 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
               },
             ),
           ),
-          const SizedBox(height: ThixPolicy.s14),
+          SizedBox(height: ThixPolicy.s14),
 
           // ── TARIFICATION DYNAMIQUE ──
           Container(
-            padding: const EdgeInsets.all(ThixPolicy.s14),
+            padding: EdgeInsets.all(ThixPolicy.s14),
             decoration: BoxDecoration(
               color: EventTheme.surface,
               borderRadius: BorderRadius.circular(ThixPolicy.rMd),
@@ -328,12 +321,12 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
               children: [
                 Row(
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.monetization_on_rounded,
                       color: EventTheme.accent,
                       size: 14,
                     ),
-                    const SizedBox(width: ThixPolicy.s6),
+                    SizedBox(width: ThixPolicy.s6),
                     Text(
                       l10n.t('admin_seat_pricing_title'),
                       style: ThixPolicy.labelStyle.copyWith(
@@ -344,7 +337,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: ThixPolicy.s12),
+                SizedBox(height: ThixPolicy.s12),
                 Row(
                   children: [
                     Expanded(
@@ -357,7 +350,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: ThixPolicy.s10),
+                    SizedBox(width: ThixPolicy.s10),
                     Expanded(
                       child: Semantics(
                         label: l10n.t('admin_seat_cat_vip'),
@@ -370,7 +363,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: ThixPolicy.s10),
+                SizedBox(height: ThixPolicy.s10),
                 Row(
                   children: [
                     Expanded(
@@ -383,7 +376,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: ThixPolicy.s10),
+                    SizedBox(width: ThixPolicy.s10),
                     Expanded(
                       child: Semantics(
                         label: l10n.t('admin_seat_cat_family'),
@@ -399,11 +392,11 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
               ],
             ),
           ),
-          const SizedBox(height: ThixPolicy.s12),
+          SizedBox(height: ThixPolicy.s12),
 
           // ── FORME & DISPOSITION ──
           Container(
-            padding: const EdgeInsets.all(ThixPolicy.s14),
+            padding: EdgeInsets.all(ThixPolicy.s14),
             decoration: BoxDecoration(
               color: EventTheme.surface,
               borderRadius: BorderRadius.circular(ThixPolicy.rMd),
@@ -414,12 +407,12 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
               children: [
                 Row(
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.event_seat_rounded,
                       color: EventTheme.primary,
                       size: 14,
                     ),
-                    const SizedBox(width: ThixPolicy.s6),
+                    SizedBox(width: ThixPolicy.s6),
                     Text(
                       l10n.t('admin_seat_layout_title'),
                       style: ThixPolicy.labelStyle.copyWith(
@@ -430,7 +423,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: ThixPolicy.s12),
+                SizedBox(height: ThixPolicy.s12),
                 Row(
                   children: [
                     Expanded(
@@ -448,7 +441,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: ThixPolicy.s10),
+                    SizedBox(width: ThixPolicy.s10),
                     Expanded(
                       child: Semantics(
                         label: l10n.t('admin_seat_per_row'),
@@ -461,7 +454,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: ThixPolicy.s10),
+                SizedBox(height: ThixPolicy.s10),
                 Semantics(
                   toggled: _hasAisle,
                   child: SwitchListTile(
@@ -497,7 +490,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: ThixPolicy.s8),
+                SizedBox(height: ThixPolicy.s8),
                 Wrap(
                   spacing: ThixPolicy.s8,
                   runSpacing: ThixPolicy.s8,
@@ -522,7 +515,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                           });
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(
+                          padding: EdgeInsets.symmetric(
                             horizontal: ThixPolicy.s10,
                             vertical: ThixPolicy.s6,
                           ),
@@ -531,8 +524,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                             border: Border.all(
                               color: _catColor(cat).withOpacity(0.6),
                             ),
-                            borderRadius:
-                                BorderRadius.circular(ThixPolicy.s8),
+                            borderRadius: BorderRadius.circular(ThixPolicy.s8),
                           ),
                           child: Text(
                             '$l : ${_catLabel(l10n, cat).toUpperCase()}',
@@ -546,7 +538,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                     );
                   }),
                 ),
-                const SizedBox(height: ThixPolicy.s16),
+                SizedBox(height: ThixPolicy.s16),
                 Semantics(
                   button: true,
                   enabled: !_generating,
@@ -561,7 +553,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                     child: ElevatedButton.icon(
                       onPressed: _generating ? null : _generate,
                       icon: _generating
-                          ? SizedBox(
+                          ? const SizedBox(
                               width: 14,
                               height: 14,
                               child: CircularProgressIndicator(
@@ -577,8 +569,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                         backgroundColor: Colors.white,
                         foregroundColor: EventTheme.bg,
                         shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(ThixPolicy.r2Xl),
+                          borderRadius: BorderRadius.circular(ThixPolicy.r2Xl),
                         ),
                       ),
                       label: Text(
@@ -598,7 +589,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
               ],
             ),
           ),
-          const SizedBox(height: ThixPolicy.s20),
+          SizedBox(height: ThixPolicy.s20),
 
           // ── APERÇU ──
           Text(
@@ -609,9 +600,9 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
               fontSize: 12,
             ),
           ),
-          const SizedBox(height: ThixPolicy.s10),
+          SizedBox(height: ThixPolicy.s10),
           if (_loading)
-            Center(
+            const Center(
               child: CircularProgressIndicator(
                 color: EventTheme.primary,
                 strokeWidth: 2,
@@ -619,11 +610,11 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
             )
           else if (_seats.isNotEmpty) ...[
             _buildMap(l10n),
-            const SizedBox(height: ThixPolicy.s12),
+            SizedBox(height: ThixPolicy.s12),
             _legend(l10n),
           ] else
             Container(
-              padding: const EdgeInsets.all(ThixPolicy.s20),
+              padding: EdgeInsets.all(ThixPolicy.s20),
               decoration: BoxDecoration(
                 color: EventTheme.surface,
                 borderRadius: BorderRadius.circular(ThixPolicy.rMd),
@@ -652,7 +643,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
     final sorted = byRow.keys.toList()..sort();
 
     return Container(
-      padding: const EdgeInsets.all(ThixPolicy.s14),
+      padding: EdgeInsets.all(ThixPolicy.s14),
       decoration: BoxDecoration(
         color: EventTheme.surface,
         borderRadius: BorderRadius.circular(ThixPolicy.rMd),
@@ -664,7 +655,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
           children: [
             Container(
               width: 220,
-              padding: const EdgeInsets.symmetric(vertical: ThixPolicy.s8),
+              padding: EdgeInsets.symmetric(vertical: ThixPolicy.s8),
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.06),
                 borderRadius: BorderRadius.circular(ThixPolicy.s10),
@@ -681,7 +672,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                 ),
               ),
             ),
-            const SizedBox(height: ThixPolicy.s24),
+            SizedBox(height: ThixPolicy.s24),
             ...sorted.map((r) {
               final seats = byRow[r]!
                 ..sort((a, b) => a.number.compareTo(b.number));
@@ -712,8 +703,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                             color: _statusColor(s).withOpacity(
                               s.isAvailable ? 0.18 : 1,
                             ),
-                            borderRadius:
-                                BorderRadius.circular(ThixPolicy.s6),
+                            borderRadius: BorderRadius.circular(ThixPolicy.s6),
                             border: Border.all(
                               color: _statusColor(s),
                               width: 1.2,
@@ -754,7 +744,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
   // LEGEND
   // ────────────────────────────────────────────────────────────
   Widget _legend(AppLocalizations l10n) => Container(
-        padding: const EdgeInsets.all(ThixPolicy.s10),
+        padding: EdgeInsets.all(ThixPolicy.s10),
         decoration: BoxDecoration(
           color: EventTheme.surface,
           borderRadius: BorderRadius.circular(ThixPolicy.rSm),
@@ -764,16 +754,10 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
           spacing: ThixPolicy.s12,
           runSpacing: ThixPolicy.s6,
           children: [
-            _dot(
-              EventTheme.seatStandard,
-              l10n.t('admin_seat_cat_standard'),
-            ),
+            _dot(EventTheme.seatStandard, l10n.t('admin_seat_cat_standard')),
             _dot(EventTheme.seatVip, l10n.t('admin_seat_cat_vip')),
             _dot(EventTheme.seatGold, l10n.t('admin_seat_cat_gold')),
-            _dot(
-              EventTheme.seatReserved,
-              l10n.t('admin_seat_legend_reserved'),
-            ),
+            _dot(EventTheme.seatReserved, l10n.t('admin_seat_legend_reserved')),
             _dot(EventTheme.seatSold, l10n.t('admin_seat_legend_sold')),
           ],
         ),
@@ -792,7 +776,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
                 borderRadius: BorderRadius.circular(3),
               ),
             ),
-            const SizedBox(width: ThixPolicy.s5 ?? 5),
+            SizedBox(width: ThixPolicy.s5 ?? 5),
             Text(
               l,
               style: ThixPolicy.microStyle.copyWith(
@@ -810,8 +794,8 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
   Widget _numField(String label, int v, Function(int) onChange) =>
       TextFormField(
         initialValue: v.toString(),
-        style: TextStyle(
-          color: EventTheme.textMain,
+        style: const TextStyle(
+          color: Colors.white,
           fontSize: 11,
         ),
         decoration: _deco(label),
@@ -825,8 +809,8 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
   Widget _priceField(String label, double v, Function(double) onChange) =>
       TextFormField(
         initialValue: v.toString(),
-        style: TextStyle(
-          color: EventTheme.textMain,
+        style: const TextStyle(
+          color: Colors.white,
           fontSize: 11,
         ),
         decoration: _deco(label, prefix: '\$ '),
@@ -863,7 +847,7 @@ class _SeatMapAdminPageState extends ConsumerState<SeatMapAdminPage> {
           borderRadius: BorderRadius.circular(ThixPolicy.rSm),
           borderSide: const BorderSide(color: Colors.white24),
         ),
-        contentPadding: const EdgeInsets.symmetric(
+        contentPadding: EdgeInsets.symmetric(
           horizontal: ThixPolicy.s12,
           vertical: ThixPolicy.s10,
         ),
