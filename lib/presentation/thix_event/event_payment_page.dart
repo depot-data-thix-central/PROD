@@ -306,7 +306,8 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
       barrierDismissible: false,
       context: context,
       builder: (_) => Semantics(
-        dialog: true,
+        namesRoute: true,
+        scopesRoute: true,
         child: Dialog(
           backgroundColor: EventTheme.surface,
           shape: RoundedRectangleBorder(
