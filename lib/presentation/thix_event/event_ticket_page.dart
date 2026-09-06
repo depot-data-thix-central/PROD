@@ -140,9 +140,19 @@ class _EventTicketPageState extends State<EventTicketPage>
           .timeout(const Duration(seconds: 15));
 
       if (!mounted) return;
+      
+      // Extraction sécurisée des données de l'événement (gère les Map et les List)
+      Map<String, dynamic>? eventData;
+      final rawEvents = res['events'];
+      if (rawEvents is List && rawEvents.isNotEmpty) {
+        eventData = rawEvents.first as Map<String, dynamic>?;
+      } else if (rawEvents is Map) {
+        eventData = rawEvents as Map<String, dynamic>?;
+      }
+
       setState(() {
         _booking = res;
-        _event = res['events'] as Map<String, dynamic>?;
+        _event = eventData;
         _loading = false;
       });
       _TicketLogger.info('Ticket loaded', {
@@ -376,7 +386,7 @@ class _EventTicketPageState extends State<EventTicketPage>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
+              const Icon(
                 Icons.event_busy_rounded,
                 size: 64,
                 color: EventTheme.textMuted,
@@ -408,6 +418,7 @@ class _EventTicketPageState extends State<EventTicketPage>
       );
     }
 
+    // Parsing sécurisé des champs texte
     final rawTitle = _event!['title']?.toString() ?? '';
     final title = _Sanitizer.text(rawTitle, maxLength: 100);
     final rawLoc = _event!['location']?.toString() ?? '';
@@ -418,14 +429,17 @@ class _EventTicketPageState extends State<EventTicketPage>
         : DateTime.now();
     final dateFmt = _formatDate(dt, locale);
     final img = _event!['image_url']?.toString();
-    final qty = (_booking!['ticket_quantity'] ?? 1) as int;
+    
+    // 🟢 CORRECTION MAJEURE ICI : Parsing sécurisé des nombres
+    final qty = int.tryParse(_booking!['ticket_quantity']?.toString() ?? '1') ?? 1;
+    final price = double.tryParse(_booking!['total_price']?.toString() ?? '0') ?? 0.0;
+    
     final cat = _Sanitizer.text(
       _booking!['ticket_category']?.toString() ?? l10n.t('ticket_standard'),
     );
     final pin = _booking!['pin_code']?.toString() ?? '****';
     final qr = _booking!['id'].toString();
-    final currency = _event!['currency']?.toString() ?? 'FC';
-    final price = (_booking!['total_price'] ?? 0) as num;
+    final currency = _event!['currency']?.toString() ?? _event!['price_currency']?.toString() ?? '';
     final organizer = _Sanitizer.text(
       _event!['organizer_name']?.toString(),
       maxLength: 60,
@@ -438,6 +452,11 @@ class _EventTicketPageState extends State<EventTicketPage>
 
     final isUpcoming = dt.isAfter(DateTime.now());
     final isUsed = (_booking!['status']?.toString() ?? '').toLowerCase() == 'used';
+
+    // Formatage propre du prix avec la devise
+    final String formattedPrice = currency.isNotEmpty
+        ? (currency == r'$' ? '\$${price.toInt()}' : '${price.toInt()} $currency')
+        : '${price.toInt()}';
 
     return Scaffold(
       backgroundColor: EventTheme.bg,
@@ -460,10 +479,8 @@ class _EventTicketPageState extends State<EventTicketPage>
               displayId: displayId,
               isUpcoming: isUpcoming,
               isUsed: isUsed,
-              price: price,
-              currency: currency,
+              formattedPrice: formattedPrice,
               organizer: organizer,
-              dt: dt,
             ),
             const SizedBox(height: ThixPolicy.s20),
             _buildActions(l10n, isUpcoming),
@@ -542,10 +559,8 @@ class _EventTicketPageState extends State<EventTicketPage>
     required String displayId,
     required bool isUpcoming,
     required bool isUsed,
-    required num price,
-    required String currency,
+    required String formattedPrice,
     required String organizer,
-    required DateTime dt,
   }) {
     return Stack(
       clipBehavior: Clip.none,
@@ -623,7 +638,7 @@ class _EventTicketPageState extends State<EventTicketPage>
                             errorBuilder: (_, __, ___) => Container(
                               height: 180,
                               color: EventTheme.surfaceAlt,
-                              child: Icon(
+                              child: const Icon(
                                 Icons.confirmation_num_rounded,
                                 size: 60,
                                 color: EventTheme.textMuted,
@@ -642,7 +657,7 @@ class _EventTicketPageState extends State<EventTicketPage>
                               ],
                             ),
                           ),
-                          child: Icon(
+                          child: const Icon(
                             Icons.confirmation_num_rounded,
                             size: 60,
                             color: EventTheme.textMuted,
@@ -698,7 +713,7 @@ class _EventTicketPageState extends State<EventTicketPage>
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.verified_rounded,
                                 size: 12,
                                 color: EventTheme.accent,
@@ -811,7 +826,7 @@ class _EventTicketPageState extends State<EventTicketPage>
                             ),
                             const Spacer(),
                             Text(
-                              '${price.toInt()} $currency',
+                              formattedPrice,
                               style: ThixPolicy.titleStyle.copyWith(
                                 color: EventTheme.accent,
                                 fontWeight: FontWeight.w900,
@@ -1044,7 +1059,7 @@ class _EventTicketPageState extends State<EventTicketPage>
       ),
       child: Row(
         children: [
-          Icon(
+          const Icon(
             Icons.qr_code_scanner_rounded,
             color: EventTheme.primary,
             size: 24,
