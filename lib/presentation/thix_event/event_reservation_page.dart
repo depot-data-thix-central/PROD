@@ -17,7 +17,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
-import '../../providers/event_provider.dart'; 
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -29,7 +29,7 @@ import '../../core/theme/thix_design_policy.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/event_model.dart';
 import '../../models/event_seat.dart';
-import 'package:thix_id/providers/event_provider.dart';
+import '../../providers/event_provider.dart';
 import '../../services/event_booking_limit_service.dart';
 import '../../services/event_seat_service.dart';
 
@@ -195,7 +195,6 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
   }
 
   String _generatePin() {
-    // Generate secure 4-digit PIN
     return (1000 + Random.secure().nextInt(9000)).toString();
   }
 
@@ -312,11 +311,19 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
       _ReservationLogger.warn('Form validation failed');
       return;
     }
-          // Check rate limit (sécurisé pour la compilation)
+
+    // 🟢 Initialisation de l10n en haut de la méthode
+    final l10n = AppLocalizations.of(context);
+
+    HapticFeedback.mediumImpact();
+    setState(() => _processing = true);
+    _ReservationLogger.info('Reservation started');
+    
+    try {
+      // Check rate limit (sécurisé pour la compilation)
       bool canBook = true;
       try {
         final limitService = EventBookingLimitService(Supabase.instance.client);
-        
       } catch (e) {
         _ReservationLogger.warn('Rate limit check skipped: $e');
       }
@@ -328,15 +335,6 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
         return;
       }
 
-    HapticFeedback.mediumImpact();
-    setState(() => _processing = true);
-    _ReservationLogger.info('Reservation started');
-    
-    final l10n = AppLocalizations.of(context);
-    
-    try {
-      
-      
       // Sanitize inputs
       final name = _Sanitizer.text(_nameCtrl.text, maxLength: 100);
       final email = _Sanitizer.text(_emailCtrl.text, maxLength: 200);
