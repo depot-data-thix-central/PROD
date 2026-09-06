@@ -23,11 +23,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/models/event_model.dart';
 import 'package:thix_id/models/ticket_tier.dart';
 
-import '../../../../core/admin_guards.dart';
-import '../../../../core/theme/thix_design_policy.dart';
-import '../../../../l10n/app_localizations.dart';
-import '../../../../providers/admin_event_provider.dart';
-import '../../../../services/admin_event_service.dart';
+// === IMPORTS ABSOLUS (Pour les traductions et le design global) ===
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
+
+// === ANCIENS IMPORTS LOCAUX (Tirés de votre photo : ../../../) ===
+import '../../../core/admin_guards.dart';
+import '../../../providers/admin_event_provider.dart';
+import '../../../services/admin_event_service.dart';
 
 // ============================================================================
 // EVENT THEME (adapté depuis ThixPolicy — Admin Events)
@@ -256,7 +259,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
               style: TextStyle(color: EventTheme.textMain),
               decoration: _decoDialog(l10n.t('admin_event_dialog_name')),
             ),
-            const SizedBox(height: ThixPolicy.s8),
+            SizedBox(height: ThixPolicy.s8),
             TextField(
               controller: p,
               keyboardType: TextInputType.number,
@@ -265,7 +268,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                 l10n.tn('admin_event_dialog_price', {'currency': _currency}),
               ),
             ),
-            const SizedBox(height: ThixPolicy.s8),
+            SizedBox(height: ThixPolicy.s8),
             TextField(
               controller: ca,
               keyboardType: TextInputType.number,
@@ -504,7 +507,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(ThixPolicy.s16),
+          padding: EdgeInsets.all(ThixPolicy.s16),
           children: [
             Row(
               children: [
@@ -520,7 +523,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                     ),
                   ),
                 ),
-                const SizedBox(width: ThixPolicy.s12),
+                SizedBox(width: ThixPolicy.s12),
                 Expanded(
                   child: Semantics(
                     button: true,
@@ -539,12 +542,12 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
             _field(_titleCtrl, l10n.t('admin_event_title'),
                 validator: (v) =>
                     v!.isEmpty ? l10n.t('admin_event_err_title_req') : null),
-            const SizedBox(height: ThixPolicy.s12),
+            SizedBox(height: ThixPolicy.s12),
             _field(_descCtrl, l10n.t('admin_event_desc'),
                 maxLines: 4,
                 validator: (v) =>
                     v!.length < 10 ? l10n.t('admin_event_err_desc_min') : null),
-            const SizedBox(height: ThixPolicy.s12),
+            SizedBox(height: ThixPolicy.s12),
             Row(
               children: [
                 Expanded(
@@ -560,7 +563,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                     onChanged: (v) => setState(() => _category = v!),
                   ),
                 ),
-                const SizedBox(width: ThixPolicy.s12),
+                SizedBox(width: ThixPolicy.s12),
                 Expanded(
                     child: _field(_subCatCtrl, l10n.t('admin_event_subcategory'))),
               ],
@@ -573,7 +576,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                   fontWeight: FontWeight.w800,
                   fontSize: 12),
             ),
-            const SizedBox(height: ThixPolicy.s8),
+            SizedBox(height: ThixPolicy.s8),
             Row(
               children: [
                 Expanded(
@@ -599,7 +602,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                     ),
                   ),
                 ),
-                const SizedBox(width: ThixPolicy.s12),
+                SizedBox(width: ThixPolicy.s12),
                 Expanded(
                   child: InkWell(
                     onTap: () async {
@@ -635,7 +638,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                         validator: (v) => v!.isEmpty
                             ? l10n.t('admin_event_err_city_req')
                             : null)),
-                const SizedBox(width: ThixPolicy.s12),
+                SizedBox(width: ThixPolicy.s12),
                 Expanded(
                     child: _field(_locationCtrl, l10n.t('admin_event_location'),
                         validator: (v) => v!.isEmpty
@@ -643,19 +646,19 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                             : null)),
               ],
             ),
-            const SizedBox(height: ThixPolicy.s12),
+            SizedBox(height: ThixPolicy.s12),
             _field(_addressCtrl, l10n.t('admin_event_address')),
             const SizedBox(height: 18),
             Row(
               children: [
                 Expanded(child: _field(_orgCtrl, l10n.t('admin_event_organizer'))),
-                const SizedBox(width: ThixPolicy.s12),
+                SizedBox(width: ThixPolicy.s12),
                 Expanded(
                     child: _field(_phoneCtrl, l10n.t('admin_event_phone'),
                         keyboard: TextInputType.phone)),
               ],
             ),
-            const SizedBox(height: ThixPolicy.s12),
+            SizedBox(height: ThixPolicy.s12),
             _field(_emailCtrl, l10n.t('admin_event_email'),
                 keyboard: TextInputType.emailAddress),
             const SizedBox(height: 20),
@@ -682,7 +685,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                 ),
               ],
             ),
-            const SizedBox(height: ThixPolicy.s8),
+            SizedBox(height: ThixPolicy.s8),
             Container(
               decoration: BoxDecoration(
                 color: EventTheme.surface,
@@ -733,13 +736,13 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                       borderRadius:
                           const BorderRadius.vertical(bottom: Radius.circular(14)),
                       child: Padding(
-                        padding: const EdgeInsets.all(ThixPolicy.s12),
+                        padding: EdgeInsets.all(ThixPolicy.s12),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             const Icon(Icons.add_circle_outline_rounded,
                                 color: Colors.white, size: 16),
-                            const SizedBox(width: ThixPolicy.s8),
+                            SizedBox(width: ThixPolicy.s8),
                             Text(
                               l10n.t('admin_event_add_tier_btn'),
                               style: TextStyle(
@@ -767,7 +770,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                   .toList(),
               onChanged: (v) => setState(() => _status = v!),
             ),
-            const SizedBox(height: ThixPolicy.s12),
+            SizedBox(height: ThixPolicy.s12),
             DropdownButtonFormField<String>(
               value: _publishSection,
               dropdownColor: EventTheme.surface,
@@ -816,7 +819,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                     children: [
                       const Icon(Icons.add_a_photo_rounded,
                           color: Colors.white, size: 18),
-                      const SizedBox(height: ThixPolicy.s6),
+                      SizedBox(height: ThixPolicy.s6),
                       Text(
                         label,
                         style: TextStyle(
