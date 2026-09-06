@@ -340,7 +340,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
+                const Icon(
                   Icons.confirmation_number_rounded,
                   size: 40,
                   color: ThixPolicy.primary,
@@ -360,7 +360,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
                     widget.requestedQuantity.toString(),
                   ]),
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: ThixPolicy.textSecondary,
                     fontSize: 12,
                   ),
@@ -379,14 +379,14 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
                             context.go('/thix-event');
                           },
                           style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: ThixPolicy.border),
+                            side: const BorderSide(color: ThixPolicy.border),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                             ),
                           ),
                           child: Text(
                             l10n.t('common_cancel'),
-                            style: TextStyle(color: ThixPolicy.textMuted),
+                            style: const TextStyle(color: ThixPolicy.textMuted),
                           ),
                         ),
                       ),
@@ -542,14 +542,14 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
     final l10n = AppLocalizations.of(context);
     
     return Scaffold(
-      backgroundColor: ThixPolicy.bg,
+      backgroundColor: ThixPolicy.inkDeep,
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(52),
         child: ClipRRect(
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: AppBar(
-              backgroundColor: ThixPolicy.bg.withOpacity(0.85),
+              backgroundColor: ThixPolicy.inkDeep.withOpacity(0.85),
               elevation: 0,
               leading: Semantics(
                 button: true,
@@ -559,7 +559,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.06),
                       shape: BoxShape.circle,
-                      border: Border.all(color: ThixPolicy.border),
+                      border: const BorderSide(color: ThixPolicy.border),
                     ),
                     padding: const EdgeInsets.all(6),
                     child: const Icon(
@@ -588,7 +588,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
         ),
       ),
       body: _loading
-          ? Center(
+          ? const Center(
               child: CircularProgressIndicator(color: ThixPolicy.primary),
             )
           : _error != null
@@ -607,7 +607,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
           backgroundColor: ThixPolicy.surface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: ThixPolicy.border),
+            side: const BorderSide(color: ThixPolicy.border),
           ),
           child: Padding(
             padding: const EdgeInsets.all(18),
@@ -624,7 +624,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
                 const SizedBox(height: 8),
                 Text(
                   l10n.t('queue_leave_msg'),
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: ThixPolicy.textSecondary,
                     fontSize: 12,
                   ),
@@ -679,7 +679,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
           decoration: BoxDecoration(
             color: ThixPolicy.surface,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: ThixPolicy.border),
+            border: const BorderSide(color: ThixPolicy.border),
           ),
           child: Column(
             children: [
@@ -693,7 +693,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
                       value: _progress(),
                       strokeWidth: 6,
                       backgroundColor: Colors.white.withOpacity(0.06),
-                      valueColor: AlwaysStoppedAnimation(ThixPolicy.primary),
+                      valueColor: const AlwaysStoppedAnimation(ThixPolicy.primary),
                     ),
                   ),
                   Column(
@@ -707,7 +707,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
                           height: 1,
                         ),
                       ),
-                      Text(
+                      const Text(
                         l10n.t('queue_position'),
                         style: TextStyle(
                           fontSize: 10,
@@ -732,7 +732,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
                 l10n.t('queue_people_ahead', args: [
                   (_size - _pos).clamp(0, 9999).toString(),
                 ]),
-                style: TextStyle(
+                style: const TextStyle(
                   color: ThixPolicy.textSecondary,
                   fontSize: 12,
                 ),
@@ -753,7 +753,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.timer_rounded,
                       size: 14,
                       color: ThixPolicy.primary,
@@ -761,7 +761,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
                     const SizedBox(width: 6),
                     Text(
                       _eta(l10n),
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: ThixPolicy.primary,
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -785,7 +785,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
           ),
           child: Row(
             children: [
-              Icon(
+              const Icon(
                 Icons.info_outline_rounded,
                 color: ThixPolicy.primary,
                 size: 18,
@@ -794,7 +794,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
               Expanded(
                 child: Text(
                   l10n.t('queue_dont_leave'),
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: ThixPolicy.textSecondary,
                     fontSize: 12,
                     height: 1.3,
@@ -810,7 +810,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
           decoration: BoxDecoration(
             color: ThixPolicy.surface,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: ThixPolicy.border),
+            border: const BorderSide(color: ThixPolicy.border),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -825,14 +825,14 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
               ),
               const SizedBox(height: 12),
               _row(l10n.t('queue_event'), _event?.title ?? '...'),
-              Divider(height: 20, color: ThixPolicy.border),
+              const Divider(height: 20, color: ThixPolicy.border),
               _row(
                 l10n.t('queue_quantity'),
                 l10n.t('queue_places', args: [
                   widget.requestedQuantity.toString(),
                 ]),
               ),
-              Divider(height: 20, color: ThixPolicy.border),
+              const Divider(height: 20, color: ThixPolicy.border),
               _row(l10n.t('queue_position_label'), '$_pos / $_size'),
             ],
           ),
@@ -846,7 +846,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
     children: [
       Text(
         label,
-        style: TextStyle(color: ThixPolicy.textMuted, fontSize: 12),
+        style: const TextStyle(color: ThixPolicy.textMuted, fontSize: 12),
       ),
       Text(
         value,
