@@ -333,7 +333,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
           backgroundColor: ThixPolicy.surface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
-            side: BorderSide(color: ThixPolicy.border),
+            side: const BorderSide(color: ThixPolicy.border),
           ),
           child: Padding(
             padding: const EdgeInsets.all(20),
@@ -559,7 +559,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.06),
                       shape: BoxShape.circle,
-                      border: const BorderSide(color: ThixPolicy.border),
+                      border: Border.all(color: ThixPolicy.border), // Correction apportée
                     ),
                     padding: const EdgeInsets.all(6),
                     child: const Icon(
@@ -679,7 +679,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
           decoration: BoxDecoration(
             color: ThixPolicy.surface,
             borderRadius: BorderRadius.circular(20),
-            border: const BorderSide(color: ThixPolicy.border),
+            border: Border.all(color: ThixPolicy.border), // Correction apportée
           ),
           child: Column(
             children: [
@@ -707,9 +707,9 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
                           height: 1,
                         ),
                       ),
-                      const Text(
+                      Text( // Correction apportée : retrait du const
                         l10n.t('queue_position'),
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 10,
                           color: ThixPolicy.textMuted,
                         ),
@@ -810,7 +810,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage>
           decoration: BoxDecoration(
             color: ThixPolicy.surface,
             borderRadius: BorderRadius.circular(16),
-            border: const BorderSide(color: ThixPolicy.border),
+            border: Border.all(color: ThixPolicy.border), // Correction apportée
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
