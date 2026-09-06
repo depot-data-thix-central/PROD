@@ -377,7 +377,7 @@ class _EventTicketPageState extends State<EventTicketPage>
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.confirmation_number_off_rounded,
+                Icons.event_busy_rounded,
                 size: 64,
                 color: EventTheme.textMuted,
               ),
