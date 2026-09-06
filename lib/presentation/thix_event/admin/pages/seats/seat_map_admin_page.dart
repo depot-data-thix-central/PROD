@@ -11,8 +11,10 @@
 // - _prices par SeatCategory (standard/vip/gold/family)
 // - _hasAisle avec split au centre (half = seats.length ~/ 2)
 // - _buildMap() avec byRow + sort par number
+// lib/presentation/thix_event/admin/pages/seats/seat_map_admin_page.dart
 import 'dart:ui';
 
+import 'package:fl_chart/fl_chart.dart';  
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -23,9 +25,8 @@ import '../../../../core/admin_constants.dart';
 import '../../../../core/admin_guards.dart';
 import '../../../../core/theme/thix_design_policy.dart';
 import '../../../../l10n/app_localizations.dart';
-import '../../../../models/event_seat.dart';
+import '../../../../models/event_seat.dart';        
 import '../../../../providers/admin_event_provider.dart';
-
 // ============================================================================
 // EVENT THEME (adapté depuis ThixPolicy — Admin Seats)
 // ============================================================================
