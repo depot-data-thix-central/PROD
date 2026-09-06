@@ -2,13 +2,6 @@
 //
 // AdminDashboard — Production Enterprise (i18n + Design System + A11y)
 //
-// LOGIQUE PRÉSERVÉE (ne rien changer) :
-// - AdminGuard.getCurrentRole() → rôle utilisateur
-// - adminEventProvider.notifier.loadDashboardStats() (microtask)
-// - AdminGuard.canWrite(role) pour la carte "Créer"
-// - AdminConstants.isDevOpenAccess pour badge DEV
-// - Navigation via context.push(route)
-// - Stats : totalEvents, totalBookings, totalRevenue, waitingQueue
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
@@ -17,11 +10,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/admin_constants.dart';
-import '../../../core/admin_guards.dart';
-import '../../../core/theme/thix_design_policy.dart';
-import '../../../l10n/app_localizations.dart';
-import '../../../providers/admin_event_provider.dart';
+// === LES ANCIENS IMPORTS LOCAUX (Exactement comme sur votre photo) ===
+import 'core/admin_constants.dart';
+import 'core/admin_guards.dart';
+import 'providers/admin_event_provider.dart';
+
+// === IMPORTS GLOBAUX SÉCURISÉS (Chemins absolus) ===
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
 
 // ============================================================================
 // EVENT THEME (adapté depuis ThixPolicy)
@@ -313,10 +309,9 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
   }
 
   // ════════════════════════════════════════════════════════════
-  // STATS GRID (logique préservée)
+  // STATS GRID
   // ════════════════════════════════════════════════════════════
   Widget _buildStatsGrid(AppLocalizations l10n, AdminEventState s) {
-    // Logique exacte préservée : loader affiché uniquement si chargement initial
     if (s.statsLoading && s.stats.totalEvents == 0) {
       return Padding(
         padding: const EdgeInsets.all(ThixPolicy.s32),
@@ -329,7 +324,6 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
       );
     }
 
-    // Formatage robuste des valeurs (gère null/erreur)
     String safeNum(dynamic v) {
       try {
         if (v == null) return '0';
@@ -376,7 +370,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
   }
 
   // ════════════════════════════════════════════════════════════
-  // ACTION GRID (data-driven, garde la logique canWrite)
+  // ACTION GRID
   // ════════════════════════════════════════════════════════════
   Widget _buildActionGrid(AppLocalizations l10n, AdminRole role) {
     final canWrite = AdminGuard.canWrite(role);
@@ -472,7 +466,7 @@ class _StatCard extends StatelessWidget {
 }
 
 // ============================================================================
-// ACTION CARD (préserve la logique canWrite + title=='Creer' check)
+// ACTION CARD
 // ============================================================================
 class _ActionCard extends StatelessWidget {
   final _AdminAction action;
