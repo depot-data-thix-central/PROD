@@ -562,8 +562,10 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
             },
             itemBuilder: (_, idx) {
               final e = list[idx];
-              final isSoldOut = e.availableSeats == 0;
-              final isLowStock = !isSoldOut && e.availableSeats < 10;
+              final int tickets = e.remainingTickets ?? 0;
+             final isSoldOut = tickets == 0;
+             final isLowStock = !isSoldOut && tickets < 10;
+
               
               return Container(
                 margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -1114,8 +1116,10 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   // ════════════════════════════════════════════════════════════
 
   Widget _card(AppLocalizations l10n, Event event) {
-    final isSoldOut = event.availableSeats == 0;
-    final isLowStock = !isSoldOut && event.availableSeats < 10;
+    final int tickets = event.remainingTickets ?? 0;
+final isSoldOut = tickets == 0;
+final isLowStock = !isSoldOut && tickets < 10;
+
     
     return Semantics(
       button: true,
