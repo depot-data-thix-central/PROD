@@ -5,13 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// ── NOUVEAUX IMPORTS (alignement production) ─────────────────────────────────
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../../core/theme/thix_design_policy.dart';
-import '../../../../l10n/app_localizations.dart';
+// ── IMPORTS ABSOLUS SÉCURISÉS (Corrige l'erreur "ThixPolicy isn't defined") ──
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
 import '../../../../providers/admin_state.dart';
 
 // ============================================================================
@@ -269,8 +269,8 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
         children: [
           // ── BANNIERE REALTIME ──
           Container(
-            margin: const EdgeInsets.all(ThixPolicy.s12),
-            padding: const EdgeInsets.all(ThixPolicy.s10),
+            margin: EdgeInsets.all(ThixPolicy.s12),
+            padding: EdgeInsets.all(ThixPolicy.s10),
             decoration: BoxDecoration(
               color: EventTheme.surface,
               borderRadius: BorderRadius.circular(ThixPolicy.rSm),
@@ -294,7 +294,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
                       ],
                     ),
                   ),
-                  const SizedBox(width: ThixPolicy.s8),
+                  SizedBox(width: ThixPolicy.s8),
                   Expanded(
                     child: Text(
                       l10n.t('admin_queue_realtime_desc'),
@@ -327,7 +327,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
                         color: EventTheme.danger,
                         size: 40,
                       ),
-                      const SizedBox(height: ThixPolicy.s12),
+                      const SizedBox(height: 12),
                       Text(
                         state.error ?? l10n.t('common_error'),
                         style: ThixPolicy.bodySmallStyle.copyWith(
@@ -335,7 +335,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
                         ),
                         textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: ThixPolicy.s16),
+                      const SizedBox(height: 16),
                       ElevatedButton.icon(
                         onPressed: () => notifier.load(refresh: true),
                         icon: const Icon(Icons.refresh_rounded, size: 16),
@@ -395,11 +395,11 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
                         label:
                             '${l10n.t('admin_queue_position')} ${i + 1}, $title, $qty ${l10n.t('admin_queue_places')}',
                         child: Container(
-                          margin: const EdgeInsets.symmetric(
+                          margin: EdgeInsets.symmetric(
                             horizontal: ThixPolicy.s12,
                             vertical: 4,
                           ),
-                          padding: const EdgeInsets.all(ThixPolicy.s12),
+                          padding: EdgeInsets.all(ThixPolicy.s12),
                           decoration: BoxDecoration(
                             color: EventTheme.surface,
                             borderRadius:
@@ -429,7 +429,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: ThixPolicy.s10),
+                              SizedBox(width: ThixPolicy.s10),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment:
@@ -461,7 +461,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: ThixPolicy.s8),
+                              SizedBox(width: ThixPolicy.s8),
                               Semantics(
                                 button: true,
                                 label: l10n.t('admin_queue_notify'),
@@ -473,7 +473,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
                                       backgroundColor: EventTheme.primary,
                                       foregroundColor: Colors.white,
                                       elevation: 0,
-                                      padding: const EdgeInsets.symmetric(
+                                      padding: EdgeInsets.symmetric(
                                         horizontal: ThixPolicy.s12,
                                       ),
                                       shape: RoundedRectangleBorder(
