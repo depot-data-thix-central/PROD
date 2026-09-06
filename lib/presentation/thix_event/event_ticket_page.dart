@@ -7,10 +7,10 @@
 // - Intégration AppLocalizations (8 langues)
 // - ThixPolicy + EventTheme (Design System)
 // - Sécurité PIN avec throttling (max 5 tentatives)
-// - Validation UUID + sanitization XSS
+// - Sanitization XSS
 // - Semantics complet pour a11y
 // - Logging structuré
-// - Aucun string/valeur en dur
+// - Chargement des données 100% sûr (aucune conversion stricte bloquante)
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
@@ -59,17 +59,8 @@ class _TicketLogger {
 }
 
 // ============================================================================
-// VALIDATORS & SANITIZERS
+// SANITIZER
 // ============================================================================
-class _Validators {
-  _Validators._();
-  static final _uuidRegex = RegExp(
-    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
-  );
-  static bool isValidUuid(String? id) =>
-      id != null && id.length == 36 && _uuidRegex.hasMatch(id);
-}
-
 class _Sanitizer {
   _Sanitizer._();
   static String text(String? input, {int maxLength = 200}) {
@@ -110,14 +101,6 @@ class _EventTicketPageState extends State<EventTicketPage>
       duration: const Duration(seconds: 3),
     )..repeat();
 
-    if (!_Validators.isValidUuid(widget.bookingId)) {
-      _TicketLogger.error('Invalid bookingId', {'id': widget.bookingId});
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) context.go('/thix-event');
-      });
-      return;
-    }
-
     _fetch();
     _TicketLogger.info('EventTicketPage init', {'bookingId': widget.bookingId});
   }
@@ -129,44 +112,34 @@ class _EventTicketPageState extends State<EventTicketPage>
     super.dispose();
   }
 
-  Future<void> _fetch({int attempt = 1}) async {
-  setState(() => _loading = true);
-  try {
-    final res = await Supabase.instance.client
-        .from('event_bookings')
-        .select('*, events(*)')
-        .eq('id', widget.bookingId)
-        .single()
-        .timeout(const Duration(seconds: 8));
+  // 🟢 LOGIQUE DE FETCH IDENTIQUE À VOTRE VERSION SIMPLE QUI MARCHE 🟢
+  Future<void> _fetch() async {
+    setState(() => _loading = true);
+    try {
+      final res = await Supabase.instance.client
+          .from("event_bookings")
+          .select("*, events(*)")
+          .eq("id", widget.bookingId)
+          .single();
 
-    if (!mounted) return;
-
-    // ✅ Extraction sûre : gère Map, List et null (plus de cast TypeError)
-    Map<String, dynamic>? eventData;
-    final raw = res['events'];
-    if (raw is Map) {
-      eventData = Map<String, dynamic>.from(raw);
-    } else if (raw is List && raw.isNotEmpty && raw.first is Map) {
-      eventData = Map<String, dynamic>.from(raw.first as Map);
+      if (mounted) {
+        setState(() {
+          _booking = res;
+          // Si events renvoie une liste, on prend le premier élément, sinon on prend l'objet.
+          final rawEvents = res["events"];
+          if (rawEvents is List && rawEvents.isNotEmpty) {
+            _event = rawEvents.first;
+          } else {
+            _event = rawEvents;
+          }
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      _TicketLogger.error('Fetch failed', {'error': e.toString()});
+      if (mounted) setState(() => _loading = false);
     }
-
-    setState(() {
-      _booking = Map<String, dynamic>.from(res);
-      _event = eventData;
-      _loading = false;
-    });
-  } on TimeoutException {
-    _TicketLogger.error('Fetch timeout', {'attempt': attempt});
-    if (mounted && attempt < 2) {
-      _fetch(attempt: attempt + 1); // 1 retry automatique
-    } else if (mounted) {
-      setState(() => _loading = false);
-    }
-  } catch (e, stack) {
-    _TicketLogger.error('Fetch failed', {'error': '$e', 'stack': '$stack'});
-    if (mounted) setState(() => _loading = false); // → écran "introuvable" + retry, jamais de spinner infini
   }
-}
 
   bool _canAttemptPin() {
     if (_pinAttempts >= _maxPinAttempts) return false;
@@ -416,11 +389,9 @@ class _EventTicketPageState extends State<EventTicketPage>
       );
     }
 
-    // Parsing sécurisé des champs texte
-    final rawTitle = _event!['title']?.toString() ?? '';
-    final title = _Sanitizer.text(rawTitle, maxLength: 100);
-    final rawLoc = _event!['location']?.toString() ?? '';
-    final loc = _Sanitizer.text(rawLoc, maxLength: 150);
+    // Parsing sécurisé des champs (comme dans votre version simple)
+    final title = _Sanitizer.text(_event!['title']?.toString() ?? 'Événement', maxLength: 100);
+    final loc = _Sanitizer.text(_event!['location']?.toString() ?? '', maxLength: 150);
     final dateStr = _event!['date'] ?? _event!['start_date'];
     final dt = dateStr != null
         ? (DateTime.tryParse(dateStr.toString()) ?? DateTime.now())
@@ -428,7 +399,6 @@ class _EventTicketPageState extends State<EventTicketPage>
     final dateFmt = _formatDate(dt, locale);
     final img = _event!['image_url']?.toString();
     
-    // 🟢 CORRECTION MAJEURE ICI : Parsing sécurisé des nombres
     final qty = int.tryParse(_booking!['ticket_quantity']?.toString() ?? '1') ?? 1;
     final price = double.tryParse(_booking!['total_price']?.toString() ?? '0') ?? 0.0;
     
@@ -451,7 +421,6 @@ class _EventTicketPageState extends State<EventTicketPage>
     final isUpcoming = dt.isAfter(DateTime.now());
     final isUsed = (_booking!['status']?.toString() ?? '').toLowerCase() == 'used';
 
-    // Formatage propre du prix avec la devise
     final String formattedPrice = currency.isNotEmpty
         ? (currency == r'$' ? '\$${price.toInt()}' : '${price.toInt()} $currency')
         : '${price.toInt()}';
@@ -481,7 +450,7 @@ class _EventTicketPageState extends State<EventTicketPage>
               organizer: organizer,
             ),
             const SizedBox(height: ThixPolicy.s20),
-            _buildActions(l10n, isUpcoming),
+            _buildActions(l10n),
             const SizedBox(height: ThixPolicy.s16),
             _buildScanHint(l10n),
           ],
@@ -990,7 +959,7 @@ class _EventTicketPageState extends State<EventTicketPage>
     );
   }
 
-  Widget _buildActions(AppLocalizations l10n, bool isUpcoming) {
+  Widget _buildActions(AppLocalizations l10n) {
     return Row(
       children: [
         Expanded(
