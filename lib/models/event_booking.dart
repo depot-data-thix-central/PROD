@@ -15,6 +15,9 @@ class EventBooking {
 
   // Catégorie du billet (ex: VIP, GOLD, Standard)
   final String ticketCategory;
+  
+  // NOUVEAU : Devise de la transaction (ex: $, FC, etc.)
+  final String? currency;
 
   // Champs additionnels venant de la jointure avec la table 'events'
   final String eventTitle;
@@ -35,6 +38,7 @@ class EventBooking {
     required this.status,
     required this.bookingDate,
     this.ticketCategory = 'Standard',
+    this.currency, // Initialisation de la devise
     this.eventTitle = '',
     this.eventImageUrl,
     required this.eventDate,
@@ -80,6 +84,13 @@ class EventBooking {
         eventData?['category']?.toString() ?? 
         'Standard';
 
+    // NOUVEAU : Gestion dynamique de la devise
+    String resolvedCurrency = json['currency']?.toString() ??
+        json['price_currency']?.toString() ??
+        eventData?['price_currency']?.toString() ??
+        eventData?['currency']?.toString() ??
+        '';
+
     return EventBooking(
       id: json['id']?.toString() ?? '',
       eventId: json['event_id']?.toString() ?? '',
@@ -96,6 +107,7 @@ class EventBooking {
           : DateTime.now(),
       
       ticketCategory: resolvedCategory,
+      currency: resolvedCurrency, // Injection de la devise
       
       eventTitle: resolvedTitle,
       eventImageUrl: resolvedImageUrl,
