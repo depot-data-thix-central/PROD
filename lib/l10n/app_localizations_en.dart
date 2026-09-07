@@ -9,6 +9,7 @@ class AppLocalizationsEn extends AppLocalizations {
   // COMMON & UI
   // ============================================================================
   @override String get common_back => 'Back';
+@override String get live_ending => 'Ending stream';
   @override String get common_close => 'Close';
   @override String get common_cancel => 'Cancel';
   @override String get common_confirm => 'Confirm';
