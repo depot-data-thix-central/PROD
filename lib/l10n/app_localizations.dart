@@ -189,6 +189,21 @@ abstract class AppLocalizations {
   String get live_leaving;
   String get live_viewers;
   String get live_likes;
+  String get live_go_live;
+  String get live_title;
+  String get live_start;
+  String get live_end;
+  String get live_duration;
+  String get live_peak_viewers;
+  String get live_chat_disabled;
+  String get live_share;
+  String get live_report;
+  String get live_follow_host;
+  String get live_gift_send;
+  String get live_quality_auto;
+  String get live_quality_hd;
+  String get live_quality_sd;
+  String get live_quality_low;
 
   // ===========================================================================
   // THIX IA - SOURCES, INSIGHTS & RISQUES
@@ -206,11 +221,23 @@ abstract class AppLocalizations {
   String get insight_type_insight;
   String get insight_confidence_label;
   String get insight_source_verified;
+  String get insight_source_unverified;
+  String get insight_recommended_actions;
+  String get insight_key_findings;
+  String get insight_summary;
+  String get insight_full_analysis;
+  String get insight_generated_by;
+  String get insight_disclaimer;
 
   String get risk_critical;
   String get risk_high;
   String get risk_medium;
   String get risk_low;
+  String get risk_level_label;
+  String get risk_mitigation;
+  String get risk_impact;
+  String get risk_probability;
+  String get risk_assessment;
 
   // ============================================================================
   // AUTH & ONBOARDING (BASIC)
