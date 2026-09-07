@@ -244,6 +244,37 @@ class AppLocalizationsFr extends AppLocalizations {
   @override String get reg_mobile_label => 'Téléphone mobile';
   @override String get reg_not_provided => 'Non renseigné';
 
+    @override String get live_go_live => 'Passer au direct';
+  @override String get live_title => 'Titre du direct';
+  @override String get live_start => 'Commencer le direct';
+  @override String get live_end => 'Terminer le direct';
+  @override String get live_duration => 'Durée';
+  @override String get live_peak_viewers => 'Pic de spectateurs';
+  @override String get live_chat_disabled => 'Le chat est désactivé.';
+  @override String get live_share => 'Partager';
+  @override String get live_report => 'Signaler';
+  @override String get live_follow_host => 'Suivre';
+  @override String get live_gift_send => 'Envoyer un cadeau';
+  @override String get live_quality_auto => 'Auto';
+  @override String get live_quality_hd => 'HD';
+  @override String get live_quality_sd => 'SD';
+  @override String get live_quality_low => 'Basse';
+
+  @override String get insight_source_unverified => 'Source non vérifiée';
+  @override String get insight_recommended_actions => 'Actions recommandées';
+  @override String get insight_key_findings => 'Principales conclusions';
+  @override String get insight_summary => 'Résumé';
+  @override String get insight_full_analysis => 'Analyse complète';
+  @override String get insight_generated_by => 'Généré par IA';
+  @override String get insight_disclaimer => 'Ceci est une analyse générée par IA. Veuillez vérifier les informations.';
+
+  @override String get risk_level_label => 'Niveau de risque';
+  @override String get risk_mitigation => 'Mesures d\'atténuation';
+  @override String get risk_impact => 'Impact';
+  @override String get risk_probability => 'Probabilité';
+  @override String get risk_assessment => 'Évaluation des risques';
+
+
   // ============================================================================
   // ACCUEIL & TABLEAU DE BORD
   // ============================================================================
