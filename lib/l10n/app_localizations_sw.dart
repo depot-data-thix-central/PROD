@@ -124,19 +124,6 @@ class AppLocalizationsSw extends AppLocalizations {
   @override String get onboarding_get_started => 'Anza';
   @override String get onboarding_skip => 'Ruka utangulizi';
 
-  
-  // ============================================================================
-  // THIX MEDIA & IA SOURCES
-  // ============================================================================
-  @override String get live_send => 'Tuma';
-  @override String get live_ending => 'Inamaliza mubashara...';
-  @override String get live_network_quality => 'Ubora wa mtandao';
-  @override String get source_type_official => 'Rasmi';
-  @override String get source_type_world_bank => 'Benki ya Dunia';
-  @override String get source_type_government => 'Serikali';
-  @override String get source_type_default => 'Chanzo Kilichothibitishwa';
-  @override String get source_aria_label => 'Chanzo cha Taarifa';
-
   // ============================================================================
   // AUTHENTIFICATION & CONNEXION (ADVANCED / ERRORS)
   // ============================================================================
@@ -1159,4 +1146,16 @@ class AppLocalizationsSw extends AppLocalizations {
   @override String common_in_minutes(int count) => count == 1 ? 'Baada ya dakika 1' : 'Baada ya dakika $count';
   @override String common_in_hours(int count) => count == 1 ? 'Baada ya saa 1' : 'Baada ya saa $count';
   @override String common_in_days(int count) => count == 1 ? 'Baada ya siku 1' : 'Baada ya siku $count';
+
+  // ============================================================================
+  // THIX MEDIA & IA SOURCES
+  // ============================================================================
+  @override String get live_send => 'Tuma';
+  @override String get live_ending => 'Inamaliza mubashara...';
+  @override String get live_network_quality => 'Ubora wa mtandao';
+  @override String get source_type_official => 'Rasmi';
+  @override String get source_type_world_bank => 'Benki ya Dunia';
+  @override String get source_type_government => 'Serikali';
+  @override String get source_type_default => 'Chanzo Kilichothibitishwa';
+  @override String get source_aria_label => 'Chanzo cha Taarifa';
 }
