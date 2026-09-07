@@ -1,5 +1,6 @@
 // lib/l10n/app_localizations_zh.dart
 import 'app_localizations.dart';
+  @override Locale get locale => const Locale('zh');
 
 class AppLocalizationsZh extends AppLocalizations {
   // ============================================================================
