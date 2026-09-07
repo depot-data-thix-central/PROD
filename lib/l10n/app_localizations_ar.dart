@@ -1,13 +1,15 @@
 // lib/l10n/app_localizations_ar.dart
 import 'dart:ui';
 import 'app_localizations.dart';
-  @override Locale get locale => const Locale('ar');
+
 
 class AppLocalizationsAr extends AppLocalizations {
+    @override Locale get locale => const Locale('ar');
   // ============================================================================
   // COMMON & UI
   // ============================================================================
   @override String get common_back => 'رجوع';
+  @override String get live_ending => 'إنهاء البث المباشر'; 
   @override String get common_close => 'إغلاق';
   @override String get common_cancel => 'إلغاء';
   @override String get common_confirm => 'تأكيد';
