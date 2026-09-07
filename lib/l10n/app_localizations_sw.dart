@@ -1,13 +1,15 @@
 // lib/l10n/app_localizations_sw.dart
 import 'dart:ui';
 import 'app_localizations.dart';
-  @override Locale get locale => const Locale('sw');
+
 
 class AppLocalizationsSw extends AppLocalizations {
+    @override Locale get locale => const Locale('sw');
   // ============================================================================
   // COMMON & UI
   // ============================================================================
   @override String get common_back => 'Rudi';
+  @override String get live_ending => 'Inamaliza mubashara';
   @override String get common_close => 'Funga';
   @override String get common_cancel => 'Ghairi';
   @override String get common_confirm => 'Thibitisha';
