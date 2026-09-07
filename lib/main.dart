@@ -6,6 +6,12 @@
 //  Erreurs UI visibles (plus jamais d'écran gris silencieux)
 // Gardes kIsWeb (Firebase/push non supportés sur Web)
 //  Timeouts sur toutes les initialisations
+//
+// CORRECTIONS APPORTÉES :
+// ✅ Utilisation de ref.watch() au lieu de ref.read() pour écouter les changements de locale
+// ✅ Support RTL automatique pour l'Arabe via Directionality
+// ✅ localeListResolutionCallback pour meilleur fallback
+// ✅ Rebuild automatique de MaterialApp lors du changement de langue
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -163,10 +169,8 @@ class ThixApp extends ConsumerStatefulWidget {
   ConsumerState<ThixApp> createState() => _ThixAppState();
 }
 
-class _ThixAppState extends ConsumerState<ThixApp> {
+class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
   late final AuthController _auth;
-  late final LocaleController _locale;
-
   GoRouter? _router;
   bool _ready = false;
   bool _pushRegistered = false;
@@ -175,17 +179,31 @@ class _ThixAppState extends ConsumerState<ThixApp> {
   void initState() {
     super.initState();
     _auth = AuthController.instance;
-    //  LIT l'instance INJECTÉE (plus de `LocaleController()..init()` ici)
-    _locale = ref.read(localeControllerProvider);
+    
+    // ✅ Observer les changements de locale système
+    WidgetsBinding.instance.addObserver(this);
+    
     _init();
+  }
+
+  @override
+  void didChangeLocales(List<Locale>? locales) {
+    // ✅ Quand la langue du système change, rafraîchir si on utilise le système
+    final localeController = ref.read(localeControllerProvider);
+    if (locales != null && locales.isNotEmpty) {
+      localeController.refreshSystemLocale(locales);
+    }
   }
 
   Future<void> _init() async {
     // Router (les controllers sont déjà initialisés dans main)
     try {
+      // ✅ LIRE le LocaleController depuis le provider (pas de ref.read dans initState)
+      final localeController = ref.read(localeControllerProvider);
+      
       _router = AppRouter.create(
         _auth,
-        extraRefreshListenable: Listenable.merge([_auth, _locale]),
+        extraRefreshListenable: Listenable.merge([_auth, localeController]),
         navigatorKey: rootNavigatorKey,
       );
       _log('✓ Router OK');
@@ -226,11 +244,15 @@ class _ThixAppState extends ConsumerState<ThixApp> {
   @override
   void dispose() {
     _auth.removeListener(_syncPush);
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    // ✅ CRUCIAL : ref.watch() déclenche un rebuild quand la locale change
+    final localeController = ref.watch(localeControllerProvider);
+
     if (!_ready || _router == null) {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -249,8 +271,9 @@ class _ThixAppState extends ConsumerState<ThixApp> {
         app_provider.ChangeNotifierProvider<AuthController>.value(
           value: _auth,
         ),
+        // ✅ LocaleController est maintenant écouté par Provider aussi
         app_provider.ChangeNotifierProvider<LocaleController>.value(
-          value: _locale,
+          value: localeController,
         ),
         app_provider.Provider<ProfileService>(
           create: (_) => ProfileService(),
@@ -263,7 +286,8 @@ class _ThixAppState extends ConsumerState<ThixApp> {
         darkTheme: ThixPolicy.darkTheme(),
         themeMode: ThemeMode.system,
         routerConfig: _router!,
-        locale: _locale.locale,
+        // ✅ Utilise la locale du controller écouté
+        locale: localeController.locale,
         supportedLocales: LocaleController.supportedLocales,
         localizationsDelegates: const [
           AppLocalizations.delegate,
@@ -271,14 +295,35 @@ class _ThixAppState extends ConsumerState<ThixApp> {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        builder: (context, child) => GlobalNotificationListener(
-          child: GlobalSosListener(
-            child: GlobalCallListener(
-              navigatorKey: rootNavigatorKey,
-              child: child ?? const SizedBox.shrink(),
+        // ✅ Fallback intelligent pour la résolution de locale
+        localeListResolutionCallback: (locales, supportedLocales) {
+          if (locales != null && locales.isNotEmpty) {
+            for (final locale in locales) {
+              // Chercher d'abord une correspondance exacte
+              for (final supportedLocale in supportedLocales) {
+                if (supportedLocale.languageCode == locale.languageCode) {
+                  return supportedLocale;
+                }
+              }
+            }
+          }
+          // Fallback : première locale supportée (français)
+          return supportedLocales.first;
+        },
+        builder: (context, child) {
+          // ✅ Support RTL automatique pour l'Arabe
+          return Directionality(
+            textDirection: localeController.textDirection,
+            child: GlobalNotificationListener(
+              child: GlobalSosListener(
+                child: GlobalCallListener(
+                  navigatorKey: rootNavigatorKey,
+                  child: child ?? const SizedBox.shrink(),
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
