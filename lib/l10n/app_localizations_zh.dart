@@ -2,9 +2,9 @@
 import 'dart:ui';
 import 'app_localizations.dart';
 
-class AppLocalizationsZh extends AppLocalizations {
-  @override Locale get locale => const Locale('zh');
 
+  @override Locale get locale => const Locale('zh');
+class AppLocalizationsZh extends AppLocalizations {
   // ============================================================================
   // COMMON & UI (COMMUN & UI)
   // ============================================================================
