@@ -2,15 +2,14 @@
 import 'dart:ui';
 import 'app_localizations.dart';
 
-
-  
 class AppLocalizationsZh extends AppLocalizations {
-  @override Locale get locale => const Locale('zh');
+  @override
+  Locale get locale => const Locale('zh');
+
   // ============================================================================
   // COMMON & UI (COMMUN & UI)
   // ============================================================================
   @override String get common_back => '返回';
-  @override String get live_ending => '结束直播'; 
   @override String get common_close => '关闭';
   @override String get common_cancel => '取消';
   @override String get common_confirm => '确认';
@@ -67,13 +66,31 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get common_disabled => '已禁用';
   @override String get common_clear => '清除';
   @override String get common_remove => '移除';
-  
-  @override String common_items(int count) => count == 0 ? '无项目' : (count == 1 ? '1 个项目' : '$count 个项目');
-  @override String common_contacts(int count) => count == 0 ? '无联系人' : (count == 1 ? '1 个联系人' : '$count 个联系人');
-  @override String common_messages(int count) => count == 0 ? '无消息' : (count == 1 ? '1 条消息' : '$count 条消息');
-  @override String common_days(int count) => count == 0 ? '0 天' : (count == 1 ? '1 天' : '$count 天');
-  @override String common_hours(int count) => count == 0 ? '0 小时' : (count == 1 ? '1 小时' : '$count 小时');
-  @override String common_minutes(int count) => count == 0 ? '0 分钟' : (count == 1 ? '1 分钟' : '$count 分钟');
+
+  @override
+  String common_items(int count) => count == 0 ? '无项目' : (count == 1 ? '1 个项目' : '$count 个项目');
+  @override
+  String common_contacts(int count) => count == 0 ? '无联系人' : (count == 1 ? '1 个联系人' : '$count 个联系人');
+  @override
+  String common_messages(int count) => count == 0 ? '无消息' : (count == 1 ? '1 条消息' : '$count 条消息');
+  @override
+  String common_days(int count) => count == 0 ? '0 天' : (count == 1 ? '1 天' : '$count 天');
+  @override
+  String common_hours(int count) => count == 0 ? '0 小时' : (count == 1 ? '1 小时' : '$count 小时');
+  @override
+  String common_minutes(int count) => count == 0 ? '0 分钟' : (count == 1 ? '1 分钟' : '$count 分钟');
+
+  // ============================================================================
+  // THIX MEDIA & IA SOURCES
+  // ============================================================================
+  @override String get live_send => '发送';
+  @override String get live_ending => '结束直播';
+  @override String get live_network_quality => '网络质量';
+  @override String get source_type_official => '官方';
+  @override String get source_type_world_bank => '世界银行';
+  @override String get source_type_government => '政府';
+  @override String get source_type_default => '已验证来源';
+  @override String get source_aria_label => '信息来源';
 
   // ============================================================================
   // AUTH & ONBOARDING (BASIC)
@@ -147,7 +164,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get login_biometric => '或使用以下方式继续';
   @override String get login_face_id => 'Face ID';
   @override String get login_touch_id => 'Touch ID';
-  
+
   @override String get login_error_suspended => '此账号已被封禁。请联系客服。';
   @override String get login_error_not_active => '此账号未激活。';
   @override String get login_error_no_account => '未找到与此信息匹配的账号。';
@@ -214,7 +231,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get reg_identity_title => 'THIX 身份';
   @override String get reg_thix_chat_label => 'THIX 聊天用户名';
   @override String get reg_thix_chat_hint => '例如：zhang.san (唯一)';
-  
+
   @override String get reg_verification_title => '验证';
   @override String get reg_get_otp => '获取验证码';
   @override String get reg_code_sent_resend => '重新发送验证码';
@@ -246,7 +263,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get home_language_kiswahili => '斯瓦希里语';
   @override String get home_banner_default_tag => '青年项目';
   @override String get home_banner_default_title => '探索最新机会与活动';
-  
+
   @override String get cert_pending => '认证待处理';
   @override String get cert_tier_ladder => '当前级别正在审核中';
   @override String get cert_view => '查看';
@@ -280,7 +297,8 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get chatlist_settings => '设置';
 
   @override String get chat_unknown_user => '未知用户';
-  @override String chat_members(int count) => count == 1 ? '1 名成员' : '$count 名成员';
+  @override
+  String chat_members(int count) => count == 1 ? '1 名成员' : '$count 名成员';
   @override String get chat_video_call => '视频通话';
   @override String get chat_audio_call => '语音通话';
   @override String get chat_escalate => '升级处理';
@@ -320,7 +338,8 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get conv_waiting_connection => '等待连接：';
   @override String get conv_group_rpc_required => '创建群组需要服务器请求';
   @override String get conv_page_title => '新聊天';
-  @override String conv_start(int count) => '开始 ($count)';
+  @override
+  String conv_start(int count) => '开始 ($count)';
   @override String get conv_search_label => '搜索用户';
   @override String get conv_search_hint => '姓名、THIX ID 或手机号...';
   @override String get conv_group_name_label => '群组名称';
@@ -387,7 +406,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get profile_block_confirm => '屏蔽';
   @override String get profile_blocked_success => '用户已屏蔽';
   @override String get profile_block_error => '屏蔽用户时出错';
-  
+
   @override String get profile_report_user => '举报';
   @override String get profile_report_reason => '原因';
   @override String get profile_report_details => '详细信息（可选）';
@@ -399,13 +418,13 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get profile_report_submit => '提交举报';
   @override String get profile_report_success => '举报已提交';
   @override String get profile_report_duplicate => '已举报过此内容';
-  
+
   @override String get profile_private_gallery => '私密相册';
   @override String get profile_private_content_locked => '此内容为私密内容';
   @override String get profile_add_private_media => '添加到我的私密相册';
   @override String get profile_no_private_media => '暂无私密媒体文件';
   @override String get profile_upload_processing => '处理中…';
-  
+
   @override String get profile_tab_bio => '简介';
   @override String get profile_tab_private_gallery => '私密相册';
   @override String get profile_tab_photos => '公开照片';
@@ -427,25 +446,25 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get settings_wallpaper => '聊天背景';
   @override String get settings_wallpaper_default => '默认';
   @override String get settings_wallpaper_custom => '自定义';
-  
+
   @override String get settings_section_privacy => '隐私';
   @override String get settings_last_seen => '最后上线时间';
   @override String get settings_visibility_everyone => '所有人';
   @override String get settings_visibility_contacts => '我的联系人';
   @override String get settings_visibility_nobody => '无人';
   @override String get settings_profile_photo => '头像';
-  
+
   @override String get settings_section_notifications => '通知';
   @override String get settings_messages => '消息';
   @override String get settings_calls => '通话';
-  
+
   @override String get settings_section_messages => '数据和存储';
   @override String get settings_ephemeral => '阅后即焚消息';
   @override String get settings_auto_download => '媒体自动下载';
   @override String get settings_download_wifi => '仅 Wi-Fi';
   @override String get settings_download_mobile => 'Wi-Fi 和 蜂窝网络';
   @override String get settings_download_never => '从不';
-  
+
   @override String get settings_section_account => '账号';
   @override String get settings_view_profile => '查看我的个人资料';
   @override String get settings_logout => '登出';
@@ -540,17 +559,17 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get edu_nav_library => '图书馆';
   @override String get edu_nav_certs => '证书';
   @override String get edu_nav_profile => '个人资料';
-  
+
   @override String get edu_auth_required => '登录后查看您的课程';
   @override String get edu_login_required => '登录后查看您的课程';
-  
+
   @override String get edu_learning_empty_title => '暂无进行中的课程';
   @override String get edu_learning_empty_desc => '报名参加课程即可开始。';
   @override String get edu_no_courses => '暂无进行中的课程';
   @override String get edu_enroll_hint => '报名参加课程即可开始。';
   @override String get edu_explore_btn => '探索课程';
   @override String get edu_completed => '已完成';
-  
+
   @override String get edu_user_avatar => '用户头像';
   @override String get edu_greeting => '你好，';
   @override String get edu_greeting_subtitle => '准备好提升您的技能了吗？';
@@ -563,29 +582,30 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get edu_certs => '证书';
   @override String get edu_qa_browse => '浏览';
   @override String get edu_instructor => '讲师';
-  
+
   @override String get edu_top_formations => '精选课程';
   @override String get edu_awaited_formations => '最受期待';
   @override String get edu_awaited => '最受期待';
   @override String get edu_see_all => '查看目录';
-  
-  @override String edu_coming_soon(String category) => '新的 $category 课程即将推出';
+
+  @override
+  String edu_coming_soon(String category) => '新的 $category 课程即将推出';
   @override String get edu_coming_soon_cat => '此处即将推出新课程';
   @override String get edu_locked_course => '即将推出！ (预计很快开放)';
   @override String get edu_coming_soon_badge => '即将开放';
   @override String get edu_awaited_badge => '即将推出';
   @override String get edu_awaited_locked => '已锁定';
   @override String get edu_awaited_locked_msg => '即将推出！ (预计很快开放)';
-  
+
   @override String get edu_thix_academy => 'THIX 学院';
   @override String get edu_scheduled_soon => '预计时间：即将推出';
   @override String get edu_new_program => '新项目';
   @override String get edu_resume_learning => '继续学习';
   @override String get edu_resume => '继续学习';
-  
+
   @override String get edu_catalog => '课程目录';
   @override String get edu_no_formations_cat => '此分类下暂无课程';
-  
+
   @override String get edu_my_library => '我的图书馆';
   @override String get edu_search_book_hint => '按书名或作者搜索...';
   @override String get edu_library_title => '我的图书馆';
@@ -593,23 +613,27 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get edu_shelves_empty => '您的书架空空如也。';
   @override String get edu_library_empty => '您的书架空空如也。';
   @override String get edu_no_result => '没有结果';
-  @override String edu_search_no_results(String query) => '找不到关于 "$query" 的结果';
-  
+  @override
+  String edu_search_no_results(String query) => '找不到关于 "$query" 的结果';
+
   @override String get edu_shelf => '书架';
   @override String get edu_books => '本书';
   @override String get edu_all => '全部';
-  @override String edu_shelf_info(String code, int count) => '书架 $code · $count 本书';
+  @override
+  String edu_shelf_info(String code, int count) => '书架 $code · $count 本书';
   @override String get edu_free => '免费';
   @override String get edu_deleted_in => '即将下架，剩余';
-  @override String edu_expires_in(String countdown) => '$countdown 后过期';
-  
+  @override
+  String edu_expires_in(String countdown) => '$countdown 后过期';
+
   @override String get edu_certifications => '我的证书';
   @override String get edu_certs_title => '认证';
   @override String get edu_no_certs => '暂无证书';
   @override String get edu_cert_expert => '专业技能证书';
   @override String get edu_cert_expertise => '专业技能证书';
-  @override String edu_cert_issued(String date) => '颁发日期：$date';
-  
+  @override
+  String edu_cert_issued(String date) => '颁发日期：$date';
+
   @override String get edu_pro_account => '专业账号';
   @override String get edu_profile_title => '专业账号';
   @override String get edu_instructor_space => '讲师控制台';
@@ -735,38 +759,40 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get events_title => '活动';
   @override String get events_upcoming => '即将举办';
   @override String get events_past => '往期活动';
-  
+
   @override String get event_share_cta => '在 THIX 上预订您的名额！';
   @override String get event_sold_out_title => '门票已售罄';
   @override String get event_sold_out_msg => '目前所有名额均已订满。请加入候补名单，如有空位我们将通知您。';
   @override String get event_join_queue_confirm => '您希望加入候补名单吗？';
   @override String get event_join_queue_btn => '加入候补名单';
-  
+
   @override String get event_unfavorite => '取消收藏';
   @override String get event_favorite => '加入收藏';
   @override String get event_free => '免费';
   @override String get event_paid => '付费';
-  
+
   @override String get event_time_label => '时间';
   @override String get event_location_label => '地点';
   @override String get event_address_label => '详细地址';
   @override String get event_organized_by => '主办方';
-  
+
   @override String get event_about_title => '关于活动';
   @override String get event_no_description => '此活动暂无相关描述。';
   @override String get event_tickets_title => '门票与预订';
-  
+
   @override String get event_sold_out_short => '已售罄';
-  @override String event_remaining_seats(String count) => '仅剩 $count 个名额';
+  @override
+  String event_remaining_seats(String count) => '仅剩 $count 个名额';
   @override String get event_queue_btn => '候补名单';
   @override String get event_book_btn => '预订';
-  
+
   @override String get event_standard_entry => '标准门票';
   @override String get event_all_sold => '所有席位已售出';
   @override String get event_limited_seats => '名额有限';
   @override String get event_book_now_btn => '立即预订';
-  
-  @override String event_numbered_seats(String count) => '$count 个编号座位';
+
+  @override
+  String event_numbered_seats(String count) => '$count 个编号座位';
   @override String get event_choose_seats_btn => '选择座位';
   @override String get event_from_price => '起价';
 
@@ -809,7 +835,8 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get tickets_no_tickets_desc => '您的预订将显示在此处';
   @override String get tickets_discover => '发现活动';
   @override String get tickets_load_error => '加载门票失败';
-  @override String tickets_quantity(int count) => count == 0 ? '无门票' : '$count 张门票';
+  @override
+  String tickets_quantity(int count) => count == 0 ? '无门票' : '$count 张门票';
 
   // ============================================================================
   // RÉSERVATIONS
@@ -970,7 +997,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get admin_title => 'THIX 管理中心';
   @override String get admin_dev_open => '开放开发';
   @override String get admin_actions_section => '操作';
-  
+
   @override String get admin_events_title => '活动管理';
   @override String get admin_events_create => '创建活动';
   @override String get admin_events_search_hint => '按标题搜索...';
@@ -978,7 +1005,8 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get admin_events_empty => '未找到任何活动';
   @override String get admin_events_no_permission => '您没有权限执行此操作';
   @override String get admin_events_delete_title => '确认删除？';
-  @override String admin_events_delete_desc(String title) => '您确定要删除 $title 吗？此操作不可逆。';
+  @override
+  String admin_events_delete_desc(String title) => '您确定要删除 $title 吗？此操作不可逆。';
 
   @override String get admin_limits_purchase_rules => '购票规则';
   @override String get admin_limits_max_person => '单人限购（全局）';
@@ -1019,17 +1047,20 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get admin_bookings_close => '关闭';
   @override String get admin_bookings_empty => '未找到符合条件的订单';
   @override String get admin_bookings_unknown_date => '未知日期';
-  @override String admin_bookings_places(int count) => '$count 个名额';
+  @override
+  String admin_bookings_places(int count) => '$count 个名额';
   @override String get admin_bookings_status_valid => '有效 (未验票)';
   @override String get admin_bookings_status_used => '已核销 (已使用)';
   @override String get admin_bookings_status_cancelled => '已取消';
   @override String get admin_bookings_status_postponed => '已延期';
   @override String get admin_bookings_status_pending => '待付款';
-  @override String admin_queue_title(int count) => '排队等候区 • 实时同步 ($count 人)';
+  @override
+  String admin_queue_title(int count) => '排队等候区 • 实时同步 ($count 人)';
   @override String get admin_queue_realtime_desc => '系统实时同步中 • 新用户加入时列表会自动刷新';
   @override String get admin_queue_empty => '当前暂无排队用户';
   @override String get admin_queue_event_fallback => '未知活动';
-  @override String admin_queue_item_meta(String userId, int qty, String status) => '用户标识: $userId • 需求量: $qty 张 • 状态: $status';
+  @override
+  String admin_queue_item_meta(String userId, int qty, String status) => '用户标识: $userId • 需求量: $qty 张 • 状态: $status';
   @override String get admin_queue_notify => '发送放票通知';
   @override String get admin_queue_notified => '已通知该用户 (购票资格保留 10 分钟)';
   @override String get admin_queue_position => '当前排位';
@@ -1081,7 +1112,8 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get admin_event_vis_featured => '首页轮播推荐';
   @override String get admin_event_dialog_add_tier => '新增门票种类';
   @override String get admin_event_dialog_name => '票种名称 (例如: VIP 票)';
-  @override String admin_event_dialog_price(String currency) => '单价 ($currency)';
+  @override
+  String admin_event_dialog_price(String currency) => '单价 ($currency)';
   @override String get admin_event_dialog_capacity => '总库存 (张)';
   @override String get admin_event_dialog_cancel => '取消';
   @override String get admin_event_dialog_add => '确认添加';
@@ -1095,8 +1127,10 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get admin_seat_page_title => '座位图可视化引擎';
   @override String get admin_seat_target_event => '关联活动';
   @override String get admin_seat_select_event => '请选择需要排座的活动';
-  @override String admin_seat_max_limit(int count) => '该场馆最大容量限制: $count 座';
-  @override String admin_seat_generated(int count) => '已成功生成 $count 个物理座位';
+  @override
+  String admin_seat_max_limit(int count) => '该场馆最大容量限制: $count 座';
+  @override
+  String admin_seat_generated(int count) => '已成功生成 $count 个物理座位';
   @override String get admin_seat_load_error => '座位数据加载失败，请检查网络设置';
   @override String get admin_seat_pricing_title => '基于算法的动态定价';
   @override String get admin_seat_layout_title => '座位区矩阵配置';
@@ -1106,7 +1140,8 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get admin_seat_aisle_desc => '在座位矩阵中间预留消防及通行空间';
   @override String get admin_seat_cats_per_row => '每排对应的门票等级配置';
   @override String get admin_seat_generating => '正在通过引擎生成座位矩阵…';
-  @override String admin_seat_generate_btn(int count) => '确认生成 $count 个座位';
+  @override
+  String admin_seat_generate_btn(int count) => '确认生成 $count 个座位';
   @override String get admin_seat_preview => '实时座位布局预览';
   @override String get admin_seat_no_seats => '当前活动暂未生成物理座位图';
   @override String get admin_seat_cat_standard => '普通区 (Standard)';
@@ -1118,7 +1153,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get seat_map_stage => '舞台区域 / 核心展示区';
 
   // ============================================================================
-  // ERREURS & VALIDATION (ERRORS & VALIDATION)
+  // ERREURS & VALIDATION
   // ============================================================================
   @override String get error_generic => '发生了一个错误';
   @override String get error_validation => '无效的数据';
@@ -1134,24 +1169,41 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get error_not_found => '未找到';
 
   // ============================================================================
-  // TEMPS & DATES RELATIVES (RELATIVE DATES & TIMES)
+  // TEMPS & DATES RELATIVES
   // ============================================================================
   @override String get common_just_now => '刚刚';
   @override String get common_in_the_future => '稍后';
-  @override String common_minutes_ago(int count) => count == 1 ? '1 分钟前' : '$count 分钟前';
-  @override String common_hours_ago(int count) => count == 1 ? '1 小时前' : '$count 小时前';
-  @override String common_days_ago(int count) => count == 1 ? '1 天前' : '$count 天前';
-  @override String common_seconds_ago(int count) => count == 1 ? '1 秒前' : '$count 秒前';
-  @override String common_weeks_ago(int count) => count == 1 ? '1 周前' : '$count 周前';
-  @override String common_months_ago(int count) => count == 1 ? '1 个月前' : '$count 个月前';
-  @override String common_years_ago(int count) => count == 1 ? '1 年前' : '$count 年前';
-  @override String common_in_minutes(int count) => count == 1 ? '1 分钟后' : '$count 分钟后';
-  @override String common_in_hours(int count) => count == 1 ? '1 小时后' : '$count 小时后';
-  @override String common_in_days(int count) => count == 1 ? '1 天后' : '$count 天后';
+  @override
+  String common_minutes_ago(int count) => count == 1 ? '1 分钟前' : '$count 分钟前';
+  @override
+  String common_hours_ago(int count) => count == 1 ? '1 小时前' : '$count 小时前';
+  @override
+  String common_days_ago(int count) => count == 1 ? '1 天前' : '$count 天前';
+  @override
+  String common_seconds_ago(int count) => count == 1 ? '1 秒前' : '$count 秒前';
+  @override
+  String common_weeks_ago(int count) => count == 1 ? '1 周前' : '$count 周前';
+  @override
+  String common_months_ago(int count) => count == 1 ? '1 个月前' : '$count 个月前';
+  @override
+  String common_years_ago(int count) => count == 1 ? '1 年前' : '$count 年前';
+  @override
+  String common_in_minutes(int count) => count == 1 ? '1 分钟后' : '$count 分钟后';
+  @override
+  String common_in_hours(int count) => count == 1 ? '1 小时后' : '$count 小时后';
+  @override
+  String common_in_days(int count) => count == 1 ? '1 天后' : '$count 天后';
 
   // ============================================================================
-  // THIX MEDIA & IA SOURCES
+  // LIVE & IA SUPPLÉMENTS
   // ============================================================================
+  @override String get live_leave_btn => '离开直播';
+  @override String get live_chat_empty => '暂无消息。';
+  @override String get live_chat_hint => '说点什么...';
+  @override String get live_like => '赞';
+  @override String get live_leaving => '正在离开...';
+  @override String get live_viewers => '名观众';
+  @override String get live_likes => '个赞';
   @override String get live_go_live => '开始直播';
   @override String get live_title => '直播标题';
   @override String get live_start => '开始';
@@ -1168,6 +1220,13 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get live_quality_sd => '标清';
   @override String get live_quality_low => '流畅';
 
+  @override String get insight_type_market => '市场';
+  @override String get insight_type_finance => '财务';
+  @override String get insight_type_strategy => '战略';
+  @override String get insight_type_business => '商业';
+  @override String get insight_type_insight => '洞察';
+  @override String get insight_confidence_label => '置信度';
+  @override String get insight_source_verified => '已验证来源';
   @override String get insight_source_unverified => '未经验证的来源';
   @override String get insight_recommended_actions => '推荐操作';
   @override String get insight_key_findings => '主要发现';
@@ -1176,38 +1235,13 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get insight_generated_by => '人工智能生成';
   @override String get insight_disclaimer => '这是由人工智能生成的分析，请核实信息。';
 
+  @override String get risk_critical => '极高风险';
+  @override String get risk_high => '高风险';
+  @override String get risk_medium => '中风险';
+  @override String get risk_low => '低风险';
   @override String get risk_level_label => '风险级别';
   @override String get risk_mitigation => '缓解措施';
   @override String get risk_impact => '影响';
   @override String get risk_probability => '概率';
   @override String get risk_assessment => '风险评估';
-
-  @override String get live_leave_btn => '离开直播';
-  @override String get live_chat_empty => '暂无消息。';
-  @override String get live_chat_hint => '说点什么...';
-  @override String get live_like => '赞';
-  @override String get live_send => '发送';
-  @override String get live_viewers => '名观众';
-  @override String get live_likes => '个赞';
-  @override String get live_leaving => '正在离开...';
-  @override String get live_network_quality => '网络质量';
-  
-  @override String get insight_type_market => '市场';
-  @override String get insight_type_finance => '财务';
-  @override String get insight_type_strategy => '战略';
-  @override String get insight_type_business => '商业';
-  @override String get insight_type_insight => '洞察';
-  @override String get insight_confidence_label => '置信度';
-  @override String get insight_source_verified => '已验证来源';
-  
-  @override String get risk_critical => '极高风险';
-  @override String get risk_high => '高风险';
-  @override String get risk_medium => '中风险';
-  @override String get risk_low => '低风险';
-  
-  @override String get source_type_official => '官方';
-  @override String get source_type_world_bank => '世界银行';
-  @override String get source_type_government => '政府';
-  @override String get source_type_default => '已验证来源';
-  @override String get source_aria_label => '信息来源';
 }
