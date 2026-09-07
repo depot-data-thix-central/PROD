@@ -12,7 +12,7 @@
 // ✅ RepaintBoundary + Semantics
 //
 // ANTI-ERREURS COMPILATION :
-// - Pas de args:{} dans l10n.t()
+// - Accès directs aux getters l10n (AppLocalizations)
 // - Pas de const sur widgets utilisant _IaPalette
 // - Pas de strings FR hardcodés
 import 'dart:ui';
@@ -183,12 +183,12 @@ class SourceBadge extends StatelessWidget {
     final config = _SourceTypeConfig.from(safeType);
 
     final typeLabel = safeType == 'official'
-        ? l10n.t('source_type_official')
+        ? l10n.source_type_official
         : safeType == 'banque_mondiale'
-            ? l10n.t('source_type_world_bank')
+            ? l10n.source_type_world_bank
             : safeType == 'government'
-                ? l10n.t('source_type_government')
-                : l10n.t('source_type_default');
+                ? l10n.source_type_government
+                : l10n.source_type_default;
 
     return RepaintBoundary(
       child: ClipRRect(
@@ -206,7 +206,7 @@ class SourceBadge extends StatelessWidget {
               ),
             ),
             child: Semantics(
-              label: '${l10n.t("source_aria_label")}: $safeSource ($typeLabel)',
+              label: '${l10n.source_aria_label}: $safeSource ($typeLabel)',
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
