@@ -10,6 +10,7 @@ class AppLocalizationsFr extends AppLocalizations {
   // ============================================================================
   @override String get common_back => 'Retour';
   @override String get common_close => 'Fermer';
+  @override String get live_ending => 'Fin du direct'; 
   @override String get common_cancel => 'Annuler';
   @override String get common_confirm => 'Confirmer';
   @override String get common_delete => 'Supprimer';
