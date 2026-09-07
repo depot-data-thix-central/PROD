@@ -1,9 +1,10 @@
 // lib/l10n/app_localizations_zh.dart
 import 'dart:ui';
 import 'app_localizations.dart';
-  @override Locale get locale => const Locale('zh');
 
 class AppLocalizationsZh extends AppLocalizations {
+  @override Locale get locale => const Locale('zh');
+
   // ============================================================================
   // COMMON & UI (COMMUN & UI)
   // ============================================================================
@@ -179,7 +180,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get auth_info_otp_sent => '验证码已发送';
 
   // ============================================================================
-  // INSCRIPTION PERSONNELLE (PERSONAL REGISTRATION)
+  // INSCRIPTION PERSONNELLE
   // ============================================================================
   @override String get reg_step1_title => '您的个人资料';
   @override String get reg_step1_subtitle => '让我们从基本信息开始';
@@ -234,7 +235,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get reg_not_provided => '未提供';
 
   // ============================================================================
-  // ACCUEIL & TABLEAU DE BORD (HOME & DASHBOARD)
+  // ACCUEIL & TABLEAU DE BORD
   // ============================================================================
   @override String get home_search_hint => '搜索服务或联系人…';
   @override String get home_greeting => '你好';
@@ -267,39 +268,8 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get service_network => '网络';
   @override String get service_certification => '认证';
 
-    @override String get live_go_live => '开始直播';
-  @override String get live_title => '直播标题';
-  @override String get live_start => '开始';
-  @override String get live_end => '结束直播';
-  @override String get live_duration => '时长';
-  @override String get live_peak_viewers => '最高观看人数';
-  @override String get live_chat_disabled => '聊天已禁用。';
-  @override String get live_share => '分享';
-  @override String get live_report => '举报';
-  @override String get live_follow_host => '关注';
-  @override String get live_gift_send => '送礼';
-  @override String get live_quality_auto => '自动';
-  @override String get live_quality_hd => '高清';
-  @override String get live_quality_sd => '标清';
-  @override String get live_quality_low => '流畅';
-
-  @override String get insight_source_unverified => '未经验证的来源';
-  @override String get insight_recommended_actions => '推荐操作';
-  @override String get insight_key_findings => '主要发现';
-  @override String get insight_summary => '摘要';
-  @override String get insight_full_analysis => '完整分析';
-  @override String get insight_generated_by => '人工智能生成';
-  @override String get insight_disclaimer => '这是由人工智能生成的分析，请核实信息。';
-
-  @override String get risk_level_label => '风险级别';
-  @override String get risk_mitigation => '缓解措施';
-  @override String get risk_impact => '影响';
-  @override String get risk_probability => '概率';
-  @override String get risk_assessment => '风险评估';
-
-
   // ============================================================================
-  // CHAT & MESSAGERIE (CHAT & MESSAGING)
+  // CHAT & MESSAGERIE
   // ============================================================================
   @override String get chatlist_network => '网络';
   @override String get chatlist_discussions => '聊天';
@@ -371,7 +341,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get call_audio => '语音通话';
 
   // ============================================================================
-  // RÉSEAU SOCIAL (NETWORK)
+  // RÉSEAU SOCIAL
   // ============================================================================
   @override String get network_search_title => '搜索';
   @override String get network_search_hint => '搜索用户、帖子或社区…';
@@ -398,7 +368,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get community_admin => '管理员';
 
   // ============================================================================
-  // PROFIL UTILISATEUR (PROFILE)
+  // PROFIL UTILISATEUR
   // ============================================================================
   @override String get profile_settings => '个人资料设置';
   @override String get profile_edit_bio => '编辑简介';
@@ -487,15 +457,12 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get settings_about => '关于 THIX';
   @override String get settings_version => '版本';
 
-  // ============================================================================
-  // TRADUCTIONS DE LANGUAGE SHEET
-  // ============================================================================
   @override String get settings_choose_language => '选择语言';
   @override String get settings_system_default => '系统默认';
   @override String get settings_language_change_failed => '切换语言失败';
 
   // ============================================================================
-  // SOS & URGENCE (EMERGENCY)
+  // SOS & URGENCE
   // ============================================================================
   @override String get sos_button => '紧急情况';
   @override String get sos_button_label => 'SOS 紧急按钮';
@@ -564,7 +531,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get certification_verified_account => '已认证账号';
 
   // ============================================================================
-  // ÉDUCATION & FORMATION (EDUCATION & TRAINING)
+  // ÉDUCATION & FORMATION
   // ============================================================================
   @override String get edu_nav_home => '首页';
   @override String get edu_nav_learning => '我的学习';
@@ -670,7 +637,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get training_continue_course => '继续课程';
 
   // ============================================================================
-  // EMPLOIS & RECRUTEMENT (JOBS & RECRUITING)
+  // EMPLOIS & RECRUTEMENT
   // ============================================================================
   @override String get jobs_title => '招聘';
   @override String get jobs_search => '搜索职位';
@@ -707,7 +674,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get recruiter_interviews => '面试安排';
 
   // ============================================================================
-  // OPPORTUNITÉS (OPPORTUNITIES)
+  // OPPORTUNITÉS
   // ============================================================================
   @override String get opportunities_title => '机会';
   @override String get opportunities_business => '商业合作';
@@ -717,7 +684,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get opportunities_coming_soon => '敬请期待';
 
   // ============================================================================
-  // MARCHÉ & E-COMMERCE (MARKET)
+  // MARCHÉ & E-COMMERCE
   // ============================================================================
   @override String get market_title => 'THIX 市场';
   @override String get market_categories => '分类';
@@ -738,7 +705,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get market_remove_from_cart => '移出购物车';
 
   // ============================================================================
-  // PORTEFEUILLE & ARGENT (WALLET & MONEY)
+  // PORTEFEUILLE & ARGENT
   // ============================================================================
   @override String get money_title => 'THIX 钱包';
   @override String get money_balance => '余额';
@@ -761,7 +728,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get money_insufficient_funds => '余额不足';
 
   // ============================================================================
-  // ÉVÉNEMENTS & BILLETS (EVENTS & TICKETS)
+  // ÉVÉNEMENTS & BILLETS
   // ============================================================================
   @override String get events_title => '活动';
   @override String get events_upcoming => '即将举办';
@@ -843,7 +810,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String tickets_quantity(int count) => count == 0 ? '无门票' : '$count 张门票';
 
   // ============================================================================
-  // RÉSERVATIONS (RESERVATIONS)
+  // RÉSERVATIONS
   // ============================================================================
   @override String get reservation_title => '预订';
   @override String get reservation_hotel => '酒店';
@@ -860,7 +827,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get reservation_my_bookings => '我的预订';
 
   // ============================================================================
-  // SANTÉ (HEALTH)
+  // SANTÉ
   // ============================================================================
   @override String get health_title => 'THIX 健康';
   @override String get health_appointments => '预约挂号';
@@ -880,7 +847,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get health_find_doctor => '查找医生';
 
   // ============================================================================
-  // MÉDIA & INFOS (MEDIA & INFO)
+  // MÉDIA & INFOS
   // ============================================================================
   @override String get media_title => 'THIX 媒体';
   @override String get media_news => '新闻动态';
@@ -906,7 +873,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get info_read_full => '阅读完整报道';
 
   // ============================================================================
-  // MON PAYS (MY COUNTRY)
+  // MON PAYS
   // ============================================================================
   @override String get mon_pays_title => '我的国家';
   @override String get mon_pays_regions => '大区';
@@ -919,7 +886,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get mon_pays_traditions => '传统节日';
 
   // ============================================================================
-  // COFFRE-FORT (VAULT)
+  // COFFRE-FORT
   // ============================================================================
   @override String get vault_title => '保险库';
   @override String get vault_documents => '文档';
@@ -937,7 +904,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get vault_lock => '锁定保险库';
 
   // ============================================================================
-  // PAIEMENT (PAYMENT)
+  // PAIEMENT
   // ============================================================================
   @override String get payment_title => '支付中心';
   @override String get payment_method => '支付方式';
@@ -980,7 +947,7 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get search_community_alert => '社区预警';
 
   // ============================================================================
-  // À PROXIMITÉ & ALERTES (NEARBY ALERTS)
+  // À PROXIMITÉ & ALERTES
   // ============================================================================
   @override String get nearby_alerts_title => '附近警报';
   @override String get nearby_view_on_map => '在地图上查看';
@@ -1183,17 +1150,6 @@ class AppLocalizationsZh extends AppLocalizations {
   // ============================================================================
   // THIX MEDIA & IA SOURCES
   // ============================================================================
-  @override String get live_send => '发送';
-  @override String get live_ending => '结束直播...';
-  @override String get live_network_quality => '网络质量';
-  @override String get source_type_official => '官方';
-  @override String get source_type_world_bank => '世界银行';
-  @override String get source_type_government => '政府';
-  @override String get source_type_default => '已验证来源';
-  @override String get source_aria_label => '信息来源';
-    // ============================================================================
-  // THIX MEDIA & IA SOURCES
-  // ============================================================================
   @override String get live_go_live => '开始直播';
   @override String get live_title => '直播标题';
   @override String get live_start => '开始';
@@ -1252,5 +1208,4 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get source_type_government => '政府';
   @override String get source_type_default => '已验证来源';
   @override String get source_aria_label => '信息来源';
-
 }
