@@ -69,6 +69,17 @@ class AppLocalizationsFr extends AppLocalizations {
   @override String common_days(int count) => count == 0 ? '0 jour' : (count == 1 ? '1 jour' : '$count jours');
   @override String common_hours(int count) => count == 0 ? '0 heure' : (count == 1 ? '1 heure' : '$count heures');
   @override String common_minutes(int count) => count == 0 ? '0 minute' : (count == 1 ? '1 minute' : '$count minutes');
+     // ============================================================================
+  // THIX MEDIA & IA SOURCES
+  // ============================================================================
+  @override String get live_send => 'Envoyer';
+  @override String get live_ending => 'Fin du direct...';
+  @override String get live_network_quality => 'Qualité réseau';
+  @override String get source_type_official => 'Officiel';
+  @override String get source_type_world_bank => 'Banque Mondiale';
+  @override String get source_type_government => 'Gouvernement';
+  @override String get source_type_default => 'Source Vérifiée';
+  @override String get source_aria_label => 'Source de l\'information';
 
   // ============================================================================
   // AUTH & ONBOARDING (BASIC)
