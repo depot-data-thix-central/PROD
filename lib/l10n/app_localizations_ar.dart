@@ -456,6 +456,37 @@ class AppLocalizationsAr extends AppLocalizations {
   @override String get settings_about => 'حول THIX';
   @override String get settings_version => 'الإصدار';
 
+    @override String get live_go_live => 'بدء البث';
+  @override String get live_title => 'عنوان البث';
+  @override String get live_start => 'ابدأ البث';
+  @override String get live_end => 'إنهاء البث';
+  @override String get live_duration => 'المدة';
+  @override String get live_peak_viewers => 'ذروة المشاهدين';
+  @override String get live_chat_disabled => 'الدردشة معطلة.';
+  @override String get live_share => 'مشاركة';
+  @override String get live_report => 'إبلاغ';
+  @override String get live_follow_host => 'متابعة';
+  @override String get live_gift_send => 'إرسال هدية';
+  @override String get live_quality_auto => 'تلقائي';
+  @override String get live_quality_hd => 'HD';
+  @override String get live_quality_sd => 'SD';
+  @override String get live_quality_low => 'منخفضة';
+
+  @override String get insight_source_unverified => 'مصدر غير موثوق';
+  @override String get insight_recommended_actions => 'الإجراءات الموصى بها';
+  @override String get insight_key_findings => 'النتائج الرئيسية';
+  @override String get insight_summary => 'الملخص';
+  @override String get insight_full_analysis => 'التحليل الكامل';
+  @override String get insight_generated_by => 'تم إنشاؤه بواسطة الذكاء الاصطناعي';
+  @override String get insight_disclaimer => 'هذا تحليل تم إنشاؤه بواسطة الذكاء الاصطناعي. يرجى التحقق من المعلومات.';
+
+  @override String get risk_level_label => 'مستوى الخطر';
+  @override String get risk_mitigation => 'التخفيف من المخاطر';
+  @override String get risk_impact => 'الأثر';
+  @override String get risk_probability => 'الاحتمالية';
+  @override String get risk_assessment => 'تقييم المخاطر';
+
+
   // ============================================================================
   // TRADUCTIONS DE LANGUAGE SHEET
   // ============================================================================
