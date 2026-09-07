@@ -267,6 +267,37 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get service_network => '网络';
   @override String get service_certification => '认证';
 
+    @override String get live_go_live => '开始直播';
+  @override String get live_title => '直播标题';
+  @override String get live_start => '开始';
+  @override String get live_end => '结束直播';
+  @override String get live_duration => '时长';
+  @override String get live_peak_viewers => '最高观看人数';
+  @override String get live_chat_disabled => '聊天已禁用。';
+  @override String get live_share => '分享';
+  @override String get live_report => '举报';
+  @override String get live_follow_host => '关注';
+  @override String get live_gift_send => '送礼';
+  @override String get live_quality_auto => '自动';
+  @override String get live_quality_hd => '高清';
+  @override String get live_quality_sd => '标清';
+  @override String get live_quality_low => '流畅';
+
+  @override String get insight_source_unverified => '未经验证的来源';
+  @override String get insight_recommended_actions => '推荐操作';
+  @override String get insight_key_findings => '主要发现';
+  @override String get insight_summary => '摘要';
+  @override String get insight_full_analysis => '完整分析';
+  @override String get insight_generated_by => '人工智能生成';
+  @override String get insight_disclaimer => '这是由人工智能生成的分析，请核实信息。';
+
+  @override String get risk_level_label => '风险级别';
+  @override String get risk_mitigation => '缓解措施';
+  @override String get risk_impact => '影响';
+  @override String get risk_probability => '概率';
+  @override String get risk_assessment => '风险评估';
+
+
   // ============================================================================
   // CHAT & MESSAGERIE (CHAT & MESSAGING)
   // ============================================================================
