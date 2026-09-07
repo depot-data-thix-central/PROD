@@ -1,1116 +1,1296 @@
+// lib/l10n/app_localizations.dart
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-class AppLocalizations {
-  AppLocalizations();
+import 'app_localizations_fr.dart';
+import 'app_localizations_en.dart';
+import 'app_localizations_pt.dart';
+import 'app_localizations_sw.dart';
+import 'app_localizations_ar.dart';
+import 'app_localizations_zh.dart';
 
+abstract class AppLocalizations {
   static AppLocalizations of(BuildContext context) {
     return Localizations.of<AppLocalizations>(context, AppLocalizations)!;
   }
 
-  static const LocalizationsDelegate<AppLocalizations> delegate =
-      _AppLocalizationsDelegate();
+  static const LocalizationsDelegate<AppLocalizations> delegate = _AppLocalizationsDelegate();
 
   // ===========================================================================
-  // MÉTHODE PRINCIPALE - l10n.t('key')
+  // 🔑 MÉTHODE DE FALLBACK l10n.t('key')
   // ===========================================================================
+  /// Permet d'accéder aux clés par leur nom de chaîne (ex: l10n.t('live_leave_btn'))
+  /// Utilisé par les widgets qui référencent des clés dynamiquement.
   String t(String key, [Map<String, dynamic>? args]) {
-    final value = _fr[key];
-    if (value == null) return key; // fallback: renvoie la clé si non trouvée
-    if (args != null && args.isNotEmpty) {
-      String result = value;
-      args.forEach((k, v) {
-        result = result.replaceAll('{$k}', '$v');
-      });
-      return result;
+    switch (key) {
+      // Fallbacks pour les widgets qui utilisent encore l'ancienne syntaxe dynamique
+      case 'common_close': return common_close;
+      case 'live_leave_btn': return live_leave_btn;
+      case 'live_chat_empty': return live_chat_empty;
+      case 'live_chat_hint': return live_chat_hint;
+      case 'live_like': return live_like;
+      case 'live_send': return live_send;
+      case 'live_leaving': return live_leaving;
+      case 'live_viewers': return live_viewers;
+      case 'live_likes': return live_likes;
+      case 'live_network_quality': return live_network_quality;
+      case 'insight_type_market': return insight_type_market;
+      case 'insight_type_finance': return insight_type_finance;
+      case 'insight_type_strategy': return insight_type_strategy;
+      case 'insight_type_business': return insight_type_business;
+      case 'insight_type_insight': return insight_type_insight;
+      case 'insight_confidence_label': return insight_confidence_label;
+      case 'insight_source_verified': return insight_source_verified;
+      case 'risk_critical': return risk_critical;
+      case 'risk_high': return risk_high;
+      case 'risk_medium': return risk_medium;
+      case 'risk_low': return risk_low;
+      case 'source_type_official': return source_type_official;
+      case 'source_type_world_bank': return source_type_world_bank;
+      case 'source_type_government': return source_type_government;
+      case 'source_type_default': return source_type_default;
+      case 'source_aria_label': return source_aria_label;
+      case 'settings_choose_language': return settings_choose_language;
+      case 'settings_system_default': return settings_system_default;
+      case 'settings_language_change_failed': return settings_language_change_failed;
+      default: return key; // Retourne la clé elle-même si non trouvée
     }
-    return value;
   }
 
   // ===========================================================================
-  // DICTIONNAIRE FRANÇAIS COMPLET
+  // COMMUN & UI
   // ===========================================================================
-  static const Map<String, String> _fr = {
+  String get common_back;
+  String get common_close;
+  String get common_cancel;
+  String get common_confirm;
+  String get common_delete;
+  String get common_add;
+  String get common_edit;
+  String get common_save;
+  String get common_manage;
+  String get common_retry;
+  String get common_refresh;
+  String get common_search;
+  String get common_open;
+  String get common_share;
+  String get common_copy;
+  String get common_copied;
+  String get common_download;
+  String get common_upload;
+  String get common_send;
+  String get common_receive;
+  String get common_accept;
+  String get common_reject;
+  String get common_skip;
+  String get common_next;
+  String get common_previous;
+  String get common_finish;
+  String get common_done;
+  String get common_error;
+  String get common_success;
+  String get common_loading;
+  String get common_please_wait;
+  String get common_today;
+  String get common_yesterday;
+  String get common_tomorrow;
+  String get common_home;
+  String get common_chat;
+  String get common_map;
+  String get common_profile;
+  String get common_menu;
+  String get common_notifications;
+  String get common_settings;
+  String get common_help;
+  String get common_about;
+  String get common_logout;
+  String get common_login;
+  String get common_signup;
+  String get common_yes;
+  String get common_no;
+  String get common_or;
+  String get common_and;
+  String get common_none;
+  String get common_all;
+  String get common_unknown;
+  String get common_enabled;
+  String get common_disabled;
+  String get common_clear;
+  String get common_remove;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // COMMON & UI
-    // ═══════════════════════════════════════════════════════════════════════
-    'common_back': 'Retour',
-    'common_close': 'Fermer',
-    'common_cancel': 'Annuler',
-    'common_confirm': 'Confirmer',
-    'common_delete': 'Supprimer',
-    'common_add': 'Ajouter',
-    'common_edit': 'Modifier',
-    'common_save': 'Enregistrer',
-    'common_manage': 'Gérer',
-    'common_retry': 'Réessayer',
-    'common_refresh': 'Actualiser',
-    'common_search': 'Rechercher',
-    'common_open': 'Ouvrir',
-    'common_share': 'Partager',
-    'common_copy': 'Copier',
-    'common_copied': 'Copié !',
-    'common_download': 'Télécharger',
-    'common_upload': 'Téléverser',
-    'common_send': 'Envoyer',
-    'common_receive': 'Recevoir',
-    'common_accept': 'Accepter',
-    'common_reject': 'Refuser',
-    'common_skip': 'Ignorer',
-    'common_next': 'Suivant',
-    'common_previous': 'Précédent',
-    'common_finish': 'Terminer',
-    'common_done': 'Terminé',
-    'common_error': 'Erreur',
-    'common_success': 'Succès',
-    'common_loading': 'Chargement en cours…',
-    'common_please_wait': 'Veuillez patienter…',
-    'common_today': "Aujourd'hui",
-    'common_yesterday': 'Hier',
-    'common_tomorrow': 'Demain',
-    'common_home': 'Accueil',
-    'common_chat': 'Discussion',
-    'common_map': 'Carte',
-    'common_profile': 'Profil',
-    'common_menu': 'Menu',
-    'common_notifications': 'Notifications',
-    'common_settings': 'Paramètres',
-    'common_help': 'Aide',
-    'common_about': 'À propos',
-    'common_logout': 'Déconnexion',
-    'common_login': 'Connexion',
-    'common_signup': 'Inscription',
-    'common_yes': 'Oui',
-    'common_no': 'Non',
-    'common_or': 'ou',
-    'common_and': 'et',
-    'common_none': 'Aucun',
-    'common_all': 'Tout',
-    'common_unknown': 'Inconnu',
-    'common_clear': 'Effacer',
-    'common_remove': 'Supprimer',
-    'common_enabled': 'Activé',
-    'common_disabled': 'Désactivé',
-    'common_just_now': 'À l\'instant',
-    'common_in_the_future': 'Plus tard',
+  String common_items(int count);
+  String common_contacts(int count);
+  String common_messages(int count);
+  String common_days(int count);
+  String common_hours(int count);
+  String common_minutes(int count);
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // AUTH & LOGIN
-    // ═══════════════════════════════════════════════════════════════════════
-    'auth_login': 'Connexion',
-    'auth_signup': 'Inscription',
-    'auth_forgot_password': 'Mot de passe oublié ?',
-    'auth_reset_password': 'Réinitialiser le mot de passe',
-    'auth_email': 'Adresse e-mail',
-    'auth_phone': 'Numéro de téléphone',
-    'auth_password': 'Mot de passe',
-    'auth_confirm_password': 'Confirmer le mot de passe',
-    'auth_logout': 'Déconnexion',
-    'auth_logout_confirm': 'Voulez-vous vraiment vous déconnecter ?',
-    'auth_welcome_back': 'Heureux de vous revoir',
-    'auth_welcome': 'Bienvenue',
-    'auth_no_account': "Vous n'avez pas encore de compte ?",
-    'auth_has_account': 'Vous avez déjà un compte ?',
-    'auth_invalid_email': 'Adresse e-mail invalide',
-    'auth_invalid_phone': 'Numéro de téléphone invalide',
-    'auth_password_too_short': 'Mot de passe trop court (8 caractères min.)',
-    'auth_passwords_mismatch': 'Les mots de passe ne correspondent pas',
-    'auth_login_success': 'Connexion réussie',
-    'auth_signup_success': 'Compte créé avec succès',
-    'auth_logout_success': 'Déconnexion réussie',
-    'auth_session_expired': 'Session expirée, veuillez vous reconnecter',
-    'auth_2fa_title': 'Vérification en deux étapes',
-    'auth_2fa_code': 'Code de vérification',
-    'auth_verify_email': 'Vérifier l\'e-mail',
-    'auth_verify_phone': 'Vérifier le téléphone',
-    'auth_biometric': 'Connexion biométrique',
-    'auth_biometric_prompt': 'Authentifiez-vous pour continuer',
-    'auth_full_name': 'Nom complet',
-    'auth_first_name': 'Prénom',
-    'auth_last_name': 'Nom de famille',
-    'auth_birth_date': 'Date de naissance',
-    'auth_gender': 'Genre',
-    'auth_gender_male': 'Homme',
-    'auth_gender_female': 'Femme',
-    'auth_gender_other': 'Autre',
-    'auth_accept_terms': "J'accepte les conditions d'utilisation",
-    'auth_terms_required': 'Vous devez accepter les conditions',
-    'auth_email_already_used': 'Cette adresse e-mail est déjà utilisée',
-    'auth_phone_already_used': 'Ce numéro est déjà utilisé',
-    'auth_create_account': 'Créer mon compte',
-    'auth_already_have_account': 'J\'ai déjà un compte',
+  // ===========================================================================
+  // 🔴 THIX MEDIA - LIVE
+  // ===========================================================================
+  String get live_send;
+  String get live_ending;
+  String get live_network_quality;
+  String get live_leave_btn;
+  String get live_chat_empty;
+  String get live_chat_hint;
+  String get live_like;
+  String get live_leaving;
+  String get live_viewers;
+  String get live_likes;
+  String get live_go_live;
+  String get live_title;
+  String get live_start;
+  String get live_end;
+  String get live_duration;
+  String get live_peak_viewers;
+  String get live_chat_disabled;
+  String get live_share;
+  String get live_report;
+  String get live_follow_host;
+  String get live_gift_send;
+  String get live_quality_auto;
+  String get live_quality_hd;
+  String get live_quality_sd;
+  String get live_quality_low;
 
-    // Erreurs Auth
-    'auth_error_identifier_required': 'L\'identifiant est requis',
-    'auth_error_password_required': 'Le mot de passe est requis',
-    'auth_error_thix_id_login_not_available': 'Connexion par ID THIX non disponible',
-    'auth_error_invalid_email': 'Adresse e-mail invalide',
-    'auth_error_password_too_short': 'Le mot de passe doit contenir au moins',
-    'auth_error_sign_in_failed': 'Échec de la connexion. Vérifiez vos identifiants.',
-    'auth_error_email_not_verified': 'Veuillez vérifier votre e-mail avant de vous connecter',
-    'auth_error_server_misconfiguration': 'Erreur de configuration du serveur',
-    'auth_error_account_already_exists': 'Un compte avec cet identifiant existe déjà',
-    'auth_error_account_exists_wrong_password': 'Compte existant, mot de passe incorrect',
-    'auth_error_account_exists_new_otp_sent': 'Un nouveau code OTP a été envoyé',
-    'auth_error_invalid_otp': 'Code OTP invalide ou expiré',
-    'auth_error_otp_expired': 'Le code OTP a expiré',
-    'auth_error_network': 'Erreur réseau. Vérifiez votre connexion.',
-    'auth_error_rate_limit': 'Trop de tentatives. Patientez un moment.',
-    'auth_error_technical': 'Erreur technique. Veuillez réessayer.',
-    'auth_error_session_expired': 'Session expirée, reconnectez-vous',
-    'auth_error_user_mismatch': 'Incohérence d\'utilisateur détectée',
-    'auth_error_profile_update_failed': 'Échec de la mise à jour du profil',
-    'auth_error_mark_email_verified_failed': 'Échec de la vérification e-mail',
-    'auth_error_qr_token_generation_failed': 'Échec de la génération du token QR',
-    'auth_error_finalize_registration_failed': 'Échec de la finalisation de l\'inscription',
-    'auth_error_consume_qr_token_failed': 'Échec de la consommation du token QR',
-    'auth_error_resend_otp_failed': 'Échec du renvoi du code OTP',
-    'auth_error_phone_auth_not_available': 'Authentification par téléphone non disponible',
-    'auth_error_delete_account_not_available': 'Suppression de compte non disponible',
-    'auth_error_update_email_failed': 'Échec de la mise à jour de l\'e-mail',
-    'auth_error_reset_password_failed': 'Échec de la réinitialisation du mot de passe',
-    'auth_error_sign_up_failed': 'Échec de la création du compte',
-    'auth_info_otp_sent': 'Code de vérification envoyé',
+  // ===========================================================================
+  // 🔴 THIX IA - SOURCES, INSIGHTS & RISQUES
+  // ===========================================================================
+  String get source_type_official;
+  String get source_type_world_bank;
+  String get source_type_government;
+  String get source_type_default;
+  String get source_aria_label;
 
-    // Login page
-    'login_title': 'Connexion à THIX',
-    'login_subtitle': 'Heureux de vous revoir',
-    'login_identifier_label': 'Identifiant',
-    'login_identifier_hint': 'E-mail, téléphone ou ID THIX',
-    'login_password_label': 'Mot de passe',
-    'login_password_hint': 'Votre mot de passe sécurisé',
-    'login_remember_me': 'Se souvenir de moi',
-    'login_forgot_password': 'Mot de passe oublié ?',
-    'login_button': 'Se connecter',
-    'login_verifying': 'Vérification…',
-    'login_retry_in': 'Réessayez dans',
-    'login_seconds_suffix': 's',
-    'login_biometric': 'OU CONTINUER AVEC',
-    'login_error_suspended': 'Ce compte est suspendu. Contactez le support.',
-    'login_error_not_active': 'Ce compte n\'est pas activé.',
-    'login_error_no_account': 'Aucun compte trouvé avec ces informations.',
-    'login_error_mfa_required': 'Vérification en deux étapes requise.',
+  String get insight_type_market;
+  String get insight_type_finance;
+  String get insight_type_strategy;
+  String get insight_type_business;
+  String get insight_type_insight;
+  String get insight_confidence_label;
+  String get insight_source_verified;
+  String get insight_source_unverified;
+  String get insight_recommended_actions;
+  String get insight_key_findings;
+  String get insight_summary;
+  String get insight_full_analysis;
+  String get insight_generated_by;
+  String get insight_disclaimer;
 
-    // Onboarding
-    'onboarding_welcome': 'Bienvenue sur THIX',
-    'onboarding_step_1_title': 'Connexion',
-    'onboarding_step_1_desc': 'Créez votre identité THIX sécurisée',
-    'onboarding_step_2_title': 'Protection',
-    'onboarding_step_2_desc': 'Activez la protection 24h/24 et 7j/7',
-    'onboarding_step_3_title': 'Action',
-    'onboarding_step_3_desc': 'Alertez vos secours en 2 secondes',
-    'onboarding_get_started': 'Commencer',
-    'onboarding_skip': 'Ignorer la présentation',
+  String get risk_critical;
+  String get risk_high;
+  String get risk_medium;
+  String get risk_low;
+  String get risk_level_label;
+  String get risk_mitigation;
+  String get risk_impact;
+  String get risk_probability;
+  String get risk_assessment;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // INSCRIPTION PERSONNELLE
-    // ═══════════════════════════════════════════════════════════════════════
-    'reg_step1_title': 'Votre profil',
-    'reg_step1_subtitle': 'Commençons par les informations de base',
-    'reg_full_name_label': 'Nom complet',
-    'reg_full_name_hint': 'Prénom et Nom',
-    'reg_dob_label': 'Date de naissance',
-    'reg_country_label': 'Pays de résidence',
-    'reg_occupation_label': 'Profession / Activité',
-    'reg_occupation_hint': 'Ex: Développeur, Étudiant, Entrepreneur',
-    'reg_next': 'Suivant',
-    'reg_step2_title': 'Sécurisez votre compte',
-    'reg_step2_subtitle': 'Créez vos identifiants de connexion',
-    'reg_email_label': 'Adresse e-mail',
-    'reg_email_hint': 'votre.email@exemple.com',
-    'reg_phone_label': 'Numéro de téléphone',
-    'reg_phone_hint': '+225 07 XX XX XX XX',
-    'reg_password_label': 'Mot de passe',
-    'reg_password_hint': 'Minimum 8 caractères',
-    'reg_confirm_password_label': 'Confirmer le mot de passe',
-    'reg_confirm_password_hint': 'Retapez votre mot de passe',
-    'reg_strength_label': 'Force du mot de passe',
-    'reg_strength_very_weak': 'Très faible',
-    'reg_strength_weak': 'Faible',
-    'reg_strength_medium': 'Moyen',
-    'reg_strength_strong': 'Fort',
-    'reg_strength_excellent': 'Excellent',
-    'reg_identity_title': 'Identité THIX',
-    'reg_thix_chat_label': 'Nom d\'utilisateur THIX Chat',
-    'reg_thix_chat_hint': 'Ex: jean.dupont (unique)',
-    'reg_verification_title': 'Vérification',
-    'reg_get_otp': 'Recevoir le code de vérification',
-    'reg_code_sent_resend': 'Renvoyer le code',
-    'reg_resend_in': 'Renvoyer dans',
-    'reg_seconds_short': 's',
-    'reg_otp_label': 'Code de vérification (OTP)',
-    'reg_validate_activate': 'Vérifier et activer',
-    'reg_activating': 'Activation en cours…',
-    'reg_congrats': 'Félicitations !',
-    'reg_welcome_message': 'Bienvenue dans l\'écosystème THIX,',
-    'reg_id_card_title': 'CARTE D\'IDENTITÉ NUMÉRIQUE THIX',
-    'reg_official_thix_id': 'ID THIX OFFICIEL',
-    'reg_generating': 'Génération en cours…',
-    'reg_copy_thix_id': 'Copier l\'ID THIX',
-    'reg_thix_id_copied': 'ID THIX copié',
-    'reg_go_to_dashboard': 'Accéder au tableau de bord',
-    'reg_summary': 'Récapitulatif de votre inscription',
-    'reg_mobile_label': 'Téléphone mobile',
-    'reg_not_provided': 'Non renseigné',
+  // ============================================================================
+  // AUTH & ONBOARDING (BASIC)
+  // ============================================================================
+  String get auth_login;
+  String get auth_signup;
+  String get auth_forgot_password;
+  String get auth_reset_password;
+  String get auth_email;
+  String get auth_phone;
+  String get auth_password;
+  String get auth_confirm_password;
+  String get auth_logout_confirm;
+  String get auth_welcome_back;
+  String get auth_welcome;
+  String get auth_no_account;
+  String get auth_has_account;
+  String get auth_invalid_email;
+  String get auth_invalid_phone;
+  String get auth_password_too_short;
+  String get auth_passwords_mismatch;
+  String get auth_login_success;
+  String get auth_signup_success;
+  String get auth_session_expired;
+  String get auth_2fa_title;
+  String get auth_2fa_code;
+  String get auth_verify_email;
+  String get auth_verify_phone;
+  String get auth_biometric;
+  String get auth_biometric_prompt;
+  String get auth_full_name;
+  String get auth_first_name;
+  String get auth_last_name;
+  String get auth_birth_date;
+  String get auth_gender;
+  String get auth_gender_male;
+  String get auth_gender_female;
+  String get auth_gender_other;
+  String get auth_accept_terms;
+  String get auth_terms_required;
+  String get auth_email_already_used;
+  String get auth_phone_already_used;
+  String get auth_create_account;
+  String get auth_already_have_account;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // HOME & DASHBOARD
-    // ═══════════════════════════════════════════════════════════════════════
-    'home_search_hint': 'Rechercher un service ou un contact…',
-    'home_greeting': 'Bonjour',
-    'home_greeting_time': 'Bonsoir',
-    'home_welcome_back': 'Ravi de vous revoir',
-    'quickSona': 'THIX Sona',
-    'quickDoc': 'Mes documents',
-    'quickChat': 'Discussion',
-    'quickSos': 'Urgence',
-    'serviceSante': 'THIX Santé',
-    'serviceMarket': 'THIX Marché',
-    'serviceMoney': 'THIX Portefeuille',
-    'serviceReservation': 'Réservations',
-    'serviceMonPays': 'Mon Pays',
-    'serviceEmploi': 'Emplois',
-    'serviceFormations': 'Formations',
-    'serviceOpportunites': 'Opportunités',
-    'serviceInfos': 'Actualités',
-    'serviceEvents': 'Événements',
-    'serviceMedia': 'THIX Média',
-    'serviceVault': 'Coffre-fort',
-    'serviceNetwork': 'Réseau',
-    'serviceCertification': 'Certification',
+  String get onboarding_welcome;
+  String get onboarding_step_1_title;
+  String get onboarding_step_1_desc;
+  String get onboarding_step_2_title;
+  String get onboarding_step_2_desc;
+  String get onboarding_step_3_title;
+  String get onboarding_step_3_desc;
+  String get onboarding_get_started;
+  String get onboarding_skip;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // SOS & URGENCE
-    // ═══════════════════════════════════════════════════════════════════════
-    'sos_button': 'Urgence',
-    'sos_button_label': 'Bouton d\'urgence SOS',
-    'sos_button_hint': 'Appuyez pendant 2 secondes pour activer',
-    'sos_button_tooltip': 'Maintenez appuyé 2 secondes',
-    'sos_button_instruction': 'Maintenez appuyé 2 secondes',
-    'sos_hold_instruction': 'Maintenez appuyé 2 secondes',
-    'sos_trigger_button': 'Activer SOS',
-    'sos_trigger_timeout': 'Délai dépassé. Veuillez réessayer.',
-    'sos_trigger_error': 'Échec de l\'activation du SOS',
-    'sos_active': 'SOS Actif',
-    'sos_crisis_room': 'Salle de crise',
-    'sos_command_center': 'Centre de commandement',
-    'sos_incident': 'Incident',
-    'sos_incident_unknown': 'Incident inconnu',
-    'sos_incident_not_found': 'Incident introuvable',
-    'sos_circle': 'Cercle',
-    'sos_rescuers': 'Secouristes',
-    'sos_rescuer': 'Secouriste',
-    'sos_my_rescuers': 'Mes secouristes',
-    'sos_duration': 'Durée',
-    'sos_identifier': 'Identifiant',
-    'sos_calling': 'Appel en cours…',
-    'sos_call': 'Appeler',
-    'sos_available': 'Disponible',
-    'sos_unavailable': 'Indisponible',
-    'sos_verified': 'Vérifié',
-    'sos_unknown': 'Inconnu',
-    'sos_end': 'Terminer',
-    'sos_end_sos': 'Terminer le SOS',
-    'sos_cancel_sos': 'Annuler le SOS',
-    'sos_pin_required': 'Code de sécurité requis',
-    'sos_cancelled': 'SOS annulé',
-    'sos_resolved': 'SOS résolu',
-    'sos_cancel_failed': 'Échec de l\'annulation',
-    'sos_in_progress': 'En cours',
-    'sos_history': 'Historique',
-    'sos_my_incidents': 'Mes incidents',
-    'sos_no_incidents': 'Aucun incident pour le moment',
-    'sos_incidents_appear_here': 'Vos demandes SOS apparaîtront ici',
-    'sos_history_error': 'Impossible de charger l\'historique',
-    'sos_circle_1': 'Cercle 1 – Prioritaire',
-    'sos_circle_2': 'Cercle 2 – Secondaire',
-    'sos_circle_3': 'Cercle 3 – Urgence',
-    'sos_no_rescuers': 'Aucun secouriste',
-    'sos_no_rescuers_circle': 'Aucun secouriste dans ce cercle',
-    'sos_add_first_rescuer': 'Ajoutez votre premier contact de secours',
-    'sos_add_rescuer': 'Ajouter un secouriste',
-    'sos_add_rescuer_info': 'Entrez l\'identifiant THIX du secouriste.',
-    'sos_thix_id_label': 'ID THIX',
-    'sos_thix_id_hint': 'THIX-XXXX',
+  // ============================================================================
+  // AUTHENTIFICATION & CONNEXION (ADVANCED / ERRORS)
+  // ============================================================================
+  String get login_title;
+  String get login_subtitle;
+  String get login_identifier_label;
+  String get login_identifier_hint;
+  String get login_password_label;
+  String get login_password_hint;
+  String get login_remember_me;
+  String get login_forgot_password;
+  String get login_button;
+  String get login_verifying;
+  String get login_retry_in;
+  String get login_seconds_suffix;
+  String get login_biometric;
+  String get login_face_id;
+  String get login_touch_id;
+  
+  String get login_error_suspended;
+  String get login_error_not_active;
+  String get login_error_no_account;
+  String get login_error_mfa_required;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // CHAT & MESSAGERIE
-    // ═══════════════════════════════════════════════════════════════════════
-    'chatlist_network': 'Réseau',
-    'chatlist_discussions': 'Discussions',
-    'chatlist_create_new': 'Créer une nouvelle discussion',
-    'chatlist_calls': 'Appels',
-    'chatlist_settings': 'Paramètres',
-    'chat_unknown_user': 'Utilisateur inconnu',
-    'chat_members': 'membres',
-    'chat_video_call': 'Appel vidéo',
-    'chat_audio_call': 'Appel audio',
-    'chat_escalate': 'Escalader',
-    'chat_history': 'Historique',
-    'chat_group_info': 'Infos du groupe',
-    'chat_file': 'Fichier',
-    'chat_sticker': 'Autocollant',
-    'chat_ephemeral': 'Éphémère',
-    'chat_protected': 'Protégé',
-    'chat_internal_note': 'Note interne',
-    'chat_send': 'Envoyer',
-    'chat_recording': 'Enregistrement',
-    'chat_stop_recording': 'Arrêter',
-    'chat_write_message': 'Écrire un message...',
-    'chat_record_audio': 'Enregistrer un audio',
-    'chat_emojis': 'Émojis',
-    'chat_reactions': 'Réactions',
-    'chat_flags': 'Drapeaux',
-    'chat_callback': 'Rappeler',
-    'chat_typing': 'est en train d\'écrire...',
-    'chat_pause': 'Pause',
-    'chat_play': 'Lecture',
-    'conv_status_connected': 'Connecté',
-    'conv_status_pending': 'En attente',
-    'conv_status_rejected': 'Rejeté',
-    'conv_cannot_self': 'Vous ne pouvez pas vous ajouter vous-même',
-    'conv_request_pending': 'Demande de connexion en attente',
-    'conv_request_rejected': 'Demande de connexion rejetée',
-    'conv_request_to': 'Envoyer une demande à',
-    'conv_request_hint': 'Ajoutez un message optionnel à votre demande.',
-    'conv_message_optional': 'Message (optionnel)',
-    'conv_send_request': 'Envoyer la demande',
-    'conv_request_sent': 'Demande envoyée avec succès',
-    'conv_request_exists': 'Une demande existe déjà',
-    'conv_select_contact': 'Sélectionnez au moins un contact',
-    'conv_waiting_connection': 'En attente de connexion pour',
-    'conv_group_rpc_required': 'La création de groupe nécessite un appel serveur',
-    'conv_page_title': 'Nouvelle discussion',
-    'conv_start': 'Démarrer',
-    'conv_search_label': 'Rechercher un utilisateur',
-    'conv_search_hint': 'Nom, ID THIX ou numéro…',
-    'conv_group_name_label': 'Nom du groupe',
-    'conv_group_name_hint': 'Ex: Équipe Projet Alpha',
-    'requests_page_title': 'Demandes de connexion',
-    'requests_reject_title': 'Rejeter la demande',
-    'requests_reject_message': 'Êtes-vous sûr de vouloir rejeter cette demande ?',
-    'requests_reject_confirm': 'Rejeter',
-    'requests_rejected': 'Demande rejetée',
-    'requests_reject_error': 'Erreur lors du rejet',
-    'requests_accepted': 'Demande acceptée',
-    'requests_accept_error': 'Erreur lors de l\'acceptation',
+  String get auth_error_identifier_required;
+  String get auth_error_password_required;
+  String get auth_error_thix_id_login_not_available;
+  String get auth_error_sign_in_failed;
+  String get auth_error_email_not_verified;
+  String get auth_error_server_misconfiguration;
+  String get auth_error_account_already_exists;
+  String get auth_error_account_exists_wrong_password;
+  String get auth_error_account_exists_new_otp_sent;
+  String get auth_error_invalid_otp;
+  String get auth_error_otp_expired;
+  String get auth_error_network;
+  String get auth_error_rate_limit;
+  String get auth_error_technical;
+  String get auth_error_user_mismatch;
+  String get auth_error_profile_update_failed;
+  String get auth_error_mark_email_verified_failed;
+  String get auth_error_qr_token_generation_failed;
+  String get auth_error_finalize_registration_failed;
+  String get auth_error_consume_qr_token_failed;
+  String get auth_error_resend_otp_failed;
+  String get auth_error_phone_auth_not_available;
+  String get auth_error_delete_account_not_available;
+  String get auth_error_update_email_failed;
+  String get auth_error_reset_password_failed;
+  String get auth_error_sign_up_failed;
+  String get auth_info_otp_sent;
 
-    // Paramètres Chat
-    'settings_title': 'Paramètres du chat',
-    'settings_section_appearance': 'Apparence',
-    'settings_theme': 'Thème',
-    'settings_theme_light': 'Clair',
-    'settings_theme_dark': 'Sombre',
-    'settings_theme_system': 'Système',
-    'settings_wallpaper': 'Fond d\'écran',
-    'settings_wallpaper_default': 'Par défaut',
-    'settings_wallpaper_custom': 'Personnalisé',
-    'settings_section_privacy': 'Confidentialité',
-    'settings_last_seen': 'Vu à',
-    'settings_visibility_everyone': 'Tout le monde',
-    'settings_visibility_contacts': 'Mes contacts',
-    'settings_visibility_nobody': 'Personne',
-    'settings_profile_photo': 'Photo de profil',
-    'settings_section_notifications': 'Notifications',
-    'settings_messages': 'Messages',
-    'settings_calls': 'Appels',
-    'settings_section_messages': 'Messages et données',
-    'settings_ephemeral': 'Messages éphémères',
-    'settings_auto_download': 'Téléchargement auto des médias',
-    'settings_download_wifi': 'Wi-Fi uniquement',
-    'settings_download_mobile': 'Wi-Fi et données mobiles',
-    'settings_download_never': 'Jamais',
-    'settings_section_account': 'Compte',
-    'settings_view_profile': 'Voir mon profil',
-    'settings_logout': 'Déconnexion',
+  // ============================================================================
+  // INSCRIPTION PERSONNELLE
+  // ============================================================================
+  String get reg_step1_title;
+  String get reg_step1_subtitle;
+  String get reg_full_name_label;
+  String get reg_full_name_hint;
+  String get reg_dob_label;
+  String get reg_country_label;
+  String get reg_occupation_label;
+  String get reg_occupation_hint;
+  String get reg_next;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // RÉSEAU SOCIAL
-    // ═══════════════════════════════════════════════════════════════════════
-    'network_search_title': 'Recherche',
-    'network_search_hint': 'Rechercher des personnes, publications…',
-    'network_tab_people': 'Personnes',
-    'network_tab_posts': 'Publications',
-    'network_tab_communities': 'Communautés',
-    'network_explore_title': 'Explorez le réseau THIX',
-    'network_explore_subtitle': 'Recherchez des personnes, publications ou communautés',
-    'network_no_results_users': 'Aucun utilisateur trouvé',
-    'network_no_results_posts': 'Aucune publication trouvée',
-    'network_no_results_communities': 'Aucune communauté trouvée',
-    'network_request_sent': 'Demande envoyée à',
-    'network_request_error': 'Erreur lors de l\'envoi',
-    'profile_followers': 'Abonnés',
-    'profile_following': 'Abonnements',
-    'profile_posts': 'Publications',
-    'profile_follow': 'Suivre',
-    'profile_unfollow': 'Abonné',
-    'profile_message': 'Message',
-    'profile_block_user': 'Bloquer cet utilisateur ?',
-    'profile_block_message': 'Vous ne verrez plus ses publications.',
-    'profile_block_confirm': 'Bloquer',
-    'profile_blocked_success': 'Utilisateur bloqué',
-    'profile_block_error': 'Erreur lors du blocage',
-    'profile_report_user': 'Signaler',
-    'profile_report_reason': 'Motif',
-    'profile_report_details': 'Détails (optionnel)',
-    'profile_report_submit': 'Signaler',
-    'profile_report_success': 'Signalement envoyé',
-    'profile_report_duplicate': 'Déjà signalé',
-    'profile_private_gallery': 'Galerie privée',
-    'profile_private_content_locked': 'Ce contenu est privé',
-    'profile_add_private_media': 'Ajouter à ma galerie privée',
-    'profile_no_private_media': 'Aucun média privé',
-    'profile_upload_processing': 'Traitement en cours…',
-    'profile_tab_bio': 'Bio',
-    'profile_tab_private_gallery': 'Galerie privée',
-    'profile_tab_photos': 'Photos publiques',
-    'profile_tab_videos': 'Vidéos',
-    'profile_tab_audios': 'Audios',
-    'profile_no_content': 'Aucun contenu',
-    'profile_pinned_post': 'Publication épinglée',
-    'profile_view_post': 'Voir la publication',
-    'profile_settings': 'Paramètres du profil',
-    'profile_edit_bio': 'Modifier ma Bio',
-    'profile_no_bio': 'Aucune biographie disponible.',
+  String get reg_step2_title;
+  String get reg_step2_subtitle;
+  String get reg_email_label;
+  String get reg_email_hint;
+  String get reg_phone_label;
+  String get reg_phone_hint;
+  String get reg_password_label;
+  String get reg_password_hint;
+  String get reg_confirm_password_label;
+  String get reg_confirm_password_hint;
+  String get reg_strength_label;
+  String get reg_strength_very_weak;
+  String get reg_strength_weak;
+  String get reg_strength_medium;
+  String get reg_strength_strong;
+  String get reg_strength_excellent;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // THIX IA - ASSISTANT INTELLIGENT
-    // ═══════════════════════════════════════════════════════════════════════
-    'thix_ia_title': 'THIX IA',
-    'thix_ia_subtitle': 'Expertise RDC & Afrique',
-    'thix_ia_new_session': 'Nouvelle session',
-    'thix_ia_welcome': 'Bonjour, {name}',
-    'thix_ia_ready_message': 'Votre conseiller stratégique est prêt.',
-    'thix_ia_assist_question': 'Comment puis-je vous assister aujourd\'hui ?',
-    'thix_ia_generating': 'Génération de l\'analyse...',
-    'thix_ia_live_search': 'Recherche Live (Tavily)',
-    'thix_ia_attachments_coming': 'Pièces jointes bientôt disponibles',
-    'thix_ia_input_hint': 'Demandez à l\'expert THIX...',
-    'thix_ia_connection_error': 'Erreur de connexion sécurisée au serveur THIX.',
-    'thix_ia_action_copy': 'Copier',
-    'thix_ia_action_share': 'Partager',
-    'thix_ia_action_regenerate': 'Régénérer',
-    'thix_ia_action_save': 'Enregistrer',
+  String get reg_identity_title;
+  String get reg_thix_chat_label;
+  String get reg_thix_chat_hint;
+  
+  String get reg_verification_title;
+  String get reg_get_otp;
+  String get reg_code_sent_resend;
+  String get reg_resend_in;
+  String get reg_seconds_short;
+  String get reg_otp_label;
+  String get reg_validate_activate;
+  String get reg_activating;
 
-    // Insight cards (widgets/insight_card.dart)
-    'insight_type_market': 'Analyse de marché',
-    'insight_type_finance': 'Analyse financière',
-    'insight_type_strategy': 'Stratégie',
-    'insight_type_business': 'Business',
-    'insight_type_insight': 'Insight',
-    'insight_confidence_label': 'Niveau de confiance',
-    'insight_source_verified': 'Source vérifiée',
-    'insight_source_unverified': 'Source non vérifiée',
-    'insight_recommended_actions': 'Actions recommandées',
-    'insight_key_findings': 'Points clés',
-    'insight_summary': 'Résumé',
-    'insight_full_analysis': 'Analyse complète',
-    'insight_generated_by': 'Généré par THIX IA',
-    'insight_disclaimer': 'Ceci est une analyse générée par IA à titre informatif.',
+  String get reg_congrats;
+  String get reg_welcome_message;
+  String get reg_id_card_title;
+  String get reg_official_thix_id;
+  String get reg_generating;
+  String get reg_copy_thix_id;
+  String get reg_thix_id_copied;
+  String get reg_go_to_dashboard;
+  String get reg_summary;
+  String get reg_mobile_label;
+  String get reg_not_provided;
 
-    // Risk cards (widgets/risk_card.dart)
-    'risk_critical': 'Critique',
-    'risk_high': 'Élevé',
-    'risk_medium': 'Moyen',
-    'risk_low': 'Faible',
-    'risk_level_label': 'Niveau de risque',
-    'risk_mitigation': 'Mesures d\'atténuation',
-    'risk_impact': 'Impact potentiel',
-    'risk_probability': 'Probabilité',
-    'risk_assessment': 'Évaluation du risque',
+  // ============================================================================
+  // ACCUEIL & TABLEAU DE BORD
+  // ============================================================================
+  String get home_search_hint;
+  String get home_greeting;
+  String get home_greeting_time;
+  String get home_welcome_back;
+  String get home_language_kiswahili;
+  String get home_banner_default_tag;
+  String get home_banner_default_title;
+  
+  String get cert_pending;
+  String get cert_tier_ladder;
+  String get cert_view;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // THIX MEDIA - LIVE
-    // ═══════════════════════════════════════════════════════════════════════
-    'live_leave_btn': 'Quitter le live',
-    'live_chat_empty': 'Soyez le premier à commenter !',
-    'live_chat_hint': 'Envoyer un message…',
-    'live_like': 'J\'aime',
-    'live_send': 'Envoyer',
-    'live_leaving': 'Vous avez quitté le live',
-    'live_viewers': 'spectateurs',
-    'live_likes': 'J\'aime',
-    'live_network_quality': 'Qualité réseau',
-    'live_go_live': 'Passer en direct',
-    'live_title': 'THIX Média Live',
-    'live_start': 'Démarrer le live',
-    'live_end': 'Terminer le live',
-    'live_duration': 'Durée',
-    'live_peak_viewers': 'Pic de spectateurs',
-    'live_chat_disabled': 'Chat désactivé',
-    'live_share': 'Partager le live',
-    'live_report': 'Signaler le live',
-    'live_follow_host': 'Suivre l\'animateur',
-    'live_gift_send': 'Envoyer un cadeau',
-    'live_quality_auto': 'Auto',
-    'live_quality_hd': 'HD',
-    'live_quality_sd': 'SD',
-    'live_quality_low': 'Basse',
+  String get quick_sona;
+  String get quick_doc;
+  String get quick_chat;
+  String get quick_sos;
+  String get service_sante;
+  String get service_market;
+  String get service_money;
+  String get service_reservation;
+  String get service_mon_pays;
+  String get service_emploi;
+  String get service_formations;
+  String get service_opportunites;
+  String get service_infos;
+  String get service_events;
+  String get service_media;
+  String get service_vault;
+  String get service_network;
+  String get service_certification;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // CERTIFICATION
-    // ═══════════════════════════════════════════════════════════════════════
-    'certification_title': 'Certification THIX',
-    'certification_apply': 'Demander une certification',
-    'certification_status': 'Statut',
-    'certification_pending': 'En attente',
-    'certification_approved': 'Approuvé',
-    'certification_rejected': 'Rejeté',
-    'certification_tier_bronze': 'Bronze',
-    'certification_tier_silver': 'Argent',
-    'certification_tier_gold': 'Or',
-    'certification_tier_platinum': 'Platine',
-    'certification_benefits': 'Avantages',
-    'certification_documents': 'Documents requis',
-    'certification_upload_doc': 'Téléverser un document',
-    'certification_review_progress': 'En cours d\'examen',
-    'certification_verified_account': 'Compte vérifié',
+  // ============================================================================
+  // CHAT & MESSAGERIE
+  // ============================================================================
+  String get chatlist_network;
+  String get chatlist_discussions;
+  String get chatlist_create_new;
+  String get chatlist_calls;
+  String get chatlist_settings;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // ÉDUCATION & FORMATION
-    // ═══════════════════════════════════════════════════════════════════════
-    'edu_nav_home': 'Accueil',
-    'edu_nav_learning': 'Mon apprentissage',
-    'edu_nav_library': 'Bibliothèque',
-    'edu_nav_certs': 'Certificats',
-    'edu_nav_profile': 'Profil',
-    'edu_login_required': 'Connectez-vous pour voir vos cours',
-    'edu_no_courses': 'Aucun cours en cours',
-    'edu_enroll_hint': 'Inscrivez-vous à un cours pour commencer.',
-    'edu_explore_btn': 'Explorer les cours',
-    'edu_completed': 'Terminé',
-    'edu_greeting': 'Bonjour,',
-    'edu_greeting_subtitle': 'Prêt à améliorer vos compétences ?',
-    'edu_learner': 'Apprenant',
-    'edu_search_hint': 'Rechercher des cours, certifications…',
-    'edu_qa_browse': 'Parcourir',
-    'edu_instructor': 'Instructeur',
-    'edu_top_formations': 'Cours populaires',
-    'edu_awaited': 'Les plus attendus',
-    'edu_see_all': 'Voir le catalogue',
-    'edu_coming_soon': 'Nouveaux cours en {category} bientôt',
-    'edu_awaited_badge': 'Bientôt disponible',
-    'edu_awaited_locked': 'Verrouillé',
-    'edu_awaited_locked_msg': 'Bientôt disponible !',
-    'edu_thix_academy': 'Académie THIX',
-    'edu_scheduled_soon': 'Prévu : Prochainement',
-    'edu_new_program': 'Nouveau programme',
-    'edu_resume': 'Reprendre l\'apprentissage',
-    'edu_library_title': 'Ma bibliothèque',
-    'edu_search_library': 'Rechercher par titre ou auteur…',
-    'edu_shelves_empty': 'Vos étagères sont vides.',
-    'edu_search_no_results': 'Aucun résultat pour "{query}"',
-    'edu_all': 'Tout',
-    'edu_shelf_info': 'Étagère {code} · {count} livres',
-    'edu_free': 'Gratuit',
-    'edu_expires_in': 'Expire dans {countdown}',
-    'edu_certs_title': 'Certifications',
-    'edu_no_certs': 'Aucune certification',
-    'edu_cert_expertise': 'Certificat d\'expertise',
-    'edu_cert_issued': 'Délivré le {date}',
-    'edu_profile_title': 'Compte professionnel',
-    'edu_instructor_space': 'Espace instructeur',
-    'edu_institutional_tools': 'Outils institutionnels',
-    'edu_free_resources': 'Ressources ouvertes',
-    'edu_masterclasses': 'Masterclasses',
-    'edu_mentorship': 'Réseautage et mentorat',
-    'edu_events_agenda': 'Agenda des événements',
-    'edu_support': 'Support technique',
-    'edu_not_connected': 'Non connecté',
-    'training_title': 'Formation',
-    'training_enroll': 'S\'inscrire',
-    'training_my_courses': 'Mes cours',
-    'training_certificates': 'Mes certificats',
-    'training_progress': 'Progression',
-    'training_lessons': 'Leçons',
-    'training_duration': 'Durée',
-    'training_level': 'Niveau',
-    'training_beginner': 'Débutant',
-    'training_intermediate': 'Intermédiaire',
-    'training_advanced': 'Avancé',
-    'training_start_course': 'Commencer le cours',
-    'training_continue_course': 'Continuer le cours',
+  String get chat_unknown_user;
+  String chat_members(int count);
+  String get chat_video_call;
+  String get chat_audio_call;
+  String get chat_escalate;
+  String get chat_history;
+  String get chat_group_info;
+  String get chat_file;
+  String get chat_sticker;
+  String get chat_ephemeral;
+  String get chat_protected;
+  String get chat_internal_note;
+  String get chat_send;
+  String get chat_recording;
+  String get chat_stop_recording;
+  String get chat_write_message;
+  String get chat_record_audio;
+  String get chat_emojis;
+  String get chat_reactions;
+  String get chat_flags;
+  String get chat_callback;
+  String get chat_typing;
+  String get chat_pause;
+  String get chat_play;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // EMPLOIS & RECRUTEMENT
-    // ═══════════════════════════════════════════════════════════════════════
-    'jobs_title': 'Emplois',
-    'jobs_search': 'Rechercher un emploi',
-    'jobs_apply': 'Postuler',
-    'jobs_saved': 'Sauvegardés',
-    'jobs_applied': 'Candidatures envoyées',
-    'jobs_company': 'Entreprise',
-    'jobs_location': 'Lieu',
-    'jobs_salary': 'Salaire',
-    'jobs_type': 'Type',
-    'jobs_full_time': 'Temps plein',
-    'jobs_part_time': 'Temps partiel',
-    'jobs_contract': 'Contrat',
-    'jobs_internship': 'Stage',
-    'jobs_freelance': 'Freelance',
-    'jobs_remote': 'Télétravail',
-    'jobs_onsite': 'Sur site',
-    'jobs_hybrid': 'Hybride',
-    'jobs_experience': 'Expérience',
-    'jobs_no_experience': 'Débutants acceptés',
-    'jobs_junior': 'Junior',
-    'jobs_mid': 'Confirmé',
-    'jobs_senior': 'Senior',
-    'jobs_requirements': 'Exigences',
-    'jobs_responsibilities': 'Responsabilités',
-    'jobs_benefits': 'Avantages',
-    'jobs_apply_now': 'Postuler maintenant',
-    'jobs_application_sent': 'Candidature envoyée',
-    'jobs_no_results': 'Aucun emploi trouvé',
-    'recruiter_title': 'Recruteur',
-    'recruiter_post_job': 'Publier une offre',
-    'recruiter_candidates': 'Candidats',
-    'recruiter_applications': 'Candidatures',
-    'recruiter_interviews': 'Entretiens',
+  String get conv_status_connected;
+  String get conv_status_pending;
+  String get conv_status_rejected;
+  String get conv_cannot_self;
+  String get conv_request_pending;
+  String get conv_request_rejected;
+  String get conv_request_to;
+  String get conv_request_hint;
+  String get conv_message_optional;
+  String get conv_send_request;
+  String get conv_request_sent;
+  String get conv_request_exists;
+  String get conv_select_contact;
+  String get conv_waiting_connection;
+  String get conv_group_rpc_required;
+  String get conv_page_title;
+  String conv_start(int count);
+  String get conv_search_label;
+  String get conv_search_hint;
+  String get conv_group_name_label;
+  String get conv_group_name_hint;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // OPPORTUNITÉS
-    // ═══════════════════════════════════════════════════════════════════════
-    'opportunities_title': 'Opportunités',
-    'opportunities_business': 'Affaires',
-    'opportunities_investment': 'Investissement',
-    'opportunities_partnership': 'Partenariat',
-    'opportunities_grant': 'Subvention',
-    'opportunities_coming_soon': 'Bientôt disponible',
+  String get requests_page_title;
+  String get requests_reject_title;
+  String get requests_reject_message;
+  String get requests_reject_confirm;
+  String get requests_rejected;
+  String get requests_reject_error;
+  String get requests_accepted;
+  String get requests_accept_error;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // MARCHÉ & E-COMMERCE
-    // ═══════════════════════════════════════════════════════════════════════
-    'market_title': 'Marché THIX',
-    'market_categories': 'Catégories',
-    'market_products': 'Produits',
-    'market_services': 'Services',
-    'market_add_to_cart': 'Ajouter au panier',
-    'market_buy_now': 'Acheter maintenant',
-    'market_cart': 'Panier',
-    'market_checkout': 'Paiement',
-    'market_total': 'Total',
-    'market_delivery': 'Livraison',
-    'market_seller': 'Vendeur',
-    'market_rating': 'Note',
-    'market_reviews': 'Avis',
-    'market_in_stock': 'En stock',
-    'market_out_of_stock': 'Rupture de stock',
-    'market_add_to_favorites': 'Ajouter aux favoris',
-    'market_remove_from_cart': 'Retirer du panier',
+  String get call_history_title;
+  String get call_missed;
+  String get call_incoming;
+  String get call_outgoing;
+  String get call_video;
+  String get call_audio;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // PORTEFEUILLE & ARGENT
-    // ═══════════════════════════════════════════════════════════════════════
-    'money_title': 'Portefeuille THIX',
-    'money_balance': 'Solde',
-    'money_send': 'Envoyer',
-    'money_receive': 'Recevoir',
-    'money_history': 'Historique',
-    'money_transactions': 'Transactions',
-    'money_top_up': 'Recharger',
-    'money_withdraw': 'Retirer',
-    'money_transfer': 'Virement',
-    'money_bills': 'Factures',
-    'money_recipients': 'Bénéficiaires',
-    'money_add_recipient': 'Ajouter un bénéficiaire',
-    'money_amount': 'Montant',
-    'money_fee': 'Frais',
-    'money_reference': 'Référence',
-    'money_confirm_transfer': 'Confirmer le virement',
-    'money_transfer_success': 'Virement réussi',
-    'money_transfer_failed': 'Échec du virement',
-    'money_insufficient_funds': 'Solde insuffisant',
+  // ============================================================================
+  // RÉSEAU SOCIAL
+  // ============================================================================
+  String get network_search_title;
+  String get network_search_hint;
+  String get network_tab_people;
+  String get network_tab_posts;
+  String get network_tab_communities;
+  String get network_explore_title;
+  String get network_explore_subtitle;
+  String get network_no_results_users;
+  String get network_no_results_posts;
+  String get network_no_results_communities;
+  String get network_request_sent;
+  String get network_request_error;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // ÉVÉNEMENTS & BILLETS
-    // ═══════════════════════════════════════════════════════════════════════
-    'events_title': 'Événements',
-    'events_upcoming': 'À venir',
-    'events_past': 'Passés',
-    'events_my_tickets': 'Mes billets',
-    'events_buy_ticket': 'Acheter un billet',
-    'events_ticket_price': 'Prix du billet',
-    'events_free': 'Gratuit',
-    'events_date': 'Date',
-    'events_time': 'Heure',
-    'events_venue': 'Lieu',
-    'events_organizer': 'Organisateur',
-    'events_attendees': 'Participants',
-    'events_seats_available': 'Places disponibles',
-    'events_sold_out': 'Complet',
-    'events_book_now': 'Réserver maintenant',
-    'events_ticket_type': 'Type de billet',
-    'ticket_standard': 'Standard',
-    'ticket_vip': 'VIP',
-    'ticket_gold': 'Or',
-    'ticket_family': 'Famille',
-    'ticket_secure_ticket': 'Billet sécurisé',
-    'ticket_not_found': 'Billet introuvable',
-    'ticket_date': 'Date',
-    'ticket_location': 'Lieu',
-    'ticket_organizer': 'Organisateur',
-    'ticket_pin_label': 'Code PIN',
-    'ticket_show_qr': 'Afficher le QR',
-    'ticket_booking_id': 'ID de réservation',
-    'ticket_add_wallet': 'Portefeuille',
-    'ticket_wallet_coming_soon': 'Intégration portefeuille bientôt',
-    'ticket_share': 'Partager',
-    'ticket_share_text': 'Mon billet THIX',
-    'ticket_scan_info': 'Présentez ce QR code à l\'entrée',
-    'ticket_security_title': 'Sécurité',
-    'ticket_enter_pin': 'Entrez votre PIN',
-    'ticket_pin_hint': 'Code à 4 chiffres',
-    'ticket_confirm': 'Confirmer',
-    'ticket_pin_incorrect': 'Code incorrect',
-    'ticket_pin_too_many_attempts': 'Trop de tentatives',
-    'ticket_attempts_remaining': 'Tentatives restantes',
-    'tickets_my_tickets': 'Mes billets',
-    'tickets_ticket': 'Billet',
-    'tickets_upcoming': 'À venir',
-    'tickets_completed': 'Terminés',
-    'tickets_no_tickets': 'Aucun billet',
-    'tickets_no_tickets_desc': 'Vos réservations apparaîtront ici',
-    'tickets_discover': 'Découvrir',
-    'tickets_load_error': 'Impossible de charger vos billets',
+  String get community_create_title;
+  String get community_name_label;
+  String get community_description_label;
+  String get community_visibility_label;
+  String get community_public;
+  String get community_private;
+  String get community_join;
+  String get community_leave;
+  String get community_members;
+  String get community_admin;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // RÉSERVATIONS
-    // ═══════════════════════════════════════════════════════════════════════
-    'reservation_title': 'Réservations',
-    'reservation_hotel': 'Hôtel',
-    'reservation_restaurant': 'Restaurant',
-    'reservation_transport': 'Transport',
-    'reservation_check_in': 'Arrivée',
-    'reservation_check_out': 'Départ',
-    'reservation_guests': 'Invités',
-    'reservation_rooms': 'Chambres',
-    'reservation_book': 'Réserver',
-    'reservation_cancel': 'Annuler',
-    'reservation_modify': 'Modifier',
-    'reservation_confirm': 'Confirmer la réservation',
-    'reservation_my_bookings': 'Mes réservations',
+  // ============================================================================
+  // PROFIL UTILISATEUR
+  // ============================================================================
+  String get profile_settings;
+  String get profile_edit_bio;
+  String get profile_no_bio;
+  String get profile_followers;
+  String get profile_following;
+  String get profile_posts;
+  String get profile_follow;
+  String get profile_unfollow;
+  String get profile_following_loading;
+  String get profile_message;
+  String get profile_block_user;
+  String get profile_block_message;
+  String get profile_block_confirm;
+  String get profile_blocked_success;
+  String get profile_block_error;
+  
+  String get profile_report_user;
+  String get profile_report_reason;
+  String get profile_report_details;
+  String get profile_report_spam;
+  String get profile_report_inappropriate;
+  String get profile_report_harassment;
+  String get profile_report_impersonation;
+  String get profile_report_other;
+  String get profile_report_submit;
+  String get profile_report_success;
+  String get profile_report_duplicate;
+  
+  String get profile_private_gallery;
+  String get profile_private_content_locked;
+  String get profile_add_private_media;
+  String get profile_no_private_media;
+  String get profile_upload_processing;
+  
+  String get profile_tab_bio;
+  String get profile_tab_private_gallery;
+  String get profile_tab_photos;
+  String get profile_tab_videos;
+  String get profile_tab_audios;
+  String get profile_no_content;
+  String get profile_pinned_post;
+  String get profile_view_post;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // SANTÉ
-    // ═══════════════════════════════════════════════════════════════════════
-    'health_title': 'THIX Santé',
-    'health_appointments': 'Rendez-vous',
-    'health_doctors': 'Médecins',
-    'health_hospitals': 'Hôpitaux',
-    'health_pharmacies': 'Pharmacies',
-    'health_emergency': 'Urgence',
-    'health_medical_records': 'Dossier médical',
-    'health_prescriptions': 'Ordonnances',
-    'health_book_appointment': 'Prendre rendez-vous',
-    'health_appointment_date': 'Date du rendez-vous',
-    'health_specialty': 'Spécialité',
-    'health_consultation': 'Consultation',
-    'health_telemedicine': 'Télémédecine',
-    'health_insurance': 'Assurance',
-    'health_symptoms': 'Symptômes',
-    'health_find_doctor': 'Trouver un médecin',
+  // ============================================================================
+  // PARAMÈTRES GÉNÉRAUX & CHAT (SETTINGS)
+  // ============================================================================
+  String get settings_title;
+  String get settings_section_appearance;
+  String get settings_theme;
+  String get settings_theme_light;
+  String get settings_theme_dark;
+  String get settings_theme_system;
+  String get settings_wallpaper;
+  String get settings_wallpaper_default;
+  String get settings_wallpaper_custom;
+  
+  String get settings_section_privacy;
+  String get settings_last_seen;
+  String get settings_visibility_everyone;
+  String get settings_visibility_contacts;
+  String get settings_visibility_nobody;
+  String get settings_profile_photo;
+  
+  String get settings_section_notifications;
+  String get settings_messages;
+  String get settings_calls;
+  
+  String get settings_section_messages;
+  String get settings_ephemeral;
+  String get settings_auto_download;
+  String get settings_download_wifi;
+  String get settings_download_mobile;
+  String get settings_download_never;
+  
+  String get settings_section_account;
+  String get settings_view_profile;
+  String get settings_logout;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // MÉDIA & INFOS
-    // ═══════════════════════════════════════════════════════════════════════
-    'media_title': 'THIX Média',
-    'media_news': 'Actualités',
-    'media_videos': 'Vidéos',
-    'media_podcasts': 'Podcasts',
-    'media_articles': 'Articles',
-    'media_live': 'En direct',
-    'media_categories': 'Catégories',
-    'media_bookmarks': 'Signets',
-    'media_share_article': 'Partager l\'article',
-    'media_read_more': 'Lire la suite',
-    'media_published_on': 'Publié le',
-    'media_author': 'Auteur',
-    'info_title': 'Infos',
-    'info_local': 'Local',
-    'info_national': 'National',
-    'info_international': 'International',
-    'info_sports': 'Sports',
-    'info_culture': 'Culture',
-    'info_economy': 'Économie',
-    'info_politics': 'Politique',
-    'info_technology': 'Technologie',
-    'info_read_full': 'Lire l\'article complet',
+  String get settings_profile_edit;
+  String get settings_notifications;
+  String get settings_privacy;
+  String get settings_security;
+  String get settings_language;
+  String get settings_help_center;
+  String get settings_about;
+  String get settings_version;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // MON PAYS
-    // ═══════════════════════════════════════════════════════════════════════
-    'mon_pays_title': 'Mon Pays',
-    'mon_pays_regions': 'Régions',
-    'mon_pays_cities': 'Villes',
-    'mon_pays_culture': 'Culture',
-    'mon_pays_history': 'Histoire',
-    'mon_pays_tourism': 'Tourisme',
-    'mon_pays_discover': 'Découvrir',
-    'mon_pays_landmarks': 'Monuments',
-    'mon_pays_traditions': 'Traditions',
+  // ============================================================================
+  // TRADUCTIONS DE LANGUAGE SHEET
+  // ============================================================================
+  String get settings_choose_language;
+  String get settings_system_default;
+  String get settings_language_change_failed;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // COFFRE-FORT
-    // ═══════════════════════════════════════════════════════════════════════
-    'vault_title': 'Coffre-fort',
-    'vault_documents': 'Documents',
-    'vault_photos': 'Photos',
-    'vault_videos': 'Vidéos',
-    'vault_notes': 'Notes',
-    'vault_passwords': 'Mots de passe',
-    'vault_add_document': 'Ajouter un document',
-    'vault_upload': 'Téléverser',
-    'vault_encrypted': 'Chiffré',
-    'vault_backup': 'Sauvegarde',
-    'vault_restore': 'Restaurer',
-    'vault_share_secure': 'Partage sécurisé',
-    'vault_unlock': 'Déverrouiller',
-    'vault_lock': 'Verrouiller',
+  // ============================================================================
+  // SOS & URGENCE
+  // ============================================================================
+  String get sos_button;
+  String get sos_button_label;
+  String get sos_button_hint;
+  String get sos_button_tooltip;
+  String get sos_trigger_button;
+  String get sos_trigger_timeout;
+  String get sos_trigger_error;
+  String get sos_active;
+  String get sos_crisis_room;
+  String get sos_command_center;
+  String get sos_incident;
+  String get sos_incident_unknown;
+  String get sos_incident_not_found;
+  String get sos_circle;
+  String get sos_rescuers;
+  String get sos_rescuer;
+  String get sos_my_rescuers;
+  String get sos_duration;
+  String get sos_identifier;
+  String get sos_calling;
+  String get sos_call;
+  String get sos_available;
+  String get sos_unavailable;
+  String get sos_verified;
+  String get sos_end;
+  String get sos_end_sos;
+  String get sos_cancel_sos;
+  String get sos_pin_required;
+  String get sos_cancelled;
+  String get sos_resolved;
+  String get sos_cancel_failed;
+  String get sos_in_progress;
+  String get sos_history;
+  String get sos_my_incidents;
+  String get sos_no_incidents;
+  String get sos_incidents_appear_here;
+  String get sos_history_error;
+  String get sos_circle_1;
+  String get sos_circle_2;
+  String get sos_circle_3;
+  String get sos_no_rescuers;
+  String get sos_add_first_rescuer;
+  String get sos_add_rescuer;
+  String get sos_add_rescuer_info;
+  String get sos_thix_id_label;
+  String get sos_thix_id_hint;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // PAIEMENT
-    // ═══════════════════════════════════════════════════════════════════════
-    'payment_title': 'Paiement',
-    'payment_method': 'Moyen de paiement',
-    'payment_card': 'Carte bancaire',
-    'payment_mobile_money': 'Mobile Money',
-    'payment_bank_transfer': 'Virement bancaire',
-    'payment_cash': 'Espèces',
-    'payment_confirm': 'Confirmer le paiement',
-    'payment_success': 'Paiement réussi',
-    'payment_failed': 'Échec du paiement',
-    'payment_processing': 'Traitement en cours…',
-    'payment_receipt': 'Reçu',
-    'payment_invoice': 'Facture',
+  // ============================================================================
+  // CERTIFICATION
+  // ============================================================================
+  String get certification_title;
+  String get certification_apply;
+  String get certification_status;
+  String get certification_pending;
+  String get certification_approved;
+  String get certification_rejected;
+  String get certification_tier_bronze;
+  String get certification_tier_silver;
+  String get certification_tier_gold;
+  String get certification_tier_platinum;
+  String get certification_benefits;
+  String get certification_documents;
+  String get certification_upload_doc;
+  String get certification_review_progress;
+  String get certification_verified_account;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // RECHERCHE (DISPARITIONS)
-    // ═══════════════════════════════════════════════════════════════════════
-    'search_title': 'Recherche THIX',
-    'search_subtitle': 'Avis de recherche et personnes disparues',
-    'search_person_missing': 'Personne disparue',
-    'search_person_wanted': 'Avis de recherche officiel',
-    'search_report_missing': 'Signaler une disparition',
-    'search_report_found': 'Signaler une découverte',
-    'search_details': 'Détails',
-    'search_contact_authorities': 'Contacter les autorités',
-    'search_share_alert': 'Partager l\'alerte',
-    'search_last_seen': 'Dernière vue',
-    'search_description': 'Description',
-    'search_age': 'Âge',
-    'search_height': 'Taille',
-    'search_weight': 'Poids',
-    'search_hair_color': 'Couleur des cheveux',
-    'search_eye_color': 'Couleur des yeux',
-    'search_distinguishing_marks': 'Signes particuliers',
-    'search_clothing': 'Vêtements',
-    'search_circumstances': 'Circonstances',
-    'search_case_number': 'Numéro de dossier',
-    'search_reported_by': 'Signalé par',
-    'search_official_notice': 'Avis officiel',
-    'search_community_alert': 'Alerte communautaire',
+  // ============================================================================
+  // ÉDUCATION & FORMATION
+  // ============================================================================
+  String get edu_nav_home;
+  String get edu_nav_learning;
+  String get edu_nav_library;
+  String get edu_nav_certs;
+  String get edu_nav_profile;
+  
+  String get edu_auth_required;
+  String get edu_login_required;
+  
+  String get edu_learning_empty_title;
+  String get edu_learning_empty_desc;
+  String get edu_no_courses;
+  String get edu_enroll_hint;
+  String get edu_explore_btn;
+  String get edu_completed;
+  
+  String get edu_user_avatar;
+  String get edu_greeting;
+  String get edu_greeting_subtitle;
+  String get edu_ready_to_learn;
+  String get edu_learner;
+  String get edu_notifications;
+  String get edu_search_hint;
+  String get edu_browse;
+  String get edu_library;
+  String get edu_certs;
+  String get edu_qa_browse;
+  String get edu_instructor;
+  
+  String get edu_top_formations;
+  String get edu_awaited_formations;
+  String get edu_awaited;
+  String get edu_see_all;
+  
+  String edu_coming_soon(String category);
+  String get edu_coming_soon_cat;
+  String get edu_locked_course;
+  String get edu_coming_soon_badge;
+  String get edu_awaited_badge;
+  String get edu_awaited_locked;
+  String get edu_awaited_locked_msg;
+  
+  String get edu_thix_academy;
+  String get edu_scheduled_soon;
+  String get edu_new_program;
+  String get edu_resume_learning;
+  String get edu_resume;
+  
+  String get edu_catalog;
+  String get edu_no_formations_cat;
+  
+  String get edu_my_library;
+  String get edu_search_book_hint;
+  String get edu_library_title;
+  String get edu_search_library;
+  String get edu_shelves_empty;
+  String get edu_library_empty;
+  String get edu_no_result;
+  String edu_search_no_results(String query);
+  
+  String get edu_shelf;
+  String get edu_books;
+  String get edu_all;
+  String edu_shelf_info(String code, int count);
+  String get edu_free;
+  String get edu_deleted_in;
+  String edu_expires_in(String countdown);
+  
+  String get edu_certifications;
+  String get edu_certs_title;
+  String get edu_no_certs;
+  String get edu_cert_expert;
+  String get edu_cert_expertise;
+  String edu_cert_issued(String date);
+  
+  String get edu_pro_account;
+  String get edu_profile_title;
+  String get edu_instructor_space;
+  String get edu_tools;
+  String get edu_institutional_tools;
+  String get edu_free_resources;
+  String get edu_masterclass;
+  String get edu_masterclasses;
+  String get edu_network;
+  String get edu_mentorship;
+  String get edu_events_agenda;
+  String get edu_support;
+  String get edu_not_connected;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // À PROXIMITÉ & ALERTES
-    // ═══════════════════════════════════════════════════════════════════════
-    'nearby_alerts_title': 'Alertes à proximité',
-    'nearby_view_on_map': 'Voir sur la carte',
-    'nearby_map_coming_soon': 'Carte plein écran bientôt disponible',
-    'nearby_map_disabled': 'Carte désactivée',
-    'nearby_active_alerts': 'Alertes actives',
-    'nearby_missing': 'Disparition',
-    'nearby_official': 'Officiel',
-    'nearby_legend_missing': 'Disparition',
-    'nearby_legend_official': 'Avis officiel',
-    'nearby_legend_report': 'Signalement',
-    'nearby_location_required': 'Activer la localisation',
-    'nearby_location_subtitle': 'Voir les alertes autour de vous',
+  String get training_title;
+  String get training_enroll;
+  String get training_my_courses;
+  String get training_certificates;
+  String get training_progress;
+  String get training_lessons;
+  String get training_duration;
+  String get training_level;
+  String get training_beginner;
+  String get training_intermediate;
+  String get training_advanced;
+  String get training_start_course;
+  String get training_continue_course;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // ADMIN
-    // ═══════════════════════════════════════════════════════════════════════
-    'admin_title': 'Administration THIX',
-    'admin_dev_open': 'Développement ouvert',
-    'admin_actions_section': 'Actions',
-    'admin_stat_events': 'Événements',
-    'admin_stat_bookings': 'Réservations',
-    'admin_stat_revenue': 'Revenus',
-    'admin_stat_queue': 'File d\'attente',
-    'admin_action_events': 'Événements',
-    'admin_action_events_sub': '20 / page',
-    'admin_action_create': 'Créer',
-    'admin_action_create_sub': 'Téléverser + Vérifier',
-    'admin_action_seats': 'Sièges',
-    'admin_action_seats_sub': 'Lot de 200',
-    'admin_action_reservations': 'Réservations',
-    'admin_action_reservations_sub': '50 / page + Filtres',
-    'admin_action_limits': 'Anti-fraude',
-    'admin_action_limits_sub': 'Limites',
-    'admin_action_analytics': 'Analytiques',
-    'admin_action_analytics_sub': 'RPC',
-    'admin_read_only': 'Lecture seule',
-    'admin_bookings_title': 'Réservations • 50/page',
-    'admin_bookings_export': 'Exportation serveur en cours',
-    'admin_bookings_details': 'Détails du billet',
-    'admin_bookings_event': 'Événement',
-    'admin_bookings_unknown_event': 'Événement inconnu',
-    'admin_bookings_id': 'ID de réservation',
-    'admin_bookings_quantity': 'Quantité',
-    'admin_bookings_category': 'Catégorie',
-    'admin_bookings_amount': 'Montant',
-    'admin_bookings_pin': 'PIN',
-    'admin_bookings_purchase_date': 'Date d\'achat',
-    'admin_bookings_close': 'Fermer',
-    'admin_bookings_empty': 'Aucune réservation',
-    'admin_bookings_unknown_date': 'Date inconnue',
-    'admin_bookings_places': '{count} places',
-    'admin_bookings_status_valid': 'Valide',
-    'admin_bookings_status_used': 'Utilisé',
-    'admin_bookings_status_cancelled': 'Annulé',
-    'admin_bookings_status_postponed': 'Reporté',
-    'admin_bookings_status_pending': 'En attente',
-    'admin_queue_title': 'File d\'attente • Temps réel ({count})',
-    'admin_queue_realtime_desc': 'Temps réel actif',
-    'admin_queue_empty': 'Aucune attente',
-    'admin_queue_event_fallback': 'Événement',
-    'admin_queue_item_meta': 'Utilisateur : {userId} • {qty} places • {status}',
-    'admin_queue_notify': 'Notifier',
-    'admin_queue_notified': 'Utilisateur notifié (expire dans 10 min)',
-    'admin_queue_position': 'Position',
-    'admin_queue_places': 'Places',
-    'admin_analytics_title': 'Analytiques • Performance',
-    'admin_analytics_fill_rate': 'Taux de remplissage',
-    'admin_analytics_avg_cart': 'Panier moyen',
-    'admin_analytics_no_show': 'Non-présent',
-    'admin_analytics_rev_per_event': 'Revenu / événement',
-    'admin_analytics_revenue_7d': 'Revenus sur 7 jours',
-    'admin_analytics_no_data': 'Aucune donnée',
-    'admin_analytics_error': 'Impossible de charger les statistiques',
-    'admin_event_create': 'Créer un événement',
-    'admin_event_edit': 'Modifier l\'événement',
-    'admin_event_btn_create': 'Créer',
-    'admin_event_btn_save': 'Enregistrer',
-    'admin_event_cover': 'Couverture',
-    'admin_event_banner': 'Bannière',
-    'admin_event_title': 'Titre *',
-    'admin_event_desc': 'Description *',
-    'admin_event_category': 'Catégorie',
-    'admin_event_subcategory': 'Sous-catégorie',
-    'admin_event_datetime': 'Date et heure',
-    'admin_event_start': 'Début',
-    'admin_event_end': 'Fin (optionnel)',
-    'admin_event_add_end': 'Ajouter',
-    'admin_event_city': 'Ville *',
-    'admin_event_location': 'Lieu *',
-    'admin_event_address': 'Adresse',
-    'admin_event_organizer': 'Organisateur',
-    'admin_event_phone': 'Téléphone',
-    'admin_event_email': 'E-mail de contact',
-    'admin_event_tiers_title': 'Niveaux et capacité',
-    'admin_event_add_tier_btn': 'Ajouter VVIP, VIP…',
-    'admin_event_status': 'Statut',
-    'admin_event_visibility': 'Visibilité',
-    'admin_event_cat_concert': 'Concert',
-    'admin_event_cat_conference': 'Conférence',
-    'admin_event_cat_sport': 'Sport',
-    'admin_event_cat_festival': 'Festival',
-    'admin_event_cat_theatre': 'Théâtre',
-    'admin_event_cat_other': 'Autre',
-    'admin_event_status_upcoming': 'À venir',
-    'admin_event_status_ongoing': 'En cours',
-    'admin_event_status_completed': 'Terminé',
-    'admin_event_status_cancelled': 'Annulé',
-    'admin_event_vis_default': 'À venir (par défaut)',
-    'admin_event_vis_recommended': 'Recommandé',
-    'admin_event_vis_featured': 'En vedette',
-    'admin_event_dialog_add_tier': 'Ajouter un niveau',
-    'admin_event_dialog_name': 'Nom (ex: VVIP)',
-    'admin_event_dialog_price': 'Prix ({currency})',
-    'admin_event_dialog_capacity': 'Capacité',
-    'admin_event_dialog_cancel': 'Annuler',
-    'admin_event_dialog_add': 'Ajouter',
-    'admin_event_err_readonly': 'Lecture seule',
-    'admin_event_err_min_tier': 'Au moins un niveau requis',
-    'admin_event_success': 'Événement enregistré',
-    'admin_event_err_title_req': 'Le titre est obligatoire',
-    'admin_event_err_desc_min': 'Minimum 10 caractères',
-    'admin_event_err_city_req': 'La ville est obligatoire',
-    'admin_event_err_loc_req': 'Le lieu est obligatoire',
-    'admin_seat_page_title': 'Plan des sièges et tarification',
-    'admin_seat_target_event': 'Événement cible',
-    'admin_seat_select_event': 'Sélectionner un événement',
-    'admin_seat_max_limit': 'Maximum {count} sièges',
-    'admin_seat_generated': '{count} sièges générés',
-    'admin_seat_load_error': 'Impossible de charger les sièges',
-    'admin_seat_pricing_title': 'Tarification dynamique',
-    'admin_seat_layout_title': 'Forme et disposition',
-    'admin_seat_rows': 'Rangées',
-    'admin_seat_per_row': 'Sièges / rangée',
-    'admin_seat_center_aisle': 'Allée centrale',
-    'admin_seat_aisle_desc': 'Espace vide au milieu',
-    'admin_seat_cats_per_row': 'Catégories par rangée',
-    'admin_seat_generating': 'Génération…',
-    'admin_seat_generate_btn': 'Générer {count} sièges',
-    'admin_seat_preview': 'Aperçu du plan actuel',
-    'admin_seat_no_seats': 'Aucun siège généré',
-    'admin_seat_cat_standard': 'Standard',
-    'admin_seat_cat_vip': 'VIP',
-    'admin_seat_cat_gold': 'Or',
-    'admin_seat_cat_family': 'Famille',
-    'admin_seat_legend_reserved': 'Réservé',
-    'admin_seat_legend_sold': 'Vendu',
-    'seat_map_stage': 'Scène',
+  // ============================================================================
+  // EMPLOIS & RECRUTEMENT
+  // ============================================================================
+  String get jobs_title;
+  String get jobs_search;
+  String get jobs_apply;
+  String get jobs_saved;
+  String get jobs_applied;
+  String get jobs_company;
+  String get jobs_location;
+  String get jobs_salary;
+  String get jobs_type;
+  String get jobs_full_time;
+  String get jobs_part_time;
+  String get jobs_contract;
+  String get jobs_internship;
+  String get jobs_freelance;
+  String get jobs_remote;
+  String get jobs_onsite;
+  String get jobs_hybrid;
+  String get jobs_experience;
+  String get jobs_no_experience;
+  String get jobs_junior;
+  String get jobs_mid;
+  String get jobs_senior;
+  String get jobs_requirements;
+  String get jobs_responsibilities;
+  String get jobs_benefits;
+  String get jobs_apply_now;
+  String get jobs_application_sent;
+  String get jobs_no_results;
+  String get recruiter_title;
+  String get recruiter_post_job;
+  String get recruiter_candidates;
+  String get recruiter_applications;
+  String get recruiter_interviews;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // ERREURS & VALIDATION
-    // ═══════════════════════════════════════════════════════════════════════
-    'error_validation': 'Données invalides',
-    'error_file_too_large': 'Fichier trop volumineux',
-    'error_unsupported_format': 'Format non pris en charge',
-    'error_permission_denied': 'Permission refusée',
-    'error_camera_unavailable': 'Caméra indisponible',
-    'error_microphone_unavailable': 'Microphone indisponible',
-    'error_location_unavailable': 'Localisation indisponible',
-    'error_network': 'Erreur réseau',
-    'error_timeout': 'Délai d\'attente dépassé',
-    'error_server': 'Erreur serveur',
-    'error_not_found': 'Non trouvé',
+  // ============================================================================
+  // OPPORTUNITÉS
+  // ============================================================================
+  String get opportunities_title;
+  String get opportunities_business;
+  String get opportunities_investment;
+  String get opportunities_partnership;
+  String get opportunities_grant;
+  String get opportunities_coming_soon;
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // TEMPS & DATES RELATIVES
-    // ═══════════════════════════════════════════════════════════════════════
-    'time_minutes_ago': 'Il y a {0} min',
-    'time_minutes_ago_plural': 'Il y a {0} min',
-    'time_hours_ago': 'Il y a {0} h',
-    'time_hours_ago_plural': 'Il y a {0} h',
-    'time_days_ago': 'Il y a {0} j',
-    'time_days_ago_plural': 'Il y a {0} j',
-    'time_seconds_ago': 'Il y a {0} s',
-    'time_weeks_ago': 'Il y a {0} sem.',
-    'time_weeks_ago_plural': 'Il y a {0} sem.',
-    'time_months_ago': 'Il y a {0} mois',
-    'time_years_ago': 'Il y a {0} an',
-    'time_years_ago_plural': 'Il y a {0} ans',
-    'time_in_minutes': 'Dans {0} min',
-    'time_in_hours': 'Dans {0} h',
-    'time_in_hours_plural': 'Dans {0} h',
-    'time_in_days': 'Dans {0} j',
-    'time_in_days_plural': 'Dans {0} j',
-  };
+  // ============================================================================
+  // MARCHÉ & E-COMMERCE
+  // ============================================================================
+  String get market_title;
+  String get market_categories;
+  String get market_products;
+  String get market_services;
+  String get market_add_to_cart;
+  String get market_buy_now;
+  String get market_cart;
+  String get market_checkout;
+  String get market_total;
+  String get market_delivery;
+  String get market_seller;
+  String get market_rating;
+  String get market_reviews;
+  String get market_in_stock;
+  String get market_out_of_stock;
+  String get market_add_to_favorites;
+  String get market_remove_from_cart;
+
+  // ============================================================================
+  // PORTEFEUILLE & ARGENT
+  // ============================================================================
+  String get money_title;
+  String get money_balance;
+  String get money_send;
+  String get money_receive;
+  String get money_history;
+  String get money_transactions;
+  String get money_top_up;
+  String get money_withdraw;
+  String get money_transfer;
+  String get money_bills;
+  String get money_recipients;
+  String get money_add_recipient;
+  String get money_amount;
+  String get money_fee;
+  String get money_reference;
+  String get money_confirm_transfer;
+  String get money_transfer_success;
+  String get money_transfer_failed;
+  String get money_insufficient_funds;
+
+  // ============================================================================
+  // ÉVÉNEMENTS & BILLETS
+  // ============================================================================
+  String get events_title;
+  String get events_upcoming;
+  String get events_past;
+  
+  String get event_share_cta;
+  String get event_sold_out_title;
+  String get event_sold_out_msg;
+  String get event_join_queue_confirm;
+  String get event_join_queue_btn;
+  
+  String get event_unfavorite;
+  String get event_favorite;
+  String get event_free;
+  String get event_paid;
+  
+  String get event_time_label;
+  String get event_location_label;
+  String get event_address_label;
+  String get event_organized_by;
+  
+  String get event_about_title;
+  String get event_no_description;
+  String get event_tickets_title;
+  
+  String get event_sold_out_short;
+  String event_remaining_seats(String count);
+  String get event_queue_btn;
+  String get event_book_btn;
+  
+  String get event_standard_entry;
+  String get event_all_sold;
+  String get event_limited_seats;
+  String get event_book_now_btn;
+  
+  String event_numbered_seats(String count);
+  String get event_choose_seats_btn;
+  String get event_from_price;
+
+  String get events_my_tickets;
+  String get events_buy_ticket;
+  String get events_ticket_price;
+  String get events_date;
+  String get events_time;
+  String get events_venue;
+  String get events_organizer;
+  String get events_attendees;
+  String get events_seats_available;
+  String get events_sold_out;
+  String get events_book_now;
+  String get events_ticket_type;
+  String get ticket_standard;
+  String get ticket_vip;
+  String get ticket_gold;
+  String get ticket_family;
+  String get ticket_secure_ticket;
+  String get ticket_not_found;
+  String get ticket_location;
+  String get ticket_pin_label;
+  String get ticket_show_qr;
+  String get ticket_booking_id;
+  String get ticket_add_wallet;
+  String get ticket_wallet_coming_soon;
+  String get ticket_share;
+  String get ticket_share_text;
+  String get ticket_scan_info;
+  String get ticket_security_title;
+  String get ticket_enter_pin;
+  String get ticket_pin_hint;
+  String get ticket_pin_incorrect;
+  String get ticket_pin_too_many_attempts;
+  String get ticket_attempts_remaining;
+  String get tickets_ticket;
+  String get tickets_completed;
+  String get tickets_no_tickets;
+  String get tickets_no_tickets_desc;
+  String get tickets_discover;
+  String get tickets_load_error;
+  String tickets_quantity(int count);
+
+  // ============================================================================
+  // RÉSERVATIONS
+  // ============================================================================
+  String get reservation_title;
+  String get reservation_hotel;
+  String get reservation_restaurant;
+  String get reservation_transport;
+  String get reservation_check_in;
+  String get reservation_check_out;
+  String get reservation_guests;
+  String get reservation_rooms;
+  String get reservation_book;
+  String get reservation_cancel;
+  String get reservation_modify;
+  String get reservation_confirm;
+  String get reservation_my_bookings;
+
+  // ============================================================================
+  // SANTÉ
+  // ============================================================================
+  String get health_title;
+  String get health_appointments;
+  String get health_doctors;
+  String get health_hospitals;
+  String get health_pharmacies;
+  String get health_emergency;
+  String get health_medical_records;
+  String get health_prescriptions;
+  String get health_book_appointment;
+  String get health_appointment_date;
+  String get health_specialty;
+  String get health_consultation;
+  String get health_telemedicine;
+  String get health_insurance;
+  String get health_symptoms;
+  String get health_find_doctor;
+
+  // ============================================================================
+  // MÉDIA & INFOS
+  // ============================================================================
+  String get media_title;
+  String get media_news;
+  String get media_videos;
+  String get media_podcasts;
+  String get media_articles;
+  String get media_live;
+  String get media_categories;
+  String get media_bookmarks;
+  String get media_share_article;
+  String get media_read_more;
+  String get media_published_on;
+  String get media_author;
+  String get info_title;
+  String get info_local;
+  String get info_national;
+  String get info_international;
+  String get info_sports;
+  String get info_culture;
+  String get info_economy;
+  String get info_politics;
+  String get info_technology;
+  String get info_read_full;
+
+  // ============================================================================
+  // MON PAYS
+  // ============================================================================
+  String get mon_pays_title;
+  String get mon_pays_regions;
+  String get mon_pays_cities;
+  String get mon_pays_culture;
+  String get mon_pays_history;
+  String get mon_pays_tourism;
+  String get mon_pays_discover;
+  String get mon_pays_landmarks;
+  String get mon_pays_traditions;
+
+  // ============================================================================
+  // COFFRE-FORT
+  // ============================================================================
+  String get vault_title;
+  String get vault_documents;
+  String get vault_photos;
+  String get vault_videos;
+  String get vault_notes;
+  String get vault_passwords;
+  String get vault_add_document;
+  String get vault_upload;
+  String get vault_encrypted;
+  String get vault_backup;
+  String get vault_restore;
+  String get vault_share_secure;
+  String get vault_unlock;
+  String get vault_lock;
+
+  // ============================================================================
+  // PAIEMENT
+  // ============================================================================
+  String get payment_title;
+  String get payment_method;
+  String get payment_card;
+  String get payment_mobile_money;
+  String get payment_bank_transfer;
+  String get payment_cash;
+  String get payment_confirm;
+  String get payment_success;
+  String get payment_failed;
+  String get payment_processing;
+  String get payment_receipt;
+  String get payment_invoice;
+
+  // ============================================================================
+  // RECHERCHE (MISSING PERSONS / SEARCH)
+  // ============================================================================
+  String get search_title;
+  String get search_subtitle;
+  String get search_person_missing;
+  String get search_person_wanted;
+  String get search_report_missing;
+  String get search_report_found;
+  String get search_details;
+  String get search_contact_authorities;
+  String get search_share_alert;
+  String get search_last_seen;
+  String get search_description;
+  String get search_age;
+  String get search_height;
+  String get search_weight;
+  String get search_hair_color;
+  String get search_eye_color;
+  String get search_distinguishing_marks;
+  String get search_clothing;
+  String get search_circumstances;
+  String get search_case_number;
+  String get search_reported_by;
+  String get search_official_notice;
+  String get search_community_alert;
+
+  // ============================================================================
+  // À PROXIMITÉ & ALERTES
+  // ============================================================================
+  String get nearby_alerts_title;
+  String get nearby_view_on_map;
+  String get nearby_map_coming_soon;
+  String get nearby_map_disabled;
+  String get nearby_active_alerts;
+  String get nearby_missing;
+  String get nearby_official;
+  String get nearby_legend_missing;
+  String get nearby_legend_official;
+  String get nearby_legend_report;
+  String get nearby_location_required;
+  String get nearby_location_subtitle;
+
+  // ============================================================================
+  // ADMINISTRATION
+  // ============================================================================
+  String get admin_title;
+  String get admin_dev_open;
+  String get admin_actions_section;
+  
+  String get admin_events_title;
+  String get admin_events_create;
+  String get admin_events_search_hint;
+  String get admin_events_filter;
+  String get admin_events_empty;
+  String get admin_events_no_permission;
+  String get admin_events_delete_title;
+  String admin_events_delete_desc(String title);
+
+  String get admin_limits_purchase_rules;
+  String get admin_limits_max_person;
+  String get admin_limits_max_transaction;
+  String get admin_limits_require_thix_id;
+  String get admin_limits_require_thix_id_desc;
+  String get admin_limits_info_title;
+  String get admin_limits_info_desc;
+
+  String get admin_stat_events;
+  String get admin_stat_bookings;
+  String get admin_stat_revenue;
+  String get admin_stat_queue;
+  String get admin_action_events;
+  String get admin_action_events_sub;
+  String get admin_action_create;
+  String get admin_action_create_sub;
+  String get admin_action_seats;
+  String get admin_action_seats_sub;
+  String get admin_action_reservations;
+  String get admin_action_reservations_sub;
+  String get admin_action_limits;
+  String get admin_action_limits_sub;
+  String get admin_action_analytics;
+  String get admin_action_analytics_sub;
+  String get admin_read_only;
+  String get admin_bookings_title;
+  String get admin_bookings_export;
+  String get admin_bookings_details;
+  String get admin_bookings_event;
+  String get admin_bookings_unknown_event;
+  String get admin_bookings_id;
+  String get admin_bookings_quantity;
+  String get admin_bookings_category;
+  String get admin_bookings_amount;
+  String get admin_bookings_pin;
+  String get admin_bookings_purchase_date;
+  String get admin_bookings_close;
+  String get admin_bookings_empty;
+  String get admin_bookings_unknown_date;
+  String admin_bookings_places(int count);
+  String get admin_bookings_status_valid;
+  String get admin_bookings_status_used;
+  String get admin_bookings_status_cancelled;
+  String get admin_bookings_status_postponed;
+  String get admin_bookings_status_pending;
+  String admin_queue_title(int count);
+  String get admin_queue_realtime_desc;
+  String get admin_queue_empty;
+  String get admin_queue_event_fallback;
+  String admin_queue_item_meta(String userId, int qty, String status);
+  String get admin_queue_notify;
+  String get admin_queue_notified;
+  String get admin_queue_position;
+  String get admin_queue_places;
+  String get admin_analytics_title;
+  String get admin_analytics_fill_rate;
+  String get admin_analytics_avg_cart;
+  String get admin_analytics_no_show;
+  String get admin_analytics_rev_per_event;
+  String get admin_analytics_revenue_7d;
+  String get admin_analytics_no_data;
+  String get admin_analytics_error;
+  String get admin_event_create;
+  String get admin_event_edit;
+  String get admin_event_btn_create;
+  String get admin_event_btn_save;
+  String get admin_event_cover;
+  String get admin_event_banner;
+  String get admin_event_title;
+  String get admin_event_desc;
+  String get admin_event_category;
+  String get admin_event_subcategory;
+  String get admin_event_datetime;
+  String get admin_event_start;
+  String get admin_event_end;
+  String get admin_event_add_end;
+  String get admin_event_city;
+  String get admin_event_location;
+  String get admin_event_address;
+  String get admin_event_organizer;
+  String get admin_event_phone;
+  String get admin_event_email;
+  String get admin_event_tiers_title;
+  String get admin_event_add_tier_btn;
+  String get admin_event_status;
+  String get admin_event_visibility;
+  String get admin_event_cat_concert;
+  String get admin_event_cat_conference;
+  String get admin_event_cat_sport;
+  String get admin_event_cat_festival;
+  String get admin_event_cat_theatre;
+  String get admin_event_cat_other;
+  String get admin_event_status_upcoming;
+  String get admin_event_status_ongoing;
+  String get admin_event_status_completed;
+  String get admin_event_status_cancelled;
+  String get admin_event_vis_default;
+  String get admin_event_vis_recommended;
+  String get admin_event_vis_featured;
+  String get admin_event_dialog_add_tier;
+  String get admin_event_dialog_name;
+  String admin_event_dialog_price(String currency);
+  String get admin_event_dialog_capacity;
+  String get admin_event_dialog_cancel;
+  String get admin_event_dialog_add;
+  String get admin_event_err_readonly;
+  String get admin_event_err_min_tier;
+  String get admin_event_success;
+  String get admin_event_err_title_req;
+  String get admin_event_err_desc_min;
+  String get admin_event_err_city_req;
+  String get admin_event_err_loc_req;
+  String get admin_seat_page_title;
+  String get admin_seat_target_event;
+  String get admin_seat_select_event;
+  String admin_seat_max_limit(int count);
+  String admin_seat_generated(int count);
+  String get admin_seat_load_error;
+  String get admin_seat_pricing_title;
+  String get admin_seat_layout_title;
+  String get admin_seat_rows;
+  String get admin_seat_per_row;
+  String get admin_seat_center_aisle;
+  String get admin_seat_aisle_desc;
+  String get admin_seat_cats_per_row;
+  String get admin_seat_generating;
+  String admin_seat_generate_btn(int count);
+  String get admin_seat_preview;
+  String get admin_seat_no_seats;
+  String get admin_seat_cat_standard;
+  String get admin_seat_cat_vip;
+  String get admin_seat_cat_gold;
+  String get admin_seat_cat_family;
+  String get admin_seat_legend_reserved;
+  String get admin_seat_legend_sold;
+  String get seat_map_stage;
+
+  // ============================================================================
+  // ERREURS & VALIDATION
+  // ============================================================================
+  String get error_generic;
+  String get error_validation;
+  String get error_file_too_large;
+  String get error_unsupported_format;
+  String get error_permission_denied;
+  String get error_camera_unavailable;
+  String get error_microphone_unavailable;
+  String get error_location_unavailable;
+  String get error_network;
+  String get error_timeout;
+  String get error_server;
+  String get error_not_found;
+
+  // ============================================================================
+  // TEMPS & DATES RELATIVES
+  // ============================================================================
+  String get common_just_now;
+  String get common_in_the_future;
+  String common_minutes_ago(int count);
+  String common_hours_ago(int count);
+  String common_days_ago(int count);
+  String common_seconds_ago(int count);
+  String common_weeks_ago(int count);
+  String common_months_ago(int count);
+  String common_years_ago(int count);
+  String common_in_minutes(int count);
+  String common_in_hours(int count);
+  String common_in_days(int count);
 }
 
-class _AppLocalizationsDelegate
-    extends LocalizationsDelegate<AppLocalizations> {
+class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {
   const _AppLocalizationsDelegate();
 
   @override
-  bool isSupported(Locale locale) => locale.languageCode == 'fr';
+  bool isSupported(Locale locale) {
+    return ['fr', 'en', 'pt', 'sw', 'ar', 'zh'].contains(locale.languageCode);
+  }
 
   @override
   Future<AppLocalizations> load(Locale locale) {
-    return SynchronousFuture<AppLocalizations>(AppLocalizations());
+    switch (locale.languageCode) {
+      case 'en':
+        return SynchronousFuture<AppLocalizations>(AppLocalizationsEn());
+      case 'pt':
+        return SynchronousFuture<AppLocalizations>(AppLocalizationsPt());
+      case 'sw':
+        return SynchronousFuture<AppLocalizations>(AppLocalizationsSw());
+      case 'ar':
+        return SynchronousFuture<AppLocalizations>(AppLocalizationsAr());
+      case 'zh':
+        return SynchronousFuture<AppLocalizations>(AppLocalizationsZh());
+      case 'fr':
+      default:
+        return SynchronousFuture<AppLocalizations>(AppLocalizationsFr());
+    }
   }
 
   @override
