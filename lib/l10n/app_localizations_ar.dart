@@ -1115,6 +1115,19 @@ class AppLocalizationsAr extends AppLocalizations {
   @override String get admin_seat_legend_sold => 'مباع';
   @override String get seat_map_stage => 'المسرح';
 
+    // ============================================================================
+  // THIX MEDIA & IA SOURCES
+  // ============================================================================
+  @override String get live_send => 'إرسال';
+  @override String get live_ending => 'إنهاء البث المباشر...';
+  @override String get live_network_quality => 'جودة الشبكة';
+  @override String get source_type_official => 'رسمي';
+  @override String get source_type_world_bank => 'البنك الدولي';
+  @override String get source_type_government => 'حكومة';
+  @override String get source_type_default => 'مصدر موثوق';
+  @override String get source_aria_label => 'مصدر المعلومات';
+
+
   // ============================================================================
   // ERREURS & VALIDATION (ERRORS & VALIDATION)
   // ============================================================================
