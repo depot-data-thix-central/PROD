@@ -1,9 +1,10 @@
 // lib/l10n/app_localizations_en.dart
 import 'dart:ui';
 import 'app_localizations.dart';
-  @override Locale get locale => const Locale('en');
 
 class AppLocalizationsEn extends AppLocalizations {
+  @override Locale get locale => const Locale('en');
+
   // ============================================================================
   // COMMON & UI
   // ============================================================================
@@ -36,8 +37,8 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get common_done => 'Done';
   @override String get common_error => 'Error';
   @override String get common_success => 'Success';
-  @override String get common_loading => 'Loading…';
-  @override String get common_please_wait => 'Please wait…';
+  @override String get common_loading => 'Loading...';
+  @override String get common_please_wait => 'Please wait...';
   @override String get common_today => 'Today';
   @override String get common_yesterday => 'Yesterday';
   @override String get common_tomorrow => 'Tomorrow';
@@ -65,12 +66,12 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get common_clear => 'Clear';
   @override String get common_remove => 'Remove';
   
-  @override String common_items(int count) => count == 0 ? 'No items' : (count == 1 ? '1 item' : '$count items');
-  @override String common_contacts(int count) => count == 0 ? 'No contacts' : (count == 1 ? '1 contact' : '$count contacts');
-  @override String common_messages(int count) => count == 0 ? 'No messages' : (count == 1 ? '1 message' : '$count messages');
-  @override String common_days(int count) => count == 0 ? '0 days' : (count == 1 ? '1 day' : '$count days');
-  @override String common_hours(int count) => count == 0 ? '0 hours' : (count == 1 ? '1 hour' : '$count hours');
-  @override String common_minutes(int count) => count == 0 ? '0 minutes' : (count == 1 ? '1 minute' : '$count minutes');
+  @override String common_items(int count) => count == 1 ? '1 item' : '$count items';
+  @override String common_contacts(int count) => count == 1 ? '1 contact' : '$count contacts';
+  @override String common_messages(int count) => count == 1 ? '1 message' : '$count messages';
+  @override String common_days(int count) => count == 1 ? '1 day' : '$count days';
+  @override String common_hours(int count) => count == 1 ? '1 hour' : '$count hours';
+  @override String common_minutes(int count) => count == 1 ? '1 minute' : '$count minutes';
 
   // ============================================================================
   // AUTH & ONBOARDING (BASIC)
@@ -79,38 +80,38 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get auth_signup => 'Sign Up';
   @override String get auth_forgot_password => 'Forgot password?';
   @override String get auth_reset_password => 'Reset password';
-  @override String get auth_email => 'Email address';
-  @override String get auth_phone => 'Phone number';
+  @override String get auth_email => 'Email Address';
+  @override String get auth_phone => 'Phone Number';
   @override String get auth_password => 'Password';
   @override String get auth_confirm_password => 'Confirm password';
   @override String get auth_logout_confirm => 'Are you sure you want to log out?';
   @override String get auth_welcome_back => 'Welcome back';
   @override String get auth_welcome => 'Welcome';
-  @override String get auth_no_account => "Don't have an account yet?";
+  @override String get auth_no_account => 'Don\'t have an account?';
   @override String get auth_has_account => 'Already have an account?';
   @override String get auth_invalid_email => 'Invalid email address';
   @override String get auth_invalid_phone => 'Invalid phone number';
-  @override String get auth_password_too_short => 'Password is too short (min 8 characters)';
+  @override String get auth_password_too_short => 'Password is too short (min. 8 characters)';
   @override String get auth_passwords_mismatch => 'Passwords do not match';
-  @override String get auth_login_success => 'Login successful';
+  @override String get auth_login_success => 'Successfully logged in';
   @override String get auth_signup_success => 'Account created successfully';
   @override String get auth_session_expired => 'Session expired, please log in again';
-  @override String get auth_2fa_title => 'Two-step verification';
+  @override String get auth_2fa_title => 'Two-Factor Authentication';
   @override String get auth_2fa_code => 'Verification code';
   @override String get auth_verify_email => 'Verify email';
   @override String get auth_verify_phone => 'Verify phone';
   @override String get auth_biometric => 'Biometric login';
   @override String get auth_biometric_prompt => 'Authenticate to continue';
-  @override String get auth_full_name => 'Full name';
-  @override String get auth_first_name => 'First name';
-  @override String get auth_last_name => 'Last name';
-  @override String get auth_birth_date => 'Date of birth';
+  @override String get auth_full_name => 'Full Name';
+  @override String get auth_first_name => 'First Name';
+  @override String get auth_last_name => 'Last Name';
+  @override String get auth_birth_date => 'Date of Birth';
   @override String get auth_gender => 'Gender';
   @override String get auth_gender_male => 'Male';
   @override String get auth_gender_female => 'Female';
   @override String get auth_gender_other => 'Other';
-  @override String get auth_accept_terms => 'I accept the Terms of Use';
-  @override String get auth_terms_required => 'You must accept the terms';
+  @override String get auth_accept_terms => 'I agree to the Terms of Use';
+  @override String get auth_terms_required => 'You must agree to the terms';
   @override String get auth_email_already_used => 'This email is already in use';
   @override String get auth_phone_already_used => 'This phone number is already in use';
   @override String get auth_create_account => 'Create my account';
@@ -119,25 +120,12 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get onboarding_welcome => 'Welcome to THIX';
   @override String get onboarding_step_1_title => 'Connect';
   @override String get onboarding_step_1_desc => 'Create your secure THIX identity';
-  @override String get onboarding_step_2_title => 'Protection';
-  @override String get onboarding_step_2_desc => 'Activate 24/7 protection';
-  @override String get onboarding_step_3_title => 'Action';
+  @override String get onboarding_step_2_title => 'Protect';
+  @override String get onboarding_step_2_desc => 'Enable 24/7 protection';
+  @override String get onboarding_step_3_title => 'Act';
   @override String get onboarding_step_3_desc => 'Alert emergency services in 2 seconds';
   @override String get onboarding_get_started => 'Get Started';
   @override String get onboarding_skip => 'Skip intro';
-
-    // ============================================================================
-  // THIX MEDIA & IA SOURCES
-  // ============================================================================
-  @override String get live_send => 'Send';
-  @override String get live_ending => 'Ending live...';
-  @override String get live_network_quality => 'Network Quality';
-  @override String get source_type_official => 'Official';
-  @override String get source_type_world_bank => 'World Bank';
-  @override String get source_type_government => 'Government';
-  @override String get source_type_default => 'Verified Source';
-  @override String get source_aria_label => 'Information Source';
-
 
   // ============================================================================
   // AUTHENTIFICATION & CONNEXION (ADVANCED / ERRORS)
@@ -151,7 +139,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get login_remember_me => 'Remember me';
   @override String get login_forgot_password => 'Forgot password?';
   @override String get login_button => 'Login';
-  @override String get login_verifying => 'Verifying…';
+  @override String get login_verifying => 'Verifying...';
   @override String get login_retry_in => 'Retry in';
   @override String get login_seconds_suffix => 's';
   @override String get login_biometric => 'OR CONTINUE WITH';
@@ -159,23 +147,23 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get login_touch_id => 'Touch ID';
   
   @override String get login_error_suspended => 'This account is suspended. Contact support.';
-  @override String get login_error_not_active => 'This account is not activated.';
+  @override String get login_error_not_active => 'This account is not active.';
   @override String get login_error_no_account => 'No account found with these details.';
-  @override String get login_error_mfa_required => 'Two-step verification required.';
+  @override String get login_error_mfa_required => 'Two-factor authentication is required.';
 
   @override String get auth_error_identifier_required => 'Identifier is required';
   @override String get auth_error_password_required => 'Password is required';
   @override String get auth_error_thix_id_login_not_available => 'Login via THIX ID is not available at the moment';
-  @override String get auth_error_sign_in_failed => 'Login failed. Check your credentials.';
-  @override String get auth_error_email_not_verified => 'Please verify your email address before logging in';
+  @override String get auth_error_sign_in_failed => 'Login failed. Please check your credentials.';
+  @override String get auth_error_email_not_verified => 'Please verify your email before logging in';
   @override String get auth_error_server_misconfiguration => 'Server configuration error';
-  @override String get auth_error_account_already_exists => 'An account with this identifier already exists';
-  @override String get auth_error_account_exists_wrong_password => 'This account exists but the password is incorrect';
+  @override String get auth_error_account_already_exists => 'An account already exists with this identifier';
+  @override String get auth_error_account_exists_wrong_password => 'Account exists, but password is incorrect';
   @override String get auth_error_account_exists_new_otp_sent => 'A new OTP code has been sent to your address';
   @override String get auth_error_invalid_otp => 'Invalid or expired OTP code';
-  @override String get auth_error_otp_expired => 'The OTP code has expired';
-  @override String get auth_error_network => 'Network connection error. Check your internet.';
-  @override String get auth_error_rate_limit => 'Too many attempts. Please wait a moment.';
+  @override String get auth_error_otp_expired => 'OTP code has expired';
+  @override String get auth_error_network => 'Network error. Please check your internet connection.';
+  @override String get auth_error_rate_limit => 'Too many attempts. Please try again later.';
   @override String get auth_error_technical => 'A technical error occurred. Please try again.';
   @override String get auth_error_user_mismatch => 'User mismatch detected';
   @override String get auth_error_profile_update_failed => 'Failed to update profile';
@@ -192,27 +180,27 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get auth_info_otp_sent => 'A verification code has been sent';
 
   // ============================================================================
-  // INSCRIPTION PERSONNELLE (PERSONAL REGISTRATION)
+  // INSCRIPTION PERSONNELLE
   // ============================================================================
   @override String get reg_step1_title => 'Your profile';
   @override String get reg_step1_subtitle => 'Let\'s start with the basics';
-  @override String get reg_full_name_label => 'Full name';
+  @override String get reg_full_name_label => 'Full Name';
   @override String get reg_full_name_hint => 'First and Last Name';
-  @override String get reg_dob_label => 'Date of birth';
-  @override String get reg_country_label => 'Country of residence';
+  @override String get reg_dob_label => 'Date of Birth';
+  @override String get reg_country_label => 'Country of Residence';
   @override String get reg_occupation_label => 'Occupation / Activity';
-  @override String get reg_occupation_hint => 'Ex: Developer, Student, Entrepreneur';
+  @override String get reg_occupation_hint => 'E.g., Developer, Student, Entrepreneur';
   @override String get reg_next => 'Next';
 
   @override String get reg_step2_title => 'Secure your account';
   @override String get reg_step2_subtitle => 'Create your login credentials';
-  @override String get reg_email_label => 'Email address';
+  @override String get reg_email_label => 'Email Address';
   @override String get reg_email_hint => 'your.email@example.com';
-  @override String get reg_phone_label => 'Phone number';
+  @override String get reg_phone_label => 'Phone Number';
   @override String get reg_phone_hint => '+1 555 XXX XXXX';
   @override String get reg_password_label => 'Password';
   @override String get reg_password_hint => 'Minimum 8 characters';
-  @override String get reg_confirm_password_label => 'Confirm password';
+  @override String get reg_confirm_password_label => 'Confirm Password';
   @override String get reg_confirm_password_hint => 'Retype your password';
   @override String get reg_strength_label => 'Password strength';
   @override String get reg_strength_very_weak => 'Very weak';
@@ -223,7 +211,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override String get reg_identity_title => 'THIX Identity';
   @override String get reg_thix_chat_label => 'THIX Chat Username';
-  @override String get reg_thix_chat_hint => 'Ex: john.doe (unique)';
+  @override String get reg_thix_chat_hint => 'E.g., john.doe (unique)';
   
   @override String get reg_verification_title => 'Verification';
   @override String get reg_get_otp => 'Get verification code';
@@ -231,25 +219,25 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get reg_resend_in => 'Resend in';
   @override String get reg_seconds_short => 's';
   @override String get reg_otp_label => 'Verification Code (OTP)';
-  @override String get reg_validate_activate => 'Verify and activate';
-  @override String get reg_activating => 'Activating…';
+  @override String get reg_validate_activate => 'Verify & Activate';
+  @override String get reg_activating => 'Activating...';
 
   @override String get reg_congrats => 'Congratulations!';
   @override String get reg_welcome_message => 'Welcome to the THIX ecosystem,';
-  @override String get reg_id_card_title => 'THIX DIGITAL ID CARD';
+  @override String get reg_id_card_title => 'THIX DIGITAL IDENTITY CARD';
   @override String get reg_official_thix_id => 'OFFICIAL THIX ID';
-  @override String get reg_generating => 'Generating…';
+  @override String get reg_generating => 'Generating...';
   @override String get reg_copy_thix_id => 'Copy THIX ID';
   @override String get reg_thix_id_copied => 'THIX ID copied to clipboard';
   @override String get reg_go_to_dashboard => 'Go to Dashboard';
   @override String get reg_summary => 'Registration Summary';
-  @override String get reg_mobile_label => 'Mobile phone';
+  @override String get reg_mobile_label => 'Mobile';
   @override String get reg_not_provided => 'Not provided';
 
   // ============================================================================
-  // ACCUEIL & TABLEAU DE BORD (HOME & DASHBOARD)
+  // ACCUEIL & TABLEAU DE BORD
   // ============================================================================
-  @override String get home_search_hint => 'Search a service or a contact…';
+  @override String get home_search_hint => 'Search for a service or contact...';
   @override String get home_greeting => 'Hello';
   @override String get home_greeting_time => 'Good evening';
   @override String get home_welcome_back => 'Welcome back';
@@ -267,8 +255,8 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get quick_sos => 'Emergency';
   @override String get service_sante => 'THIX Health';
   @override String get service_market => 'THIX Market';
-  @override String get service_money => 'THIX Money';
-  @override String get service_reservation => 'Reservations';
+  @override String get service_money => 'THIX Wallet';
+  @override String get service_reservation => 'Reservation';
   @override String get service_mon_pays => 'My Country';
   @override String get service_emploi => 'Jobs';
   @override String get service_formations => 'Training';
@@ -281,7 +269,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get service_certification => 'Certification';
 
   // ============================================================================
-  // CHAT & MESSAGERIE (CHAT & MESSAGING)
+  // CHAT & MESSAGERIE
   // ============================================================================
   @override String get chatlist_network => 'Network';
   @override String get chatlist_discussions => 'Chats';
@@ -289,10 +277,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get chatlist_calls => 'Calls';
   @override String get chatlist_settings => 'Settings';
 
-  @override String get chat_unknown_user => 'Unknown user';
+  @override String get chat_unknown_user => 'Unknown User';
   @override String chat_members(int count) => count == 1 ? '1 member' : '$count members';
   @override String get chat_video_call => 'Video call';
-  @override String get chat_audio_call => 'Voice call';
+  @override String get chat_audio_call => 'Audio call';
   @override String get chat_escalate => 'Escalate';
   @override String get chat_history => 'History';
   @override String get chat_group_info => 'Group info';
@@ -304,13 +292,13 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get chat_send => 'Send';
   @override String get chat_recording => 'Recording';
   @override String get chat_stop_recording => 'Stop';
-  @override String get chat_write_message => 'Type a message...';
+  @override String get chat_write_message => 'Write a message...';
   @override String get chat_record_audio => 'Record audio';
   @override String get chat_emojis => 'Emojis';
   @override String get chat_reactions => 'Reactions';
   @override String get chat_flags => 'Flags';
   @override String get chat_callback => 'Call back';
-  @override String get chat_typing => 'is typing...';
+  @override String get chat_typing => 'typing...';
   @override String get chat_pause => 'Pause';
   @override String get chat_play => 'Play';
 
@@ -327,46 +315,46 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get conv_request_sent => 'Request sent successfully';
   @override String get conv_request_exists => 'A request already exists for this user';
   @override String get conv_select_contact => 'Please select at least one contact';
-  @override String get conv_waiting_connection => 'Waiting for connection for';
+  @override String get conv_waiting_connection => 'Waiting for connection to';
   @override String get conv_group_rpc_required => 'Group creation requires a server call';
   @override String get conv_page_title => 'New chat';
   @override String conv_start(int count) => 'Start ($count)';
   @override String get conv_search_label => 'Search user';
-  @override String get conv_search_hint => 'Name, THIX ID or phone number...';
+  @override String get conv_search_hint => 'Name, THIX ID, or phone number...';
   @override String get conv_group_name_label => 'Group name';
-  @override String get conv_group_name_hint => 'Ex: Alpha Project Team';
+  @override String get conv_group_name_hint => 'E.g., Project Alpha Team';
 
   @override String get requests_page_title => 'Connection Requests';
   @override String get requests_reject_title => 'Reject request';
   @override String get requests_reject_message => 'Are you sure you want to reject this connection request? This action cannot be undone.';
   @override String get requests_reject_confirm => 'Reject';
   @override String get requests_rejected => 'Request rejected';
-  @override String get requests_reject_error => 'Error rejecting the request';
+  @override String get requests_reject_error => 'Error rejecting request';
   @override String get requests_accepted => 'Request accepted successfully';
-  @override String get requests_accept_error => 'Error accepting the request';
+  @override String get requests_accept_error => 'Error accepting request';
 
   @override String get call_history_title => 'Call History';
   @override String get call_missed => 'Missed call';
   @override String get call_incoming => 'Incoming call';
   @override String get call_outgoing => 'Outgoing call';
   @override String get call_video => 'Video call';
-  @override String get call_audio => 'Voice call';
+  @override String get call_audio => 'Audio call';
 
   // ============================================================================
-  // RÉSEAU SOCIAL (NETWORK)
+  // RÉSEAU SOCIAL
   // ============================================================================
   @override String get network_search_title => 'Search';
-  @override String get network_search_hint => 'Search for people, posts, or communities…';
+  @override String get network_search_hint => 'Search people, posts, or communities...';
   @override String get network_tab_people => 'People';
   @override String get network_tab_posts => 'Posts';
   @override String get network_tab_communities => 'Communities';
   @override String get network_explore_title => 'Explore the THIX Network';
-  @override String get network_explore_subtitle => 'Search for people, posts, or communities';
+  @override String get network_explore_subtitle => 'Find people, posts, or communities';
   @override String get network_no_results_users => 'No users found';
   @override String get network_no_results_posts => 'No posts found';
   @override String get network_no_results_communities => 'No communities found';
   @override String get network_request_sent => 'Request sent to';
-  @override String get network_request_error => 'Error sending the request';
+  @override String get network_request_error => 'Error sending request';
 
   @override String get community_create_title => 'Create a community';
   @override String get community_name_label => 'Community name';
@@ -380,20 +368,20 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get community_admin => 'Admin';
 
   // ============================================================================
-  // PROFIL UTILISATEUR (PROFILE)
+  // PROFIL UTILISATEUR
   // ============================================================================
   @override String get profile_settings => 'Profile settings';
   @override String get profile_edit_bio => 'Edit Bio';
-  @override String get profile_no_bio => 'No biography available yet.';
+  @override String get profile_no_bio => 'No bio available at the moment.';
   @override String get profile_followers => 'Followers';
   @override String get profile_following => 'Following';
   @override String get profile_posts => 'Posts';
   @override String get profile_follow => 'Follow';
   @override String get profile_unfollow => 'Following';
-  @override String get profile_following_loading => 'Loading…';
+  @override String get profile_following_loading => 'Loading...';
   @override String get profile_message => 'Message';
   @override String get profile_block_user => 'Block this user?';
-  @override String get profile_block_message => 'You will no longer see their posts and they won\'t be able to interact with you.';
+  @override String get profile_block_message => 'You will no longer see their posts and they will not be able to interact with you.';
   @override String get profile_block_confirm => 'Block';
   @override String get profile_blocked_success => 'User blocked';
   @override String get profile_block_error => 'Error blocking user';
@@ -410,17 +398,17 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get profile_report_success => 'Report submitted';
   @override String get profile_report_duplicate => 'Already reported';
   
-  @override String get profile_private_gallery => 'Private gallery';
+  @override String get profile_private_gallery => 'Private Gallery';
   @override String get profile_private_content_locked => 'This content is private';
-  @override String get profile_add_private_media => 'Add to private gallery';
+  @override String get profile_add_private_media => 'Add to my private gallery';
   @override String get profile_no_private_media => 'No private media yet';
-  @override String get profile_upload_processing => 'Processing…';
+  @override String get profile_upload_processing => 'Processing...';
   
   @override String get profile_tab_bio => 'Bio';
   @override String get profile_tab_private_gallery => 'Private Gallery';
   @override String get profile_tab_photos => 'Public Photos';
   @override String get profile_tab_videos => 'Videos';
-  @override String get profile_tab_audios => 'Audio';
+  @override String get profile_tab_audios => 'Audios';
   @override String get profile_no_content => 'No content';
   @override String get profile_pinned_post => 'Pinned Post';
   @override String get profile_view_post => 'View post';
@@ -450,15 +438,15 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get settings_calls => 'Calls';
   
   @override String get settings_section_messages => 'Data and Storage';
-  @override String get settings_ephemeral => 'Disappearing messages';
-  @override String get settings_auto_download => 'Media auto-download';
+  @override String get settings_ephemeral => 'Ephemeral messages';
+  @override String get settings_auto_download => 'Auto-download media';
   @override String get settings_download_wifi => 'Wi-Fi only';
   @override String get settings_download_mobile => 'Wi-Fi and Cellular';
   @override String get settings_download_never => 'Never';
   
   @override String get settings_section_account => 'Account';
   @override String get settings_view_profile => 'View my profile';
-  @override String get settings_logout => 'Logout';
+  @override String get settings_logout => 'Log out';
 
   @override String get settings_profile_edit => 'Edit profile';
   @override String get settings_notifications => 'Notifications';
@@ -469,8 +457,12 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get settings_about => 'About THIX';
   @override String get settings_version => 'Version';
 
+  @override String get settings_choose_language => 'Choose Language';
+  @override String get settings_system_default => 'System Default';
+  @override String get settings_language_change_failed => 'Failed to change language';
+
   // ============================================================================
-  // SOS & URGENCE (EMERGENCY)
+  // SOS & URGENCE
   // ============================================================================
   @override String get sos_button => 'Emergency';
   @override String get sos_button_label => 'SOS Emergency Button';
@@ -491,7 +483,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get sos_my_rescuers => 'My rescuers';
   @override String get sos_duration => 'Duration';
   @override String get sos_identifier => 'Identifier';
-  @override String get sos_calling => 'Calling…';
+  @override String get sos_calling => 'Calling...';
   @override String get sos_call => 'Call';
   @override String get sos_available => 'Available';
   @override String get sos_unavailable => 'Unavailable';
@@ -539,7 +531,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get certification_verified_account => 'Verified Account';
 
   // ============================================================================
-  // ÉDUCATION & FORMATION (EDUCATION & TRAINING)
+  // ÉDUCATION & FORMATION
   // ============================================================================
   @override String get edu_nav_home => 'Home';
   @override String get edu_nav_learning => 'My Learning';
@@ -547,8 +539,8 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get edu_nav_certs => 'Certificates';
   @override String get edu_nav_profile => 'Profile';
   
-  @override String get edu_auth_required => 'Login to see your courses';
-  @override String get edu_login_required => 'Login to see your courses';
+  @override String get edu_auth_required => 'Log in to view your courses';
+  @override String get edu_login_required => 'Log in to view your courses';
   
   @override String get edu_learning_empty_title => 'No courses in progress';
   @override String get edu_learning_empty_desc => 'Enroll in a course to get started.';
@@ -563,7 +555,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get edu_ready_to_learn => 'Ready to improve your skills?';
   @override String get edu_learner => 'Learner';
   @override String get edu_notifications => 'Notifications';
-  @override String get edu_search_hint => 'Search courses, certifications…';
+  @override String get edu_search_hint => 'Search courses, certifications...';
   @override String get edu_browse => 'Browse';
   @override String get edu_library => 'Library';
   @override String get edu_certs => 'Certificates';
@@ -576,7 +568,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get edu_see_all => 'See Catalog';
   
   @override String edu_coming_soon(String category) => 'New $category courses coming soon';
-  @override String get edu_coming_soon_cat => 'New courses coming soon here';
+  @override String get edu_coming_soon_cat => 'New courses coming here soon';
   @override String get edu_locked_course => 'Coming soon! (Opening expected shortly)';
   @override String get edu_coming_soon_badge => 'OPENING SOON';
   @override String get edu_awaited_badge => 'Coming Soon';
@@ -595,7 +587,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get edu_my_library => 'My Library';
   @override String get edu_search_book_hint => 'Search by title or author...';
   @override String get edu_library_title => 'My library';
-  @override String get edu_search_library => 'Search by title or author…';
+  @override String get edu_search_library => 'Search by title or author...';
   @override String get edu_shelves_empty => 'Your shelves are empty.';
   @override String get edu_library_empty => 'Your shelves are empty.';
   @override String get edu_no_result => 'No results';
@@ -606,14 +598,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get edu_all => 'All';
   @override String edu_shelf_info(String code, int count) => 'Shelf $code · $count books';
   @override String get edu_free => 'Free';
-  @override String get edu_deleted_in => 'No longer available in';
+  @override String get edu_deleted_in => 'Will be removed in';
   @override String edu_expires_in(String countdown) => 'Expires in $countdown';
   
   @override String get edu_certifications => 'Certifications';
   @override String get edu_certs_title => 'Certifications';
   @override String get edu_no_certs => 'No certifications yet';
-  @override String get edu_cert_expert => 'Certificate of Expertise';
-  @override String get edu_cert_expertise => 'Certificate of Expertise';
+  @override String get edu_cert_expert => 'Expertise Certificate';
+  @override String get edu_cert_expertise => 'Expertise Certificate';
   @override String edu_cert_issued(String date) => 'Issued on $date';
   
   @override String get edu_pro_account => 'Professional Account';
@@ -622,7 +614,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get edu_tools => 'Institutional Tools';
   @override String get edu_institutional_tools => 'Institutional Tools';
   @override String get edu_free_resources => 'Open Resources';
-  @override String get edu_masterclass => 'Masterclasses';
+  @override String get edu_masterclass => 'Masterclass';
   @override String get edu_masterclasses => 'Masterclasses';
   @override String get edu_network => 'Network & Mentorship';
   @override String get edu_mentorship => 'Networking & Mentorship';
@@ -645,7 +637,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get training_continue_course => 'Continue Course';
 
   // ============================================================================
-  // EMPLOIS & RECRUTEMENT (JOBS & RECRUITING)
+  // EMPLOIS & RECRUTEMENT
   // ============================================================================
   @override String get jobs_title => 'Jobs';
   @override String get jobs_search => 'Search Jobs';
@@ -667,7 +659,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get jobs_experience => 'Experience';
   @override String get jobs_no_experience => 'Entry Level';
   @override String get jobs_junior => 'Junior';
-  @override String get jobs_mid => 'Mid-Level';
+  @override String get jobs_mid => 'Mid-level';
   @override String get jobs_senior => 'Senior';
   @override String get jobs_requirements => 'Requirements';
   @override String get jobs_responsibilities => 'Responsibilities';
@@ -682,7 +674,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get recruiter_interviews => 'Interviews';
 
   // ============================================================================
-  // OPPORTUNITÉS (OPPORTUNITIES)
+  // OPPORTUNITÉS
   // ============================================================================
   @override String get opportunities_title => 'Opportunities';
   @override String get opportunities_business => 'Business';
@@ -691,39 +683,8 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get opportunities_grant => 'Grant';
   @override String get opportunities_coming_soon => 'Coming Soon';
 
-    @override String get live_go_live => 'Go Live';
-  @override String get live_title => 'Live Title';
-  @override String get live_start => 'Start Live';
-  @override String get live_end => 'End Live';
-  @override String get live_duration => 'Duration';
-  @override String get live_peak_viewers => 'Peak Viewers';
-  @override String get live_chat_disabled => 'Chat is disabled.';
-  @override String get live_share => 'Share';
-  @override String get live_report => 'Report';
-  @override String get live_follow_host => 'Follow';
-  @override String get live_gift_send => 'Send Gift';
-  @override String get live_quality_auto => 'Auto';
-  @override String get live_quality_hd => 'HD';
-  @override String get live_quality_sd => 'SD';
-  @override String get live_quality_low => 'Low';
-
-  @override String get insight_source_unverified => 'Unverified Source';
-  @override String get insight_recommended_actions => 'Recommended Actions';
-  @override String get insight_key_findings => 'Key Findings';
-  @override String get insight_summary => 'Summary';
-  @override String get insight_full_analysis => 'Full Analysis';
-  @override String get insight_generated_by => 'AI Generated';
-  @override String get insight_disclaimer => 'This is an AI-generated analysis. Please verify information independently.';
-
-  @override String get risk_level_label => 'Risk Level';
-  @override String get risk_mitigation => 'Mitigation';
-  @override String get risk_impact => 'Impact';
-  @override String get risk_probability => 'Probability';
-  @override String get risk_assessment => 'Risk Assessment';
-
-
   // ============================================================================
-  // MARCHÉ & E-COMMERCE (MARKET)
+  // MARCHÉ & E-COMMERCE
   // ============================================================================
   @override String get market_title => 'THIX Market';
   @override String get market_categories => 'Categories';
@@ -744,7 +705,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get market_remove_from_cart => 'Remove from Cart';
 
   // ============================================================================
-  // PORTEFEUILLE & ARGENT (WALLET & MONEY)
+  // PORTEFEUILLE & ARGENT
   // ============================================================================
   @override String get money_title => 'THIX Wallet';
   @override String get money_balance => 'Balance';
@@ -764,20 +725,20 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get money_confirm_transfer => 'Confirm Transfer';
   @override String get money_transfer_success => 'Transfer Successful';
   @override String get money_transfer_failed => 'Transfer Failed';
-  @override String get money_insufficient_funds => 'Insufficient Funds';
+  @override String get money_insufficient_funds => 'Insufficient funds';
 
   // ============================================================================
-  // ÉVÉNEMENTS & BILLETS (EVENTS & TICKETS)
+  // ÉVÉNEMENTS & BILLETS
   // ============================================================================
   @override String get events_title => 'Events';
   @override String get events_upcoming => 'Upcoming';
   @override String get events_past => 'Past';
   
-  @override String get event_share_cta => 'Book your spot on THIX!';
+  @override String get event_share_cta => 'Secure your spot on THIX!';
   @override String get event_sold_out_title => 'Event Sold Out';
-  @override String get event_sold_out_msg => 'All spots are currently booked. Join the queue to be notified if spots become available.';
-  @override String get event_join_queue_confirm => 'Would you like to join the waiting list?';
-  @override String get event_join_queue_btn => 'Join the queue';
+  @override String get event_sold_out_msg => 'All spots are currently booked. Join the waitlist to be notified if spots become available.';
+  @override String get event_join_queue_confirm => 'Would you like to join the waitlist?';
+  @override String get event_join_queue_btn => 'Join Waitlist';
   
   @override String get event_unfavorite => 'Remove from favorites';
   @override String get event_favorite => 'Add to favorites';
@@ -794,13 +755,13 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get event_tickets_title => 'Tickets & Booking';
   
   @override String get event_sold_out_short => 'SOLD OUT';
-  @override String event_remaining_seats(String count) => '$count seats left';
-  @override String get event_queue_btn => 'WAITING LIST';
+  @override String event_remaining_seats(String count) => '$count spots remaining';
+  @override String get event_queue_btn => 'WAITLIST';
   @override String get event_book_btn => 'BOOK';
   
   @override String get event_standard_entry => 'Standard Entry';
-  @override String get event_all_sold => 'All seats are sold';
-  @override String get event_limited_seats => 'Limited seats';
+  @override String get event_all_sold => 'All seats are sold out';
+  @override String get event_limited_seats => 'Limited spots';
   @override String get event_book_now_btn => 'BOOK NOW';
   
   @override String event_numbered_seats(String count) => '$count numbered seats';
@@ -844,12 +805,12 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get tickets_completed => 'Completed';
   @override String get tickets_no_tickets => 'No tickets';
   @override String get tickets_no_tickets_desc => 'Your bookings will appear here';
-  @override String get tickets_discover => 'Discover';
+  @override String get tickets_discover => 'Discover Events';
   @override String get tickets_load_error => 'Failed to load your tickets';
   @override String tickets_quantity(int count) => count == 0 ? 'No tickets' : (count == 1 ? '1 ticket' : '$count tickets');
 
   // ============================================================================
-  // RÉSERVATIONS (RESERVATIONS)
+  // RÉSERVATIONS
   // ============================================================================
   @override String get reservation_title => 'Reservations';
   @override String get reservation_hotel => 'Hotel';
@@ -862,11 +823,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get reservation_book => 'Book';
   @override String get reservation_cancel => 'Cancel';
   @override String get reservation_modify => 'Modify';
-  @override String get reservation_confirm => 'Confirm Booking';
+  @override String get reservation_confirm => 'Confirm Reservation';
   @override String get reservation_my_bookings => 'My Bookings';
 
   // ============================================================================
-  // SANTÉ (HEALTH)
+  // SANTÉ
   // ============================================================================
   @override String get health_title => 'THIX Health';
   @override String get health_appointments => 'Appointments';
@@ -886,7 +847,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get health_find_doctor => 'Find a Doctor';
 
   // ============================================================================
-  // MÉDIA & INFOS (MEDIA & INFO)
+  // MÉDIA & INFOS
   // ============================================================================
   @override String get media_title => 'THIX Media';
   @override String get media_news => 'News';
@@ -912,7 +873,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get info_read_full => 'Read Full Article';
 
   // ============================================================================
-  // MON PAYS (MY COUNTRY)
+  // MON PAYS
   // ============================================================================
   @override String get mon_pays_title => 'My Country';
   @override String get mon_pays_regions => 'Regions';
@@ -925,7 +886,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get mon_pays_traditions => 'Traditions';
 
   // ============================================================================
-  // COFFRE-FORT (VAULT)
+  // COFFRE-FORT
   // ============================================================================
   @override String get vault_title => 'Vault';
   @override String get vault_documents => 'Documents';
@@ -943,18 +904,18 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get vault_lock => 'Lock';
 
   // ============================================================================
-  // PAIEMENT (PAYMENT)
+  // PAIEMENT
   // ============================================================================
   @override String get payment_title => 'Payment';
   @override String get payment_method => 'Payment Method';
-  @override String get payment_card => 'Credit Card';
+  @override String get payment_card => 'Credit/Debit Card';
   @override String get payment_mobile_money => 'Mobile Money';
   @override String get payment_bank_transfer => 'Bank Transfer';
   @override String get payment_cash => 'Cash';
   @override String get payment_confirm => 'Confirm Payment';
   @override String get payment_success => 'Payment Successful';
   @override String get payment_failed => 'Payment Failed';
-  @override String get payment_processing => 'Processing…';
+  @override String get payment_processing => 'Processing...';
   @override String get payment_receipt => 'Receipt';
   @override String get payment_invoice => 'Invoice';
 
@@ -966,11 +927,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get search_person_missing => 'Missing Person';
   @override String get search_person_wanted => 'Official Wanted Notice';
   @override String get search_report_missing => 'Report Missing Person';
-  @override String get search_report_found => 'Report Found';
+  @override String get search_report_found => 'Report Person Found';
   @override String get search_details => 'Details';
   @override String get search_contact_authorities => 'Contact Authorities';
   @override String get search_share_alert => 'Share Alert';
-  @override String get search_last_seen => 'Last Seen';
+  @override String get search_last_seen => 'Last seen at';
   @override String get search_description => 'Description';
   @override String get search_age => 'Age';
   @override String get search_height => 'Height';
@@ -981,17 +942,17 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get search_clothing => 'Clothing';
   @override String get search_circumstances => 'Circumstances';
   @override String get search_case_number => 'Case Number';
-  @override String get search_reported_by => 'Reported By';
+  @override String get search_reported_by => 'Reported by';
   @override String get search_official_notice => 'Official Notice';
   @override String get search_community_alert => 'Community Alert';
 
   // ============================================================================
-  // À PROXIMITÉ & ALERTES (NEARBY ALERTS)
+  // À PROXIMITÉ & ALERTES
   // ============================================================================
   @override String get nearby_alerts_title => 'Nearby Alerts';
   @override String get nearby_view_on_map => 'View on Map';
-  @override String get nearby_map_coming_soon => 'Full-screen map coming soon';
-  @override String get nearby_map_disabled => 'Map disabled (awaiting API key)';
+  @override String get nearby_map_coming_soon => 'Full screen map coming soon';
+  @override String get nearby_map_disabled => 'Map disabled (pending API key)';
   @override String get nearby_active_alerts => 'Active Alerts';
   @override String get nearby_missing => 'Missing';
   @override String get nearby_official => 'Official';
@@ -1011,17 +972,17 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get admin_events_title => 'Events';
   @override String get admin_events_create => 'Create';
   @override String get admin_events_search_hint => 'Search by title...';
-  @override String get admin_events_filter => 'Category Filter';
+  @override String get admin_events_filter => 'Category filter';
   @override String get admin_events_empty => 'No events found';
   @override String get admin_events_no_permission => 'You do not have permission to perform this action';
   @override String get admin_events_delete_title => 'Delete?';
-  @override String admin_events_delete_desc(String title) => 'Do you want to delete $title? This action is irreversible.';
+  @override String admin_events_delete_desc(String title) => 'Are you sure you want to delete $title? This action cannot be undone.';
 
   @override String get admin_limits_purchase_rules => 'Purchase Rules';
   @override String get admin_limits_max_person => 'Max / person (global)';
   @override String get admin_limits_max_transaction => 'Max / transaction (cart)';
   @override String get admin_limits_require_thix_id => 'THIX ID Verification Required';
-  @override String get admin_limits_require_thix_id_desc => 'Recommended for high-demand events.';
+  @override String get admin_limits_require_thix_id_desc => 'Recommended for high demand events.';
   @override String get admin_limits_info_title => 'Secure Architecture';
   @override String get admin_limits_info_desc => 'These limits are enforced and verified directly by SQL Edge Functions in real-time to prevent race conditions and fraud.';
 
@@ -1037,16 +998,16 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get admin_action_seats_sub => 'Batch of 200';
   @override String get admin_action_reservations => 'Reservations';
   @override String get admin_action_reservations_sub => '50 / page + Filters';
-  @override String get admin_action_limits => 'Anti-fraud';
+  @override String get admin_action_limits => 'Anti-Fraud';
   @override String get admin_action_limits_sub => 'Limits';
   @override String get admin_action_analytics => 'Analytics';
   @override String get admin_action_analytics_sub => 'RPC';
   @override String get admin_read_only => 'Read Only';
   @override String get admin_bookings_title => 'Bookings • 50/page';
-  @override String get admin_bookings_export => 'Server export in progress (task)';
+  @override String get admin_bookings_export => 'Server export in progress (job)';
   @override String get admin_bookings_details => 'Ticket Details';
   @override String get admin_bookings_event => 'Event';
-  @override String get admin_bookings_unknown_event => 'Unknown Event';
+  @override String get admin_bookings_unknown_event => 'Unknown event';
   @override String get admin_bookings_id => 'Booking ID';
   @override String get admin_bookings_quantity => 'Quantity';
   @override String get admin_bookings_category => 'Category';
@@ -1056,25 +1017,25 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get admin_bookings_close => 'Close';
   @override String get admin_bookings_empty => 'No bookings found';
   @override String get admin_bookings_unknown_date => 'Unknown date';
-  @override String admin_bookings_places(int count) => '$count spots';
+  @override String admin_bookings_places(int count) => '$count places';
   @override String get admin_bookings_status_valid => 'Valid';
   @override String get admin_bookings_status_used => 'Used';
   @override String get admin_bookings_status_cancelled => 'Cancelled';
   @override String get admin_bookings_status_postponed => 'Postponed';
   @override String get admin_bookings_status_pending => 'Pending';
   @override String admin_queue_title(int count) => 'Waiting Queue • Real-time ($count)';
-  @override String get admin_queue_realtime_desc => 'Real-time active • Auto-refreshes when users join';
+  @override String get admin_queue_realtime_desc => 'Real-time active • Updates automatically when users join';
   @override String get admin_queue_empty => 'Queue is empty';
   @override String get admin_queue_event_fallback => 'Event';
-  @override String admin_queue_item_meta(String userId, int qty, String status) => 'User: $userId • $qty spots • $status';
+  @override String admin_queue_item_meta(String userId, int qty, String status) => 'User: $userId • $qty places • $status';
   @override String get admin_queue_notify => 'Notify';
-  @override String get admin_queue_notified => 'User notified (expires in 10 minutes)';
+  @override String get admin_queue_notified => 'User notified (expires in 10 mins)';
   @override String get admin_queue_position => 'Position';
-  @override String get admin_queue_places => 'Spots';
+  @override String get admin_queue_places => 'Places';
   @override String get admin_analytics_title => 'Analytics • Performance';
   @override String get admin_analytics_fill_rate => 'Fill Rate';
   @override String get admin_analytics_avg_cart => 'Average Cart';
-  @override String get admin_analytics_no_show => 'No-show';
+  @override String get admin_analytics_no_show => 'No-Show Rate';
   @override String get admin_analytics_rev_per_event => 'Revenue / event';
   @override String get admin_analytics_revenue_7d => '7-Day Revenue';
   @override String get admin_analytics_no_data => 'No data available';
@@ -1094,20 +1055,20 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get admin_event_end => 'End (optional)';
   @override String get admin_event_add_end => 'Add End Time';
   @override String get admin_event_city => 'City *';
-  @override String get admin_event_location => 'Location *';
+  @override String get admin_event_location => 'Venue *';
   @override String get admin_event_address => 'Address';
   @override String get admin_event_organizer => 'Organizer';
   @override String get admin_event_phone => 'Phone';
   @override String get admin_event_email => 'Contact Email';
   @override String get admin_event_tiers_title => 'Tiers and Capacity';
-  @override String get admin_event_add_tier_btn => 'Add VVIP, VIP…';
+  @override String get admin_event_add_tier_btn => 'Add VVIP, VIP...';
   @override String get admin_event_status => 'Status';
   @override String get admin_event_visibility => 'Visibility';
   @override String get admin_event_cat_concert => 'Concert';
   @override String get admin_event_cat_conference => 'Conference';
   @override String get admin_event_cat_sport => 'Sport';
   @override String get admin_event_cat_festival => 'Festival';
-  @override String get admin_event_cat_theatre => 'Theater';
+  @override String get admin_event_cat_theatre => 'Theatre';
   @override String get admin_event_cat_other => 'Other';
   @override String get admin_event_status_upcoming => 'Upcoming';
   @override String get admin_event_status_ongoing => 'Ongoing';
@@ -1116,8 +1077,8 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get admin_event_vis_default => 'Upcoming (default)';
   @override String get admin_event_vis_recommended => 'Recommended';
   @override String get admin_event_vis_featured => 'Featured';
-  @override String get admin_event_dialog_add_tier => 'Add a tier';
-  @override String get admin_event_dialog_name => 'Name (ex: VVIP)';
+  @override String get admin_event_dialog_add_tier => 'Add Tier';
+  @override String get admin_event_dialog_name => 'Name (e.g., VVIP)';
   @override String admin_event_dialog_price(String currency) => 'Price ($currency)';
   @override String get admin_event_dialog_capacity => 'Capacity';
   @override String get admin_event_dialog_cancel => 'Cancel';
@@ -1128,21 +1089,21 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get admin_event_err_title_req => 'Title is required';
   @override String get admin_event_err_desc_min => 'Minimum 10 characters';
   @override String get admin_event_err_city_req => 'City is required';
-  @override String get admin_event_err_loc_req => 'Location is required';
+  @override String get admin_event_err_loc_req => 'Venue is required';
   @override String get admin_seat_page_title => 'Seat Map & Pricing';
   @override String get admin_seat_target_event => 'Target Event';
   @override String get admin_seat_select_event => 'Select an event';
-  @override String admin_seat_max_limit(int count) => 'Maximum $count seats';
+  @override String admin_seat_max_limit(int count) => 'Maximum limit $count seats';
   @override String admin_seat_generated(int count) => '$count seats generated';
   @override String get admin_seat_load_error => 'Failed to load seats';
   @override String get admin_seat_pricing_title => 'Dynamic Pricing';
-  @override String get admin_seat_layout_title => 'Layout & Shape';
+  @override String get admin_seat_layout_title => 'Layout and Shape';
   @override String get admin_seat_rows => 'Rows';
   @override String get admin_seat_per_row => 'Seats / row';
   @override String get admin_seat_center_aisle => 'Center Aisle';
   @override String get admin_seat_aisle_desc => 'Empty space in the middle';
   @override String get admin_seat_cats_per_row => 'Categories per row';
-  @override String get admin_seat_generating => 'Generating…';
+  @override String get admin_seat_generating => 'Generating...';
   @override String admin_seat_generate_btn(int count) => 'Generate $count seats';
   @override String get admin_seat_preview => 'Current layout preview';
   @override String get admin_seat_no_seats => 'No seats generated';
@@ -1155,11 +1116,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get seat_map_stage => 'Stage';
 
   // ============================================================================
-  // ERREURS & VALIDATION (ERRORS & VALIDATION)
+  // ERREURS & VALIDATION
   // ============================================================================
   @override String get error_generic => 'An error occurred';
   @override String get error_validation => 'Invalid data';
-  @override String get error_file_too_large => 'File is too large';
+  @override String get error_file_too_large => 'File too large';
   @override String get error_unsupported_format => 'Unsupported format';
   @override String get error_permission_denied => 'Permission denied';
   @override String get error_camera_unavailable => 'Camera unavailable';
@@ -1171,7 +1132,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get error_not_found => 'Not found';
 
   // ============================================================================
-  // TEMPS & DATES RELATIVES (RELATIVE DATES & TIMES)
+  // TEMPS & DATES RELATIVES
   // ============================================================================
   @override String get common_just_now => 'Just now';
   @override String get common_in_the_future => 'Later';
@@ -1185,4 +1146,63 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String common_in_minutes(int count) => count == 1 ? 'In 1 minute' : 'In $count minutes';
   @override String common_in_hours(int count) => count == 1 ? 'In 1 hour' : 'In $count hours';
   @override String common_in_days(int count) => count == 1 ? 'In 1 day' : 'In $count days';
+
+  // ============================================================================
+  // THIX MEDIA & IA SOURCES
+  // ============================================================================
+  @override String get live_go_live => 'Go Live';
+  @override String get live_title => 'Live Title';
+  @override String get live_start => 'Start Live';
+  @override String get live_end => 'End Live';
+  @override String get live_duration => 'Duration';
+  @override String get live_peak_viewers => 'Peak Viewers';
+  @override String get live_chat_disabled => 'Chat is disabled.';
+  @override String get live_share => 'Share';
+  @override String get live_report => 'Report';
+  @override String get live_follow_host => 'Follow';
+  @override String get live_gift_send => 'Send Gift';
+  @override String get live_quality_auto => 'Auto';
+  @override String get live_quality_hd => 'HD';
+  @override String get live_quality_sd => 'SD';
+  @override String get live_quality_low => 'Low';
+
+  @override String get insight_source_unverified => 'Unverified Source';
+  @override String get insight_recommended_actions => 'Recommended Actions';
+  @override String get insight_key_findings => 'Key Findings';
+  @override String get insight_summary => 'Summary';
+  @override String get insight_full_analysis => 'Full Analysis';
+  @override String get insight_generated_by => 'AI Generated';
+  @override String get insight_disclaimer => 'This is an AI-generated analysis. Please verify information independently.';
+
+  @override String get risk_level_label => 'Risk Level';
+  @override String get risk_mitigation => 'Mitigation';
+  @override String get risk_impact => 'Impact';
+  @override String get risk_probability => 'Probability';
+  @override String get risk_assessment => 'Risk Assessment';
+
+  @override String get live_leave_btn => 'Leave Live';
+  @override String get live_chat_empty => 'No messages yet.';
+  @override String get live_chat_hint => 'Say something...';
+  @override String get live_like => 'Like';
+  @override String get live_send => 'Send';
+  @override String get live_viewers => 'viewers';
+  @override String get live_likes => 'likes';
+  @override String get live_leaving => 'Leaving...';
+  @override String get live_network_quality => 'Network Quality';
+  @override String get insight_type_market => 'Market';
+  @override String get insight_type_finance => 'Finance';
+  @override String get insight_type_strategy => 'Strategy';
+  @override String get insight_type_business => 'Business';
+  @override String get insight_type_insight => 'Insight';
+  @override String get insight_confidence_label => 'Confidence Score';
+  @override String get insight_source_verified => 'Verified Source';
+  @override String get risk_critical => 'Critical';
+  @override String get risk_high => 'High';
+  @override String get risk_medium => 'Medium';
+  @override String get risk_low => 'Low';
+  @override String get source_type_official => 'Official';
+  @override String get source_type_world_bank => 'World Bank';
+  @override String get source_type_government => 'Government';
+  @override String get source_type_default => 'Verified Source';
+  @override String get source_aria_label => 'Information Source';
 }
