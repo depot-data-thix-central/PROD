@@ -1191,4 +1191,66 @@ class AppLocalizationsSw extends AppLocalizations {
   @override String get source_type_government => 'Serikali';
   @override String get source_type_default => 'Chanzo Kilichothibitishwa';
   @override String get source_aria_label => 'Chanzo cha Taarifa';
+    // ============================================================================
+  // THIX MEDIA & IA SOURCES
+  // ============================================================================
+  @override String get live_go_live => 'Nenda Mubashara';
+  @override String get live_title => 'Kichwa cha Mubashara';
+  @override String get live_start => 'Anza Mubashara';
+  @override String get live_end => 'Maliza Mubashara';
+  @override String get live_duration => 'Muda';
+  @override String get live_peak_viewers => 'Kilele cha Watazamaji';
+  @override String get live_chat_disabled => 'Soga imezimwa.';
+  @override String get live_share => 'Shiriki';
+  @override String get live_report => 'Ripoti';
+  @override String get live_follow_host => 'Fuata';
+  @override String get live_gift_send => 'Tuma Zawadi';
+  @override String get live_quality_auto => 'Otomatiki';
+  @override String get live_quality_hd => 'HD';
+  @override String get live_quality_sd => 'SD';
+  @override String get live_quality_low => 'Chini';
+
+  @override String get insight_source_unverified => 'Chanzo Hakijathibitishwa';
+  @override String get insight_recommended_actions => 'Vitendo Vinavyopendekezwa';
+  @override String get insight_key_findings => 'Matokeo Makuu';
+  @override String get insight_summary => 'Muhtasari';
+  @override String get insight_full_analysis => 'Uchambuzi Kamili';
+  @override String get insight_generated_by => 'Imetengenezwa na AI';
+  @override String get insight_disclaimer => 'Huu ni uchambuzi uliotengenezwa na AI. Tafadhali thibitisha taarifa.';
+
+  @override String get risk_level_label => 'Kiwango cha Hatari';
+  @override String get risk_mitigation => 'Upunguzaji';
+  @override String get risk_impact => 'Athari';
+  @override String get risk_probability => 'Uwezekano';
+  @override String get risk_assessment => 'Tathmini ya Hatari';
+
+  @override String get live_leave_btn => 'Ondoka Mubashara';
+  @override String get live_chat_empty => 'Hakuna ujumbe bado.';
+  @override String get live_chat_hint => 'Sema kitu...';
+  @override String get live_like => 'Penda';
+  @override String get live_send => 'Tuma';
+  @override String get live_viewers => 'watazamaji';
+  @override String get live_likes => 'wamependa';
+  @override String get live_leaving => 'Inaondoka...';
+  @override String get live_network_quality => 'Ubora wa mtandao';
+  
+  @override String get insight_type_market => 'Soko';
+  @override String get insight_type_finance => 'Fedha';
+  @override String get insight_type_strategy => 'Mkakati';
+  @override String get insight_type_business => 'Biashara';
+  @override String get insight_type_insight => 'Ufahamu';
+  @override String get insight_confidence_label => 'Kiwango cha uhakika';
+  @override String get insight_source_verified => 'Chanzo kilichothibitishwa';
+  
+  @override String get risk_critical => 'Hatari sana';
+  @override String get risk_high => 'Juu';
+  @override String get risk_medium => 'Wastani';
+  @override String get risk_low => 'Chini';
+  
+  @override String get source_type_official => 'Rasmi';
+  @override String get source_type_world_bank => 'Benki ya Dunia';
+  @override String get source_type_government => 'Serikali';
+  @override String get source_type_default => 'Chanzo Kilichothibitishwa';
+  @override String get source_aria_label => 'Chanzo cha Taarifa';
+
 }
