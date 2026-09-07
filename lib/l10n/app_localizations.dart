@@ -84,6 +84,18 @@ abstract class AppLocalizations {
   String common_days(int count);
   String common_hours(int count);
   String common_minutes(int count);
+    // ============================================================================
+  // THIX MEDIA & IA SOURCES
+  // ============================================================================
+  String get live_send;
+  String get live_ending;
+  String get live_network_quality;
+  String get source_type_official;
+  String get source_type_world_bank;
+  String get source_type_government;
+  String get source_type_default;
+  String get source_aria_label;
+
 
   // ============================================================================
   // AUTH & ONBOARDING (BASIC)
