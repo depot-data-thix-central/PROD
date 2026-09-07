@@ -6,15 +6,13 @@
 //
 // Bottom sheet pour sélectionner la langue de l'application.
 //
-// Langues supportées (8) — synchronisées avec locale_controller.dart :
+// Langues supportées (6) — synchronisées avec locale_controller.dart :
 //   🇫🇷 Français (fr)
 //   🇬🇧 English (en)
-//   🇪🇸 Español (es)
 //   🇵🇹 Português (pt)
-//   🇨🇩 Lingála (ln)
 //   🇨🇩 Kiswahili (sw)
-//   🇨🇩 Kikongo (kg)
-//   🇨🇩 Tshiluba (lu)
+//   🇸🇦 العربية (ar)
+//   🇨🇳 中文 (zh)
 //
 // Fonctionnalités :
 //   - Option "Langue du système" pour revenir à la locale du téléphone
@@ -172,7 +170,7 @@ class LanguageSheet extends ConsumerWidget {
       child: Semantics(
         header: true,
         child: Text(
-          l10n.t('settings_choose_language'),
+          l10n.settings_choose_language,
           style: TextStyle(
             fontSize: _kTitleFontSize,
             fontWeight: FontWeight.w800,
@@ -202,7 +200,7 @@ class LanguageSheet extends ConsumerWidget {
       child: Semantics(
         button: true,
         selected: isSystemActive,
-        label: '${l10n.t("settings_system_default")} ($systemName)',
+        label: '${l10n.settings_system_default} ($systemName)',
         child: ListTile(
           dense: true,
           contentPadding: const EdgeInsets.symmetric(
@@ -224,7 +222,7 @@ class LanguageSheet extends ConsumerWidget {
             ),
           ),
           title: Text(
-            l10n.t('settings_system_default'),
+            l10n.settings_system_default,
             style: TextStyle(
               fontWeight: isSystemActive ? FontWeight.bold : FontWeight.w500,
               color: ThixPolicy.textMain,
@@ -347,9 +345,10 @@ class LanguageSheet extends ConsumerWidget {
     final success = await controller.setLocale(Locale(code));
 
     if (!success && context.mounted) {
+      // ✅ Accès direct aux getters typés 
       _showError(
         context,
-        AppLocalizations.of(context).t('settings_language_change_failed'),
+        AppLocalizations.of(context).settings_language_change_failed,
       );
       return;
     }
@@ -376,9 +375,10 @@ class LanguageSheet extends ConsumerWidget {
     final success = await controller.setSystem();
 
     if (!success && context.mounted) {
+      // ✅ Accès direct aux getters typés 
       _showError(
         context,
-        AppLocalizations.of(context).t('settings_language_change_failed'),
+        AppLocalizations.of(context).settings_language_change_failed,
       );
       return;
     }
