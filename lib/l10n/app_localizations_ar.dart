@@ -1191,4 +1191,66 @@ class AppLocalizationsAr extends AppLocalizations {
   @override String get source_type_government => 'حكومة';
   @override String get source_type_default => 'مصدر موثوق';
   @override String get source_aria_label => 'مصدر المعلومات';
+    // ============================================================================
+  // THIX MEDIA & IA SOURCES
+  // ============================================================================
+  @override String get live_go_live => 'بدء البث';
+  @override String get live_title => 'عنوان البث';
+  @override String get live_start => 'ابدأ البث';
+  @override String get live_end => 'إنهاء البث';
+  @override String get live_duration => 'المدة';
+  @override String get live_peak_viewers => 'ذروة المشاهدين';
+  @override String get live_chat_disabled => 'الدردشة معطلة.';
+  @override String get live_share => 'مشاركة';
+  @override String get live_report => 'إبلاغ';
+  @override String get live_follow_host => 'متابعة';
+  @override String get live_gift_send => 'إرسال هدية';
+  @override String get live_quality_auto => 'تلقائي';
+  @override String get live_quality_hd => 'HD';
+  @override String get live_quality_sd => 'SD';
+  @override String get live_quality_low => 'منخفضة';
+
+  @override String get insight_source_unverified => 'مصدر غير موثوق';
+  @override String get insight_recommended_actions => 'الإجراءات الموصى بها';
+  @override String get insight_key_findings => 'النتائج الرئيسية';
+  @override String get insight_summary => 'الملخص';
+  @override String get insight_full_analysis => 'التحليل الكامل';
+  @override String get insight_generated_by => 'تم إنشاؤه بواسطة الذكاء الاصطناعي';
+  @override String get insight_disclaimer => 'هذا تحليل تم إنشاؤه بواسطة الذكاء الاصطناعي. يرجى التحقق من المعلومات.';
+
+  @override String get risk_level_label => 'مستوى الخطر';
+  @override String get risk_mitigation => 'التخفيف من المخاطر';
+  @override String get risk_impact => 'الأثر';
+  @override String get risk_probability => 'الاحتمالية';
+  @override String get risk_assessment => 'تقييم المخاطر';
+
+  @override String get live_leave_btn => 'مغادرة البث';
+  @override String get live_chat_empty => 'لا توجد رسائل بعد.';
+  @override String get live_chat_hint => 'قل شيئاً...';
+  @override String get live_like => 'إعجاب';
+  @override String get live_send => 'إرسال';
+  @override String get live_viewers => 'مشاهدون';
+  @override String get live_likes => 'إعجابات';
+  @override String get live_leaving => 'جاري المغادرة...';
+  @override String get live_network_quality => 'جودة الشبكة';
+  
+  @override String get insight_type_market => 'سوق';
+  @override String get insight_type_finance => 'مالية';
+  @override String get insight_type_strategy => 'استراتيجية';
+  @override String get insight_type_business => 'أعمال';
+  @override String get insight_type_insight => 'رؤية';
+  @override String get insight_confidence_label => 'مستوى الثقة';
+  @override String get insight_source_verified => 'مصدر موثوق';
+  
+  @override String get risk_critical => 'حرج';
+  @override String get risk_high => 'مرتفع';
+  @override String get risk_medium => 'متوسط';
+  @override String get risk_low => 'منخفض';
+  
+  @override String get source_type_official => 'رسمي';
+  @override String get source_type_world_bank => 'البنك الدولي';
+  @override String get source_type_government => 'حكومة';
+  @override String get source_type_default => 'مصدر موثوق';
+  @override String get source_aria_label => 'مصدر المعلومات';
+
 }
