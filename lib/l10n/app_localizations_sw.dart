@@ -463,6 +463,37 @@ class AppLocalizationsSw extends AppLocalizations {
   @override String get settings_system_default => 'Lugha ya mfumo';
   @override String get settings_language_change_failed => 'Imeshindwa kubadilisha lugha';
 
+    @override String get live_go_live => 'Nenda Mubashara';
+  @override String get live_title => 'Kichwa cha Mubashara';
+  @override String get live_start => 'Anza Mubashara';
+  @override String get live_end => 'Maliza Mubashara';
+  @override String get live_duration => 'Muda';
+  @override String get live_peak_viewers => 'Kilele cha Watazamaji';
+  @override String get live_chat_disabled => 'Soga imezimwa.';
+  @override String get live_share => 'Shiriki';
+  @override String get live_report => 'Ripoti';
+  @override String get live_follow_host => 'Fuata';
+  @override String get live_gift_send => 'Tuma Zawadi';
+  @override String get live_quality_auto => 'Otomatiki';
+  @override String get live_quality_hd => 'HD';
+  @override String get live_quality_sd => 'SD';
+  @override String get live_quality_low => 'Chini';
+
+  @override String get insight_source_unverified => 'Chanzo Hakijathibitishwa';
+  @override String get insight_recommended_actions => 'Vitendo Vinavyopendekezwa';
+  @override String get insight_key_findings => 'Matokeo Makuu';
+  @override String get insight_summary => 'Muhtasari';
+  @override String get insight_full_analysis => 'Uchambuzi Kamili';
+  @override String get insight_generated_by => 'Imetengenezwa na AI';
+  @override String get insight_disclaimer => 'Huu ni uchambuzi uliotengenezwa na AI. Tafadhali thibitisha taarifa.';
+
+  @override String get risk_level_label => 'Kiwango cha Hatari';
+  @override String get risk_mitigation => 'Upunguzaji';
+  @override String get risk_impact => 'Athari';
+  @override String get risk_probability => 'Uwezekano';
+  @override String get risk_assessment => 'Tathmini ya Hatari';
+
+
   // ============================================================================
   // SOS & URGENCE (EMERGENCY)
   // ============================================================================
