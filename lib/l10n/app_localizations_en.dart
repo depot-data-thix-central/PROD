@@ -691,6 +691,37 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get opportunities_grant => 'Grant';
   @override String get opportunities_coming_soon => 'Coming Soon';
 
+    @override String get live_go_live => 'Go Live';
+  @override String get live_title => 'Live Title';
+  @override String get live_start => 'Start Live';
+  @override String get live_end => 'End Live';
+  @override String get live_duration => 'Duration';
+  @override String get live_peak_viewers => 'Peak Viewers';
+  @override String get live_chat_disabled => 'Chat is disabled.';
+  @override String get live_share => 'Share';
+  @override String get live_report => 'Report';
+  @override String get live_follow_host => 'Follow';
+  @override String get live_gift_send => 'Send Gift';
+  @override String get live_quality_auto => 'Auto';
+  @override String get live_quality_hd => 'HD';
+  @override String get live_quality_sd => 'SD';
+  @override String get live_quality_low => 'Low';
+
+  @override String get insight_source_unverified => 'Unverified Source';
+  @override String get insight_recommended_actions => 'Recommended Actions';
+  @override String get insight_key_findings => 'Key Findings';
+  @override String get insight_summary => 'Summary';
+  @override String get insight_full_analysis => 'Full Analysis';
+  @override String get insight_generated_by => 'AI Generated';
+  @override String get insight_disclaimer => 'This is an AI-generated analysis. Please verify information independently.';
+
+  @override String get risk_level_label => 'Risk Level';
+  @override String get risk_mitigation => 'Mitigation';
+  @override String get risk_impact => 'Impact';
+  @override String get risk_probability => 'Probability';
+  @override String get risk_assessment => 'Risk Assessment';
+
+
   // ============================================================================
   // MARCHÉ & E-COMMERCE (MARKET)
   // ============================================================================
