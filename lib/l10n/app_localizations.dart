@@ -17,7 +17,15 @@ abstract class AppLocalizations {
   static const LocalizationsDelegate<AppLocalizations> delegate = _AppLocalizationsDelegate();
 
   // ===========================================================================
-  // 🔑 MÉTHODES DE FALLBACK l10n.t() ET l10n.tn()
+  // 🌍 GETTER DE LOCALE (Nécessaire pour I18nService)
+  // ===========================================================================
+  /// Expose la locale actuelle (ex: 'fr', 'en') pour que I18nService puisse formater
+  /// les dates et les nombres correctement. Doit être implémentée (override) dans
+  /// chaque fichier de langue spécifique.
+  Locale get locale;
+
+  // ===========================================================================
+  // 🔑 MÉTHODES DE FALLBACK l10n.t(), tn() ET plural()
   // ===========================================================================
   
   /// Permet d'accéder aux clés par leur nom de chaîne, avec support d'arguments positionnels (List).
@@ -54,7 +62,7 @@ abstract class AppLocalizations {
       case 'settings_system_default': value = settings_system_default; break;
       case 'settings_language_change_failed': value = settings_language_change_failed; break;
 
-      // Fallbacks en dur pour les projets & analyses (évite de modifier les 6 fichiers de langues)
+      // Fallbacks en dur pour les projets & analyses
       case 'project_delete_error': value = 'Erreur: {0}'; break;
       case 'project_command_hint': value = 'Tapez {0} pour confirmer'; break;
       case 'project_bp_error': value = 'Erreur: {0}'; break;
@@ -79,6 +87,25 @@ abstract class AppLocalizations {
       value = value.replaceAll('{$k}', v.toString());
     });
     return value;
+  }
+
+  /// Méthode de fallback pour les traductions plurielles
+  String plural(String key, int count, {List<String>? args}) {
+    // Si la langue est l'anglais (basé sur le getter locale) on utilise des règles anglaises, 
+    // sinon des règles françaises/autres par défaut pour le fallback
+    final isPlural = count > 1 || (locale.languageCode == 'en' && count != 1);
+    
+    switch (key) {
+      case 'category_events_count':
+        return count == 0 ? 'Aucun événement' : (isPlural ? '$count événements' : '1 événement');
+      case 'reservation_quantity':
+        return count == 0 ? 'Aucune réservation' : (isPlural ? '$count réservations' : '1 réservation');
+      case 'tickets_quantity':
+        return count == 0 ? 'Aucun billet' : (isPlural ? '$count billets' : '1 billet');
+      default:
+        // Si la clé n'est pas gérée manuellement ici, on essaie d'utiliser t()
+        return t(key, args: args);
+    }
   }
 
   // ===========================================================================
