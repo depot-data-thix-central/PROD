@@ -21,7 +21,7 @@ import 'package:thix_id/presentation/education/models/certificate.dart';
 import 'package:thix_id/presentation/education/models/formation.dart';
 import 'package:thix_id/presentation/education/providers/book_provider.dart';
 
-// Imports locaux (à migrer vers des absolus si possible)
+// Imports locaux
 import '../providers/certificate_provider.dart';
 import '../providers/education_provider.dart' hide certificatesProvider;
 import '../widgets/common/education_category_chip.dart';
@@ -55,6 +55,15 @@ class _SecurityUtils {
   static String sanitize(String? input) {
     if (input == null) return '';
     return input.replaceAll(RegExp(r'<[^>]*>|&[^;]+;'), '').trim();
+  }
+
+  // CORRECTION : Ajout de la méthode de validation UUID
+  static bool isValidUUID(String uuid) {
+    final regExp = RegExp(
+      r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+      caseSensitive: false,
+    );
+    return regExp.hasMatch(uuid);
   }
 }
 
@@ -389,7 +398,7 @@ class _HomePageState extends ConsumerState<_HomePage> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final user = Supabase.instance.client.auth.currentUser; // Idéalement à migrer vers currentUserProvider
+    final user = Supabase.instance.client.auth.currentUser;
     final unreadAsync = ref.watch(unreadNotificationsProvider);
     final formationsAsync = ref.watch(formationsProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
@@ -576,7 +585,6 @@ class _HomePageState extends ConsumerState<_HomePage> {
               final formations = paginated.items;
               final recentFormations = formations.take(5).toList();
               
-              // Pré-calcul sécurisé pour les performances
               final topFormations = List.of(formations)..sort((a, b) => b.rating.compareTo(a.rating));
               final awaitedFormations = formations.reversed.take(4).toList();
 
@@ -657,7 +665,8 @@ class _HomePageState extends ConsumerState<_HomePage> {
                         Category(id: 'cat-culture', name: 'Culture'),
                       ];
 
-                      final List<Category> allCats = List.from(dbCats);
+                      // CORRECTION DU TYPAGE STRICT ICI
+                      final List<Category> allCats = List<Category>.from(dbCats);
                       for (var custom in customCats) {
                         if (!allCats.any((c) => c.name.toLowerCase() == custom.name.toLowerCase())) {
                           allCats.add(custom);
@@ -665,7 +674,8 @@ class _HomePageState extends ConsumerState<_HomePage> {
                       }
 
                       return Column(
-                        children: allCats.map((cat) {
+                        // CORRECTION DU TYPAGE STRICT DU MAP
+                        children: allCats.map<Widget>((Category cat) {
                           final catFormations = formations.where((f) {
                             try {
                               if ((f as dynamic).categoryId == cat.id) return true;
@@ -680,6 +690,7 @@ class _HomePageState extends ConsumerState<_HomePage> {
                             children: [
                               _SectionHeader(
                                 title: cat.name,
+                                // cat.id est maintenant bien reconnu grâce au typage Category strict
                                 onSeeAll: () => context.push('/education/explore?category=${cat.id}'),
                               ),
                               const SizedBox(height: ThixPolicy.s12),
@@ -722,7 +733,7 @@ class _HomePageState extends ConsumerState<_HomePage> {
                               const SizedBox(height: ThixPolicy.s24),
                             ],
                           );
-                        }).toList(),
+                        }).toList(), // Le retour est maintenant bien garanti comme List<Widget>
                       );
                     },
                     loading: () => const SizedBox.shrink(),
