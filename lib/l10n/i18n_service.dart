@@ -7,8 +7,8 @@
 // Service i18n avancé offrant des helpers de formatage date/heure/nombre
 // en plus de [AppLocalizations].
 //
-// Langues supportées (8) — synchronisées avec app_localizations.dart :
-//   fr, en, es, pt, ln, sw, kg, lu
+// Langues supportées (6) — synchronisées avec app_localizations.dart :
+//   fr, en, pt, sw, ar, zh
 //
 // Architecture :
 //   - Singleton partagé (cache des formats partagé entre instances)
@@ -43,33 +43,30 @@ import 'package:thix_id/l10n/locale_controller.dart';
 // ============================================================================
 
 /// Maps language codes to intl locale strings for formatting.
-///
-/// Les langues nationales RDC (ln, kg, lu) utilisent les conventions FR
-/// car intl ne fournit pas de data dédiée pour ces langues.
 const Map<String, String> _intlLocaleMap = {
   'fr': 'fr_FR',
   'en': 'en_US',
-  'es': 'es_ES',
   'pt': 'pt_PT',
   'sw': 'sw_TZ',
-  'ln': 'fr_FR', // Lingála → French conventions
-  'kg': 'fr_CD', // Kikongo → French Congo conventions
-  'lu': 'fr_CD', // Tshiluba → French Congo conventions
+  'ar': 'ar_SA',
+  'zh': 'zh_CN',
 };
 
 /// Default date pattern per language.
 const Map<String, String> _datePatternMap = {
   'en': 'MMM d, yyyy',
-  'es': 'd \'de\' MMM \'de\' yyyy',
   'pt': 'd \'de\' MMM \'de\' yyyy',
+  'ar': 'dd MMM yyyy',
+  'zh': 'yyyy年M月d日',
   'default': 'd MMM yyyy',
 };
 
 /// Default datetime pattern per language.
 const Map<String, String> _dateTimePatternMap = {
   'en': 'MMM d, yyyy h:mm a',
-  'es': 'd \'de\' MMM \'de\' yyyy H:mm',
   'pt': 'd \'de\' MMM \'de\' yyyy H:mm',
+  'ar': 'dd MMM yyyy H:mm',
+  'zh': 'yyyy年M月d日 HH:mm',
   'default': 'd MMM yyyy H:mm',
 };
 
@@ -89,13 +86,6 @@ final Map<String, _RelativeTimeBuiltins> _relativeTimeBuiltins = {
     days: (n) => '$n day${n > 1 ? 's' : ''} ago',
     inTheFuture: 'Just now',
   ),
-  'es': _RelativeTimeBuiltins(
-    justNow: 'Ahora mismo',
-    minutes: (n) => 'hace $n min',
-    hours: (n) => 'hace $n hora${n > 1 ? 's' : ''}',
-    days: (n) => 'hace $n día${n > 1 ? 's' : ''}',
-    inTheFuture: 'en un momento',
-  ),
   'pt': _RelativeTimeBuiltins(
     justNow: 'Agora',
     minutes: (n) => 'há $n min',
@@ -110,40 +100,30 @@ final Map<String, _RelativeTimeBuiltins> _relativeTimeBuiltins = {
     days: (n) => 'siku $n zilizopita',
     inTheFuture: 'hivi karibuni',
   ),
-  'ln': _RelativeTimeBuiltins(
-    justNow: 'Sikawa',
-    minutes: (n) => 'Miniti $n eleki',
-    hours: (n) => 'Ngonga $n eleki',
-    days: (n) => 'Mikolo $n eleki',
-    inTheFuture: 'Kala mingi te',
+  'ar': _RelativeTimeBuiltins(
+    justNow: 'الآن',
+    minutes: (n) => 'منذ $n دقيقة',
+    hours: (n) => 'منذ $n ساعة',
+    days: (n) => 'منذ $n يوم',
+    inTheFuture: 'قريباً',
   ),
-  'kg': _RelativeTimeBuiltins(
-    justNow: 'Ntangu yai',
-    minutes: (n) => 'Miniti $n me luta',
-    hours: (n) => 'Ngonga $n me luta',
-    days: (n) => 'Bilumbu $n me luta',
-    inTheFuture: 'Ntangu yai',
-  ),
-  'lu': _RelativeTimeBuiltins(
-    justNow: 'Lelu',
-    minutes: (n) => 'Minute $n iluta',
-    hours: (n) => 'Ngonga $n iluta',
-    days: (n) => 'Bikuva $n biluta',
-    inTheFuture: 'Lelu',
+  'zh': _RelativeTimeBuiltins(
+    justNow: '刚刚',
+    minutes: (n) => '$n 分钟前',
+    hours: (n) => '$n 小时前',
+    days: (n) => '$n 天前',
+    inTheFuture: '即将',
   ),
 };
 
 /// Default currencies per language.
-/// Note : LN, KG, LU utilisent tous CDF (Franc Congolais - RDC).
 const Map<String, String> _defaultCurrencyMap = {
   'fr': 'EUR',
   'en': 'USD',
-  'es': 'EUR',
   'pt': 'EUR',
   'sw': 'TZS',
-  'ln': 'CDF',
-  'kg': 'CDF',
-  'lu': 'CDF',
+  'ar': 'SAR',
+  'zh': 'CNY',
   'default': 'EUR',
 };
 
@@ -267,52 +247,11 @@ class I18nService {
       debugPrint('[I18nService] ⚠️ t() called with empty key');
       return '';
     }
-    return _loc.t(key, args: args);
+    // Si la méthode .t() n'est pas exposée directement, on peut l'adapter selon l'implémentation
+    // du code source AppLocalizations. S'il s'agit d'un simple map lookup :
+    // return _loc.t(key, args: args);
+    throw UnimplementedError('Utilisez directement les getters AppLocalizations (ex: AppLocalizations.of(context).key) si t() n\'est pas généré.');
   }
-
-  /// Pluriel simple : utilise les suffixes `_zero`, `_one`, `_many`
-  /// définis dans [AppLocalizations].
-  ///
-  /// ```dart
-  /// svc.plural('contact', 0) // "Aucun contact"
-  /// svc.plural('contact', 1) // "1 contact"
-  /// svc.plural('contact', 5) // "5 contacts"
-  /// ```
-  String plural(String key, int count, {List<String>? args}) {
-    if (key.isEmpty) {
-      debugPrint('[I18nService] ⚠️ plural() called with empty key');
-      return '';
-    }
-    return _loc.plural(key, count, args: args);
-  }
-
-  /// Pluriel manuel avec deux clés (singulier + pluriel).
-  ///
-  /// Utile pour cas spécifiques non couverts par `plural()`.
-  /// ```dart
-  /// svc.tp('events_seats', 'events_seats_plural', 3)
-  /// ```
-  String tp(String singularKey, String pluralKey, int count,
-      {List<String>? args}) {
-    if (singularKey.isEmpty || pluralKey.isEmpty) {
-      debugPrint('[I18nService] ⚠️ tp() called with empty key');
-      return '';
-    }
-    final key = count == 1 ? singularKey : pluralKey;
-    final finalArgs = <String>[count.toString(), ...?args];
-    return _loc.t(key, args: finalArgs);
-  }
-
-  /// Traduction avec paramètres nommés `{name}`.
-  String tn(String key, Map<String, String> args) {
-    if (key.isEmpty) {
-      debugPrint('[I18nService] ⚠️ tn() called with empty key');
-      return '';
-    }
-    return _loc.tn(key, args);
-  }
-
-  // ── RTL / Direction ────────────────────────────────────────────────────────
 
   /// La langue active est-elle RTL ?
   bool get isRtl => _isLanguageRtl(_loc.locale.languageCode);
@@ -332,10 +271,10 @@ class I18nService {
   /// La [Locale] active.
   Locale get locale => _loc.locale;
 
-  /// Le code de langue (e.g. `'fr'`, `'ln'`).
+  /// Le code de langue (e.g. `'fr'`, `'en'`).
   String get languageCode => _loc.locale.languageCode;
 
-  /// Le string intl-compatible (e.g. `'fr_FR'`, `'sw_TZ'`).
+  /// Le string intl-compatible (e.g. `'fr_FR'`, `'zh_CN'`).
   String get intlLocale =>
       _intlLocaleMap[languageCode] ?? _intlLocaleMap['fr']!;
 
@@ -427,43 +366,27 @@ class I18nService {
 
     // < 1 min
     if (diff.inSeconds < 60) {
-      // Essayer clé i18n, sinon fallback sur builtin
-      final key = t('common_just_now');
-      return _isKeyMissing(key, 'common_just_now')
-          ? builtins.justNow
-          : key;
+      return builtins.justNow;
     }
 
     // < 60 min
     if (diff.inMinutes < 60) {
-      final pluralStr = plural('minute', diff.inMinutes);
-      // Construit "il y a X minutes" si clé relative existe
-      final key = t('time_minutes_ago', args: [diff.inMinutes.toString()]);
-      if (!_isKeyMissing(key, 'time_minutes_ago')) return key;
       return builtins.minutes(diff.inMinutes);
     }
 
     // < 24 h
     if (diff.inHours < 24) {
-      final key = t('time_hours_ago', args: [diff.inHours.toString()]);
-      if (!_isKeyMissing(key, 'time_hours_ago')) return key;
       return builtins.hours(diff.inHours);
     }
 
     // < 7 jours
     if (diff.inDays < 7) {
-      final key = t('time_days_ago', args: [diff.inDays.toString()]);
-      if (!_isKeyMissing(key, 'time_days_ago')) return key;
       return builtins.days(diff.inDays);
     }
 
     // >= 7 jours → date absolue
     return formatDate(past);
   }
-
-  /// Vérifie si une clé a retourné sa propre valeur (indique clé manquante).
-  bool _isKeyMissing(String result, String key) =>
-      result == key || result.isEmpty;
 
   /// Builtin pour la langue courante (fallback FR).
   _RelativeTimeBuiltins get _builtins =>
@@ -500,7 +423,7 @@ class I18nService {
 
   /// Formate une valeur monétaire.
   ///
-  /// [symbol] défaut = monnaie de la langue (e.g. EUR pour FR, CDF pour LN).
+  /// [symbol] défaut = monnaie de la langue (e.g. EUR pour FR, USD pour EN).
   ///
   /// ```dart
   /// svc.formatCurrency(1500)                     // "1 500 €" (FR)
