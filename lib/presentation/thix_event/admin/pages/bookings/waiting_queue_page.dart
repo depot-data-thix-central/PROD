@@ -9,7 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
-// ── IMPORTS ABSOLUS SÉCURISÉS (Corrige l'erreur "ThixPolicy isn't defined") ──
+// ── IMPORTS ABSOLUS SÉCURISÉS ──
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import '../../../../providers/admin_state.dart';
@@ -269,11 +269,11 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
         children: [
           // ── BANNIERE REALTIME ──
           Container(
-            margin: EdgeInsets.all(ThixPolicy.s12),
-            padding: EdgeInsets.all(ThixPolicy.s10),
+            margin: EdgeInsets.all(12),
+            padding: EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: EventTheme.surface,
-              borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+              borderRadius: BorderRadius.circular(8),
               border: Border.all(color: EventTheme.border),
             ),
             child: Semantics(
@@ -294,7 +294,7 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
                       ],
                     ),
                   ),
-                  SizedBox(width: ThixPolicy.s8),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       l10n.t('admin_queue_realtime_desc'),
@@ -309,54 +309,65 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
             ),
           ),
 
-          // ── CONTENU ──
+          // ── CONTENU (Utilisation d'un Builder au lieu du switch) ──
           Expanded(
-            child: switch (state.status) {
-              AdminStatus.loading => const Center(
-                  child: CircularProgressIndicator(
-                    color: EventTheme.primary,
-                    strokeWidth: 2,
-                  ),
-                ),
-              AdminStatus.error => Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.error_outline_rounded,
-                        color: EventTheme.danger,
-                        size: 40,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        state.error ?? l10n.t('common_error'),
-                        style: ThixPolicy.bodySmallStyle.copyWith(
-                          color: EventTheme.textMuted,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        onPressed: () => notifier.load(refresh: true),
-                        icon: const Icon(Icons.refresh_rounded, size: 16),
-                        label: Text(l10n.t('common_retry')),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: EventTheme.surface,
-                          foregroundColor: EventTheme.textMain,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              AdminStatus.empty => Center(
-                  child: Text(
-                    l10n.t('admin_queue_empty'),
-                    style: ThixPolicy.bodyMediumStyle.copyWith(
-                      color: EventTheme.textMuted,
+            child: Builder(
+              builder: (context) {
+                if (state.status == AdminStatus.loading) {
+                  return const Center(
+                    child: CircularProgressIndicator(
+                      color: EventTheme.primary,
+                      strokeWidth: 2,
                     ),
-                  ),
-                ),
-              _ => RefreshIndicator(
+                  );
+                }
+
+                if (state.status == AdminStatus.error) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.error_outline_rounded,
+                          color: EventTheme.danger,
+                          size: 40,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          state.error ?? l10n.t('common_error'),
+                          style: ThixPolicy.bodySmallStyle.copyWith(
+                            color: EventTheme.textMuted,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: () => notifier.load(refresh: true),
+                          icon: const Icon(Icons.refresh_rounded, size: 16),
+                          label: Text(l10n.t('common_retry')),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: EventTheme.surface,
+                            foregroundColor: EventTheme.textMain,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                if (state.status == AdminStatus.empty) {
+                  return Center(
+                    child: Text(
+                      l10n.t('admin_queue_empty'),
+                      style: ThixPolicy.bodyMediumStyle.copyWith(
+                        color: EventTheme.textMuted,
+                      ),
+                    ),
+                  );
+                }
+
+                // SUCCESS STATE
+                return RefreshIndicator(
                   color: Colors.white,
                   backgroundColor: EventTheme.surface,
                   onRefresh: () async => notifier.load(refresh: true),
@@ -386,24 +397,21 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
                       final userIdShort = userId.length >= 8
                           ? '${userId.substring(0, 8)}...'
                           : userId;
-                      final qty =
-                          item['requested_quantity']?.toString() ?? '1';
-                      final status =
-                          item['status']?.toString() ?? 'waiting';
+                      final qty = item['requested_quantity']?.toString() ?? '1';
+                      final status = item['status']?.toString() ?? 'waiting';
 
                       return Semantics(
                         label:
                             '${l10n.t('admin_queue_position')} ${i + 1}, $title, $qty ${l10n.t('admin_queue_places')}',
                         child: Container(
-                          margin: EdgeInsets.symmetric(
-                            horizontal: ThixPolicy.s12,
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: 12,
                             vertical: 4,
                           ),
-                          padding: EdgeInsets.all(ThixPolicy.s12),
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: EventTheme.surface,
-                            borderRadius:
-                                BorderRadius.circular(ThixPolicy.rMd),
+                            borderRadius: BorderRadius.circular(8),
                             border: Border.all(color: EventTheme.border),
                             boxShadow: ThixPolicy.shadowSoft(opacity: 0.15),
                           ),
@@ -429,18 +437,16 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
                                   ),
                                 ),
                               ),
-                              SizedBox(width: ThixPolicy.s10),
+                              const SizedBox(width: 10),
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       title,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style:
-                                          ThixPolicy.bodyMediumStyle.copyWith(
+                                      style: ThixPolicy.bodyMediumStyle.copyWith(
                                         color: EventTheme.textMain,
                                         fontWeight: FontWeight.w800,
                                         fontSize: 11,
@@ -453,15 +459,14 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
                                         'qty': qty,
                                         'status': status,
                                       }),
-                                      style:
-                                          ThixPolicy.microStyle.copyWith(
+                                      style: ThixPolicy.microStyle.copyWith(
                                         color: EventTheme.textMuted,
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                              SizedBox(width: ThixPolicy.s8),
+                              const SizedBox(width: 8),
                               Semantics(
                                 button: true,
                                 label: l10n.t('admin_queue_notify'),
@@ -473,19 +478,16 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
                                       backgroundColor: EventTheme.primary,
                                       foregroundColor: Colors.white,
                                       elevation: 0,
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: ThixPolicy.s12,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
                                       ),
                                       shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(
-                                          ThixPolicy.rMd,
-                                        ),
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
                                     ),
                                     child: Text(
                                       l10n.t('admin_queue_notify'),
-                                      style:
-                                          ThixPolicy.microStyle.copyWith(
+                                      style: ThixPolicy.microStyle.copyWith(
                                         fontWeight: FontWeight.w800,
                                       ),
                                     ),
@@ -498,8 +500,9 @@ class _WaitingQueuePageState extends ConsumerState<WaitingQueuePage> {
                       );
                     },
                   ),
-                ),
-            },
+                );
+              },
+            ),
           ),
         ],
       ),
