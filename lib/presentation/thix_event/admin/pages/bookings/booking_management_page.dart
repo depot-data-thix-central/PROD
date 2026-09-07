@@ -6,16 +6,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// ── NOUVEAUX IMPORTS (alignement production) ─────────────────────────────────
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/admin_constants.dart';
-import '../../core/theme/thix_design_policy.dart';
-import '../../l10n/app_localizations.dart';
-import '../../providers/admin_state.dart';
-import '../../services/admin_event_service.dart';
+// ── IMPORTS ABSOLUS SÉCURISÉS ──
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
+import '../../../../providers/admin_state.dart';
+import '../../../../services/admin_event_service.dart';
 
 // ============================================================================
 // EVENT THEME (adapté depuis ThixPolicy — Admin Bookings)
@@ -145,7 +144,7 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
   }
 
   // ────────────────────────────────────────────────────────────
-  // STATUS HELPERS (logique exacte préservée)
+  // STATUS HELPERS
   // ────────────────────────────────────────────────────────────
   Color _statusColor(String s) {
     switch (s.toLowerCase()) {
@@ -214,11 +213,11 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
       builder: (_) => Semantics(
         dialog: true,
         child: Container(
-          padding: const EdgeInsets.all(ThixPolicy.s20),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: EventTheme.surface,
             borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(ThixPolicy.r2Xl),
+              top: Radius.circular(24),
             ),
             border: const Border(top: BorderSide(color: EventTheme.border)),
           ),
@@ -232,7 +231,7 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
                   height: 4,
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(ThixPolicy.s10),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                 ),
               ),
@@ -250,12 +249,12 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: ThixPolicy.s8,
-                      vertical: ThixPolicy.s4,
+                      horizontal: 8,
+                      vertical: 4,
                     ),
                     decoration: BoxDecoration(
                       color: col.withOpacity(0.14),
-                      borderRadius: BorderRadius.circular(ThixPolicy.s8),
+                      borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: col.withOpacity(0.3)),
                     ),
                     child: Text(
@@ -290,13 +289,13 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
                       l10n.tn('admin_bookings_places', {'count': qty}),
                     ),
                   ),
-                  const SizedBox(width: ThixPolicy.s12),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: _block(l10n.t('admin_bookings_category'), cat),
                   ),
                 ],
               ),
-              const SizedBox(height: ThixPolicy.s12),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
@@ -306,7 +305,7 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(width: ThixPolicy.s12),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: _block(
                       l10n.t('admin_bookings_pin'),
@@ -336,7 +335,7 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
                       foregroundColor: Colors.black,
                       elevation: 0,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(ThixPolicy.r2Xl),
+                        borderRadius: BorderRadius.circular(24),
                       ),
                     ),
                     child: Text(
@@ -358,14 +357,14 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
   }
 
   // ────────────────────────────────────────────────────────────
-  // SUB-WIDGETS (logique préservée)
+  // SUB-WIDGETS
   // ────────────────────────────────────────────────────────────
   Widget _row(IconData icon, String label, String val, {bool mono = false}) =>
       Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, size: 16, color: EventTheme.textMuted),
-          const SizedBox(width: ThixPolicy.s10),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -490,54 +489,66 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
         backgroundColor: EventTheme.surface,
         onRefresh: () async =>
             ref.read(adminBookingsProvider.notifier).load(refresh: true),
-        child: switch (state.status) {
-          AdminStatus.loading => const Center(
-              child: CircularProgressIndicator(
-                color: EventTheme.primary,
-                strokeWidth: 2,
-              ),
-            ),
-          AdminStatus.error => Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.error_outline_rounded,
-                    color: EventTheme.danger,
-                    size: 40,
-                  ),
-                  const SizedBox(height: ThixPolicy.s12),
-                  Text(
-                    state.error ?? l10n.t('common_error'),
-                    style: ThixPolicy.bodySmallStyle.copyWith(
-                      color: EventTheme.textMuted,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: ThixPolicy.s16),
-                  ElevatedButton.icon(
-                    onPressed: () => ref
-                        .read(adminBookingsProvider.notifier)
-                        .load(refresh: true),
-                    icon: const Icon(Icons.refresh_rounded, size: 16),
-                    label: Text(l10n.t('common_retry')),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: EventTheme.surface,
-                      foregroundColor: EventTheme.textMain,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          AdminStatus.empty => Center(
-              child: Text(
-                l10n.t('admin_bookings_empty'),
-                style: ThixPolicy.bodyMediumStyle.copyWith(
-                  color: EventTheme.textMuted,
+        // ── UTILISATION DE BUILDER AU LIEU DU SWITCH ──
+        child: Builder(
+          builder: (context) {
+            if (state.status == AdminStatus.loading) {
+              return const Center(
+                child: CircularProgressIndicator(
+                  color: EventTheme.primary,
+                  strokeWidth: 2,
                 ),
-              ),
-            ),
-          _ => ListView.builder(
+              );
+            }
+
+            if (state.status == AdminStatus.error) {
+              return Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.error_outline_rounded,
+                      color: EventTheme.danger,
+                      size: 40,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      state.error ?? l10n.t('common_error'),
+                      style: ThixPolicy.bodySmallStyle.copyWith(
+                        color: EventTheme.textMuted,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: () => ref
+                          .read(adminBookingsProvider.notifier)
+                          .load(refresh: true),
+                      icon: const Icon(Icons.refresh_rounded, size: 16),
+                      label: Text(l10n.t('common_retry')),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: EventTheme.surface,
+                        foregroundColor: EventTheme.textMain,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            if (state.status == AdminStatus.empty) {
+              return Center(
+                child: Text(
+                  l10n.t('admin_bookings_empty'),
+                  style: ThixPolicy.bodyMediumStyle.copyWith(
+                    color: EventTheme.textMuted,
+                  ),
+                ),
+              );
+            }
+
+            // SUCCESS STATE
+            return ListView.builder(
               controller: _scrollCtrl,
               padding: const EdgeInsets.only(top: 12, bottom: 100),
               itemCount: state.items.length + (state.hasMore ? 1 : 0),
@@ -571,31 +582,36 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
                   label: '$title, ${_statusLabel(raw, l10n)}, $price FC',
                   child: Container(
                     margin: const EdgeInsets.symmetric(
-                      horizontal: ThixPolicy.s16,
+                      horizontal: 16,
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
                       color: EventTheme.surface,
-                      borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                      borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: EventTheme.border),
-                      boxShadow: ThixPolicy.shadowSoft(opacity: 0.15),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.15),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        )
+                      ],
                     ),
                     child: InkWell(
-                      borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                      borderRadius: BorderRadius.circular(12),
                       onTap: () {
                         HapticFeedback.selectionClick();
                         _showDetails(b);
                       },
                       child: Padding(
-                        padding: const EdgeInsets.all(ThixPolicy.s14),
+                        padding: const EdgeInsets.all(14),
                         child: Row(
                           children: [
                             Container(
-                              padding: const EdgeInsets.all(ThixPolicy.s10),
+                              padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
                                 color: EventTheme.primary.withOpacity(0.12),
-                                borderRadius:
-                                    BorderRadius.circular(ThixPolicy.s10),
+                                borderRadius: BorderRadius.circular(10),
                                 border: Border.all(
                                   color: EventTheme.primary.withOpacity(0.25),
                                 ),
@@ -606,7 +622,7 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
                                 color: EventTheme.primary,
                               ),
                             ),
-                            const SizedBox(width: ThixPolicy.s12),
+                            const SizedBox(width: 12),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -615,8 +631,7 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
                                     title,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style:
-                                        ThixPolicy.bodyMediumStyle.copyWith(
+                                    style: ThixPolicy.bodyMediumStyle.copyWith(
                                       color: EventTheme.textMain,
                                       fontWeight: FontWeight.w800,
                                       fontSize: 12,
@@ -625,16 +640,14 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
                                   const SizedBox(height: 3),
                                   Text(
                                     '$userIdShort • $qty x $cat',
-                                    style:
-                                        ThixPolicy.captionStyle.copyWith(
+                                    style: ThixPolicy.captionStyle.copyWith(
                                       color: EventTheme.textMuted,
                                     ),
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
                                     '$price FC',
-                                    style:
-                                        ThixPolicy.labelStyle.copyWith(
+                                    style: ThixPolicy.labelStyle.copyWith(
                                       color: EventTheme.textMain,
                                       fontWeight: FontWeight.w800,
                                       fontSize: 11,
@@ -653,8 +666,7 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
                                   ),
                                   decoration: BoxDecoration(
                                     color: _statusColor(raw).withOpacity(0.12),
-                                    borderRadius:
-                                        BorderRadius.circular(ThixPolicy.s6),
+                                    borderRadius: BorderRadius.circular(6),
                                     border: Border.all(
                                       color: _statusColor(raw).withOpacity(0.25),
                                     ),
@@ -682,8 +694,9 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
                   ),
                 );
               },
-            ),
-        },
+            );
+          },
+        ),
       ),
     );
   }
