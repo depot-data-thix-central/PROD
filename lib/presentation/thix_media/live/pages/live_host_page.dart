@@ -866,7 +866,7 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
                         ),
                         Semantics(
                           button: true,
-                          label: l10n.t('live_send'),
+                          label: l10n.live_send,
                           child: _RoundBtn(
                             icon: Icons.send_rounded,
                             onTap: _chatSending ? null : _sendChat,
@@ -890,7 +890,7 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
                       const CircularProgressIndicator(color: Colors.white),
                       const SizedBox(height: 12),
                       Text(
-                        l10n.t('live_ending'),
+                        l10n.live_ending,
                         style: const TextStyle(
                             color: Colors.white70, fontSize: 13),
                       ),
@@ -974,7 +974,7 @@ class _NetworkIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = q.color();
     return Semantics(
-      label: '${l10n.t("live_network_quality")}: ${q.label(l10n)}',
+      label: '${l10n.live_network_quality}: ${q.label(l10n)}',
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
