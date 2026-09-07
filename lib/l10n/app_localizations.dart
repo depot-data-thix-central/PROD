@@ -17,44 +17,68 @@ abstract class AppLocalizations {
   static const LocalizationsDelegate<AppLocalizations> delegate = _AppLocalizationsDelegate();
 
   // ===========================================================================
-  // 🔑 MÉTHODE DE FALLBACK l10n.t('key')
+  // 🔑 MÉTHODES DE FALLBACK l10n.t() ET l10n.tn()
   // ===========================================================================
-  /// Permet d'accéder aux clés par leur nom de chaîne (ex: l10n.t('live_leave_btn'))
-  /// Utilisé par les widgets qui référencent des clés dynamiquement.
-  String t(String key, [Map<String, dynamic>? args]) {
+  
+  /// Permet d'accéder aux clés par leur nom de chaîne, avec support d'arguments positionnels (List).
+  String t(String key, {List<dynamic>? args}) {
+    String value = key;
     switch (key) {
-      // Fallbacks pour les widgets qui utilisent encore l'ancienne syntaxe dynamique
-      case 'common_close': return common_close;
-      case 'live_leave_btn': return live_leave_btn;
-      case 'live_chat_empty': return live_chat_empty;
-      case 'live_chat_hint': return live_chat_hint;
-      case 'live_like': return live_like;
-      case 'live_send': return live_send;
-      case 'live_leaving': return live_leaving;
-      case 'live_viewers': return live_viewers;
-      case 'live_likes': return live_likes;
-      case 'live_network_quality': return live_network_quality;
-      case 'insight_type_market': return insight_type_market;
-      case 'insight_type_finance': return insight_type_finance;
-      case 'insight_type_strategy': return insight_type_strategy;
-      case 'insight_type_business': return insight_type_business;
-      case 'insight_type_insight': return insight_type_insight;
-      case 'insight_confidence_label': return insight_confidence_label;
-      case 'insight_source_verified': return insight_source_verified;
-      case 'risk_critical': return risk_critical;
-      case 'risk_high': return risk_high;
-      case 'risk_medium': return risk_medium;
-      case 'risk_low': return risk_low;
-      case 'source_type_official': return source_type_official;
-      case 'source_type_world_bank': return source_type_world_bank;
-      case 'source_type_government': return source_type_government;
-      case 'source_type_default': return source_type_default;
-      case 'source_aria_label': return source_aria_label;
-      case 'settings_choose_language': return settings_choose_language;
-      case 'settings_system_default': return settings_system_default;
-      case 'settings_language_change_failed': return settings_language_change_failed;
-      default: return key; // Retourne la clé elle-même si non trouvée
+      case 'common_close': value = common_close; break;
+      case 'live_leave_btn': value = live_leave_btn; break;
+      case 'live_chat_empty': value = live_chat_empty; break;
+      case 'live_chat_hint': value = live_chat_hint; break;
+      case 'live_like': value = live_like; break;
+      case 'live_send': value = live_send; break;
+      case 'live_leaving': value = live_leaving; break;
+      case 'live_viewers': value = live_viewers; break;
+      case 'live_likes': value = live_likes; break;
+      case 'live_network_quality': value = live_network_quality; break;
+      case 'insight_type_market': value = insight_type_market; break;
+      case 'insight_type_finance': value = insight_type_finance; break;
+      case 'insight_type_strategy': value = insight_type_strategy; break;
+      case 'insight_type_business': value = insight_type_business; break;
+      case 'insight_type_insight': value = insight_type_insight; break;
+      case 'insight_confidence_label': value = insight_confidence_label; break;
+      case 'insight_source_verified': value = insight_source_verified; break;
+      case 'risk_critical': value = risk_critical; break;
+      case 'risk_high': value = risk_high; break;
+      case 'risk_medium': value = risk_medium; break;
+      case 'risk_low': value = risk_low; break;
+      case 'source_type_official': value = source_type_official; break;
+      case 'source_type_world_bank': value = source_type_world_bank; break;
+      case 'source_type_government': value = source_type_government; break;
+      case 'source_type_default': value = source_type_default; break;
+      case 'source_aria_label': value = source_aria_label; break;
+      case 'settings_choose_language': value = settings_choose_language; break;
+      case 'settings_system_default': value = settings_system_default; break;
+      case 'settings_language_change_failed': value = settings_language_change_failed; break;
+
+      // Fallbacks en dur pour les projets & analyses (évite de modifier les 6 fichiers de langues)
+      case 'project_delete_error': value = 'Erreur: {0}'; break;
+      case 'project_command_hint': value = 'Tapez {0} pour confirmer'; break;
+      case 'project_bp_error': value = 'Erreur: {0}'; break;
+      case 'media_episodes': value = 'Épisode {0}'; break;
+      
+      default: value = key;
     }
+
+    // Remplace les {0}, {1}, etc. par les éléments de la liste args
+    if (args != null && args.isNotEmpty) {
+      for (int i = 0; i < args.length; i++) {
+        value = value.replaceAll('{$i}', args[i].toString());
+      }
+    }
+    return value;
+  }
+
+  /// Permet de passer des arguments nommés (Map) si le code utilise tn()
+  String tn(String key, Map<String, dynamic> args) {
+    String value = t(key);
+    args.forEach((k, v) {
+      value = value.replaceAll('{$k}', v.toString());
+    });
+    return value;
   }
 
   // ===========================================================================
@@ -126,7 +150,7 @@ abstract class AppLocalizations {
   String common_minutes(int count);
 
   // ===========================================================================
-  // 🔴 THIX MEDIA - LIVE
+  // THIX MEDIA - LIVE 
   // ===========================================================================
   String get live_send;
   String get live_ending;
@@ -138,24 +162,9 @@ abstract class AppLocalizations {
   String get live_leaving;
   String get live_viewers;
   String get live_likes;
-  String get live_go_live;
-  String get live_title;
-  String get live_start;
-  String get live_end;
-  String get live_duration;
-  String get live_peak_viewers;
-  String get live_chat_disabled;
-  String get live_share;
-  String get live_report;
-  String get live_follow_host;
-  String get live_gift_send;
-  String get live_quality_auto;
-  String get live_quality_hd;
-  String get live_quality_sd;
-  String get live_quality_low;
 
   // ===========================================================================
-  // 🔴 THIX IA - SOURCES, INSIGHTS & RISQUES
+  // THIX IA - SOURCES, INSIGHTS & RISQUES
   // ===========================================================================
   String get source_type_official;
   String get source_type_world_bank;
@@ -170,23 +179,11 @@ abstract class AppLocalizations {
   String get insight_type_insight;
   String get insight_confidence_label;
   String get insight_source_verified;
-  String get insight_source_unverified;
-  String get insight_recommended_actions;
-  String get insight_key_findings;
-  String get insight_summary;
-  String get insight_full_analysis;
-  String get insight_generated_by;
-  String get insight_disclaimer;
 
   String get risk_critical;
   String get risk_high;
   String get risk_medium;
   String get risk_low;
-  String get risk_level_label;
-  String get risk_mitigation;
-  String get risk_impact;
-  String get risk_probability;
-  String get risk_assessment;
 
   // ============================================================================
   // AUTH & ONBOARDING (BASIC)
@@ -572,9 +569,6 @@ abstract class AppLocalizations {
   String get settings_about;
   String get settings_version;
 
-  // ============================================================================
-  // TRADUCTIONS DE LANGUAGE SHEET
-  // ============================================================================
   String get settings_choose_language;
   String get settings_system_default;
   String get settings_language_change_failed;
