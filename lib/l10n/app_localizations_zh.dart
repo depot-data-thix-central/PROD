@@ -9,6 +9,7 @@ class AppLocalizationsZh extends AppLocalizations {
   // COMMON & UI (COMMUN & UI)
   // ============================================================================
   @override String get common_back => '返回';
+  @override String get live_ending => '结束直播'; 
   @override String get common_close => '关闭';
   @override String get common_cancel => '取消';
   @override String get common_confirm => '确认';
