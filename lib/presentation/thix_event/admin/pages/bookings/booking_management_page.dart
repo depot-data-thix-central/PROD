@@ -13,8 +13,12 @@ import 'package:go_router/go_router.dart';
 // ── IMPORTS ABSOLUS SÉCURISÉS ──
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import '../../../../providers/admin_state.dart';
-import '../../../../services/admin_event_service.dart';
+
+// CORRECTION : Import absolu pour trouver AdminStatus et AdminPaginatedState
+import 'package:thix_id/presentation/thix_event/admin/providers/admin_state.dart';
+
+// Import local préservé
+import '../../services/admin_event_service.dart';
 
 // ============================================================================
 // EVENT THEME (adapté depuis ThixPolicy — Admin Bookings)
@@ -211,7 +215,8 @@ class _BookingManagementPageState extends ConsumerState<BookingManagementPage> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => Semantics(
-        dialog: true,
+        // CORRECTION : Remplacement de "dialog" par "namesRoute" (Standard Flutter)
+        namesRoute: true,
         child: Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
