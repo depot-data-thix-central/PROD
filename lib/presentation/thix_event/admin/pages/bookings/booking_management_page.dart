@@ -1,24 +1,17 @@
 // lib/presentation/thix_event/admin/pages/bookings/booking_management_page.dart
-import 'dart:ui';
 
+import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
-
-// ── IMPORTS ABSOLUS SÉCURISÉS ──
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-
-// CORRECTION : Import absolu pour trouver AdminStatus et AdminPaginatedState
 import 'package:thix_id/presentation/thix_event/admin/providers/admin_state.dart';
-
-// Import local préservé
-import '../../services/admin_event_service.dart';
+import 'package:thix_id/presentation/thix_event/admin/services/admin_event_service.dart';
 
 // ============================================================================
 // EVENT THEME (adapté depuis ThixPolicy — Admin Bookings)
