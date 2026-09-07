@@ -9,22 +9,20 @@
 // Fonctionnalités :
 //   - Persistance de la locale sélectionnée (SharedPreferences)
 //   - Support de la locale système (fallback intelligent)
-//   - 8 langues alignées avec app_localizations.dart
-//   - Détection RTL pour ar/hébreu (futur)
+//   - 6 langues alignées avec app_localizations.dart
+//   - Détection RTL automatique (Arabe)
 //   - Validation robuste des locales (regex)
 //   - Protection contre les race conditions
 //   - Logs structurés pour debug
 //   - Intégration Riverpod (provider global)
 //
-// Langues supportées :
+// Langues supportées (6) :
 //   - fr (Français) — défaut
 //   - en (English)
-//   - es (Español)
 //   - pt (Português)
-//   - ln (Lingála)       — RDC
-//   - sw (Kiswahili)     — RDC
-//   - kg (Kikongo)       — RDC
-//   - lu (Tshiluba)      — RDC
+//   - sw (Kiswahili)
+//   - ar (العربية)       — RTL (Right-to-Left)
+//   - zh (中文)
 // ============================================================================
 
 import 'package:flutter/foundation.dart';
@@ -70,7 +68,7 @@ class LanguageInfo {
 }
 
 /// Informations sur toutes les langues supportées.
-/// ⚠️ DOIT être synchronisé avec app_localizations.dart
+/// ⚠️ DOIT être synchronisé avec app_localizations.dart et main.dart
 const Map<String, LanguageInfo> kSupportedLanguages = {
   'fr': LanguageInfo(
     code: 'fr',
@@ -84,41 +82,30 @@ const Map<String, LanguageInfo> kSupportedLanguages = {
     englishName: 'English',
     flag: '🇬🇧',
   ),
-  'es': LanguageInfo(
-    code: 'es',
-    nativeName: 'Español',
-    englishName: 'Spanish',
-    flag: '🇪🇸',
-  ),
   'pt': LanguageInfo(
     code: 'pt',
     nativeName: 'Português',
     englishName: 'Portuguese',
     flag: '🇵🇹',
   ),
-  'ln': LanguageInfo(
-    code: 'ln',
-    nativeName: 'Lingála',
-    englishName: 'Lingala',
-    flag: '🇨🇩',
-  ),
   'sw': LanguageInfo(
     code: 'sw',
     nativeName: 'Kiswahili',
     englishName: 'Swahili',
-    flag: '🇨🇩',
+    flag: '🇨🇩', 
   ),
-  'kg': LanguageInfo(
-    code: 'kg',
-    nativeName: 'Kikongo',
-    englishName: 'Kikongo',
-    flag: '🇨🇩',
+  'ar': LanguageInfo(
+    code: 'ar',
+    nativeName: 'العربية',
+    englishName: 'Arabic',
+    flag: '🇸🇦',
+    isRTL: true, // Activation du mode Right-To-Left
   ),
-  'lu': LanguageInfo(
-    code: 'lu',
-    nativeName: 'Tshiluba',
-    englishName: 'Tshiluba',
-    flag: '🇨🇩',
+  'zh': LanguageInfo(
+    code: 'zh',
+    nativeName: '中文',
+    englishName: 'Chinese',
+    flag: '🇨🇳',
   ),
 };
 
