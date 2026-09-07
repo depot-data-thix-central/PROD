@@ -1,13 +1,15 @@
 // lib/l10n/app_localizations_pt.dart
 import 'dart:ui';
 import 'app_localizations.dart';
-  @override Locale get locale => const Locale('pt');
+
 
 class AppLocalizationsPt extends AppLocalizations {
+    @override Locale get locale => const Locale('pt');
   // ============================================================================
   // COMMON & UI
   // ============================================================================
   @override String get common_back => 'Voltar';
+  @override String get live_ending => 'Encerrando ao vivo';
   @override String get common_close => 'Fechar';
   @override String get common_cancel => 'Cancelar';
   @override String get common_confirm => 'Confirmar';
