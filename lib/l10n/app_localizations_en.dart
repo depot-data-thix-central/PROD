@@ -124,6 +124,19 @@ class AppLocalizationsEn extends AppLocalizations {
   @override String get onboarding_get_started => 'Get Started';
   @override String get onboarding_skip => 'Skip intro';
 
+    // ============================================================================
+  // THIX MEDIA & IA SOURCES
+  // ============================================================================
+  @override String get live_send => 'Send';
+  @override String get live_ending => 'Ending live...';
+  @override String get live_network_quality => 'Network Quality';
+  @override String get source_type_official => 'Official';
+  @override String get source_type_world_bank => 'World Bank';
+  @override String get source_type_government => 'Government';
+  @override String get source_type_default => 'Verified Source';
+  @override String get source_aria_label => 'Information Source';
+
+
   // ============================================================================
   // AUTHENTIFICATION & CONNEXION (ADVANCED / ERRORS)
   // ============================================================================
