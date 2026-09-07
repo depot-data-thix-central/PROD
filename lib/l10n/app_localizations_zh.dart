@@ -1191,4 +1191,66 @@ class AppLocalizationsZh extends AppLocalizations {
   @override String get source_type_government => '政府';
   @override String get source_type_default => '已验证来源';
   @override String get source_aria_label => '信息来源';
+    // ============================================================================
+  // THIX MEDIA & IA SOURCES
+  // ============================================================================
+  @override String get live_go_live => '开始直播';
+  @override String get live_title => '直播标题';
+  @override String get live_start => '开始';
+  @override String get live_end => '结束直播';
+  @override String get live_duration => '时长';
+  @override String get live_peak_viewers => '最高观看人数';
+  @override String get live_chat_disabled => '聊天已禁用。';
+  @override String get live_share => '分享';
+  @override String get live_report => '举报';
+  @override String get live_follow_host => '关注';
+  @override String get live_gift_send => '送礼';
+  @override String get live_quality_auto => '自动';
+  @override String get live_quality_hd => '高清';
+  @override String get live_quality_sd => '标清';
+  @override String get live_quality_low => '流畅';
+
+  @override String get insight_source_unverified => '未经验证的来源';
+  @override String get insight_recommended_actions => '推荐操作';
+  @override String get insight_key_findings => '主要发现';
+  @override String get insight_summary => '摘要';
+  @override String get insight_full_analysis => '完整分析';
+  @override String get insight_generated_by => '人工智能生成';
+  @override String get insight_disclaimer => '这是由人工智能生成的分析，请核实信息。';
+
+  @override String get risk_level_label => '风险级别';
+  @override String get risk_mitigation => '缓解措施';
+  @override String get risk_impact => '影响';
+  @override String get risk_probability => '概率';
+  @override String get risk_assessment => '风险评估';
+
+  @override String get live_leave_btn => '离开直播';
+  @override String get live_chat_empty => '暂无消息。';
+  @override String get live_chat_hint => '说点什么...';
+  @override String get live_like => '赞';
+  @override String get live_send => '发送';
+  @override String get live_viewers => '名观众';
+  @override String get live_likes => '个赞';
+  @override String get live_leaving => '正在离开...';
+  @override String get live_network_quality => '网络质量';
+  
+  @override String get insight_type_market => '市场';
+  @override String get insight_type_finance => '财务';
+  @override String get insight_type_strategy => '战略';
+  @override String get insight_type_business => '商业';
+  @override String get insight_type_insight => '洞察';
+  @override String get insight_confidence_label => '置信度';
+  @override String get insight_source_verified => '已验证来源';
+  
+  @override String get risk_critical => '极高风险';
+  @override String get risk_high => '高风险';
+  @override String get risk_medium => '中风险';
+  @override String get risk_low => '低风险';
+  
+  @override String get source_type_official => '官方';
+  @override String get source_type_world_bank => '世界银行';
+  @override String get source_type_government => '政府';
+  @override String get source_type_default => '已验证来源';
+  @override String get source_aria_label => '信息来源';
+
 }
