@@ -10,7 +10,7 @@
 // - Intégration AppLocalizations (8 langues)
 // - Semantics complet pour a11y
 // - Logging structuré (_EventLogger)
-// - Utilisation ThixPolicy (couleurs centralisées)
+// - Design Dark Premium (Fond noir pur, suppression du bleu)
 // - Gestion erreurs API robuste (try/catch + feedback UI)
 import 'dart:async';
 import 'dart:ui';
@@ -32,6 +32,22 @@ import '../../services/event_seat_service.dart';
 import 'event_reservation_page.dart';
 import 'seat_selection_page.dart';
 import 'waiting_queue_page.dart';
+
+// ============================================================================
+// THEME LOCAL (Noir Pur pour correspondre aux maquettes)
+// ============================================================================
+class _ThixColors {
+  static const bg = Color(0xFF050508);
+  static const surface = Color(0xFF0C0C12);
+  static const surfaceAlt = Color(0xFF111118);
+  static const cardBorder = Color(0x14FFFFFF);
+  static const primary = Color(0xFFFF0A54); // Rose/Rouge
+  static const primaryDeep = Color(0xFFFF5E00); // Orange pour le dégradé
+  static const textSecondary = Color(0x99FFFFFF);
+  static const textMuted = Color(0x66FFFFFF);
+  static const warning = Color(0xFFF59E0B);
+  static const danger = Color(0xFFEF4444);
+}
 
 // ============================================================================
 // CONSTANTS & HELPERS
@@ -278,10 +294,10 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
       final showQueue = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          backgroundColor: ThixPolicy.surfaceSoft,
+          backgroundColor: _ThixColors.surface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24), 
-            side: BorderSide(color: Colors.white.withOpacity(0.1))
+            side: const BorderSide(color: _ThixColors.cardBorder)
           ),
           title: Text(
             l10n.t('event_sold_out_title'), 
@@ -294,16 +310,16 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: ThixPolicy.warning.withOpacity(0.1), 
+                  color: _ThixColors.warning.withOpacity(0.1), 
                   shape: BoxShape.circle
                 ),
-                child: const Icon(Icons.queue_rounded, size: 42, color: Color(0xFFF59E0B)),
+                child: const Icon(Icons.queue_rounded, size: 42, color: _ThixColors.warning),
               ),
               const SizedBox(height: 20),
               Text(
                 l10n.t('event_sold_out_msg'), 
                 textAlign: TextAlign.center, 
-                style: TextStyle(color: ThixPolicy.textSecondary, height: 1.4, fontSize: 14)
+                style: const TextStyle(color: _ThixColors.textSecondary, height: 1.4, fontSize: 14)
               ),
               const SizedBox(height: 16),
               Text(
@@ -319,14 +335,14 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
               onPressed: () => Navigator.pop(context, false),
               child: Text(
                 l10n.t('common_cancel'), 
-                style: TextStyle(color: ThixPolicy.textMuted, fontWeight: FontWeight.bold)
+                style: const TextStyle(color: _ThixColors.textMuted, fontWeight: FontWeight.bold)
               ),
             ),
             const SizedBox(width: 8),
             ElevatedButton(
               onPressed: () => Navigator.pop(context, true),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFF59E0B),
+                backgroundColor: _ThixColors.warning,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -363,7 +379,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: ThixPolicy.danger,
+        backgroundColor: _ThixColors.danger,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -374,16 +390,16 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     final l10n = AppLocalizations.of(context);
     
     if (_isLoading) {
-      return Scaffold(
-        backgroundColor: ThixPolicy.inkDeep, 
+      return const Scaffold(
+        backgroundColor: _ThixColors.bg, 
         body: Center(
-          child: CircularProgressIndicator(color: ThixPolicy.primary)
+          child: CircularProgressIndicator(color: _ThixColors.primary)
         )
       );
     }
 
     return Scaffold(
-      backgroundColor: ThixPolicy.inkDeep,
+      backgroundColor: _ThixColors.bg,
       extendBodyBehindAppBar: true,
       extendBody: true,
       body: CustomScrollView(
@@ -428,16 +444,9 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
               background: Stack(
                 fit: StackFit.expand,
                 children: [
+                  // Suppression du RadialGradient bleu
                   Positioned.fill(
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        gradient: RadialGradient(
-                          colors: [ThixPolicy.domainEvents, ThixPolicy.inkDeep],
-                          radius: 1.5,
-                          center: Alignment(0, -0.5),
-                        ),
-                      ),
-                    ),
+                    child: Container(color: _ThixColors.bg),
                   ),
                   
                   (_event.imageUrl != null && _event.imageUrl!.isNotEmpty)
@@ -446,28 +455,29 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                           child: Image.network(
                             _event.imageUrl!, 
                             fit: BoxFit.cover, 
-                            errorBuilder: (_, __, ___) => Container(color: ThixPolicy.surfaceStrong)
+                            errorBuilder: (_, __, ___) => Container(color: _ThixColors.surfaceAlt)
                           )
                         )
                       : Container(
-                          color: ThixPolicy.surfaceStrong, 
-                          child: Icon(
+                          color: _ThixColors.surfaceAlt, 
+                          child: const Icon(
                             Icons.confirmation_num_rounded, 
                             size: 80, 
-                            color: ThixPolicy.textMuted
+                            color: _ThixColors.textMuted
                           )
                         ),
                   
+                  // Fondu vers le noir parfait au lieu du bleu
                   DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter, 
                         end: Alignment.bottomCenter, 
                         colors: [
-                          ThixPolicy.inkDeep.withOpacity(0.4), 
+                          _ThixColors.bg.withOpacity(0.4), 
                           Colors.transparent, 
-                          ThixPolicy.inkDeep.withOpacity(0.9),
-                          ThixPolicy.inkDeep
+                          _ThixColors.bg.withOpacity(0.9),
+                          _ThixColors.bg
                         ],
                         stops: const [0.0, 0.3, 0.8, 1.0],
                       )
@@ -486,7 +496,9 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6), 
                               decoration: BoxDecoration(
-                                gradient: const LinearGradient(colors: [ThixPolicy.primary, ThixPolicy.primaryDeep]), 
+                                gradient: const LinearGradient(
+                                  colors: [_ThixColors.primary, _ThixColors.primaryDeep]
+                                ), 
                                 borderRadius: BorderRadius.circular(20)
                               ), 
                               child: Text(
@@ -529,7 +541,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            const Icon(Icons.calendar_month_rounded, size: 16, color: ThixPolicy.tint), 
+                            const Icon(Icons.calendar_month_rounded, size: 16, color: _ThixColors.primary), 
                             const SizedBox(width: 8), 
                             Text(
                               _event.formattedDate, 
@@ -572,15 +584,15 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                     width: double.infinity, 
                     padding: const EdgeInsets.all(20), 
                     decoration: BoxDecoration(
-                      color: ThixPolicy.surface, 
+                      color: _ThixColors.surface, 
                       borderRadius: BorderRadius.circular(24), 
-                      border: Border.all(color: Colors.white.withOpacity(0.05))
+                      border: Border.all(color: _ThixColors.cardBorder)
                     ), 
                     child: Text(
                       _event.description.isNotEmpty 
                           ? _event.description 
                           : l10n.t('event_no_description'), 
-                      style: TextStyle(fontSize: 14, height: 1.6, color: ThixPolicy.textSecondary)
+                      style: const TextStyle(fontSize: 14, height: 1.6, color: _ThixColors.textSecondary)
                     )
                   ),
                   const SizedBox(height: 36),
@@ -622,7 +634,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
               shape: BoxShape.circle, 
               border: Border.all(color: Colors.white.withOpacity(0.2))
             ), 
-            child: Icon(icon, size: 20, color: isActive ? ThixPolicy.primary : Colors.white)
+            child: Icon(icon, size: 20, color: isActive ? _ThixColors.primary : Colors.white)
           )
         ),
       ),
@@ -636,11 +648,11 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
         Container(
           height: 48, width: 48,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05), 
+            color: _ThixColors.surface, 
             borderRadius: BorderRadius.circular(16), 
-            border: Border.all(color: Colors.white.withOpacity(0.05))
+            border: Border.all(color: _ThixColors.cardBorder)
           ), 
-          child: Icon(icon, size: 20, color: ThixPolicy.textSecondary)
+          child: Icon(icon, size: 20, color: _ThixColors.textSecondary)
         ),
         const SizedBox(width: 16),
         Expanded(
@@ -649,7 +661,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
             children: [
               Text(
                 label, 
-                style: TextStyle(fontSize: 11, color: ThixPolicy.textMuted, fontWeight: FontWeight.w600)
+                style: const TextStyle(fontSize: 11, color: _ThixColors.textMuted, fontWeight: FontWeight.w600)
               ),
               const SizedBox(height: 2),
               Text(
@@ -667,18 +679,18 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     return Container(
       padding: const EdgeInsets.all(16), 
       decoration: BoxDecoration(
-        color: ThixPolicy.surface, 
+        color: _ThixColors.surface, 
         borderRadius: BorderRadius.circular(20), 
-        border: Border.all(color: Colors.white.withOpacity(0.05))
+        border: Border.all(color: _ThixColors.cardBorder)
       ), 
       child: Row(
         children: [
           Container(
             height: 50, width: 50, 
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05), 
+              color: _ThixColors.surfaceAlt, 
               borderRadius: BorderRadius.circular(16), 
-              border: Border.all(color: Colors.white.withOpacity(0.1))
+              border: Border.all(color: _ThixColors.cardBorder)
             ), 
             child: const Icon(Icons.business_center_rounded, color: Colors.white)
           ),
@@ -689,7 +701,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
               children: [
                 Text(
                   l10n.t('event_organized_by'), 
-                  style: TextStyle(color: ThixPolicy.textMuted, fontSize: 11, fontWeight: FontWeight.w600)
+                  style: const TextStyle(color: _ThixColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600)
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -699,7 +711,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                 if (_event.contactPhone != null && _event.contactPhone!.isNotEmpty) 
                   Text(
                     _event.contactPhone!, 
-                    style: TextStyle(color: ThixPolicy.tint, fontSize: 12, fontWeight: FontWeight.w700, height: 1.4)
+                    style: const TextStyle(color: _ThixColors.primary, fontSize: 12, fontWeight: FontWeight.w700, height: 1.4)
                   )
               ]
             )
@@ -717,16 +729,16 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
       margin: const EdgeInsets.only(bottom: 16), 
       padding: const EdgeInsets.all(20), 
       decoration: BoxDecoration(
-        color: ThixPolicy.surface, 
+        color: _ThixColors.surface, 
         borderRadius: BorderRadius.circular(24), 
         border: Border.all(
           color: soldOut 
-              ? Colors.white.withOpacity(0.05) 
-              : ThixPolicy.primary.withOpacity(0.4)
+              ? _ThixColors.cardBorder 
+              : _ThixColors.primary.withOpacity(0.4)
         ),
         boxShadow: soldOut 
             ? [] 
-            : [BoxShadow(color: ThixPolicy.primary.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 5))]
+            : [BoxShadow(color: _ThixColors.primary.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 5))]
       ), 
       child: Column(
         children: [
@@ -741,7 +753,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                       Icon(
                         Icons.confirmation_num_rounded, 
                         size: 18, 
-                        color: soldOut ? ThixPolicy.textMuted : ThixPolicy.primary
+                        color: soldOut ? _ThixColors.textMuted : _ThixColors.primary
                       ), 
                       const SizedBox(width: 8), 
                       Text(
@@ -749,7 +761,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                         style: TextStyle(
                           fontSize: 16, 
                           fontWeight: FontWeight.w900, 
-                          color: soldOut ? ThixPolicy.textMuted : Colors.white
+                          color: soldOut ? _ThixColors.textMuted : Colors.white
                         )
                       )
                     ]
@@ -763,7 +775,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                       style: TextStyle(
                         fontSize: 12, 
                         fontWeight: FontWeight.w800, 
-                        color: soldOut ? Colors.redAccent : ThixPolicy.tint
+                        color: soldOut ? _ThixColors.danger : _ThixColors.primary
                       )
                     ),
                 ]
@@ -775,7 +787,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                 style: TextStyle(
                   fontSize: 20, 
                   fontWeight: FontWeight.w900, 
-                  color: soldOut ? ThixPolicy.textMuted : Colors.white
+                  color: soldOut ? _ThixColors.textMuted : Colors.white
                 )
               ),
             ]
@@ -788,16 +800,16 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
               onPressed: soldOut ? _joinQueue : () => _goReservation(tier: tier), 
               style: ElevatedButton.styleFrom(
                 backgroundColor: soldOut 
-                    ? const Color(0xFFF59E0B).withOpacity(0.15) 
+                    ? _ThixColors.warning.withOpacity(0.15) 
                     : Colors.white, 
                 foregroundColor: soldOut 
-                    ? const Color(0xFFF59E0B) 
+                    ? _ThixColors.warning 
                     : Colors.black, 
                 elevation: 0, 
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16), 
                   side: soldOut 
-                      ? const BorderSide(color: Color(0xFFF59E0B)) 
+                      ? const BorderSide(color: _ThixColors.warning) 
                       : BorderSide.none
                 )
               ), 
@@ -820,16 +832,16 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     return Container(
       padding: const EdgeInsets.all(20), 
       decoration: BoxDecoration(
-        color: ThixPolicy.surface, 
+        color: _ThixColors.surface, 
         borderRadius: BorderRadius.circular(24), 
         border: Border.all(
           color: soldOut 
-              ? Colors.white.withOpacity(0.05) 
-              : ThixPolicy.primary.withOpacity(0.4)
+              ? _ThixColors.cardBorder 
+              : _ThixColors.primary.withOpacity(0.4)
         ),
         boxShadow: soldOut 
             ? [] 
-            : [BoxShadow(color: ThixPolicy.primary.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 5))]
+            : [BoxShadow(color: _ThixColors.primary.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 5))]
       ), 
       child: Column(
         children: [
@@ -844,7 +856,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                     style: TextStyle(
                       fontWeight: FontWeight.w900, 
                       fontSize: 16, 
-                      color: soldOut ? ThixPolicy.textMuted : Colors.white
+                      color: soldOut ? _ThixColors.textMuted : Colors.white
                     )
                   ),
                   const SizedBox(height: 6),
@@ -856,7 +868,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                       style: TextStyle(
                         fontSize: 12, 
                         fontWeight: FontWeight.w800, 
-                        color: soldOut ? Colors.redAccent : ThixPolicy.tint
+                        color: soldOut ? _ThixColors.danger : _ThixColors.primary
                       )
                     )
                 ]
@@ -865,7 +877,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                 _event.formattedPrice, 
                 style: TextStyle(
                   fontWeight: FontWeight.w900, 
-                  color: soldOut ? ThixPolicy.textMuted : Colors.white, 
+                  color: soldOut ? _ThixColors.textMuted : Colors.white, 
                   fontSize: 20
                 )
               )
@@ -879,15 +891,15 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
               onPressed: soldOut ? _joinQueue : () => _goReservation(), 
               style: ElevatedButton.styleFrom(
                 backgroundColor: soldOut 
-                    ? const Color(0xFFF59E0B).withOpacity(0.15) 
+                    ? _ThixColors.warning.withOpacity(0.15) 
                     : Colors.white, 
                 foregroundColor: soldOut 
-                    ? const Color(0xFFF59E0B) 
+                    ? _ThixColors.warning 
                     : Colors.black, 
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16), 
                   side: soldOut 
-                      ? const BorderSide(color: Color(0xFFF59E0B)) 
+                      ? const BorderSide(color: _ThixColors.warning) 
                       : BorderSide.none
                 )
               ), 
@@ -909,16 +921,16 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     return Container(
       padding: const EdgeInsets.all(20), 
       decoration: BoxDecoration(
-        color: ThixPolicy.surface, 
+        color: _ThixColors.surface, 
         borderRadius: BorderRadius.circular(24), 
         border: Border.all(
           color: soldOut 
-              ? Colors.white.withOpacity(0.05) 
-              : ThixPolicy.primary.withOpacity(0.4)
+              ? _ThixColors.cardBorder 
+              : _ThixColors.primary.withOpacity(0.4)
         ),
         boxShadow: soldOut 
             ? [] 
-            : [BoxShadow(color: ThixPolicy.primary.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 5))]
+            : [BoxShadow(color: _ThixColors.primary.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 5))]
       ), 
       child: Column(
         children: [
@@ -926,7 +938,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
             children: [
               Icon(
                 Icons.event_seat_rounded, 
-                color: soldOut ? ThixPolicy.textMuted : ThixPolicy.tint, 
+                color: soldOut ? _ThixColors.textMuted : _ThixColors.primary, 
                 size: 22
               ), 
               const SizedBox(width: 12), 
@@ -937,7 +949,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                 style: TextStyle(
                   fontWeight: FontWeight.w900, 
                   fontSize: 16, 
-                  color: soldOut ? ThixPolicy.textMuted : Colors.white
+                  color: soldOut ? _ThixColors.textMuted : Colors.white
                 )
               )
             ]
@@ -950,15 +962,15 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
               onPressed: soldOut ? _joinQueue : _goSeats, 
               style: ElevatedButton.styleFrom(
                 backgroundColor: soldOut 
-                    ? const Color(0xFFF59E0B).withOpacity(0.15) 
+                    ? _ThixColors.warning.withOpacity(0.15) 
                     : Colors.white, 
                 foregroundColor: soldOut 
-                    ? const Color(0xFFF59E0B) 
+                    ? _ThixColors.warning 
                     : Colors.black, 
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16), 
                   side: soldOut 
-                      ? const BorderSide(color: Color(0xFFF59E0B)) 
+                      ? const BorderSide(color: _ThixColors.warning) 
                       : BorderSide.none
                 )
               ), 
@@ -975,7 +987,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     );
   }
 
-  // 🌟 BOTTOM BAR FLOTTANTE
+  // 🌟 BOTTOM BAR FLOTTANTE (Design Noir/Glassmorphism)
   Widget _bottomBar(AppLocalizations l10n) {
     final price = _event.ticketTiers.isNotEmpty 
         ? '${_event.ticketTiers.first.price.toInt()} ${_event.priceCurrency}' 
@@ -993,9 +1005,9 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.08),
+                color: _ThixColors.surface.withOpacity(0.85),
                 borderRadius: BorderRadius.circular(36),
-                border: Border.all(color: Colors.white.withOpacity(0.15), width: 1.2),
+                border: Border.all(color: _ThixColors.cardBorder, width: 1.2),
                 boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 30, offset: const Offset(0, 10))],
               ),
               child: Row(
@@ -1006,7 +1018,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                     children: [
                       Text(
                         l10n.t('event_from_price'), 
-                        style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 11, fontWeight: FontWeight.w700)
+                        style: const TextStyle(color: _ThixColors.textSecondary, fontSize: 11, fontWeight: FontWeight.w700)
                       ), 
                       const SizedBox(height: 2), 
                       Text(
@@ -1022,9 +1034,11 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                       height: 52, 
                       padding: const EdgeInsets.symmetric(horizontal: 28), 
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(colors: [ThixPolicy.primary, ThixPolicy.primaryDeep]),
+                        gradient: const LinearGradient(
+                          colors: [_ThixColors.primary, _ThixColors.primaryDeep]
+                        ),
                         borderRadius: BorderRadius.circular(26),
-                        boxShadow: [BoxShadow(color: ThixPolicy.primary.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))]
+                        boxShadow: [BoxShadow(color: _ThixColors.primary.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))]
                       ), 
                       child: Row(
                         children: [
