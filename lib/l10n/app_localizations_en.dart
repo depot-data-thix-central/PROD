@@ -1,4 +1,5 @@
 // lib/l10n/app_localizations_en.dart
+import 'dart:ui';
 import 'app_localizations.dart';
   @override Locale get locale => const Locale('en');
 
