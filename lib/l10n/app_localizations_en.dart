@@ -1,5 +1,6 @@
 // lib/l10n/app_localizations_en.dart
 import 'app_localizations.dart';
+  @override Locale get locale => const Locale('en');
 
 class AppLocalizationsEn extends AppLocalizations {
   // ============================================================================
