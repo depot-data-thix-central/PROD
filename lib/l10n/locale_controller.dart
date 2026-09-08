@@ -14,7 +14,7 @@
 //   - Validation robuste des locales (regex)
 //   - Protection contre les race conditions
 //   - Logs structurés pour debug
-//   - Intégration Riverpod (provider global)
+//   - Intégration Riverpod (provider global, ChangeNotifierProvider)
 //
 // Langues supportées (6) :
 //   - fr (Français) — défaut
@@ -92,7 +92,7 @@ const Map<String, LanguageInfo> kSupportedLanguages = {
     code: 'sw',
     nativeName: 'Kiswahili',
     englishName: 'Swahili',
-    flag: '🇨🇩', 
+    flag: '🇨🇩',
   ),
   'ar': LanguageInfo(
     code: 'ar',
@@ -387,6 +387,15 @@ class LocaleController extends ChangeNotifier {
 
 /// Provider global pour le LocaleController.
 ///
+/// ⚠️ IMPORTANT : `ChangeNotifierProvider` (et non `Provider`) est requis ici.
+/// `Provider` ne réagit pas aux appels `notifyListeners()` du controller —
+/// avec un simple `Provider`, `ref.watch(localeControllerProvider)` renvoie
+/// toujours la même référence et ne déclenche jamais de rebuild quand la
+/// locale change, même si `setLocale()`/`setSystem()` fonctionnent en
+/// interne et persistent bien la valeur. `ChangeNotifierProvider` s'abonne
+/// automatiquement au `ChangeNotifier` et invalide les `watch()` à chaque
+/// `notifyListeners()`.
+///
 /// **Usage** :
 /// ```dart
 /// // Dans main()
@@ -406,7 +415,8 @@ class LocaleController extends ChangeNotifier {
 /// final controller = ref.watch(localeControllerProvider);
 /// Text(controller.currentLanguageInfo?.nativeName ?? '');
 /// ```
-final localeControllerProvider = Provider<LocaleController>((ref) {
+final localeControllerProvider =
+    ChangeNotifierProvider<LocaleController>((ref) {
   throw UnimplementedError(
     'localeControllerProvider must be overridden in main() '
     'after calling LocaleController.init()',
@@ -415,13 +425,7 @@ final localeControllerProvider = Provider<LocaleController>((ref) {
 
 /// Provider dérivé pour écouter uniquement la locale active (rebuild widgets).
 final currentLocaleProvider = Provider<Locale>((ref) {
-  final controller = ref.watch(localeControllerProvider);
-  // Écoute les changements via ChangeNotifier
-  ref.listen<LocaleController>(
-    localeControllerProvider,
-    (_, __) {},
-  );
-  return controller.locale;
+  return ref.watch(localeControllerProvider).locale;
 });
 
 /// Provider pour savoir si la locale actuelle est RTL.
