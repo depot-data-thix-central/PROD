@@ -9,16 +9,17 @@
 // Fonctionnalités :
 //   - Persistance de la locale sélectionnée (SharedPreferences)
 //   - Support de la locale système (fallback intelligent)
-//   - 6 langues alignées avec app_localizations.dart
+//   - 7 langues alignées avec app_localizations.dart
 //   - Détection RTL automatique (Arabe)
 //   - Validation robuste des locales (regex)
 //   - Protection contre les race conditions
 //   - Logs structurés pour debug
 //   - Intégration Riverpod (provider global, ChangeNotifierProvider)
 //
-// Langues supportées (6) :
+// Langues supportées (7) :
 //   - fr (Français) — défaut
 //   - en (English)
+//   - es (Español)
 //   - pt (Português)
 //   - sw (Kiswahili)
 //   - ar (العربية)       — RTL (Right-to-Left)
@@ -81,6 +82,12 @@ const Map<String, LanguageInfo> kSupportedLanguages = {
     nativeName: 'English',
     englishName: 'English',
     flag: '🇬🇧',
+  ),
+  'es': LanguageInfo(
+    code: 'es',
+    nativeName: 'Español',
+    englishName: 'Spanish',
+    flag: '🇪🇸',
   ),
   'pt': LanguageInfo(
     code: 'pt',
@@ -405,7 +412,8 @@ class LocaleController extends ChangeNotifier {
 /// runApp(
 ///   ProviderScope(
 ///     overrides: [
-///       localeControllerProvider.overrideWithValue(controller),
+///       // Note: Utilisez overrideWith((ref) => controller) dans les nouvelles versions de Riverpod
+///       localeControllerProvider.overrideWith((ref) => controller),
 ///     ],
 ///     child: const MyApp(),
 ///   ),
