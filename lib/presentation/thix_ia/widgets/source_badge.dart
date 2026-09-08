@@ -182,13 +182,14 @@ class SourceBadge extends StatelessWidget {
 
     final config = _SourceTypeConfig.from(safeType);
 
+    // CORRECTION ICI : Utilisation de l10n.t('cle_de_traduction')
     final typeLabel = safeType == 'official'
-        ? l10n.source_type_official
+        ? l10n.t('source_type_official')
         : safeType == 'banque_mondiale'
-            ? l10n.source_type_world_bank
+            ? l10n.t('source_type_world_bank')
             : safeType == 'government'
-                ? l10n.source_type_government
-                : l10n.source_type_default;
+                ? l10n.t('source_type_government')
+                : l10n.t('source_type_default');
 
     return RepaintBoundary(
       child: ClipRRect(
@@ -206,7 +207,8 @@ class SourceBadge extends StatelessWidget {
               ),
             ),
             child: Semantics(
-              label: '${l10n.source_aria_label}: $safeSource ($typeLabel)',
+              // CORRECTION ICI : Utilisation de l10n.t('source_aria_label')
+              label: '${l10n.t('source_aria_label')}: $safeSource ($typeLabel)',
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
