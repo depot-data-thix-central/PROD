@@ -9925,40 +9925,19 @@ const Map<String, String> _es = {
   'market_cart_semantics': 'Carrito',
   'error_session_expired': 'Sesión expirada. Por favor, inicia sesión de nuevo.',
   
-  // THIX SOS MODULE
-  'sos_button_label': 'Botón SOS de emergencia',
-  'sos_button_hint': 'Mantén presionado durante 2 segundos para activar una alerta',
-  'sos_button_tooltip': 'Botón SOS seguro',
-  'sos_trigger_timeout': 'Se agotó el tiempo de espera al activar el SOS.',
+  
+  // NOUVELLES CLES THIX SOS (Sans doublons)
   'sos_button_text': 'SOS',
   'sos_button_instruction': 'Mantener 2s\npara activar',
-  
   'sos_circle_1_title': 'Círculo 1: Emergencia Absoluta',
   'sos_circle_2_title': 'Círculo 2: Familia y Amigos',
   'sos_circle_3_title': 'Círculo 3: Autoridades y Seguridad',
-  'sos_circle': 'Círculo',
-  'sos_no_rescuers': 'Ningún rescatista asignado',
-  'sos_rescuers': 'rescatistas',
-  'sos_my_rescuers': 'MIS CÍRCULOS DE RESCATE',
-  
-  'nearby_alerts_title': 'ALERTAS CERCANAS',
-  'nearby_view_on_map': 'Ver mapa',
   'nearby_error_timeout': 'Tiempo de espera agotado al obtener la ubicación.',
   'nearby_error_network': 'Error de red al obtener las alertas.',
   'nearby_error_permission': 'Permiso de ubicación denegado.',
   'nearby_error_location': 'No se pudo obtener tu posición GPS.',
   'nearby_error_generic': 'Error al cargar las alertas cercanas.',
-  'nearby_map_coming_soon': '¡El mapa de pantalla completa estará disponible pronto!',
   'nearby_invalid_coordinates': 'Coordenadas GPS no válidas.',
-  'nearby_active_alerts': 'alertas activas',
-  'nearby_missing': 'desaparecidos',
-  'nearby_official': 'oficiales',
-  'nearby_legend_missing': 'Desaparición',
-  'nearby_legend_official': 'Aviso oficial',
-  'nearby_legend_report': 'Reporte',
-  'nearby_location_required': 'Ubicación requerida',
-  'nearby_location_subtitle': 'Activa el GPS para ver alertas a tu alrededor',
-  
   'sos_banner_safe_title': 'Sistema de Protección Activo',
   'sos_banner_safe_subtitle': 'Monitoreo 24/7 totalmente operativo',
   'sos_banner_sos_title': 'ALERTA SOS EN CURSO',
@@ -9966,7 +9945,6 @@ const Map<String, String> _es = {
   'sos_banner_network_subtitle': 'Intentando reconectar al servidor...',
   'sos_banner_warning_title': 'Advertencia de Seguridad',
   'sos_banner_warning_subtitle': 'Verifica el estado de tus círculos de rescate',
-  'sos_incident_unknown': 'Incidente no identificado',
   'sos_view_location': 'Ver ubicación',
   'sos_protection_active': 'Protección activa',
 
