@@ -1,7 +1,7 @@
 /// THIX RETROUVE — Enterprise Glass Design (Production)
 /// ✅ Glassmorphism subtil : surfaces blanches translucides, palette réduite
-/// ✅ Vraies cartes pour les objets (lisibilité maximale)
-/// ✅ Couleur uniquement dans pastilles statut + icônes
+/// ✅ Actions compactes icône + libellé (plus de grandes cartes)
+/// ✅ Objets en grille carrée 2 colonnes (photo-first, lisibilité maximale)
 /// ✅ i18n + sanitization + Semantics + HapticFeedback + logs
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
@@ -79,7 +79,6 @@ class _GlassCard extends StatelessWidget {
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        // Dégradé vertical subtil = effet verre sans BackdropFilter
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
@@ -150,12 +149,12 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                           _buildHero(l10n),
                           const SizedBox(height: 20),
                           _buildActionRow(context, l10n),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 10),
                           _buildMapShortcut(context, l10n),
                           const SizedBox(height: 28),
                           _buildSectionHeader(context, l10n),
                           const SizedBox(height: 12),
-                          _buildObjetsList(context, l10n, objetsAsync),
+                          _buildObjetsGrid(context, l10n, objetsAsync),
                         ],
                       ),
                     ),
@@ -179,13 +178,13 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
 
   // ── Fond : halo unique très discret ─────────────────────────
   Widget _buildBackgroundGlow() {
-  return Positioned(
-    top: -120,
-    right: -100,
-    child: IgnorePointer(
-      child: Container(
-        width: 280,
-        height: 280,
+    return Positioned(
+      top: -120,
+      right: -100,
+      child: IgnorePointer(
+        child: Container(
+          width: 280,
+          height: 280,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: RadialGradient(
@@ -277,87 +276,89 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── Actions Perdu / Trouvé (cartes glass, icônes teintées) ──
+  // ── Actions Perdu / Trouvé — COMPACTES, icône + libellé court ──
   Widget _buildActionRow(BuildContext context, AppLocalizations l10n) {
     return Row(
       children: [
-        _buildActionTile(
-          tint: ThixPolicy.domainOpportunity,
-          icon: Icons.search_off_rounded,
-          title: l10n.t('retrouve_lost_title'),
-          subtitle: l10n.t('retrouve_lost_subtitle'),
-          onTap: () => _navigateToDeclare(context, StatutObjet.perdu),
+        Expanded(
+          child: _buildCompactAction(
+            tint: ThixPolicy.domainOpportunity,
+            icon: Icons.search_off_rounded,
+            label: l10n.t('retrouve_lost_title'),
+            onTap: () => _navigateToDeclare(context, StatutObjet.perdu),
+          ),
         ),
-        const SizedBox(width: 12),
-        _buildActionTile(
-          tint: ThixPolicy.success,
-          icon: Icons.inventory_2_rounded,
-          title: l10n.t('retrouve_found_title'),
-          subtitle: l10n.t('retrouve_found_subtitle'),
-          onTap: () => _navigateToDeclare(context, StatutObjet.trouve),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _buildCompactAction(
+            tint: ThixPolicy.success,
+            icon: Icons.inventory_2_rounded,
+            label: l10n.t('retrouve_found_title'),
+            onTap: () => _navigateToDeclare(context, StatutObjet.trouve),
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildActionTile({
+  // Action compacte : icône dans un badge + libellé sur une ligne.
+  // Ne prend qu'une hauteur réduite — plus de sous-titre, plus de grande carte.
+  Widget _buildCompactAction({
     required Color tint,
     required IconData icon,
-    required String title,
-    required String subtitle,
+    required String label,
     required VoidCallback onTap,
   }) {
-    return Expanded(
-      child: Semantics(
-        button: true,
-        label: '$title. $subtitle',
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(_kRadiusMd),
-            child: _GlassCard(
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: tint.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(_kRadiusSm),
-                    ),
-                    child: Icon(icon, color: tint, size: 20),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: TextStyle(
-                            color: ThixPolicy.textMain,
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle,
-                          style: TextStyle(
-                            color: ThixPolicy.textMuted,
-                            fontSize: 11,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
+    return Semantics(
+      button: true,
+      label: label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(_kRadiusSm),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white.withValues(alpha: _kGlassSurfaceHi),
+                  Colors.white.withValues(alpha: _kGlassSurface),
                 ],
               ),
+              borderRadius: BorderRadius.circular(_kRadiusSm),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: _kGlassBorder),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: tint.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(icon, color: tint, size: 16),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: ThixPolicy.textMain,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -365,7 +366,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── Raccourci carte ─────────────────────────────────────────
+  // ── Raccourci carte — compact, icône seule + texte court ─────
   Widget _buildMapShortcut(BuildContext context, AppLocalizations l10n) {
     return Semantics(
       button: true,
@@ -376,46 +377,50 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
           onTap: () => _throttledTap(
             () => context.pushNamed('thixRetrouveCarte'),
           ),
-          borderRadius: BorderRadius.circular(_kRadiusMd),
-          child: _GlassCard(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+          borderRadius: BorderRadius.circular(_kRadiusSm),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white.withValues(alpha: _kGlassSurfaceHi),
+                  Colors.white.withValues(alpha: _kGlassSurface),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(_kRadiusSm),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: _kGlassBorder),
+              ),
+            ),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(7),
+                  width: 30,
+                  height: 30,
                   decoration: BoxDecoration(
-                    color: ThixPolicy.primary.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(10),
+                    color: ThixPolicy.primary.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(9),
                   ),
                   child: Icon(Icons.map_outlined,
-                      color: ThixPolicy.primary, size: 18),
+                      color: ThixPolicy.primary, size: 16),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        l10n.t('retrouve_map_title'),
-                        style: TextStyle(
-                          color: ThixPolicy.textMain,
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        l10n.t('retrouve_map_subtitle'),
-                        style: TextStyle(
-                          color: ThixPolicy.textMuted,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    l10n.t('retrouve_map_title'),
+                    style: TextStyle(
+                      color: ThixPolicy.textMain,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 Icon(Icons.chevron_right_rounded,
-                    color: ThixPolicy.textMuted, size: 18),
+                    color: ThixPolicy.textMuted, size: 16),
               ],
             ),
           ),
@@ -458,8 +463,8 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── Liste objets ────────────────────────────────────────────
-  Widget _buildObjetsList(
+  // ── Grille objets — 2 colonnes, cartes carrées, photo-first ──
+  Widget _buildObjetsGrid(
     BuildContext context,
     AppLocalizations l10n,
     AsyncValue<List<ObjetModel>> objetsAsync,
@@ -467,14 +472,22 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     return objetsAsync.when(
       data: (objets) {
         if (objets.isEmpty) return _buildEmptyState(l10n);
-        return Column(
-          children: objets
-              .take(_kMaxVisibleObjects)
-              .map((obj) => _buildObjectCard(context, l10n, obj))
-              .toList(),
+        final visible = objets.take(_kMaxVisibleObjects).toList();
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: visible.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 0.86,
+          ),
+          itemBuilder: (context, i) =>
+              _buildObjectCard(context, l10n, visible[i]),
         );
       },
-      loading: () => const _SkeletonList(),
+      loading: () => const _SkeletonGrid(),
       error: (err, stack) => _buildErrorState(l10n, err),
     );
   }
@@ -536,7 +549,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── CARTE OBJET (vraie carte glass, lisible) ────────────────
+  // ── CARTE OBJET CARRÉE — photo en haut (60%), infos compactes en bas ──
   Widget _buildObjectCard(
     BuildContext context,
     AppLocalizations l10n,
@@ -553,79 +566,113 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
         maxLength: _kMaxLocationLength);
     final safeImageUrl = _RetrouveSanitizer.sanitizeImageUrl(obj.imageUrl);
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Semantics(
-        button: true,
-        label: '$safeTitle. ${obj.statutLabel}. $safeLocation',
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => _throttledTap(() {
-              HapticFeedback.selectionClick();
-              context.pushNamed(
-                'thixRetrouveDetail',
-                extra: {
-                  'title': safeTitle,
-                  'status': obj.statutLabel,
-                  'location': safeLocation,
-                  'time': i18n.relativeTime(obj.date),
-                  'description': _RetrouveSanitizer.sanitizeText(
-                      obj.description,
-                      maxLength: 500),
-                  'imageUrl': safeImageUrl,
-                },
-              );
-            }),
-            borderRadius: BorderRadius.circular(_kRadiusMd),
-            child: _GlassCard(
-              child: Row(
-                children: [
-                  _buildThumbnail(safeImageUrl),
-                  const SizedBox(width: 12),
-                  Expanded(
+    return Semantics(
+      button: true,
+      label: '$safeTitle. ${obj.statutLabel}. $safeLocation',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _throttledTap(() {
+            HapticFeedback.selectionClick();
+            context.pushNamed(
+              'thixRetrouveDetail',
+              extra: {
+                'title': safeTitle,
+                'status': obj.statutLabel,
+                'location': safeLocation,
+                'time': i18n.relativeTime(obj.date),
+                'description': _RetrouveSanitizer.sanitizeText(
+                    obj.description,
+                    maxLength: 500),
+                'imageUrl': safeImageUrl,
+              },
+            );
+          }),
+          borderRadius: BorderRadius.circular(_kRadiusMd),
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white.withValues(alpha: _kGlassSurfaceHi),
+                  Colors.white.withValues(alpha: _kGlassSurface),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(_kRadiusMd),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: _kGlassBorder),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ── Zone photo (occupe la majorité du carré) ──
+                Expanded(
+                  flex: 6,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _buildThumbnail(safeImageUrl),
+                      // Pastille statut en overlay coin haut-gauche
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: _statusPill(statusColor, obj.statutLabel),
+                      ),
+                      if (obj.hasRecompense)
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: ThixPolicy.inkDeep.withValues(alpha: 0.55),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Semantics(
+                              label: l10n.t('retrouve_has_reward'),
+                              child: Icon(Icons.workspace_premium_rounded,
+                                  color: ThixPolicy.warning, size: 14),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                // ── Zone infos compactes ──
+                Expanded(
+                  flex: 4,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
                           safeTitle,
                           style: TextStyle(
                             color: ThixPolicy.textMain,
-                            fontSize: 14.5,
+                            fontSize: 13,
                             fontWeight: FontWeight.w700,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            _statusPill(statusColor, obj.statutLabel),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Text(
-                                i18n.relativeTime(obj.date),
-                                style: TextStyle(
-                                  color: ThixPolicy.textMuted,
-                                  fontSize: 11,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (safeLocation.isNotEmpty) ...[
-                          const SizedBox(height: 5),
+                        const SizedBox(height: 4),
+                        if (safeLocation.isNotEmpty)
                           Row(
                             children: [
                               Icon(Icons.location_on_outlined,
-                                  size: 12, color: ThixPolicy.textMuted),
-                              const SizedBox(width: 4),
+                                  size: 11, color: ThixPolicy.textMuted),
+                              const SizedBox(width: 3),
                               Expanded(
                                 child: Text(
                                   safeLocation,
                                   style: TextStyle(
                                     color: ThixPolicy.textMuted,
-                                    fontSize: 11,
+                                    fontSize: 10.5,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -633,22 +680,21 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                               ),
                             ],
                           ),
-                        ],
+                        const SizedBox(height: 2),
+                        Text(
+                          i18n.relativeTime(obj.date),
+                          style: TextStyle(
+                            color: ThixPolicy.textMuted,
+                            fontSize: 10,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ],
                     ),
                   ),
-                  if (obj.hasRecompense)
-                    Semantics(
-                      label: l10n.t('retrouve_has_reward'),
-                      child: Icon(Icons.workspace_premium_rounded,
-                          color: ThixPolicy.warning, size: 18),
-                    )
-                  else
-                    Icon(Icons.chevron_right_rounded,
-                        color: ThixPolicy.textMuted.withValues(alpha: 0.5),
-                        size: 18),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -658,47 +704,40 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
 
   Widget _buildThumbnail(String? imageUrl) {
     return Container(
-      width: 52,
-      height: 52,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(_kRadiusSm),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.08),
-        ),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(_kRadiusSm - 1),
-        child: imageUrl != null
-            ? CachedNetworkImage(
-                imageUrl: imageUrl,
-                fit: BoxFit.cover,
-                placeholder: (_, __) => const Center(
-                  child: SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+      color: Colors.white.withValues(alpha: 0.06),
+      child: imageUrl != null
+          ? CachedNetworkImage(
+              imageUrl: imageUrl,
+              fit: BoxFit.cover,
+              placeholder: (_, __) => const Center(
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-                errorWidget: (_, __, ___) => Icon(
+              ),
+              errorWidget: (_, __, ___) => Center(
+                child: Icon(
                   Icons.inventory_2_rounded,
                   color: ThixPolicy.textMuted,
-                  size: 22,
+                  size: 28,
                 ),
-              )
-            : Icon(Icons.inventory_2_rounded,
-                color: ThixPolicy.textMuted, size: 22),
-      ),
+              ),
+            )
+          : Center(
+              child: Icon(Icons.inventory_2_rounded,
+                  color: ThixPolicy.textMuted, size: 28),
+            ),
     );
   }
 
   Widget _statusPill(Color color, String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: ThixPolicy.inkDeep.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -708,14 +747,14 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
             height: 5,
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
-          const SizedBox(width: 5),
+          const SizedBox(width: 4),
           Text(
             label.toUpperCase(),
             style: TextStyle(
               color: color,
-              fontSize: 10,
+              fontSize: 9,
               fontWeight: FontWeight.w800,
-              letterSpacing: 0.4,
+              letterSpacing: 0.3,
             ),
           ),
         ],
@@ -819,6 +858,8 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                   fontSize: 9,
                   fontWeight: FontWeight.w600,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -962,17 +1003,17 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
 }
 
 // ============================================================================
-// SKELETON
+// SKELETON — grille 2 colonnes, cohérente avec le layout final
 // ============================================================================
 
-class _SkeletonList extends StatefulWidget {
-  const _SkeletonList();
+class _SkeletonGrid extends StatefulWidget {
+  const _SkeletonGrid();
 
   @override
-  State<_SkeletonList> createState() => _SkeletonListState();
+  State<_SkeletonGrid> createState() => _SkeletonGridState();
 }
 
-class _SkeletonListState extends State<_SkeletonList>
+class _SkeletonGridState extends State<_SkeletonGrid>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
@@ -993,24 +1034,26 @@ class _SkeletonListState extends State<_SkeletonList>
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: List.generate(
-        4,
-        (i) => Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: AnimatedBuilder(
-            animation: _ctrl,
-            builder: (_, __) => Opacity(
-              opacity: 0.4 + 0.3 * _ctrl.value,
-              child: Container(
-                height: 84,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(_kRadiusMd),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.06),
-                  ),
-                ),
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 4,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 0.86,
+      ),
+      itemBuilder: (_, __) => AnimatedBuilder(
+        animation: _ctrl,
+        builder: (_, __) => Opacity(
+          opacity: 0.4 + 0.3 * _ctrl.value,
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(_kRadiusMd),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.06),
               ),
             ),
           ),
