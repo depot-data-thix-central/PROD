@@ -10,7 +10,7 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-const int _kMaxTitleLength = 20;
+const int _kMaxTitleLength = 25;
 const double _kStageHeight = ThixPolicy.constellationStageHeight;
 const double _kHubRadius = ThixPolicy.constellationHubRadius;
 const double _kNodeContainerWidth = 52.0;
@@ -97,28 +97,28 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
       _ServiceNodeData(
         key: 'thixMoney',
         icon: Icons.account_balance_wallet_rounded,
-        title: l10n.t('serviceMoney'),
+        title: 'Thix ${l10n.t('svc_money')}',
         badge: c.money,
         color: _colorMoney,
       ),
       _ServiceNodeData(
         key: 'thixMedia',
         icon: Icons.video_collection_rounded,
-        title: 'TDIA',
+        title: 'Thix ${l10n.t('svc_media')}',
         badge: c.media,
         color: _colorNetwork,
       ),
       _ServiceNodeData(
         key: 'monPays',
         icon: Icons.flag_rounded,
-        title: l10n.t('serviceMonPays'),
+        title: 'Thix ${l10n.t('svc_country')}',
         badge: c.monPays,
         color: _colorCorporate,
       ),
       _ServiceNodeData(
         key: 'thixInfo',
         icon: Icons.newspaper_rounded,
-        title: 'THIX MEDIA',
+        title: 'Thix ${l10n.t('svc_news')}',
         badge: c.info,
         color: _colorPrimary,
       ),
@@ -127,56 +127,56 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
       _ServiceNodeData(
         key: 'evenements',
         icon: Icons.event_rounded,
-        title: 'Thix Event',
+        title: 'Thix ${l10n.t('svc_event')}',
         badge: c.events,
         color: _colorEvent,
       ),
       _ServiceNodeData(
         key: 'thixMarket',
         icon: Icons.storefront_rounded,
-        title: l10n.t('serviceMarket'),
+        title: 'Thix ${l10n.t('svc_market')}',
         badge: c.market,
         color: _colorMarket,
       ),
       _ServiceNodeData(
         key: 'reservation',
         icon: Icons.confirmation_number_rounded,
-        title: l10n.t('serviceReservation'),
+        title: 'Thix ${l10n.t('svc_booking')}',
         badge: c.reservation,
         color: _colorPrimary,
       ),
       _ServiceNodeData(
         key: 'emplois',
         icon: Icons.work_rounded,
-        title: l10n.t('serviceEmplois'),
+        title: 'Thix ${l10n.t('svc_jobs')}',
         badge: c.jobs,
         color: _colorCorporate,
       ),
       _ServiceNodeData(
         key: 'formations',
         icon: Icons.school_rounded,
-        title: l10n.t('serviceFormations'),
+        title: 'Thix ${l10n.t('svc_learning')}',
         badge: c.formations,
         color: _colorLearning,
       ),
       _ServiceNodeData(
         key: 'opportunites',
         icon: Icons.lightbulb_rounded,
-        title: l10n.t('serviceOpportunites'),
+        title: 'Thix ${l10n.t('svc_opps')}',
         badge: c.opportunities,
         color: _colorMoney,
       ),
       _ServiceNodeData(
         key: 'reseauPro',
         icon: Icons.groups_rounded,
-        title: 'Thix Pro',
+        title: 'Thix ${l10n.t('svc_pro')}',
         badge: c.network,
         color: _colorNetwork,
       ),
       _ServiceNodeData(
         key: 'thixSante',
         icon: Icons.local_hospital_rounded,
-        title: l10n.t('serviceSante'),
+        title: 'Thix ${l10n.t('svc_health')}',
         badge: c.health,
         color: _colorHealth,
       ),
