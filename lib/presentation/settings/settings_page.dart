@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/l10n/locale_controller.dart';
-import 'package:thix_id/l10n/i18n_service.dart';
-import 'package:thix_id/presentation/common/notifications_sheet.dart';
-import '../../theme.dart';
 import 'package:thix_id/auth/auth_controller.dart';
-import 'package:thix_id/nav.dart';
+import 'package:thix_id/l10n/i18n_service.dart';
+import 'package:thix_id/l10n/locale_controller.dart';
 import 'package:thix_id/models/app_user.dart';
+import 'package:thix_id/nav.dart';
+import '../../theme.dart';
 
 class SettingsGroup extends StatelessWidget {
   final String title;
@@ -116,53 +114,18 @@ class SettingsItem extends StatelessWidget {
   }
 }
 
-class LangChip extends StatelessWidget {
-  final String flag;
-  final String name;
-  final bool selected;
-
-  const LangChip({
-    super.key,
-    required this.flag,
-    required this.name,
-    required this.selected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(right: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: selected ? context.theme.colorScheme.primary : context.theme.scaffoldBackgroundColor,
-        borderRadius: BorderRadius.circular(AppRadius.full),
-        border: Border.all(
-          color: selected ? Colors.transparent : context.theme.dividerColor,
-        ),
-      ),
-      child: Row(
-        children: [
-          Text(flag, style: const TextStyle(fontSize: 16)),
-          const SizedBox(width: AppSpacing.xs),
-          Text(
-            name,
-            style: context.textStyles.labelLarge?.copyWith(
-              color: selected ? Colors.white : context.theme.colorScheme.onSurface,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _LocaleChip extends StatelessWidget {
   final String flag;
   final String name;
   final bool selected;
   final VoidCallback onTap;
 
-  const _LocaleChip({required this.flag, required this.name, required this.selected, required this.onTap});
+  const _LocaleChip({
+    required this.flag,
+    required this.name,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -183,7 +146,9 @@ class _LocaleChip extends StatelessWidget {
             const SizedBox(width: AppSpacing.xs),
             Text(
               name,
-              style: context.textStyles.labelLarge?.copyWith(color: selected ? Colors.white : context.theme.colorScheme.onSurface),
+              style: context.textStyles.labelLarge?.copyWith(
+                color: selected ? Colors.white : context.theme.colorScheme.onSurface,
+              ),
             ),
           ],
         ),
@@ -204,6 +169,12 @@ String _flagForLanguageCode(String languageCode) {
       return '🇨🇩';
     case 'ar':
       return '🇸🇦';
+    case 'es':
+      return '🇪🇸';
+    case 'pt':
+      return '🇵🇹';
+    case 'zh':
+      return '🇨🇳';
     default:
       return '🌐';
   }
@@ -220,6 +191,7 @@ String _nameForLanguageCode(String code) {
     case 'kg': return 'Kikongo';
     case 'lu': return 'Tshiluba';
     case 'ar': return 'العربية';
+    case 'zh': return '中文';
     default: return code.toUpperCase();
   }
 }
@@ -231,6 +203,7 @@ class SettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final localeCtrl = context.watch<LocaleController>();
     final selected = localeCtrl.locale;
+    
     return Scaffold(
       backgroundColor: context.theme.scaffoldBackgroundColor,
       body: SafeArea(
@@ -269,7 +242,7 @@ class SettingsPage extends StatelessWidget {
                     ),
                     IconButton(
                       icon: Icon(Icons.help_outline_rounded, color: context.theme.colorScheme.primary, size: 24),
-                      onPressed: () => NotificationsSheet.show(context),
+                      onPressed: () {},
                     ),
                   ],
                 ),
