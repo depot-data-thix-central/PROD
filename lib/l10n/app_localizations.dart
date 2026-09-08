@@ -1,1346 +1,4919 @@
-// lib/l10n/app_localizations.dart
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import 'app_localizations_fr.dart';
-import 'app_localizations_en.dart';
-import 'app_localizations_pt.dart';
-import 'app_localizations_sw.dart';
-import 'app_localizations_ar.dart';
-import 'app_localizations_zh.dart';
+/// Système de localisation THIX — 8 langues
+/// Supporte les substitutions de paramètres : {0}, {1}, {2}
+class AppLocalizations {
+  final Locale locale;
+  AppLocalizations(this.locale);
 
-abstract class AppLocalizations {
   static AppLocalizations of(BuildContext context) {
     return Localizations.of<AppLocalizations>(context, AppLocalizations)!;
   }
 
-  static const LocalizationsDelegate<AppLocalizations> delegate = _AppLocalizationsDelegate();
+  static const LocalizationsDelegate<AppLocalizations> delegate =
+      _AppLocalizationsDelegate();
 
-  // ===========================================================================
-  // 🌍 GETTER DE LOCALE (Nécessaire pour I18nService)
-  // ===========================================================================
-  /// Expose la locale actuelle (ex: 'fr', 'en') pour que I18nService puisse formater
-  /// les dates et les nombres correctement. Doit être implémentée (override) dans
-  /// chaque fichier de langue spécifique.
-  Locale get locale;
+  static const List<String> supportedLanguages = [
+    'fr', 'en', 'es', 'pt', 'ln', 'sw', 'kg', 'lu',
+  ];
 
-  // ===========================================================================
-  // 🔑 MÉTHODES DE FALLBACK l10n.t(), tn() ET plural()
-  // ===========================================================================
-  
-  /// Permet d'accéder aux clés par leur nom de chaîne, avec support d'arguments positionnels (List).
-  String t(String key, {List<dynamic>? args}) {
-    String value = key;
-    switch (key) {
-      case 'common_close': value = common_close; break;
-      case 'live_leave_btn': value = live_leave_btn; break;
-      case 'live_chat_empty': value = live_chat_empty; break;
-      case 'live_chat_hint': value = live_chat_hint; break;
-      case 'live_like': value = live_like; break;
-      case 'live_send': value = live_send; break;
-      case 'live_leaving': value = live_leaving; break;
-      case 'live_viewers': value = live_viewers; break;
-      case 'live_likes': value = live_likes; break;
-      case 'live_network_quality': value = live_network_quality; break;
-      case 'insight_type_market': value = insight_type_market; break;
-      case 'insight_type_finance': value = insight_type_finance; break;
-      case 'insight_type_strategy': value = insight_type_strategy; break;
-      case 'insight_type_business': value = insight_type_business; break;
-      case 'insight_type_insight': value = insight_type_insight; break;
-      case 'insight_confidence_label': value = insight_confidence_label; break;
-      case 'insight_source_verified': value = insight_source_verified; break;
-      case 'risk_critical': value = risk_critical; break;
-      case 'risk_high': value = risk_high; break;
-      case 'risk_medium': value = risk_medium; break;
-      case 'risk_low': value = risk_low; break;
-      case 'source_type_official': value = source_type_official; break;
-      case 'source_type_world_bank': value = source_type_world_bank; break;
-      case 'source_type_government': value = source_type_government; break;
-      case 'source_type_default': value = source_type_default; break;
-      case 'source_aria_label': value = source_aria_label; break;
-      case 'settings_choose_language': value = settings_choose_language; break;
-      case 'settings_system_default': value = settings_system_default; break;
-      case 'settings_language_change_failed': value = settings_language_change_failed; break;
+  static const Map<String, String> languageNames = {
+    'fr': 'Français',
+    'en': 'English',
+    'es': 'Español',
+    'pt': 'Português',
+    'ln': 'Lingála',
+    'sw': 'Kiswahili',
+    'kg': 'Kikongo',
+    'lu': 'Tshiluba',
+  };
 
-      // Fallbacks en dur pour les projets & analyses
-      case 'project_delete_error': value = 'Erreur: {0}'; break;
-      case 'project_command_hint': value = 'Tapez {0} pour confirmer'; break;
-      case 'project_bp_error': value = 'Erreur: {0}'; break;
-      case 'media_episodes': value = 'Épisode {0}'; break;
-      
-      default: value = key;
-    }
+  static final Map<String, Map<String, String>> _localizedValues = {
+    'fr': _fr,
+    'en': _en,
+    'es': _es,
+    'pt': _pt,
+    'ln': _ln,
+    'sw': _sw,
+    'kg': _kg,
+    'lu': _lu,
+  };
 
-    // Remplace les {0}, {1}, etc. par les éléments de la liste args
-    if (args != null && args.isNotEmpty) {
-      for (int i = 0; i < args.length; i++) {
-        value = value.replaceAll('{$i}', args[i].toString());
+  /// Traduction avec support des paramètres {0}, {1}, ...
+  String t(String key, {List<String>? args}) {
+    final map = _localizedValues[locale.languageCode] ?? _fr;
+    var value = map[key] ?? _fr[key] ?? key;
+    if (args != null) {
+      for (var i = 0; i < args.length; i++) {
+        value = value.replaceAll('{$i}', args[i]);
       }
     }
     return value;
   }
 
-  /// Permet de passer des arguments nommés (Map) si le code utilise tn()
-  String tn(String key, Map<String, dynamic> args) {
-    String value = t(key);
+  /// Traduction avec paramètres nommés {name}
+  String tn(String key, Map<String, String> args) {
+    final map = _localizedValues[locale.languageCode] ?? _fr;
+    var value = map[key] ?? _fr[key] ?? key;
     args.forEach((k, v) {
-      value = value.replaceAll('{$k}', v.toString());
+      value = value.replaceAll('{$k}', v);
     });
     return value;
   }
 
-  /// Méthode de fallback pour les traductions plurielles
+  /// Pluralisation simple : 0, 1, many
   String plural(String key, int count, {List<String>? args}) {
-    // Si la langue est l'anglais (basé sur le getter locale) on utilise des règles anglaises, 
-    // sinon des règles françaises/autres par défaut pour le fallback
-    final isPlural = count > 1 || (locale.languageCode == 'en' && count != 1);
-    
-    switch (key) {
-      case 'category_events_count':
-        return count == 0 ? 'Aucun événement' : (isPlural ? '$count événements' : '1 événement');
-      case 'reservation_quantity':
-        return count == 0 ? 'Aucune réservation' : (isPlural ? '$count réservations' : '1 réservation');
-      case 'tickets_quantity':
-        return count == 0 ? 'Aucun billet' : (isPlural ? '$count billets' : '1 billet');
-      default:
-        // Si la clé n'est pas gérée manuellement ici, on essaie d'utiliser t()
-        return t(key, args: args);
+    final suffix = count == 0 ? '_zero' : (count == 1 ? '_one' : '_many');
+    final fullKey = '$key$suffix';
+    final map = _localizedValues[locale.languageCode] ?? _fr;
+    var value = map[fullKey] ?? map[key] ?? _fr[fullKey] ?? _fr[key] ?? key;
+    value = value.replaceAll('{count}', count.toString());
+    if (args != null) {
+      for (var i = 0; i < args.length; i++) {
+        value = value.replaceAll('{$i}', args[i]);
+      }
     }
+    return value;
   }
-
-  // ===========================================================================
-  // COMMUN & UI
-  // ===========================================================================
-  String get common_back;
-  String get common_close;
-  String get common_cancel;
-  String get common_confirm;
-  String get common_delete;
-  String get common_add;
-  String get common_edit;
-  String get common_save;
-  String get common_manage;
-  String get common_retry;
-  String get common_refresh;
-  String get common_search;
-  String get common_open;
-  String get common_share;
-  String get common_copy;
-  String get common_copied;
-  String get common_download;
-  String get common_upload;
-  String get common_send;
-  String get common_receive;
-  String get common_accept;
-  String get common_reject;
-  String get common_skip;
-  String get common_next;
-  String get common_previous;
-  String get common_finish;
-  String get common_done;
-  String get common_error;
-  String get common_success;
-  String get common_loading;
-  String get common_please_wait;
-  String get common_today;
-  String get common_yesterday;
-  String get common_tomorrow;
-  String get common_home;
-  String get common_chat;
-  String get common_map;
-  String get common_profile;
-  String get common_menu;
-  String get common_notifications;
-  String get common_settings;
-  String get common_help;
-  String get common_about;
-  String get common_logout;
-  String get common_login;
-  String get common_signup;
-  String get common_yes;
-  String get common_no;
-  String get common_or;
-  String get common_and;
-  String get common_none;
-  String get common_all;
-  String get common_unknown;
-  String get common_enabled;
-  String get common_disabled;
-  String get common_clear;
-  String get common_remove;
-
-  String common_items(int count);
-  String common_contacts(int count);
-  String common_messages(int count);
-  String common_days(int count);
-  String common_hours(int count);
-  String common_minutes(int count);
-
-  // ===========================================================================
-  // THIX MEDIA - LIVE 
-  // ===========================================================================
-  String get live_send;
-  String get live_ending;
-  String get live_network_quality;
-  String get live_leave_btn;
-  String get live_chat_empty;
-  String get live_chat_hint;
-  String get live_like;
-  String get live_leaving;
-  String get live_viewers;
-  String get live_likes;
-  String get live_go_live;
-  String get live_title;
-  String get live_start;
-  String get live_end;
-  String get live_duration;
-  String get live_peak_viewers;
-  String get live_chat_disabled;
-  String get live_share;
-  String get live_report;
-  String get live_follow_host;
-  String get live_gift_send;
-  String get live_quality_auto;
-  String get live_quality_hd;
-  String get live_quality_sd;
-  String get live_quality_low;
-
-  // ===========================================================================
-  // THIX IA - SOURCES, INSIGHTS & RISQUES
-  // ===========================================================================
-  String get source_type_official;
-  String get source_type_world_bank;
-  String get source_type_government;
-  String get source_type_default;
-  String get source_aria_label;
-
-  String get insight_type_market;
-  String get insight_type_finance;
-  String get insight_type_strategy;
-  String get insight_type_business;
-  String get insight_type_insight;
-  String get insight_confidence_label;
-  String get insight_source_verified;
-  String get insight_source_unverified;
-  String get insight_recommended_actions;
-  String get insight_key_findings;
-  String get insight_summary;
-  String get insight_full_analysis;
-  String get insight_generated_by;
-  String get insight_disclaimer;
-
-  String get risk_critical;
-  String get risk_high;
-  String get risk_medium;
-  String get risk_low;
-  String get risk_level_label;
-  String get risk_mitigation;
-  String get risk_impact;
-  String get risk_probability;
-  String get risk_assessment;
-
-  // ============================================================================
-  // AUTH & ONBOARDING (BASIC)
-  // ============================================================================
-  String get auth_login;
-  String get auth_signup;
-  String get auth_forgot_password;
-  String get auth_reset_password;
-  String get auth_email;
-  String get auth_phone;
-  String get auth_password;
-  String get auth_confirm_password;
-  String get auth_logout_confirm;
-  String get auth_welcome_back;
-  String get auth_welcome;
-  String get auth_no_account;
-  String get auth_has_account;
-  String get auth_invalid_email;
-  String get auth_invalid_phone;
-  String get auth_password_too_short;
-  String get auth_passwords_mismatch;
-  String get auth_login_success;
-  String get auth_signup_success;
-  String get auth_session_expired;
-  String get auth_2fa_title;
-  String get auth_2fa_code;
-  String get auth_verify_email;
-  String get auth_verify_phone;
-  String get auth_biometric;
-  String get auth_biometric_prompt;
-  String get auth_full_name;
-  String get auth_first_name;
-  String get auth_last_name;
-  String get auth_birth_date;
-  String get auth_gender;
-  String get auth_gender_male;
-  String get auth_gender_female;
-  String get auth_gender_other;
-  String get auth_accept_terms;
-  String get auth_terms_required;
-  String get auth_email_already_used;
-  String get auth_phone_already_used;
-  String get auth_create_account;
-  String get auth_already_have_account;
-
-  String get onboarding_welcome;
-  String get onboarding_step_1_title;
-  String get onboarding_step_1_desc;
-  String get onboarding_step_2_title;
-  String get onboarding_step_2_desc;
-  String get onboarding_step_3_title;
-  String get onboarding_step_3_desc;
-  String get onboarding_get_started;
-  String get onboarding_skip;
-
-  // ============================================================================
-  // AUTHENTIFICATION & CONNEXION (ADVANCED / ERRORS)
-  // ============================================================================
-  String get login_title;
-  String get login_subtitle;
-  String get login_identifier_label;
-  String get login_identifier_hint;
-  String get login_password_label;
-  String get login_password_hint;
-  String get login_remember_me;
-  String get login_forgot_password;
-  String get login_button;
-  String get login_verifying;
-  String get login_retry_in;
-  String get login_seconds_suffix;
-  String get login_biometric;
-  String get login_face_id;
-  String get login_touch_id;
-  
-  String get login_error_suspended;
-  String get login_error_not_active;
-  String get login_error_no_account;
-  String get login_error_mfa_required;
-
-  String get auth_error_identifier_required;
-  String get auth_error_password_required;
-  String get auth_error_thix_id_login_not_available;
-  String get auth_error_sign_in_failed;
-  String get auth_error_email_not_verified;
-  String get auth_error_server_misconfiguration;
-  String get auth_error_account_already_exists;
-  String get auth_error_account_exists_wrong_password;
-  String get auth_error_account_exists_new_otp_sent;
-  String get auth_error_invalid_otp;
-  String get auth_error_otp_expired;
-  String get auth_error_network;
-  String get auth_error_rate_limit;
-  String get auth_error_technical;
-  String get auth_error_user_mismatch;
-  String get auth_error_profile_update_failed;
-  String get auth_error_mark_email_verified_failed;
-  String get auth_error_qr_token_generation_failed;
-  String get auth_error_finalize_registration_failed;
-  String get auth_error_consume_qr_token_failed;
-  String get auth_error_resend_otp_failed;
-  String get auth_error_phone_auth_not_available;
-  String get auth_error_delete_account_not_available;
-  String get auth_error_update_email_failed;
-  String get auth_error_reset_password_failed;
-  String get auth_error_sign_up_failed;
-  String get auth_info_otp_sent;
-
-  // ============================================================================
-  // INSCRIPTION PERSONNELLE
-  // ============================================================================
-  String get reg_step1_title;
-  String get reg_step1_subtitle;
-  String get reg_full_name_label;
-  String get reg_full_name_hint;
-  String get reg_dob_label;
-  String get reg_country_label;
-  String get reg_occupation_label;
-  String get reg_occupation_hint;
-  String get reg_next;
-
-  String get reg_step2_title;
-  String get reg_step2_subtitle;
-  String get reg_email_label;
-  String get reg_email_hint;
-  String get reg_phone_label;
-  String get reg_phone_hint;
-  String get reg_password_label;
-  String get reg_password_hint;
-  String get reg_confirm_password_label;
-  String get reg_confirm_password_hint;
-  String get reg_strength_label;
-  String get reg_strength_very_weak;
-  String get reg_strength_weak;
-  String get reg_strength_medium;
-  String get reg_strength_strong;
-  String get reg_strength_excellent;
-
-  String get reg_identity_title;
-  String get reg_thix_chat_label;
-  String get reg_thix_chat_hint;
-  
-  String get reg_verification_title;
-  String get reg_get_otp;
-  String get reg_code_sent_resend;
-  String get reg_resend_in;
-  String get reg_seconds_short;
-  String get reg_otp_label;
-  String get reg_validate_activate;
-  String get reg_activating;
-
-  String get reg_congrats;
-  String get reg_welcome_message;
-  String get reg_id_card_title;
-  String get reg_official_thix_id;
-  String get reg_generating;
-  String get reg_copy_thix_id;
-  String get reg_thix_id_copied;
-  String get reg_go_to_dashboard;
-  String get reg_summary;
-  String get reg_mobile_label;
-  String get reg_not_provided;
-
-  // ============================================================================
-  // ACCUEIL & TABLEAU DE BORD
-  // ============================================================================
-  String get home_search_hint;
-  String get home_greeting;
-  String get home_greeting_time;
-  String get home_welcome_back;
-  String get home_language_kiswahili;
-  String get home_banner_default_tag;
-  String get home_banner_default_title;
-  
-  String get cert_pending;
-  String get cert_tier_ladder;
-  String get cert_view;
-
-  String get quick_sona;
-  String get quick_doc;
-  String get quick_chat;
-  String get quick_sos;
-  String get service_sante;
-  String get service_market;
-  String get service_money;
-  String get service_reservation;
-  String get service_mon_pays;
-  String get service_emploi;
-  String get service_formations;
-  String get service_opportunites;
-  String get service_infos;
-  String get service_events;
-  String get service_media;
-  String get service_vault;
-  String get service_network;
-  String get service_certification;
-
-  // ============================================================================
-  // CHAT & MESSAGERIE
-  // ============================================================================
-  String get chatlist_network;
-  String get chatlist_discussions;
-  String get chatlist_create_new;
-  String get chatlist_calls;
-  String get chatlist_settings;
-
-  String get chat_unknown_user;
-  String chat_members(int count);
-  String get chat_video_call;
-  String get chat_audio_call;
-  String get chat_escalate;
-  String get chat_history;
-  String get chat_group_info;
-  String get chat_file;
-  String get chat_sticker;
-  String get chat_ephemeral;
-  String get chat_protected;
-  String get chat_internal_note;
-  String get chat_send;
-  String get chat_recording;
-  String get chat_stop_recording;
-  String get chat_write_message;
-  String get chat_record_audio;
-  String get chat_emojis;
-  String get chat_reactions;
-  String get chat_flags;
-  String get chat_callback;
-  String get chat_typing;
-  String get chat_pause;
-  String get chat_play;
-
-  String get conv_status_connected;
-  String get conv_status_pending;
-  String get conv_status_rejected;
-  String get conv_cannot_self;
-  String get conv_request_pending;
-  String get conv_request_rejected;
-  String get conv_request_to;
-  String get conv_request_hint;
-  String get conv_message_optional;
-  String get conv_send_request;
-  String get conv_request_sent;
-  String get conv_request_exists;
-  String get conv_select_contact;
-  String get conv_waiting_connection;
-  String get conv_group_rpc_required;
-  String get conv_page_title;
-  String conv_start(int count);
-  String get conv_search_label;
-  String get conv_search_hint;
-  String get conv_group_name_label;
-  String get conv_group_name_hint;
-
-  String get requests_page_title;
-  String get requests_reject_title;
-  String get requests_reject_message;
-  String get requests_reject_confirm;
-  String get requests_rejected;
-  String get requests_reject_error;
-  String get requests_accepted;
-  String get requests_accept_error;
-
-  String get call_history_title;
-  String get call_missed;
-  String get call_incoming;
-  String get call_outgoing;
-  String get call_video;
-  String get call_audio;
-
-  // ============================================================================
-  // RÉSEAU SOCIAL
-  // ============================================================================
-  String get network_search_title;
-  String get network_search_hint;
-  String get network_tab_people;
-  String get network_tab_posts;
-  String get network_tab_communities;
-  String get network_explore_title;
-  String get network_explore_subtitle;
-  String get network_no_results_users;
-  String get network_no_results_posts;
-  String get network_no_results_communities;
-  String get network_request_sent;
-  String get network_request_error;
-
-  String get community_create_title;
-  String get community_name_label;
-  String get community_description_label;
-  String get community_visibility_label;
-  String get community_public;
-  String get community_private;
-  String get community_join;
-  String get community_leave;
-  String get community_members;
-  String get community_admin;
-
-  // ============================================================================
-  // PROFIL UTILISATEUR
-  // ============================================================================
-  String get profile_settings;
-  String get profile_edit_bio;
-  String get profile_no_bio;
-  String get profile_followers;
-  String get profile_following;
-  String get profile_posts;
-  String get profile_follow;
-  String get profile_unfollow;
-  String get profile_following_loading;
-  String get profile_message;
-  String get profile_block_user;
-  String get profile_block_message;
-  String get profile_block_confirm;
-  String get profile_blocked_success;
-  String get profile_block_error;
-  
-  String get profile_report_user;
-  String get profile_report_reason;
-  String get profile_report_details;
-  String get profile_report_spam;
-  String get profile_report_inappropriate;
-  String get profile_report_harassment;
-  String get profile_report_impersonation;
-  String get profile_report_other;
-  String get profile_report_submit;
-  String get profile_report_success;
-  String get profile_report_duplicate;
-  
-  String get profile_private_gallery;
-  String get profile_private_content_locked;
-  String get profile_add_private_media;
-  String get profile_no_private_media;
-  String get profile_upload_processing;
-  
-  String get profile_tab_bio;
-  String get profile_tab_private_gallery;
-  String get profile_tab_photos;
-  String get profile_tab_videos;
-  String get profile_tab_audios;
-  String get profile_no_content;
-  String get profile_pinned_post;
-  String get profile_view_post;
-
-  // ============================================================================
-  // PARAMÈTRES GÉNÉRAUX & CHAT (SETTINGS)
-  // ============================================================================
-  String get settings_title;
-  String get settings_section_appearance;
-  String get settings_theme;
-  String get settings_theme_light;
-  String get settings_theme_dark;
-  String get settings_theme_system;
-  String get settings_wallpaper;
-  String get settings_wallpaper_default;
-  String get settings_wallpaper_custom;
-  
-  String get settings_section_privacy;
-  String get settings_last_seen;
-  String get settings_visibility_everyone;
-  String get settings_visibility_contacts;
-  String get settings_visibility_nobody;
-  String get settings_profile_photo;
-  
-  String get settings_section_notifications;
-  String get settings_messages;
-  String get settings_calls;
-  
-  String get settings_section_messages;
-  String get settings_ephemeral;
-  String get settings_auto_download;
-  String get settings_download_wifi;
-  String get settings_download_mobile;
-  String get settings_download_never;
-  
-  String get settings_section_account;
-  String get settings_view_profile;
-  String get settings_logout;
-
-  String get settings_profile_edit;
-  String get settings_notifications;
-  String get settings_privacy;
-  String get settings_security;
-  String get settings_language;
-  String get settings_help_center;
-  String get settings_about;
-  String get settings_version;
-
-  String get settings_choose_language;
-  String get settings_system_default;
-  String get settings_language_change_failed;
-
-  // ============================================================================
-  // SOS & URGENCE
-  // ============================================================================
-  String get sos_button;
-  String get sos_button_label;
-  String get sos_button_hint;
-  String get sos_button_tooltip;
-  String get sos_trigger_button;
-  String get sos_trigger_timeout;
-  String get sos_trigger_error;
-  String get sos_active;
-  String get sos_crisis_room;
-  String get sos_command_center;
-  String get sos_incident;
-  String get sos_incident_unknown;
-  String get sos_incident_not_found;
-  String get sos_circle;
-  String get sos_rescuers;
-  String get sos_rescuer;
-  String get sos_my_rescuers;
-  String get sos_duration;
-  String get sos_identifier;
-  String get sos_calling;
-  String get sos_call;
-  String get sos_available;
-  String get sos_unavailable;
-  String get sos_verified;
-  String get sos_end;
-  String get sos_end_sos;
-  String get sos_cancel_sos;
-  String get sos_pin_required;
-  String get sos_cancelled;
-  String get sos_resolved;
-  String get sos_cancel_failed;
-  String get sos_in_progress;
-  String get sos_history;
-  String get sos_my_incidents;
-  String get sos_no_incidents;
-  String get sos_incidents_appear_here;
-  String get sos_history_error;
-  String get sos_circle_1;
-  String get sos_circle_2;
-  String get sos_circle_3;
-  String get sos_no_rescuers;
-  String get sos_add_first_rescuer;
-  String get sos_add_rescuer;
-  String get sos_add_rescuer_info;
-  String get sos_thix_id_label;
-  String get sos_thix_id_hint;
-
-  // ============================================================================
-  // CERTIFICATION
-  // ============================================================================
-  String get certification_title;
-  String get certification_apply;
-  String get certification_status;
-  String get certification_pending;
-  String get certification_approved;
-  String get certification_rejected;
-  String get certification_tier_bronze;
-  String get certification_tier_silver;
-  String get certification_tier_gold;
-  String get certification_tier_platinum;
-  String get certification_benefits;
-  String get certification_documents;
-  String get certification_upload_doc;
-  String get certification_review_progress;
-  String get certification_verified_account;
-
-  // ============================================================================
-  // ÉDUCATION & FORMATION
-  // ============================================================================
-  String get edu_nav_home;
-  String get edu_nav_learning;
-  String get edu_nav_library;
-  String get edu_nav_certs;
-  String get edu_nav_profile;
-  
-  String get edu_auth_required;
-  String get edu_login_required;
-  
-  String get edu_learning_empty_title;
-  String get edu_learning_empty_desc;
-  String get edu_no_courses;
-  String get edu_enroll_hint;
-  String get edu_explore_btn;
-  String get edu_completed;
-  
-  String get edu_user_avatar;
-  String get edu_greeting;
-  String get edu_greeting_subtitle;
-  String get edu_ready_to_learn;
-  String get edu_learner;
-  String get edu_notifications;
-  String get edu_search_hint;
-  String get edu_browse;
-  String get edu_library;
-  String get edu_certs;
-  String get edu_qa_browse;
-  String get edu_instructor;
-  
-  String get edu_top_formations;
-  String get edu_awaited_formations;
-  String get edu_awaited;
-  String get edu_see_all;
-  
-  String edu_coming_soon(String category);
-  String get edu_coming_soon_cat;
-  String get edu_locked_course;
-  String get edu_coming_soon_badge;
-  String get edu_awaited_badge;
-  String get edu_awaited_locked;
-  String get edu_awaited_locked_msg;
-  
-  String get edu_thix_academy;
-  String get edu_scheduled_soon;
-  String get edu_new_program;
-  String get edu_resume_learning;
-  String get edu_resume;
-  
-  String get edu_catalog;
-  String get edu_no_formations_cat;
-  
-  String get edu_my_library;
-  String get edu_search_book_hint;
-  String get edu_library_title;
-  String get edu_search_library;
-  String get edu_shelves_empty;
-  String get edu_library_empty;
-  String get edu_no_result;
-  String edu_search_no_results(String query);
-  
-  String get edu_shelf;
-  String get edu_books;
-  String get edu_all;
-  String edu_shelf_info(String code, int count);
-  String get edu_free;
-  String get edu_deleted_in;
-  String edu_expires_in(String countdown);
-  
-  String get edu_certifications;
-  String get edu_certs_title;
-  String get edu_no_certs;
-  String get edu_cert_expert;
-  String get edu_cert_expertise;
-  String edu_cert_issued(String date);
-  
-  String get edu_pro_account;
-  String get edu_profile_title;
-  String get edu_instructor_space;
-  String get edu_tools;
-  String get edu_institutional_tools;
-  String get edu_free_resources;
-  String get edu_masterclass;
-  String get edu_masterclasses;
-  String get edu_network;
-  String get edu_mentorship;
-  String get edu_events_agenda;
-  String get edu_support;
-  String get edu_not_connected;
-
-  String get training_title;
-  String get training_enroll;
-  String get training_my_courses;
-  String get training_certificates;
-  String get training_progress;
-  String get training_lessons;
-  String get training_duration;
-  String get training_level;
-  String get training_beginner;
-  String get training_intermediate;
-  String get training_advanced;
-  String get training_start_course;
-  String get training_continue_course;
-
-  // ============================================================================
-  // EMPLOIS & RECRUTEMENT
-  // ============================================================================
-  String get jobs_title;
-  String get jobs_search;
-  String get jobs_apply;
-  String get jobs_saved;
-  String get jobs_applied;
-  String get jobs_company;
-  String get jobs_location;
-  String get jobs_salary;
-  String get jobs_type;
-  String get jobs_full_time;
-  String get jobs_part_time;
-  String get jobs_contract;
-  String get jobs_internship;
-  String get jobs_freelance;
-  String get jobs_remote;
-  String get jobs_onsite;
-  String get jobs_hybrid;
-  String get jobs_experience;
-  String get jobs_no_experience;
-  String get jobs_junior;
-  String get jobs_mid;
-  String get jobs_senior;
-  String get jobs_requirements;
-  String get jobs_responsibilities;
-  String get jobs_benefits;
-  String get jobs_apply_now;
-  String get jobs_application_sent;
-  String get jobs_no_results;
-  String get recruiter_title;
-  String get recruiter_post_job;
-  String get recruiter_candidates;
-  String get recruiter_applications;
-  String get recruiter_interviews;
-
-  // ============================================================================
-  // OPPORTUNITÉS
-  // ============================================================================
-  String get opportunities_title;
-  String get opportunities_business;
-  String get opportunities_investment;
-  String get opportunities_partnership;
-  String get opportunities_grant;
-  String get opportunities_coming_soon;
-
-  // ============================================================================
-  // MARCHÉ & E-COMMERCE
-  // ============================================================================
-  String get market_title;
-  String get market_categories;
-  String get market_products;
-  String get market_services;
-  String get market_add_to_cart;
-  String get market_buy_now;
-  String get market_cart;
-  String get market_checkout;
-  String get market_total;
-  String get market_delivery;
-  String get market_seller;
-  String get market_rating;
-  String get market_reviews;
-  String get market_in_stock;
-  String get market_out_of_stock;
-  String get market_add_to_favorites;
-  String get market_remove_from_cart;
-
-  // ============================================================================
-  // PORTEFEUILLE & ARGENT
-  // ============================================================================
-  String get money_title;
-  String get money_balance;
-  String get money_send;
-  String get money_receive;
-  String get money_history;
-  String get money_transactions;
-  String get money_top_up;
-  String get money_withdraw;
-  String get money_transfer;
-  String get money_bills;
-  String get money_recipients;
-  String get money_add_recipient;
-  String get money_amount;
-  String get money_fee;
-  String get money_reference;
-  String get money_confirm_transfer;
-  String get money_transfer_success;
-  String get money_transfer_failed;
-  String get money_insufficient_funds;
-
-  // ============================================================================
-  // ÉVÉNEMENTS & BILLETS
-  // ============================================================================
-  String get events_title;
-  String get events_upcoming;
-  String get events_past;
-  
-  String get event_share_cta;
-  String get event_sold_out_title;
-  String get event_sold_out_msg;
-  String get event_join_queue_confirm;
-  String get event_join_queue_btn;
-  
-  String get event_unfavorite;
-  String get event_favorite;
-  String get event_free;
-  String get event_paid;
-  
-  String get event_time_label;
-  String get event_location_label;
-  String get event_address_label;
-  String get event_organized_by;
-  
-  String get event_about_title;
-  String get event_no_description;
-  String get event_tickets_title;
-  
-  String get event_sold_out_short;
-  String event_remaining_seats(String count);
-  String get event_queue_btn;
-  String get event_book_btn;
-  
-  String get event_standard_entry;
-  String get event_all_sold;
-  String get event_limited_seats;
-  String get event_book_now_btn;
-  
-  String event_numbered_seats(String count);
-  String get event_choose_seats_btn;
-  String get event_from_price;
-
-  String get events_my_tickets;
-  String get events_buy_ticket;
-  String get events_ticket_price;
-  String get events_date;
-  String get events_time;
-  String get events_venue;
-  String get events_organizer;
-  String get events_attendees;
-  String get events_seats_available;
-  String get events_sold_out;
-  String get events_book_now;
-  String get events_ticket_type;
-  String get ticket_standard;
-  String get ticket_vip;
-  String get ticket_gold;
-  String get ticket_family;
-  String get ticket_secure_ticket;
-  String get ticket_not_found;
-  String get ticket_location;
-  String get ticket_pin_label;
-  String get ticket_show_qr;
-  String get ticket_booking_id;
-  String get ticket_add_wallet;
-  String get ticket_wallet_coming_soon;
-  String get ticket_share;
-  String get ticket_share_text;
-  String get ticket_scan_info;
-  String get ticket_security_title;
-  String get ticket_enter_pin;
-  String get ticket_pin_hint;
-  String get ticket_pin_incorrect;
-  String get ticket_pin_too_many_attempts;
-  String get ticket_attempts_remaining;
-  String get tickets_ticket;
-  String get tickets_completed;
-  String get tickets_no_tickets;
-  String get tickets_no_tickets_desc;
-  String get tickets_discover;
-  String get tickets_load_error;
-  String tickets_quantity(int count);
-
-  // ============================================================================
-  // RÉSERVATIONS
-  // ============================================================================
-  String get reservation_title;
-  String get reservation_hotel;
-  String get reservation_restaurant;
-  String get reservation_transport;
-  String get reservation_check_in;
-  String get reservation_check_out;
-  String get reservation_guests;
-  String get reservation_rooms;
-  String get reservation_book;
-  String get reservation_cancel;
-  String get reservation_modify;
-  String get reservation_confirm;
-  String get reservation_my_bookings;
-
-  // ============================================================================
-  // SANTÉ
-  // ============================================================================
-  String get health_title;
-  String get health_appointments;
-  String get health_doctors;
-  String get health_hospitals;
-  String get health_pharmacies;
-  String get health_emergency;
-  String get health_medical_records;
-  String get health_prescriptions;
-  String get health_book_appointment;
-  String get health_appointment_date;
-  String get health_specialty;
-  String get health_consultation;
-  String get health_telemedicine;
-  String get health_insurance;
-  String get health_symptoms;
-  String get health_find_doctor;
-
-  // ============================================================================
-  // MÉDIA & INFOS
-  // ============================================================================
-  String get media_title;
-  String get media_news;
-  String get media_videos;
-  String get media_podcasts;
-  String get media_articles;
-  String get media_live;
-  String get media_categories;
-  String get media_bookmarks;
-  String get media_share_article;
-  String get media_read_more;
-  String get media_published_on;
-  String get media_author;
-  String get info_title;
-  String get info_local;
-  String get info_national;
-  String get info_international;
-  String get info_sports;
-  String get info_culture;
-  String get info_economy;
-  String get info_politics;
-  String get info_technology;
-  String get info_read_full;
-
-  // ============================================================================
-  // MON PAYS
-  // ============================================================================
-  String get mon_pays_title;
-  String get mon_pays_regions;
-  String get mon_pays_cities;
-  String get mon_pays_culture;
-  String get mon_pays_history;
-  String get mon_pays_tourism;
-  String get mon_pays_discover;
-  String get mon_pays_landmarks;
-  String get mon_pays_traditions;
-
-  // ============================================================================
-  // COFFRE-FORT
-  // ============================================================================
-  String get vault_title;
-  String get vault_documents;
-  String get vault_photos;
-  String get vault_videos;
-  String get vault_notes;
-  String get vault_passwords;
-  String get vault_add_document;
-  String get vault_upload;
-  String get vault_encrypted;
-  String get vault_backup;
-  String get vault_restore;
-  String get vault_share_secure;
-  String get vault_unlock;
-  String get vault_lock;
-
-  // ============================================================================
-  // PAIEMENT
-  // ============================================================================
-  String get payment_title;
-  String get payment_method;
-  String get payment_card;
-  String get payment_mobile_money;
-  String get payment_bank_transfer;
-  String get payment_cash;
-  String get payment_confirm;
-  String get payment_success;
-  String get payment_failed;
-  String get payment_processing;
-  String get payment_receipt;
-  String get payment_invoice;
-
-  // ============================================================================
-  // RECHERCHE (MISSING PERSONS / SEARCH)
-  // ============================================================================
-  String get search_title;
-  String get search_subtitle;
-  String get search_person_missing;
-  String get search_person_wanted;
-  String get search_report_missing;
-  String get search_report_found;
-  String get search_details;
-  String get search_contact_authorities;
-  String get search_share_alert;
-  String get search_last_seen;
-  String get search_description;
-  String get search_age;
-  String get search_height;
-  String get search_weight;
-  String get search_hair_color;
-  String get search_eye_color;
-  String get search_distinguishing_marks;
-  String get search_clothing;
-  String get search_circumstances;
-  String get search_case_number;
-  String get search_reported_by;
-  String get search_official_notice;
-  String get search_community_alert;
-
-  // ============================================================================
-  // À PROXIMITÉ & ALERTES
-  // ============================================================================
-  String get nearby_alerts_title;
-  String get nearby_view_on_map;
-  String get nearby_map_coming_soon;
-  String get nearby_map_disabled;
-  String get nearby_active_alerts;
-  String get nearby_missing;
-  String get nearby_official;
-  String get nearby_legend_missing;
-  String get nearby_legend_official;
-  String get nearby_legend_report;
-  String get nearby_location_required;
-  String get nearby_location_subtitle;
-
-  // ============================================================================
-  // ADMINISTRATION
-  // ============================================================================
-  String get admin_title;
-  String get admin_dev_open;
-  String get admin_actions_section;
-  
-  String get admin_events_title;
-  String get admin_events_create;
-  String get admin_events_search_hint;
-  String get admin_events_filter;
-  String get admin_events_empty;
-  String get admin_events_no_permission;
-  String get admin_events_delete_title;
-  String admin_events_delete_desc(String title);
-
-  String get admin_limits_purchase_rules;
-  String get admin_limits_max_person;
-  String get admin_limits_max_transaction;
-  String get admin_limits_require_thix_id;
-  String get admin_limits_require_thix_id_desc;
-  String get admin_limits_info_title;
-  String get admin_limits_info_desc;
-
-  String get admin_stat_events;
-  String get admin_stat_bookings;
-  String get admin_stat_revenue;
-  String get admin_stat_queue;
-  String get admin_action_events;
-  String get admin_action_events_sub;
-  String get admin_action_create;
-  String get admin_action_create_sub;
-  String get admin_action_seats;
-  String get admin_action_seats_sub;
-  String get admin_action_reservations;
-  String get admin_action_reservations_sub;
-  String get admin_action_limits;
-  String get admin_action_limits_sub;
-  String get admin_action_analytics;
-  String get admin_action_analytics_sub;
-  String get admin_read_only;
-  String get admin_bookings_title;
-  String get admin_bookings_export;
-  String get admin_bookings_details;
-  String get admin_bookings_event;
-  String get admin_bookings_unknown_event;
-  String get admin_bookings_id;
-  String get admin_bookings_quantity;
-  String get admin_bookings_category;
-  String get admin_bookings_amount;
-  String get admin_bookings_pin;
-  String get admin_bookings_purchase_date;
-  String get admin_bookings_close;
-  String get admin_bookings_empty;
-  String get admin_bookings_unknown_date;
-  String admin_bookings_places(int count);
-  String get admin_bookings_status_valid;
-  String get admin_bookings_status_used;
-  String get admin_bookings_status_cancelled;
-  String get admin_bookings_status_postponed;
-  String get admin_bookings_status_pending;
-  String admin_queue_title(int count);
-  String get admin_queue_realtime_desc;
-  String get admin_queue_empty;
-  String get admin_queue_event_fallback;
-  String admin_queue_item_meta(String userId, int qty, String status);
-  String get admin_queue_notify;
-  String get admin_queue_notified;
-  String get admin_queue_position;
-  String get admin_queue_places;
-  String get admin_analytics_title;
-  String get admin_analytics_fill_rate;
-  String get admin_analytics_avg_cart;
-  String get admin_analytics_no_show;
-  String get admin_analytics_rev_per_event;
-  String get admin_analytics_revenue_7d;
-  String get admin_analytics_no_data;
-  String get admin_analytics_error;
-  String get admin_event_create;
-  String get admin_event_edit;
-  String get admin_event_btn_create;
-  String get admin_event_btn_save;
-  String get admin_event_cover;
-  String get admin_event_banner;
-  String get admin_event_title;
-  String get admin_event_desc;
-  String get admin_event_category;
-  String get admin_event_subcategory;
-  String get admin_event_datetime;
-  String get admin_event_start;
-  String get admin_event_end;
-  String get admin_event_add_end;
-  String get admin_event_city;
-  String get admin_event_location;
-  String get admin_event_address;
-  String get admin_event_organizer;
-  String get admin_event_phone;
-  String get admin_event_email;
-  String get admin_event_tiers_title;
-  String get admin_event_add_tier_btn;
-  String get admin_event_status;
-  String get admin_event_visibility;
-  String get admin_event_cat_concert;
-  String get admin_event_cat_conference;
-  String get admin_event_cat_sport;
-  String get admin_event_cat_festival;
-  String get admin_event_cat_theatre;
-  String get admin_event_cat_other;
-  String get admin_event_status_upcoming;
-  String get admin_event_status_ongoing;
-  String get admin_event_status_completed;
-  String get admin_event_status_cancelled;
-  String get admin_event_vis_default;
-  String get admin_event_vis_recommended;
-  String get admin_event_vis_featured;
-  String get admin_event_dialog_add_tier;
-  String get admin_event_dialog_name;
-  String admin_event_dialog_price(String currency);
-  String get admin_event_dialog_capacity;
-  String get admin_event_dialog_cancel;
-  String get admin_event_dialog_add;
-  String get admin_event_err_readonly;
-  String get admin_event_err_min_tier;
-  String get admin_event_success;
-  String get admin_event_err_title_req;
-  String get admin_event_err_desc_min;
-  String get admin_event_err_city_req;
-  String get admin_event_err_loc_req;
-  String get admin_seat_page_title;
-  String get admin_seat_target_event;
-  String get admin_seat_select_event;
-  String admin_seat_max_limit(int count);
-  String admin_seat_generated(int count);
-  String get admin_seat_load_error;
-  String get admin_seat_pricing_title;
-  String get admin_seat_layout_title;
-  String get admin_seat_rows;
-  String get admin_seat_per_row;
-  String get admin_seat_center_aisle;
-  String get admin_seat_aisle_desc;
-  String get admin_seat_cats_per_row;
-  String get admin_seat_generating;
-  String admin_seat_generate_btn(int count);
-  String get admin_seat_preview;
-  String get admin_seat_no_seats;
-  String get admin_seat_cat_standard;
-  String get admin_seat_cat_vip;
-  String get admin_seat_cat_gold;
-  String get admin_seat_cat_family;
-  String get admin_seat_legend_reserved;
-  String get admin_seat_legend_sold;
-  String get seat_map_stage;
-
-  // ============================================================================
-  // ERREURS & VALIDATION
-  // ============================================================================
-  String get error_generic;
-  String get error_validation;
-  String get error_file_too_large;
-  String get error_unsupported_format;
-  String get error_permission_denied;
-  String get error_camera_unavailable;
-  String get error_microphone_unavailable;
-  String get error_location_unavailable;
-  String get error_network;
-  String get error_timeout;
-  String get error_server;
-  String get error_not_found;
-
-  // ============================================================================
-  // TEMPS & DATES RELATIVES
-  // ============================================================================
-  String get common_just_now;
-  String get common_in_the_future;
-  String common_minutes_ago(int count);
-  String common_hours_ago(int count);
-  String common_days_ago(int count);
-  String common_seconds_ago(int count);
-  String common_weeks_ago(int count);
-  String common_months_ago(int count);
-  String common_years_ago(int count);
-  String common_in_minutes(int count);
-  String common_in_hours(int count);
-  String common_in_days(int count);
 }
 
-class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {
+class _AppLocalizationsDelegate
+    extends LocalizationsDelegate<AppLocalizations> {
   const _AppLocalizationsDelegate();
 
   @override
-  bool isSupported(Locale locale) {
-    return ['fr', 'en', 'pt', 'sw', 'ar', 'zh'].contains(locale.languageCode);
-  }
+  bool isSupported(Locale locale) =>
+      AppLocalizations.supportedLanguages.contains(locale.languageCode);
 
   @override
-  Future<AppLocalizations> load(Locale locale) {
-    switch (locale.languageCode) {
-      case 'en':
-        return SynchronousFuture<AppLocalizations>(AppLocalizationsEn());
-      case 'pt':
-        return SynchronousFuture<AppLocalizations>(AppLocalizationsPt());
-      case 'sw':
-        return SynchronousFuture<AppLocalizations>(AppLocalizationsSw());
-      case 'ar':
-        return SynchronousFuture<AppLocalizations>(AppLocalizationsAr());
-      case 'zh':
-        return SynchronousFuture<AppLocalizations>(AppLocalizationsZh());
-      case 'fr':
-      default:
-        return SynchronousFuture<AppLocalizations>(AppLocalizationsFr());
-    }
-  }
+  Future<AppLocalizations> load(Locale locale) async =>
+      AppLocalizations(locale);
 
   @override
   bool shouldReload(_AppLocalizationsDelegate old) => false;
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// 🇫🇷 FRANÇAIS
+// ════════════════════════════════════════════════════════════════════════════
+const Map<String, String> _fr = {
+  // ─── COMMON ─────────────────────────────────────────────────
+  'common_back': 'Retour',
+  'common_close': 'Fermer',
+  'common_cancel': 'Annuler',
+  'common_confirm': 'Confirmer',
+  'common_delete': 'Supprimer',
+  'common_add': 'Ajouter',
+  'common_edit': 'Modifier',
+  'common_save': 'Enregistrer',
+  'common_manage': 'Gérer',
+  'common_retry': 'Réessayer',
+  'common_refresh': 'Actualiser',
+  'common_search': 'Rechercher',
+  'common_open': 'Ouvrir',
+  'common_share': 'Partager',
+  'common_copy': 'Copier',
+  'common_copied': 'Copié',
+  'common_download': 'Télécharger',
+  'common_upload': 'Téléverser',
+  'common_send': 'Envoyer',
+  'common_receive': 'Recevoir',
+  'common_accept': 'Accepter',
+  'common_reject': 'Refuser',
+  'common_skip': 'Passer',
+  'common_next': 'Suivant',
+  'common_previous': 'Précédent',
+  'common_finish': 'Terminer',
+  'common_done': 'Terminé',
+  'common_error': 'Erreur',
+  'common_success': 'Succès',
+  'common_loading': 'Chargement…',
+  'common_please_wait': 'Veuillez patienter…',
+  'common_today': "Aujourd'hui",
+  'common_yesterday': 'Hier',
+  'common_tomorrow': 'Demain',
+  'common_home': 'Accueil',
+  'common_chat': 'Chat',
+  'common_map': 'Carte',
+  'common_profile': 'Profil',
+  'common_menu': 'Menu',
+  'common_notifications': 'Notifications',
+  'common_settings': 'Paramètres',
+  'common_help': 'Aide',
+  'common_about': 'À propos',
+  'common_logout': 'Déconnexion',
+  'common_login': 'Connexion',
+  'common_signup': 'Inscription',
+  'common_yes': 'Oui',
+  'common_no': 'Non',
+  'common_or': 'ou',
+  'common_and': 'et',
+  'common_none': 'Aucun',
+  'common_all': 'Tous',
+  'common_unknown': 'Inconnu',
+  // ─── HOME / CONSTELLATION ──────────────────────────────────
+  'home_search_hint': 'Rechercher un service, un contact…',
+  'home_greeting_fr': 'Bonjour',
+  'quickSona': 'THIX Sona',
+  'quickDoc': 'Mes documents',
+  'quickChat': 'Chat',
+  'quickSos': 'SOS',
+  'serviceSante': 'THIX Santé',
+  'serviceMarket': 'THIX Market',
+  'serviceMoney': 'THIX Money',
+  'serviceReservation': 'Réservations',
+  'serviceMonPays': 'Mon Pays',
+  'serviceEmploi': 'Emploi',
+  'serviceFormations': 'Formations',
+  'serviceOpportunites': 'Opportunités',
+  'serviceInfos': 'Infos',
+  'serviceEvents': 'Événements',
+
+  // ─── AUTH ───────────────────────────────────────────────────
+  'auth_login': 'Se connecter',
+  'auth_signup': 'Créer un compte',
+  'auth_forgot_password': 'Mot de passe oublié ?',
+  'auth_reset_password': 'Réinitialiser le mot de passe',
+  'auth_email': 'E-mail',
+  'auth_phone': 'Téléphone',
+  'auth_password': 'Mot de passe',
+  'auth_confirm_password': 'Confirmer le mot de passe',
+  'auth_logout': 'Se déconnecter',
+  'auth_logout_confirm': 'Voulez-vous vraiment vous déconnecter ?',
+  'auth_welcome_back': 'Bon retour',
+  'auth_welcome': 'Bienvenue',
+  'auth_no_account': "Pas encore de compte ?",
+  'auth_has_account': 'Déjà un compte ?',
+  'auth_invalid_email': 'Adresse e-mail invalide',
+  'auth_invalid_phone': 'Numéro de téléphone invalide',
+  'auth_password_too_short': 'Mot de passe trop court (min 8 caractères)',
+  'auth_passwords_mismatch': 'Les mots de passe ne correspondent pas',
+  'auth_login_success': 'Connexion réussie',
+  'auth_signup_success': 'Compte créé avec succès',
+  'auth_logout_success': 'Déconnexion réussie',
+  'auth_session_expired': 'Session expirée, veuillez vous reconnecter',
+  'auth_2fa_title': 'Vérification en deux étapes',
+  'auth_2fa_code': 'Code de vérification',
+  'auth_verify_email': "Vérifier l'e-mail",
+  'auth_verify_phone': 'Vérifier le téléphone',
+  'auth_biometric': 'Connexion biométrique',
+  'auth_biometric_prompt': 'Authentifiez-vous pour continuer',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Choisir la langue',
+  'settings_system_default': 'Langue du système',
+  'settings_language_change_failed': 'Impossible de changer la langue',
+  'settings_language_changed': 'Langue changée',
+
+  // ─── ONBOARDING ─────────────────────────────────────────────
+  'onboarding_welcome': 'Bienvenue sur THIX',
+  'onboarding_step_1_title': 'Connecter',
+  'onboarding_step_1_desc': 'Créez votre identité THIX sécurisée',
+  'onboarding_step_2_title': 'Protéger',
+  'onboarding_step_2_desc': 'Activez votre protection 24/7',
+  'onboarding_step_3_title': 'Agir',
+  'onboarding_step_3_desc': 'Alertez vos secours en 2 secondes',
+  'onboarding_get_started': 'Commencer',
+  'onboarding_skip': 'Passer la présentation',
+
+  // ─── SOS — Général ──────────────────────────────────────────
+  'sos_button': 'SOS',
+  'sos_button_label': "Bouton SOS d'urgence",
+  'sos_button_hint': 'Maintenir 2 secondes pour déclencher',
+  'sos_button_tooltip': 'Appuyer et maintenir 2 secondes',
+  'sos_button_text': 'SOS',
+  'sos_button_instruction': 'APPUYER ET MAINTENIR\n2 SECONDES',
+  'sos_hold_instruction': 'Appuyer et maintenir 2 secondes',
+  'sos_trigger_button': 'Déclencher SOS',
+  'sos_trigger_timeout': 'Délai dépassé. Réessayez.',
+  'sos_trigger_error': 'Échec du déclenchement SOS',
+  'sos_active': 'SOS EN COURS',
+  'sos_crisis_room': 'CHAMBRE DE CRISE',
+  'sos_command_center': 'CENTRE DE PILOTAGE',
+  'sos_incident': 'Incident',
+  'sos_incident_unknown': 'Incident inconnu',
+  'sos_incident_not_found': 'Incident introuvable',
+  'sos_circle': 'Cercle',
+  'sos_rescuers': 'secours',
+  'sos_rescuer': 'Secours',
+  'sos_my_rescuers': 'MES SECOURS',
+  'sos_duration': 'Durée',
+  'sos_identifier': 'Identifiant',
+  'sos_calling': 'Appel en cours…',
+  'sos_call': 'Appeler',
+  'sos_available': 'Disponible',
+  'sos_unavailable': 'Indisponible',
+  'sos_verified': 'Vérifié',
+  'sos_unknown': 'Inconnu',
+  'sos_end': 'Terminer',
+  'sos_end_sos': 'Terminer le SOS',
+  'sos_cancel_sos': 'ANNULER LE SOS',
+  'sos_pin_required': 'Code de sécurité requis',
+  'sos_cancelled': 'SOS annulé',
+  'sos_resolved': 'SOS terminé',
+  'sos_cancel_failed': "Échec annulation",
+  'sos_in_progress': 'EN COURS',
+  'sos_history': 'HISTORIQUE',
+  'sos_my_incidents': 'Mes incidents',
+  'sos_no_incidents': 'Aucun incident pour le moment',
+  'sos_incidents_appear_here': 'Vos SOS apparaîtront ici',
+  'sos_history_error': "Impossible de charger l'historique",
+
+  // ─── SOS — Cercles & Secours ────────────────────────────────
+  'sos_circle_1': 'Cercle 1 – Prioritaire',
+  'sos_circle_2': 'Cercle 2 – Secondaire',
+  'sos_circle_3': 'Cercle 3 – Urgence',
+  'sos_circle_1_title': 'Cercle 1 – Prioritaire',
+  'sos_circle_2_title': 'Cercle 2 – Secondaire',
+  'sos_circle_3_title': 'Cercle 3 – Urgence',
+  'sos_circle_priority': 'Prioritaire',
+  'sos_circle_secondary': 'Secondaire',
+  'sos_circle_urgent': 'Urgence',
+  'sos_no_rescuers': 'Aucun secours',
+  'sos_no_rescuers_circle': 'Aucun secours dans ce cercle',
+  'sos_add_first_rescuer': 'Ajoutez votre premier contact de secours',
+  'sos_add_rescuer': 'Ajouter un secours',
+  'sos_add_rescuer_info': "Entrez le THIX ID du secours. Le système récupère automatiquement le nom et la photo.",
+  'sos_thix_id_label': 'THIX ID',
+  'sos_thix_id_hint': 'THIX-XXXX',
+  'sos_relation': 'Relation',
+  'sos_relation_hint': 'Ex: Mère, Ami, Collègue…',
+  'sos_phone_optional': 'Téléphone (optionnel)',
+  'sos_phone_hint': '+243 …',
+  'sos_save_rescuer': 'Enregistrer le secours',
+  'sos_multiple_rescuers_info': 'Vous pouvez ajouter plusieurs secours par cercle.',
+  'sos_rescuer_saved': 'Secours THIX enregistré',
+  'sos_search_first': "Recherchez d'abord un THIX ID valide",
+  'sos_no_thix_account': 'Aucun compte THIX trouvé pour cet ID',
+  'sos_enter_thix_id': 'Saisissez un THIX ID',
+  'sos_load_error': 'Impossible de charger vos secours',
+  'sos_delete_rescuer': 'Supprimer ce secours ?',
+  'sos_delete_rescuer_confirm': 'Ce contact ne recevra plus les alertes SOS. Cette action est irréversible.',
+  'sos_rescuer_deleted': 'Secours supprimé avec succès',
+  'sos_delete_error': 'Erreur lors de la suppression',
+  'sos_circle_priority_title': 'Ordre de priorité',
+  'sos_circle_priority_info': 'Cercle 1 contacté en premier. Sans réponse → Cercle 2 → Cercle 3.',
+
+  // ─── SOS — PIN ──────────────────────────────────────────────
+  'sos_pin_title': 'Code de sécurité',
+  'sos_pin_label': 'Code PIN',
+  'sos_pin_enter': 'Entrez votre code de sécurité à {0} chiffres',
+  'sos_pin_invalid': 'Code invalide (4-6 chiffres)',
+  'sos_pin_wrong': 'Code incorrect',
+  'sos_remaining': 'tentatives restantes',
+  'sos_pin_locked': 'Trop de tentatives — verrouillé temporairement',
+  'sos_pin_locked_for': 'Verrouillé pendant',
+
+  // ─── SOS — Status & Banners ─────────────────────────────────
+  'sos_status_location': 'Localisation',
+  'sos_status_active': 'ACTIVE',
+  'sos_status_waiting': 'EN ATTENTE',
+  'sos_status_camera': 'Caméra',
+  'sos_status_backup': 'Sauvegarde',
+  'sos_banner_safe_title': 'VOUS ÊTES EN SÉCURITÉ',
+  'sos_banner_safe_subtitle': 'Votre protection THIX est active',
+  'sos_banner_sos_title': 'SOS EN COURS',
+  'sos_banner_network_title': 'CONNEXION PERDUE',
+  'sos_banner_network_subtitle': 'Dernière position conservée localement',
+  'sos_banner_warning_title': 'ATTENTION',
+  'sos_banner_warning_subtitle': 'Vérifiez vos paramètres de secours',
+  'sos_view_location': 'Voir la localisation',
+  'sos_protection_active': 'Protection active',
+
+  // ─── SOS — Chat & Communication ─────────────────────────────
+  'sos_chat': 'Chat SOS',
+  'sos_chat_sos': 'THIX CHAT SOS',
+  'sos_open_urgent_chat': "Ouvrir la conversation d'urgence",
+  'sos_open_crisis_room': 'Ouvrir la chambre de crise',
+  'sos_chat_not_ready': 'Conversation SOS pas encore créée',
+  'sos_group': 'Groupe SOS',
+  'sos_group_ok': 'Groupe OK',
+  'sos_group_waiting': 'Groupe ?',
+  'sos_clip': 'Clip 10s',
+  'sos_clip_busy': 'Clip…',
+  'sos_clip_recording': 'Enregistrement 10s puis envoi automatique…',
+  'sos_clip_unavailable': 'Clip 10s impossible sur cet appareil',
+  'sos_clip_sent': '🎥 Clip 10s envoyé dans le groupe SOS',
+  'sos_clip_pending': '🎥 Clip 10s enregistré — envoi groupe en cours',
+  'sos_recall': 'Rappeler',
+  'sos_audio_call': 'Appel audio',
+  'sos_auto_call_in_progress': 'APPEL AUTOMATIQUE EN COURS',
+  'sos_next_in': 'prochain dans',
+  'sos_mic_on': 'Micro on',
+  'sos_mic_mute': 'Muet',
+  'sos_cam_on': 'Activer la caméra',
+  'sos_cam_off': 'Désactiver la caméra',
+
+  // ─── SOS — Localisation & Carte ─────────────────────────────
+  'sos_section_location': 'LOCALISATION EN DIRECT',
+  'sos_position_active': 'Position active',
+  'sos_position_waiting': 'En attente de position',
+  'sos_position_unknown': 'Position ?',
+  'sos_battery_unknown': 'Batt ?',
+  'sos_map_disabled': "Carte temporairement désactivée\n(En attente de l'API Google)",
+  'sos_current_position': 'Position actuelle',
+
+  // ─── SOS — Preuves & Événements ─────────────────────────────
+  'sos_tab_evidence': 'PREUVES',
+  'sos_tab_journal': 'JOURNAL',
+  'sos_no_evidence': 'Aucune preuve — lancez Photo / Clip / Surveillance',
+  'sos_journal_empty': 'Journal vide',
+  'sos_evidence': 'preuve',
+  'sos_latest_evidence': 'DERNIÈRE PREUVE',
+  'sos_offline': 'HORS LIGNE — COMMANDES ACTIVES',
+  'sos_no_live': 'Pas de live. Lancez Photo / Clip 10s / Surveillance.',
+  'sos_photo': 'Photo',
+  'sos_video_30s': 'Vidéo 30s',
+  'sos_stop_audio': 'STOP AUDIO',
+  'sos_record_audio': 'Enreg. audio',
+  'sos_stop_surveillance': 'Stop surveillance',
+  'sos_surveillance_10s': 'Surveillance 10s',
+  'sos_instruction': 'Instruction',
+  'sos_instruct_title': '📢 Instruction réelle → victime + groupe SOS',
+  'sos_instruct_custom': 'Message personnalisé…',
+  'sos_instruct_sent': '📢 Instruction dans le groupe SOS',
+  'sos_send_group': 'ENVOYER AU GROUPE',
+  'sos_instruct_calm': 'Restez calme, les secours arrivent',
+  'sos_instruct_talk': 'Parlez-moi, décrivez votre situation',
+  'sos_instruct_room': 'Montrez la pièce avec la caméra',
+  'sos_instruct_clip': 'Lancez un clip 10 secondes',
+  'sos_instruct_stay': 'Ne raccrochez pas',
+
+  // ─── SOS — Événements (labels) ──────────────────────────────
+  'sos_ev_instruct': 'Instruction',
+  'sos_ev_instruction': 'instruction',
+  'sos_ev_photo_requested': 'Photo demandée par le secours',
+  'sos_ev_video_requested': 'Vidéo',
+  'sos_ev_clip_requested': 'Clip 10s demandé',
+  'sos_ev_mic_on': 'Micro distant ON',
+  'sos_ev_mic_off': 'Micro distant OFF',
+  'sos_ev_surveillance_on': 'Surveillance 10s ON',
+  'sos_ev_surveillance_off': 'Surveillance OFF',
+  'sos_ev_photo_sent': 'Photo envoyée dans le groupe',
+  'sos_ev_photo_captured': 'Photo capturée',
+  'sos_ev_video_sent': 'Vidéo envoyée dans le groupe',
+  'sos_ev_video_captured': 'Vidéo capturée',
+  'sos_ev_audio_sent': 'Audio envoyé dans le groupe',
+  'sos_ev_audio_captured': 'Audio capturé',
+  'sos_ev_capture_failed': 'Échec capture',
+  'sos_ev_rescue_joined': 'Un secours a rejoint la salle',
+  'sos_ev_created': 'Incident créé',
+  'sos_ev_started': 'SOS démarré',
+  'sos_ev_photo_received': '📥 Photo victime reçue',
+  'sos_ev_video_received': '📥 Vidéo victime reçue',
+  'sos_ev_audio_received': '📥 Audio victime reçu',
+  'sos_ev_failed': '⚠️ Échec capture victime',
+  'sos_victim_label': 'Victime',
+  'sos_victim_unknown': 'Victime inconnue — appel impossible',
+
+  // ─── SOS — Commandes ────────────────────────────────────────
+  'sos_cmd_photo': '📸 Commande photo → téléphone victime',
+  'sos_cmd_video': '🎥 Commande vidéo → téléphone victime',
+  'sos_cmd_clip': 'Commande clip 10s',
+  'sos_cmd_audio_start': '🎤 Audio victime en cours…',
+  'sos_cmd_audio_stop': '⏹ Stop audio → téléphone victime',
+  'sos_cmd_surveillance_on': '🛰️ Surveillance : photo toutes les 10 s + envoi',
+  'sos_cmd_surveillance_off': '⏹ Surveillance arrêtée',
+
+  // ─── SOS — Quick Messages ───────────────────────────────────
+  'sos_section_quick': 'MESSAGES RAPIDES',
+  'sos_qm_help': "🚨 J'AI BESOIN D'AIDE",
+  'sos_qm_silent': '🤫 JE NE PEUX PAS PARLER',
+  'sos_qm_here': '📍 JE SUIS ICI',
+  'sos_qm_injured': '🏥 JE SUIS BLESSÉ',
+  'sos_qm_followed': '👤 JE SUIS SUIVI',
+  'sos_qm_locked': '🚪 JE SUIS ENFERMÉ',
+  'sos_qm_call': '📞 APPELEZ LES SECOURS',
+  'sos_qm_ok': '🟢 JE VAIS BIEN',
+
+  // ─── SOS — Sections ─────────────────────────────────────────
+  'sos_section_rescuers': 'SECOURS',
+  'sos_section_communication': 'COMMUNICATION',
+  'sos_section_system': 'ÉTAT SYSTÈME',
+  'sos_section_events': 'ÉVÉNEMENTS',
+  'sos_events_error': 'Impossible de charger les événements',
+  'sos_no_events': 'Aucun événement',
+
+  // ─── SOS — Erreurs ──────────────────────────────────────────
+  'sos_error_timeout': 'Délai dépassé. Réessayez.',
+  'sos_error_permission': 'Permission refusée',
+  'sos_error_network': 'Erreur réseau. Vérifiez votre connexion.',
+  'sos_error_generic': 'Une erreur est survenue',
+  'sos_error_camera': 'Caméra indisponible',
+  'sos_error_live': 'Live indisponible',
+
+  // ─── SOS — Homepage ─────────────────────────────────────────
+  'sos_active_crisis': '🚨 SOS EN COURS — CHAMBRE DE CRISE',
+  'sos_rescue_instructions': 'Piloter le sauvetage : caméra, photo, vidéo, audio',
+  'sos_crisis_room_subtitle': 'Gérer vos incidents actifs en temps réel',
+  'sos_quick_actions': 'ACTIONS RAPIDES',
+  'sos_share_location': 'Partager',
+  'sos_safe_check': 'Safe Check',
+  'sos_my_routes': 'Mes trajets',
+  'sos_report': 'Signaler',
+  'sos_thix_search': 'THIX RECHERCHE',
+  'sos_search_subtitle': 'Avis & disparitions',
+  'sos_incidents_subtitle': 'Historique & rapports',
+
+  // ─── NEARBY ALERTS ──────────────────────────────────────────
+  'nearby_alerts_title': 'ALERTES À PROXIMITÉ',
+  'nearby_view_on_map': 'Voir sur la carte',
+  'nearby_map_coming_soon': 'Carte plein écran bientôt disponible',
+  'nearby_map_disabled': "Carte désactivée\n(En attente de clé API)",
+  'nearby_active_alerts': 'alertes actives',
+  'nearby_missing': 'disparues',
+  'nearby_official': 'officiels',
+  'nearby_legend_missing': 'Disparue',
+  'nearby_legend_official': 'Avis officiel',
+  'nearby_legend_report': 'Signalement',
+  'nearby_error_timeout': 'Délai dépassé. Réessayez.',
+  'nearby_error_network': 'Erreur réseau. Vérifiez votre connexion.',
+  'nearby_error_permission': 'Permission localisation refusée',
+  'nearby_error_location': 'Localisation indisponible',
+  'nearby_error_generic': 'Une erreur est survenue',
+  'nearby_invalid_coordinates': 'Coordonnées invalides',
+  'nearby_location_required': 'Activez la localisation',
+  'nearby_location_subtitle': 'Pour voir les alertes proches de vous',
+
+  // ─── SEARCH / RECHERCHE ─────────────────────────────────────
+  'search_title': 'THIX Recherche',
+  'search_subtitle': 'Avis de recherche et disparitions',
+  'search_person_missing': 'Personne disparue',
+  'search_person_wanted': 'Avis de recherche officiel',
+  'search_report_missing': 'Signaler une disparition',
+  'search_report_found': 'Signaler une découverte',
+  'search_details': 'Détails',
+  'search_contact_authorities': 'Contacter les autorités',
+  'search_share_alert': "Partager l'alerte",
+  'search_last_seen': 'Vu pour la dernière fois',
+  'search_description': 'Description',
+  'search_age': 'Âge',
+  'search_height': 'Taille',
+  'search_weight': 'Poids',
+  'search_hair_color': 'Couleur de cheveux',
+  'search_eye_color': 'Couleur des yeux',
+  'search_distinguishing_marks': 'Signes particuliers',
+  'search_clothing': 'Vêtements',
+  'search_circumstances': 'Circonstances',
+  'search_case_number': 'Numéro de dossier',
+  'search_reported_by': 'Signalé par',
+  'search_official_notice': 'Avis officiel',
+  'search_community_alert': 'Alerte communautaire',
+
+  // ─── CHAT — Général ─────────────────────────────────────────
+  'chat_online': 'En ligne',
+  'chat_seen_at': 'Vu à',
+  'chat_at': 'à',
+  'chat_yesterday_at': "Hier à",
+  'chat_on': 'le',
+  'chat_write_message': 'Écrire un message…',
+  'chat_send': 'Envoyer',
+  'chat_record_audio': 'Enregistrer audio',
+  'chat_stop_recording': "Arrêter l'enregistrement",
+  'chat_recording': 'Enregistrement',
+  'chat_recording_error': "Erreur d'enregistrement",
+  'chat_file': 'Fichier',
+  'chat_sticker': 'Sticker',
+  'chat_ephemeral': 'Éphémère',
+  'chat_protected': 'Protégé',
+  'chat_internal_note': 'Note interne',
+  'chat_internal_note_on': 'Mode note interne activé',
+  'chat_internal_note_off': 'Mode note interne désactivé',
+  'chat_video_call': 'Appel vidéo',
+  'chat_audio_call': 'Appel audio',
+  'chat_escalate': 'Escalader',
+  'chat_history': 'Historique',
+  'chat_group_info': 'Infos groupe',
+  'chat_typing': 'écrit…',
+  'chat_members': 'membres',
+  'chat_unknown_user': 'Utilisateur inconnu',
+  'chat_cannot_reply': 'Impossible de répondre',
+  'chat_connection_interrupted': 'Connexion interrompue',
+  'chat_call_inactive': 'Appel impossible — connexion inactive',
+  'chat_send_inactive': 'Envoi impossible — connexion inactive',
+  'chat_auth_required': 'Autorisation requise',
+  'chat_understood': "J'ai compris",
+  'chat_mic_call_disclosure': "L'appel audio nécessite l'accès au microphone",
+  'chat_cam_call_disclosure': "L'appel vidéo nécessite l'accès à la caméra",
+  'chat_mic_disclosure': "L'enregistrement audio nécessite l'accès au microphone",
+  'chat_callback': 'Rappeler',
+  'chat_pause': 'Pause',
+  'chat_play': 'Lecture',
+  'chat_file_too_big': 'Fichier trop volumineux',
+  'chat_delete_title': 'Supprimer le message',
+  'chat_delete_message': 'Ce message sera supprimé pour tout le monde.',
+  'chat_ephemeral_message': 'Message éphémère',
+  'chat_disabled': 'Désactivé',
+  'chat_seconds_10': '10 secondes',
+  'chat_minute_1': '1 minute',
+  'chat_hour_1': '1 heure',
+  'chat_hours_24': '24 heures',
+  'chat_custom_time': 'Durée personnalisée',
+  'chat_duration_seconds': 'Durée (secondes)',
+  'chat_validate': 'Valider',
+  'chat_invalid_number': 'Nombre invalide',
+  'chat_secure_message': 'Message sécurisé',
+  'chat_message': 'Message',
+  'chat_password': 'Mot de passe',
+  'chat_emojis': 'Émojis',
+  'chat_reactions': 'Réactions',
+  'chat_flags': 'Drapeaux',
+  'chat_seen_at_label': 'Vu',
+  'chat_new_message': 'Nouveau message',
+  'chat_no_messages': 'Aucun message',
+  'chat_start_conversation': 'Commencez la conversation',
+  'chat_group_name': 'Nom du groupe',
+  'chat_add_members': 'Ajouter des membres',
+  'chat_leave_group': 'Quitter le groupe',
+  'chat_leave_confirm': 'Voulez-vous vraiment quitter ce groupe ?',
+  'chat_mute': 'Muet',
+  'chat_unmute': 'Activer son',
+  'chat_pinned': 'Épinglé',
+  'chat_reply': 'Répondre',
+  'chat_forward': 'Transférer',
+  'chat_star': 'Favori',
+
+  // ─── PROFILE ────────────────────────────────────────────────
+  'profile_title': 'Mon profil',
+  'profile_edit': 'Modifier le profil',
+  'profile_full_name': 'Nom complet',
+  'profile_first_name': 'Prénom',
+  'profile_last_name': 'Nom',
+  'profile_display_name': "Nom d'affichage",
+  'profile_bio': 'Biographie',
+  'profile_avatar': 'Photo de profil',
+  'profile_change_avatar': 'Changer la photo',
+  'profile_email': 'E-mail',
+  'profile_phone': 'Téléphone',
+  'profile_location': 'Localisation',
+  'profile_birthday': 'Date de naissance',
+  'profile_gender': 'Genre',
+  'profile_gender_male': 'Homme',
+  'profile_gender_female': 'Femme',
+  'profile_gender_other': 'Autre',
+  'profile_gender_prefer_not': 'Préfère ne pas dire',
+  'profile_social_links': 'Liens sociaux',
+  'profile_website': 'Site web',
+  'profile_save_success': 'Profil mis à jour',
+  'profile_save_error': 'Erreur lors de la mise à jour',
+
+  // ─── CERTIFICATION ──────────────────────────────────────────
+  'certification_title': 'Certification THIX',
+  'certification_apply': 'Demander une certification',
+  'certification_status': 'Statut',
+  'certification_pending': 'En attente',
+  'certification_approved': 'Approuvé',
+  'certification_rejected': 'Refusé',
+  'certification_tier_bronze': 'Bronze',
+  'certification_tier_silver': 'Argent',
+  'certification_tier_gold': 'Or',
+  'certification_tier_platinum': 'Platine',
+  'certification_benefits': 'Avantages',
+  'certification_documents': 'Documents requis',
+  'certification_upload_doc': 'Téléverser un document',
+  'certification_review_progress': 'Examen en cours',
+  'certification_verified_account': 'Compte vérifié',
+
+  // ─── NETWORK / SOCIAL ───────────────────────────────────────
+  'network_title': 'Réseau THIX',
+  'network_connections': 'Connexions',
+  'network_followers': 'Abonnés',
+  'network_following': 'Abonnements',
+  'network_follow': 'Suivre',
+  'network_unfollow': 'Ne plus suivre',
+  'network_connect': 'Connecter',
+  'network_disconnect': 'Déconnecter',
+  'network_block': 'Bloquer',
+  'network_report': 'Signaler',
+  'network_connection_request': 'Demande de connexion',
+  'network_pending_requests': 'Demandes en attente',
+  'network_suggested': 'Suggestions',
+  'network_mutual_connections': 'Connexions mutuelles',
+  'network_no_connections': 'Aucune connexion',
+  'network_post': 'Publication',
+  'network_posts': 'Publications',
+  'network_like': 'J\'aime',
+  'network_comment': 'Commentaire',
+  'network_share_post': 'Partager la publication',
+
+  // ─── SETTINGS ───────────────────────────────────────────────
+  'settings_title': 'Paramètres',
+  'settings_account': 'Compte',
+  'settings_privacy': 'Confidentialité',
+  'settings_security': 'Sécurité',
+  'settings_notifications': 'Notifications',
+  'settings_appearance': 'Apparence',
+  'settings_language': 'Langue',
+  'settings_theme': 'Thème',
+  'settings_theme_light': 'Clair',
+  'settings_theme_dark': 'Sombre',
+  'settings_theme_system': 'Système',
+  'settings_sounds': 'Sons',
+  'settings_vibration': 'Vibration',
+  'settings_data_usage': 'Utilisation des données',
+  'settings_storage': 'Stockage',
+  'settings_clear_cache': 'Vider le cache',
+  'settings_cache_cleared': 'Cache vidé',
+  'settings_about': 'À propos',
+  'settings_version': 'Version',
+  'settings_terms': "Conditions d'utilisation",
+  'settings_privacy_policy': 'Politique de confidentialité',
+  'settings_help_support': 'Aide et support',
+  'settings_contact_us': 'Nous contacter',
+  'settings_rate_app': "Noter l'application",
+  'settings_delete_account': 'Supprimer le compte',
+  'settings_delete_confirm': 'Cette action est irréversible. Toutes vos données seront supprimées.',
+
+  // ─── NOTIFICATIONS ──────────────────────────────────────────
+  'notif_new_message': 'Nouveau message',
+  'notif_connection_request': 'Demande de connexion',
+  'notif_sos_alert': '🚨 Alerte SOS',
+  'notif_emergency_call': 'Appel d\'urgence',
+  'notif_location_shared': 'Position partagée',
+  'notif_mark_as_read': 'Marquer comme lu',
+  'notif_clear_all': 'Tout effacer',
+  'notif_no_notifications': 'Aucune notification',
+
+  // ─── PERMISSIONS ────────────────────────────────────────────
+  'perm_camera_title': 'Accès caméra',
+  'perm_camera_desc': "Pour prendre des photos et vidéos",
+  'perm_mic_title': 'Accès microphone',
+  'perm_mic_desc': "Pour enregistrer l'audio et passer des appels",
+  'perm_location_title': 'Accès localisation',
+  'perm_location_desc': 'Pour partager votre position en cas d\'urgence',
+  'perm_contacts_title': 'Accès contacts',
+  'perm_contacts_desc': 'Pour ajouter rapidement vos secours',
+  'perm_photos_title': 'Accès photos',
+  'perm_photos_desc': 'Pour envoyer des images',
+  'perm_notifications_title': 'Notifications',
+  'perm_notifications_desc': 'Pour recevoir les alertes importantes',
+  'perm_allow': 'Autoriser',
+  'perm_deny': 'Refuser',
+  'perm_go_to_settings': 'Aller dans les paramètres',
+
+  // ─── ERRORS GÉNÉRIQUES ──────────────────────────────────────
+  'error_generic': 'Une erreur est survenue',
+  'error_network': 'Erreur réseau. Vérifiez votre connexion.',
+  'error_timeout': 'Délai dépassé. Réessayez.',
+  'error_server': 'Erreur serveur. Réessayez plus tard.',
+  'error_unauthorized': 'Non autorisé. Veuillez vous reconnecter.',
+  'error_forbidden': 'Accès refusé',
+  'error_not_found': 'Ressource introuvable',
+  'error_validation': 'Données invalides',
+  'error_file_too_large': 'Fichier trop volumineux',
+  'error_unsupported_format': 'Format non supporté',
+  'error_permission_denied': 'Permission refusée',
+  'error_camera_unavailable': 'Caméra indisponible',
+  'error_microphone_unavailable': 'Microphone indisponible',
+  'error_location_unavailable': 'Localisation indisponible',
+
+  // ─── PLURAL KEYS ────────────────────────────────────────────
+  'item_zero': 'Aucun élément',
+  'item_one': '{count} élément',
+  'item_many': '{count} éléments',
+  'contact_zero': 'Aucun contact',
+  'contact_one': '{count} contact',
+  'contact_many': '{count} contacts',
+  'message_zero': 'Aucun message',
+  'message_one': '{count} message',
+  'message_many': '{count} messages',
+  'day_zero': '0 jour',
+  'day_one': '{count} jour',
+  'day_many': '{count} jours',
+  'hour_zero': '0 heure',
+  'hour_one': '{count} heure',
+  'hour_many': '{count} heures',
+  'minute_zero': '0 minute',
+  'minute_one': '{count} minute',
+  'minute_many': '{count} minutes',
+  // ─── TIME / RELATIVE ──────────────────────────────────────
+  'common_just_now': 'À l\'instant',
+  'common_in_the_future': 'dans un instant',
+  'time_minutes_ago': 'il y a {0} min',
+  'time_minutes_ago_plural': 'il y a {0} minutes',
+  'time_hours_ago': 'il y a {0} heure',
+  'time_hours_ago_plural': 'il y a {0} heures',
+  'time_days_ago': 'il y a {0} jour',
+  'time_days_ago_plural': 'il y a {0} jours',
+  'time_seconds_ago': 'il y a {0} s',
+  'time_weeks_ago': 'il y a {0} semaine',
+  'time_weeks_ago_plural': 'il y a {0} semaines',
+  'time_months_ago': 'il y a {0} mois',
+  'time_years_ago': 'il y a {0} an',
+  'time_years_ago_plural': 'il y a {0} ans',
+  'time_in_minutes': 'dans {0} min',
+  'time_in_hours': 'dans {0} heure',
+  'time_in_hours_plural': 'dans {0} heures',
+  'time_in_days': 'dans {0} jour',
+  'time_in_days_plural': 'dans {0} jours',
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// 🇬🇧 ENGLISH
+// ════════════════════════════════════════════════════════════════════════════
+const Map<String, String> _en = {
+  'common_back': 'Back',
+  'common_close': 'Close',
+  'common_cancel': 'Cancel',
+  'common_confirm': 'Confirm',
+  'common_delete': 'Delete',
+  'common_add': 'Add',
+  'common_edit': 'Edit',
+  'common_save': 'Save',
+  'common_manage': 'Manage',
+  'common_retry': 'Retry',
+  'common_refresh': 'Refresh',
+  'common_search': 'Search',
+  'common_open': 'Open',
+  'common_share': 'Share',
+  'common_copy': 'Copy',
+  'common_copied': 'Copied',
+  'common_download': 'Download',
+  'common_upload': 'Upload',
+  'common_send': 'Send',
+  'common_receive': 'Receive',
+  'common_accept': 'Accept',
+  'common_reject': 'Reject',
+  'common_skip': 'Skip',
+  'common_next': 'Next',
+  'common_previous': 'Previous',
+  'common_finish': 'Finish',
+  'common_done': 'Done',
+  'common_error': 'Error',
+  'common_success': 'Success',
+  'common_loading': 'Loading…',
+  'common_please_wait': 'Please wait…',
+  'common_today': 'Today',
+  'common_yesterday': 'Yesterday',
+  'common_tomorrow': 'Tomorrow',
+  'common_home': 'Home',
+  'common_chat': 'Chat',
+  'common_map': 'Map',
+  'common_profile': 'Profile',
+  'common_menu': 'Menu',
+  'common_notifications': 'Notifications',
+  'common_settings': 'Settings',
+  'common_help': 'Help',
+  'common_about': 'About',
+  'common_logout': 'Logout',
+  'common_login': 'Login',
+  'common_signup': 'Sign up',
+  'common_yes': 'Yes',
+  'common_no': 'No',
+  'common_or': 'or',
+  'common_and': 'and',
+  'common_none': 'None',
+  'common_all': 'All',
+  'common_unknown': 'Unknown',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Choose language',
+  'settings_system_default': 'System default',
+  'settings_language_change_failed': 'Unable to change language',
+  'settings_language_changed': 'Language changed',
+  // ─── HOME / CONSTELLATION ──────────────────────────────────
+  'home_search_hint': 'Search a service, a contact…',
+  'home_greeting_fr': 'Hello',
+  'quickSona': 'THIX Sona',
+  'quickDoc': 'My documents',
+  'quickChat': 'Chat',
+  'quickSos': 'SOS',
+  'serviceSante': 'THIX Health',
+  'serviceMarket': 'THIX Market',
+  'serviceMoney': 'THIX Money',
+  'serviceReservation': 'Reservations',
+  'serviceMonPays': 'My Country',
+  'serviceEmploi': 'Jobs',
+  'serviceFormations': 'Training',
+  'serviceOpportunites': 'Opportunities',
+  'serviceInfos': 'News',
+  'serviceEvents': 'Events',
+
+  'auth_login': 'Log in',
+  'auth_signup': 'Create account',
+  'auth_forgot_password': 'Forgot password?',
+  'auth_reset_password': 'Reset password',
+  'auth_email': 'Email',
+  'auth_phone': 'Phone',
+  'auth_password': 'Password',
+  'auth_confirm_password': 'Confirm password',
+  'auth_logout': 'Log out',
+  'auth_logout_confirm': 'Do you really want to log out?',
+  'auth_welcome_back': 'Welcome back',
+  'auth_welcome': 'Welcome',
+  'auth_no_account': 'No account yet?',
+  'auth_has_account': 'Already have an account?',
+  'auth_invalid_email': 'Invalid email address',
+  'auth_invalid_phone': 'Invalid phone number',
+  'auth_password_too_short': 'Password too short (min 8 chars)',
+  'auth_passwords_mismatch': 'Passwords do not match',
+  'auth_login_success': 'Login successful',
+  'auth_signup_success': 'Account created successfully',
+  'auth_logout_success': 'Logout successful',
+  'auth_session_expired': 'Session expired, please log in again',
+  'auth_2fa_title': 'Two-factor verification',
+  'auth_2fa_code': 'Verification code',
+  'auth_verify_email': 'Verify email',
+  'auth_verify_phone': 'Verify phone',
+  'auth_biometric': 'Biometric login',
+  'auth_biometric_prompt': 'Authenticate to continue',
+
+  'onboarding_welcome': 'Welcome to THIX',
+  'onboarding_step_1_title': 'Connect',
+  'onboarding_step_1_desc': 'Create your secure THIX identity',
+  'onboarding_step_2_title': 'Protect',
+  'onboarding_step_2_desc': 'Enable 24/7 protection',
+  'onboarding_step_3_title': 'Act',
+  'onboarding_step_3_desc': 'Alert your rescuers in 2 seconds',
+  'onboarding_get_started': 'Get started',
+  'onboarding_skip': 'Skip introduction',
+
+  'sos_button': 'SOS',
+  'sos_button_label': 'Emergency SOS button',
+  'sos_button_hint': 'Hold 2 seconds to trigger',
+  'sos_button_tooltip': 'Press and hold 2 seconds',
+  'sos_button_text': 'SOS',
+  'sos_button_instruction': 'PRESS AND HOLD\n2 SECONDS',
+  'sos_hold_instruction': 'Press and hold 2 seconds',
+  'sos_trigger_button': 'Trigger SOS',
+  'sos_trigger_timeout': 'Timeout. Please retry.',
+  'sos_trigger_error': 'Failed to trigger SOS',
+  'sos_active': 'SOS ACTIVE',
+  'sos_crisis_room': 'CRISIS ROOM',
+  'sos_command_center': 'COMMAND CENTER',
+  'sos_incident': 'Incident',
+  'sos_incident_unknown': 'Unknown incident',
+  'sos_incident_not_found': 'Incident not found',
+  'sos_circle': 'Circle',
+  'sos_rescuers': 'rescuers',
+  'sos_rescuer': 'Rescuer',
+  'sos_my_rescuers': 'MY RESCUERS',
+  'sos_duration': 'Duration',
+  'sos_identifier': 'Identifier',
+  'sos_calling': 'Calling…',
+  'sos_call': 'Call',
+  'sos_available': 'Available',
+  'sos_unavailable': 'Unavailable',
+  'sos_verified': 'Verified',
+  'sos_unknown': 'Unknown',
+  'sos_end': 'End',
+  'sos_end_sos': 'End SOS',
+  'sos_cancel_sos': 'CANCEL SOS',
+  'sos_pin_required': 'Security code required',
+  'sos_cancelled': 'SOS cancelled',
+  'sos_resolved': 'SOS resolved',
+  'sos_cancel_failed': 'Cancellation failed',
+  'sos_in_progress': 'IN PROGRESS',
+  'sos_history': 'HISTORY',
+  'sos_my_incidents': 'My incidents',
+  'sos_no_incidents': 'No incidents yet',
+  'sos_incidents_appear_here': 'Your SOS will appear here',
+  'sos_history_error': 'Cannot load history',
+
+  'sos_circle_1': 'Circle 1 – Priority',
+  'sos_circle_2': 'Circle 2 – Secondary',
+  'sos_circle_3': 'Circle 3 – Emergency',
+  'sos_circle_1_title': 'Circle 1 – Priority',
+  'sos_circle_2_title': 'Circle 2 – Secondary',
+  'sos_circle_3_title': 'Circle 3 – Emergency',
+  'sos_circle_priority': 'Priority',
+  'sos_circle_secondary': 'Secondary',
+  'sos_circle_urgent': 'Emergency',
+  'sos_no_rescuers': 'No rescuers',
+  'sos_no_rescuers_circle': 'No rescuers in this circle',
+  'sos_add_first_rescuer': 'Add your first rescue contact',
+  'sos_add_rescuer': 'Add a rescuer',
+  'sos_add_rescuer_info': "Enter the rescuer's THIX ID. Name and photo are auto-fetched.",
+  'sos_thix_id_label': 'THIX ID',
+  'sos_thix_id_hint': 'THIX-XXXX',
+  'sos_relation': 'Relationship',
+  'sos_relation_hint': 'e.g. Mother, Friend, Colleague…',
+  'sos_phone_optional': 'Phone (optional)',
+  'sos_phone_hint': '+1 …',
+  'sos_save_rescuer': 'Save rescuer',
+  'sos_multiple_rescuers_info': 'You can add multiple rescuers per circle.',
+  'sos_rescuer_saved': 'THIX rescuer saved',
+  'sos_search_first': 'Search a valid THIX ID first',
+  'sos_no_thix_account': 'No THIX account found for this ID',
+  'sos_enter_thix_id': 'Enter a THIX ID',
+  'sos_load_error': 'Cannot load your rescuers',
+  'sos_delete_rescuer': 'Delete this rescuer?',
+  'sos_delete_rescuer_confirm': 'This contact will no longer receive SOS alerts. Irreversible.',
+  'sos_rescuer_deleted': 'Rescuer deleted successfully',
+  'sos_delete_error': 'Error while deleting',
+  'sos_circle_priority_title': 'Priority order',
+  'sos_circle_priority_info': 'Circle 1 contacted first. No answer → Circle 2 → Circle 3.',
+
+  'sos_pin_title': 'Security code',
+  'sos_pin_label': 'PIN code',
+  'sos_pin_enter': 'Enter your {0}-digit security code',
+  'sos_pin_invalid': 'Invalid code (4-6 digits)',
+  'sos_pin_wrong': 'Wrong code',
+  'sos_remaining': 'attempts remaining',
+  'sos_pin_locked': 'Too many attempts — temporarily locked',
+  'sos_pin_locked_for': 'Locked for',
+
+  'sos_status_location': 'Location',
+  'sos_status_active': 'ACTIVE',
+  'sos_status_waiting': 'WAITING',
+  'sos_status_camera': 'Camera',
+  'sos_status_backup': 'Backup',
+  'sos_banner_safe_title': 'YOU ARE SAFE',
+  'sos_banner_safe_subtitle': 'Your THIX protection is active',
+  'sos_banner_sos_title': 'SOS ACTIVE',
+  'sos_banner_network_title': 'CONNECTION LOST',
+  'sos_banner_network_subtitle': 'Last position saved locally',
+  'sos_banner_warning_title': 'WARNING',
+  'sos_banner_warning_subtitle': 'Check your rescuer settings',
+  'sos_view_location': 'View location',
+  'sos_protection_active': 'Protection active',
+
+  'sos_chat': 'SOS Chat',
+  'sos_chat_sos': 'THIX CHAT SOS',
+  'sos_open_urgent_chat': 'Open urgent conversation',
+  'sos_open_crisis_room': 'Open crisis room',
+  'sos_chat_not_ready': 'SOS conversation not yet created',
+  'sos_group': 'SOS Group',
+  'sos_group_ok': 'Group OK',
+  'sos_group_waiting': 'Group ?',
+  'sos_clip': '10s clip',
+  'sos_clip_busy': 'Clip…',
+  'sos_clip_recording': 'Recording 10s then automatic send…',
+  'sos_clip_unavailable': '10s clip unavailable on this device',
+  'sos_clip_sent': '🎥 10s clip sent to SOS group',
+  'sos_clip_pending': '🎥 10s clip recorded — sending to group',
+  'sos_recall': 'Call back',
+  'sos_audio_call': 'Audio call',
+  'sos_auto_call_in_progress': 'AUTO CALL IN PROGRESS',
+  'sos_next_in': 'next in',
+  'sos_mic_on': 'Mic on',
+  'sos_mic_mute': 'Mute',
+  'sos_cam_on': 'Enable camera',
+  'sos_cam_off': 'Disable camera',
+
+  'sos_section_location': 'LIVE LOCATION',
+  'sos_position_active': 'Position active',
+  'sos_position_waiting': 'Waiting for position',
+  'sos_position_unknown': 'Position ?',
+  'sos_battery_unknown': 'Batt ?',
+  'sos_map_disabled': 'Map temporarily disabled\n(Waiting for Google API)',
+  'sos_current_position': 'Current position',
+
+  'sos_tab_evidence': 'EVIDENCE',
+  'sos_tab_journal': 'JOURNAL',
+  'sos_no_evidence': 'No evidence — launch Photo / Clip / Surveillance',
+  'sos_journal_empty': 'Journal empty',
+  'sos_evidence': 'evidence',
+  'sos_latest_evidence': 'LATEST EVIDENCE',
+  'sos_offline': 'OFFLINE — COMMANDS ACTIVE',
+  'sos_no_live': 'No live. Launch Photo / 10s Clip / Surveillance.',
+  'sos_photo': 'Photo',
+  'sos_video_30s': 'Video 30s',
+  'sos_stop_audio': 'STOP AUDIO',
+  'sos_record_audio': 'Record audio',
+  'sos_stop_surveillance': 'Stop surveillance',
+  'sos_surveillance_10s': 'Surveillance 10s',
+  'sos_instruction': 'Instruction',
+  'sos_instruct_title': '📢 Real instruction → victim + SOS group',
+  'sos_instruct_custom': 'Custom message…',
+  'sos_instruct_sent': '📢 Instruction sent to SOS group',
+  'sos_send_group': 'SEND TO GROUP',
+  'sos_instruct_calm': 'Stay calm, rescuers are coming',
+  'sos_instruct_talk': 'Talk to me, describe your situation',
+  'sos_instruct_room': 'Show the room with the camera',
+  'sos_instruct_clip': 'Launch a 10-second clip',
+  'sos_instruct_stay': "Don't hang up",
+
+  'sos_ev_instruct': 'Instruction',
+  'sos_ev_instruction': 'instruction',
+  'sos_ev_photo_requested': 'Photo requested by rescuer',
+  'sos_ev_video_requested': 'Video',
+  'sos_ev_clip_requested': '10s clip requested',
+  'sos_ev_mic_on': 'Remote mic ON',
+  'sos_ev_mic_off': 'Remote mic OFF',
+  'sos_ev_surveillance_on': 'Surveillance 10s ON',
+  'sos_ev_surveillance_off': 'Surveillance OFF',
+  'sos_ev_photo_sent': 'Photo sent to group',
+  'sos_ev_photo_captured': 'Photo captured',
+  'sos_ev_video_sent': 'Video sent to group',
+  'sos_ev_video_captured': 'Video captured',
+  'sos_ev_audio_sent': 'Audio sent to group',
+  'sos_ev_audio_captured': 'Audio captured',
+  'sos_ev_capture_failed': 'Capture failed',
+  'sos_ev_rescue_joined': 'A rescuer joined the room',
+  'sos_ev_created': 'Incident created',
+  'sos_ev_started': 'SOS started',
+  'sos_ev_photo_received': '📥 Victim photo received',
+  'sos_ev_video_received': '📥 Victim video received',
+  'sos_ev_audio_received': '📥 Victim audio received',
+  'sos_ev_failed': '⚠️ Victim capture failed',
+  'sos_victim_label': 'Victim',
+  'sos_victim_unknown': 'Unknown victim — call impossible',
+
+  'sos_cmd_photo': '📸 Photo command → victim phone',
+  'sos_cmd_video': '🎥 Video command → victim phone',
+  'sos_cmd_clip': '10s clip command',
+  'sos_cmd_audio_start': '🎤 Victim audio in progress…',
+  'sos_cmd_audio_stop': '⏹ Audio stop → victim phone',
+  'sos_cmd_surveillance_on': '🛰️ Surveillance: photo every 10s + send',
+  'sos_cmd_surveillance_off': '⏹ Surveillance stopped',
+
+  'sos_section_quick': 'QUICK MESSAGES',
+  'sos_qm_help': '🚨 I NEED HELP',
+  'sos_qm_silent': '🤫 I CANNOT TALK',
+  'sos_qm_here': '📍 I AM HERE',
+  'sos_qm_injured': '🏥 I AM INJURED',
+  'sos_qm_followed': '👤 I AM BEING FOLLOWED',
+  'sos_qm_locked': '🚪 I AM LOCKED IN',
+  'sos_qm_call': '📞 CALL EMERGENCY',
+  'sos_qm_ok': '🟢 I AM OK',
+
+  'sos_section_rescuers': 'RESCUERS',
+  'sos_section_communication': 'COMMUNICATION',
+  'sos_section_system': 'SYSTEM STATUS',
+  'sos_section_events': 'EVENTS',
+  'sos_events_error': 'Cannot load events',
+  'sos_no_events': 'No events',
+
+  'sos_error_timeout': 'Timeout. Please retry.',
+  'sos_error_permission': 'Permission denied',
+  'sos_error_network': 'Network error. Check your connection.',
+  'sos_error_generic': 'An error occurred',
+  'sos_error_camera': 'Camera unavailable',
+  'sos_error_live': 'Live unavailable',
+
+  'sos_active_crisis': '🚨 SOS ACTIVE — CRISIS ROOM',
+  'sos_rescue_instructions': 'Manage the rescue: camera, photo, video, audio',
+  'sos_crisis_room_subtitle': 'Manage your active incidents in real time',
+  'sos_quick_actions': 'QUICK ACTIONS',
+  'sos_share_location': 'Share',
+  'sos_safe_check': 'Safe Check',
+  'sos_my_routes': 'My routes',
+  'sos_report': 'Report',
+  'sos_thix_search': 'THIX SEARCH',
+  'sos_search_subtitle': 'Alerts & missing persons',
+  'sos_incidents_subtitle': 'History & reports',
+
+  'nearby_alerts_title': 'NEARBY ALERTS',
+  'nearby_view_on_map': 'View on map',
+  'nearby_map_coming_soon': 'Full-screen map coming soon',
+  'nearby_map_disabled': 'Map disabled\n(Waiting for API key)',
+  'nearby_active_alerts': 'active alerts',
+  'nearby_missing': 'missing',
+  'nearby_official': 'official',
+  'nearby_legend_missing': 'Missing',
+  'nearby_legend_official': 'Official notice',
+  'nearby_legend_report': 'Report',
+  'nearby_error_timeout': 'Timeout. Please retry.',
+  'nearby_error_network': 'Network error. Check your connection.',
+  'nearby_error_permission': 'Location permission denied',
+  'nearby_error_location': 'Location unavailable',
+  'nearby_error_generic': 'An error occurred',
+  'nearby_invalid_coordinates': 'Invalid coordinates',
+  'nearby_location_required': 'Enable location',
+  'nearby_location_subtitle': 'To see alerts near you',
+
+  'search_title': 'THIX Search',
+  'search_subtitle': 'Wanted notices & missing persons',
+  'search_person_missing': 'Missing person',
+  'search_person_wanted': 'Official wanted notice',
+  'search_report_missing': 'Report a disappearance',
+  'search_report_found': 'Report a finding',
+  'search_details': 'Details',
+  'search_contact_authorities': 'Contact authorities',
+  'search_share_alert': 'Share alert',
+  'search_last_seen': 'Last seen',
+  'search_description': 'Description',
+  'search_age': 'Age',
+  'search_height': 'Height',
+  'search_weight': 'Weight',
+  'search_hair_color': 'Hair color',
+  'search_eye_color': 'Eye color',
+  'search_distinguishing_marks': 'Distinguishing marks',
+  'search_clothing': 'Clothing',
+  'search_circumstances': 'Circumstances',
+  'search_case_number': 'Case number',
+  'search_reported_by': 'Reported by',
+  'search_official_notice': 'Official notice',
+  'search_community_alert': 'Community alert',
+
+  'chat_online': 'Online',
+  'chat_seen_at': 'Seen at',
+  'chat_at': 'at',
+  'chat_yesterday_at': 'Yesterday at',
+  'chat_on': 'on',
+  'chat_write_message': 'Write a message…',
+  'chat_send': 'Send',
+  'chat_record_audio': 'Record audio',
+  'chat_stop_recording': 'Stop recording',
+  'chat_recording': 'Recording',
+  'chat_recording_error': 'Recording error',
+  'chat_file': 'File',
+  'chat_sticker': 'Sticker',
+  'chat_ephemeral': 'Ephemeral',
+  'chat_protected': 'Protected',
+  'chat_internal_note': 'Internal note',
+  'chat_internal_note_on': 'Internal note mode enabled',
+  'chat_internal_note_off': 'Internal note mode disabled',
+  'chat_video_call': 'Video call',
+  'chat_audio_call': 'Audio call',
+  'chat_escalate': 'Escalate',
+  'chat_history': 'History',
+  'chat_group_info': 'Group info',
+  'chat_typing': 'typing…',
+  'chat_members': 'members',
+  'chat_unknown_user': 'Unknown user',
+  'chat_cannot_reply': 'Cannot reply',
+  'chat_connection_interrupted': 'Connection interrupted',
+  'chat_call_inactive': 'Call impossible — inactive connection',
+  'chat_send_inactive': 'Send impossible — inactive connection',
+  'chat_auth_required': 'Authorization required',
+  'chat_understood': 'I understand',
+  'chat_mic_call_disclosure': 'Audio call requires microphone access',
+  'chat_cam_call_disclosure': 'Video call requires camera access',
+  'chat_mic_disclosure': 'Audio recording requires microphone access',
+  'chat_callback': 'Call back',
+  'chat_pause': 'Pause',
+  'chat_play': 'Play',
+  'chat_file_too_big': 'File too large',
+  'chat_delete_title': 'Delete message',
+  'chat_delete_message': 'This message will be deleted for everyone.',
+  'chat_ephemeral_message': 'Ephemeral message',
+  'chat_disabled': 'Disabled',
+  'chat_seconds_10': '10 seconds',
+  'chat_minute_1': '1 minute',
+  'chat_hour_1': '1 hour',
+  'chat_hours_24': '24 hours',
+  'chat_custom_time': 'Custom duration',
+  'chat_duration_seconds': 'Duration (seconds)',
+  'chat_validate': 'Validate',
+  'chat_invalid_number': 'Invalid number',
+  'chat_secure_message': 'Secure message',
+  'chat_message': 'Message',
+  'chat_password': 'Password',
+  'chat_emojis': 'Emojis',
+  'chat_reactions': 'Reactions',
+  'chat_flags': 'Flags',
+  'chat_seen_at_label': 'Seen',
+  'chat_new_message': 'New message',
+  'chat_no_messages': 'No messages',
+  'chat_start_conversation': 'Start the conversation',
+  'chat_group_name': 'Group name',
+  'chat_add_members': 'Add members',
+  'chat_leave_group': 'Leave group',
+  'chat_leave_confirm': 'Do you really want to leave this group?',
+  'chat_mute': 'Mute',
+  'chat_unmute': 'Unmute',
+  'chat_pinned': 'Pinned',
+  'chat_reply': 'Reply',
+  'chat_forward': 'Forward',
+  'chat_star': 'Star',
+
+  'profile_title': 'My profile',
+  'profile_edit': 'Edit profile',
+  'profile_full_name': 'Full name',
+  'profile_first_name': 'First name',
+  'profile_last_name': 'Last name',
+  'profile_display_name': 'Display name',
+  'profile_bio': 'Bio',
+  'profile_avatar': 'Profile picture',
+  'profile_change_avatar': 'Change picture',
+  'profile_email': 'Email',
+  'profile_phone': 'Phone',
+  'profile_location': 'Location',
+  'profile_birthday': 'Birthday',
+  'profile_gender': 'Gender',
+  'profile_gender_male': 'Male',
+  'profile_gender_female': 'Female',
+  'profile_gender_other': 'Other',
+  'profile_gender_prefer_not': 'Prefer not to say',
+  'profile_social_links': 'Social links',
+  'profile_website': 'Website',
+  'profile_save_success': 'Profile updated',
+  'profile_save_error': 'Error while updating',
+
+  'certification_title': 'THIX Certification',
+  'certification_apply': 'Apply for certification',
+  'certification_status': 'Status',
+  'certification_pending': 'Pending',
+  'certification_approved': 'Approved',
+  'certification_rejected': 'Rejected',
+  'certification_tier_bronze': 'Bronze',
+  'certification_tier_silver': 'Silver',
+  'certification_tier_gold': 'Gold',
+  'certification_tier_platinum': 'Platinum',
+  'certification_benefits': 'Benefits',
+  'certification_documents': 'Required documents',
+  'certification_upload_doc': 'Upload document',
+  'certification_review_progress': 'Review in progress',
+  'certification_verified_account': 'Verified account',
+
+  'network_title': 'THIX Network',
+  'network_connections': 'Connections',
+  'network_followers': 'Followers',
+  'network_following': 'Following',
+  'network_follow': 'Follow',
+  'network_unfollow': 'Unfollow',
+  'network_connect': 'Connect',
+  'network_disconnect': 'Disconnect',
+  'network_block': 'Block',
+  'network_report': 'Report',
+  'network_connection_request': 'Connection request',
+  'network_pending_requests': 'Pending requests',
+  'network_suggested': 'Suggestions',
+  'network_mutual_connections': 'Mutual connections',
+  'network_no_connections': 'No connections',
+  'network_post': 'Post',
+  'network_posts': 'Posts',
+  'network_like': 'Like',
+  'network_comment': 'Comment',
+  'network_share_post': 'Share post',
+
+  'settings_title': 'Settings',
+  'settings_account': 'Account',
+  'settings_privacy': 'Privacy',
+  'settings_security': 'Security',
+  'settings_notifications': 'Notifications',
+  'settings_appearance': 'Appearance',
+  'settings_language': 'Language',
+  'settings_theme': 'Theme',
+  'settings_theme_light': 'Light',
+  'settings_theme_dark': 'Dark',
+  'settings_theme_system': 'System',
+  'settings_sounds': 'Sounds',
+  'settings_vibration': 'Vibration',
+  'settings_data_usage': 'Data usage',
+  'settings_storage': 'Storage',
+  'settings_clear_cache': 'Clear cache',
+  'settings_cache_cleared': 'Cache cleared',
+  'settings_about': 'About',
+  'settings_version': 'Version',
+  'settings_terms': 'Terms of use',
+  'settings_privacy_policy': 'Privacy policy',
+  'settings_help_support': 'Help & support',
+  'settings_contact_us': 'Contact us',
+  'settings_rate_app': 'Rate the app',
+  'settings_delete_account': 'Delete account',
+  'settings_delete_confirm': 'This action is irreversible. All your data will be deleted.',
+
+  'notif_new_message': 'New message',
+  'notif_connection_request': 'Connection request',
+  'notif_sos_alert': '🚨 SOS alert',
+  'notif_emergency_call': 'Emergency call',
+  'notif_location_shared': 'Location shared',
+  'notif_mark_as_read': 'Mark as read',
+  'notif_clear_all': 'Clear all',
+  'notif_no_notifications': 'No notifications',
+
+  'perm_camera_title': 'Camera access',
+  'perm_camera_desc': 'To take photos and videos',
+  'perm_mic_title': 'Microphone access',
+  'perm_mic_desc': 'To record audio and make calls',
+  'perm_location_title': 'Location access',
+  'perm_location_desc': 'To share your position in emergencies',
+  'perm_contacts_title': 'Contacts access',
+  'perm_contacts_desc': 'To quickly add your rescuers',
+  'perm_photos_title': 'Photos access',
+  'perm_photos_desc': 'To send images',
+  'perm_notifications_title': 'Notifications',
+  'perm_notifications_desc': 'To receive important alerts',
+  'perm_allow': 'Allow',
+  'perm_deny': 'Deny',
+  'perm_go_to_settings': 'Go to settings',
+
+  'error_generic': 'An error occurred',
+  'error_network': 'Network error. Check your connection.',
+  'error_timeout': 'Timeout. Please retry.',
+  'error_server': 'Server error. Try later.',
+  'error_unauthorized': 'Unauthorized. Please log in again.',
+  'error_forbidden': 'Access denied',
+  'error_not_found': 'Resource not found',
+  'error_validation': 'Invalid data',
+  'error_file_too_large': 'File too large',
+  'error_unsupported_format': 'Unsupported format',
+  'error_permission_denied': 'Permission denied',
+  'error_camera_unavailable': 'Camera unavailable',
+  'error_microphone_unavailable': 'Microphone unavailable',
+  'error_location_unavailable': 'Location unavailable',
+
+  'item_zero': 'No items',
+  'item_one': '{count} item',
+  'item_many': '{count} items',
+  'contact_zero': 'No contacts',
+  'contact_one': '{count} contact',
+  'contact_many': '{count} contacts',
+  'message_zero': 'No messages',
+  'message_one': '{count} message',
+  'message_many': '{count} messages',
+  'day_zero': '0 days',
+  'day_one': '{count} day',
+  'day_many': '{count} days',
+  'hour_zero': '0 hours',
+  'hour_one': '{count} hour',
+  'hour_many': '{count} hours',
+  'minute_zero': '0 minutes',
+  'minute_one': '{count} minute',
+  'minute_many': '{count} minutes',
+  // ─── TIME / RELATIVE ──────────────────────────────────────
+  'common_just_now': 'Just now',
+  'common_in_the_future': 'in a moment',
+  'time_minutes_ago': '{0} min ago',
+  'time_minutes_ago_plural': '{0} minutes ago',
+  'time_hours_ago': '{0} hour ago',
+  'time_hours_ago_plural': '{0} hours ago',
+  'time_days_ago': '{0} day ago',
+  'time_days_ago_plural': '{0} days ago',
+  'time_seconds_ago': '{0}s ago',
+  'time_weeks_ago': '{0} week ago',
+  'time_weeks_ago_plural': '{0} weeks ago',
+  'time_months_ago': '{0} month ago',
+  'time_months_ago_plural': '{0} months ago',
+  'time_years_ago': '{0} year ago',
+  'time_years_ago_plural': '{0} years ago',
+  'time_in_minutes': 'in {0} min',
+  'time_in_hours': 'in {0} hour',
+  'time_in_hours_plural': 'in {0} hours',
+  'time_in_days': 'in {0} day',
+  'time_in_days_plural': 'in {0} days',
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// 🇪🇸 ESPAÑOL
+// ════════════════════════════════════════════════════════════════════════════
+const Map<String, String> _es = {
+  'common_back': 'Volver',
+  'common_close': 'Cerrar',
+  'common_cancel': 'Cancelar',
+  'common_confirm': 'Confirmar',
+  'common_delete': 'Eliminar',
+  'common_add': 'Agregar',
+  'common_edit': 'Editar',
+  'common_save': 'Guardar',
+  'common_manage': 'Gestionar',
+  'common_retry': 'Reintentar',
+  'common_refresh': 'Actualizar',
+  'common_search': 'Buscar',
+  'common_open': 'Abrir',
+  'common_share': 'Compartir',
+  'common_copy': 'Copiar',
+  'common_copied': 'Copiado',
+  'common_download': 'Descargar',
+  'common_upload': 'Subir',
+  'common_send': 'Enviar',
+  'common_receive': 'Recibir',
+  'common_accept': 'Aceptar',
+  'common_reject': 'Rechazar',
+  'common_skip': 'Omitir',
+  'common_next': 'Siguiente',
+  'common_previous': 'Anterior',
+  'common_finish': 'Finalizar',
+  'common_done': 'Hecho',
+  'common_error': 'Error',
+  'common_success': 'Éxito',
+  'common_loading': 'Cargando…',
+  'common_please_wait': 'Por favor espere…',
+  'common_today': 'Hoy',
+  'common_yesterday': 'Ayer',
+  'common_tomorrow': 'Mañana',
+  'common_home': 'Inicio',
+  'common_chat': 'Chat',
+  'common_map': 'Mapa',
+  'common_profile': 'Perfil',
+  'common_menu': 'Menú',
+  'common_notifications': 'Notificaciones',
+  'common_settings': 'Configuración',
+  'common_help': 'Ayuda',
+  'common_about': 'Acerca de',
+  'common_logout': 'Cerrar sesión',
+  'common_login': 'Iniciar sesión',
+  'common_signup': 'Registrarse',
+  'common_yes': 'Sí',
+  'common_no': 'No',
+  'common_or': 'o',
+  'common_and': 'y',
+  'common_none': 'Ninguno',
+  'common_all': 'Todos',
+  'common_unknown': 'Desconocido',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Elegir idioma',
+  'settings_system_default': 'Predeterminado del sistema',
+  'settings_language_change_failed': 'No se puede cambiar el idioma',
+  'settings_language_changed': 'Idioma cambiado',
+
+  'auth_login': 'Iniciar sesión',
+  'auth_signup': 'Crear cuenta',
+  'auth_forgot_password': '¿Olvidó su contraseña?',
+  'auth_reset_password': 'Restablecer contraseña',
+  'auth_email': 'Correo electrónico',
+  'auth_phone': 'Teléfono',
+  'auth_password': 'Contraseña',
+  'auth_confirm_password': 'Confirmar contraseña',
+  'auth_logout': 'Cerrar sesión',
+  'auth_logout_confirm': '¿Realmente desea cerrar sesión?',
+  'auth_welcome_back': 'Bienvenido de nuevo',
+  'auth_welcome': 'Bienvenido',
+  'auth_no_account': '¿No tiene cuenta?',
+  'auth_has_account': '¿Ya tiene una cuenta?',
+  'auth_invalid_email': 'Correo electrónico inválido',
+  'auth_invalid_phone': 'Número de teléfono inválido',
+  'auth_password_too_short': 'Contraseña demasiado corta (mín 8 caracteres)',
+  'auth_passwords_mismatch': 'Las contraseñas no coinciden',
+  'auth_login_success': 'Inicio de sesión exitoso',
+  'auth_signup_success': 'Cuenta creada exitosamente',
+  'auth_logout_success': 'Sesión cerrada exitosamente',
+  'auth_session_expired': 'Sesión expirada, inicie sesión de nuevo',
+  'auth_2fa_title': 'Verificación de dos factores',
+  'auth_2fa_code': 'Código de verificación',
+  'auth_verify_email': 'Verificar correo',
+  'auth_verify_phone': 'Verificar teléfono',
+  'auth_biometric': 'Inicio biométrico',
+  'auth_biometric_prompt': 'Autentíquese para continuar',
+
+  'sos_button': 'SOS',
+  'sos_button_label': 'Botón SOS de emergencia',
+  'sos_button_hint': 'Mantenga 2 segundos para activar',
+  'sos_button_tooltip': 'Presione y mantenga 2 segundos',
+  'sos_button_text': 'SOS',
+  'sos_button_instruction': 'PRESIONAR Y MANTENER\n2 SEGUNDOS',
+  'sos_hold_instruction': 'Presione y mantenga 2 segundos',
+  'sos_trigger_button': 'Activar SOS',
+  'sos_trigger_timeout': 'Tiempo agotado. Reintente.',
+  'sos_trigger_error': 'Error al activar SOS',
+  'sos_active': 'SOS ACTIVO',
+  'sos_crisis_room': 'SALA DE CRISIS',
+  'sos_command_center': 'CENTRO DE MANDO',
+  'sos_incident': 'Incidente',
+  'sos_incident_unknown': 'Incidente desconocido',
+  'sos_incident_not_found': 'Incidente no encontrado',
+  'sos_circle': 'Círculo',
+  'sos_rescuers': 'rescatistas',
+  'sos_rescuer': 'Rescatista',
+  'sos_my_rescuers': 'MIS RESCATISTAS',
+  'sos_duration': 'Duración',
+  'sos_identifier': 'Identificador',
+  'sos_calling': 'Llamando…',
+  'sos_call': 'Llamar',
+  'sos_available': 'Disponible',
+  'sos_unavailable': 'No disponible',
+  'sos_verified': 'Verificado',
+  'sos_unknown': 'Desconocido',
+  'sos_end': 'Finalizar',
+  'sos_end_sos': 'Finalizar SOS',
+  'sos_cancel_sos': 'CANCELAR SOS',
+  'sos_pin_required': 'Código de seguridad requerido',
+  'sos_cancelled': 'SOS cancelado',
+  'sos_resolved': 'SOS resuelto',
+  'sos_cancel_failed': 'Cancelación fallida',
+  'sos_in_progress': 'EN PROGRESO',
+  'sos_history': 'HISTORIAL',
+  'sos_my_incidents': 'Mis incidentes',
+  'sos_no_incidents': 'Sin incidentes todavía',
+  'sos_incidents_appear_here': 'Sus SOS aparecerán aquí',
+  'sos_history_error': 'No se puede cargar el historial',
+
+  'sos_circle_1': 'Círculo 1 – Prioritario',
+  'sos_circle_2': 'Círculo 2 – Secundario',
+  'sos_circle_3': 'Círculo 3 – Emergencia',
+  'sos_no_rescuers': 'Sin rescatistas',
+  'sos_no_rescuers_circle': 'Sin rescatistas en este círculo',
+  'sos_add_first_rescuer': 'Agregue su primer contacto de rescate',
+  'sos_add_rescuer': 'Agregar rescatista',
+  'sos_add_rescuer_info': 'Ingrese el THIX ID del rescatista. Nombre y foto se obtienen automáticamente.',
+  'sos_thix_id_label': 'THIX ID',
+  'sos_thix_id_hint': 'THIX-XXXX',
+  'sos_relation': 'Relación',
+  'sos_relation_hint': 'Ej: Madre, Amigo, Colega…',
+  'sos_phone_optional': 'Teléfono (opcional)',
+  'sos_phone_hint': '+34 …',
+  'sos_save_rescuer': 'Guardar rescatista',
+  'sos_multiple_rescuers_info': 'Puede agregar varios rescatistas por círculo.',
+  'sos_rescuer_saved': 'Rescatista THIX guardado',
+  'sos_search_first': 'Busque primero un THIX ID válido',
+  'sos_no_thix_account': 'No se encontró cuenta THIX para este ID',
+  'sos_enter_thix_id': 'Ingrese un THIX ID',
+  'sos_load_error': 'No se pueden cargar sus rescatistas',
+  'sos_delete_rescuer': '¿Eliminar este rescatista?',
+  'sos_delete_rescuer_confirm': 'Este contacto no recibirá más alertas SOS. Irreversible.',
+  'sos_rescuer_deleted': 'Rescatista eliminado exitosamente',
+  'sos_delete_error': 'Error al eliminar',
+  'sos_circle_priority_title': 'Orden de prioridad',
+  'sos_circle_priority_info': 'Círculo 1 contactado primero. Sin respuesta → Círculo 2 → Círculo 3.',
+
+  'sos_pin_title': 'Código de seguridad',
+  'sos_pin_label': 'Código PIN',
+  'sos_pin_enter': 'Ingrese su código de seguridad de {0} dígitos',
+  'sos_pin_invalid': 'Código inválido (4-6 dígitos)',
+  'sos_pin_wrong': 'Código incorrecto',
+  'sos_remaining': 'intentos restantes',
+  'sos_pin_locked': 'Demasiados intentos — bloqueado temporalmente',
+  'sos_pin_locked_for': 'Bloqueado por',
+
+  'sos_status_location': 'Ubicación',
+  'sos_status_active': 'ACTIVA',
+  'sos_status_waiting': 'ESPERANDO',
+  'sos_status_camera': 'Cámara',
+  'sos_status_backup': 'Respaldo',
+  'sos_banner_safe_title': 'ESTÁ SEGURO',
+  'sos_banner_safe_subtitle': 'Su protección THIX está activa',
+  'sos_banner_sos_title': 'SOS ACTIVO',
+  'sos_banner_network_title': 'CONEXIÓN PERDIDA',
+  'sos_banner_network_subtitle': 'Última posición guardada localmente',
+  'sos_banner_warning_title': 'ADVERTENCIA',
+  'sos_banner_warning_subtitle': 'Revise sus ajustes de rescatistas',
+  'sos_view_location': 'Ver ubicación',
+  'sos_protection_active': 'Protección activa',
+
+  'sos_chat': 'Chat SOS',
+  'sos_chat_sos': 'THIX CHAT SOS',
+  'sos_open_urgent_chat': 'Abrir conversación urgente',
+  'sos_open_crisis_room': 'Abrir sala de crisis',
+  'sos_chat_not_ready': 'Conversación SOS aún no creada',
+  'sos_group': 'Grupo SOS',
+  'sos_group_ok': 'Grupo OK',
+  'sos_group_waiting': 'Grupo ?',
+  'sos_clip': 'Clip 10s',
+  'sos_clip_busy': 'Clip…',
+  'sos_clip_recording': 'Grabando 10s luego envío automático…',
+  'sos_clip_unavailable': 'Clip 10s no disponible en este dispositivo',
+  'sos_clip_sent': '🎥 Clip 10s enviado al grupo SOS',
+  'sos_clip_pending': '🎥 Clip 10s grabado — enviando al grupo',
+  'sos_recall': 'Devolver llamada',
+  'sos_audio_call': 'Llamada de audio',
+  'sos_auto_call_in_progress': 'LLAMADA AUTO EN PROGRESO',
+  'sos_next_in': 'próximo en',
+  'sos_mic_on': 'Micrófono encendido',
+  'sos_mic_mute': 'Silencio',
+  'sos_cam_on': 'Activar cámara',
+  'sos_cam_off': 'Desactivar cámara',
+
+  'sos_section_location': 'UBICACIÓN EN VIVO',
+  'sos_position_active': 'Posición activa',
+  'sos_position_waiting': 'Esperando posición',
+  'sos_position_unknown': 'Posición ?',
+  'sos_battery_unknown': 'Bat ?',
+  'sos_map_disabled': 'Mapa temporalmente desactivado\n(Esperando API de Google)',
+  'sos_current_position': 'Posición actual',
+
+  'sos_tab_evidence': 'EVIDENCIAS',
+  'sos_tab_journal': 'DIARIO',
+  'sos_no_evidence': 'Sin evidencias — lance Foto / Clip / Vigilancia',
+  'sos_journal_empty': 'Diario vacío',
+  'sos_evidence': 'evidencia',
+  'sos_latest_evidence': 'ÚLTIMA EVIDENCIA',
+  'sos_offline': 'SIN CONEXIÓN — COMANDOS ACTIVOS',
+  'sos_no_live': 'Sin vivo. Lance Foto / Clip 10s / Vigilancia.',
+  'sos_photo': 'Foto',
+  'sos_video_30s': 'Video 30s',
+  'sos_stop_audio': 'DETENER AUDIO',
+  'sos_record_audio': 'Grabar audio',
+  'sos_stop_surveillance': 'Detener vigilancia',
+  'sos_surveillance_10s': 'Vigilancia 10s',
+  'sos_instruction': 'Instrucción',
+  'sos_instruct_title': '📢 Instrucción real → víctima + grupo SOS',
+  'sos_instruct_custom': 'Mensaje personalizado…',
+  'sos_instruct_sent': '📢 Instrucción enviada al grupo SOS',
+  'sos_send_group': 'ENVIAR AL GRUPO',
+  'sos_instruct_calm': 'Mantenga la calma, los rescatistas vienen',
+  'sos_instruct_talk': 'Hábleme, describa su situación',
+  'sos_instruct_room': 'Muestre la habitación con la cámara',
+  'sos_instruct_clip': 'Lance un clip de 10 segundos',
+  'sos_instruct_stay': 'No cuelgue',
+
+  'sos_ev_instruct': 'Instrucción',
+  'sos_ev_photo_requested': 'Foto solicitada por rescatista',
+  'sos_ev_photo_sent': 'Foto enviada al grupo',
+  'sos_ev_photo_captured': 'Foto capturada',
+  'sos_ev_video_sent': 'Video enviado al grupo',
+  'sos_ev_video_captured': 'Video capturado',
+  'sos_ev_audio_sent': 'Audio enviado al grupo',
+  'sos_ev_audio_captured': 'Audio capturado',
+  'sos_ev_capture_failed': 'Captura fallida',
+  'sos_ev_rescue_joined': 'Un rescatista se unió a la sala',
+  'sos_ev_created': 'Incidente creado',
+  'sos_ev_started': 'SOS iniciado',
+  'sos_ev_photo_received': '📥 Foto de víctima recibida',
+  'sos_ev_video_received': '📥 Video de víctima recibido',
+  'sos_ev_audio_received': '📥 Audio de víctima recibido',
+  'sos_ev_failed': '⚠️ Captura de víctima fallida',
+  'sos_victim_label': 'Víctima',
+  'sos_victim_unknown': 'Víctima desconocida — llamada imposible',
+
+  'sos_cmd_photo': '📸 Comando foto → teléfono víctima',
+  'sos_cmd_video': '🎥 Comando video → teléfono víctima',
+  'sos_cmd_clip': 'Comando clip 10s',
+  'sos_cmd_audio_start': '🎤 Audio víctima en progreso…',
+  'sos_cmd_audio_stop': '⏹ Detener audio → teléfono víctima',
+  'sos_cmd_surveillance_on': '🛰️ Vigilancia: foto cada 10s + envío',
+  'sos_cmd_surveillance_off': '⏹ Vigilancia detenida',
+
+  'sos_section_quick': 'MENSAJES RÁPIDOS',
+  'sos_qm_help': '🚨 NECESITO AYUDA',
+  'sos_qm_silent': '🤫 NO PUEDO HABLAR',
+  'sos_qm_here': '📍 ESTOY AQUÍ',
+  'sos_qm_injured': '🏥 ESTOY HERIDO',
+  'sos_qm_followed': '👤 ME ESTÁN SIGUIENDO',
+  'sos_qm_locked': '🚪 ESTOY ENCERRADO',
+  'sos_qm_call': '📞 LLAMEN EMERGENCIA',
+  'sos_qm_ok': '🟢 ESTOY BIEN',
+
+  'sos_section_rescuers': 'RESCATISTAS',
+  'sos_section_communication': 'COMUNICACIÓN',
+  'sos_section_system': 'ESTADO DEL SISTEMA',
+  'sos_section_events': 'EVENTOS',
+  'sos_events_error': 'No se pueden cargar los eventos',
+  'sos_no_events': 'Sin eventos',
+
+  'sos_error_timeout': 'Tiempo agotado. Reintente.',
+  'sos_error_permission': 'Permiso denegado',
+  'sos_error_network': 'Error de red. Verifique su conexión.',
+  'sos_error_generic': 'Ocurrió un error',
+  'sos_error_camera': 'Cámara no disponible',
+  'sos_error_live': 'Vivo no disponible',
+
+  'sos_active_crisis': '🚨 SOS ACTIVO — SALA DE CRISIS',
+  'sos_rescue_instructions': 'Gestionar rescate: cámara, foto, video, audio',
+  'sos_crisis_room_subtitle': 'Gestionar sus incidentes activos en tiempo real',
+  'sos_quick_actions': 'ACCIONES RÁPIDAS',
+  'sos_share_location': 'Compartir',
+  'sos_safe_check': 'Verificación segura',
+  'sos_my_routes': 'Mis rutas',
+  'sos_report': 'Reportar',
+  'sos_thix_search': 'THIX BÚSQUEDA',
+  'sos_search_subtitle': 'Alertas y desaparecidos',
+  'sos_incidents_subtitle': 'Historial e informes',
+
+  'nearby_alerts_title': 'ALERTAS CERCANAS',
+  'nearby_view_on_map': 'Ver en mapa',
+  'nearby_map_coming_soon': 'Mapa pantalla completa pronto',
+  'nearby_map_disabled': 'Mapa desactivado\n(Esperando clave API)',
+  'nearby_active_alerts': 'alertas activas',
+  'nearby_missing': 'desaparecidos',
+  'nearby_official': 'oficiales',
+  'nearby_legend_missing': 'Desaparecido',
+  'nearby_legend_official': 'Aviso oficial',
+  'nearby_legend_report': 'Reporte',
+  'nearby_error_timeout': 'Tiempo agotado. Reintente.',
+  'nearby_error_network': 'Error de red. Verifique su conexión.',
+  'nearby_error_permission': 'Permiso de ubicación denegado',
+  'nearby_error_location': 'Ubicación no disponible',
+  'nearby_error_generic': 'Ocurrió un error',
+  'nearby_invalid_coordinates': 'Coordenadas inválidas',
+  'nearby_location_required': 'Active la ubicación',
+  'nearby_location_subtitle': 'Para ver alertas cerca de usted',
+
+  'search_title': 'THIX Búsqueda',
+  'search_subtitle': 'Avisos de búsqueda y desaparecidos',
+  'search_person_missing': 'Persona desaparecida',
+  'search_person_wanted': 'Aviso oficial de búsqueda',
+  'search_report_missing': 'Reportar desaparición',
+  'search_report_found': 'Reportar hallazgo',
+  'search_details': 'Detalles',
+  'search_contact_authorities': 'Contactar autoridades',
+  'search_share_alert': 'Compartir alerta',
+  'search_last_seen': 'Visto por última vez',
+  'search_description': 'Descripción',
+  'search_age': 'Edad',
+  'search_height': 'Altura',
+  'search_weight': 'Peso',
+  'search_hair_color': 'Color de cabello',
+  'search_eye_color': 'Color de ojos',
+  'search_distinguishing_marks': 'Señas particulares',
+  'search_clothing': 'Ropa',
+  'search_circumstances': 'Circunstancias',
+  'search_case_number': 'Número de caso',
+  'search_reported_by': 'Reportado por',
+  'search_official_notice': 'Aviso oficial',
+  'search_community_alert': 'Alerta comunitaria',
+
+  'chat_online': 'En línea',
+  'chat_seen_at': 'Visto a las',
+  'chat_at': 'a las',
+  'chat_yesterday_at': 'Ayer a las',
+  'chat_on': 'el',
+  'chat_write_message': 'Escribir un mensaje…',
+  'chat_send': 'Enviar',
+  'chat_record_audio': 'Grabar audio',
+  'chat_stop_recording': 'Detener grabación',
+  'chat_recording': 'Grabando',
+  'chat_recording_error': 'Error de grabación',
+  'chat_file': 'Archivo',
+  'chat_sticker': 'Sticker',
+  'chat_ephemeral': 'Efímero',
+  'chat_protected': 'Protegido',
+  'chat_internal_note': 'Nota interna',
+  'chat_video_call': 'Videollamada',
+  'chat_audio_call': 'Llamada de audio',
+  'chat_escalate': 'Escalar',
+  'chat_history': 'Historial',
+  'chat_group_info': 'Info del grupo',
+  'chat_typing': 'escribiendo…',
+  'chat_members': 'miembros',
+  'chat_unknown_user': 'Usuario desconocido',
+  'chat_cannot_reply': 'No puede responder',
+  'chat_connection_interrupted': 'Conexión interrumpida',
+  'chat_call_inactive': 'Llamada imposible — conexión inactiva',
+  'chat_send_inactive': 'Envío imposible — conexión inactiva',
+  'chat_auth_required': 'Autorización requerida',
+  'chat_understood': 'Entendido',
+  'chat_mic_call_disclosure': 'Llamada de audio requiere micrófono',
+  'chat_cam_call_disclosure': 'Videollamada requiere cámara',
+  'chat_mic_disclosure': 'Grabación de audio requiere micrófono',
+  'chat_callback': 'Devolver llamada',
+  'chat_pause': 'Pausar',
+  'chat_play': 'Reproducir',
+  'chat_file_too_big': 'Archivo demasiado grande',
+  'chat_delete_title': 'Eliminar mensaje',
+  'chat_delete_message': 'Este mensaje será eliminado para todos.',
+  'chat_ephemeral_message': 'Mensaje efímero',
+  'chat_disabled': 'Desactivado',
+  'chat_seconds_10': '10 segundos',
+  'chat_minute_1': '1 minuto',
+  'chat_hour_1': '1 hora',
+  'chat_hours_24': '24 horas',
+  'chat_custom_time': 'Duración personalizada',
+  'chat_duration_seconds': 'Duración (segundos)',
+  'chat_validate': 'Validar',
+  'chat_invalid_number': 'Número inválido',
+  'chat_secure_message': 'Mensaje seguro',
+  'chat_message': 'Mensaje',
+  'chat_password': 'Contraseña',
+  'chat_emojis': 'Emojis',
+  'chat_reactions': 'Reacciones',
+  'chat_flags': 'Banderas',
+  'chat_new_message': 'Nuevo mensaje',
+  'chat_no_messages': 'Sin mensajes',
+  'chat_start_conversation': 'Iniciar la conversación',
+  'chat_group_name': 'Nombre del grupo',
+  'chat_add_members': 'Agregar miembros',
+  'chat_leave_group': 'Salir del grupo',
+  'chat_leave_confirm': '¿Realmente desea salir de este grupo?',
+  'chat_mute': 'Silenciar',
+  'chat_unmute': 'Activar sonido',
+  'chat_pinned': 'Fijado',
+  'chat_reply': 'Responder',
+  'chat_forward': 'Reenviar',
+  'chat_star': 'Favorito',
+
+  'profile_title': 'Mi perfil',
+  'profile_edit': 'Editar perfil',
+  'profile_full_name': 'Nombre completo',
+  'profile_first_name': 'Nombre',
+  'profile_last_name': 'Apellido',
+  'profile_display_name': 'Nombre visible',
+  'profile_bio': 'Biografía',
+  'profile_avatar': 'Foto de perfil',
+  'profile_change_avatar': 'Cambiar foto',
+  'profile_email': 'Correo electrónico',
+  'profile_phone': 'Teléfono',
+  'profile_location': 'Ubicación',
+  'profile_birthday': 'Fecha de nacimiento',
+  'profile_gender': 'Género',
+  'profile_gender_male': 'Masculino',
+  'profile_gender_female': 'Femenino',
+  'profile_gender_other': 'Otro',
+  'profile_gender_prefer_not': 'Prefiero no decir',
+  'profile_social_links': 'Enlaces sociales',
+  'profile_website': 'Sitio web',
+  'profile_save_success': 'Perfil actualizado',
+  'profile_save_error': 'Error al actualizar',
+
+  'certification_title': 'Certificación THIX',
+  'certification_apply': 'Solicitar certificación',
+  'certification_status': 'Estado',
+  'certification_pending': 'Pendiente',
+  'certification_approved': 'Aprobado',
+  'certification_rejected': 'Rechazado',
+  'certification_tier_bronze': 'Bronce',
+  'certification_tier_silver': 'Plata',
+  'certification_tier_gold': 'Oro',
+  'certification_tier_platinum': 'Platino',
+  'certification_benefits': 'Beneficios',
+  'certification_documents': 'Documentos requeridos',
+  'certification_upload_doc': 'Subir documento',
+  'certification_review_progress': 'Revisión en progreso',
+  'certification_verified_account': 'Cuenta verificada',
+
+  'network_title': 'Red THIX',
+  'network_connections': 'Conexiones',
+  'network_followers': 'Seguidores',
+  'network_following': 'Siguiendo',
+  'network_follow': 'Seguir',
+  'network_unfollow': 'Dejar de seguir',
+  'network_connect': 'Conectar',
+  'network_disconnect': 'Desconectar',
+  'network_block': 'Bloquear',
+  'network_report': 'Reportar',
+  'network_connection_request': 'Solicitud de conexión',
+  'network_pending_requests': 'Solicitudes pendientes',
+  'network_suggested': 'Sugerencias',
+  'network_mutual_connections': 'Conexiones mutuas',
+  'network_no_connections': 'Sin conexiones',
+  'network_post': 'Publicación',
+  'network_posts': 'Publicaciones',
+  'network_like': 'Me gusta',
+  'network_comment': 'Comentario',
+  'network_share_post': 'Compartir publicación',
+
+  'settings_title': 'Configuración',
+  'settings_account': 'Cuenta',
+  'settings_privacy': 'Privacidad',
+  'settings_security': 'Seguridad',
+  'settings_notifications': 'Notificaciones',
+  'settings_appearance': 'Apariencia',
+  'settings_language': 'Idioma',
+  'settings_theme': 'Tema',
+  'settings_theme_light': 'Claro',
+  'settings_theme_dark': 'Oscuro',
+  'settings_theme_system': 'Sistema',
+  'settings_sounds': 'Sonidos',
+  'settings_vibration': 'Vibración',
+  'settings_data_usage': 'Uso de datos',
+  'settings_storage': 'Almacenamiento',
+  'settings_clear_cache': 'Borrar caché',
+  'settings_cache_cleared': 'Caché borrada',
+  'settings_about': 'Acerca de',
+  'settings_version': 'Versión',
+  'settings_terms': 'Términos de uso',
+  'settings_privacy_policy': 'Política de privacidad',
+  'settings_help_support': 'Ayuda y soporte',
+  'settings_contact_us': 'Contáctenos',
+  'settings_rate_app': 'Calificar la app',
+  'settings_delete_account': 'Eliminar cuenta',
+  'settings_delete_confirm': 'Esta acción es irreversible. Todos sus datos serán eliminados.',
+
+  'notif_new_message': 'Nuevo mensaje',
+  'notif_connection_request': 'Solicitud de conexión',
+  'notif_sos_alert': '🚨 Alerta SOS',
+  'notif_emergency_call': 'Llamada de emergencia',
+  'notif_location_shared': 'Ubicación compartida',
+  'notif_mark_as_read': 'Marcar como leído',
+  'notif_clear_all': 'Borrar todo',
+  'notif_no_notifications': 'Sin notificaciones',
+
+  'perm_camera_title': 'Acceso a cámara',
+  'perm_camera_desc': 'Para tomar fotos y videos',
+  'perm_mic_title': 'Acceso a micrófono',
+  'perm_mic_desc': 'Para grabar audio y hacer llamadas',
+  'perm_location_title': 'Acceso a ubicación',
+  'perm_location_desc': 'Para compartir su posición en emergencias',
+  'perm_contacts_title': 'Acceso a contactos',
+  'perm_contacts_desc': 'Para agregar rescatistas rápidamente',
+  'perm_photos_title': 'Acceso a fotos',
+  'perm_photos_desc': 'Para enviar imágenes',
+  'perm_notifications_title': 'Notificaciones',
+  'perm_notifications_desc': 'Para recibir alertas importantes',
+  'perm_allow': 'Permitir',
+  'perm_deny': 'Denegar',
+  'perm_go_to_settings': 'Ir a configuración',
+
+  'error_generic': 'Ocurrió un error',
+  'error_network': 'Error de red. Verifique su conexión.',
+  'error_timeout': 'Tiempo agotado. Reintente.',
+  'error_server': 'Error del servidor. Intente más tarde.',
+  'error_unauthorized': 'No autorizado. Inicie sesión de nuevo.',
+  'error_forbidden': 'Acceso denegado',
+  'error_not_found': 'Recurso no encontrado',
+  'error_validation': 'Datos inválidos',
+  'error_file_too_large': 'Archivo demasiado grande',
+  'error_unsupported_format': 'Formato no soportado',
+  'error_permission_denied': 'Permiso denegado',
+  'error_camera_unavailable': 'Cámara no disponible',
+  'error_microphone_unavailable': 'Micrófono no disponible',
+  'error_location_unavailable': 'Ubicación no disponible',
+
+  'item_zero': 'Sin elementos',
+  'item_one': '{count} elemento',
+  'item_many': '{count} elementos',
+  'contact_zero': 'Sin contactos',
+  'contact_one': '{count} contacto',
+  'contact_many': '{count} contactos',
+  'message_zero': 'Sin mensajes',
+  'message_one': '{count} mensaje',
+  'message_many': '{count} mensajes',
+  'day_zero': '0 días',
+  'day_one': '{count} día',
+  'day_many': '{count} días',
+  'hour_zero': '0 horas',
+  'hour_one': '{count} hora',
+  'hour_many': '{count} horas',
+  'minute_zero': '0 minutos',
+  'minute_one': '{count} minuto',
+  'minute_many': '{count} minutos',
+  // ─── TIME / RELATIVE ──────────────────────────────────────
+  'common_just_now': 'Ahora mismo',
+  'common_in_the_future': 'en un momento',
+  'time_minutes_ago': 'hace {0} min',
+  'time_minutes_ago_plural': 'hace {0} minutos',
+  'time_hours_ago': 'hace {0} hora',
+  'time_hours_ago_plural': 'hace {0} horas',
+  'time_days_ago': 'hace {0} día',
+  'time_days_ago_plural': 'hace {0} días',
+  'time_seconds_ago': 'hace {0}s',
+  'time_weeks_ago': 'hace {0} semana',
+  'time_weeks_ago_plural': 'hace {0} semanas',
+  'time_months_ago': 'hace {0} mes',
+  'time_months_ago_plural': 'hace {0} meses',
+  'time_years_ago': 'hace {0} año',
+  'time_years_ago_plural': 'hace {0} años',
+  'time_in_minutes': 'en {0} min',
+  'time_in_hours': 'en {0} hora',
+  'time_in_hours_plural': 'en {0} horas',
+  'time_in_days': 'en {0} día',
+  'time_in_days_plural': 'en {0} días',
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// 🇵🇹 PORTUGUÊS
+// ════════════════════════════════════════════════════════════════════════════
+const Map<String, String> _pt = {
+  'common_back': 'Voltar',
+  'common_close': 'Fechar',
+  'common_cancel': 'Cancelar',
+  'common_confirm': 'Confirmar',
+  'common_delete': 'Excluir',
+  'common_add': 'Adicionar',
+  'common_edit': 'Editar',
+  'common_save': 'Salvar',
+  'common_manage': 'Gerenciar',
+  'common_retry': 'Tentar novamente',
+  'common_refresh': 'Atualizar',
+  'common_search': 'Pesquisar',
+  'common_open': 'Abrir',
+  'common_share': 'Compartilhar',
+  'common_copy': 'Copiar',
+  'common_copied': 'Copiado',
+  'common_download': 'Baixar',
+  'common_upload': 'Enviar',
+  'common_send': 'Enviar',
+  'common_receive': 'Receber',
+  'common_accept': 'Aceitar',
+  'common_reject': 'Recusar',
+  'common_skip': 'Pular',
+  'common_next': 'Próximo',
+  'common_previous': 'Anterior',
+  'common_finish': 'Finalizar',
+  'common_done': 'Concluído',
+  'common_error': 'Erro',
+  'common_success': 'Sucesso',
+  'common_loading': 'Carregando…',
+  'common_please_wait': 'Por favor aguarde…',
+  'common_today': 'Hoje',
+  'common_yesterday': 'Ontem',
+  'common_tomorrow': 'Amanhã',
+  'common_home': 'Início',
+  'common_chat': 'Chat',
+  'common_map': 'Mapa',
+  'common_profile': 'Perfil',
+  'common_menu': 'Menu',
+  'common_notifications': 'Notificações',
+  'common_settings': 'Configurações',
+  'common_help': 'Ajuda',
+  'common_about': 'Sobre',
+  'common_logout': 'Sair',
+  'common_login': 'Entrar',
+  'common_signup': 'Cadastrar',
+  'common_yes': 'Sim',
+  'common_no': 'Não',
+  'common_or': 'ou',
+  'common_and': 'e',
+  'common_none': 'Nenhum',
+  'common_all': 'Todos',
+  'common_unknown': 'Desconhecido',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Escolher idioma',
+  'settings_system_default': 'Padrão do sistema',
+  'settings_language_change_failed': 'Não foi possível alterar o idioma',
+  'settings_language_changed': 'Idioma alterado',
+
+  'auth_login': 'Entrar',
+  'auth_signup': 'Criar conta',
+  'auth_forgot_password': 'Esqueceu a senha?',
+  'auth_reset_password': 'Redefinir senha',
+  'auth_email': 'E-mail',
+  'auth_phone': 'Telefone',
+  'auth_password': 'Senha',
+  'auth_confirm_password': 'Confirmar senha',
+  'auth_logout': 'Sair',
+  'auth_logout_confirm': 'Deseja realmente sair?',
+  'auth_welcome_back': 'Bem-vindo de volta',
+  'auth_welcome': 'Bem-vindo',
+  'auth_no_account': 'Ainda não tem conta?',
+  'auth_has_account': 'Já tem uma conta?',
+  'auth_invalid_email': 'E-mail inválido',
+  'auth_invalid_phone': 'Número de telefone inválido',
+  'auth_password_too_short': 'Senha muito curta (mín 8 caracteres)',
+  'auth_passwords_mismatch': 'As senhas não coincidem',
+  'auth_login_success': 'Login bem-sucedido',
+  'auth_signup_success': 'Conta criada com sucesso',
+  'auth_logout_success': 'Logout bem-sucedido',
+  'auth_session_expired': 'Sessão expirada, faça login novamente',
+  'auth_2fa_title': 'Verificação em duas etapas',
+  'auth_2fa_code': 'Código de verificação',
+  'auth_verify_email': 'Verificar e-mail',
+  'auth_verify_phone': 'Verificar telefone',
+  'auth_biometric': 'Login biométrico',
+  'auth_biometric_prompt': 'Autentique-se para continuar',
+
+  'sos_button': 'SOS',
+  'sos_button_label': 'Botão SOS de emergência',
+  'sos_button_hint': 'Segure 2 segundos para ativar',
+  'sos_button_tooltip': 'Pressione e segure 2 segundos',
+  'sos_button_text': 'SOS',
+  'sos_button_instruction': 'PRESSIONE E SEGURE\n2 SEGUNDOS',
+  'sos_hold_instruction': 'Pressione e segure 2 segundos',
+  'sos_trigger_button': 'Ativar SOS',
+  'sos_trigger_timeout': 'Tempo esgotado. Tente novamente.',
+  'sos_trigger_error': 'Falha ao ativar SOS',
+  'sos_active': 'SOS ATIVO',
+  'sos_crisis_room': 'SALA DE CRISE',
+  'sos_command_center': 'CENTRO DE COMANDO',
+  'sos_incident': 'Incidente',
+  'sos_incident_unknown': 'Incidente desconhecido',
+  'sos_incident_not_found': 'Incidente não encontrado',
+  'sos_circle': 'Círculo',
+  'sos_rescuers': 'socorristas',
+  'sos_rescuer': 'Socorrista',
+  'sos_my_rescuers': 'MEUS SOCORRISTAS',
+  'sos_duration': 'Duração',
+  'sos_identifier': 'Identificador',
+  'sos_calling': 'Chamando…',
+  'sos_call': 'Ligar',
+  'sos_available': 'Disponível',
+  'sos_unavailable': 'Indisponível',
+  'sos_verified': 'Verificado',
+  'sos_unknown': 'Desconhecido',
+  'sos_end': 'Finalizar',
+  'sos_end_sos': 'Finalizar SOS',
+  'sos_cancel_sos': 'CANCELAR SOS',
+  'sos_pin_required': 'Código de segurança necessário',
+  'sos_cancelled': 'SOS cancelado',
+  'sos_resolved': 'SOS resolvido',
+  'sos_cancel_failed': 'Falha ao cancelar',
+  'sos_in_progress': 'EM ANDAMENTO',
+  'sos_history': 'HISTÓRICO',
+  'sos_my_incidents': 'Meus incidentes',
+  'sos_no_incidents': 'Nenhum incidente ainda',
+  'sos_incidents_appear_here': 'Seus SOS aparecerão aqui',
+  'sos_history_error': 'Não é possível carregar o histórico',
+
+  'sos_circle_1': 'Círculo 1 – Prioritário',
+  'sos_circle_2': 'Círculo 2 – Secundário',
+  'sos_circle_3': 'Círculo 3 – Emergência',
+  'sos_no_rescuers': 'Sem socorristas',
+  'sos_no_rescuers_circle': 'Sem socorristas neste círculo',
+  'sos_add_first_rescuer': 'Adicione seu primeiro contato de resgate',
+  'sos_add_rescuer': 'Adicionar socorrista',
+  'sos_add_rescuer_info': 'Digite o THIX ID do socorrista. Nome e foto são obtidos automaticamente.',
+  'sos_thix_id_label': 'THIX ID',
+  'sos_thix_id_hint': 'THIX-XXXX',
+  'sos_relation': 'Relação',
+  'sos_relation_hint': 'Ex: Mãe, Amigo, Colega…',
+  'sos_phone_optional': 'Telefone (opcional)',
+  'sos_phone_hint': '+55 …',
+  'sos_save_rescuer': 'Salvar socorrista',
+  'sos_multiple_rescuers_info': 'Você pode adicionar vários socorristas por círculo.',
+  'sos_rescuer_saved': 'Socorrista THIX salvo',
+  'sos_search_first': 'Pesquise primeiro um THIX ID válido',
+  'sos_no_thix_account': 'Nenhuma conta THIX encontrada para este ID',
+  'sos_enter_thix_id': 'Digite um THIX ID',
+  'sos_load_error': 'Não é possível carregar seus socorristas',
+  'sos_delete_rescuer': 'Excluir este socorrista?',
+  'sos_delete_rescuer_confirm': 'Este contato não receberá mais alertas SOS. Irreversível.',
+  'sos_rescuer_deleted': 'Socorrista excluído com sucesso',
+  'sos_delete_error': 'Erro ao excluir',
+  'sos_circle_priority_title': 'Ordem de prioridade',
+  'sos_circle_priority_info': 'Círculo 1 contatado primeiro. Sem resposta → Círculo 2 → Círculo 3.',
+
+  'sos_pin_title': 'Código de segurança',
+  'sos_pin_label': 'Código PIN',
+  'sos_pin_enter': 'Digite seu código de segurança de {0} dígitos',
+  'sos_pin_invalid': 'Código inválido (4-6 dígitos)',
+  'sos_pin_wrong': 'Código incorreto',
+  'sos_remaining': 'tentativas restantes',
+  'sos_pin_locked': 'Muitas tentativas — bloqueado temporariamente',
+  'sos_pin_locked_for': 'Bloqueado por',
+
+  'sos_status_location': 'Localização',
+  'sos_status_active': 'ATIVA',
+  'sos_status_waiting': 'AGUARDANDO',
+  'sos_status_camera': 'Câmera',
+  'sos_status_backup': 'Backup',
+  'sos_banner_safe_title': 'VOCÊ ESTÁ SEGURO',
+  'sos_banner_safe_subtitle': 'Sua proteção THIX está ativa',
+  'sos_banner_sos_title': 'SOS ATIVO',
+  'sos_banner_network_title': 'CONEXÃO PERDIDA',
+  'sos_banner_network_subtitle': 'Última posição salva localmente',
+  'sos_banner_warning_title': 'AVISO',
+  'sos_banner_warning_subtitle': 'Verifique suas configurações de socorristas',
+  'sos_view_location': 'Ver localização',
+  'sos_protection_active': 'Proteção ativa',
+
+  'sos_chat': 'Chat SOS',
+  'sos_chat_sos': 'THIX CHAT SOS',
+  'sos_open_urgent_chat': 'Abrir conversa urgente',
+  'sos_open_crisis_room': 'Abrir sala de crise',
+  'sos_chat_not_ready': 'Conversa SOS ainda não criada',
+  'sos_group': 'Grupo SOS',
+  'sos_group_ok': 'Grupo OK',
+  'sos_group_waiting': 'Grupo ?',
+  'sos_clip': 'Clip 10s',
+  'sos_clip_busy': 'Clip…',
+  'sos_clip_recording': 'Gravando 10s e envio automático…',
+  'sos_clip_unavailable': 'Clip 10s indisponível neste dispositivo',
+  'sos_clip_sent': '🎥 Clip 10s enviado ao grupo SOS',
+  'sos_clip_pending': '🎥 Clip 10s gravado — enviando ao grupo',
+  'sos_recall': 'Retornar chamada',
+  'sos_audio_call': 'Chamada de áudio',
+  'sos_auto_call_in_progress': 'CHAMADA AUTO EM ANDAMENTO',
+  'sos_next_in': 'próximo em',
+  'sos_mic_on': 'Microfone ligado',
+  'sos_mic_mute': 'Mudo',
+  'sos_cam_on': 'Ativar câmera',
+  'sos_cam_off': 'Desativar câmera',
+
+  'sos_section_location': 'LOCALIZAÇÃO AO VIVO',
+  'sos_position_active': 'Posição ativa',
+  'sos_position_waiting': 'Aguardando posição',
+  'sos_position_unknown': 'Posição ?',
+  'sos_battery_unknown': 'Bat ?',
+  'sos_map_disabled': 'Mapa temporariamente desativado\n(Aguardando API Google)',
+  'sos_current_position': 'Posição atual',
+
+  'sos_tab_evidence': 'EVIDÊNCIAS',
+  'sos_tab_journal': 'DIÁRIO',
+  'sos_no_evidence': 'Sem evidências — lance Foto / Clip / Vigilância',
+  'sos_journal_empty': 'Diário vazio',
+  'sos_evidence': 'evidência',
+  'sos_latest_evidence': 'ÚLTIMA EVIDÊNCIA',
+  'sos_offline': 'OFFLINE — COMANDOS ATIVOS',
+  'sos_no_live': 'Sem ao vivo. Lance Foto / Clip 10s / Vigilância.',
+  'sos_photo': 'Foto',
+  'sos_video_30s': 'Vídeo 30s',
+  'sos_stop_audio': 'PARAR ÁUDIO',
+  'sos_record_audio': 'Gravar áudio',
+  'sos_stop_surveillance': 'Parar vigilância',
+  'sos_surveillance_10s': 'Vigilância 10s',
+  'sos_instruction': 'Instrução',
+  'sos_instruct_title': '📢 Instrução real → vítima + grupo SOS',
+  'sos_instruct_custom': 'Mensagem personalizada…',
+  'sos_instruct_sent': '📢 Instrução enviada ao grupo SOS',
+  'sos_send_group': 'ENVIAR AO GRUPO',
+  'sos_instruct_calm': 'Mantenha a calma, os socorristas estão vindo',
+  'sos_instruct_talk': 'Fale comigo, descreva sua situação',
+  'sos_instruct_room': 'Mostre o cômodo com a câmera',
+  'sos_instruct_clip': 'Lance um clip de 10 segundos',
+  'sos_instruct_stay': 'Não desligue',
+
+  'sos_ev_instruct': 'Instrução',
+  'sos_ev_photo_requested': 'Foto solicitada por socorrista',
+  'sos_ev_photo_sent': 'Foto enviada ao grupo',
+  'sos_ev_photo_captured': 'Foto capturada',
+  'sos_ev_video_sent': 'Vídeo enviado ao grupo',
+  'sos_ev_video_captured': 'Vídeo capturado',
+  'sos_ev_audio_sent': 'Áudio enviado ao grupo',
+  'sos_ev_audio_captured': 'Áudio capturado',
+  'sos_ev_capture_failed': 'Falha na captura',
+  'sos_ev_rescue_joined': 'Um socorrista entrou na sala',
+  'sos_ev_created': 'Incidente criado',
+  'sos_ev_started': 'SOS iniciado',
+  'sos_ev_photo_received': '📥 Foto da vítima recebida',
+  'sos_ev_video_received': '📥 Vídeo da vítima recebido',
+  'sos_ev_audio_received': '📥 Áudio da vítima recebido',
+  'sos_ev_failed': '⚠️ Falha na captura da vítima',
+  'sos_victim_label': 'Vítima',
+  'sos_victim_unknown': 'Vítima desconhecida — chamada impossível',
+
+  'sos_cmd_photo': '📸 Comando foto → telefone da vítima',
+  'sos_cmd_video': '🎥 Comando vídeo → telefone da vítima',
+  'sos_cmd_clip': 'Comando clip 10s',
+  'sos_cmd_audio_start': '🎤 Áudio da vítima em andamento…',
+  'sos_cmd_audio_stop': '⏹ Parar áudio → telefone da vítima',
+  'sos_cmd_surveillance_on': '🛰️ Vigilância: foto a cada 10s + envio',
+  'sos_cmd_surveillance_off': '⏹ Vigilância parada',
+
+  'sos_section_quick': 'MENSAGENS RÁPIDAS',
+  'sos_qm_help': '🚨 PRECISO DE AJUDA',
+  'sos_qm_silent': '🤫 NÃO POSSO FALAR',
+  'sos_qm_here': '📍 ESTOU AQUI',
+  'sos_qm_injured': '🏥 ESTOU FERIDO',
+  'sos_qm_followed': '👤 ESTOU SENDO SEGUIDO',
+  'sos_qm_locked': '🚪 ESTOU TRANCAFIADO',
+  'sos_qm_call': '📞 LIGUEM EMERGÊNCIA',
+  'sos_qm_ok': '🟢 ESTOU BEM',
+
+  'sos_section_rescuers': 'SOCORRISTAS',
+  'sos_section_communication': 'COMUNICAÇÃO',
+  'sos_section_system': 'ESTADO DO SISTEMA',
+  'sos_section_events': 'EVENTOS',
+  'sos_events_error': 'Não é possível carregar eventos',
+  'sos_no_events': 'Sem eventos',
+
+  'sos_error_timeout': 'Tempo esgotado. Tente novamente.',
+  'sos_error_permission': 'Permissão negada',
+  'sos_error_network': 'Erro de rede. Verifique sua conexão.',
+  'sos_error_generic': 'Ocorreu um erro',
+  'sos_error_camera': 'Câmera indisponível',
+  'sos_error_live': 'Ao vivo indisponível',
+
+  'sos_active_crisis': '🚨 SOS ATIVO — SALA DE CRISE',
+  'sos_rescue_instructions': 'Gerenciar resgate: câmera, foto, vídeo, áudio',
+  'sos_crisis_room_subtitle': 'Gerenciar seus incidentes ativos em tempo real',
+  'sos_quick_actions': 'AÇÕES RÁPIDAS',
+  'sos_share_location': 'Compartilhar',
+  'sos_safe_check': 'Verificação segura',
+  'sos_my_routes': 'Minhas rotas',
+  'sos_report': 'Reportar',
+  'sos_thix_search': 'THIX BUSCA',
+  'sos_search_subtitle': 'Alertas e desaparecidos',
+  'sos_incidents_subtitle': 'Histórico e relatórios',
+
+  'nearby_alerts_title': 'ALERTAS PRÓXIMOS',
+  'nearby_view_on_map': 'Ver no mapa',
+  'nearby_map_coming_soon': 'Mapa em tela cheia em breve',
+  'nearby_map_disabled': 'Mapa desativado\n(Aguardando chave API)',
+  'nearby_active_alerts': 'alertas ativos',
+  'nearby_missing': 'desaparecidos',
+  'nearby_official': 'oficiais',
+  'nearby_legend_missing': 'Desaparecido',
+  'nearby_legend_official': 'Aviso oficial',
+  'nearby_legend_report': 'Relatório',
+  'nearby_error_timeout': 'Tempo esgotado. Tente novamente.',
+  'nearby_error_network': 'Erro de rede. Verifique sua conexão.',
+  'nearby_error_permission': 'Permissão de localização negada',
+  'nearby_error_location': 'Localização indisponível',
+  'nearby_error_generic': 'Ocorreu um erro',
+  'nearby_invalid_coordinates': 'Coordenadas inválidas',
+  'nearby_location_required': 'Ative a localização',
+  'nearby_location_subtitle': 'Para ver alertas perto de você',
+
+  'search_title': 'THIX Busca',
+  'search_subtitle': 'Avisos de busca e desaparecidos',
+  'search_person_missing': 'Pessoa desaparecida',
+  'search_person_wanted': 'Aviso oficial de busca',
+  'search_report_missing': 'Reportar desaparecimento',
+  'search_report_found': 'Reportar achado',
+  'search_details': 'Detalhes',
+  'search_contact_authorities': 'Contatar autoridades',
+  'search_share_alert': 'Compartilhar alerta',
+  'search_last_seen': 'Visto pela última vez',
+  'search_description': 'Descrição',
+  'search_age': 'Idade',
+  'search_height': 'Altura',
+  'search_weight': 'Peso',
+  'search_hair_color': 'Cor do cabelo',
+  'search_eye_color': 'Cor dos olhos',
+  'search_distinguishing_marks': 'Sinais particulares',
+  'search_clothing': 'Roupas',
+  'search_circumstances': 'Circunstâncias',
+  'search_case_number': 'Número do caso',
+  'search_reported_by': 'Reportado por',
+  'search_official_notice': 'Aviso oficial',
+  'search_community_alert': 'Alerta comunitário',
+
+  'chat_online': 'Online',
+  'chat_seen_at': 'Visto às',
+  'chat_at': 'às',
+  'chat_yesterday_at': 'Ontem às',
+  'chat_on': 'em',
+  'chat_write_message': 'Escrever uma mensagem…',
+  'chat_send': 'Enviar',
+  'chat_record_audio': 'Gravar áudio',
+  'chat_stop_recording': 'Parar gravação',
+  'chat_recording': 'Gravando',
+  'chat_recording_error': 'Erro de gravação',
+  'chat_file': 'Arquivo',
+  'chat_sticker': 'Sticker',
+  'chat_ephemeral': 'Efêmero',
+  'chat_protected': 'Protegido',
+  'chat_internal_note': 'Nota interna',
+  'chat_video_call': 'Videochamada',
+  'chat_audio_call': 'Chamada de áudio',
+  'chat_escalate': 'Escalar',
+  'chat_history': 'Histórico',
+  'chat_group_info': 'Info do grupo',
+  'chat_typing': 'digitando…',
+  'chat_members': 'membros',
+  'chat_unknown_user': 'Usuário desconhecido',
+  'chat_cannot_reply': 'Não pode responder',
+  'chat_connection_interrupted': 'Conexão interrompida',
+  'chat_call_inactive': 'Chamada impossível — conexão inativa',
+  'chat_send_inactive': 'Envio impossível — conexão inativa',
+  'chat_auth_required': 'Autorização necessária',
+  'chat_understood': 'Entendido',
+  'chat_mic_call_disclosure': 'Chamada de áudio requer microfone',
+  'chat_cam_call_disclosure': 'Videochamada requer câmera',
+  'chat_mic_disclosure': 'Gravação de áudio requer microfone',
+  'chat_callback': 'Retornar chamada',
+  'chat_pause': 'Pausar',
+  'chat_play': 'Reproduzir',
+  'chat_file_too_big': 'Arquivo muito grande',
+  'chat_delete_title': 'Excluir mensagem',
+  'chat_delete_message': 'Esta mensagem será excluída para todos.',
+  'chat_ephemeral_message': 'Mensagem efêmera',
+  'chat_disabled': 'Desativado',
+  'chat_seconds_10': '10 segundos',
+  'chat_minute_1': '1 minuto',
+  'chat_hour_1': '1 hora',
+  'chat_hours_24': '24 horas',
+  'chat_custom_time': 'Duração personalizada',
+  'chat_duration_seconds': 'Duração (segundos)',
+  'chat_validate': 'Validar',
+  'chat_invalid_number': 'Número inválido',
+  'chat_secure_message': 'Mensagem segura',
+  'chat_message': 'Mensagem',
+  'chat_password': 'Senha',
+  'chat_emojis': 'Emojis',
+  'chat_reactions': 'Reações',
+  'chat_flags': 'Bandeiras',
+  'chat_new_message': 'Nova mensagem',
+  'chat_no_messages': 'Sem mensagens',
+  'chat_start_conversation': 'Iniciar a conversa',
+  'chat_group_name': 'Nome do grupo',
+  'chat_add_members': 'Adicionar membros',
+  'chat_leave_group': 'Sair do grupo',
+  'chat_leave_confirm': 'Deseja realmente sair deste grupo?',
+  'chat_mute': 'Silenciar',
+  'chat_unmute': 'Ativar som',
+  'chat_pinned': 'Fixado',
+  'chat_reply': 'Responder',
+  'chat_forward': 'Encaminhar',
+  'chat_star': 'Favorito',
+
+  'profile_title': 'Meu perfil',
+  'profile_edit': 'Editar perfil',
+  'profile_full_name': 'Nome completo',
+  'profile_first_name': 'Nome',
+  'profile_last_name': 'Sobrenome',
+  'profile_display_name': 'Nome visível',
+  'profile_bio': 'Biografia',
+  'profile_avatar': 'Foto de perfil',
+  'profile_change_avatar': 'Mudar foto',
+  'profile_email': 'E-mail',
+  'profile_phone': 'Telefone',
+  'profile_location': 'Localização',
+  'profile_birthday': 'Data de nascimento',
+  'profile_gender': 'Gênero',
+  'profile_gender_male': 'Masculino',
+  'profile_gender_female': 'Feminino',
+  'profile_gender_other': 'Outro',
+  'profile_gender_prefer_not': 'Prefiro não dizer',
+  'profile_social_links': 'Links sociais',
+  'profile_website': 'Site',
+  'profile_save_success': 'Perfil atualizado',
+  'profile_save_error': 'Erro ao atualizar',
+
+  'certification_title': 'Certificação THIX',
+  'certification_apply': 'Solicitar certificação',
+  'certification_status': 'Status',
+  'certification_pending': 'Pendente',
+  'certification_approved': 'Aprovado',
+  'certification_rejected': 'Rejeitado',
+  'certification_tier_bronze': 'Bronze',
+  'certification_tier_silver': 'Prata',
+  'certification_tier_gold': 'Ouro',
+  'certification_tier_platinum': 'Platina',
+  'certification_benefits': 'Benefícios',
+  'certification_documents': 'Documentos necessários',
+  'certification_upload_doc': 'Enviar documento',
+  'certification_review_progress': 'Revisão em andamento',
+  'certification_verified_account': 'Conta verificada',
+
+  'network_title': 'Rede THIX',
+  'network_connections': 'Conexões',
+  'network_followers': 'Seguidores',
+  'network_following': 'Seguindo',
+  'network_follow': 'Seguir',
+  'network_unfollow': 'Deixar de seguir',
+  'network_connect': 'Conectar',
+  'network_disconnect': 'Desconectar',
+  'network_block': 'Bloquear',
+  'network_report': 'Reportar',
+  'network_connection_request': 'Solicitação de conexão',
+  'network_pending_requests': 'Solicitações pendentes',
+  'network_suggested': 'Sugestões',
+  'network_mutual_connections': 'Conexões mútuas',
+  'network_no_connections': 'Sem conexões',
+  'network_post': 'Publicação',
+  'network_posts': 'Publicações',
+  'network_like': 'Curtir',
+  'network_comment': 'Comentário',
+  'network_share_post': 'Compartilhar publicação',
+
+  'settings_title': 'Configurações',
+  'settings_account': 'Conta',
+  'settings_privacy': 'Privacidade',
+  'settings_security': 'Segurança',
+  'settings_notifications': 'Notificações',
+  'settings_appearance': 'Aparência',
+  'settings_language': 'Idioma',
+  'settings_theme': 'Tema',
+  'settings_theme_light': 'Claro',
+  'settings_theme_dark': 'Escuro',
+  'settings_theme_system': 'Sistema',
+  'settings_sounds': 'Sons',
+  'settings_vibration': 'Vibração',
+  'settings_data_usage': 'Uso de dados',
+  'settings_storage': 'Armazenamento',
+  'settings_clear_cache': 'Limpar cache',
+  'settings_cache_cleared': 'Cache limpo',
+  'settings_about': 'Sobre',
+  'settings_version': 'Versão',
+  'settings_terms': 'Termos de uso',
+  'settings_privacy_policy': 'Política de privacidade',
+  'settings_help_support': 'Ajuda e suporte',
+  'settings_contact_us': 'Contate-nos',
+  'settings_rate_app': 'Avaliar o app',
+  'settings_delete_account': 'Excluir conta',
+  'settings_delete_confirm': 'Esta ação é irreversível. Todos os seus dados serão excluídos.',
+
+  'notif_new_message': 'Nova mensagem',
+  'notif_connection_request': 'Solicitação de conexão',
+  'notif_sos_alert': '🚨 Alerta SOS',
+  'notif_emergency_call': 'Chamada de emergência',
+  'notif_location_shared': 'Localização compartilhada',
+  'notif_mark_as_read': 'Marcar como lida',
+  'notif_clear_all': 'Limpar tudo',
+  'notif_no_notifications': 'Sem notificações',
+
+  'perm_camera_title': 'Acesso à câmera',
+  'perm_camera_desc': 'Para tirar fotos e vídeos',
+  'perm_mic_title': 'Acesso ao microfone',
+  'perm_mic_desc': 'Para gravar áudio e fazer chamadas',
+  'perm_location_title': 'Acesso à localização',
+  'perm_location_desc': 'Para compartilhar sua posição em emergências',
+  'perm_contacts_title': 'Acesso aos contatos',
+  'perm_contacts_desc': 'Para adicionar socorristas rapidamente',
+  'perm_photos_title': 'Acesso às fotos',
+  'perm_photos_desc': 'Para enviar imagens',
+  'perm_notifications_title': 'Notificações',
+  'perm_notifications_desc': 'Para receber alertas importantes',
+  'perm_allow': 'Permitir',
+  'perm_deny': 'Negar',
+  'perm_go_to_settings': 'Ir para configurações',
+
+  'error_generic': 'Ocorreu um erro',
+  'error_network': 'Erro de rede. Verifique sua conexão.',
+  'error_timeout': 'Tempo esgotado. Tente novamente.',
+  'error_server': 'Erro do servidor. Tente mais tarde.',
+  'error_unauthorized': 'Não autorizado. Faça login novamente.',
+  'error_forbidden': 'Acesso negado',
+  'error_not_found': 'Recurso não encontrado',
+  'error_validation': 'Dados inválidos',
+  'error_file_too_large': 'Arquivo muito grande',
+  'error_unsupported_format': 'Formato não suportado',
+  'error_permission_denied': 'Permissão negada',
+  'error_camera_unavailable': 'Câmera indisponível',
+  'error_microphone_unavailable': 'Microfone indisponível',
+  'error_location_unavailable': 'Localização indisponível',
+
+  'item_zero': 'Sem itens',
+  'item_one': '{count} item',
+  'item_many': '{count} itens',
+  'contact_zero': 'Sem contatos',
+  'contact_one': '{count} contato',
+  'contact_many': '{count} contatos',
+  'message_zero': 'Sem mensagens',
+  'message_one': '{count} mensagem',
+  'message_many': '{count} mensagens',
+  'day_zero': '0 dias',
+  'day_one': '{count} dia',
+  'day_many': '{count} dias',
+  'hour_zero': '0 horas',
+  'hour_one': '{count} hora',
+  'hour_many': '{count} horas',
+  'minute_zero': '0 minutos',
+  'minute_one': '{count} minuto',
+  'minute_many': '{count} minutos',
+  // ─── TIME / RELATIVE ──────────────────────────────────────
+  'common_just_now': 'Agora mesmo',
+  'common_in_the_future': 'em breve',
+  'time_minutes_ago': 'há {0} min',
+  'time_minutes_ago_plural': 'há {0} minutos',
+  'time_hours_ago': 'há {0} hora',
+  'time_hours_ago_plural': 'há {0} horas',
+  'time_days_ago': 'há {0} dia',
+  'time_days_ago_plural': 'há {0} dias',
+  'time_seconds_ago': 'há {0}s',
+  'time_weeks_ago': 'há {0} semana',
+  'time_weeks_ago_plural': 'há {0} semanas',
+  'time_months_ago': 'há {0} mês',
+  'time_months_ago_plural': 'há {0} meses',
+  'time_years_ago': 'há {0} ano',
+  'time_years_ago_plural': 'há {0} anos',
+  'time_in_minutes': 'em {0} min',
+  'time_in_hours': 'em {0} hora',
+  'time_in_hours_plural': 'em {0} horas',
+  'time_in_days': 'em {0} dia',
+  'time_in_days_plural': 'em {0} dias',
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// 🇨🇩 LINGALA (LN)
+// ════════════════════════════════════════════════════════════════════════════
+const Map<String, String> _ln = {
+  'common_back': 'Kozonga',
+  'common_close': 'Kokanga',
+  'common_cancel': 'Kolongola',
+  'common_confirm': 'Kondima',
+  'common_delete': 'Kolongola',
+  'common_add': 'Kobakisa',
+  'common_edit': 'Kobongola',
+  'common_save': 'Kobomba',
+  'common_manage': 'Koyangela',
+  'common_retry': 'Komeka lisusu',
+  'common_refresh': 'Kozongisa',
+  'common_search': 'Koluka',
+  'common_open': 'Kofungola',
+  'common_share': 'Kokabola',
+  'common_copy': 'Kosala kopi',
+  'common_copied': 'Esalami kopi',
+  'common_download': 'Kokitisa',
+  'common_upload': 'Kotia',
+  'common_send': 'Kotinda',
+  'common_receive': 'Kozwa',
+  'common_accept': 'Kondima',
+  'common_reject': 'Koboya',
+  'common_skip': 'Koleka',
+  'common_next': 'Oyo elandi',
+  'common_previous': 'Oyo eleki',
+  'common_finish': 'Kosuka',
+  'common_done': 'Esili',
+  'common_error': 'Libunga',
+  'common_success': 'Elongi',
+  'common_loading': 'Ezali kokomba…',
+  'common_please_wait': 'Zela moke…',
+  'common_today': 'Lelo',
+  'common_yesterday': 'Lobi eleki',
+  'common_tomorrow': 'Lobi ekoya',
+  'common_home': 'Ndako',
+  'common_chat': 'Masolo',
+  'common_map': 'Karte',
+  'common_profile': 'Profil',
+  'common_menu': 'Menu',
+  'common_notifications': 'Mayebisi',
+  'common_settings': 'Mibeko',
+  'common_help': 'Lisalisi',
+  'common_about': 'Mpo na',
+  'common_logout': 'Kobima',
+  'common_login': 'Kokota',
+  'common_signup': 'Kofungola compte',
+  'common_yes': 'Iyo',
+  'common_no': 'Te',
+  'common_or': 'to',
+  'common_and': 'mpe',
+  'common_none': 'Moko te',
+  'common_all': 'Nyonso',
+  'common_unknown': 'Eyebani te',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Kopona monoko',
+  'settings_system_default': 'Monoko ya système',
+  'settings_language_change_failed': 'Ekoki te kobongola monoko',
+  'settings_language_changed': 'Monoko ebongwani',
+  // ─── HOME / CONSTELLATION ──────────────────────────────────
+  'home_search_hint': 'Luka mosala, moninga…',
+  'quickSona': 'THIX Sona',
+  'quickDoc': 'Ba documents na ngai',
+  'quickChat': 'Masolo',
+  'quickSos': 'SOS',
+  'serviceSante': 'THIX Kolongono',
+  'serviceMarket': 'THIX Zando',
+  'serviceMoney': 'THIX Mbongo',
+  'serviceReservation': 'Kobomba esika',
+  'serviceMonPays': 'Mboka na ngai',
+  'serviceEmploi': 'Mosala',
+  'serviceFormations': 'Mateya',
+  'serviceOpportunites': 'Ba opportunités',
+  'serviceInfos': 'Ba sango',
+  'serviceEvents': 'Ba événements',
+
+  'auth_login': 'Kokota',
+  'auth_signup': 'Kofungola compte',
+  'auth_forgot_password': 'Obosani mot de passe ?',
+  'auth_reset_password': 'Kobongola mot de passe',
+  'auth_email': 'Email',
+  'auth_phone': 'Telefon',
+  'auth_password': 'Mot de passe',
+  'auth_confirm_password': 'Kondima mot de passe',
+  'auth_logout': 'Kobima',
+  'auth_logout_confirm': 'Olingi mpenza kobima ?',
+  'auth_welcome_back': 'Bozongi malamu',
+  'auth_welcome': 'Boyei malamu',
+  'auth_no_account': 'Ozali na compte te ?',
+  'auth_has_account': 'Ozali déjà na compte ?',
+  'auth_invalid_email': 'Email ezali malamu te',
+  'auth_invalid_phone': 'Nimero ya telefon ezali malamu te',
+  'auth_password_too_short': 'Mot de passe ezali mokuse (min 8)',
+  'auth_passwords_mismatch': 'Mots de passe ekokani te',
+  'auth_login_success': 'Okoti malamu',
+  'auth_signup_success': 'Compte efungwami malamu',
+  'auth_logout_success': 'Obimi malamu',
+  'auth_session_expired': 'Session esili, kota lisusu',
+  'auth_2fa_title': 'Vérification na ba étapes mibale',
+  'auth_2fa_code': 'Code ya vérification',
+  'auth_verify_email': 'Kondima email',
+  'auth_verify_phone': 'Kondima telefon',
+  'auth_biometric': 'Kokota na biométrie',
+  'auth_biometric_prompt': 'Lakisa identité na yo mpo okoba',
+
+  'sos_button': 'SOS',
+  'sos_button_label': 'Bouton SOS ya urgence',
+  'sos_button_hint': 'Simba segonde 2 mpo oa activer',
+  'sos_button_tooltip': 'Finá mpe simba segonde 2',
+  'sos_button_text': 'SOS',
+  'sos_button_instruction': 'FINÁ MPE SIMBA\nSEGONDE 2',
+  'sos_hold_instruction': 'Finá mpe simba segonde 2',
+  'sos_trigger_button': 'Kobimisa SOS',
+  'sos_trigger_timeout': 'Tango eleki. Meka lisusu.',
+  'sos_trigger_error': 'Libunga na kobimisa SOS',
+  'sos_active': 'SOS EZALI KOTAMBOLA',
+  'sos_crisis_room': 'SALLE YA CRISE',
+  'sos_command_center': 'CENTRE YA COMMANDEMENT',
+  'sos_incident': 'Incident',
+  'sos_incident_unknown': 'Incident eyebani te',
+  'sos_incident_not_found': 'Incident ezwami te',
+  'sos_circle': 'Cercle',
+  'sos_rescuers': 'basauveteurs',
+  'sos_rescuer': 'Mosauveteur',
+  'sos_my_rescuers': 'BASAUVEUTEURS NA NGAI',
+  'sos_duration': 'Ntango',
+  'sos_identifier': 'Identifiant',
+  'sos_calling': 'Ezali kobenga…',
+  'sos_call': 'Kobenga',
+  'sos_available': 'Ezali disponible',
+  'sos_unavailable': 'Ezali disponible te',
+  'sos_verified': 'Econdimami',
+  'sos_unknown': 'Eyebani te',
+  'sos_end': 'Kosuka',
+  'sos_end_sos': 'Kosuka SOS',
+  'sos_cancel_sos': 'KOLONGOLA SOS',
+  'sos_pin_required': 'Code ya sécurité esengeli',
+  'sos_cancelled': 'SOS elongwami',
+  'sos_resolved': 'SOS esili',
+  'sos_cancel_failed': 'Libunga na kolongola',
+  'sos_in_progress': 'EZALI KOTAMBOLA',
+  'sos_history': 'HISTOIRE',
+  'sos_my_incidents': 'Ba incidents na ngai',
+  'sos_no_incidents': 'Incident moko te nanu',
+  'sos_incidents_appear_here': 'Ba SOS na yo ekobima awa',
+  'sos_history_error': 'Ekoki te kokomba histoire',
+  'sos_circle_1': 'Cercle 1 – Ya liboso',
+  'sos_circle_2': 'Cercle 2 – Ya mibale',
+  'sos_circle_3': 'Cercle 3 – Ya urgence',
+  'sos_no_rescuers': 'Mosauveteur te',
+  'sos_no_rescuers_circle': 'Mosauveteur te na cercle oyo',
+  'sos_add_first_rescuer': 'Bakisa mosauveteur na yo ya liboso',
+  'sos_add_rescuer': 'Kobakisa mosauveteur',
+  'sos_add_rescuer_info': 'Koma THIX ID ya mosauveteur. Nkombo na foto ekokomama automatiquement.',
+  'sos_thix_id_label': 'THIX ID',
+  'sos_thix_id_hint': 'THIX-XXXX',
+  'sos_relation': 'Relation',
+  'sos_relation_hint': 'Ndakisa : Mama, Moninga, Kolègue…',
+  'sos_phone_optional': 'Telefon (optionnel)',
+  'sos_phone_hint': '+243 …',
+  'sos_save_rescuer': 'Kobomba mosauveteur',
+  'sos_multiple_rescuers_info': 'Okoki kobakisa basauveteurs ebele na cercle moko.',
+  'sos_rescuer_saved': 'Mosauveteur THIX abombami',
+  'sos_search_first': 'Luka d\'abord THIX ID ya malamu',
+  'sos_no_thix_account': 'Compte THIX moko te mpo na ID oyo',
+  'sos_enter_thix_id': 'Koma THIX ID',
+  'sos_load_error': 'Ekoki te kokomba basauveteurs na yo',
+  'sos_delete_rescuer': 'Kolongola mosauveteur oyo ?',
+  'sos_delete_rescuer_confirm': 'Contact oyo akozwa lisusu ba alertes SOS te. Ekoki te kozonga.',
+  'sos_rescuer_deleted': 'Mosauveteur alongwami malamu',
+  'sos_delete_error': 'Libunga na kolongola',
+  'sos_circle_priority_title': 'Ordre ya priorité',
+ 
+  'sos_circle_priority_info': 'Cercle 1 ebengami d\'abord. Réponse te → Cercle 2 → Cercle 3.',
+
+
+  'sos_pin_title': 'Code ya sécurité',
+  'sos_pin_label': 'Code PIN',
+  'sos_pin_enter': 'Koma code na yo ya sécurité ya {0} chiffres',
+  'sos_pin_invalid': 'Code ezali malamu te (4-6 chiffres)',
+  'sos_pin_wrong': 'Code ezali malamu te',
+  'sos_remaining': 'ba tentatives etikali',
+  'sos_pin_locked': 'Ba tentatives mingi — ekangami mpo na mwa ntango',
+  'sos_pin_locked_for': 'Ekangami mpo na',
+
+  'sos_status_location': 'Position',
+  'sos_status_active': 'ACTIVE',
+  'sos_status_waiting': 'EZALI KOZELA',
+  'sos_status_camera': 'Caméra',
+  'sos_status_backup': 'Sauvegarde',
+  'sos_banner_safe_title': 'OZALI NA SÉCURITÉ',
+  'sos_banner_safe_subtitle': 'Protection na yo THIX ezali active',
+  'sos_banner_sos_title': 'SOS EZALI KOTAMBOLA',
+  'sos_banner_network_title': 'CONNEXION ELONGWE',
+  'sos_banner_network_subtitle': 'Position ya suka ebombami localement',
+  'sos_banner_warning_title': 'KEBA',
+  'sos_banner_warning_subtitle': 'Tala mibeko na yo ya basauveteurs',
+  'sos_view_location': 'Komona position',
+  'sos_protection_active': 'Protection active',
+
+  'sos_chat': 'Masolo SOS',
+  'sos_chat_sos': 'THIX CHAT SOS',
+  'sos_open_urgent_chat': 'Kofungola masolo ya urgence',
+  'sos_open_crisis_room': 'Kofungola salle ya crise',
+  'sos_chat_not_ready': 'Masolo SOS esalami nanu te',
+  'sos_group': 'Groupe SOS',
+  'sos_group_ok': 'Groupe OK',
+  'sos_group_waiting': 'Groupe ?',
+  'sos_clip': 'Clip 10s',
+  'sos_clip_busy': 'Clip…',
+  'sos_clip_recording': 'Ezali kokanga 10s mpe kotinda automatiquement…',
+  'sos_clip_unavailable': 'Clip 10s ezali disponible te na appareil oyo',
+  'sos_clip_sent': '🎥 Clip 10s etindami na groupe SOS',
+  'sos_clip_pending': '🎥 Clip 10s ekangami — ezali kotindama na groupe',
+  'sos_recall': 'Kobenga lisusu',
+  'sos_audio_call': 'Appel ya audio',
+  'sos_auto_call_in_progress': 'APPEL AUTO EZALI KOTAMBOLA',
+  'sos_next_in': 'oyo elandi na',
+  'sos_mic_on': 'Micro allumé',
+  'sos_mic_mute': 'Silence',
+  'sos_cam_on': 'Ko activer caméra',
+  'sos_cam_off': 'Ko désactiver caméra',
+
+  'sos_section_location': 'POSITION EN DIRECT',
+  'sos_position_active': 'Position active',
+  'sos_position_waiting': 'Ezali kozela position',
+  'sos_position_unknown': 'Position ?',
+  'sos_battery_unknown': 'Bat ?',
+  'sos_map_disabled': 'Karte ekangami mpo na mwa ntango\n(Ezali kozela API Google)',
+  'sos_current_position': 'Position ya sikoyo',
+
+  'sos_tab_evidence': 'PREUVES',
+  'sos_tab_journal': 'JOURNAL',
+  'sos_no_evidence': 'Preuve te — bimisa Foto / Clip / Surveillance',
+  'sos_journal_empty': 'Journal ezali vide',
+  'sos_evidence': 'preuve',
+  'sos_latest_evidence': 'PREUVE YA SUKA',
+  'sos_offline': 'HORS LIGNE — COMMANDES ACTIVE',
+  'sos_no_live': 'Live te. Bimisa Foto / Clip 10s / Surveillance.',
+  'sos_photo': 'Foto',
+  'sos_video_30s': 'Vidéo 30s',
+  'sos_stop_audio': 'KOKANGA AUDIO',
+  'sos_record_audio': 'Kokanga audio',
+  'sos_stop_surveillance': 'Kokanga surveillance',
+  'sos_surveillance_10s': 'Surveillance 10s',
+  'sos_instruction': 'Instruction',
+  'sos_instruct_title': '📢 Instruction ya solo → victime + groupe SOS',
+  'sos_instruct_custom': 'Message personnalisé…',
+  'sos_instruct_sent': '📢 Instruction etindami na groupe SOS',
+  'sos_send_group': 'KOTINDA NA GROUPE',
+  'sos_instruct_calm': 'Zala calme, basauveteurs bazali koya',
+  'sos_instruct_talk': 'Solola na ngai, yakisa situation na yo',
+  'sos_instruct_room': 'Lakisa chambre na caméra',
+  'sos_instruct_clip': 'Bimisa clip ya segonde 10',
+  'sos_instruct_stay': 'Kokanga te',
+
+  'sos_ev_instruct': 'Instruction',
+  'sos_ev_photo_requested': 'Foto esengami na mosauveteur',
+  'sos_ev_photo_sent': 'Foto etindami na groupe',
+  'sos_ev_photo_captured': 'Foto ekangami',
+  'sos_ev_video_sent': 'Vidéo etindami na groupe',
+  'sos_ev_video_captured': 'Vidéo ekangami',
+  'sos_ev_audio_sent': 'Audio etindami na groupe',
+  'sos_ev_audio_captured': 'Audio ekangami',
+  'sos_ev_capture_failed': 'Libunga na kokanga',
+  'sos_ev_rescue_joined': 'Mosauveteur moko akoti na salle',
+  'sos_ev_created': 'Incident esalami',
+  'sos_ev_started': 'SOS ebandi',
+  'sos_ev_photo_received': '📥 Foto ya victime eyambi',
+  'sos_ev_video_received': '📥 Vidéo ya victime eyambi',
+  'sos_ev_audio_received': '📥 Audio ya victime eyambi',
+  'sos_ev_failed': '⚠️ Libunga na kokanga victime',
+  'sos_victim_label': 'Victime',
+  'sos_victim_unknown': 'Victime eyebani te — appel ekoki te',
+
+  'sos_cmd_photo': '📸 Commande foto → telefon ya victime',
+  'sos_cmd_video': '🎥 Commande vidéo → telefon ya victime',
+  'sos_cmd_clip': 'Commande clip 10s',
+  'sos_cmd_audio_start': '🎤 Audio ya victime ezali kotambola…',
+  'sos_cmd_audio_stop': '⏹ Kokanga audio → telefon ya victime',
+  'sos_cmd_surveillance_on': '🛰️ Surveillance : foto na 10s nyonso + kotinda',
+  'sos_cmd_surveillance_off': '⏹ Surveillance ekangami',
+
+  'sos_section_quick': 'BA MESSAGES YA MBANGU',
+  'sos_qm_help': '🚨 NASENGELI NA LISALISI',
+  'sos_qm_silent': '🤫 NAOKI TE KOSOLOBA',
+  'sos_qm_here': '📍 NAZALI AWA',
+  'sos_qm_injured': '🏥 NAZOKI',
+  'sos_qm_followed': '👤 BAZALI KOLANDA NGAI',
+  'sos_qm_locked': '🚪 BAKANGI NGAI',
+  'sos_qm_call': '📞 BENGA BA URGENCES',
+  'sos_qm_ok': '🟢 NAZALI MALAMU',
+
+  'sos_section_rescuers': 'BASAUVEUTEURS',
+  'sos_section_communication': 'COMMUNICATION',
+  'sos_section_system': 'ÉTAT YA SYSTÈME',
+  'sos_section_events': 'ÉVÉNEMENTS',
+  'sos_events_error': 'Ekoki te kokomba événements',
+  'sos_no_events': 'Événement moko te',
+
+  'sos_error_timeout': 'Tango eleki. Meka lisusu.',
+  'sos_error_permission': 'Permission eboyami',
+  'sos_error_network': 'Libunga ya réseau. Tala connexion na yo.',
+  'sos_error_generic': 'Libunga esalemi',
+  'sos_error_camera': 'Caméra ezali disponible te',
+  'sos_error_live': 'Live ezali disponible te',
+
+  'sos_active_crisis': '🚨 SOS EZALI KOTAMBOLA — SALLE YA CRISE',
+  'sos_rescue_instructions': 'Koyangela sauvetage : caméra, foto, vidéo, audio',
+  'sos_crisis_room_subtitle': 'Koyangela ba incidents na yo ya active en temps réel',
+  'sos_quick_actions': 'BA ACTIONS YA MBANGU',
+  'sos_share_location': 'Kokabola',
+  'sos_safe_check': 'Vérification sécurité',
+  'sos_my_routes': 'Ba routes na ngai',
+  'sos_report': 'Koyebisa',
+  'sos_thix_search': 'THIX RECHERCHE',
+  'sos_search_subtitle': 'Ba avis & ba disparitions',
+  'sos_incidents_subtitle': 'Histoire & ba rapports',
+
+  'nearby_alerts_title': 'BA ALERTES YA PENE',
+  'nearby_view_on_map': 'Komona na karte',
+  'nearby_map_coming_soon': 'Karte ya écran mobimba ekoya kala te',
+  'nearby_map_disabled': 'Karte ekangami\n(Ezali kozela clé API)',
+  'nearby_active_alerts': 'ba alertes ya active',
+  'nearby_missing': 'ba disparus',
+  'nearby_official': 'officiels',
+  'nearby_legend_missing': 'Disparu',
+  'nearby_legend_official': 'Avis officiel',
+  'nearby_legend_report': 'Rapport',
+  'nearby_error_timeout': 'Tango eleki. Meka lisusu.',
+  'nearby_error_network': 'Libunga ya réseau. Tala connexion na yo.',
+  'nearby_error_permission': 'Permission ya position eboyami',
+  'nearby_error_location': 'Position ezali disponible te',
+  'nearby_error_generic': 'Libunga esalemi',
+  'nearby_invalid_coordinates': 'Coordonnées ezali malamu te',
+  'nearby_location_required': 'Activer position',
+  'nearby_location_subtitle': 'Mpo na komona ba alertes pene na yo',
+
+  'search_title': 'THIX Recherche',
+  'search_subtitle': 'Ba avis ya recherche & ba disparitions',
+  'search_person_missing': 'Moto alimbwe',
+  'search_person_wanted': 'Avis officiel ya recherche',
+  'search_report_missing': 'Koyebisa disparition',
+  'search_report_found': 'Koyebisa découverte',
+  'search_details': 'Ba détails',
+  'search_contact_authorities': 'Kobenga ba autorités',
+  'search_share_alert': 'Kokabola alerte',
+  'search_last_seen': 'Bamonaki ye mpo na mbala ya suka',
+  'search_description': 'Description',
+  'search_age': 'Mbula',
+  'search_height': 'Bosanda',
+  'search_weight': 'Kilo',
+  'search_hair_color': 'Langi ya nsuki',
+  'search_eye_color': 'Langi ya miso',
+  'search_distinguishing_marks': 'Ba signes particuliers',
+  'search_clothing': 'Bilamba',
+  'search_circumstances': 'Circonstances',
+  'search_case_number': 'Nimero ya dossier',
+  'search_reported_by': 'Eyebisami na',
+  'search_official_notice': 'Avis officiel',
+  'search_community_alert': 'Alerte ya communauté',
+
+  'chat_online': 'En ligne',
+  'chat_seen_at': 'Emonani na',
+  'chat_at': 'na',
+  'chat_yesterday_at': 'Lobi eleki na',
+  'chat_on': 'na',
+  'chat_write_message': 'Kokoma message…',
+  'chat_send': 'Kotinda',
+  'chat_record_audio': 'Kokanga audio',
+  'chat_stop_recording': 'Kokanga enregistrement',
+  'chat_recording': 'Enregistrement',
+  'chat_recording_error': 'Libunga na enregistrement',
+  'chat_file': 'Fichier',
+  'chat_sticker': 'Sticker',
+  'chat_ephemeral': 'Éphémère',
+  'chat_protected': 'Ebatelami',
+  'chat_internal_note': 'Note interne',
+  'chat_video_call': 'Appel vidéo',
+  'chat_audio_call': 'Appel audio',
+  'chat_escalate': 'Kokende likolo',
+  'chat_history': 'Histoire',
+  'chat_group_info': 'Ba infos ya groupe',
+  'chat_typing': 'ezali kokoma…',
+  'chat_members': 'ba membres',
+  'chat_unknown_user': 'Utilisateur eyebani te',
+  'chat_cannot_reply': 'Ekoki te kopesa réponse',
+  'chat_connection_interrupted': 'Connexion ekatani',
+  'chat_call_inactive': 'Appel ekoki te — connexion inactive',
+  'chat_send_inactive': 'Kotinda ekoki te — connexion inactive',
+  'chat_auth_required': 'Autorisation esengeli',
+  'chat_understood': 'Nakangoli',
+  'chat_mic_call_disclosure': 'Appel audio esengeli micro',
+  'chat_cam_call_disclosure': 'Appel vidéo esengeli caméra',
+  'chat_mic_disclosure': 'Enregistrement audio esengeli micro',
+  'chat_callback': 'Kobenga lisusu',
+  'chat_pause': 'Kotika',
+  'chat_play': 'Kobeta',
+  'chat_file_too_big': 'Fichier ezali monene mingi',
+  'chat_delete_title': 'Kolongola message',
+  'chat_delete_message': 'Message oyo ekolongwama mpo na bato nyonso.',
+  'chat_ephemeral_message': 'Message éphémère',
+  'chat_disabled': 'Ekangami',
+  'chat_seconds_10': 'Segonde 10',
+  'chat_minute_1': 'Minute 1',
+  'chat_hour_1': 'Ngonga 1',
+  'chat_hours_24': 'Ngonga 24',
+  'chat_custom_time': 'Ntango personnalisé',
+  'chat_duration_seconds': 'Ntango (segondes)',
+  'chat_validate': 'Kondima',
+  'chat_invalid_number': 'Nimero ezali malamu te',
+  'chat_secure_message': 'Message sécurisé',
+  'chat_message': 'Message',
+  'chat_password': 'Mot de passe',
+  'chat_emojis': 'Emojis',
+  'chat_reactions': 'Réactions',
+  'chat_flags': 'Ba drapeaux',
+  'chat_new_message': 'Message ya sika',
+  'chat_no_messages': 'Message moko te',
+  'chat_start_conversation': 'Kobanda masolo',
+  'chat_group_name': 'Nkombo ya groupe',
+  'chat_add_members': 'Kobakisa ba membres',
+  'chat_leave_group': 'Kobima na groupe',
+  'chat_leave_confirm': 'Olingi mpenza kobima na groupe oyo ?',
+  'chat_mute': 'Kokangisa makasi',
+  'chat_unmute': 'Kofungola makasi',
+  'chat_pinned': 'Ekangami',
+  'chat_reply': 'Koyanola',
+  'chat_forward': 'Kotinda lisusu',
+  'chat_star': 'Favori',
+
+  'profile_title': 'Profil na ngai',
+  'profile_edit': 'Kobongola profil',
+  'profile_full_name': 'Nkombo mobimba',
+  'profile_first_name': 'Nkombo ya liboso',
+  'profile_last_name': 'Nkombo ya famille',
+  'profile_display_name': 'Nkombo ya komonisa',
+  'profile_bio': 'Biographie',
+  'profile_avatar': 'Foto ya profil',
+  'profile_change_avatar': 'Kobongola foto',
+  'profile_email': 'Email',
+  'profile_phone': 'Telefon',
+  'profile_location': 'Position',
+  'profile_birthday': 'Mokolo ya mbotama',
+  'profile_gender': 'Bosexe',
+  'profile_gender_male': 'Mobali',
+  'profile_gender_female': 'Mwasi',
+  'profile_gender_other': 'Mosusu',
+  'profile_gender_prefer_not': 'Nalingi te koloba',
+  'profile_social_links': 'Ba liens sociaux',
+  'profile_website': 'Site web',
+  'profile_save_success': 'Profil ebongwami',
+  'profile_save_error': 'Libunga na kobongola',
+
+  'certification_title': 'Certification THIX',
+  'certification_apply': 'Kosenga certification',
+  'certification_status': 'Statut',
+  'certification_pending': 'Ezali kozela',
+  'certification_approved': 'Endimami',
+  'certification_rejected': 'Eboyami',
+  'certification_tier_bronze': 'Bronze',
+  'certification_tier_silver': 'Palata',
+  'certification_tier_gold': 'Wolo',
+  'certification_tier_platinum': 'Platine',
+  'certification_benefits': 'Ba avantages',
+  'certification_documents': 'Ba documents esengeli',
+  'certification_upload_doc': 'Kotia document',
+  'certification_review_progress': 'Examen ezali kotambola',
+  'certification_verified_account': 'Compte evérifier',
+
+  'network_title': 'Réseau THIX',
+  'network_connections': 'Connexions',
+  'network_followers': 'Ba abonnés',
+  'network_following': 'Ba abonnements',
+  'network_follow': 'Kolanda',
+  'network_unfollow': 'Kolongola kolanda',
+  'network_connect': 'Kokangisa',
+  'network_disconnect': 'Kokangola',
+  'network_block': 'Kokanga',
+  'network_report': 'Koyebisa',
+  'network_connection_request': 'Demande ya connexion',
+  'network_pending_requests': 'Ba demandes ezali kozela',
+  'network_suggested': 'Ba suggestions',
+  'network_mutual_connections': 'Connexions communes',
+  'network_no_connections': 'Connexion moko te',
+  'network_post': 'Publication',
+  'network_posts': 'Ba publications',
+  'network_like': 'Nalingi',
+  'network_comment': 'Commentaire',
+  'network_share_post': 'Kokabola publication',
+
+  'settings_title': 'Mibeko',
+  'settings_account': 'Compte',
+  'settings_privacy': 'Vie privée',
+  'settings_security': 'Sécurité',
+  'settings_notifications': 'Mayebisi',
+  'settings_appearance': 'Apparence',
+  'settings_language': 'Monoko',
+  'settings_theme': 'Thème',
+  'settings_theme_light': 'Pole',
+  'settings_theme_dark': 'Molili',
+  'settings_theme_system': 'Système',
+  'settings_sounds': 'Ba sons',
+  'settings_vibration': 'Vibration',
+  'settings_data_usage': 'Kosalela données',
+  'settings_storage': 'Stockage',
+  'settings_clear_cache': 'Kopweza cache',
+  'settings_cache_cleared': 'Cache epwezami',
+  'settings_about': 'Mpo na',
+  'settings_version': 'Version',
+  'settings_terms': 'Ba conditions ya kosalela',
+  'settings_privacy_policy': 'Politique ya vie privée',
+  'settings_help_support': 'Lisalisi mpe soutien',
+  'settings_contact_us': 'Kobenga biso',
+  'settings_rate_app': 'Kopesa note na app',
+  'settings_delete_account': 'Kolongola compte',
+  'settings_delete_confirm': 'Action oyo ekoki te kozonga. Ba données na yo nyonso ekolongwama.',
+
+  'notif_new_message': 'Message ya sika',
+  'notif_connection_request': 'Demande ya connexion',
+  'notif_sos_alert': '🚨 Alerte SOS',
+  'notif_emergency_call': 'Appel ya urgence',
+  'notif_location_shared': 'Position ekabolami',
+  'notif_mark_as_read': 'Kotia lokola etangami',
+  'notif_clear_all': 'Kolongola nyonso',
+  'notif_no_notifications': 'Notification moko te',
+
+  'perm_camera_title': 'Accès caméra',
+  'perm_camera_desc': 'Mpo na kokanga ba fotos na ba vidéos',
+  'perm_mic_title': 'Accès micro',
+  'perm_mic_desc': 'Mpo na kokanga audio mpe kobenga',
+  'perm_location_title': 'Accès position',
+  'perm_location_desc': 'Mpo na kokabola position na yo na urgence',
+  'perm_contacts_title': 'Accès contacts',
+  'perm_contacts_desc': 'Mpo na kobakisa basauveteurs noki',
+  'perm_photos_title': 'Accès ba fotos',
+  'perm_photos_desc': 'Mpo na kotinda ba images',
+  'perm_notifications_title': 'Ba notifications',
+  'perm_notifications_desc': 'Mpo na kozwa ba alertes ya important',
+  'perm_allow': 'Kondima',
+  'perm_deny': 'Koboya',
+  'perm_go_to_settings': 'Kokende na mibeko',
+
+  'error_generic': 'Libunga esalemi',
+  'error_network': 'Libunga ya réseau. Tala connexion na yo.',
+  'error_timeout': 'Tango eleki. Meka lisusu.',
+  'error_server': 'Libunga ya serveur. Meka kala te.',
+  'error_unauthorized': 'Autorisation te. Kota lisusu.',
+  'error_forbidden': 'Accès eboyami',
+  'error_not_found': 'Eloko ezwami te',
+  'error_validation': 'Ba données ezali malamu te',
+  'error_file_too_large': 'Fichier ezali monene mingi',
+  'error_unsupported_format': 'Format esupporté te',
+  'error_permission_denied': 'Permission eboyami',
+  'error_camera_unavailable': 'Caméra ezali disponible te',
+  'error_microphone_unavailable': 'Micro ezali disponible te',
+  'error_location_unavailable': 'Position ezali disponible te',
+
+  'item_zero': 'Eloko moko te',
+  'item_one': 'Eloko {count}',
+  'item_many': 'Ba éléments {count}',
+  'contact_zero': 'Contact moko te',
+  'contact_one': 'Contact {count}',
+  'contact_many': 'Ba contacts {count}',
+  'message_zero': 'Message moko te',
+  'message_one': 'Message {count}',
+  'message_many': 'Ba messages {count}',
+  'day_zero': 'Mokolo 0',
+  'day_one': 'Mokolo {count}',
+  'day_many': 'Ba mikolo {count}',
+  'hour_zero': 'Ngonga 0',
+  'hour_one': 'Ngonga {count}',
+  'hour_many': 'Ba ngonga {count}',
+  'minute_zero': 'Minute 0',
+  'minute_one': 'Minute {count}',
+  'minute_many': 'Ba minutes {count}',
+  // ─── TIME / RELATIVE ──────────────────────────────────────
+  'common_just_now': 'Sikawa',
+  'common_in_the_future': 'Kala mingi te',
+  'time_minutes_ago': 'Miniti {0} eleki',
+  'time_minutes_ago_plural': 'Miniti {0} mileki',
+  'time_hours_ago': 'Ngonga {0} eleki',
+  'time_hours_ago_plural': 'Bangonga {0} bileki',
+  'time_days_ago': 'Mokolo {0} eleki',
+  'time_days_ago_plural': 'Mikolo {0} mileki',
+  'time_seconds_ago': 'Segonde {0} eleki',
+  'time_weeks_ago': 'Pɔsɔ {0} eleki',
+  'time_weeks_ago_plural': 'Bapɔsɔ {0} bileki',
+  'time_months_ago': 'Sanza {0} eleki',
+  'time_months_ago_plural': 'Basanza {0} bileki',
+  'time_years_ago': 'Mbula {0} eleki',
+  'time_years_ago_plural': 'Bambula {0} bileki',
+  'time_in_minutes': 'Na miniti {0}',
+  'time_in_hours': 'Na ngonga {0}',
+  'time_in_hours_plural': 'Na bangonga {0}',
+  'time_in_days': 'Na mokolo {0}',
+  'time_in_days_plural': 'Na mikolo {0}',
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// 🇨🇩 SWAHILI (SW)
+// ════════════════════════════════════════════════════════════════════════════
+const Map<String, String> _sw = {
+  'common_back': 'Rudi',
+  'common_close': 'Funga',
+  'common_cancel': 'Ghairi',
+  'common_confirm': 'Thibitisha',
+  'common_delete': 'Futa',
+  'common_add': 'Ongeza',
+  'common_edit': 'Hariri',
+  'common_save': 'Hifadhi',
+  'common_manage': 'Simamia',
+  'common_retry': 'Jaribu tena',
+  'common_refresh': 'Onyesha upya',
+  'common_search': 'Tafuta',
+  'common_open': 'Fungua',
+  'common_share': 'Shiriki',
+  'common_copy': 'Nakili',
+  'common_copied': 'Imenakiliwa',
+  'common_download': 'Pakua',
+  'common_upload': 'Pakia',
+  'common_send': 'Tuma',
+  'common_receive': 'Pokea',
+  'common_accept': 'Kubali',
+  'common_reject': 'Kataa',
+  'common_skip': 'Ruka',
+  'common_next': 'Inayofuata',
+  'common_previous': 'Iliyotangulia',
+  'common_finish': 'Maliza',
+  'common_done': 'Imemalizika',
+  'common_error': 'Kosa',
+  'common_success': 'Mafanikio',
+  'common_loading': 'Inapakia…',
+  'common_please_wait': 'Tafadhali subiri…',
+  'common_today': 'Leo',
+  'common_yesterday': 'Jana',
+  'common_tomorrow': 'Kesho',
+  'common_home': 'Nyumbani',
+  'common_chat': 'Mazungumzo',
+  'common_map': 'Ramani',
+  'common_profile': 'Wasifu',
+  'common_menu': 'Menyu',
+  'common_notifications': 'Arifa',
+  'common_settings': 'Mipangilio',
+  'common_help': 'Msaada',
+  'common_about': 'Kuhusu',
+  'common_logout': 'Toka',
+  'common_login': 'Ingia',
+  'common_signup': 'Jisajili',
+  'common_yes': 'Ndiyo',
+  'common_no': 'Hapana',
+  'common_or': 'au',
+  'common_and': 'na',
+  'common_none': 'Hakuna',
+  'common_all': 'Zote',
+  'common_unknown': 'Haijulikani',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Chagua lugha',
+  'settings_system_default': 'Chaguo-msingi la mfumo',
+  'settings_language_change_failed': 'Haiwezi kubadilisha lugha',
+  'settings_language_changed': 'Lugha imebadilishwa',
+  // ─── HOME / CONSTELLATION ──────────────────────────────────
+  'home_search_hint': 'Tafuta huduma, mwasiliani…',
+  'quickSona': 'THIX Sona',
+  'quickDoc': 'Nyaraka zangu',
+  'quickChat': 'Mazungumzo',
+  'quickSos': 'SOS',
+  'serviceSante': 'THIX Afya',
+  'serviceMarket': 'THIX Soko',
+  'serviceMoney': 'THIX Pesa',
+  'serviceReservation': 'Uhifadhi',
+  'serviceMonPays': 'Nchi Yangu',
+  'serviceEmploi': 'Ajira',
+  'serviceFormations': 'Mafunzo',
+  'serviceOpportunites': 'Fursa',
+  'serviceInfos': 'Habari',
+  'serviceEvents': 'Matukio',
+
+  'auth_login': 'Ingia',
+  'auth_signup': 'Tengeneza akaunti',
+  'auth_forgot_password': 'Umesahau nenosiri?',
+  'auth_reset_password': 'Weka upya nenosiri',
+  'auth_email': 'Barua pepe',
+  'auth_phone': 'Simu',
+  'auth_password': 'Nenosiri',
+  'auth_confirm_password': 'Thibitisha nenosiri',
+  'auth_logout': 'Toka',
+  'auth_logout_confirm': 'Je, kweli unataka kutoka?',
+  'auth_welcome_back': 'Karibu tena',
+  'auth_welcome': 'Karibu',
+  'auth_no_account': 'Bado huna akaunti?',
+  'auth_has_account': 'Tayari una akaunti?',
+  'auth_invalid_email': 'Barua pepe si sahihi',
+  'auth_invalid_phone': 'Nambari ya simu si sahihi',
+  'auth_password_too_short': 'Nenosiri fupi sana (chini ya 8)',
+  'auth_passwords_mismatch': 'Manenosiri hayafanani',
+  'auth_login_success': 'Umeingia vizuri',
+  'auth_signup_success': 'Akaunti imeundwa',
+  'auth_logout_success': 'Umetoka vizuri',
+  'auth_session_expired': 'Kipindi kimeisha, ingia tena',
+  'auth_2fa_title': 'Uthibitisho wa hatua mbili',
+  'auth_2fa_code': 'Msimbo wa uthibitisho',
+  'auth_verify_email': 'Thibitisha barua pepe',
+  'auth_verify_phone': 'Thibitisha simu',
+  'auth_biometric': 'Kuingia kwa biometria',
+  'auth_biometric_prompt': 'Thibitisha utambulisho kuendelea',
+
+  'sos_button': 'SOS',
+  'sos_button_label': 'Kitufe cha SOS cha dharura',
+  'sos_button_hint': 'Shikilia sekunde 2 kuamsha',
+  'sos_button_tooltip': 'Bonyeza na shikilia sekunde 2',
+  'sos_button_text': 'SOS',
+  'sos_button_instruction': 'BONYEZA NA SHIKILIA\nSEKUNDE 2',
+  'sos_hold_instruction': 'Bonyeza na shikilia sekunde 2',
+  'sos_trigger_button': 'Amsha SOS',
+  'sos_trigger_timeout': 'Muda umekwisha. Jaribu tena.',
+  'sos_trigger_error': 'Imeshindwa kuamsha SOS',
+  'sos_active': 'SOS INAFANYA KAZI',
+  'sos_crisis_room': 'CHUMBA CHA MGOGORO',
+  'sos_command_center': 'KITUO CHA AMRI',
+  'sos_incident': 'Tukio',
+  'sos_incident_unknown': 'Tukio halijulikani',
+  'sos_incident_not_found': 'Tukio halipatikani',
+  'sos_circle': 'Mduara',
+  'sos_rescuers': 'waokoaji',
+  'sos_rescuer': 'Mwokoa',
+  'sos_my_rescuers': 'WAOKOAJI WANGU',
+  'sos_duration': 'Muda',
+  'sos_identifier': 'Kitambulisho',
+  'sos_calling': 'Inapiga…',
+  'sos_call': 'Piga',
+  'sos_available': 'Inapatikana',
+  'sos_unavailable': 'Haipatikani',
+  'sos_verified': 'Imethibitishwa',
+  'sos_unknown': 'Haijulikani',
+  'sos_end': 'Maliza',
+  'sos_end_sos': 'Maliza SOS',
+  'sos_cancel_sos': 'GHAIRI SOS',
+  'sos_pin_required': 'Msimbo wa usalama unahitajika',
+  'sos_cancelled': 'SOS imeghairiwa',
+  'sos_resolved': 'SOS imetatuliwa',
+  'sos_cancel_failed': 'Kughairi kumeshindwa',
+  'sos_in_progress': 'INAENDELEA',
+  'sos_history': 'HISTORIA',
+  'sos_my_incidents': 'Matukio yangu',
+  'sos_no_incidents': 'Hakuna matukio bado',
+  'sos_incidents_appear_here': 'SOS zako zitaonekana hapa',
+  'sos_history_error': 'Haiwezi kupakia historia',
+
+  'sos_circle_1': 'Mduara 1 – Kipaumbele',
+  'sos_circle_2': 'Mduara 2 – Sekondari',
+  'sos_circle_3': 'Mduara 3 – Dharura',
+  'sos_no_rescuers': 'Hakuna waokoaji',
+  'sos_no_rescuers_circle': 'Hakuna waokoaji katika mduara huu',
+  'sos_add_first_rescuer': 'Ongeza mwasiliani wako wa kwanza wa uokoaji',
+  'sos_add_rescuer': 'Ongeza mwokoa',
+  'sos_add_rescuer_info': 'Ingiza THIX ID ya mwokoa. Jina na picha zitapatikana kiotomatiki.',
+  'sos_thix_id_label': 'THIX ID',
+  'sos_thix_id_hint': 'THIX-XXXX',
+  'sos_relation': 'Uhusiano',
+  'sos_relation_hint': 'Mf: Mama, Rafiki, Mwanakazi…',
+  'sos_phone_optional': 'Simu (si lazima)',
+  'sos_phone_hint': '+255 …',
+  'sos_save_rescuer': 'Hifadhi mwokoa',
+  'sos_multiple_rescuers_info': 'Unaweza kuongeza waokoaji wengi kwa kila mduara.',
+  'sos_rescuer_saved': 'Mwokoa THIX amehifadhiwa',
+  'sos_search_first': 'Tafuta kwanza THIX ID sahihi',
+  'sos_no_thix_account': 'Hakuna akaunti THIX kwa ID hii',
+  'sos_enter_thix_id': 'Ingiza THIX ID',
+  'sos_load_error': 'Haiwezi kupakia waokoaji wako',
+  'sos_delete_rescuer': 'Futa mwokoa huyu?',
+  'sos_delete_rescuer_confirm': 'Mwasiliani huyu hatapokea tena arifa za SOS. Haiwezi kurejeshwa.',
+  'sos_rescuer_deleted': 'Mwokoa amefutwa',
+  'sos_delete_error': 'Kosa katika kufuta',
+  'sos_circle_priority_title': 'Mpangilio wa kipaumbele',
+  'sos_circle_priority_info': 'Mduara 1 utapigwa kwanza. Hakuna jibu → Mduara 2 → Mduara 3.',
+
+  'sos_pin_title': 'Msimbo wa usalama',
+  'sos_pin_label': 'Msimbo PIN',
+  'sos_pin_enter': 'Ingiza msimbo wako wa usalama wa {0} tarakimu',
+  'sos_pin_invalid': 'Msimbo si sahihi (4-6 tarakimu)',
+  'sos_pin_wrong': 'Msimbo si sahihi',
+  'sos_remaining': 'majaribio yaliyobaki',
+  'sos_pin_locked': 'Majaribio mengi sana - imefungwa kwa muda',
+  'sos_pin_locked_for': 'Imefungwa kwa',
+
+  'sos_status_location': 'Mahali',
+  'sos_status_active': 'INATUMIKA',
+  'sos_status_waiting': 'INASUBIRI',
+  'sos_status_camera': 'Kamera',
+  'sos_status_backup': 'Hifadhi rudufu',
+  'sos_banner_safe_title': 'UPO SALAMA',
+  'sos_banner_safe_subtitle': 'Ulinzi wako wa THIX unafanya kazi',
+  'sos_banner_sos_title': 'SOS INATUMIKA',
+  'sos_banner_network_title': 'MUUNGANO UMEPOTEA',
+  'sos_banner_network_subtitle': 'Mahali pa mwisho yamehifadhiwa',
+  'sos_banner_warning_title': 'ONYO',
+  'sos_banner_warning_subtitle': 'Angalia mipangilio ya waokoaji',
+  'sos_view_location': 'Tazama mahali',
+  'sos_protection_active': 'Ulinzi unatumika',
+
+  'sos_chat': 'Mazungumzo ya SOS',
+  'sos_chat_sos': 'THIX CHAT SOS',
+  'sos_open_urgent_chat': 'Fungua mazungumzo ya dharura',
+  'sos_open_crisis_room': 'Fungua chumba cha mgogoro',
+  'sos_chat_not_ready': 'Mazungumzo ya SOS bado hayajaundwa',
+  'sos_group': 'Kikundi cha SOS',
+  'sos_group_ok': 'Kikundi OK',
+  'sos_group_waiting': 'Kikundi ?',
+  'sos_clip': 'Klipu 10s',
+  'sos_clip_busy': 'Klipu…',
+  'sos_clip_recording': 'Inarekodi 10s kisha kutuma kiotomatiki…',
+  'sos_clip_unavailable': 'Klipu 10s haipatikani kwenye kifaa hiki',
+  'sos_clip_sent': '🎥 Klipu 10s imetumwa kwenye kikundi cha SOS',
+  'sos_clip_pending': '🎥 Klipu 10s imerekodiwa - inatumwa',
+  'sos_recall': 'Piga tena',
+  'sos_audio_call': 'Simu ya sauti',
+  'sos_auto_call_in_progress': 'SIMU YA OTOMATIKI INAENDELEA',
+  'sos_next_in': 'inayofuata ndani ya',
+  'sos_mic_on': 'Maikrofoni imewashwa',
+  'sos_mic_mute': 'Kimya',
+  'sos_cam_on': 'Washa kamera',
+  'sos_cam_off': 'Zima kamera',
+
+  'sos_section_location': 'MAHALI PAPo',
+  'sos_position_active': 'Mahali panatumika',
+  'sos_position_waiting': 'Inasubiri mahali',
+  'sos_position_unknown': 'Mahali ?',
+  'sos_battery_unknown': 'Bat ?',
+  'sos_map_disabled': 'Ramani imezimwa kwa muda\n(Inasubiri API ya Google)',
+  'sos_current_position': 'Mahali pa sasa',
+
+  'sos_tab_evidence': 'USHADIDI',
+  'sos_tab_journal': 'JURNALI',
+  'sos_no_evidence': 'Hakuna ushahidi - anza Picha / Klipu / Uchunguzi',
+  'sos_journal_empty': 'Jurnali ni tupu',
+  'sos_evidence': 'ushahidi',
+  'sos_latest_evidence': 'USHAHIDI WA MWISHO',
+  'sos_offline': 'NJE YA MTANDAO - AMRI ZINATUMIKA',
+  'sos_no_live': 'Hakuna papo. Anza Picha / Klipu 10s / Uchunguzi.',
+  'sos_photo': 'Picha',
+  'sos_video_30s': 'Video 30s',
+  'sos_stop_audio': 'SIMAMISHA SAUTI',
+  'sos_record_audio': 'Rekodi sauti',
+  'sos_stop_surveillance': 'Simamisha uchunguzi',
+  'sos_surveillance_10s': 'Uchunguzi 10s',
+  'sos_instruction': 'Maagizo',
+  'sos_instruct_title': '📢 Maagizo halisi → mwathirika + kikundi cha SOS',
+  'sos_instruct_custom': 'Ujumbe maalum…',
+  'sos_instruct_sent': '📢 Maagizo yametumwa kwenye kikundi cha SOS',
+  'sos_send_group': 'TUMA KWA KIKUNDI',
+  'sos_instruct_calm': 'Kaa kimya, waokoaji wanakuja',
+  'sos_instruct_talk': 'Niongee, eleza hali yako',
+  'sos_instruct_room': 'Onyesha chumba na kamera',
+  'sos_instruct_clip': 'Anza klipu ya sekunde 10',
+  'sos_instruct_stay': 'Usiweke simu',
+
+  'sos_ev_instruct': 'Maagizo',
+  'sos_ev_photo_requested': 'Picha iliyoombwa na mwokoa',
+  'sos_ev_photo_sent': 'Picha imetumwa kwenye kikundi',
+  'sos_ev_photo_captured': 'Picha imenasa',
+  'sos_ev_video_sent': 'Video imetumwa kwenye kikundi',
+  'sos_ev_video_captured': 'Video imenasa',
+  'sos_ev_audio_sent': 'Sauti imetumwa kwenye kikundi',
+  'sos_ev_audio_captured': 'Sauti imenasa',
+  'sos_ev_capture_failed': 'Kunasa kumeshindwa',
+  'sos_ev_rescue_joined': 'Mwokoa amejiunga na chumba',
+  'sos_ev_created': 'Tukio limeundwa',
+  'sos_ev_started': 'SOS imeanza',
+  'sos_ev_photo_received': '📥 Picha ya mwathirika imepokelewa',
+  'sos_ev_video_received': '📥 Video ya mwathirika imepokelewa',
+  'sos_ev_audio_received': '📥 Sauti ya mwathirika imepokelewa',
+  'sos_ev_failed': '⚠️ Kunasa mwathirika kumeshindwa',
+  'sos_victim_label': 'Mwathirika',
+  'sos_victim_unknown': 'Mwathirika hajulikani - simu haiwezekani',
+
+  'sos_cmd_photo': '📸 Amri ya picha → simu ya mwathirika',
+  'sos_cmd_video': '🎥 Amri ya video → simu ya mwathirika',
+  'sos_cmd_clip': 'Amri ya klipu 10s',
+  'sos_cmd_audio_start': '🎤 Sauti ya mwathirika inaendelea…',
+  'sos_cmd_audio_stop': '⏹ Simamisha sauti → simu ya mwathirika',
+  'sos_cmd_surveillance_on': '🛰️ Uchunguzi: picha kila 10s + kutuma',
+  'sos_cmd_surveillance_off': '⏹ Uchunguzi umesimama',
+
+  'sos_section_quick': 'UJUMBE WA HARAKA',
+  'sos_qm_help': '🚨 NAHITAJI MSAADA',
+  'sos_qm_silent': '🤫 SIWEZI KUZUNGUMZA',
+  'sos_qm_here': '📍 NIKO HAPA',
+  'sos_qm_injured': '🏥 NIMEJERUHIWA',
+  'sos_qm_followed': '👤 NINAFUATILIWA',
+  'sos_qm_locked': '🚪 NIMEFUNGWA',
+  'sos_qm_call': '📞 PIGA DHARURA',
+  'sos_qm_ok': '🟢 NIPO SAWA',
+
+  'sos_section_rescuers': 'WAOKOAJI',
+  'sos_section_communication': 'MAWASILIANO',
+  'sos_section_system': 'HALI YA MFUMO',
+  'sos_section_events': 'MATUKIO',
+  'sos_events_error': 'Haiwezi kupakia matukio',
+  'sos_no_events': 'Hakuna matukio',
+
+  'sos_error_timeout': 'Muda umekwisha. Jaribu tena.',
+  'sos_error_permission': 'Ruhusa imekataliwa',
+  'sos_error_network': 'Kosa la mtandao. Angalia muunganisho.',
+  'sos_error_generic': 'Kosa limetokea',
+  'sos_error_camera': 'Kamera haipatikani',
+  'sos_error_live': 'Papo haipatikani',
+
+  'sos_active_crisis': '🚨 SOS INATUMIKA - CHUMBA CHA MGOGORO',
+  'sos_rescue_instructions': 'Simamia uokoaji: kamera, picha, video, sauti',
+  'sos_crisis_room_subtitle': 'Simamia matukio yako hai kwa wakati halisi',
+  'sos_quick_actions': 'VITENDO VYA HARAKA',
+  'sos_share_location': 'Shiriki',
+  'sos_safe_check': 'Ukaguzi wa usalama',
+  'sos_my_routes': 'Njia zangu',
+  'sos_report': 'Ripoti',
+  'sos_thix_search': 'UTAFUTAJI THIX',
+  'sos_search_subtitle': 'Arifa na watu waliopotea',
+  'sos_incidents_subtitle': 'Historia na ripoti',
+
+  'nearby_alerts_title': 'ARIFA ZA KARIBU',
+  'nearby_view_on_map': 'Tazama kwenye ramani',
+  'nearby_map_coming_soon': 'Ramani ya skrini kamili inakuja',
+  'nearby_map_disabled': 'Ramani imezimwa\n(Inasubiri ufunguo API)',
+  'nearby_active_alerts': 'arifa zinazotumika',
+  'nearby_missing': 'waliopotea',
+  'nearby_official': 'rasmi',
+  'nearby_legend_missing': 'Aliyepotea',
+  'nearby_legend_official': 'Arifa rasmi',
+  'nearby_legend_report': 'Ripoti',
+  'nearby_error_timeout': 'Muda umekwisha. Jaribu tena.',
+  'nearby_error_network': 'Kosa la mtandao. Angalia muunganisho.',
+  'nearby_error_permission': 'Ruhusa ya mahali imekataliwa',
+  'nearby_error_location': 'Mahali haipatikani',
+  'nearby_error_generic': 'Kosa limetokea',
+  'nearby_invalid_coordinates': 'Vipimo si sahihi',
+  'nearby_location_required': 'Washa mahali',
+  'nearby_location_subtitle': 'Kuona arifa karibu nawe',
+
+  'search_title': 'Utafutaji THIX',
+  'search_subtitle': 'Arifa za utafutaji na watu waliopotea',
+  'search_person_missing': 'Mtu aliyepotea',
+  'search_person_wanted': 'Arifa rasmi ya utafutaji',
+  'search_report_missing': 'Ripoti kupotea',
+  'search_report_found': 'Ripoti kupatikana',
+  'search_details': 'Maelezo',
+  'search_contact_authorities': 'Wasiliana na mamlaka',
+  'search_share_alert': 'Shiriki arifa',
+  'search_last_seen': 'Alionekana mara ya mwisho',
+  'search_description': 'Maelezo',
+  'search_age': 'Umri',
+  'search_height': 'Urefu',
+  'search_weight': 'Uzito',
+  'search_hair_color': 'Rangi ya nywele',
+  'search_eye_color': 'Rangi ya macho',
+  'search_distinguishing_marks': 'Alama maalum',
+  'search_clothing': 'Mavazi',
+  'search_circumstances': 'Mazingira',
+  'search_case_number': 'Nambari ya kesi',
+  'search_reported_by': 'Imeripotiwa na',
+  'search_official_notice': 'Arifa rasmi',
+  'search_community_alert': 'Arifa ya jamii',
+
+  'chat_online': 'Mtandaoni',
+  'chat_seen_at': 'Alionekana saa',
+  'chat_at': 'saa',
+  'chat_yesterday_at': 'Jana saa',
+  'chat_on': 'tarehe',
+  'chat_write_message': 'Andika ujumbe…',
+  'chat_send': 'Tuma',
+  'chat_record_audio': 'Rekodi sauti',
+  'chat_stop_recording': 'Simamisha kurekodi',
+  'chat_recording': 'Inarekodi',
+  'chat_recording_error': 'Kosa la kurekodi',
+  'chat_file': 'Faili',
+  'chat_sticker': 'Stika',
+  'chat_ephemeral': 'Ya muda',
+  'chat_protected': 'Imelindwa',
+  'chat_internal_note': 'Dokezo la ndani',
+  'chat_video_call': 'Simu ya video',
+  'chat_audio_call': 'Simu ya sauti',
+  'chat_escalate': 'Pandisha',
+  'chat_history': 'Historia',
+  'chat_group_info': 'Maelezo ya kikundi',
+  'chat_typing': 'inaandika…',
+  'chat_members': 'wanachama',
+  'chat_unknown_user': 'Mtumiaji asiyejulikana',
+  'chat_cannot_reply': 'Haiwezi kujibu',
+  'chat_connection_interrupted': 'Muunganisho umekatika',
+  'chat_call_inactive': 'Simu haiwezekani - muunganisho haufanyi kazi',
+  'chat_send_inactive': 'Kutuma haiwezekani - muunganisho haufanyi kazi',
+  'chat_auth_required': 'Idhini inahitajika',
+  'chat_understood': 'Nimeelewa',
+  'chat_mic_call_disclosure': 'Simu ya sauti inahitaji maikrofoni',
+  'chat_cam_call_disclosure': 'Simu ya video inahitaji kamera',
+  'chat_mic_disclosure': 'Kurekodi sauti kunahitaji maikrofoni',
+  'chat_callback': 'Piga tena',
+  'chat_pause': 'Simamisha',
+  'chat_play': 'Cheza',
+  'chat_file_too_big': 'Faili kubwa sana',
+  'chat_delete_title': 'Futa ujumbe',
+  'chat_delete_message': 'Ujumbe huu utafutwa kwa kila mtu.',
+  'chat_ephemeral_message': 'Ujumbe wa muda',
+  'chat_disabled': 'Imezimwa',
+  'chat_seconds_10': 'Sekunde 10',
+  'chat_minute_1': 'Dakika 1',
+  'chat_hour_1': 'Saa 1',
+  'chat_hours_24': 'Saa 24',
+  'chat_custom_time': 'Muda maalum',
+  'chat_duration_seconds': 'Muda (sekunde)',
+  'chat_validate': 'Thibitisha',
+  'chat_invalid_number': 'Nambari si sahihi',
+  'chat_secure_message': 'Ujumbe salama',
+  'chat_message': 'Ujumbe',
+  'chat_password': 'Nenosiri',
+  'chat_emojis': 'Emoji',
+  'chat_reactions': 'Majibu',
+  'chat_flags': 'Bendera',
+  'chat_new_message': 'Ujumbe mpya',
+  'chat_no_messages': 'Hakuna ujumbe',
+  'chat_start_conversation': 'Anza mazungumzo',
+  'chat_group_name': 'Jina la kikundi',
+  'chat_add_members': 'Ongeza wanachama',
+  'chat_leave_group': 'Ondoka kwenye kikundi',
+  'chat_leave_confirm': 'Je, kweli unataka kuondoka kwenye kikundi hiki?',
+  'chat_mute': 'Zima sauti',
+  'chat_unmute': 'Washa sauti',
+  'chat_pinned': 'Imebandikwa',
+  'chat_reply': 'Jibu',
+  'chat_forward': 'Sambaza',
+  'chat_star': 'Nyota',
+
+  'profile_title': 'Wasifu wangu',
+  'profile_edit': 'Hariri wasifu',
+  'profile_full_name': 'Jina kamili',
+  'profile_first_name': 'Jina la kwanza',
+  'profile_last_name': 'Jina la familia',
+  'profile_display_name': 'Jina la kuonyesha',
+  'profile_bio': 'Wasifu',
+  'profile_avatar': 'Picha ya wasifu',
+  'profile_change_avatar': 'Badilisha picha',
+  'profile_email': 'Barua pepe',
+  'profile_phone': 'Simu',
+  'profile_location': 'Mahali',
+  'profile_birthday': 'Siku ya kuzaliwa',
+  'profile_gender': 'Jinsia',
+  'profile_gender_male': 'Mwanaume',
+  'profile_gender_female': 'Mwanamke',
+  'profile_gender_other': 'Nyingine',
+  'profile_gender_prefer_not': 'Ningependa kusema',
+  'profile_social_links': 'Viungo vya kijamii',
+  'profile_website': 'Tovuti',
+  'profile_save_success': 'Wasifu umesasishwa',
+  'profile_save_error': 'Kosa katika kusasisha',
+
+  'certification_title': 'Uthibitisho wa THIX',
+  'certification_apply': 'Omba uthibitisho',
+  'certification_status': 'Hali',
+  'certification_pending': 'Inasubiri',
+  'certification_approved': 'Imeidhinishwa',
+  'certification_rejected': 'Imekataliwa',
+  'certification_tier_bronze': 'Shaba',
+  'certification_tier_silver': 'Fedha',
+  'certification_tier_gold': 'Dhahabu',
+  'certification_tier_platinum': 'Platinamu',
+  'certification_benefits': 'Faida',
+  'certification_documents': 'Nyaraka zinazohitajika',
+  'certification_upload_doc': 'Pakia nyaraka',
+  'certification_review_progress': 'Ukaguzi unaendelea',
+  'certification_verified_account': 'Akaunti imethibitishwa',
+
+  'network_title': 'Mtandao THIX',
+  'network_connections': 'Miunganisho',
+  'network_followers': 'Wafuasi',
+  'network_following': 'Unafuata',
+  'network_follow': 'Fuata',
+  'network_unfollow': 'Acha kufuata',
+  'network_connect': 'Unganisha',
+  'network_disconnect': 'Tenganisha',
+  'network_block': 'Zuia',
+  'network_report': 'Ripoti',
+  'network_connection_request': 'Ombi la muunganisho',
+  'network_pending_requests': 'Maombi yanasubiri',
+  'network_suggested': 'Mapendekezo',
+  'network_mutual_connections': 'Miunganisho ya pamoja',
+  'network_no_connections': 'Hakuna miunganisho',
+  'network_post': 'Chapisho',
+  'network_posts': 'Machapisho',
+  'network_like': 'Penda',
+  'network_comment': 'Maoni',
+  'network_share_post': 'Shiriki chapisho',
+
+  'settings_title': 'Mipangilio',
+  'settings_account': 'Akaunti',
+  'settings_privacy': 'Faragha',
+  'settings_security': 'Usalama',
+  'settings_notifications': 'Arifa',
+  'settings_appearance': 'Mwonekano',
+  'settings_language': 'Lugha',
+  'settings_theme': 'Mandhari',
+  'settings_theme_light': 'Mwanga',
+  'settings_theme_dark': 'Giza',
+  'settings_theme_system': 'Mfumo',
+  'settings_sounds': 'Sauti',
+  'settings_vibration': 'Mtetemo',
+  'settings_data_usage': 'Matumizi ya data',
+  'settings_storage': 'Hifadhi',
+  'settings_clear_cache': 'Futa kache',
+  'settings_cache_cleared': 'Kache imefutwa',
+  'settings_about': 'Kuhusu',
+  'settings_version': 'Toleo',
+  'settings_terms': 'Masharti ya matumizi',
+  'settings_privacy_policy': 'Sera ya faragha',
+  'settings_help_support': 'Msaada na usaidizi',
+  'settings_contact_us': 'Wasiliana nasi',
+  'settings_rate_app': 'Kadiria programu',
+  'settings_delete_account': 'Futa akaunti',
+  'settings_delete_confirm': 'Kitendo hiki hakiwezi kurejeshwa. Data yako yote itafutwa.',
+
+  'notif_new_message': 'Ujumbe mpya',
+  'notif_connection_request': 'Ombi la muunganisho',
+  'notif_sos_alert': '🚨 Arifa ya SOS',
+  'notif_emergency_call': 'Simu ya dharura',
+  'notif_location_shared': 'Mahali pameshirikiwa',
+  'notif_mark_as_read': 'Weka kama iliyosomwa',
+  'notif_clear_all': 'Futa zote',
+  'notif_no_notifications': 'Hakuna arifa',
+
+  'perm_camera_title': 'Ufikiaji wa kamera',
+  'perm_camera_desc': 'Kuchukua picha na video',
+  'perm_mic_title': 'Ufikiaji wa maikrofoni',
+  'perm_mic_desc': 'Kurekodi sauti na kupiga simu',
+  'perm_location_title': 'Ufikiaji wa mahali',
+  'perm_location_desc': 'Kushiriki mahali pako katika dharura',
+  'perm_contacts_title': 'Ufikiaji wa anwani',
+  'perm_contacts_desc': 'Kuongeza waokoaji haraka',
+  'perm_photos_title': 'Ufikiaji wa picha',
+  'perm_photos_desc': 'Kutuma picha',
+  'perm_notifications_title': 'Arifa',
+  'perm_notifications_desc': 'Kupokea arifa muhimu',
+  'perm_allow': 'Ruhusu',
+  'perm_deny': 'Kataa',
+  'perm_go_to_settings': 'Nenda kwenye mipangilio',
+
+  'error_generic': 'Kosa limetokea',
+  'error_network': 'Kosa la mtandao. Angalia muunganisho.',
+  'error_timeout': 'Muda umekwisha. Jaribu tena.',
+  'error_server': 'Kosa la seva. Jaribu baadaye.',
+  'error_unauthorized': 'Hujaidhinishwa. Ingia tena.',
+  'error_forbidden': 'Ufikiaji umekataliwa',
+  'error_not_found': 'Rasilimali haipatikani',
+  'error_validation': 'Data si sahihi',
+  'error_file_too_large': 'Faili kubwa sana',
+  'error_unsupported_format': 'Umbizo halijaungwa mkono',
+  'error_permission_denied': 'Ruhusa imekataliwa',
+  'error_camera_unavailable': 'Kamera haipatikani',
+  'error_microphone_unavailable': 'Maikrofoni haipatikani',
+  'error_location_unavailable': 'Mahali haipatikani',
+
+  'item_zero': 'Hakuna vitu',
+  'item_one': 'Kipengee {count}',
+  'item_many': 'Vipengee {count}',
+  'contact_zero': 'Hakuna anwani',
+  'contact_one': 'Anwani {count}',
+  'contact_many': 'Anwani {count}',
+  'message_zero': 'Hakuna ujumbe',
+  'message_one': 'Ujumbe {count}',
+  'message_many': 'Ujumbe {count}',
+  'day_zero': 'Siku 0',
+  'day_one': 'Siku {count}',
+  'day_many': 'Siku {count}',
+  'hour_zero': 'Saa 0',
+  'hour_one': 'Saa {count}',
+  'hour_many': 'Saa {count}',
+  'minute_zero': 'Dakika 0',
+  'minute_one': 'Dakika {count}',
+  'minute_many': 'Dakika {count}',
+  // ─── TIME / RELATIVE ──────────────────────────────────────
+  'common_just_now': 'Sasa hivi',
+  'common_in_the_future': 'hivi karibuni',
+  'time_minutes_ago': 'dakika {0} zilizopita',
+  'time_minutes_ago_plural': 'dakika {0} zilizopita',
+  'time_hours_ago': 'saa {0} iliyopita',
+  'time_hours_ago_plural': 'masaa {0} yaliyopita',
+  'time_days_ago': 'siku {0} iliyopita',
+  'time_days_ago_plural': 'siku {0} zilizopita',
+  'time_seconds_ago': 'sekunde {0} zilizopita',
+  'time_weeks_ago': 'wiki {0} iliyopita',
+  'time_weeks_ago_plural': 'wiki {0} zilizopita',
+  'time_months_ago': 'mwezi {0} uliopita',
+  'time_months_ago_plural': 'miezi {0} iliyopita',
+  'time_years_ago': 'mwaka {0} uliopita',
+  'time_years_ago_plural': 'miaka {0} iliyopita',
+  'time_in_minutes': 'baada ya dakika {0}',
+  'time_in_hours': 'baada ya saa {0}',
+  'time_in_hours_plural': 'baada ya masaa {0}',
+  'time_in_days': 'baada ya siku {0}',
+  'time_in_days_plural': 'baada ya siku {0}',
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// 🇨🇩 KIKONGO (KG)
+// ════════════════════════════════════════════════════════════════════════════
+const Map<String, String> _kg = {
+  'common_back': 'Vutuka',
+  'common_close': 'Kanga',
+  'common_cancel': 'Katula',
+  'common_confirm': 'Ndima',
+  'common_delete': 'Katula',
+  'common_add': 'Yika',
+  'common_edit': 'Soba',
+  'common_save': 'Bumba',
+  'common_manage': 'Yala',
+  'common_retry': 'Meka diaka',
+  'common_refresh': 'Vutukisa',
+  'common_search': 'Sosa',
+  'common_open': 'Zibula',
+  'common_share': 'Kabila',
+  'common_copy': 'Baka kopi',
+  'common_copied': 'Ebaki kopi',
+  'common_download': 'Kitisa',
+  'common_upload': 'Tia',
+  'common_send': 'Tinda',
+  'common_receive': 'Baka',
+  'common_accept': 'Ndima',
+  'common_reject': 'Buya',
+  'common_skip': 'Luta',
+  'common_next': 'Yina kulanda',
+  'common_previous': 'Yina kuluta',
+  'common_finish': 'Manisa',
+  'common_done': 'Emani',
+  'common_error': 'Kifu',
+  'common_success': 'Nluta',
+  'common_loading': 'Ezali kukomba…',
+  'common_please_wait': 'Zinga fioti…',
+  'common_today': 'Bubu',
+  'common_yesterday': 'Zono',
+  'common_tomorrow': 'Mbasi',
+  'common_home': 'Nzo',
+  'common_chat': 'Masolo',
+  'common_map': 'Karte',
+  'common_profile': 'Profil',
+  'common_menu': 'Menu',
+  'common_notifications': 'Bansangu',
+  'common_settings': 'Mibeko',
+  'common_help': 'Lusadusu',
+  'common_about': 'Mambu ma',
+  'common_logout': 'Basika',
+  'common_login': 'Kota',
+  'common_signup': 'Fungula konti',
+  'common_yes': 'Ee',
+  'common_no': 'Ve',
+  'common_or': 'to',
+  'common_and': 'mpi',
+  'common_none': 'Ve ata mosi',
+  'common_all': 'Yonso',
+  'common_unknown': 'Ke zabakana ve',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Kupona ndinga',
+  'settings_system_default': 'Ndinga ya système',
+  'settings_language_change_failed': 'Ekoki te kusoba ndinga',
+  'settings_language_changed': 'Ndinga esobami',
+
+  'auth_login': 'Kota',
+  'auth_signup': 'Fungula konti',
+  'auth_forgot_password': 'Vilakana mot de passe ?',
+  'auth_reset_password': 'Soba mot de passe',
+  'auth_email': 'Email',
+  'auth_phone': 'Telefone',
+  'auth_password': 'Mot de passe',
+  'auth_confirm_password': 'Ndima mot de passe',
+  'auth_logout': 'Basika',
+  'auth_logout_confirm': 'Keti nzola basika kibeni ?',
+  'auth_welcome_back': 'Ntoto ya mbote',
+  'auth_welcome': 'Mbote',
+  'auth_no_account': 'Ke na konti ve ?',
+  'auth_has_account': 'Ke na konti dezia ?',
+  'auth_invalid_email': 'Email ke mbote ve',
+  'auth_invalid_phone': 'Nimero ya telefone ke mbote ve',
+  'auth_password_too_short': 'Mot de passe fioti mingi (min 8)',
+  'auth_passwords_mismatch': 'Mots de passe ke kokana ve',
+  'auth_login_success': 'Okoti mbote',
+  'auth_signup_success': 'Konti efungwami mbote',
+  'auth_logout_success': 'Obasiki mbote',
+  'auth_session_expired': 'Session emani, kota diaka',
+  'auth_2fa_title': 'Vérification na ba étapes zole',
+  'auth_2fa_code': 'Code ya vérification',
+  'auth_verify_email': 'Ndima email',
+  'auth_verify_phone': 'Ndima telefone',
+  'auth_biometric': 'Kota na biométrie',
+  'auth_biometric_prompt': 'Songisa kimuntu na nge',
+
+  'sos_button': 'SOS',
+  'sos_button_label': 'Bouton SOS ya urgence',
+  'sos_button_hint': 'Simba segonde 2 mpo na activer',
+  'sos_button_tooltip': 'Simba mpi bika segonde 2',
+  'sos_button_text': 'SOS',
+  'sos_button_instruction': 'SIMBA MPI BIKA\nSEGONDE 2',
+  'sos_hold_instruction': 'Simba mpi bika segonde 2',
+  'sos_trigger_button': 'Basisa SOS',
+  'sos_trigger_timeout': 'Tango me luta. Meka diaka.',
+  'sos_trigger_error': 'Kifu na kubasisa SOS',
+  'sos_active': 'SOS EZALI KUTAMBULA',
+  'sos_crisis_room': 'SALLE YA CRIZE',
+  'sos_command_center': 'CENTRE YA COMMANDEMENT',
+  'sos_incident': 'Incident',
+  'sos_incident_unknown': 'Incident ke zabakana ve',
+  'sos_incident_not_found': 'Incident me zwaswa ve',
+  'sos_circle': 'Cercle',
+  'sos_rescuers': 'basauveteurs',
+  'sos_rescuer': 'Mosauveteur',
+  'sos_my_rescuers': 'BASAUVEUTEURS NA MONO',
+  'sos_duration': 'Tango',
+  'sos_identifier': 'Identifiant',
+  'sos_calling': 'Ezali kubinga…',
+  'sos_call': 'Binga',
+  'sos_available': 'Ezali disponible',
+  'sos_unavailable': 'Ezali disponible ve',
+  'sos_verified': 'Endimami',
+  'sos_unknown': 'Ke zabakana ve',
+  'sos_end': 'Manisa',
+  'sos_end_sos': 'Manisa SOS',
+  'sos_cancel_sos': 'KATULA SOS',
+  'sos_pin_required': 'Code ya sécurité me lomba',
+  'sos_cancelled': 'SOS me katulwa',
+  'sos_resolved': 'SOS me mana',
+  'sos_cancel_failed': 'Kifu na kukatula',
+  'sos_in_progress': 'EZALI KUTAMBULA',
+  'sos_history': 'HISTOIRE',
+  'sos_my_incidents': 'Ba incidents na mono',
+  'sos_no_incidents': 'Incident mosi ve ntete',
+  'sos_incidents_appear_here': 'Ba SOS na nge tabasika awa',
+  'sos_history_error': 'Ekoki ve kukomba histoire',
+
+  'sos_circle_1': 'Cercle 1 – Ya ntete',
+  'sos_circle_2': 'Cercle 2 – Ya zole',
+  'sos_circle_3': 'Cercle 3 – Ya urgence',
+  'sos_no_rescuers': 'Mosauveteur ve',
+  'sos_no_rescuers_circle': 'Mosauveteur ve na cercle yayi',
+  'sos_add_first_rescuer': 'Yika mosauveteur na nge ya ntete',
+  'sos_add_rescuer': 'Kuyika mosauveteur',
+  'sos_add_rescuer_info': 'Soneka THIX ID ya mosauveteur. Nkumbu na foto takomama automatiquement.',
+  'sos_thix_id_label': 'THIX ID',
+  'sos_thix_id_hint': 'THIX-XXXX',
+  'sos_relation': 'Relation',
+  'sos_relation_hint': 'Ndakisa : Mama, Nduku, Kolègue…',
+  'sos_phone_optional': 'Telefone (optionnel)',
+  'sos_phone_hint': '+243 …',
+  'sos_save_rescuer': 'Kubumba mosauveteur',
+  'sos_multiple_rescuers_info': 'Nge lenda yika basauveteurs mingi na cercle mosi.',
+  'sos_rescuer_saved': 'Mosauveteur THIX me bumbwa',
+  'sos_search_first': 'Sosa ntete THIX ID ya mbote',
+  'sos_no_thix_account': 'Konti THIX mosi ve mpo na ID yayi',
+  'sos_enter_thix_id': 'Soneka THIX ID',
+  'sos_load_error': 'Ekoki ve kukomba basauveteurs na nge',
+  'sos_delete_rescuer': 'Kukatula mosauveteur yayi ?',
+  'sos_delete_rescuer_confirm': 'Contact yayi tabaka diaka ba alertes SOS ve. Ekoki ve kuvutuka.',
+  'sos_rescuer_deleted': 'Mosauveteur me katulwa mbote',
+  'sos_delete_error': 'Kifu na kukatula',
+  'sos_circle_priority_title': 'Ordre ya priorité',
+  'sos_circle_priority_info': 'Cercle 1 me bingama ntete. Réponse ve → Cercle 2 → Cercle 3.',
+
+  'sos_pin_title': 'Code ya sécurité',
+  'sos_pin_label': 'Code PIN',
+  'sos_pin_enter': 'Soneka code na nge ya sécurité ya {0} chiffres',
+  'sos_pin_invalid': 'Code ke mbote ve (4-6 chiffres)',
+  'sos_pin_wrong': 'Code ke mbote ve',
+  'sos_remaining': 'ba tentatives me bikala',
+  'sos_pin_locked': 'Ba tentatives mingi — me kangama mpo na tango fioti',
+  'sos_pin_locked_for': 'Me kangama mpo na',
+
+  'sos_status_location': 'Position',
+  'sos_status_active': 'ACTIVE',
+  'sos_status_waiting': 'EZALI KUZINGA',
+  'sos_status_camera': 'Caméra',
+  'sos_status_backup': 'Sauvegarde',
+  'sos_banner_safe_title': 'NGE KE NA SÉCURITÉ',
+  'sos_banner_safe_subtitle': 'Protection na nge THIX ezali active',
+  'sos_banner_sos_title': 'SOS EZALI KUTAMBULA',
+  'sos_banner_network_title': 'CONNEXION ME VILAKANA',
+  'sos_banner_network_subtitle': 'Position ya nsuka me bumbama localement',
+  'sos_banner_warning_title': 'KEBA',
+  'sos_banner_warning_subtitle': 'Tala mibeko na nge ya basauveteurs',
+  'sos_view_location': 'Kumona position',
+  'sos_protection_active': 'Protection active',
+
+  'sos_chat': 'Masolo SOS',
+  'sos_chat_sos': 'THIX CHAT SOS',
+  'sos_open_urgent_chat': 'Kufungula masolo ya urgence',
+  'sos_open_crisis_room': 'Kufungula salle ya crize',
+  'sos_chat_not_ready': 'Masolo SOS me salama ntete ve',
+  'sos_group': 'Groupe SOS',
+  'sos_group_ok': 'Groupe OK',
+  'sos_group_waiting': 'Groupe ?',
+  'sos_clip': 'Clip 10s',
+  'sos_clip_busy': 'Clip…',
+  'sos_clip_recording': 'Ezali kukanga 10s mpi kutinda automatiquement…',
+  'sos_clip_unavailable': 'Clip 10s ezali disponible ve na appareil yayi',
+  'sos_clip_sent': '🎥 Clip 10s me tindwa na groupe SOS',
+  'sos_clip_pending': '🎥 Clip 10s me kangama — ezali kutindama na groupe',
+  'sos_recall': 'Kubinga diaka',
+  'sos_audio_call': 'Appel ya audio',
+  'sos_auto_call_in_progress': 'APPEL AUTO EZALI KUTAMBULA',
+  'sos_next_in': 'yina kulanda na',
+  'sos_mic_on': 'Micro allumé',
+  'sos_mic_mute': 'Silence',
+  'sos_cam_on': 'Ku activer caméra',
+  'sos_cam_off': 'Ku désactiver caméra',
+
+  'sos_section_location': 'POSITION EN DIRECT',
+  'sos_position_active': 'Position active',
+  'sos_position_waiting': 'Ezali kuzinga position',
+  'sos_position_unknown': 'Position ?',
+  'sos_battery_unknown': 'Bat ?',
+  'sos_map_disabled': 'Karte me kangama mpo na tango fioti\n(Ezali kuzinga API Google)',
+  'sos_current_position': 'Position ya bubu',
+
+  'sos_tab_evidence': 'PREUVES',
+  'sos_tab_journal': 'JOURNAL',
+  'sos_no_evidence': 'Preuve ve — basisa Foto / Clip / Surveillance',
+  'sos_journal_empty': 'Journal ezali vide',
+  'sos_evidence': 'preuve',
+  'sos_latest_evidence': 'PREUVE YA NSUKA',
+  'sos_offline': 'HORS LIGNE — COMMANDES ACTIVE',
+  'sos_no_live': 'Live ve. Basisa Foto / Clip 10s / Surveillance.',
+  'sos_photo': 'Foto',
+  'sos_video_30s': 'Vidéo 30s',
+  'sos_stop_audio': 'KUKANGA AUDIO',
+  'sos_record_audio': 'Kukanga audio',
+  'sos_stop_surveillance': 'Kukanga surveillance',
+  'sos_surveillance_10s': 'Surveillance 10s',
+  'sos_instruction': 'Instruction',
+  'sos_instruct_title': '📢 Instruction ya solo → victime + groupe SOS',
+  'sos_instruct_custom': 'Message personnalisé…',
+  'sos_instruct_sent': '📢 Instruction me tindwa na groupe SOS',
+  'sos_send_group': 'KUTINDA NA GROUPE',
+  'sos_instruct_calm': 'Zinga calme, basauveteurs bazali kuya',
+  'sos_instruct_talk': 'Solula na mono, songisa situation na nge',
+  'sos_instruct_room': 'Songisa chambre na caméra',
+  'sos_instruct_clip': 'Basisa clip ya segonde 10',
+  'sos_instruct_stay': 'Kukanga ve',
+
+  'sos_ev_instruct': 'Instruction',
+  'sos_ev_photo_requested': 'Foto me lomba na mosauveteur',
+  'sos_ev_photo_sent': 'Foto me tindwa na groupe',
+  'sos_ev_photo_captured': 'Foto me kangama',
+  'sos_ev_video_sent': 'Vidéo me tindwa na groupe',
+  'sos_ev_video_captured': 'Vidéo me kangama',
+  'sos_ev_audio_sent': 'Audio me tindwa na groupe',
+  'sos_ev_audio_captured': 'Audio me kangama',
+  'sos_ev_capture_failed': 'Kifu na kukanga',
+  'sos_ev_rescue_joined': 'Mosauveteur mosi me kota na salle',
+  'sos_ev_created': 'Incident me salama',
+  'sos_ev_started': 'SOS me yantika',
+  'sos_ev_photo_received': '📥 Foto ya victime me bakama',
+  'sos_ev_video_received': '📥 Vidéo ya victime me bakama',
+  'sos_ev_audio_received': '📥 Audio ya victime me bakama',
+  'sos_ev_failed': '⚠️ Kifu na kukanga victime',
+  'sos_victim_label': 'Victime',
+  'sos_victim_unknown': 'Victime ke zabakana ve — appel ekoki ve',
+
+  'sos_cmd_photo': '📸 Commande foto → telefone ya victime',
+  'sos_cmd_video': '🎥 Commande vidéo → telefone ya victime',
+  'sos_cmd_clip': 'Commande clip 10s',
+  'sos_cmd_audio_start': '🎤 Audio ya victime ezali kutambula…',
+  'sos_cmd_audio_stop': '⏹ Kukanga audio → telefone ya victime',
+  'sos_cmd_surveillance_on': '🛰️ Surveillance : foto na 10s yonso + kutinda',
+  'sos_cmd_surveillance_off': '⏹ Surveillance me kangama',
+
+  'sos_section_quick': 'BA MESSAGES YA NTIMA',
+  'sos_qm_help': '🚨 MONO KE NA Mfunu YA LUSADUSU',
+  'sos_qm_silent': '🤫 MONO LENDA VE KUSOLULA',
+  'sos_qm_here': '📍 MONO KE AWA',
+  'sos_qm_injured': '🏥 MONO ME BULUA',
+  'sos_qm_followed': '👤 BAZALI KULANDA MONO',
+  'sos_qm_locked': '🚪 BAKANGA MONO',
+  'sos_qm_call': '📞 BINGA BA URGENCES',
+  'sos_qm_ok': '🟢 MONO KE MBOTE',
+
+  'sos_section_rescuers': 'BASAUVEUTEURS',
+  'sos_section_communication': 'COMMUNICATION',
+  'sos_section_system': 'ÉTAT YA SYSTÈME',
+  'sos_section_events': 'ÉVÉNEMENTS',
+  'sos_events_error': 'Ekoki ve kukomba événements',
+  'sos_no_events': 'Événement mosi ve',
+
+  'sos_error_timeout': 'Tango me luta. Meka diaka.',
+  'sos_error_permission': 'Permission me buywa',
+  'sos_error_network': 'Kifu ya réseau. Tala connexion na nge.',
+  'sos_error_generic': 'Kifu me salama',
+  'sos_error_camera': 'Caméra ezali disponible ve',
+  'sos_error_live': 'Live ezali disponible ve',
+
+  'sos_active_crisis': '🚨 SOS EZALI KUTAMBULA — SALLE YA CRIZE',
+  'sos_rescue_instructions': 'Kuyala sauvetage : caméra, foto, vidéo, audio',
+  'sos_crisis_room_subtitle': 'Kuyala ba incidents na nge ya active en temps réel',
+  'sos_quick_actions': 'BA ACTIONS YA NTIMA',
+  'sos_share_location': 'Kukabila',
+  'sos_safe_check': 'Vérification sécurité',
+  'sos_my_routes': 'Ba routes na mono',
+  'sos_report': 'Kuyebisa',
+  'sos_thix_search': 'THIX RECHERCHE',
+  'sos_search_subtitle': 'Ba avis & ba disparitions',
+  'sos_incidents_subtitle': 'Histoire & ba rapports',
+
+  'nearby_alerts_title': 'BA ALERTES YA PENE',
+  'nearby_view_on_map': 'Kumona na karte',
+  'nearby_map_coming_soon': 'Karte ya écran mobimba takwisa ntete ve',
+  'nearby_map_disabled': 'Karte me kangama\n(Ezali kuzinga clé API)',
+  'nearby_active_alerts': 'ba alertes ya active',
+  'nearby_missing': 'ba disparus',
+  'nearby_official': 'officiels',
+  'nearby_legend_missing': 'Disparu',
+  'nearby_legend_official': 'Avis officiel',
+  'nearby_legend_report': 'Rapport',
+  'nearby_error_timeout': 'Tango me luta. Meka diaka.',
+  'nearby_error_network': 'Kifu ya réseau. Tala connexion na nge.',
+  'nearby_error_permission': 'Permission ya position me buywa',
+  'nearby_error_location': 'Position ezali disponible ve',
+  'nearby_error_generic': 'Kifu me salama',
+  'nearby_invalid_coordinates': 'Coordonnées ke mbote ve',
+  'nearby_location_required': 'Activer position',
+  'nearby_location_subtitle': 'Mpo na kumona ba alertes pene na nge',
+
+  'search_title': 'THIX Recherche',
+  'search_subtitle': 'Ba avis ya recherche & ba disparitions',
+  'search_person_missing': 'Muntu me vilakana',
+  'search_person_wanted': 'Avis officiel ya recherche',
+  'search_report_missing': 'Kuyebisa disparition',
+  'search_report_found': 'Kuyebisa découverte',
+  'search_details': 'Ba détails',
+  'search_contact_authorities': 'Kubinga ba autorités',
+  'search_share_alert': 'Kukabila alerte',
+  'search_last_seen': 'Bamonaka yandi mpo na mbala ya nsuka',
+  'search_description': 'Description',
+  'search_age': 'Bamvula',
+  'search_height': 'Bosanda',
+  'search_weight': 'Kilo',
+  'search_hair_color': 'Langi ya nsuki',
+  'search_eye_color': 'Langi ya meso',
+  'search_distinguishing_marks': 'Ba signes particuliers',
+  'search_clothing': 'Bilamba',
+  'search_circumstances': 'Circonstances',
+  'search_case_number': 'Nimero ya dossier',
+  'search_reported_by': 'Eyebisami na',
+  'search_official_notice': 'Avis officiel',
+  'search_community_alert': 'Alerte ya communauté',
+
+  'chat_online': 'En ligne',
+  'chat_seen_at': 'Emonani na',
+  'chat_at': 'na',
+  'chat_yesterday_at': 'Zono na',
+  'chat_on': 'na',
+  'chat_write_message': 'Kusoneka message…',
+  'chat_send': 'Kutinda',
+  'chat_record_audio': 'Kukanga audio',
+  'chat_stop_recording': 'Kukanga enregistrement',
+  'chat_recording': 'Enregistrement',
+  'chat_recording_error': 'Kifu na enregistrement',
+  'chat_file': 'Fichier',
+  'chat_sticker': 'Sticker',
+  'chat_ephemeral': 'Éphémère',
+  'chat_protected': 'Ebumbama',
+  'chat_internal_note': 'Note interne',
+  'chat_video_call': 'Appel vidéo',
+  'chat_audio_call': 'Appel audio',
+  'chat_escalate': 'Kukwenda na zulu',
+  'chat_history': 'Histoire',
+  'chat_group_info': 'Ba infos ya groupe',
+  'chat_typing': 'ezali kusoneka…',
+  'chat_members': 'ba membres',
+  'chat_unknown_user': 'Utilisateur ke zabakana ve',
+  'chat_cannot_reply': 'Ekoki ve kopesa réponse',
+  'chat_connection_interrupted': 'Connexion me katuka',
+  'chat_call_inactive': 'Appel ekoki ve — connexion inactive',
+  'chat_send_inactive': 'Kutinda ekoki ve — connexion inactive',
+  'chat_auth_required': 'Autorisation me lomba',
+  'chat_understood': 'Mono me bakisa',
+  'chat_mic_call_disclosure': 'Appel audio me lomba micro',
+  'chat_cam_call_disclosure': 'Appel vidéo me lomba caméra',
+  'chat_mic_disclosure': 'Enregistrement audio me lomba micro',
+  'chat_callback': 'Kubinga diaka',
+  'chat_pause': 'Kubika',
+  'chat_play': 'Kubeta',
+  'chat_file_too_big': 'Fichier ezali monene mingi',
+  'chat_delete_title': 'Kukatula message',
+  'chat_delete_message': 'Message yayi takatulwa mpo na bantu yonso.',
+  'chat_ephemeral_message': 'Message éphémère',
+  'chat_disabled': 'Ekangama',
+  'chat_seconds_10': 'Segonde 10',
+  'chat_minute_1': 'Minute 1',
+  'chat_hour_1': 'Ngonga 1',
+  'chat_hours_24': 'Ngonga 24',
+  'chat_custom_time': 'Tango personnalisé',
+  'chat_duration_seconds': 'Tango (segondes)',
+  'chat_validate': 'Kundima',
+  'chat_invalid_number': 'Nimero ke mbote ve',
+  'chat_secure_message': 'Message sécurisé',
+  'chat_message': 'Message',
+  'chat_password': 'Mot de passe',
+  'chat_emojis': 'Emojis',
+  'chat_reactions': 'Réactions',
+  'chat_flags': 'Ba drapeaux',
+  'chat_new_message': 'Message ya mpa',
+  'chat_no_messages': 'Message mosi ve',
+  'chat_start_conversation': 'Kuyantika masolo',
+  'chat_group_name': 'Nkumbu ya groupe',
+  'chat_add_members': 'Kuyika ba membres',
+  'chat_leave_group': 'Kubasika na groupe',
+  'chat_leave_confirm': 'Keti nzola kubasika na groupe yayi ?',
+  'chat_mute': 'Kukanga makasi',
+  'chat_unmute': 'Kufungula makasi',
+  'chat_pinned': 'Ekangama',
+  'chat_reply': 'Kuvutula',
+  'chat_forward': 'Kutinda diaka',
+  'chat_star': 'Favori',
+
+  'profile_title': 'Profil na mono',
+  'profile_edit': 'Kusoba profil',
+  'profile_full_name': 'Nkumbu mobimba',
+  'profile_first_name': 'Nkumbu ya ntete',
+  'profile_last_name': 'Nkumbu ya famille',
+  'profile_display_name': 'Nkumbu ya kumonsa',
+  'profile_bio': 'Biographie',
+  'profile_avatar': 'Foto ya profil',
+  'profile_change_avatar': 'Kusoba foto',
+  'profile_email': 'Email',
+  'profile_phone': 'Telefone',
+  'profile_location': 'Position',
+  'profile_birthday': 'Kilumbu ya kubutuka',
+  'profile_gender': 'Busexe',
+  'profile_gender_male': 'Bakala',
+  'profile_gender_female': 'Nkento',
+  'profile_gender_other': 'Nkaka',
+  'profile_gender_prefer_not': 'Mono ke zola ve kutuba',
+  'profile_social_links': 'Ba liens sociaux',
+  'profile_website': 'Site web',
+  'profile_save_success': 'Profil me sobwa',
+  'profile_save_error': 'Kifu na kusoba',
+
+  'certification_title': 'Certification THIX',
+  'certification_apply': 'Kulomba certification',
+  'certification_status': 'Statut',
+  'certification_pending': 'Ezali kuzinga',
+  'certification_approved': 'Endimami',
+  'certification_rejected': 'Ebuyami',
+  'certification_tier_bronze': 'Bronze',
+  'certification_tier_silver': 'Palata',
+  'certification_tier_gold': 'Wolo',
+  'certification_tier_platinum': 'Platine',
+  'certification_benefits': 'Ba avantages',
+  'certification_documents': 'Ba documents me lomba',
+  'certification_upload_doc': 'Kutia document',
+  'certification_review_progress': 'Examen ezali kutambula',
+  'certification_verified_account': 'Konti evérifier',
+
+  'network_title': 'Réseau THIX',
+  'network_connections': 'Connexions',
+  'network_followers': 'Ba abonnés',
+  'network_following': 'Ba abonnements',
+  'network_follow': 'Kulanda',
+  'network_unfollow': 'Kukatula kulanda',
+  'network_connect': 'Kukangisa',
+  'network_disconnect': 'Kukangola',
+  'network_block': 'Kukanga',
+  'network_report': 'Kuyebisa',
+  'network_connection_request': 'Demande ya connexion',
+  'network_pending_requests': 'Ba demandes ezali kuzinga',
+  'network_suggested': 'Ba suggestions',
+  'network_mutual_connections': 'Connexions communes',
+  'network_no_connections': 'Connexion mosi ve',
+  'network_post': 'Publication',
+  'network_posts': 'Ba publications',
+  'network_like': 'Mono ke zola',
+  'network_comment': 'Commentaire',
+  'network_share_post': 'Kukabila publication',
+
+  'settings_title': 'Mibeko',
+  'settings_account': 'Konti',
+  'settings_privacy': 'Vie privée',
+  'settings_security': 'Sécurité',
+  'settings_notifications': 'Bansangu',
+  'settings_appearance': 'Apparence',
+  'settings_language': 'Ndinga',
+  'settings_theme': 'Thème',
+  'settings_theme_light': 'Nsema',
+  'settings_theme_dark': 'Mpimpa',
+  'settings_theme_system': 'Système',
+  'settings_sounds': 'Ba sons',
+  'settings_vibration': 'Vibration',
+  'settings_data_usage': 'Kusadisa données',
+  'settings_storage': 'Stockage',
+  'settings_clear_cache': 'Kupweza cache',
+  'settings_cache_cleared': 'Cache me pwezwa',
+  'settings_about': 'Mambu ma',
+  'settings_version': 'Version',
+  'settings_terms': 'Ba conditions ya kusadisa',
+  'settings_privacy_policy': 'Politique ya vie privée',
+  'settings_help_support': 'Lusadusu mpi soutien',
+  'settings_contact_us': 'Kubinga beto',
+  'settings_rate_app': 'Kupesa note na app',
+  'settings_delete_account': 'Kukatula konti',
+  'settings_delete_confirm': 'Action yayi ekoki ve kuvutuka. Ba données na nge yonso takatulwa.',
+
+  'notif_new_message': 'Message ya mpa',
+  'notif_connection_request': 'Demande ya connexion',
+  'notif_sos_alert': '🚨 Alerte SOS',
+  'notif_emergency_call': 'Appel ya urgence',
+  'notif_location_shared': 'Position me kabilwa',
+  'notif_mark_as_read': 'Kutia lokola etangami',
+  'notif_clear_all': 'Kukatula yonso',
+  'notif_no_notifications': 'Notification mosi ve',
+
+  'perm_camera_title': 'Accès caméra',
+  'perm_camera_desc': 'Mpo na kukanga ba fotos na ba vidéos',
+  'perm_mic_title': 'Accès micro',
+  'perm_mic_desc': 'Mpo na kukanga audio mpi kubinga',
+  'perm_location_title': 'Accès position',
+  'perm_location_desc': 'Mpo na kukabila position na nge na urgence',
+  'perm_contacts_title': 'Accès contacts',
+  'perm_contacts_desc': 'Mpo na kuyika basauveteurs nswalu',
+  'perm_photos_title': 'Accès ba fotos',
+  'perm_photos_desc': 'Mpo na kutinda ba images',
+  'perm_notifications_title': 'Ba notifications',
+  'perm_notifications_desc': 'Mpo na kubaka ba alertes ya important',
+  'perm_allow': 'Kundima',
+  'perm_deny': 'Kubuya',
+  'perm_go_to_settings': 'Kukwenda na mibeko',
+
+  'error_generic': 'Kifu me salama',
+  'error_network': 'Kifu ya réseau. Tala connexion na nge.',
+  'error_timeout': 'Tango me luta. Meka diaka.',
+  'error_server': 'Kifu ya serveur. Meka ntete ve.',
+  'error_unauthorized': 'Autorisation ve. Kota diaka.',
+  'error_forbidden': 'Accès me buywa',
+  'error_not_found': 'Eloko me zwaswa ve',
+  'error_validation': 'Ba données ke mbote ve',
+  'error_file_too_large': 'Fichier ezali monene mingi',
+  'error_unsupported_format': 'Format ke supportama ve',
+  'error_permission_denied': 'Permission me buywa',
+  'error_camera_unavailable': 'Caméra ezali disponible ve',
+  'error_microphone_unavailable': 'Micro ezali disponible ve',
+  'error_location_unavailable': 'Position ezali disponible ve',
+
+  'item_zero': 'Eloko mosi ve',
+  'item_one': 'Eloko {count}',
+  'item_many': 'Ba éléments {count}',
+  'contact_zero': 'Contact mosi ve',
+  'contact_one': 'Contact {count}',
+  'contact_many': 'Ba contacts {count}',
+  'message_zero': 'Message mosi ve',
+  'message_one': 'Message {count}',
+  'message_many': 'Ba messages {count}',
+  'day_zero': 'Kilumbu 0',
+  'day_one': 'Kilumbu {count}',
+  'day_many': 'Ba bilumbu {count}',
+  'hour_zero': 'Ngonga 0',
+  'hour_one': 'Ngonga {count}',
+  'hour_many': 'Ba ngonga {count}',
+  'minute_zero': 'Minute 0',
+  'minute_one': 'Minute {count}',
+  'minute_many': 'Ba minutes {count}',
+  // ─── TIME / RELATIVE ──────────────────────────────────────
+  'common_just_now': 'Ntangu yai',
+  'common_in_the_future': 'Ntangu yai',
+  'time_minutes_ago': 'Miniti {0} me luta',
+  'time_minutes_ago_plural': 'Miniti {0} me luta',
+  'time_hours_ago': 'Ngonga {0} me luta',
+  'time_hours_ago_plural': 'Bangonga {0} me luta',
+  'time_days_ago': 'Kilumbu {0} me luta',
+  'time_days_ago_plural': 'Bilumbu {0} me luta',
+  'time_seconds_ago': 'Segonde {0} me luta',
+  'time_weeks_ago': 'Mposo {0} me luta',
+  'time_weeks_ago_plural': 'Bamposo {0} me luta',
+  'time_months_ago': 'Ngonda {0} me luta',
+  'time_months_ago_plural': 'Bangonda {0} me luta',
+  'time_years_ago': 'Mvula {0} me luta',
+  'time_years_ago_plural': 'Bamvula {0} me luta',
+  'time_in_minutes': 'Na minut {0}',
+  'time_in_hours': 'Na ngonga {0}',
+  'time_in_hours_plural': 'Na bangonga {0}',
+  'time_in_days': 'Na kilumbu {0}',
+  'time_in_days_plural': 'Na bilumbu {0}',
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// 🇨🇩 TSHILUBA (LU)
+// ════════════════════════════════════════════════════════════════════════════
+const Map<String, String> _lu = {
+  'common_back': 'Kubwela',
+  'common_close': 'Kukanga',
+  'common_cancel': 'Kulekela',
+  'common_confirm': 'Kumvwisha',
+  'common_delete': 'Kufuta',
+  'common_add': 'Kuangisha',
+  'common_edit': 'Kupandulula',
+  'common_save': 'Kubika',
+  'common_manage': 'Kuyamba',
+  'common_retry': 'Kumeka kabidi',
+  'common_refresh': 'Kuvutukisha',
+  'common_search': 'Kusosa',
+  'common_open': 'Kufungula',
+  'common_share': 'Kukabisha',
+  'common_copy': 'Kubaka kopi',
+  'common_copied': 'Ebaki kopi',
+  'common_download': 'Kukitisha',
+  'common_upload': 'Kutia',
+  'common_send': 'Kutumina',
+  'common_receive': 'Kubaka',
+  'common_accept': 'Kumvwisha',
+  'common_reject': 'Kuleka',
+  'common_skip': 'Kuluta',
+  'common_next': 'Yi kulanda',
+  'common_previous': 'Yi kuluta',
+  'common_finish': 'Kumanisha',
+  'common_done': 'Bimena',
+  'common_error': 'Dikuma',
+  'common_success': 'Ditshi buloho',
+  'common_loading': 'Ikomba…',
+  'common_please_wait': 'Dikala kampanda…',
+  'common_today': 'Lelu',
+  'common_yesterday': 'Makolo',
+  'common_tomorrow': 'Mbishi',
+  'common_home': 'Kwesu',
+  'common_chat': 'Masolo',
+  'common_map': 'Karte',
+  'common_profile': 'Profil',
+  'common_menu': 'Menu',
+  'common_notifications': 'Mikanda',
+  'common_settings': 'Mibeko',
+  'common_help': 'Kusadisha',
+  'common_about': 'Pa',
+  'common_logout': 'Kufuma',
+  'common_login': 'Kukwenda',
+  'common_signup': 'Kufungula konti',
+  'common_yes': 'Eyo',
+  'common_no': 'To',
+  'common_or': 'to',
+  'common_and': 'ne',
+  'common_none': 'Kudi kamosi',
+  'common_all': 'Bionsu',
+  'common_unknown': 'Kumanyika bua',
+  // ─── SETTINGS / LANGUAGE ────────────────────────────────────
+  'settings_choose_language': 'Kusola lulimi',
+  'settings_system_default': 'Lulimi lua système',
+  'settings_language_change_failed': 'Ikoki bua kupandulula lulimi',
+  'settings_language_changed': 'Lulimi lupandululwa',
+
+  'auth_login': 'Kukwenda',
+  'auth_signup': 'Kufungula konti',
+  'auth_forgot_password': 'Udidimangana mot de passe ?',
+  'auth_reset_password': 'Kuvutukisha mot de passe',
+  'auth_email': 'Email',
+  'auth_phone': 'Telefone',
+  'auth_password': 'Mot de passe',
+  'auth_confirm_password': 'Kumvwisha mot de passe',
+  'auth_logout': 'Kufuma',
+  'auth_logout_confirm': 'Udi ne lulua kufuma ?',
+  'auth_welcome_back': 'Kubwela buloho',
+  'auth_welcome': 'Muakila',
+  'auth_no_account': 'Keudi ne konti ?',
+  'auth_has_account': 'Udi ne konti kabidi ?',
+  'auth_invalid_email': 'Email ke mbote bua',
+  'auth_invalid_phone': 'Nimero ya telefone ke mbote bua',
+  'auth_password_too_short': 'Mot de passe ufupi mingi (min 8)',
+  'auth_passwords_mismatch': 'Mots de passe ke kokana bua',
+  'auth_login_success': 'Okwenda buloho',
+  'auth_signup_success': 'Konti efungulwa buloho',
+  'auth_logout_success': 'Ufuma buloho',
+  'auth_session_expired': 'Session imena, kwenda kabidi',
+  'auth_2fa_title': 'Vérification na ba étapes ibidi',
+  'auth_2fa_code': 'Code ya vérification',
+  'auth_verify_email': 'Kumvwisha email',
+  'auth_verify_phone': 'Kumvwisha telefone',
+  'auth_biometric': 'Kukwenda na biométrie',
+  'auth_biometric_prompt': 'Songisha kimuntu kuaku',
+
+  'sos_button': 'SOS',
+  'sos_button_label': 'Bouton SOS ya urgence',
+  'sos_button_hint': 'Kusimba segonde 2 mpo na activer',
+  'sos_button_tooltip': 'Kusimba ne kuleka segonde 2',
+  'sos_button_text': 'SOS',
+  'sos_button_instruction': 'KUSIMBA NE KULEKA\nSEGONDE 2',
+  'sos_hold_instruction': 'Kusimba ne kuleka segonde 2',
+  'sos_trigger_button': 'Kubimisha SOS',
+  'sos_trigger_timeout': 'Tango iluta. Meka kabidi.',
+  'sos_trigger_error': 'Dikuma na kubimisha SOS',
+  'sos_active': 'SOS IKUTAMBULA',
+  'sos_crisis_room': 'SALLE YA CRISE',
+  'sos_command_center': 'CENTRE YA COMMANDEMENT',
+  'sos_incident': 'Incident',
+  'sos_incident_unknown': 'Incident kumanyika bua',
+  'sos_incident_not_found': 'Incident kuzwaswa bua',
+  'sos_circle': 'Cercle',
+  'sos_rescuers': 'basauveteurs',
+  'sos_rescuer': 'Mosauveteur',
+  'sos_my_rescuers': 'BASAUVEUTEURS BAMI',
+  'sos_duration': 'Tango',
+  'sos_identifier': 'Identifiant',
+  'sos_calling': 'Ikubinga…',
+  'sos_call': 'Kubinga',
+  'sos_available': 'Ikudika',
+  'sos_unavailable': 'Ke kudika bua',
+  'sos_verified': 'Endimami',
+  'sos_unknown': 'Kumanyika bua',
+  'sos_end': 'Kumanisha',
+  'sos_end_sos': 'Kumanisha SOS',
+  'sos_cancel_sos': 'KULEKELA SOS',
+  'sos_pin_required': 'Code ya sécurité ulomba',
+  'sos_cancelled': 'SOS ulekela',
+  'sos_resolved': 'SOS umena',
+  'sos_cancel_failed': 'Dikuma na kulekela',
+  'sos_in_progress': 'IKUTAMBULA',
+  'sos_history': 'HISTOIRE',
+  'sos_my_incidents': 'Ba incidents bami',
+  'sos_no_incidents': 'Incident kamosi bua nanku',
+  'sos_incidents_appear_here': 'Ba SOS buaku tababimisha awa',
+  'sos_history_error': 'Ikoki bua kukomba histoire',
+
+  'sos_circle_1': 'Cercle 1 – Ya ntete',
+  'sos_circle_2': 'Cercle 2 – Ya ibidi',
+  'sos_circle_3': 'Cercle 3 – Ya urgence',
+  'sos_no_rescuers': 'Mosauveteur bua',
+  'sos_no_rescuers_circle': 'Mosauveteur bua na cercle eyi',
+  'sos_add_first_rescuer': 'Uangisha mosauveteur wa ntete',
+  'sos_add_rescuer': 'Kuangisha mosauveteur',
+  'sos_add_rescuer_info': 'Soneka THIX ID ya mosauveteur. Dina ne foto tabasonekwa automatiquement.',
+  'sos_thix_id_label': 'THIX ID',
+  'sos_thix_id_hint': 'THIX-XXXX',
+  'sos_relation': 'Relation',
+  'sos_relation_hint': 'Ndakisa : Mama, Mukwabu, Kolègue…',
+  'sos_phone_optional': 'Telefone (optionnel)',
+  'sos_phone_hint': '+243 …',
+  'sos_save_rescuer': 'Kubika mosauveteur',
+  'sos_multiple_rescuers_info': 'Udi ne lulua kuangisha basauveteurs bingi na cercle umosi.',
+  'sos_rescuer_saved': 'Mosauveteur THIX ubikiwa',
+  'sos_search_first': 'Sosa ntete THIX ID ya mbote',
+  'sos_no_thix_account': 'Konti THIX kamosi bua mpo na ID eyi',
+  'sos_enter_thix_id': 'Soneka THIX ID',
+  'sos_load_error': 'Ikoki bua kukomba basauveteurs buaku',
+  'sos_delete_rescuer': 'Kufuta mosauveteur eyi ?',
+  'sos_delete_rescuer_confirm': 'Contact eyi tababaka kabidi ba alertes SOS bua. Ikoki bua kuvutuka.',
+  'sos_rescuer_deleted': 'Mosauveteur ufutwa buloho',
+  'sos_delete_error': 'Dikuma na kufuta',
+  'sos_circle_priority_title': 'Ordre ya priorité',
+  'sos_circle_priority_info': 'Cercle 1 ubingama ntete. Réponse bua → Cercle 2 → Cercle 3.',
+
+  'sos_pin_title': 'Code ya sécurité',
+  'sos_pin_label': 'Code PIN',
+  'sos_pin_enter': 'Soneka code wa sécurité wa {0} chiffres',
+  'sos_pin_invalid': 'Code ke mbote bua (4-6 chiffres)',
+  'sos_pin_wrong': 'Code ke mbote bua',
+  'sos_remaining': 'ba tentatives bimana',
+  'sos_pin_locked': 'Ba tentatives bingi — ukangama mpo na tango kampanda',
+  'sos_pin_locked_for': 'Ukangama mpo na',
+
+  'sos_status_location': 'Position',
+  'sos_status_active': 'ACTIVE',
+  'sos_status_waiting': 'IKUZINGA',
+  'sos_status_camera': 'Caméra',
+  'sos_status_backup': 'Sauvegarde',
+  'sos_banner_safe_title': 'UDI NA SÉCURITÉ',
+  'sos_banner_safe_subtitle': 'Protection wa THIX ikudika',
+  'sos_banner_sos_title': 'SOS IKUTAMBULA',
+  'sos_banner_network_title': 'CONNEXION IDIDIMANGANA',
+  'sos_banner_network_subtitle': 'Position ya nsuka ibikiwa localement',
+  'sos_banner_warning_title': 'DIKEBA',
+  'sos_banner_warning_subtitle': 'Tala mibeko buaku ya basauveteurs',
+  'sos_view_location': 'Kumona position',
+  'sos_protection_active': 'Protection ikudika',
+
+  'sos_chat': 'Masolo SOS',
+  'sos_chat_sos': 'THIX CHAT SOS',
+  'sos_open_urgent_chat': 'Kufungula masolo ya urgence',
+  'sos_open_crisis_room': 'Kufungula salle ya crise',
+  'sos_chat_not_ready': 'Masolo SOS ke salama nanku bua',
+  'sos_group': 'Groupe SOS',
+  'sos_group_ok': 'Groupe OK',
+  'sos_group_waiting': 'Groupe ?',
+  'sos_clip': 'Clip 10s',
+  'sos_clip_busy': 'Clip…',
+  'sos_clip_recording': 'Ikukanga 10s ne kutumina automatiquement…',
+  'sos_clip_unavailable': 'Clip 10s ke kudika bua na appareil eyi',
+  'sos_clip_sent': '🎥 Clip 10s utuminwa na groupe SOS',
+  'sos_clip_pending': '🎥 Clip 10s ukangwa — ikutumina na groupe',
+  'sos_recall': 'Kubinga kabidi',
+  'sos_audio_call': 'Appel ya audio',
+  'sos_auto_call_in_progress': 'APPEL AUTO IKUTAMBULA',
+  'sos_next_in': 'yi kulanda na',
+  'sos_mic_on': 'Micro allumé',
+  'sos_mic_mute': 'Silence',
+  'sos_cam_on': 'Ku activer caméra',
+  'sos_cam_off': 'Ku désactiver caméra',
+
+  'sos_section_location': 'POSITION EN DIRECT',
+  'sos_position_active': 'Position ikudika',
+  'sos_position_waiting': 'Ikuzinga position',
+  'sos_position_unknown': 'Position ?',
+  'sos_battery_unknown': 'Bat ?',
+  'sos_map_disabled': 'Karte ukangama mpo na tango kampanda\n(Ikuzinga API Google)',
+  'sos_current_position': 'Position ya lelu',
+
+  'sos_tab_evidence': 'PREUVES',
+  'sos_tab_journal': 'JOURNAL',
+  'sos_no_evidence': 'Preuve bua — bimisha Foto / Clip / Surveillance',
+  'sos_journal_empty': 'Journal ivuidi',
+  'sos_evidence': 'preuve',
+  'sos_latest_evidence': 'PREUVE YA NSUKA',
+  'sos_offline': 'HORS LIGNE — COMMANDES IKUDIKA',
+  'sos_no_live': 'Live bua. Bimisha Foto / Clip 10s / Surveillance.',
+  'sos_photo': 'Foto',
+  'sos_video_30s': 'Vidéo 30s',
+  'sos_stop_audio': 'KUKANGA AUDIO',
+  'sos_record_audio': 'Kukanga audio',
+  'sos_stop_surveillance': 'Kukanga surveillance',
+  'sos_surveillance_10s': 'Surveillance 10s',
+  'sos_instruction': 'Instruction',
+  'sos_instruct_title': '📢 Instruction ya solo → victime + groupe SOS',
+  'sos_instruct_custom': 'Message personnalisé…',
+  'sos_instruct_sent': '📢 Instruction utuminwa na groupe SOS',
+  'sos_send_group': 'KUTUMINA NA GROUPE',
+  'sos_instruct_calm': 'Dikala calme, basauveteurs bakuikila',
+  'sos_instruct_talk': 'Solula nami, songisha situation wa muaku',
+  'sos_instruct_room': 'Songisha chambre na caméra',
+  'sos_instruct_clip': 'Bimisha clip ya segonde 10',
+  'sos_instruct_stay': 'Kukanga bua',
+
+  'sos_ev_instruct': 'Instruction',
+  'sos_ev_photo_requested': 'Foto ulomba na mosauveteur',
+  'sos_ev_photo_sent': 'Foto utuminwa na groupe',
+  'sos_ev_photo_captured': 'Foto ukangwa',
+  'sos_ev_video_sent': 'Vidéo utuminwa na groupe',
+  'sos_ev_video_captured': 'Vidéo ukangwa',
+  'sos_ev_audio_sent': 'Audio utuminwa na groupe',
+  'sos_ev_audio_captured': 'Audio ukangwa',
+  'sos_ev_capture_failed': 'Dikuma na kukanga',
+  'sos_ev_rescue_joined': 'Mosauveteur umosi ukwenda na salle',
+  'sos_ev_created': 'Incident usalwa',
+  'sos_ev_started': 'SOS uyantika',
+  'sos_ev_photo_received': '📥 Foto ya victime ubakwa',
+  'sos_ev_video_received': '📥 Vidéo ya victime ubakwa',
+  'sos_ev_audio_received': '📥 Audio ya victime ubakwa',
+  'sos_ev_failed': '⚠️ Dikuma na kukanga victime',
+  'sos_victim_label': 'Victime',
+  'sos_victim_unknown': 'Victime kumanyika bua — appel ikoki bua',
+
+  'sos_cmd_photo': '📸 Commande foto → telefone ya victime',
+  'sos_cmd_video': '🎥 Commande vidéo → telefone ya victime',
+  'sos_cmd_clip': 'Commande clip 10s',
+  'sos_cmd_audio_start': '🎤 Audio ya victime ikutambula…',
+  'sos_cmd_audio_stop': '⏹ Kukanga audio → telefone ya victime',
+  'sos_cmd_surveillance_on': '🛰️ Surveillance : foto na 10s yonso + kutumina',
+  'sos_cmd_surveillance_off': '⏹ Surveillance ukangama',
+
+  'sos_section_quick': 'BA MESSAGES YA NTIMA',
+  'sos_qm_help': '🚨 MONO KUDI NA MFUNU YA KUSADISHA',
+  'sos_qm_silent': '🤫 MONO LENDA BUA KUSOLULA',
+  'sos_qm_here': '📍 MONO KUDI AWA',
+  'sos_qm_injured': '🏥 MONO UBULWA',
+  'sos_qm_followed': '👤 BAKULANDA MONO',
+  'sos_qm_locked': '🚪 BANKANGA MONO',
+  'sos_qm_call': '📞 BINGA BA URGENCES',
+  'sos_qm_ok': '🟢 MONO KUDI MBOTE',
+
+  'sos_section_rescuers': 'BASAUVEUTEURS',
+  'sos_section_communication': 'COMMUNICATION',
+  'sos_section_system': 'ÉTAT YA SYSTÈME',
+  'sos_section_events': 'ÉVÉNEMENTS',
+  'sos_events_error': 'Ikoki bua kukomba événements',
+  'sos_no_events': 'Événement kamosi bua',
+
+  'sos_error_timeout': 'Tango iluta. Meka kabidi.',
+  'sos_error_permission': 'Permission ulekwa',
+  'sos_error_network': 'Dikuma ya réseau. Tala connexion wa muaku.',
+  'sos_error_generic': 'Dikuma usalwa',
+  'sos_error_camera': 'Caméra ke kudika bua',
+  'sos_error_live': 'Live ke kudika bua',
+
+  'sos_active_crisis': '🚨 SOS IKUTAMBULA — SALLE YA CRISE',
+  'sos_rescue_instructions': 'Kuyamba sauvetage : caméra, foto, vidéo, audio',
+  'sos_crisis_room_subtitle': 'Kuyamba ba incidents buaku ya active en temps réel',
+  'sos_quick_actions': 'BA ACTIONS YA NTIMA',
+  'sos_share_location': 'Kukabisha',
+  'sos_safe_check': 'Vérification sécurité',
+  'sos_my_routes': 'Ba routes bami',
+  'sos_report': 'Kuyebisha',
+  'sos_thix_search': 'THIX RECHERCHE',
+  'sos_search_subtitle': 'Ba avis & ba disparitions',
+  'sos_incidents_subtitle': 'Histoire & ba rapports',
+
+  'nearby_alerts_title': 'BA ALERTES YA PENE',
+  'nearby_view_on_map': 'Kumona na karte',
+  'nearby_map_coming_soon': 'Karte ya écran mobimba ikwisa nanku bua',
+  'nearby_map_disabled': 'Karte ukangama\n(Ikuzinga clé API)',
+  'nearby_active_alerts': 'ba alertes ya active',
+  'nearby_missing': 'ba disparus',
+  'nearby_official': 'officiels',
+  'nearby_legend_missing': 'Disparu',
+  'nearby_legend_official': 'Avis officiel',
+  'nearby_legend_report': 'Rapport',
+  'nearby_error_timeout': 'Tango iluta. Meka kabidi.',
+  'nearby_error_network': 'Dikuma ya réseau. Tala connexion wa muaku.',
+  'nearby_error_permission': 'Permission ya position ulekwa',
+  'nearby_error_location': 'Position ke kudika bua',
+  'nearby_error_generic': 'Dikuma usalwa',
+  'nearby_invalid_coordinates': 'Coordonnées ke mbote bua',
+  'nearby_location_required': 'Activer position',
+  'nearby_location_subtitle': 'Mpo na kumona ba alertes pene na muaku',
+
+  'search_title': 'THIX Recherche',
+  'search_subtitle': 'Ba avis ya recherche & ba disparitions',
+  'search_person_missing': 'Muntu udidimangana',
+  'search_person_wanted': 'Avis officiel ya recherche',
+  'search_report_missing': 'Kuyebisha disparition',
+  'search_report_found': 'Kuyebisha découverte',
+  'search_details': 'Ba détails',
+  'search_contact_authorities': 'Kubinga ba autorités',
+  'search_share_alert': 'Kukabisha alerte',
+  'search_last_seen': 'Bamona yandi mpo na mbala ya nsuka',
+  'search_description': 'Description',
+  'search_age': 'Bamvula',
+  'search_height': 'Bosanda',
+  'search_weight': 'Kilo',
+  'search_hair_color': 'Langi ya nsuki',
+  'search_eye_color': 'Langi ya meso',
+  'search_distinguishing_marks': 'Ba signes particuliers',
+  'search_clothing': 'Bilamba',
+  'search_circumstances': 'Circonstances',
+  'search_case_number': 'Nimero ya dossier',
+  'search_reported_by': 'Eyebisami na',
+  'search_official_notice': 'Avis officiel',
+  'search_community_alert': 'Alerte ya communauté',
+
+  'chat_online': 'En ligne',
+  'chat_seen_at': 'Emonana na',
+  'chat_at': 'na',
+  'chat_yesterday_at': 'Makolo na',
+  'chat_on': 'na',
+  'chat_write_message': 'Kusoneka message…',
+  'chat_send': 'Kutumina',
+  'chat_record_audio': 'Kukanga audio',
+  'chat_stop_recording': 'Kukanga enregistrement',
+  'chat_recording': 'Enregistrement',
+  'chat_recording_error': 'Dikuma na enregistrement',
+  'chat_file': 'Fichier',
+  'chat_sticker': 'Sticker',
+  'chat_ephemeral': 'Éphémère',
+  'chat_protected': 'Ubikiwa',
+  'chat_internal_note': 'Note interne',
+  'chat_video_call': 'Appel vidéo',
+  'chat_audio_call': 'Appel audio',
+  'chat_escalate': 'Kukwenda na zulu',
+  'chat_history': 'Histoire',
+  'chat_group_info': 'Ba infos ya groupe',
+  'chat_typing': 'ikusoneka…',
+  'chat_members': 'ba membres',
+  'chat_unknown_user': 'Utilisateur kumanyika bua',
+  'chat_cannot_reply': 'Ikoki bua kupa réponse',
+  'chat_connection_interrupted': 'Connexion ikatuka',
+  'chat_call_inactive': 'Appel ikoki bua — connexion inactive',
+  'chat_send_inactive': 'Kutumina ikoki bua — connexion inactive',
+  'chat_auth_required': 'Autorisation ulomba',
+  'chat_understood': 'Mono ubakisha',
+  'chat_mic_call_disclosure': 'Appel audio ulomba micro',
+  'chat_cam_call_disclosure': 'Appel vidéo ulomba caméra',
+  'chat_mic_disclosure': 'Enregistrement audio ulomba micro',
+  'chat_callback': 'Kubinga kabidi',
+  'chat_pause': 'Kuleka',
+  'chat_play': 'Kubeta',
+  'chat_file_too_big': 'Fichier inene mingi',
+  'chat_delete_title': 'Kufuta message',
+  'chat_delete_message': 'Message eyi takafutwa mpo na bantu bionsu.',
+  'chat_ephemeral_message': 'Message éphémère',
+  'chat_disabled': 'Ukangama',
+  'chat_seconds_10': 'Segonde 10',
+  'chat_minute_1': 'Minute 1',
+  'chat_hour_1': 'Ngonga 1',
+  'chat_hours_24': 'Ngonga 24',
+  'chat_custom_time': 'Tango personnalisé',
+  'chat_duration_seconds': 'Tango (segondes)',
+  'chat_validate': 'Kumvwisha',
+  'chat_invalid_number': 'Nimero ke mbote bua',
+  'chat_secure_message': 'Message sécurisé',
+  'chat_message': 'Message',
+  'chat_password': 'Mot de passe',
+  'chat_emojis': 'Emojis',
+  'chat_reactions': 'Réactions',
+  'chat_flags': 'Ba drapeaux',
+  'chat_new_message': 'Message ya mpa',
+  'chat_no_messages': 'Message kamosi bua',
+  'chat_start_conversation': 'Kuyantika masolo',
+  'chat_group_name': 'Dina ya groupe',
+  'chat_add_members': 'Kuangisha ba membres',
+  'chat_leave_group': 'Kufuma na groupe',
+  'chat_leave_confirm': 'Udi ne lulua kufuma na groupe eyi ?',
+  'chat_mute': 'Kukanga makasi',
+  'chat_unmute': 'Kufungula makasi',
+  'chat_pinned': 'Ukangama',
+  'chat_reply': 'Kuvutula',
+  'chat_forward': 'Kutumina kabidi',
+  'chat_star': 'Favori',
+
+  'profile_title': 'Profil wa muaku',
+  'profile_edit': 'Kupandulula profil',
+  'profile_full_name': 'Dina dimvuimba',
+  'profile_first_name': 'Dina ya ntete',
+  'profile_last_name': 'Dina ya famille',
+  'profile_display_name': 'Dina ya kumonsa',
+  'profile_bio': 'Biographie',
+  'profile_avatar': 'Foto ya profil',
+  'profile_change_avatar': 'Kupandulula foto',
+  'profile_email': 'Email',
+  'profile_phone': 'Telefone',
+  'profile_location': 'Position',
+  'profile_birthday': 'Dikuva ya kubutuka',
+  'profile_gender': 'Busexe',
+  'profile_gender_male': 'Mulume',
+  'profile_gender_female': 'Mukaji',
+  'profile_gender_other': 'Nkaka',
+  'profile_gender_prefer_not': 'Mono ke zola bua kutuba',
+  'profile_social_links': 'Ba liens sociaux',
+  'profile_website': 'Site web',
+  'profile_save_success': 'Profil upandululwa',
+  'profile_save_error': 'Dikuma na kupandulula',
+
+  'certification_title': 'Certification THIX',
+  'certification_apply': 'Kulomba certification',
+  'certification_status': 'Statut',
+  'certification_pending': 'Ikuzinga',
+  'certification_approved': 'Endimami',
+  'certification_rejected': 'Ebuyami',
+  'certification_tier_bronze': 'Bronze',
+  'certification_tier_silver': 'Palata',
+  'certification_tier_gold': 'Wolo',
+  'certification_tier_platinum': 'Platine',
+  'certification_benefits': 'Ba avantages',
+  'certification_documents': 'Ba documents ba lomba',
+  'certification_upload_doc': 'Kutia document',
+  'certification_review_progress': 'Examen ikutambula',
+  'certification_verified_account': 'Konti evérifier',
+
+  'network_title': 'Réseau THIX',
+  'network_connections': 'Connexions',
+  'network_followers': 'Ba abonnés',
+  'network_following': 'Ba abonnements',
+  'network_follow': 'Kulanda',
+  'network_unfollow': 'Kufuta kulanda',
+  'network_connect': 'Kukangisha',
+  'network_disconnect': 'Kukangula',
+  'network_block': 'Kukanga',
+  'network_report': 'Kuyebisha',
+  'network_connection_request': 'Demande ya connexion',
+  'network_pending_requests': 'Ba demandes bakuzinga',
+  'network_suggested': 'Ba suggestions',
+  'network_mutual_connections': 'Connexions communes',
+  'network_no_connections': 'Connexion kamosi bua',
+  'network_post': 'Publication',
+  'network_posts': 'Ba publications',
+  'network_like': 'Mono kuzola',
+  'network_comment': 'Commentaire',
+  'network_share_post': 'Kukabisha publication',
+
+  'settings_title': 'Mibeko',
+  'settings_account': 'Konti',
+  'settings_privacy': 'Vie privée',
+  'settings_security': 'Sécurité',
+  'settings_notifications': 'Mikanda',
+  'settings_appearance': 'Apparence',
+  'settings_language': 'Lulimi',
+  'settings_theme': 'Thème',
+  'settings_theme_light': 'Mwidimuki',
+  'settings_theme_dark': 'Mfidimuki',
+  'settings_theme_system': 'Système',
+  'settings_sounds': 'Ba sons',
+  'settings_vibration': 'Vibration',
+  'settings_data_usage': 'Kusadisha données',
+  'settings_storage': 'Stockage',
+  'settings_clear_cache': 'Kupweza cache',
+  'settings_cache_cleared': 'Cache upwezwa',
+  'settings_about': 'Pa',
+  'settings_version': 'Version',
+  'settings_terms': 'Ba conditions ya kusadisha',
+  'settings_privacy_policy': 'Politique ya vie privée',
+  'settings_help_support': 'Kusadisha ne soutien',
+  'settings_contact_us': 'Kubinga betu',
+  'settings_rate_app': 'Kupa note na app',
+  'settings_delete_account': 'Kufuta konti',
+  'settings_delete_confirm': 'Action eyi ikoki bua kuvutuka. Ba données buaku bionsu bakafutwa.',
+
+  'notif_new_message': 'Message ya mpa',
+  'notif_connection_request': 'Demande ya connexion',
+  'notif_sos_alert': '🚨 Alerte SOS',
+  'notif_emergency_call': 'Appel ya urgence',
+  'notif_location_shared': 'Position ukabisha',
+  'notif_mark_as_read': 'Kutia lokola itangama',
+  'notif_clear_all': 'Kufuta bionsu',
+  'notif_no_notifications': 'Notification kamosi bua',
+
+  'perm_camera_title': 'Accès caméra',
+  'perm_camera_desc': 'Mpo na kukanga ba fotos ne ba vidéos',
+  'perm_mic_title': 'Accès micro',
+  'perm_mic_desc': 'Mpo na kukanga audio ne kubinga',
+  'perm_location_title': 'Accès position',
+  'perm_location_desc': 'Mpo na kukabisha position wa muaku na urgence',
+  'perm_contacts_title': 'Accès contacts',
+  'perm_contacts_desc': 'Mpo na kuangisha basauveteurs nswalu',
+  'perm_photos_title': 'Accès ba fotos',
+  'perm_photos_desc': 'Mpo na kutumina ba images',
+  'perm_notifications_title': 'Ba notifications',
+  'perm_notifications_desc': 'Mpo na kubaka ba alertes ya important',
+  'perm_allow': 'Kumvwisha',
+  'perm_deny': 'Kuleka',
+  'perm_go_to_settings': 'Kukwenda na mibeko',
+
+  'error_generic': 'Dikuma usalwa',
+  'error_network': 'Dikuma ya réseau. Tala connexion wa muaku.',
+  'error_timeout': 'Tango iluta. Meka kabidi.',
+  'error_server': 'Dikuma ya serveur. Meka nanku bua.',
+  'error_unauthorized': 'Autorisation bua. Kwenda kabidi.',
+  'error_forbidden': 'Accès ulekwa',
+  'error_not_found': 'Eloko kuzwaswa bua',
+  'error_validation': 'Ba données ke mbote bua',
+  'error_file_too_large': 'Fichier inene mingi',
+  'error_unsupported_format': 'Format ke supportama bua',
+  'error_permission_denied': 'Permission ulekwa',
+  'error_camera_unavailable': 'Caméra ke kudika bua',
+  'error_microphone_unavailable': 'Micro ke kudika bua',
+  'error_location_unavailable': 'Position ke kudika bua',
+
+  'item_zero': 'Eloko kamosi bua',
+  'item_one': 'Eloko {count}',
+  'item_many': 'Ba éléments {count}',
+  'contact_zero': 'Contact kamosi bua',
+  'contact_one': 'Contact {count}',
+  'contact_many': 'Ba contacts {count}',
+  'message_zero': 'Message kamosi bua',
+  'message_one': 'Message {count}',
+  'message_many': 'Ba messages {count}',
+  'day_zero': 'Dikuva 0',
+  'day_one': 'Dikuva {count}',
+  'day_many': 'Ba bikuva {count}',
+  'hour_zero': 'Ngonga 0',
+  'hour_one': 'Ngonga {count}',
+  'hour_many': 'Ba ngonga {count}',
+  'minute_zero': 'Minute 0',
+  'minute_one': 'Minute {count}',
+  'minute_many': 'Ba minutes {count}',
+  // ─── TIME / RELATIVE ──────────────────────────────────────
+  'common_just_now': 'Lelu',
+  'common_in_the_future': 'Lelu',
+  'time_minutes_ago': 'Minute {0} iluta',
+  'time_minutes_ago_plural': 'Minute {0} iluta',
+  'time_hours_ago': 'Ngonga {0} iluta',
+  'time_hours_ago_plural': 'Bangonga {0} iluta',
+  'time_days_ago': 'Dikuva {0} diluta',
+  'time_days_ago_plural': 'Bikuva {0} biluta',
+  'time_seconds_ago': 'Segonde {0} iluta',
+  'time_weeks_ago': 'Lumingu {0} iluta',
+  'time_weeks_ago_plural': 'Mamingi {0} iluta',
+  'time_months_ago': 'Mweshi {0} iluta',
+  'time_months_ago_plural': 'Myeshi {0} iluta',
+  'time_years_ago': 'Mvua {0} iluta',
+  'time_years_ago_plural': 'Mivua {0} iluta',
+  'time_in_minutes': 'Mu minute {0}',
+  'time_in_hours': 'Mu ngonga {0}',
+  'time_in_hours_plural': 'Mu bangonga {0}',
+  'time_in_days': 'Mu dikuva {0}',
+  'time_in_days_plural': 'Mu bikuva {0}',
+};
