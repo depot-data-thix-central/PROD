@@ -13,8 +13,8 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/data/models/live/live_model.dart';
 import 'package:thix_id/presentation/network/live/live_viewer_screen.dart';
+import 'package:thix_id/l10n/app_localizations.dart'; // Remplacement
 
-import '../l10n/market_strings.dart';
 import '../providers/market_providers.dart';
 import '../widgets/products/product_card.dart';
 import '../widgets/market/flash_sale_timer.dart';
@@ -58,12 +58,12 @@ class _MarketValidators {
     return trimmed.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
   }
 
-  static String parseError(dynamic e) {
+  static String parseError(dynamic e, AppLocalizations l10n) {
     final msg = e.toString().toLowerCase();
-    if (msg.contains('timeout')) return 'Délai dépassé. Vérifiez votre connexion.';
-    if (msg.contains('network') || msg.contains('socket')) return 'Erreur réseau. Réessayez.';
-    if (msg.contains('unauthorized')) return 'Session expirée. Reconnectez-vous.';
-    return 'Erreur inattendue';
+    if (msg.contains('timeout')) return l10n.t('error_timeout');
+    if (msg.contains('network') || msg.contains('socket')) return l10n.t('error_network');
+    if (msg.contains('unauthorized')) return l10n.t('error_session_expired');
+    return l10n.t('error_generic');
   }
 }
 
@@ -172,7 +172,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     return null;
   }
 
-  String _greetingName(MarketStrings t) {
+  String _greetingName(AppLocalizations l10n) {
     try {
       final user = Supabase.instance.client.auth.currentUser;
       final full = user?.userMetadata?['full_name'] ?? user?.userMetadata?['name'];
@@ -186,15 +186,15 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     } catch (e) {
       debugPrint('[Market] ⚠️ greetingName error: $e');
     }
-    return _MarketValidators.sanitize(t.client, maxLength: _kMaxNameLength);
+    return _MarketValidators.sanitize(l10n.t('market_client_default'), maxLength: _kMaxNameLength);
   }
 
   void _showComing(String feature) {
-    final t = context.mkt;
+    final l10n = AppLocalizations.of(context);
     HapticFeedback.selectionClick();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(t.comingSoon(feature)),
+        content: Text(l10n.t('market_coming_soon', args: [feature])),
         backgroundColor: ThixPolicy.warning,
         behavior: SnackBarBehavior.floating,
       ),
@@ -254,7 +254,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final t = context.mkt;
+    final l10n = AppLocalizations.of(context);
     final featuredAsync = ref.watch(featuredProductsProvider);
     final flashAsync = ref.watch(flashSalesProvider);
     final forYouAsync = ref.watch(forYouProvider);
@@ -295,36 +295,36 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
               controller: _scroll,
               physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
               slivers: [
-                SliverToBoxAdapter(child: _buildTopSection(t)),
+                SliverToBoxAdapter(child: _buildTopSection(l10n)),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
-                SliverToBoxAdapter(child: _buildHero(featuredAsync, t)),
-                SliverToBoxAdapter(child: _buildFeaturedStrip(featuredAsync, t)),
+                SliverToBoxAdapter(child: _buildHero(featuredAsync, l10n)),
+                SliverToBoxAdapter(child: _buildFeaturedStrip(featuredAsync, l10n)),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
-                SliverToBoxAdapter(child: _buildTrustBadges(t)),
+                SliverToBoxAdapter(child: _buildTrustBadges(l10n)),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s20)),
-                SliverToBoxAdapter(child: _buildLiveSection(liveSessionsAsync, t)),
-                SliverToBoxAdapter(child: _buildSupermarketSection(t)),
+                SliverToBoxAdapter(child: _buildLiveSection(liveSessionsAsync, l10n)),
+                SliverToBoxAdapter(child: _buildSupermarketSection(l10n)),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s24)),
-                SliverToBoxAdapter(child: _buildPromoBannersRow(t)),
+                SliverToBoxAdapter(child: _buildPromoBannersRow(l10n)),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
-                SliverToBoxAdapter(child: _buildB2BTools(t)),
+                SliverToBoxAdapter(child: _buildB2BTools(l10n)),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s24)),
-                SliverToBoxAdapter(child: _buildFlashSaleSection(flashAsync, t)),
-                SliverToBoxAdapter(child: _buildSectionHeader(t.allProducts)),
+                SliverToBoxAdapter(child: _buildFlashSaleSection(flashAsync, l10n)),
+                SliverToBoxAdapter(child: _buildSectionHeader(l10n.t('market_all_products'))),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
-                _buildGrid(forYouAsync, mixedAll, hasMore, t),
+                _buildGrid(forYouAsync, mixedAll, hasMore, l10n),
                 const SliverToBoxAdapter(child: SizedBox(height: 120)),
               ],
             ),
           ),
 
-          Positioned(left: 0, right: 0, bottom: 0, child: _buildBottomNavBar(t)),
+          Positioned(left: 0, right: 0, bottom: 0, child: _buildBottomNavBar(l10n)),
         ],
       ),
     );
   }
 
-  Widget _buildTopSection(MarketStrings t) {
+  Widget _buildTopSection(AppLocalizations l10n) {
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(bottom: Radius.circular(ThixPolicy.rXl)),
       child: BackdropFilter(
@@ -337,8 +337,8 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
           ),
           child: Column(
             children: [
-              _buildTopBar(t),
-              _buildSearchBar(t),
+              _buildTopBar(l10n),
+              _buildSearchBar(l10n),
               const SizedBox(height: ThixPolicy.s16),
             ],
           ),
@@ -347,7 +347,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  Widget _buildTopBar(MarketStrings t) {
+  Widget _buildTopBar(AppLocalizations l10n) {
     return Container(
       color: Colors.transparent,
       padding: EdgeInsets.fromLTRB(ThixPolicy.s16, MediaQuery.paddingOf(context).top + 12, ThixPolicy.s16, ThixPolicy.s12),
@@ -379,7 +379,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                     ),
                   ),
                   Text(
-                    _MarketValidators.sanitize(t.appTagline, maxLength: 50),
+                    _MarketValidators.sanitize(l10n.t('market_app_tagline'), maxLength: 50),
                     style: const TextStyle(color: ThixPolicy.textSecondary, fontSize: 11, fontWeight: FontWeight.w500),
                   ),
                 ],
@@ -390,7 +390,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
             children: [
               Semantics(
                 button: true,
-                label: 'Notifications',
+                label: l10n.t('common_notifications'),
                 child: InkWell(
                   onTap: () => _safeNavigate('marketNotifications', '/market/notifications'),
                   borderRadius: BorderRadius.circular(ThixPolicy.rFull),
@@ -408,7 +408,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
               const SizedBox(width: ThixPolicy.s8),
               Semantics(
                 button: true,
-                label: 'Profil',
+                label: l10n.t('common_profile'),
                 child: InkWell(
                   onTap: () => _safeNavigate('userDashboard', '/user/dashboard'),
                   borderRadius: BorderRadius.circular(ThixPolicy.rFull),
@@ -430,7 +430,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  Widget _buildSearchBar(MarketStrings t) {
+  Widget _buildSearchBar(AppLocalizations l10n) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
       child: Row(
@@ -438,7 +438,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
           Expanded(
             child: Semantics(
               button: true,
-              label: t.searchHint,
+              label: l10n.t('market_search_hint'),
               child: GestureDetector(
                 onTap: () => _safeNavigate('marketSearch', '/market/search'),
                 child: Container(
@@ -455,7 +455,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                       const SizedBox(width: ThixPolicy.s12),
                       Expanded(
                         child: Text(
-                          _MarketValidators.sanitize(t.searchHint, maxLength: 80),
+                          _MarketValidators.sanitize(l10n.t('market_search_hint'), maxLength: 80),
                           style: const TextStyle(fontSize: 13, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w500),
                         ),
                       ),
@@ -468,7 +468,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
           const SizedBox(width: ThixPolicy.s8),
           Semantics(
             button: true,
-            label: 'Filtres',
+            label: l10n.t('market_filters'),
             child: InkWell(
               onTap: () => _safeNavigate('marketSearch', '/market/search'),
               borderRadius: BorderRadius.circular(ThixPolicy.inputRadius),
@@ -489,21 +489,21 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  Widget _buildHero(AsyncValue<List<Map<String, dynamic>>> async, MarketStrings t) {
+  Widget _buildHero(AsyncValue<List<Map<String, dynamic>>> async, AppLocalizations l10n) {
     return async.when(
       loading: () => const _HeroSkeleton(),
       error: (e, _) => _MarketErrorCard(
-        message: _MarketValidators.parseError(e),
+        message: _MarketValidators.parseError(e, l10n),
         onRetry: () => ref.invalidate(featuredProductsProvider),
       ),
       data: (products) {
         if (products.isEmpty) return const SizedBox.shrink();
-        return _buildHeroContent(products, t);
+        return _buildHeroContent(products, l10n);
       },
     );
   }
 
-  Widget _buildHeroContent(List<Map<String, dynamic>> products, MarketStrings t) {
+  Widget _buildHeroContent(List<Map<String, dynamic>> products, AppLocalizations l10n) {
     return Column(
       children: [
         SizedBox(
@@ -537,7 +537,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                   padding: const EdgeInsets.symmetric(horizontal: 6),
                   child: Semantics(
                     button: true,
-                    label: title.isEmpty ? 'Offre en vedette' : title,
+                    label: title.isEmpty ? l10n.t('market_featured_offer') : title,
                     child: GestureDetector(
                       onTap: () {
                         HapticFeedback.selectionClick();
@@ -553,7 +553,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                               ? DecorationImage(
                                   image: CachedNetworkImageProvider(imageUrl),
                                   fit: BoxFit.cover,
-                                  // errorBuilder supprimé car non supporté par DecorationImage
                                   colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.6), BlendMode.darken),
                                 )
                               : null,
@@ -569,7 +568,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(color: ThixPolicy.domainMarket, borderRadius: BorderRadius.circular(6)),
                                 child: Text(
-                                  '${_MarketValidators.sanitize(t.greeting)}, ${_greetingName(t)}',
+                                  '${_MarketValidators.sanitize(l10n.t('market_greeting'))}, ${_greetingName(l10n)}',
                                   style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
                                 ),
                               ),
@@ -596,7 +595,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                                 children: [
                                   const Icon(Icons.shopping_cart_rounded, size: 16, color: ThixPolicy.inkDeep),
                                   const SizedBox(width: 8),
-                                  Text(_MarketValidators.sanitize(t.viewOffer, maxLength: 30), style: const TextStyle(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800, fontSize: 12)),
+                                  Text(_MarketValidators.sanitize(l10n.t('market_view_offer'), maxLength: 30), style: const TextStyle(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800, fontSize: 12)),
                                 ],
                               ),
                             ),
@@ -632,7 +631,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  Widget _buildFeaturedStrip(AsyncValue<List<Map<String, dynamic>>> async, MarketStrings t) {
+  Widget _buildFeaturedStrip(AsyncValue<List<Map<String, dynamic>>> async, AppLocalizations l10n) {
     return async.when(
       loading: () => const SizedBox.shrink(),
       error: (_, __) => const SizedBox.shrink(),
@@ -641,14 +640,14 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
         return _AutoScrollProductStrip(
           products: products,
           badgeType: _StripBadge.featured,
-          title: _MarketValidators.sanitize(t.featuredProducts, maxLength: 50),
+          title: _MarketValidators.sanitize(l10n.t('market_featured_products'), maxLength: 50),
           icon: Icons.star_rounded,
         );
       },
     );
   }
 
-  Widget _buildTrustBadges(MarketStrings t) {
+  Widget _buildTrustBadges(AppLocalizations l10n) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s12, vertical: ThixPolicy.s16),
@@ -660,10 +659,10 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _trustItem(Icons.lock_outline_rounded, _MarketValidators.sanitize(t.securePayment, maxLength: 20)),
-          _trustItem(Icons.verified_user_outlined, _MarketValidators.sanitize(t.verifiedSellers, maxLength: 20)),
-          _trustItem(Icons.local_shipping_outlined, _MarketValidators.sanitize(t.reliableDelivery, maxLength: 20)),
-          _trustItem(Icons.headset_mic_outlined, _MarketValidators.sanitize(t.support247, maxLength: 20)),
+          _trustItem(Icons.lock_outline_rounded, _MarketValidators.sanitize(l10n.t('market_secure_payment'), maxLength: 20)),
+          _trustItem(Icons.verified_user_outlined, _MarketValidators.sanitize(l10n.t('market_verified_sellers'), maxLength: 20)),
+          _trustItem(Icons.local_shipping_outlined, _MarketValidators.sanitize(l10n.t('market_reliable_delivery'), maxLength: 20)),
+          _trustItem(Icons.headset_mic_outlined, _MarketValidators.sanitize(l10n.t('market_support_247'), maxLength: 20)),
         ],
       ),
     );
@@ -686,13 +685,13 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  Widget _buildLiveSection(AsyncValue<List<Map<String, dynamic>>> liveAsync, MarketStrings t) {
+  Widget _buildLiveSection(AsyncValue<List<Map<String, dynamic>>> liveAsync, AppLocalizations l10n) {
     return liveAsync.when(
       loading: () => const SizedBox.shrink(),
       error: (e, _) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
         child: _MarketErrorCard(
-          message: _MarketValidators.parseError(e),
+          message: _MarketValidators.parseError(e, l10n),
           onRetry: () => ref.invalidate(activeMarketLiveSessionsProvider),
           compact: true,
         ),
@@ -708,9 +707,9 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                 children: [
                   const _PulsingDot(),
                   const SizedBox(width: 8),
-                  const Text(
-                    'Live en cours...',
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: ThixPolicy.textMain, letterSpacing: -0.5),
+                  Text(
+                    l10n.t('market_live_ongoing'),
+                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: ThixPolicy.textMain, letterSpacing: -0.5),
                   ),
                   const SizedBox(width: 8),
                   Container(
@@ -733,7 +732,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                 physics: const BouncingScrollPhysics(),
                 itemCount: sessions.length,
                 separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s12),
-                itemBuilder: (ctx, i) => _buildLiveCard(sessions[i], t),
+                itemBuilder: (ctx, i) => _buildLiveCard(sessions[i], l10n),
               ),
             ),
             const SizedBox(height: ThixPolicy.s24),
@@ -743,16 +742,16 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  Widget _buildLiveCard(Map<String, dynamic> s, MarketStrings t) {
+  Widget _buildLiveCard(Map<String, dynamic> s, AppLocalizations l10n) {
     final hostAvatar = _MarketValidators.sanitizeUrl(s['host_avatar']?.toString());
     final shopName = _MarketValidators.sanitize(
-      s['channel_name']?.toString() ?? s['host_name']?.toString() ?? t.client,
+      s['channel_name']?.toString() ?? s['host_name']?.toString() ?? l10n.t('market_client_default'),
       maxLength: _kMaxNameLength,
     );
 
     return Semantics(
       button: true,
-      label: 'Live: $shopName',
+      label: l10n.t('market_shop_semantics', args: [shopName]),
       child: GestureDetector(
         onTap: () {
           HapticFeedback.mediumImpact();
@@ -816,7 +815,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                     children: [
                       Container(width: 4, height: 4, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle)),
                       const SizedBox(width: 4),
-                      Text(_MarketValidators.sanitize(t.live, maxLength: 10).toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
+                      Text(_MarketValidators.sanitize(l10n.t('market_live_badge'), maxLength: 10).toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ),
@@ -832,7 +831,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  Widget _buildSupermarketSection(MarketStrings t) {
+  Widget _buildSupermarketSection(AppLocalizations l10n) {
     final shopsAsync = ref.watch(featuredShopsProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
@@ -840,21 +839,22 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildSectionHeader(
-            _MarketValidators.sanitize(t.homeSupermarkets, maxLength: 50),
+            _MarketValidators.sanitize(l10n.t('market_home_supermarkets'), maxLength: 50),
             onSeeAll: () => _safeNavigate('marketShops', '/market/shops'),
+            l10n: l10n,
           ),
           const SizedBox(height: ThixPolicy.s16),
           shopsAsync.when(
             loading: () => const _ShopsSkeleton(),
             error: (e, _) => _MarketErrorCard(
-              message: _MarketValidators.parseError(e),
+              message: _MarketValidators.parseError(e, l10n),
               onRetry: () => ref.invalidate(featuredShopsProvider),
               compact: true,
             ),
             data: (shops) {
               if (shops.isEmpty) {
                 return Text(
-                  _MarketValidators.sanitize(t.noSupermarket, maxLength: 100),
+                  _MarketValidators.sanitize(l10n.t('market_no_supermarket'), maxLength: 100),
                   style: const TextStyle(color: ThixPolicy.textSecondary, fontSize: 12),
                 );
               }
@@ -866,7 +866,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                   final logoUrl = _MarketValidators.sanitizeUrl(s['logo_url']?.toString());
                   return Semantics(
                     button: true,
-                    label: 'Boutique: $name',
+                    label: l10n.t('market_shop_semantics', args: [name]),
                     child: GestureDetector(
                       onTap: () {
                         HapticFeedback.selectionClick();
@@ -885,7 +885,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                                   ? DecorationImage(
                                       image: CachedNetworkImageProvider(logoUrl),
                                       fit: BoxFit.cover,
-                                      // errorBuilder supprimé car non supporté par DecorationImage
                                     )
                                   : null,
 
@@ -910,7 +909,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  Widget _buildPromoBannersRow(MarketStrings t) {
+  Widget _buildPromoBannersRow(AppLocalizations l10n) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
       child: Row(
@@ -918,7 +917,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
           Expanded(
             child: Semantics(
               button: true,
-              label: 'Offres exclusives',
+              label: l10n.t('market_exclusive_offers_tag'),
               child: GestureDetector(
                 onTap: () => _safeNavigate('marketFlashSales', '/market/flash-sales'),
                 child: Container(
@@ -936,15 +935,15 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(color: ThixPolicy.gold, borderRadius: BorderRadius.circular(4)),
-                        child: Text(_MarketValidators.sanitize(t.exclusiveOffers, maxLength: 30), style: const TextStyle(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800, fontSize: 9)),
+                        child: Text(_MarketValidators.sanitize(l10n.t('market_exclusive_offers_tag'), maxLength: 30), style: const TextStyle(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800, fontSize: 9)),
                       ),
                       const SizedBox(height: 8),
-                      Text(_MarketValidators.sanitize(t.upTo50, maxLength: 50), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18, height: 1.1)),
-                      Text(_MarketValidators.sanitize(t.onPremiumSelection, maxLength: 60), style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w500)),
+                      Text(_MarketValidators.sanitize(l10n.t('market_up_to_50'), maxLength: 50), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18, height: 1.1)),
+                      Text(_MarketValidators.sanitize(l10n.t('market_premium_selection'), maxLength: 60), style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.w500)),
                       const Spacer(),
                       Row(
                         children: [
-                          Text(_MarketValidators.sanitize(t.discover, maxLength: 20), style: const TextStyle(color: ThixPolicy.gold, fontWeight: FontWeight.w800, fontSize: 11)),
+                          Text(_MarketValidators.sanitize(l10n.t('market_discover'), maxLength: 20), style: const TextStyle(color: ThixPolicy.gold, fontWeight: FontWeight.w800, fontSize: 11)),
                           const SizedBox(width: 4),
                           const Icon(Icons.arrow_forward_rounded, size: 12, color: ThixPolicy.gold),
                         ],
@@ -959,7 +958,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
           Expanded(
             child: Semantics(
               button: true,
-              label: 'Vendre sur THIX',
+              label: l10n.t('market_sell_with_thix'),
               child: GestureDetector(
                 onTap: () => _safeNavigate('vendorDashboard', '/market/vendor/dashboard'),
                 child: Container(
@@ -974,14 +973,14 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(_MarketValidators.sanitize(t.sellWithThix, maxLength: 30), style: const TextStyle(color: ThixPolicy.primaryDeep, fontWeight: FontWeight.w800, fontSize: 10)),
+                      Text(_MarketValidators.sanitize(l10n.t('market_sell_with_thix'), maxLength: 30), style: const TextStyle(color: ThixPolicy.primaryDeep, fontWeight: FontWeight.w800, fontSize: 10)),
                       const SizedBox(height: 6),
-                      Text(_MarketValidators.sanitize(t.growBusiness, maxLength: 60), style: const TextStyle(color: ThixPolicy.textMain, fontWeight: FontWeight.w900, fontSize: 14, height: 1.2)),
+                      Text(_MarketValidators.sanitize(l10n.t('market_grow_business'), maxLength: 60), style: const TextStyle(color: ThixPolicy.textMain, fontWeight: FontWeight.w900, fontSize: 14, height: 1.2)),
                       const Spacer(),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(color: ThixPolicy.primaryDeep.withOpacity(0.9), borderRadius: BorderRadius.circular(8)),
-                        child: Text(_MarketValidators.sanitize(t.start, maxLength: 20), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10)),
+                        child: Text(_MarketValidators.sanitize(l10n.t('market_start_now'), maxLength: 20), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 10)),
                       ),
                     ],
                   ),
@@ -994,7 +993,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  Widget _buildB2BTools(MarketStrings t) {
+  Widget _buildB2BTools(AppLocalizations l10n) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
       child: Container(
@@ -1008,10 +1007,10 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            _b2bItem(Icons.compare_arrows_rounded, _MarketValidators.sanitize(t.compare, maxLength: 20), () => _safeNavigate('marketProductComparator', '/market/compare')),
-            _b2bItem(Icons.notifications_active_rounded, _MarketValidators.sanitize(t.priceAlert, maxLength: 20), () => _safeNavigate('marketPriceAlerts', '/market/price-alerts')),
-            _b2bItem(Icons.request_quote_rounded, _MarketValidators.sanitize(t.b2bQuote, maxLength: 20), () => _showComing(t.b2bQuote)),
-            _b2bItem(Icons.favorite_rounded, _MarketValidators.sanitize(t.wishlist, maxLength: 20), () => _safeNavigate('marketWishlist', '/market/wishlist')),
+            _b2bItem(Icons.compare_arrows_rounded, _MarketValidators.sanitize(l10n.t('market_compare'), maxLength: 20), () => _safeNavigate('marketProductComparator', '/market/compare')),
+            _b2bItem(Icons.notifications_active_rounded, _MarketValidators.sanitize(l10n.t('market_price_alert'), maxLength: 20), () => _safeNavigate('marketPriceAlerts', '/market/price-alerts')),
+            _b2bItem(Icons.request_quote_rounded, _MarketValidators.sanitize(l10n.t('market_b2b_quote'), maxLength: 20), () => _showComing(l10n.t('market_b2b_quote'))),
+            _b2bItem(Icons.favorite_rounded, _MarketValidators.sanitize(l10n.t('market_wishlist'), maxLength: 20), () => _safeNavigate('marketWishlist', '/market/wishlist')),
           ],
         ),
       ),
@@ -1043,11 +1042,11 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  Widget _buildFlashSaleSection(AsyncValue<List<Map<String, dynamic>>> async, MarketStrings t) {
+  Widget _buildFlashSaleSection(AsyncValue<List<Map<String, dynamic>>> async, AppLocalizations l10n) {
     return async.when(
       loading: () => const SizedBox.shrink(),
       error: (e, _) => _MarketErrorCard(
-        message: _MarketValidators.parseError(e),
+        message: _MarketValidators.parseError(e, l10n),
         onRetry: () => ref.invalidate(flashSalesProvider),
       ),
       data: (list) {
@@ -1078,16 +1077,16 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                         child: FlashSaleTimer(endTime: timerEnd!),
                       ),
                     ),
-                    Expanded(child: ClipRect(child: _MarqueeText(text: _MarketValidators.sanitize(t.flashSaleBannerText, maxLength: 100)))),
+                    Expanded(child: ClipRect(child: _MarqueeText(text: _MarketValidators.sanitize(l10n.t('market_flash_sale_banner'), maxLength: 100)))),
                   ],
                 ),
               ),
             _AutoScrollProductStrip(
               products: active,
               badgeType: _StripBadge.flash,
-              title: _MarketValidators.sanitize(t.flashOffers, maxLength: 50),
+              title: _MarketValidators.sanitize(l10n.t('market_flash_offers'), maxLength: 50),
               icon: Icons.bolt_rounded,
-              liveLabel: _MarketValidators.sanitize(t.live, maxLength: 10),
+              liveLabel: _MarketValidators.sanitize(l10n.t('market_live_badge'), maxLength: 10),
             ),
           ],
         );
@@ -1095,23 +1094,23 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  Widget _buildSectionHeader(String title, {VoidCallback? onSeeAll}) {
+  Widget _buildSectionHeader(String title, {VoidCallback? onSeeAll, AppLocalizations? l10n}) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: ThixPolicy.textMain, letterSpacing: -0.5)),
-          if (onSeeAll != null)
+          if (onSeeAll != null && l10n != null)
             Semantics(
               button: true,
-              label: 'Voir tout',
+              label: l10n.t('common_see_all'),
               child: GestureDetector(
                 onTap: () {
                   HapticFeedback.selectionClick();
                   onSeeAll();
                 },
-                child: const Text('Voir tout', style: TextStyle(color: ThixPolicy.primary, fontSize: 13, fontWeight: FontWeight.w800)),
+                child: Text(l10n.t('common_see_all'), style: const TextStyle(color: ThixPolicy.primary, fontSize: 13, fontWeight: FontWeight.w800)),
               ),
             ),
         ],
@@ -1119,14 +1118,14 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  Widget _buildGrid(AsyncValue<List<Map<String, dynamic>>> forYouAsync, List<Map<String, dynamic>> mixedAll, bool hasMore, MarketStrings t) {
+  Widget _buildGrid(AsyncValue<List<Map<String, dynamic>>> forYouAsync, List<Map<String, dynamic>> mixedAll, bool hasMore, AppLocalizations l10n) {
     return forYouAsync.when(
       loading: () => const SliverToBoxAdapter(child: _GridSkeleton()),
       error: (e, _) => SliverToBoxAdapter(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: _MarketErrorCard(
-            message: _MarketValidators.parseError(e),
+            message: _MarketValidators.parseError(e, l10n),
             onRetry: () => ref.read(forYouProvider.notifier).refresh(),
           ),
         ),
@@ -1149,7 +1148,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  Widget _buildBottomNavBar(MarketStrings t) {
+  Widget _buildBottomNavBar(AppLocalizations l10n) {
     return Container(
       color: Colors.transparent,
       child: SafeArea(
@@ -1175,18 +1174,18 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        _navItem(Icons.home_rounded, _MarketValidators.sanitize(t.home, maxLength: 20), 0),
-                        _navItem(Icons.receipt_long_rounded, _MarketValidators.sanitize(t.orders, maxLength: 20), 1),
+                        _navItem(Icons.home_rounded, _MarketValidators.sanitize(l10n.t('common_home'), maxLength: 20), 0),
+                        _navItem(Icons.receipt_long_rounded, _MarketValidators.sanitize(l10n.t('market_orders'), maxLength: 20), 1),
                         const SizedBox(width: 60),
-                        _navItem(Icons.favorite_rounded, _MarketValidators.sanitize(t.wishlist, maxLength: 20), 3),
-                        _navItem(Icons.notifications_active_rounded, _MarketValidators.sanitize(t.alerts, maxLength: 20), 4),
+                        _navItem(Icons.favorite_rounded, _MarketValidators.sanitize(l10n.t('market_wishlist'), maxLength: 20), 3),
+                        _navItem(Icons.notifications_active_rounded, _MarketValidators.sanitize(l10n.t('market_alerts'), maxLength: 20), 4),
                       ],
                     ),
                     Positioned(
                       top: -18,
                       child: Semantics(
                         button: true,
-                        label: 'Panier',
+                        label: l10n.t('market_cart_semantics'),
                         child: GestureDetector(
                           onTap: () {
                             HapticFeedback.mediumImpact();
@@ -1263,6 +1262,7 @@ class _MarketErrorCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: EdgeInsets.all(compact ? 12 : 20),
@@ -1280,7 +1280,7 @@ class _MarketErrorCard extends StatelessWidget {
             TextButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: const Text('Réessayer'),
+              label: Text(l10n.t('common_retry')),
               style: TextButton.styleFrom(foregroundColor: ThixPolicy.primary),
             ),
         ],
