@@ -1590,40 +1590,18 @@ const Map<String, String> _fr = {
   'editors_edit_skill': 'Modifier la compétence',
   'editors_level': 'Niveau',
   'editors_details': 'Détails / Explication',
-  // THIX SOS MODULE
-  'sos_button_label': 'Bouton SOS d\'urgence',
-  'sos_button_hint': 'Maintenez enfoncé pendant 2 secondes pour déclencher une alerte',
-  'sos_button_tooltip': 'Bouton SOS sécurisé',
-  'sos_trigger_timeout': 'Délai d\'attente dépassé lors de l\'activation du SOS.',
+  //   // NOUVELLES CLES THIX SOS (Sans doublons)
   'sos_button_text': 'SOS',
   'sos_button_instruction': 'Maintenir 2s\npour déclencher',
-  
   'sos_circle_1_title': 'Cercle 1 : Urgence Absolue',
   'sos_circle_2_title': 'Cercle 2 : Proches & Famille',
   'sos_circle_3_title': 'Cercle 3 : Autorités & Sécurité',
-  'sos_circle': 'Cercle',
-  'sos_no_rescuers': 'Aucun secouriste assigné',
-  'sos_rescuers': 'secouristes',
-  'sos_my_rescuers': 'MES CERCLES DE SECOURS',
-  
-  'nearby_alerts_title': 'ALERTES À PROXIMITÉ',
-  'nearby_view_on_map': 'Voir la carte',
   'nearby_error_timeout': 'Délai de connexion dépassé pour la géolocalisation.',
   'nearby_error_network': 'Erreur réseau lors de la récupération des alertes.',
   'nearby_error_permission': 'Permission de localisation refusée.',
   'nearby_error_location': 'Impossible d\'obtenir votre position GPS.',
   'nearby_error_generic': 'Erreur lors du chargement des alertes à proximité.',
-  'nearby_map_coming_soon': 'La carte plein écran sera bientôt disponible !',
   'nearby_invalid_coordinates': 'Coordonnées GPS invalides.',
-  'nearby_active_alerts': 'alertes actives',
-  'nearby_missing': 'disparus',
-  'nearby_official': 'officiels',
-  'nearby_legend_missing': 'Disparition',
-  'nearby_legend_official': 'Avis officiel',
-  'nearby_legend_report': 'Signalement',
-  'nearby_location_required': 'Localisation requise',
-  'nearby_location_subtitle': 'Activez le GPS pour voir les alertes autour de vous',
-  
   'sos_banner_safe_title': 'Système de Protection Actif',
   'sos_banner_safe_subtitle': 'Surveillance 24h/24 et 7j/7 opérationnelle',
   'sos_banner_sos_title': 'ALERTE SOS EN COURS',
@@ -1631,7 +1609,6 @@ const Map<String, String> _fr = {
   'sos_banner_network_subtitle': 'Tentative de reconnexion au serveur...',
   'sos_banner_warning_title': 'Avertissement de Sécurité',
   'sos_banner_warning_subtitle': 'Vérifiez l\'état de vos cercles de secours',
-  'sos_incident_unknown': 'Incident non identifié',
   'sos_view_location': 'Voir l\'emplacement',
   'sos_protection_active': 'Protection active',
 
@@ -3123,41 +3100,18 @@ const Map<String, String> _en = {
   'market_shop_semantics': 'Shop: {0}',
   'market_cart_semantics': 'Cart',
   'error_session_expired': 'Session expired. Please log in again.',
-
-  // THIX SOS MODULE
-  'sos_button_label': 'Emergency SOS Button',
-  'sos_button_hint': 'Hold down for 2 seconds to trigger an alert',
-  'sos_button_tooltip': 'Secure SOS Button',
-  'sos_trigger_timeout': 'Timeout exceeded while triggering SOS.',
+  // NOUVELLES CLES THIX SOS (Sans doublons)
   'sos_button_text': 'SOS',
   'sos_button_instruction': 'Hold 2s\nto trigger',
-  
   'sos_circle_1_title': 'Circle 1: Immediate Emergency',
   'sos_circle_2_title': 'Circle 2: Family & Close Friends',
   'sos_circle_3_title': 'Circle 3: Authorities & Security',
-  'sos_circle': 'Circle',
-  'sos_no_rescuers': 'No rescuers assigned',
-  'sos_rescuers': 'rescuers',
-  'sos_my_rescuers': 'MY RESCUE CIRCLES',
-  
-  'nearby_alerts_title': 'NEARBY ALERTS',
-  'nearby_view_on_map': 'View map',
   'nearby_error_timeout': 'Connection timeout while getting location.',
   'nearby_error_network': 'Network error while fetching alerts.',
   'nearby_error_permission': 'Location permission denied.',
   'nearby_error_location': 'Unable to retrieve your GPS position.',
   'nearby_error_generic': 'Error loading nearby alerts.',
-  'nearby_map_coming_soon': 'Full-screen map coming soon!',
   'nearby_invalid_coordinates': 'Invalid GPS coordinates.',
-  'nearby_active_alerts': 'active alerts',
-  'nearby_missing': 'missing',
-  'nearby_official': 'official',
-  'nearby_legend_missing': 'Missing',
-  'nearby_legend_official': 'Official notice',
-  'nearby_legend_report': 'Report',
-  'nearby_location_required': 'Location required',
-  'nearby_location_subtitle': 'Enable GPS to view alerts around you',
-  
   'sos_banner_safe_title': 'Protection System Active',
   'sos_banner_safe_subtitle': '24/7 monitoring fully operational',
   'sos_banner_sos_title': 'SOS ALERT IN PROGRESS',
@@ -3165,11 +3119,11 @@ const Map<String, String> _en = {
   'sos_banner_network_subtitle': 'Attempting to reconnect to server...',
   'sos_banner_warning_title': 'Security Warning',
   'sos_banner_warning_subtitle': 'Check the status of your rescue circles',
-  'sos_incident_unknown': 'Unidentified incident',
   'sos_view_location': 'View location',
   'sos_protection_active': 'Protection active',
 
 };
+
 //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
 //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
 
