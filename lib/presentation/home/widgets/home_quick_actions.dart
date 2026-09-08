@@ -1,7 +1,6 @@
 // lib/presentation/home/widgets/home_quick_actions.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/services/notification_counters_service.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
@@ -39,10 +38,8 @@ class HomeQuickActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-
     if (badgeCountsStream == null) {
-      return _buildRow(l10n, chatBadge: 0, sosBadge: 0);
+      return _buildRow(chatBadge: 0, sosBadge: 0);
     }
 
     return StreamBuilder<SectionBadgeCounts>(
@@ -51,10 +48,8 @@ class HomeQuickActions extends StatelessWidget {
       builder: (context, snap) {
         final c = snap.data ?? SectionBadgeCounts.zero;
         return _buildRow(
-          l10n,
           chatBadge: _safeBadge(c.messages),
           sosBadge: _safeBadge(c.health), 
-
         );
       },
     );
@@ -66,8 +61,7 @@ class HomeQuickActions extends StatelessWidget {
     return value < 0 ? 0 : value;
   }
 
-  Widget _buildRow(
-    AppLocalizations l10n, {
+  Widget _buildRow({
     required int chatBadge,
     required int sosBadge,
   }) {
@@ -77,9 +71,9 @@ class HomeQuickActions extends StatelessWidget {
           Expanded(
             child: _QuickActionItem(
               icon: Icons.auto_awesome_rounded,
-              label: l10n.t('quickSona'),
+              label: 'Sona',
               accent: ThixPolicy.primaryDeep,
-              semanticsLabel: l10n.t('quickSona_semantics'),
+              semanticsLabel: 'Sona',
               onTap: () {
                 HapticFeedback.selectionClick();
                 debugPrint('[QuickActions] 🤖 Sona tap');
@@ -90,9 +84,9 @@ class HomeQuickActions extends StatelessWidget {
           Expanded(
             child: _QuickActionItem(
               icon: Icons.folder_shared_rounded,
-              label: l10n.t('quickDoc'),
+              label: 'Thix doc',
               accent: ThixPolicy.domainLearning,
-              semanticsLabel: l10n.t('quickDoc_semantics'),
+              semanticsLabel: 'Thix doc',
               onTap: () {
                 HapticFeedback.selectionClick();
                 debugPrint('[QuickActions] 📁 Documents tap');
@@ -103,9 +97,9 @@ class HomeQuickActions extends StatelessWidget {
           Expanded(
             child: _QuickActionItem(
               icon: Icons.forum_rounded,
-              label: l10n.t('quickChat'),
+              label: 'Thix chat',
               accent: ThixPolicy.domainNetwork,
-              semanticsLabel: l10n.t('quickChat_semantics'),
+              semanticsLabel: 'Thix chat',
               onTap: () {
                 HapticFeedback.selectionClick();
                 debugPrint('[QuickActions] 💬 Chat tap');
@@ -117,9 +111,9 @@ class HomeQuickActions extends StatelessWidget {
           Expanded(
             child: _QuickActionItem(
               icon: Icons.emergency_rounded,
-              label: l10n.t('quickSos'),
+              label: 'Thix sos',
               accent: ThixPolicy.danger,
-              semanticsLabel: l10n.t('quickSos_semantics'),
+              semanticsLabel: 'Thix sos',
               onTap: () {
                 HapticFeedback.mediumImpact();
                 debugPrint('[QuickActions] 🚨 SOS tap');
