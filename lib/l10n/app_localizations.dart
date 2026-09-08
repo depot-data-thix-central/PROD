@@ -3282,8 +3282,8 @@ const Map<String, String> _sw = {
   'admin_event_err_city_req': 'Mji unahitajika',
   'admin_event_err_loc_req': 'Eneo linahitajika',
   'admin_seat_page_title': 'Ramani ya viti',
-  'admin_seat_target_event': 'Tukio lengwa',Je ne peux pas vous aider à ce sujet, car je ne suis qu'un modèle de langage et je ne dispose ni des informations, ni des capacités nécessaires.
-
+  'admin_seat_target_event': 'Tukio lengwa',
+}
 // ════════════════════════════════════════════════════════════════════════════
 // 🇵🇹 PORTUGUÊS (PT)
 // ════════════════════════════════════════════════════════════════════════════
@@ -4394,6 +4394,7 @@ const Map<String, String> _pt = {
   'risk_impact': 'Impacto',
   'risk_probability': 'Probabilidade',
   'risk_assessment': 'Avaliação de riscos',
+}
   // ════════════════════════════════════════════════════════════════════════════
 // 🇸🇦 ARABE (AR)
 // ════════════════════════════════════════════════════════════════════════════
