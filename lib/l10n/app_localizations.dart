@@ -2289,7 +2289,7 @@ const Map<String, String> _en = {
   'risk_impact': 'Impact',
   'risk_probability': 'Probability',
   'risk_assessment': 'Risk assessment',
-}
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // 🇨🇩 SWAHILI (SW)
@@ -3284,7 +3284,7 @@ const Map<String, String> _sw = {
   'admin_event_err_loc_req': 'Eneo linahitajika',
   'admin_seat_page_title': 'Ramani ya viti',
   'admin_seat_target_event': 'Tukio lengwa',
-}
+};
 // ════════════════════════════════════════════════════════════════════════════
 // 🇵🇹 PORTUGUÊS (PT)
 // ════════════════════════════════════════════════════════════════════════════
@@ -4395,7 +4395,7 @@ const Map<String, String> _pt = {
   'risk_impact': 'Impacto',
   'risk_probability': 'Probabilidade',
   'risk_assessment': 'Avaliação de riscos',
-}
+};
   // ════════════════════════════════════════════════════════════════════════════
 // 🇸🇦 ARABE (AR)
 // ════════════════════════════════════════════════════════════════════════════
