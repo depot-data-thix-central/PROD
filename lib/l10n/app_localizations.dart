@@ -39,6 +39,7 @@ class AppLocalizations {
     'ar': _ar,
     'zh': _zh,
   };
+  
 
   /// Traduction standard avec paramètres {0}, {1}...
   String t(String key, {List<String>? args}) {
@@ -49,6 +50,15 @@ class AppLocalizations {
         value = value.replaceAll('{$i}', args[i]);
       }
     }
+    return value;
+  }
+  /// Traduction avec arguments nommés (Map)
+  String tn(String key, Map<String, dynamic> args) {
+    final map = _localizedValues[locale.languageCode] ?? _fr;
+    var value = map[key] ?? _fr[key] ?? key;
+    args.forEach((k, v) {
+      value = value.replaceAll('{$k}', v.toString());
+    });
     return value;
   }
 
