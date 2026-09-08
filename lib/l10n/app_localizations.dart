@@ -2289,6 +2289,7 @@ const Map<String, String> _en = {
   'risk_impact': 'Impact',
   'risk_probability': 'Probability',
   'risk_assessment': 'Risk assessment',
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // 🇨🇩 SWAHILI (SW)
