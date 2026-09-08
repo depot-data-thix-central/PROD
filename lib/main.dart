@@ -131,7 +131,8 @@ Future<void> main() async {
         ProviderScope(
           // INJECTION : le provider reçoit la vraie instance
           overrides: [
-            localeControllerProvider.overrideWithValue(_localeController),
+            localeControllerProvider.overrideWith((ref) => _localeController),
+
           ],
           child: const ThixApp(),
         ),
