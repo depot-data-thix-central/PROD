@@ -1,6 +1,6 @@
 /// THIX SOS — Mes secours / 3 cercles (Production Enterprise)
 /// ✅ SÉCURISÉ : validation URL, mounted checks, throttling, i18n, semantics
-/// ✅ DESIGN : ThixPolicy, animations, skeleton, empty state premium
+/// ✅ DESIGN : fond marine profond, cartes blanches, texte noir, zéro débordement
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +12,33 @@ import 'package:thix_id/l10n/app_localizations.dart';
 import '../models/sos_models.dart';
 import '../providers/sos_providers.dart';
 import 'ajouter_secours_page.dart';
+
+// ============================================================================
+// PALETTE DÉDIÉE À CETTE PAGE — enterprise, forte lisibilité
+// ============================================================================
+class _Palette {
+  _Palette._();
+
+  // Fond de page (conservé : marine profond)
+  static const Color pageBg = Color(0xFF0A1830);
+
+  // Cartes : blanc pur, texte noir
+  static const Color cardBg = Color(0xFFFFFFFF);
+  static const Color cardBorder = Color(0xFFE2E6ED);
+  static const Color textPrimary = Color(0xFF11151C);
+  static const Color textSecondary = Color(0xFF4B5563);
+  static const Color textMuted = Color(0xFF8A93A3);
+
+  // Accents par cercle — assez foncés pour rester lisibles sur blanc
+  static const Color circle1 = Color(0xFF15803D); // vert profond
+  static const Color circle2 = Color(0xFFB45309); // ambre profond
+  static const Color circle3 = Color(0xFF1D4ED8); // bleu profond
+
+  static const Color danger = Color(0xFFDC2626);
+  static const Color success = Color(0xFF15803D);
+  static const Color infoBg = Color(0xFFEFF4FF);
+  static const Color infoBorder = Color(0xFFC7D7FE);
+}
 
 // ============================================================================
 // CONSTANTS
@@ -94,21 +121,21 @@ class _MesSecoursPageState extends ConsumerState<MesSecoursPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: ThixPolicy.card,
+        backgroundColor: _Palette.cardBg,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          side: BorderSide(color: ThixPolicy.border),
+          side: const BorderSide(color: _Palette.cardBorder),
         ),
         title: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: ThixPolicy.danger.withValues(alpha: 0.15),
+                color: _Palette.danger.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(ThixPolicy.rXs),
               ),
               child: const Icon(Icons.delete_outline,
-                  color: ThixPolicy.danger, size: 20),
+                  color: _Palette.danger, size: 20),
             ),
             const SizedBox(width: ThixPolicy.s12),
             Expanded(
@@ -117,8 +144,10 @@ class _MesSecoursPageState extends ConsumerState<MesSecoursPage> {
                 style: GoogleFonts.inter(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                  color: _Palette.textPrimary,
                 ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -127,7 +156,7 @@ class _MesSecoursPageState extends ConsumerState<MesSecoursPage> {
           l10n.t('sos_delete_rescuer_confirm'),
           style: GoogleFonts.inter(
             fontSize: 14,
-            color: ThixPolicy.textMuted,
+            color: _Palette.textSecondary,
             height: 1.4,
           ),
         ),
@@ -139,7 +168,7 @@ class _MesSecoursPageState extends ConsumerState<MesSecoursPage> {
               onPressed: () => Navigator.pop(context, false),
               child: Text(
                 l10n.t('common_cancel'),
-                style: GoogleFonts.inter(color: ThixPolicy.textMuted),
+                style: GoogleFonts.inter(color: _Palette.textSecondary),
               ),
             ),
           ),
@@ -151,7 +180,7 @@ class _MesSecoursPageState extends ConsumerState<MesSecoursPage> {
               child: Text(
                 l10n.t('common_delete'),
                 style: GoogleFonts.inter(
-                  color: ThixPolicy.danger,
+                  color: _Palette.danger,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -170,7 +199,7 @@ class _MesSecoursPageState extends ConsumerState<MesSecoursPage> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(l10n.t('sos_rescuer_deleted')),
-              backgroundColor: ThixPolicy.success,
+              backgroundColor: _Palette.success,
               behavior: SnackBarBehavior.floating,
               duration: const Duration(seconds: 2),
             ),
@@ -182,7 +211,7 @@ class _MesSecoursPageState extends ConsumerState<MesSecoursPage> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(l10n.t('sos_delete_error')),
-              backgroundColor: ThixPolicy.danger,
+              backgroundColor: _Palette.danger,
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -201,9 +230,9 @@ class _MesSecoursPageState extends ConsumerState<MesSecoursPage> {
     final contactsAsync = ref.watch(sosContactsProvider);
 
     return Scaffold(
-      backgroundColor: ThixPolicy.inkDeep,
+      backgroundColor: _Palette.pageBg,
       appBar: AppBar(
-        backgroundColor: ThixPolicy.inkDeep,
+        backgroundColor: _Palette.pageBg,
         elevation: 0,
         leading: Semantics(
           button: true,
@@ -221,6 +250,8 @@ class _MesSecoursPageState extends ConsumerState<MesSecoursPage> {
             fontWeight: FontWeight.w700,
             color: Colors.white,
           ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
         centerTitle: true,
         actions: [
@@ -238,7 +269,7 @@ class _MesSecoursPageState extends ConsumerState<MesSecoursPage> {
         button: true,
         label: l10n.t('sos_add_rescuer'),
         child: FloatingActionButton.extended(
-          backgroundColor: ThixPolicy.danger,
+          backgroundColor: _Palette.danger,
           onPressed: () => _navigateToAdd(context),
           icon: const Icon(Icons.person_add_alt_1, color: Colors.white),
           label: Text(
@@ -289,7 +320,7 @@ class _MesSecoursPageState extends ConsumerState<MesSecoursPage> {
 }
 
 // ============================================================================
-// INFO BANNER
+// INFO BANNER — carte claire, texte noir, jamais de débordement
 // ============================================================================
 class _InfoBanner extends StatelessWidget {
   const _InfoBanner({required this.l10n});
@@ -298,38 +329,24 @@ class _InfoBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(ThixPolicy.s14),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            ThixPolicy.primary.withValues(alpha: 0.25),
-            ThixPolicy.primary.withValues(alpha: 0.15),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: _Palette.infoBg,
         borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-        border: Border.all(
-            color: ThixPolicy.primary.withValues(alpha: 0.3), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: ThixPolicy.primary.withValues(alpha: 0.1),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        border: Border.all(color: _Palette.infoBorder, width: 1.5),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: ThixPolicy.primary.withValues(alpha: 0.2),
+            decoration: const BoxDecoration(
+              color: Colors.white,
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.info_outline,
-                color: ThixPolicy.primary, size: 18),
+            child: const Icon(Icons.info_outline,
+                color: _Palette.circle3, size: 18),
           ),
           const SizedBox(width: ThixPolicy.s12),
           Expanded(
@@ -341,7 +358,7 @@ class _InfoBanner extends StatelessWidget {
                   style: GoogleFonts.inter(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    color: _Palette.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -349,7 +366,7 @@ class _InfoBanner extends StatelessWidget {
                   l10n.t('sos_circle_priority_info'),
                   style: GoogleFonts.inter(
                     fontSize: 12,
-                    color: ThixPolicy.textMuted,
+                    color: _Palette.textSecondary,
                     height: 1.4,
                   ),
                 ),
@@ -363,7 +380,7 @@ class _InfoBanner extends StatelessWidget {
 }
 
 // ============================================================================
-// CIRCLE SECTION
+// CIRCLE SECTION — header contraint pour ne jamais déborder
 // ============================================================================
 class _CircleSection extends StatelessWidget {
   const _CircleSection({
@@ -383,11 +400,11 @@ class _CircleSection extends StatelessWidget {
   Color get _color {
     switch (circle) {
       case 1:
-        return ThixPolicy.success;
+        return _Palette.circle1;
       case 2:
-        return ThixPolicy.warning;
+        return _Palette.circle2;
       default:
-        return ThixPolicy.primary;
+        return _Palette.circle3;
     }
   }
 
@@ -414,14 +431,7 @@ class _CircleSection extends StatelessWidget {
               width: 32,
               height: 32,
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    _color.withValues(alpha: 0.3),
-                    _color.withValues(alpha: 0.15),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                color: _color.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(ThixPolicy.rSm),
                 border: Border.all(color: _color.withValues(alpha: 0.4)),
               ),
@@ -448,30 +458,46 @@ class _CircleSection extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                       color: Colors.white,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
                   Text(
                     '${contacts.length} ${l10n.t('sos_rescuers')}',
                     style: GoogleFonts.inter(
                       fontSize: 12,
-                      color: ThixPolicy.textMuted,
+                      color: Colors.white54,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
             ),
-            Semantics(
-              button: true,
-              label: '${l10n.t('common_add')} ${_title(l10n)}',
-              child: TextButton.icon(
-                onPressed: onAdd,
-                icon: Icon(Icons.add_circle_outline, size: 18, color: _color),
-                label: Text(
-                  l10n.t('common_add'),
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: _color,
+            // ✅ Bouton "Ajouter" contraint — ne déborde plus jamais
+            Flexible(
+              flex: 0,
+              child: Semantics(
+                button: true,
+                label: '${l10n.t('common_add')} ${_title(l10n)}',
+                child: TextButton.icon(
+                  onPressed: onAdd,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: Icon(Icons.add_circle_outline, size: 18, color: _color),
+                  label: Text(
+                    l10n.t('common_add'),
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: _color,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ),
@@ -496,7 +522,7 @@ class _CircleSection extends StatelessWidget {
 }
 
 // ============================================================================
-// CONTACT TILE — ✅ Validation URL + safe initial + semantics
+// CONTACT TILE — carte blanche, texte noir, contraste garanti
 // ============================================================================
 class _ContactTile extends StatelessWidget {
   const _ContactTile({
@@ -521,12 +547,13 @@ class _ContactTile extends StatelessWidget {
       opacity: isDeleting ? 0.5 : 1.0,
       duration: const Duration(milliseconds: 200),
       child: Container(
+        width: double.infinity,
         margin: const EdgeInsets.only(bottom: ThixPolicy.s10),
         child: Semantics(
           button: true,
           label: '${l10n.t('sos_rescuer')} $safeName',
           child: Material(
-            color: ThixPolicy.card,
+            color: _Palette.cardBg,
             borderRadius: BorderRadius.circular(ThixPolicy.rMd),
             child: InkWell(
               onTap: onDelete,
@@ -535,7 +562,7 @@ class _ContactTile extends StatelessWidget {
                 padding: const EdgeInsets.all(ThixPolicy.s14),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                  border: Border.all(color: ThixPolicy.border),
+                  border: Border.all(color: _Palette.cardBorder),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.05),
@@ -548,7 +575,7 @@ class _ContactTile extends StatelessWidget {
                   children: [
                     CircleAvatar(
                       radius: 24,
-                      backgroundColor: accent.withValues(alpha: 0.2),
+                      backgroundColor: accent.withValues(alpha: 0.14),
                       backgroundImage:
                           validPhoto ? NetworkImage(contact.photoUrl!) : null,
                       child: !validPhoto
@@ -569,45 +596,47 @@ class _ContactTile extends StatelessWidget {
                         children: [
                           Row(
                             children: [
-                              Expanded(
+                              Flexible(
                                 child: Text(
                                   safeName,
                                   style: GoogleFonts.inter(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w600,
-                                    color: Colors.white,
+                                    color: _Palette.textPrimary,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              if (contact.verified)
+                              if (contact.verified) ...[
+                                const SizedBox(width: 6),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
                                     color:
-                                        ThixPolicy.success.withValues(alpha: 0.15),
+                                        _Palette.success.withValues(alpha: 0.12),
                                     borderRadius:
                                         BorderRadius.circular(ThixPolicy.rXs),
                                   ),
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(Icons.verified,
-                                          size: 14, color: ThixPolicy.success),
+                                      const Icon(Icons.verified,
+                                          size: 14, color: _Palette.success),
                                       const SizedBox(width: 4),
                                       Text(
                                         l10n.t('sos_verified'),
                                         style: GoogleFonts.inter(
                                           fontSize: 10,
                                           fontWeight: FontWeight.w600,
-                                          color: ThixPolicy.success,
+                                          color: _Palette.success,
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
+                              ],
                             ],
                           ),
                           if (contact.relation != null &&
@@ -617,8 +646,10 @@ class _ContactTile extends StatelessWidget {
                               contact.relation!,
                               style: GoogleFonts.inter(
                                 fontSize: 13,
-                                color: ThixPolicy.textMuted,
+                                color: _Palette.textSecondary,
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ],
                           if (contact.phone != null &&
@@ -626,14 +657,18 @@ class _ContactTile extends StatelessWidget {
                             const SizedBox(height: 2),
                             Row(
                               children: [
-                                Icon(Icons.phone,
-                                    size: 12, color: ThixPolicy.textMuted),
+                                const Icon(Icons.phone,
+                                    size: 12, color: _Palette.textMuted),
                                 const SizedBox(width: 4),
-                                Text(
-                                  contact.phone!,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    color: ThixPolicy.textMuted,
+                                Flexible(
+                                  child: Text(
+                                    contact.phone!,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      color: _Palette.textMuted,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                               ],
@@ -652,11 +687,11 @@ class _ContactTile extends StatelessWidget {
                                 height: 18,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  color: ThixPolicy.danger,
+                                  color: _Palette.danger,
                                 ),
                               )
                             : const Icon(Icons.delete_outline,
-                                color: ThixPolicy.textMuted, size: 22),
+                                color: _Palette.textMuted, size: 22),
                         onPressed: isDeleting ? null : onDelete,
                       ),
                     ),
@@ -672,7 +707,7 @@ class _ContactTile extends StatelessWidget {
 }
 
 // ============================================================================
-// EMPTY CIRCLE
+// EMPTY CIRCLE — carte blanche, texte noir
 // ============================================================================
 class _EmptyCircle extends StatelessWidget {
   const _EmptyCircle({required this.color, required this.l10n});
@@ -686,9 +721,9 @@ class _EmptyCircle extends StatelessWidget {
       padding: const EdgeInsets.symmetric(
           vertical: ThixPolicy.s24, horizontal: ThixPolicy.s16),
       decoration: BoxDecoration(
-        color: ThixPolicy.card,
+        color: _Palette.cardBg,
         borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-        border: Border.all(color: ThixPolicy.border),
+        border: Border.all(color: _Palette.cardBorder),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -696,11 +731,11 @@ class _EmptyCircle extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
+              color: color.withValues(alpha: 0.10),
               shape: BoxShape.circle,
             ),
             child: Icon(Icons.person_add_outlined,
-                color: color.withValues(alpha: 0.6), size: 32),
+                color: color, size: 32),
           ),
           const SizedBox(height: ThixPolicy.s12),
           Text(
@@ -708,7 +743,7 @@ class _EmptyCircle extends StatelessWidget {
             style: GoogleFonts.inter(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Colors.white,
+              color: _Palette.textPrimary,
             ),
             textAlign: TextAlign.center,
           ),
@@ -717,7 +752,7 @@ class _EmptyCircle extends StatelessWidget {
             l10n.t('sos_add_first_rescuer'),
             style: GoogleFonts.inter(
               fontSize: 12,
-              color: ThixPolicy.textMuted,
+              color: _Palette.textSecondary,
             ),
             textAlign: TextAlign.center,
           ),
@@ -728,7 +763,7 @@ class _EmptyCircle extends StatelessWidget {
 }
 
 // ============================================================================
-// SKELETON LOADER
+// SKELETON LOADER — teintes claires cohérentes avec les cartes blanches
 // ============================================================================
 class _SkeletonLoader extends StatefulWidget {
   const _SkeletonLoader();
@@ -765,7 +800,7 @@ class _SkeletonLoaderState extends State<_SkeletonLoader>
           height: h,
           width: w,
           decoration: BoxDecoration(
-            color: ThixPolicy.border,
+            color: _Palette.cardBorder,
             borderRadius: BorderRadius.circular(ThixPolicy.rSm),
           ),
         ),
@@ -779,9 +814,9 @@ class _SkeletonLoaderState extends State<_SkeletonLoader>
       child: Container(
         padding: const EdgeInsets.all(ThixPolicy.s14),
         decoration: BoxDecoration(
-          color: ThixPolicy.card,
+          color: _Palette.cardBg,
           borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          border: Border.all(color: ThixPolicy.border),
+          border: Border.all(color: _Palette.cardBorder),
         ),
         child: Row(
           children: [
@@ -846,11 +881,11 @@ class _ErrorState extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: ThixPolicy.danger.withValues(alpha: 0.1),
+                color: _Palette.danger.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.error_outline,
-                  color: ThixPolicy.danger, size: 48),
+                  color: _Palette.danger, size: 48),
             ),
             const SizedBox(height: ThixPolicy.s16),
             Text(
@@ -874,7 +909,7 @@ class _ErrorState extends StatelessWidget {
                 icon: const Icon(Icons.refresh, size: 18),
                 label: Text(l10n.t('common_retry')),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: ThixPolicy.danger,
+                  backgroundColor: _Palette.danger,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(
                       horizontal: 24, vertical: 14),
