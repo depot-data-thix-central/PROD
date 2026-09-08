@@ -173,6 +173,20 @@ const Map<String, String> _fr = {
   'common_minutes_zero': '0 minute',
   'common_minutes_one': '1 minute',
   'common_minutes_many': '{count} minutes',
+    // SERVICES CONSTELLATION
+  'svc_money': 'Portefeuille',
+  'svc_media': 'Média',
+  'svc_country': 'Pays',
+  'svc_news': 'Info',
+  'svc_event': 'Event',
+  'svc_market': 'Market',
+  'svc_booking': 'Réservation',
+  'svc_jobs': 'Emploi',
+  'svc_learning': 'Formation',
+  'svc_opps': 'Opportunité',
+  'svc_pro': 'Pro',
+  'svc_health': 'Santé',
+
 
   // THIX MEDIA & IA SOURCES
   'live_send': 'Envoyer',
@@ -2977,6 +2991,19 @@ const Map<String, String> _en = {
   'editors_edit_skill': 'Edit Skill',
   'editors_level': 'Level',
   'editors_details': 'Details / Explanation',
+  // SERVICES CONSTELLATION
+  'svc_money': 'Wallet',
+  'svc_media': 'Media',
+  'svc_country': 'Country',
+  'svc_news': 'News',
+  'svc_event': 'Event',
+  'svc_market': 'Market',
+  'svc_booking': 'Booking',
+  'svc_jobs': 'Jobs',
+  'svc_learning': 'Learning',
+  'svc_opps': 'Opps',
+  'svc_pro': 'Pro',
+  'svc_health': 'Health',
 
 };
 //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
@@ -4312,6 +4339,20 @@ const Map<String, String> _sw = {
   'editors_edit_skill': 'Hariri Ujuzi',
   'editors_level': 'Kiwango',
   'editors_details': 'Maelezo / Ufafanuzi',
+  
+  // SERVICES CONSTELLATION
+  'svc_money': 'Pesa',
+  'svc_media': 'Media',
+  'svc_country': 'Nchi',
+  'svc_news': 'Habari',
+  'svc_event': 'Tukio',
+  'svc_market': 'Soko',
+  'svc_booking': 'Uhifadhi',
+  'svc_jobs': 'Ajira',
+  'svc_learning': 'Mafunzo',
+  'svc_opps': 'Fursa',
+  'svc_pro': 'Pro',
+  'svc_health': 'Afya',
 
 
 };
@@ -5766,7 +5807,21 @@ const Map<String, String> _pt = {
   'editors_edit_skill': 'Editar Habilidade',
   'editors_level': 'Nível',
   'editors_details': 'Detalhes / Explicação',
+  
 
+  // SERVICES CONSTELLATION
+  'svc_money': 'Carteira',
+  'svc_media': 'Mídia',
+  'svc_country': 'País',
+  'svc_news': 'Notícias',
+  'svc_event': 'Evento',
+  'svc_market': 'Mercado',
+  'svc_booking': 'Reserva',
+  'svc_jobs': 'Emprego',
+  'svc_learning': 'Educação',
+  'svc_opps': 'Oportunidade',
+  'svc_pro': 'Pro',
+  'svc_health': 'Saúde',
 
 };
 
@@ -7223,6 +7278,19 @@ const Map<String, String> _ar = {
   'editors_level': 'المستوى',
   'editors_details': 'التفاصيل / الشرح',
 
+  // SERVICES CONSTELLATION
+  'svc_money': 'محفظة',
+  'svc_media': 'ميديا',
+  'svc_country': 'بلدي',
+  'svc_news': 'أخبار',
+  'svc_event': 'فعالية',
+  'svc_market': 'سوق',
+  'svc_booking': 'حجز',
+  'svc_jobs': 'وظائف',
+  'svc_learning': 'تعليم',
+  'svc_opps': 'فرص',
+  'svc_pro': 'برو',
+  'svc_health': 'صحة',
 
 };
 //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
@@ -8677,6 +8745,19 @@ const Map<String, String> _zh = {
   'editors_edit_skill': '编辑技能',
   'editors_level': '熟练程度',
   'editors_details': '详情 / 说明',
+  // SERVICES CONSTELLATION
+  'svc_money': '钱包',
+  'svc_media': '媒体',
+  'svc_country': '国家',
+  'svc_news': '资讯',
+  'svc_event': '活动',
+  'svc_market': '市场',
+  'svc_booking': '预订',
+  'svc_jobs': '工作',
+  'svc_learning': '教育',
+  'svc_opps': '机会',
+  'svc_pro': 'Pro',
+  'svc_health': '健康',
 
 };
 ///🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
@@ -9350,5 +9431,18 @@ const Map<String, String> _es = {
   'editors_edit_skill': 'Editar Habilidad',
   'editors_level': 'Nivel',
   'editors_details': 'Detalles / Explicación',
+  // SERVICES CONSTELLATION
+  'svc_money': 'Cartera',
+  'svc_media': 'Media',
+  'svc_country': 'País',
+  'svc_news': 'Noticias',
+  'svc_event': 'Evento',
+  'svc_market': 'Mercado',
+  'svc_booking': 'Reserva',
+  'svc_jobs': 'Empleo',
+  'svc_learning': 'Educación',
+  'svc_opps': 'Oportunidad',
+  'svc_pro': 'Pro',
+  'svc_health': 'Salud',
 
 };
