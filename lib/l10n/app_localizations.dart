@@ -1,4 +1,3 @@
-// lib/l10n/app_localizations.dart
 import 'package:flutter/material.dart';
 
 /// Système de localisation THIX — "All in One"
@@ -14,19 +13,31 @@ class AppLocalizations {
   static const LocalizationsDelegate<AppLocalizations> delegate =
       _AppLocalizationsDelegate();
 
+  // 1. Liste des codes des 7 langues supportées
   static const List<String> supportedLanguages = [
-    'fr', 'en', 'es', 'pt', 'ln', 'sw', 'kg', 'lu',
+    'fr', 'en', 'es', 'pt', 'sw', 'ar', 'zh',
   ];
 
+  // 2. Noms d'affichage des langues
   static const Map<String, String> languageNames = {
-    'fr': 'Français', 'en': 'English', 'es': 'Español', 'pt': 'Português',
-    'ln': 'Lingála', 'sw': 'Kiswahili', 'kg': 'Kikongo', 'lu': 'Tshiluba',
+    'fr': 'Français', 
+    'en': 'English', 
+    'es': 'Español', 
+    'pt': 'Português',
+    'sw': 'Kiswahili', 
+    'ar': 'العربية', 
+    'zh': '中文',    
   };
 
+  // 3. Liaison avec les dictionnaires (Maps)
   static final Map<String, Map<String, String>> _localizedValues = {
     'fr': _fr,
     'en': _en,
-    // Ajoutez ici _es, _pt, _ln, _sw, _kg, _lu de votre ancien fichier
+    'es': _es,
+    'pt': _pt,
+    'sw': _sw,
+    'ar': _ar,
+    'zh': _zh,
   };
 
   /// Traduction standard avec paramètres {0}, {1}...
@@ -59,10 +70,13 @@ class AppLocalizations {
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {
   const _AppLocalizationsDelegate();
+  
   @override
   bool isSupported(Locale locale) => AppLocalizations.supportedLanguages.contains(locale.languageCode);
+  
   @override
   Future<AppLocalizations> load(Locale locale) async => AppLocalizations(locale);
+  
   @override
   bool shouldReload(_AppLocalizationsDelegate old) => false;
 }
