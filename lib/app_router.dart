@@ -284,7 +284,10 @@ import 'package:thix_id/presentation/thix_weeding/thix_weeding_routes.dart';
 import 'package:thix_id/presentation/thix_home_swipe_screen.dart';
 
 // === THIX IA NEW MODULE - 15 PAGES + 21 WIDGETS - FULL PROD ===
-import 'package:thix_id/presentation/thix_ia/thix_ia_routes.dart'; // <-- AJOUT THIX IA
+import 'package:thix_id/presentation/thix_ia/thix_ia_routes.dart'; 
+// === SETTINGS & POLITIQUES ===
+import 'package:thix_id/presentation/settings/policy_viewer_page.dart';
+import 'package:thix_id/presentation/settings/admin_policy_manager_page.dart';
 
 class NoTransitionPage<T> extends Page<T> {
   final Widget child;
@@ -448,6 +451,21 @@ class AppRouter {
                 ]
               ),
             ]),
+            
+    // Lecteur de politique (public / connecté)
+    GoRoute(
+      path: 'policy/:slug',
+      builder: (_, s) => PolicyViewerPage(
+        slug: s.pathParameters['slug']!,
+      ),
+    ),
+    // Gestion des politiques — réservée admin (guard interne de la page)
+    GoRoute(
+      path: 'admin/policies',
+      builder: (_, __) => const AdminPolicyManagerPage(),
+    ),
+  ],
+),
             // === THIX CHAT ===
             StatefulShellBranch(routes: [
               GoRoute(path: AppRoutes.chat, name: 'chat', pageBuilder: (_, __) => const NoTransitionPage(child: ChatListPage()), routes: [
