@@ -46,6 +46,7 @@ class _PolicyViewerPageState extends State<PolicyViewerPage> {
       appBar: AppBar(
         title: Text(_policy?['title'] ?? l10n.t('settings_policies_title')),
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      ), // <-- CORRECTION 1 : Parenthèse fermante et virgule ajoutées ici
 
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -81,6 +82,5 @@ class _PolicyViewerPageState extends State<PolicyViewerPage> {
                     ],
                   ),
                 ),
-    ),
+    ); 
   }
-}
