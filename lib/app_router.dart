@@ -28,7 +28,7 @@ import 'package:thix_id/presentation/vault/document_vault_page.dart';
 import 'package:thix_id/presentation/settings/settings_page.dart';
 import 'package:thix_id/presentation/common/main_app_shell.dart';
 import 'package:thix_id/presentation/certification/certification_tiers_page.dart';
-import 'package:thix_id/presentation/auth/pending_deletion_screen.dart';
+import 'package:thix_id/presentation/settings/settings_account_status_screen.dart';
 
 // === THIX CHAT ===
 import 'package:thix_id/models/chat/chat_conversation.dart';
@@ -331,6 +331,9 @@ class AppRouter {
     final isLoginPage = loc == AppRoutes.login;
     final isStartPage = loc == AppRoutes.start;
     final isRegPage = loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
+    
+    // ✅ NOUVELLE ROUTE DÉTECTÉE
+    final isAccountStatusRoute = loc == '/settings/account-status';
 
     final isPublic = isStartPage ||
                     isLoginPage ||
@@ -350,60 +353,65 @@ class AppRouter {
 
     final logged = auth.isAuthenticated;
     final currentUser = auth.currentUser;
-    final status = currentUser?.registrationStatus?.toLowerCase() ?? '';
-
-    // RÈGLE STRICTE : Le compte est actif UNIQUEMENT si le statut exact est 'active'
-    final isAccountActive = currentUser != null && (status == 'active' || status == 'completed');
     
-    // ✅ NOUVEAU : VÉRIFICATIONS DU STATUT GLOBAL DU COMPTE
-    final isPendingDeletion = currentUser?.isPendingDeletion == true;
-    final isDeactivated = currentUser?.isDeactivated == true;
+    // 1. STATUT D'INSCRIPTION (Onboarding/Finalisation)
+    final regStatus = currentUser?.registrationStatus?.toLowerCase() ?? '';
+    final isRegistrationCompleted = currentUser != null && (regStatus == 'active' || regStatus == 'completed');
+
+    // 2. STATUT GLOBAL DU COMPTE (Cycle de vie : active, deactivated, pending_deletion)
+    // On considère que le compte est sain uniquement s'il est 'active'
+    final isLifecycleActive = currentUser?.accountStatus == 'active';
+
+    // ==========================================
+    // RÈGLES DE REDIRECTION
+    // ==========================================
 
     // Cas 1 : Non connecté
     if (!logged) {
       return isPublic ? null : AppRoutes.login;
     }
 
-    // ✅ NOUVEAU CAS 1.4 : Blocage global si compte DÉSACTIVÉ
-    if (logged && isDeactivated) {
-      // Si une session fantôme subsiste alors que le compte est désactivé en DB,
-      // on détruit la session et on jette l'utilisateur sur la page de connexion.
-      await auth.signOut();
-      return AppRoutes.login;
+    // ✅ 🔴 COMPTE NON ACTIF (Désactivé ou En suppression) → Forcer vers la page de statut
+    if (logged && !isLifecycleActive) {
+      if (!isAccountStatusRoute) {
+        return '/settings/account-status';
+      }
+      return null; // On est déjà sur la page de statut, on laisse passer
     }
 
-    // ✅ NOUVEAU CAS 1.5 : Blocage global si SUPPRESSION programmée
-    if (logged && isPendingDeletion) {
-      // Redirige de force vers l'écran de suppression si on n'y est pas déjà
-      if (loc != '/pending-deletion') return '/pending-deletion';
-      return null; 
-    }
-    
-    // ✅ NOUVEAU CAS 1.6 : Empêcher l'accès à la page de suppression si le compte est redevenu normal
-    if (logged && !isPendingDeletion && loc == '/pending-deletion') {
-      return AppRoutes.userDashboard;
+    // ✅ EMPÊCHER l'accès à la page de statut si le compte est normal/réactivé
+    if (logged && isLifecycleActive && isAccountStatusRoute) {
+      return currentUser.accountType == AccountType.enterprise
+          ? AppRoutes.enterpriseDashboard
+          : AppRoutes.userDashboard;
     }
 
-    // Cas 2 : Connecté et se trouve sur la page Login ou Start
+    // Cas 2 : Connecté et tente d'accéder au Login/Start
     if (logged && (isLoginPage || isStartPage)) {
-      if (isAccountActive) return AppRoutes.userDashboard;
+      if (isRegistrationCompleted) {
+        return currentUser.accountType == AccountType.enterprise
+            ? AppRoutes.enterpriseDashboard
+            : AppRoutes.userDashboard;
+      }
       return null;
     }
 
-    // Cas 3 : Connecté sur page d'inscription avec compte ACTIVÉ
-    if (logged && isRegPage && isAccountActive) {
+    // Cas 3 : Connecté sur page d'inscription avec inscription DÉJÀ COMPLÉTÉE
+    if (logged && isRegPage && isRegistrationCompleted) {
       if (state.uri.queryParameters['step'] == '3') return null;
-      return AppRoutes.userDashboard;
+      return currentUser.accountType == AccountType.enterprise
+          ? AppRoutes.enterpriseDashboard
+          : AppRoutes.userDashboard;
     }
 
-    // Cas 4 : Connecté mais compte NON ACTIVÉ
-    if (logged && !isRegPage && !isLoginPage && !isStartPage && !isAccountActive && currentUser?.registrationStatus != null) {
+    // Cas 4 : Connecté mais inscription NON COMPLÉTÉE (Onboarding inachevé)
+    if (logged && !isRegPage && !isLoginPage && !isStartPage && !isRegistrationCompleted && currentUser?.registrationStatus != null) {
       if (loc == AppRoutes.home) {
         await auth.signOut();
         return AppRoutes.login;
       }
 
-      if (status == 'draft_step1') {
+      if (regStatus == 'draft_step1') {
         return '${AppRoutes.personalReg}?step=1';
       } else {
         return '${AppRoutes.personalReg}?step=2';
@@ -417,7 +425,7 @@ class AppRouter {
     return null;
   }
 },
-                          
+
 
 
           
@@ -440,10 +448,13 @@ class AppRouter {
         GoRoute(path: AppRoutes.profile, name: 'profile', pageBuilder: (_, __) => const NoTransitionPage(child: ProfilePage())),
 
         GoRoute(
-  path: '/pending-deletion',
-  name: 'pendingDeletion',
-  pageBuilder: (_, __) => const NoTransitionPage(child: PendingDeletionScreen()),
+  path: '/settings/account-status',
+  name: 'accountStatus', // Optionnel mais recommandé
+  pageBuilder: (_, __) => const NoTransitionPage(
+    child: SettingsAccountStatusScreen(),
+  ),
 ),
+
 
         GoRoute(
           path: '/settings/policy/:slug',
