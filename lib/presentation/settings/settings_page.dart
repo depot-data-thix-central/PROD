@@ -565,28 +565,28 @@ class _SettingsPageState extends State<SettingsPage> {
       message: l10n.t('settings_deactivate_msg'),
     );
     if (pw == null) return;
+    
     setState(() => _busy = true);
     try {
-      await _sb.rpc('deactivate_my_account', params: {'password': pw});
-      await _loadProfile();
-      _snack(l10n.t('settings_deactivate_done'));
-    } catch (e) {
-      _snack('$e', error: true);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
+      final email = _sb.auth.currentUser?.email;
+      if (email == null) throw Exception('No session found');
 
-  // ── Réactivation depuis état "deactivated" ────────────────────
-  Future<void> _reactivateAccount() async {
-    final l10n = AppLocalizations.of(context);
-    setState(() => _busy = true);
-    try {
-      await _sb.rpc('reactivate_my_account');
-      await _loadProfile();
-      _snack(l10n.t('settings_reactivate_done'));
+      // 1. VÉRIFICATION DU MOT DE PASSE (Re-auth)
+      await _sb.auth.signInWithPassword(email: email, password: pw);
+
+      // 2. APPEL DE LA FONCTION DE DÉSACTIVATION
+      await _sb.rpc('deactivate_my_account', params: {'password': pw});
+      
+      _snack(l10n.t('settings_deactivate_done'));
+      
+      // 3. DÉCONNEXION FORCÉE ET REDIRECTION
+      if (mounted) {
+        await context.read<AuthController>().signOut();
+        context.go(AppRoutes.login);
+      }
     } catch (e) {
-      _snack('$e', error: true);
+      // Si la vérification du mot de passe échoue, on affiche une erreur
+      _snack(l10n.t('settings_reauth_failed') ?? 'Mot de passe incorrect ou erreur', error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -601,11 +601,44 @@ class _SettingsPageState extends State<SettingsPage> {
       keyword: l10n.t('settings_delete_keyword'),
     );
     if (pw == null) return;
+    
     setState(() => _busy = true);
     try {
+      final email = _sb.auth.currentUser?.email;
+      if (email == null) throw Exception('No session found');
+
+      // 1. VÉRIFICATION DU MOT DE PASSE (Re-auth)
+      await _sb.auth.signInWithPassword(email: email, password: pw);
+
+      // 2. APPEL DE LA FONCTION DE SUPPRESSION
       await _sb.rpc('schedule_account_deletion', params: {'password': pw});
-      await _loadProfile();
+      
       _snack(l10n.t('settings_delete_scheduled_done'));
+      
+      // 3. RAFRAÎCHISSEMENT GLOBAL
+      // On ne déconnecte pas ici : on rafraîchit simplement l'état global. 
+      // Le routeur (app_router.dart) détectera que l'utilisateur est 'pending_deletion' 
+      // et le bloquera immédiatement sur la page du compte à rebours.
+      if (mounted) {
+        await context.read<AuthController>().refreshCurrentUser();
+        await _loadProfile(); // Rafraîchit l'UI localement au cas où
+      }
+    } catch (e) {
+      // Si la vérification du mot de passe échoue, on affiche une erreur
+      _snack(l10n.t('settings_reauth_failed') ?? 'Mot de passe incorrect ou erreur', error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  // ── Réactivation depuis état "deactivated" ────────────────────
+  Future<void> _reactivateAccount() async {
+    final l10n = AppLocalizations.of(context);
+    setState(() => _busy = true);
+    try {
+      await _sb.rpc('reactivate_my_account');
+      await _loadProfile();
+      _snack(l10n.t('settings_reactivate_done'));
     } catch (e) {
       _snack('$e', error: true);
     } finally {
