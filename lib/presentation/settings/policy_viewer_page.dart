@@ -41,11 +41,12 @@ class _PolicyViewerPageState extends State<PolicyViewerPage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
-      backgroundColor: context.theme.scaffoldBackgroundColor,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+
       appBar: AppBar(
         title: Text(_policy?['title'] ?? l10n.t('settings_policies_title')),
-        backgroundColor: context.theme.scaffoldBackgroundColor,
-      ),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null || _policy == null
