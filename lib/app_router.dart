@@ -28,6 +28,7 @@ import 'package:thix_id/presentation/vault/document_vault_page.dart';
 import 'package:thix_id/presentation/settings/settings_page.dart';
 import 'package:thix_id/presentation/common/main_app_shell.dart';
 import 'package:thix_id/presentation/certification/certification_tiers_page.dart';
+import 'package:thix_id/presentation/auth/pending_deletion_screen.dart';
 
 // === THIX CHAT ===
 import 'package:thix_id/models/chat/chat_conversation.dart';
@@ -351,15 +352,30 @@ class AppRouter {
     final currentUser = auth.currentUser;
     final status = currentUser?.registrationStatus?.toLowerCase() ?? '';
 
-    // ✅ RÈGLE STRICTE : Le compte est actif UNIQUEMENT si le statut exact est 'active'
+    // RÈGLE STRICTE : Le compte est actif UNIQUEMENT si le statut exact est 'active'
     final isAccountActive = currentUser != null && (status == 'active' || status == 'completed');
+    
+    // ✅ NOUVELLE RÈGLE : Vérifier si le compte est en cours de suppression
+    final isPendingDeletion = currentUser?.isPendingDeletion == true;
 
     // Cas 1 : Non connecté
     if (!logged) {
       return isPublic ? null : AppRoutes.login;
     }
 
-    // ✅ NOUVEAU Cas 2 : Connecté et se trouve sur la page Login ou Start
+    // ✅ NOUVEAU CAS 1.5 : Blocage global si suppression programmée
+    if (logged && isPendingDeletion) {
+      // Redirige de force vers l'écran de suppression si on n'y est pas déjà
+      if (loc != '/pending-deletion') return '/pending-deletion';
+      return null; 
+    }
+    
+    // ✅ NOUVEAU CAS 1.6 : Empêcher l'accès à la page de suppression si le compte est redevenu normal
+    if (logged && !isPendingDeletion && loc == '/pending-deletion') {
+      return AppRoutes.userDashboard;
+    }
+
+    // Cas 2 : Connecté et se trouve sur la page Login ou Start
     if (logged && (isLoginPage || isStartPage)) {
       if (isAccountActive) return AppRoutes.userDashboard;
       return null;
@@ -371,12 +387,8 @@ class AppRouter {
       return AppRoutes.userDashboard;
     }
 
-    // ✅ Cas 4 CORRIGÉ : Connecté mais compte NON ACTIVÉ
+    // Cas 4 : Connecté mais compte NON ACTIVÉ
     if (logged && !isRegPage && !isLoginPage && !isStartPage && !isAccountActive && currentUser?.registrationStatus != null) {
-      // Si l'utilisateur est déjà en train de compléter son inscription
-      // dans CETTE session (venant d'une page interne), on le renvoie à l'étape.
-      // Mais si c'est un lancement à froid de l'app (home au démarrage),
-      // on déconnecte la session périmée au lieu de forcer l'inscription en boucle.
       if (loc == AppRoutes.home) {
         await auth.signOut();
         return AppRoutes.login;
@@ -399,6 +411,7 @@ class AppRouter {
 
 
 
+
           
 
       routes: [
@@ -417,7 +430,14 @@ class AppRouter {
         GoRoute(path: AppRoutes.vault, name: 'document-vault', pageBuilder: (_, __) => const NoTransitionPage(child: DocumentVaultPage())),
         GoRoute(path: AppRoutes.settings, name: 'settings', pageBuilder: (_, __) => const NoTransitionPage(child: SettingsPage())),
         GoRoute(path: AppRoutes.profile, name: 'profile', pageBuilder: (_, __) => const NoTransitionPage(child: ProfilePage())),
-GoRoute(
+
+        GoRoute(
+  path: '/pending-deletion',
+  name: 'pendingDeletion',
+  pageBuilder: (_, __) => const NoTransitionPage(child: PendingDeletionScreen()),
+),
+
+        GoRoute(
           path: '/settings/policy/:slug',
           builder: (_, s) => PolicyViewerPage(
             slug: s.pathParameters['slug']!,
