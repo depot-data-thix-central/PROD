@@ -8,16 +8,46 @@ class UserService {
   UserService(this._supabase);
 
   // ==========================================================================
+  // GESTION DU COMPTE ET RGPD (Nouveau)
+  // ==========================================================================
+
+  /// Désactive le compte (réversible immédiatement)
+  Future<void> deactivateMyAccount(String password) async {
+    await _supabase.rpc(
+      'deactivate_my_account',
+      params: {'password': password},
+    );
+  }
+
+  /// Programme la suppression du compte dans 24h
+  Future<void> scheduleAccountDeletion(String password) async {
+    await _supabase.rpc(
+      'schedule_account_deletion',
+      params: {'password': password},
+    );
+  }
+
+  /// Annule une suppression de compte programmée
+  Future<void> cancelAccountDeletion() async {
+    await _supabase.rpc('cancel_account_deletion');
+  }
+
+  /// Exporte les données utilisateur au format RGPD (JSON)
+  Future<Map<String, dynamic>> exportMyData() async {
+    final response = await _supabase.rpc('export_my_data');
+    // Le retour RPC est un jsonb qui est casté automatiquement en Map par le SDK
+    return response as Map<String, dynamic>;
+  }
+
+  // ==========================================================================
   // UPDATE PROFILE — Colonnes sensibles GELÉES
   // ==========================================================================
 
   Future<void> updateProfile({
     required String uid,
-    // ⭐ SUPPRIMÉ : thixId (géré par le serveur)
     String? displayName,
     String? fullName,
     String? photoUrl,
-    // ⭐ SUPPRIMÉ : registrationStatus (géré par le serveur)
     String? thixChat,
     String? bio,
     String? competence,
@@ -63,9 +93,6 @@ class UserService {
     String? idDocumentFrontDocId,
     String? idDocumentBackDocId,
     String? idDocumentSelfieDocId,
-    // ⭐ SUPPRIMÉ : idVerificationStatus (géré par le serveur)
-    // ⭐ SUPPRIMÉ : biometricsEnabled (géré par le serveur)
-    // ⭐ SUPPRIMÉ : twoFaEnabled (géré par le serveur)
     List<String>? languages,
     List<Map<String, dynamic>>? languagesDetailed,
   }) async {
@@ -142,7 +169,7 @@ class UserService {
   }
 
   // ==========================================================================
-  // MÉTHODES DE PAIEMENT (inchangées)
+  // MÉTHODES DE PAIEMENT
   // ==========================================================================
   Future<void> logSecurityEvent(String type, String label, {Map<String, dynamic>? metadata}) async {
     try {
@@ -190,13 +217,6 @@ class UserService {
         .map((list) => list.cast<Map<String, dynamic>>());
   }
 
-  // ==========================================================================
-  // MÉTHODES DE SÉCURITÉ — Supprimées (gérées par RPCs serveur)
-  // ==========================================================================
-
-  // ⭐ SUPPRIMÉ : logSecurityEvent() — Utiliser la RPC serveur à la place
-  // La table security_events est protégée et seuls les RPCs SECURITY DEFINER peuvent y écrire.
-
   Stream<List<Map<String, dynamic>>> streamSecurityEvents(String uid) {
     return _supabase
         .from('security_events')
@@ -207,24 +227,11 @@ class UserService {
   }
 
   // ==========================================================================
-  // MÉTHODES POUR THIX ID — SUPPRIMÉES (gérées par finalize_registration)
-  // ==========================================================================
-
-  // ⭐ SUPPRIMÉ : ensureThixId()
-  // La génération de THIX ID est UNIQUEMENT côté serveur via finalize_registration().
-  // Cette méthode est obsolète et dangereuse (fallback client-side).
-
-  // ⭐ SUPPRIMÉ : ensureThixChat()
-  // La réservation de THIX CHAT est UNIQUEMENT côté serveur via finalize_registration().
-  // Cette méthode est obsolète et dangereuse (fallback client-side).
-
-  // ==========================================================================
-  // MÉTHODES POUR HOME PAGE — Utilisent profiles_public
+  // MÉTHODES POUR HOME PAGE
   // ==========================================================================
 
   Future<AppUser?> getUserByThixId(String thixId) async {
     try {
-      // ⭐ CORRECTION : Utiliser profiles_public au lieu de profiles
       final row = await _supabase
           .from('profiles_public')
           .select()
@@ -283,6 +290,8 @@ class UserService {
 
     final createdAt = row['created_at'] != null ? parseDate(row['created_at']) : DateTime.now();
     final updatedAt = row['updated_at'] != null ? parseDate(row['updated_at']) : DateTime.now();
+    // ✅ AJOUT : Extraction de la date de suppression prévue
+    final scheduledDeletionAt = row['scheduled_deletion_at'] != null ? parseDate(row['scheduled_deletion_at']) : null;
 
     List<Map<String, dynamic>> mapList(dynamic value) {
       if (value is List) {
@@ -344,6 +353,9 @@ class UserService {
       twoFaEnabled: (row['two_fa_enabled'] as bool?) ?? false,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      // ✅ AJOUT : Statut du compte
+      accountStatus: row['account_status']?.toString() ?? 'active',
+      scheduledDeletionAt: scheduledDeletionAt,
     );
   }
 
@@ -354,27 +366,27 @@ class UserService {
       thixId: row['thix_id'] ?? 'THIX-PENDING',
       thixChat: row['thix_chat'] ?? '',
       thixScore: 0,
-      email: '', // ⭐ Masqué pour les profils publics
-      phone: '', // ⭐ Masqué pour les profils publics
+      email: '',
+      phone: '', 
       displayName: row['display_name'] ?? 'Utilisateur',
       accountType: AccountType.personal,
       photoUrl: row['photo_url'],
       bio: row['bio'],
       occupation: row['occupation'],
       countryOrOrigin: row['country_or_origin'],
-      contactPhone: '', // ⭐ Masqué pour les profils publics
-      maritalStatus: '', // ⭐ Masqué pour les profils publics
-      gender: '', // ⭐ Masqué pour les profils publics
+      contactPhone: '',
+      maritalStatus: '',
+      gender: '',
       profession: row['profession'],
-      dateOfBirth: '', // ⭐ Masqué pour les profils publics
-      placeOfBirth: '', // ⭐ Masqué pour les profils publics
-      nationality: '', // ⭐ Masqué pour les profils publics
-      address: '', // ⭐ Masqué pour les profils publics
-      fatherName: '', // ⭐ Masqué pour les profils publics
-      motherName: '', // ⭐ Masqué pour les profils publics
-      emergencyContactName: '', // ⭐ Masqué pour les profils publics
-      emergencyContactPhone: '', // ⭐ Masqué pour les profils publics
-      emergencyContactRelation: '', // ⭐ Masqué pour les profils publics
+      dateOfBirth: '',
+      placeOfBirth: '',
+      nationality: '',
+      address: '',
+      fatherName: '',
+      motherName: '',
+      emergencyContactName: '',
+      emergencyContactPhone: '',
+      emergencyContactRelation: '',
       registrationStatus: row['registration_status'],
       education: const [],
       experience: const [],
@@ -385,6 +397,8 @@ class UserService {
       twoFaEnabled: false,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
+      // Un profil public est par définition actif s'il est récupéré
+      accountStatus: 'active', 
     );
   }
 }
