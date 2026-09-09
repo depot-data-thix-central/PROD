@@ -260,18 +260,26 @@ class _SettingsAccountStatusScreenState extends State<SettingsAccountStatusScree
 
               // ── Déconnexion ──
               OutlinedButton.icon(
-                onPressed: _busy ? null : () {
-                  context.read<AuthController>().signOut();
-                  context.go(AppRoutes.login);
-                },
-                icon: const Icon(Icons.logout_rounded),
-                label: Text(l10n.t('settings_sign_out') ?? 'Se déconnecter'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: LightModeColors.secondaryText,
-                  side: const BorderSide(color: Colors.transparent),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-              ),
+  onPressed: _busy
+      ? null
+      : () async {
+          setState(() => _busy = true);
+          try {
+            await context.read<AuthController>().signOut();
+          } catch (_) {
+            // même si Supabase échoue, on sort de l’écran
+          }
+          if (!context.mounted) return;
+          context.go(AppRoutes.login);
+        },
+  icon: const Icon(Icons.logout_rounded),
+  label: Text(l10n.t('settings_sign_out')),
+  style: OutlinedButton.styleFrom(
+    foregroundColor: LightModeColors.secondaryText,
+    side: const BorderSide(color: Colors.transparent),
+    padding: const EdgeInsets.symmetric(vertical: 16),
+  ),
+),
             ],
           ),
         ),
