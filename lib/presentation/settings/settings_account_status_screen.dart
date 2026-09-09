@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/auth/auth_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/app_user.dart';
+import 'package:thix_id/models/account_type.dart';
 import 'package:thix_id/nav.dart';
 import 'package:thix_id/theme.dart';
 
@@ -22,15 +23,15 @@ class SettingsAccountStatusScreen extends StatefulWidget {
       _SettingsAccountStatusScreenState();
 }
 
-class _SettingsAccountStatusScreenState
-    extends State<SettingsAccountStatusScreen> {
+class _SettingsAccountStatusScreenState extends State<SettingsAccountStatusScreen> {
   Timer? _timer;
   Duration _remaining = Duration.zero;
   bool _busy = false;
 
-  AccountStatus get _status => context.read<AuthController>().currentUser?.status
-      ?? AccountStatus.active;
-
+  // Récupération sécurisée des statuts depuis le modèle AppUser
+  bool get _isPendingDeletion => context.read<AuthController>().currentUser?.isPendingDeletion ?? false;
+  bool get _isDeactivated => context.read<AuthController>().currentUser?.isDeactivated ?? false;
+  
   DateTime? get _scheduledDeletionAt =>
       context.read<AuthController>().currentUser?.scheduledDeletionAt;
 
@@ -38,12 +39,12 @@ class _SettingsAccountStatusScreenState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_status == AccountStatus.active) {
-        // Compte redevenu actif → redirection vers dashboard
+      // Si le compte n'est ni en suppression ni désactivé, c'est qu'il est actif
+      if (!_isPendingDeletion && !_isDeactivated) {
         _goHome();
         return;
       }
-      if (_status == AccountStatus.pendingDeletion) {
+      if (_isPendingDeletion) {
         _startTimer();
       }
     });
@@ -97,7 +98,10 @@ class _SettingsAccountStatusScreenState
       await context.read<AuthController>().refreshCurrentUser();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.t('settings_reactivate_done'))),
+        SnackBar(
+          content: Text(l10n.t('settings_reactivate_done') ?? 'Compte réactivé avec succès'),
+          backgroundColor: LightModeColors.success,
+        ),
       );
       _goHome();
     } catch (e) {
@@ -118,13 +122,16 @@ class _SettingsAccountStatusScreenState
       await context.read<AuthController>().refreshCurrentUser();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.t('settings_cancel_deletion_done'))),
+        SnackBar(
+          content: Text(l10n.t('settings_cancel_deletion_done') ?? 'Suppression annulée'),
+          backgroundColor: LightModeColors.success,
+        ),
       );
       _goHome();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${l10n.t('settings_cancel_deletion_error')}: $e'),
+        content: Text('${l10n.t('settings_cancel_deletion_error') ?? 'Erreur'}: $e'),
         backgroundColor: LightModeColors.error,
       ));
     } finally {
@@ -136,8 +143,11 @@ class _SettingsAccountStatusScreenState
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
-    final isPending = _status == AccountStatus.pendingDeletion;
-    final isDeactivated = _status == AccountStatus.deactivated;
+    
+    // On écoute les changements en temps réel
+    final user = context.watch<AuthController>().currentUser;
+    final isPending = user?.isPendingDeletion ?? false;
+    // Si ce n'est pas en suppression, on suppose que c'est désactivé (puisqu'on est sur cet écran)
 
     final h = _remaining.inHours.toString().padLeft(2, '0');
     final m = (_remaining.inMinutes % 60).toString().padLeft(2, '0');
@@ -165,8 +175,8 @@ class _SettingsAccountStatusScreenState
               // ── Titre ──
               Text(
                 isPending
-                    ? l10n.t('settings_banner_pending_deletion_title')
-                    : l10n.t('settings_banner_deactivated_title'),
+                    ? (l10n.t('settings_banner_pending_deletion_title') ?? 'Suppression en cours')
+                    : (l10n.t('settings_banner_deactivated_title') ?? 'Compte désactivé'),
                 textAlign: TextAlign.center,
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
@@ -178,8 +188,8 @@ class _SettingsAccountStatusScreenState
               // ── Sous-titre ──
               Text(
                 isPending
-                    ? l10n.t('settings_delete_msg_24h')
-                    : l10n.t('settings_banner_deactivated_sub'),
+                    ? (l10n.t('settings_delete_msg_24h') ?? 'Votre compte sera définitivement supprimé dans :')
+                    : (l10n.t('settings_banner_deactivated_sub') ?? 'Votre compte est en pause.'),
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyLarge?.copyWith(
                   color: LightModeColors.secondaryText,
@@ -210,7 +220,7 @@ class _SettingsAccountStatusScreenState
                 ),
                 const SizedBox(height: AppSpacing.xl),
                 Text(
-                  l10n.t('settings_cancel_deletion_hint'),
+                  l10n.t('settings_cancel_deletion_hint') ?? 'Vous avez changé d\'avis ? Vous pouvez annuler la suppression.',
                   textAlign: TextAlign.center,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurface,
@@ -233,8 +243,8 @@ class _SettingsAccountStatusScreenState
                     : const Icon(Icons.refresh_rounded),
                 label: Text(
                   isPending
-                      ? l10n.t('settings_cancel_deletion')
-                      : l10n.t('settings_reactivate'),
+                      ? (l10n.t('settings_cancel_deletion') ?? 'Annuler la suppression')
+                      : (l10n.t('settings_reactivate') ?? 'Réactiver mon compte'),
                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 style: FilledButton.styleFrom(
@@ -250,9 +260,12 @@ class _SettingsAccountStatusScreenState
 
               // ── Déconnexion ──
               OutlinedButton.icon(
-                onPressed: _busy ? null : () => context.read<AuthController>().signOut(),
+                onPressed: _busy ? null : () {
+                  context.read<AuthController>().signOut();
+                  context.go(AppRoutes.login);
+                },
                 icon: const Icon(Icons.logout_rounded),
-                label: Text(l10n.t('settings_sign_out')),
+                label: Text(l10n.t('settings_sign_out') ?? 'Se déconnecter'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: LightModeColors.secondaryText,
                   side: const BorderSide(color: Colors.transparent),
