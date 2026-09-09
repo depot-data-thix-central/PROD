@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:thix_id/auth/auth_controller.dart';
-import 'package:thix_id/services/user_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:thix_id/auth/auth_controller.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
+import 'package:thix_id/services/user_service.dart';
+import 'package:thix_id/theme.dart'; // Assurez-vous du bon chemin vers votre theme.dart
 
 class PendingDeletionScreen extends StatefulWidget {
   const PendingDeletionScreen({super.key});
@@ -26,18 +29,27 @@ class _PendingDeletionScreenState extends State<PendingDeletionScreen> {
   void _startCountdown() {
     final user = context.read<AuthController>().currentUser;
     if (user?.scheduledDeletionAt != null) {
+      // Déclenchement immédiat pour éviter le délai d'une seconde à l'affichage
+      _updateTimeLeft(user!.scheduledDeletionAt!);
+      
       _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        final remaining = user!.scheduledDeletionAt!.difference(DateTime.now());
-        if (remaining.isNegative) {
-          timer.cancel();
-          // Le cron job serveur devrait s'en charger, mais on déconnecte ici
-          context.read<AuthController>().signOut();
-        } else {
-          setState(() {
-            _timeLeft = remaining;
-          });
-        }
+        _updateTimeLeft(user.scheduledDeletionAt!);
       });
+    }
+  }
+
+  void _updateTimeLeft(DateTime targetDate) {
+    final remaining = targetDate.difference(DateTime.now());
+    if (remaining.isNegative) {
+      _timer?.cancel();
+      // Le délai est écoulé, on déconnecte l'utilisateur
+      context.read<AuthController>().signOut();
+    } else {
+      if (mounted) {
+        setState(() {
+          _timeLeft = remaining;
+        });
+      }
     }
   }
 
@@ -49,19 +61,24 @@ class _PendingDeletionScreenState extends State<PendingDeletionScreen> {
 
   Future<void> _cancelDeletion() async {
     setState(() => _isLoading = true);
+    final l10n = AppLocalizations.of(context);
+    
     try {
       final userService = UserService(Supabase.instance.client);
       await userService.cancelAccountDeletion();
       
       if (mounted) {
         // Rafraîchir l'utilisateur force le routeur à réévaluer la règle globale
-        // et renverra l'utilisateur vers son dashboard
+        // Le GoRouter redirigera automatiquement vers le dashboard (isPendingDeletion deviendra false)
         await context.read<AuthController>().refreshUser();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur: $e')),
+          SnackBar(
+            content: Text(l10n.t('settings_cancel_deletion_error') ?? 'Erreur lors de l\'annulation : $e'),
+            backgroundColor: LightModeColors.error,
+          ),
         );
       }
     } finally {
@@ -71,70 +88,122 @@ class _PendingDeletionScreenState extends State<PendingDeletionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context); // ou context.theme si vous avez l'extension ici
+
     final hours = _timeLeft.inHours.toString().padLeft(2, '0');
     final minutes = (_timeLeft.inMinutes % 60).toString().padLeft(2, '0');
     final seconds = (_timeLeft.inSeconds % 60).toString().padLeft(2, '0');
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0B3D91), // Couleur THIX
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.warning_amber_rounded, size: 80, color: Colors.orangeAccent),
-            const SizedBox(height: 24),
-            const Text(
-              'Compte en cours de suppression',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Votre compte sera définitivement supprimé dans :',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: Colors.white70),
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
+      backgroundColor: theme.scaffoldBackgroundColor,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Spacer(),
+              
+              // Icône d'avertissement
+              Icon(
+                Icons.timer_outlined, 
+                size: 80, 
+                color: LightModeColors.error,
               ),
-              child: Text(
-                '$hours:$minutes:$seconds',
-                style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white),
-              ),
-            ),
-            const SizedBox(height: 40),
-            const Text(
-              'Vous avez changé d\'avis ? Vous pouvez annuler la suppression et récupérer l\'accès immédiat à vos services THIX.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white70),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: _isLoading ? null : _cancelDeletion,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: const Color(0xFF0B3D91),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+              const SizedBox(height: AppSpacing.lg),
+              
+              // Titre
+              Text(
+                l10n.t('settings_banner_pending_deletion_title') ?? 'Compte en cours de suppression',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onSurface,
                 ),
-                child: _isLoading 
-                    ? const CircularProgressIndicator()
-                    : const Text('Annuler la suppression', style: TextStyle(fontWeight: FontWeight.bold)),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () => context.read<AuthController>().signOut(),
-              child: const Text('Se déconnecter', style: TextStyle(color: Colors.white54)),
-            ),
-          ],
+              const SizedBox(height: AppSpacing.md),
+              
+              // Sous-titre
+              Text(
+                l10n.t('settings_delete_msg_24h') ?? 'Votre compte sera définitivement supprimé dans :',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: LightModeColors.secondaryText,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              
+              // Compteur (façon bloc code/digital)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl, vertical: AppSpacing.lg),
+                decoration: BoxDecoration(
+                  color: LightModeColors.error.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(AppRadius.lg),
+                  border: Border.all(color: LightModeColors.error.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  '$hours:$minutes:$seconds',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.displaySmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: LightModeColors.error,
+                    fontFeatures: const [FontFeature.tabularFigures()], // Empêche le texte de bouger à chaque seconde
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              
+              // Message informatif
+              Text(
+                l10n.t('settings_cancel_deletion_hint') ?? 'Vous avez changé d\'avis ? Vous pouvez annuler la suppression et récupérer l\'accès immédiat à vos services THIX.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              
+              const Spacer(),
+              
+              // Bouton Annuler la suppression
+              FilledButton.icon(
+                onPressed: _isLoading ? null : _cancelDeletion,
+                icon: _isLoading 
+                    ? const SizedBox(
+                        width: 20, 
+                        height: 20, 
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                      )
+                    : const Icon(Icons.refresh_rounded),
+                label: Text(
+                  l10n.t('settings_cancel_deletion') ?? 'Annuler la suppression',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: theme.colorScheme.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.full),
+                  ),
+                ),
+              ),
+              
+              const SizedBox(height: AppSpacing.md),
+              
+              // Bouton Déconnexion
+              OutlinedButton.icon(
+                onPressed: _isLoading ? null : () => context.read<AuthController>().signOut(),
+                icon: const Icon(Icons.logout_rounded),
+                label: Text(l10n.t('settings_sign_out') ?? 'Se déconnecter'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: LightModeColors.secondaryText,
+                  side: const BorderSide(color: Colors.transparent),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
