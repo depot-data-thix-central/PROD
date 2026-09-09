@@ -325,108 +325,109 @@ class AppRouter {
           ElevatedButton(onPressed: () => context.go(AppRoutes.home), child: const Text('Accueil')),
         ])),
       ),
-    redirect: (context, state) async {
+    
+redirect: (context, state) async {
   try {
     final loc = state.matchedLocation;
     final isLoginPage = loc == AppRoutes.login;
     final isStartPage = loc == AppRoutes.start;
-    final isRegPage = loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
-    
-    // ✅ NOUVELLE ROUTE DÉTECTÉE
-    final isAccountStatusRoute = loc == '/settings/account-status';
+    final isRegPage =
+        loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
+    const accountStatusPath = '/settings/account-status';
+    final isAccountStatusRoute = loc == accountStatusPath;
 
     final isPublic = isStartPage ||
-                    isLoginPage ||
-                    isRegPage ||
-                    loc == AppRoutes.publicProfile ||
-                    loc == AppRoutes.jobs ||
-                    loc == AppRoutes.opportunities ||
-                    loc == AppRoutes.education ||
-                    loc == AppRoutes.trainingHome ||
-                    loc.startsWith('${AppRoutes.trainingDetailsBasePath}/') ||
-                    loc == AppRoutes.monPays ||
-                    loc.startsWith('${AppRoutes.monPays}/') ||
-                    loc.startsWith('/thix-event') ||
-                    loc.startsWith('/thix-retrouve') ||
-                    loc.startsWith('/thix-weeding') ||
-                    loc.startsWith('/thix-reservation/delivery');
+        isLoginPage ||
+        isRegPage ||
+        loc == AppRoutes.publicProfile ||
+        loc == AppRoutes.jobs ||
+        loc == AppRoutes.opportunities ||
+        loc == AppRoutes.education ||
+        loc == AppRoutes.trainingHome ||
+        loc.startsWith('${AppRoutes.trainingDetailsBasePath}/') ||
+        loc == AppRoutes.monPays ||
+        loc.startsWith('${AppRoutes.monPays}/') ||
+        loc.startsWith('/thix-event') ||
+        loc.startsWith('/thix-retrouve') ||
+        loc.startsWith('/thix-weeding') ||
+        loc.startsWith('/thix-reservation/delivery');
 
     final logged = auth.isAuthenticated;
     final currentUser = auth.currentUser;
-    
-    // 1. STATUT D'INSCRIPTION (Onboarding/Finalisation)
+
+    final rawLifecycle = currentUser?.accountStatus?.toLowerCase();
+    // null / vide = on ne bloque PAS (évite de piéger tout le monde)
+    final isDeactivated = rawLifecycle == 'deactivated';
+    final isPendingDeletion = rawLifecycle == 'pending_deletion';
+    final isLifecycleBlocked = isDeactivated || isPendingDeletion;
+
     final regStatus = currentUser?.registrationStatus?.toLowerCase() ?? '';
-    final isRegistrationCompleted = currentUser != null && (regStatus == 'active' || regStatus == 'completed');
+    final isRegistrationCompleted = currentUser != null &&
+        (regStatus == 'active' || regStatus == 'completed');
 
-    // 2. STATUT GLOBAL DU COMPTE (Cycle de vie : active, deactivated, pending_deletion)
-    // On considère que le compte est sain uniquement s'il est 'active'
-    final isLifecycleActive = currentUser?.accountStatus == 'active';
-
-    // ==========================================
-    // RÈGLES DE REDIRECTION
-    // ==========================================
-
-    // Cas 1 : Non connecté
+    // 1. Pas connecté → login autorisé
     if (!logged) {
       return isPublic ? null : AppRoutes.login;
     }
 
-    // ✅ 🔴 COMPTE NON ACTIF (Désactivé ou En suppression) → Forcer vers la page de statut
-    if (logged && !isLifecycleActive) {
-      if (!isAccountStatusRoute) {
-        return '/settings/account-status';
+    // 2. Compte désactivé / suppression
+    //    login + start + écran statut sont AUTORISÉS
+    //    (sinon "Se déconnecter" ne peut jamais atteindre /login)
+    if (isLifecycleBlocked) {
+      if (isAccountStatusRoute || isLoginPage || isStartPage) {
+        return null;
       }
-      return null; // On est déjà sur la page de statut, on laisse passer
+      return accountStatusPath;
     }
 
-    // ✅ EMPÊCHER l'accès à la page de statut si le compte est normal/réactivé
-    if (logged && isLifecycleActive && isAccountStatusRoute) {
-      return currentUser!.accountType == AccountType.enterprise
-
+    // 3. Compte sain : pas d’écran statut
+    if (!isLifecycleBlocked && isAccountStatusRoute) {
+      return currentUser?.accountType == AccountType.enterprise
           ? AppRoutes.enterpriseDashboard
           : AppRoutes.userDashboard;
     }
 
-    // Cas 2 : Connecté et tente d'accéder au Login/Start
-    if (logged && (isLoginPage || isStartPage)) {
+    // 4. Connecté + login/start → dashboard si onboarding fini
+    if (isLoginPage || isStartPage) {
       if (isRegistrationCompleted) {
-        return currentUser.accountType == AccountType.enterprise
+        return currentUser!.accountType == AccountType.enterprise
             ? AppRoutes.enterpriseDashboard
             : AppRoutes.userDashboard;
       }
       return null;
     }
 
-    // Cas 3 : Connecté sur page d'inscription avec inscription DÉJÀ COMPLÉTÉE
-    if (logged && isRegPage && isRegistrationCompleted) {
+    // 5. Inscription déjà terminée
+    if (isRegPage && isRegistrationCompleted) {
       if (state.uri.queryParameters['step'] == '3') return null;
-      return currentUser.accountType == AccountType.enterprise
+      return currentUser!.accountType == AccountType.enterprise
           ? AppRoutes.enterpriseDashboard
           : AppRoutes.userDashboard;
     }
 
-    // Cas 4 : Connecté mais inscription NON COMPLÉTÉE (Onboarding inachevé)
-    if (logged && !isRegPage && !isLoginPage && !isStartPage && !isRegistrationCompleted && currentUser?.registrationStatus != null) {
+    // 6. Onboarding inachevé
+    if (!isRegPage &&
+        !isLoginPage &&
+        !isStartPage &&
+        !isAccountStatusRoute &&
+        !isRegistrationCompleted &&
+        currentUser?.registrationStatus != null) {
       if (loc == AppRoutes.home) {
         await auth.signOut();
         return AppRoutes.login;
       }
-
       if (regStatus == 'draft_step1') {
         return '${AppRoutes.personalReg}?step=1';
-      } else {
-        return '${AppRoutes.personalReg}?step=2';
       }
+      return '${AppRoutes.personalReg}?step=2';
     }
 
-    // Cas par défaut (Navigation normale dans l'app)
     return null;
   } catch (e) {
     debugPrint('GoRouter redirect error: $e');
     return null;
   }
 },
-
 
 
           
