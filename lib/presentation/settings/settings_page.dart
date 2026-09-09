@@ -1,4 +1,5 @@
 // lib/presentation/settings/settings_page.dart
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -14,8 +15,6 @@ import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/nav.dart';
 import 'package:thix_id/presentation/common/notifications_sheet.dart';
 import '../../theme.dart';
-import 'admin_policy_manager_page.dart';
-import 'policy_viewer_page.dart';
 
 // ============================================================================
 // STATUT DE COMPTE
@@ -29,7 +28,7 @@ AccountStatus _statusFromString(String? s) => switch (s) {
     };
 
 // ============================================================================
-// WIDGETS DE BASE
+// WIDGETS DE BASE (inchangés)
 // ============================================================================
 class SettingsGroup extends StatelessWidget {
   final String title;
@@ -77,6 +76,7 @@ class SettingsItem extends StatelessWidget {
   final Widget trailing;
   final VoidCallback? onTap;
   final Color? iconColor;
+  final bool enabled; // ← nouveau
 
   const SettingsItem({
     super.key,
@@ -87,6 +87,7 @@ class SettingsItem extends StatelessWidget {
     required this.trailing,
     this.onTap,
     this.iconColor,
+    this.enabled = true,
   });
 
   @override
@@ -94,50 +95,54 @@ class SettingsItem extends StatelessWidget {
     return Semantics(
       button: onTap != null,
       label: label,
+      enabled: enabled,
       child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: context.theme.scaffoldBackgroundColor,
-                  borderRadius: BorderRadius.circular(AppRadius.md),
+        onTap: enabled ? onTap : null,
+        child: Opacity(
+          opacity: enabled ? 1.0 : 0.4,
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: context.theme.scaffoldBackgroundColor,
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(icon,
+                      color: iconColor ?? context.theme.colorScheme.primary,
+                      size: 22),
                 ),
-                alignment: Alignment.center,
-                child: Icon(icon,
-                    color: iconColor ?? context.theme.colorScheme.primary,
-                    size: 22),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      style: context.textStyles.bodyLarge?.copyWith(
-                        color: context.theme.colorScheme.onSurface,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    if (hasSublabel) ...[
-                      const SizedBox(height: AppSpacing.xs),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        sublabel,
-                        style: context.textStyles.bodySmall?.copyWith(
-                          color: LightModeColors.secondaryText,
+                        label,
+                        style: context.textStyles.bodyLarge?.copyWith(
+                          color: context.theme.colorScheme.onSurface,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
+                      if (hasSublabel) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          sublabel,
+                          style: context.textStyles.bodySmall?.copyWith(
+                            color: LightModeColors.secondaryText,
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              trailing,
-            ],
+                trailing,
+              ],
+            ),
           ),
         ),
       ),
@@ -175,8 +180,7 @@ class _LocaleChip extends StatelessWidget {
                 : context.theme.scaffoldBackgroundColor,
             borderRadius: BorderRadius.circular(AppRadius.full),
             border: Border.all(
-                color:
-                    selected ? Colors.transparent : context.theme.dividerColor),
+                color: selected ? Colors.transparent : context.theme.dividerColor),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -186,8 +190,9 @@ class _LocaleChip extends StatelessWidget {
               Text(
                 name,
                 style: context.textStyles.labelLarge?.copyWith(
-                  color:
-                      selected ? Colors.white : context.theme.colorScheme.onSurface,
+                  color: selected
+                      ? Colors.white
+                      : context.theme.colorScheme.onSurface,
                 ),
               ),
             ],
@@ -201,8 +206,12 @@ class _LocaleChip extends StatelessWidget {
 String _flagForLanguageCode(String c) => switch (c) {
       'fr' => '🇫🇷',
       'en' => '🇬🇧',
-      'sw' => '🇰🇪',
+      'es' => '🇪🇸',
       'pt' => '🇵🇹',
+      'ln' => '🇨🇩',
+      'sw' => '🇰🇪',
+      'kg' => '🇨🇩',
+      'lu' => '🇨🇩',
       'zh' => '🇨🇳',
       'ar' => '🇸🇦',
       _ => '🌐',
@@ -211,27 +220,33 @@ String _flagForLanguageCode(String c) => switch (c) {
 String _nameForLanguageCode(String c) => switch (c) {
       'fr' => 'Français',
       'en' => 'English',
-      'sw' => 'Kiswahili',
+      'es' => 'Español',
       'pt' => 'Português',
+      'ln' => 'Lingála',
+      'sw' => 'Kiswahili',
+      'kg' => 'Kikongo',
+      'lu' => 'Tshiluba',
       'zh' => '中文',
       'ar' => 'العربية',
       _ => c.toUpperCase(),
     };
 
 // ============================================================================
-// BANNIÈRE DE STATUT DE COMPTE (désactivé / suppression programmée)
+// BANNIÈRE DE STATUT DE COMPTE (avec timer live)
 // ============================================================================
 class _AccountStatusBanner extends StatefulWidget {
   final AccountStatus status;
   final DateTime? scheduledDeletionAt;
   final VoidCallback onReactivate;
   final VoidCallback onCancelDeletion;
+  final VoidCallback onViewFullPage; // ← nouveau : ouvre la page dédiée
 
   const _AccountStatusBanner({
     required this.status,
     required this.scheduledDeletionAt,
     required this.onReactivate,
     required this.onCancelDeletion,
+    required this.onViewFullPage,
   });
 
   @override
@@ -239,87 +254,122 @@ class _AccountStatusBanner extends StatefulWidget {
 }
 
 class _AccountStatusBannerState extends State<_AccountStatusBanner> {
+  Timer? _timer;
+  Duration _remaining = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.status == AccountStatus.pendingDeletion &&
+        widget.scheduledDeletionAt != null) {
+      _tick();
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+    }
+  }
+
+  void _tick() {
+    final target = widget.scheduledDeletionAt;
+    if (target == null) return;
+    final remaining = target.difference(DateTime.now());
+    if (remaining.isNegative) {
+      _timer?.cancel();
+      return;
+    }
+    if (mounted && remaining != _remaining) {
+      setState(() => _remaining = remaining);
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     if (widget.status == AccountStatus.active) return const SizedBox.shrink();
 
-    final isPendingDeletion = widget.status == AccountStatus.pendingDeletion;
-    final remaining = widget.scheduledDeletionAt != null
-        ? widget.scheduledDeletionAt!.difference(DateTime.now())
-        : Duration.zero;
-    final hours = remaining.inHours.clamp(0, 24);
-    final minutes = (remaining.inMinutes % 60).clamp(0, 59);
+    final isPending = widget.status == AccountStatus.pendingDeletion;
+    final h = _remaining.inHours.toString().padLeft(2, '0');
+    final m = (_remaining.inMinutes % 60).toString().padLeft(2, '0');
+    final s = (_remaining.inSeconds % 60).toString().padLeft(2, '0');
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppSpacing.lg),
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: isPendingDeletion
-            ? LightModeColors.error.withValues(alpha: 0.10)
-            : Colors.orange.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        border: Border.all(
-          color: isPendingDeletion
-              ? LightModeColors.error.withValues(alpha: 0.4)
-              : Colors.orange.withValues(alpha: 0.4),
+    return InkWell(
+      onTap: widget.onViewFullPage,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: isPending
+              ? LightModeColors.error.withValues(alpha: 0.10)
+              : Colors.orange.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(
+            color: isPending
+                ? LightModeColors.error.withValues(alpha: 0.4)
+                : Colors.orange.withValues(alpha: 0.4),
+          ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                isPendingDeletion
-                    ? Icons.timer_outlined
-                    : Icons.pause_circle_outline_rounded,
-                color: isPendingDeletion ? LightModeColors.error : Colors.orange,
-                size: 22,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  isPendingDeletion
-                      ? l10n.t('settings_banner_pending_deletion_title')
-                      : l10n.t('settings_banner_deactivated_title'),
-                  style: context.textStyles.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: isPendingDeletion
-                        ? LightModeColors.error
-                        : Colors.orange.shade800,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  isPending
+                      ? Icons.timer_outlined
+                      : Icons.pause_circle_outline_rounded,
+                  color:
+                      isPending ? LightModeColors.error : Colors.orange,
+                  size: 22,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    isPending
+                        ? l10n.t('settings_banner_pending_deletion_title')
+                        : l10n.t('settings_banner_deactivated_title'),
+                    style: context.textStyles.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: isPending
+                          ? LightModeColors.error
+                          : Colors.orange.shade800,
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            isPendingDeletion
-                ? '${l10n.t('settings_banner_pending_deletion_sub')} '
-                    '(${hours}h ${minutes}min)'
-                : l10n.t('settings_banner_deactivated_sub'),
-            style: context.textStyles.bodySmall?.copyWith(
-              color: LightModeColors.secondaryText,
+                const Icon(Icons.chevron_right_rounded, size: 20),
+              ],
             ),
-          ),
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FilledButton.icon(
-              onPressed:
-                  isPendingDeletion ? widget.onCancelDeletion : widget.onReactivate,
-              icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: Text(isPendingDeletion
-                  ? l10n.t('settings_cancel_deletion')
-                  : l10n.t('settings_reactivate')),
-              style: FilledButton.styleFrom(
-                backgroundColor:
-                    isPendingDeletion ? LightModeColors.error : Colors.orange,
+            const SizedBox(height: 8),
+            Text(
+              isPending
+                  ? '${l10n.t('settings_banner_pending_deletion_sub')} ($h:$m:$s)'
+                  : l10n.t('settings_banner_deactivated_sub'),
+              style: context.textStyles.bodySmall?.copyWith(
+                color: LightModeColors.secondaryText,
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: isPending
+                    ? widget.onCancelDeletion
+                    : widget.onReactivate,
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: Text(isPending
+                    ? l10n.t('settings_cancel_deletion')
+                    : l10n.t('settings_reactivate')),
+                style: FilledButton.styleFrom(
+                  backgroundColor:
+                      isPending ? LightModeColors.error : Colors.orange,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -343,7 +393,6 @@ class _SettingsPageState extends State<SettingsPage> {
   AccountStatus _accountStatus = AccountStatus.active;
   DateTime? _scheduledDeletionAt;
 
-  // Préférences persistées (profiles.preferences)
   bool _darkMode = true;
   bool _highContrast = false;
   bool _notifPush = true;
@@ -359,7 +408,6 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadProfile();
   }
 
-  // ── Chargement profil + rôle admin + préférences + statut compte ──
   Future<void> _loadProfile() async {
     final uid = _sb.auth.currentUser?.id;
     if (uid == null) return;
@@ -428,7 +476,6 @@ class _SettingsPageState extends State<SettingsPage> {
     ));
   }
 
-  // ── Dialog mot de passe (+ mot-clé tapé optionnel) ───────────
   Future<String?> _askPassword({
     required String title,
     required String message,
@@ -479,7 +526,7 @@ class _SettingsPageState extends State<SettingsPage> {
             onPressed: () {
               if (keyword != null && kwCtrl.text.trim() != keyword) {
                 Navigator.pop(ctx, false);
-                _snack(l10n.t('settings_delete_keyword'), error: true);
+                _snack(l10n.t('settings_delete_keyword_mismatch'), error: true);
                 return;
               }
               Navigator.pop(ctx, true);
@@ -493,7 +540,6 @@ class _SettingsPageState extends State<SettingsPage> {
     return pwCtrl.text;
   }
 
-  // ── Changement mot de passe ──────────────────────────────────
   Future<void> _changePassword() async {
     final l10n = AppLocalizations.of(context);
     final current = await _askPassword(
@@ -557,7 +603,6 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  // ── Désactivation (réversible immédiatement via reactivate) ──
   Future<void> _deactivateAccount() async {
     final l10n = AppLocalizations.of(context);
     final pw = await _askPassword(
@@ -565,34 +610,20 @@ class _SettingsPageState extends State<SettingsPage> {
       message: l10n.t('settings_deactivate_msg'),
     );
     if (pw == null) return;
-    
+
     setState(() => _busy = true);
     try {
-      final email = _sb.auth.currentUser?.email;
-      if (email == null) throw Exception('No session found');
-
-      // 1. VÉRIFICATION DU MOT DE PASSE (Re-auth)
-      await _sb.auth.signInWithPassword(email: email, password: pw);
-
-      // 2. APPEL DE LA FONCTION DE DÉSACTIVATION
       await _sb.rpc('deactivate_my_account', params: {'password': pw});
-      
-      _snack(l10n.t('settings_deactivate_done'));
-      
-      // 3. DÉCONNEXION FORCÉE ET REDIRECTION
-      if (mounted) {
-        await context.read<AuthController>().signOut();
-        context.go(AppRoutes.login);
-      }
+      await context.read<AuthController>().refreshCurrentUser();
+      await _loadProfile();
+      if (mounted) _snack(l10n.t('settings_deactivate_done'));
     } catch (e) {
-      // Si la vérification du mot de passe échoue, on affiche une erreur
-      _snack(l10n.t('settings_reauth_failed') ?? 'Mot de passe incorrect ou erreur', error: true);
+      if (mounted) _snack(l10n.t('settings_reauth_failed'), error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  // ── Programme la suppression définitive (24h, annulable) ──────
   Future<void> _deleteAccount() async {
     final l10n = AppLocalizations.of(context);
     final pw = await _askPassword(
@@ -601,67 +632,50 @@ class _SettingsPageState extends State<SettingsPage> {
       keyword: l10n.t('settings_delete_keyword'),
     );
     if (pw == null) return;
-    
+
     setState(() => _busy = true);
     try {
-      final email = _sb.auth.currentUser?.email;
-      if (email == null) throw Exception('No session found');
-
-      // 1. VÉRIFICATION DU MOT DE PASSE (Re-auth)
-      await _sb.auth.signInWithPassword(email: email, password: pw);
-
-      // 2. APPEL DE LA FONCTION DE SUPPRESSION
       await _sb.rpc('schedule_account_deletion', params: {'password': pw});
-      
-      _snack(l10n.t('settings_delete_scheduled_done'));
-      
-      // 3. RAFRAÎCHISSEMENT GLOBAL
-      // On ne déconnecte pas ici : on rafraîchit simplement l'état global. 
-      // Le routeur (app_router.dart) détectera que l'utilisateur est 'pending_deletion' 
-      // et le bloquera immédiatement sur la page du compte à rebours.
-      if (mounted) {
-        await context.read<AuthController>().refreshCurrentUser();
-        await _loadProfile(); // Rafraîchit l'UI localement au cas où
-      }
+      await context.read<AuthController>().refreshCurrentUser();
+      await _loadProfile();
+      if (mounted) _snack(l10n.t('settings_delete_scheduled_done'));
     } catch (e) {
-      // Si la vérification du mot de passe échoue, on affiche une erreur
-      _snack(l10n.t('settings_reauth_failed') ?? 'Mot de passe incorrect ou erreur', error: true);
+      if (mounted) _snack(l10n.t('settings_reauth_failed'), error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  // ── Réactivation depuis état "deactivated" ────────────────────
   Future<void> _reactivateAccount() async {
     final l10n = AppLocalizations.of(context);
     setState(() => _busy = true);
     try {
       await _sb.rpc('reactivate_my_account');
+      await context.read<AuthController>().refreshCurrentUser();
       await _loadProfile();
-      _snack(l10n.t('settings_reactivate_done'));
+      if (mounted) _snack(l10n.t('settings_reactivate_done'));
     } catch (e) {
-      _snack('$e', error: true);
+      if (mounted) _snack('$e', error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  // ── Annule une suppression programmée ──────────────────────────
   Future<void> _cancelDeletion() async {
     final l10n = AppLocalizations.of(context);
     setState(() => _busy = true);
     try {
       await _sb.rpc('cancel_account_deletion');
+      await context.read<AuthController>().refreshCurrentUser();
       await _loadProfile();
-      _snack(l10n.t('settings_cancel_deletion_done'));
+      if (mounted) _snack(l10n.t('settings_cancel_deletion_done'));
     } catch (e) {
-      _snack('$e', error: true);
+      if (mounted) _snack('$e', error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  // ── Export RGPD ──────────────────────────────────────────────
   Future<void> _exportData() async {
     final l10n = AppLocalizations.of(context);
     setState(() => _busy = true);
@@ -671,9 +685,9 @@ class _SettingsPageState extends State<SettingsPage> {
         jsonEncode(data),
         subject: 'THIX ID — ${l10n.t('settings_data_export')}',
       );
-      _snack(l10n.t('settings_data_export_done'));
+      if (mounted) _snack(l10n.t('settings_data_export_done'));
     } catch (e) {
-      _snack('$e', error: true);
+      if (mounted) _snack('$e', error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -684,14 +698,13 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() => _busy = true);
     try {
       await _sb.auth.signOut(scope: SignOutScope.global);
-      _snack(l10n.t('settings_sign_out_all_done'));
+      if (mounted) _snack(l10n.t('settings_sign_out_all_done'));
       if (mounted) context.go(AppRoutes.login);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  // ── Switch helper ────────────────────────────────────────────
   Widget _switch(bool value, ValueChanged<bool> onChanged) => Switch(
         value: value,
         onChanged: (v) => _setPref(() => onChanged(v)),
@@ -703,6 +716,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final localeCtrl = context.watch<LocaleController>();
     final selected = localeCtrl.locale;
     final l10n = AppLocalizations.of(context);
+    final isActive = _accountStatus == AccountStatus.active;
 
     return Scaffold(
       backgroundColor: context.theme.scaffoldBackgroundColor,
@@ -755,12 +769,13 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
 
-                    // ── BANNIÈRE STATUT DE COMPTE ──
+                    // ── BANNIÈRE STATUT (avec timer live) ──
                     _AccountStatusBanner(
                       status: _accountStatus,
                       scheduledDeletionAt: _scheduledDeletionAt,
                       onReactivate: _reactivateAccount,
                       onCancelDeletion: _cancelDeletion,
+                      onViewFullPage: () => context.push('/settings/account-status'),
                     ),
 
                     // ── COMPTE ──
@@ -771,9 +786,12 @@ class _SettingsPageState extends State<SettingsPage> {
                           SettingsItem(
                             icon: Icons.person_rounded,
                             label: l10n.t('settings_edit_profile'),
+                            enabled: isActive,
                             trailing: const Icon(Icons.chevron_right_rounded,
                                 color: LightModeColors.hint),
-                            onTap: () => context.push('/profile/edit'),
+                            onTap: isActive
+                                ? () => context.push('/profile/edit')
+                                : null,
                           ),
                           Divider(
                               color: context.theme.dividerColor,
@@ -782,11 +800,12 @@ class _SettingsPageState extends State<SettingsPage> {
                           SettingsItem(
                             icon: Icons.devices_rounded,
                             label: l10n.t('settings_active_sessions'),
+                            enabled: isActive,
                             trailing: const Icon(Icons.chevron_right_rounded,
                                 color: LightModeColors.hint),
-                            onTap: _signOutAll,
+                            onTap: isActive ? _signOutAll : null,
                           ),
-                          if (_accountStatus == AccountStatus.active) ...[
+                          if (isActive) ...[
                             Divider(
                                 color: context.theme.dividerColor,
                                 indent: 56,
@@ -820,7 +839,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
 
-                    // ── LANGUE ──
+                    // ── LANGUE (actif même si désactivé) ──
                     SettingsGroup(
                       title: l10n.t('settings_language_group'),
                       child: Padding(
@@ -853,8 +872,9 @@ class _SettingsPageState extends State<SettingsPage> {
                                                   l.languageCode),
                                               name: _nameForLanguageCode(
                                                   l.languageCode),
-                                              selected: selected?.languageCode ==
-                                                  l.languageCode,
+                                              selected:
+                                                  selected?.languageCode ==
+                                                      l.languageCode,
                                               onTap: () =>
                                                   localeCtrl.setLocale(l),
                                             ),
@@ -868,7 +888,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
 
-                    // ── APPARENCE ──
+                    // ── APPARENCE (actif même si désactivé) ──
                     SettingsGroup(
                       title: l10n.t('settings_appearance_group'),
                       child: Column(
@@ -896,7 +916,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
 
-                    // ── NOTIFICATIONS ──
+                    // ── NOTIFICATIONS (désactivé si compte inactif) ──
                     SettingsGroup(
                       title: l10n.t('settings_notifications'),
                       child: Column(
@@ -904,7 +924,9 @@ class _SettingsPageState extends State<SettingsPage> {
                           SettingsItem(
                             icon: Icons.notifications_active_rounded,
                             label: l10n.t('settings_notif_push'),
-                            trailing: _switch(_notifPush, (v) => _notifPush = v),
+                            enabled: isActive,
+                            trailing:
+                                _switch(_notifPush, (v) => _notifPush = v),
                           ),
                           Divider(
                               color: context.theme.dividerColor,
@@ -913,6 +935,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           SettingsItem(
                             icon: Icons.mail_outline_rounded,
                             label: l10n.t('settings_notif_email'),
+                            enabled: isActive,
                             trailing:
                                 _switch(_notifEmail, (v) => _notifEmail = v),
                           ),
@@ -923,6 +946,7 @@ class _SettingsPageState extends State<SettingsPage> {
                           SettingsItem(
                             icon: Icons.sos_rounded,
                             label: l10n.t('settings_notif_sos'),
+                            enabled: isActive,
                             iconColor: LightModeColors.error,
                             trailing: _switch(_notifSos, (v) => _notifSos = v),
                           ),
@@ -930,7 +954,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
 
-                    // ── SÉCURITÉ ──
+                    // ── SÉCURITÉ (désactivé si compte inactif) ──
                     SettingsGroup(
                       title: l10n.t('settings_security_group'),
                       child: Column(
@@ -938,9 +962,10 @@ class _SettingsPageState extends State<SettingsPage> {
                           SettingsItem(
                             icon: Icons.vpn_key_rounded,
                             label: l10n.t('settings_change_password'),
+                            enabled: isActive,
                             trailing: const Icon(Icons.chevron_right_rounded,
                                 color: LightModeColors.hint),
-                            onTap: _changePassword,
+                            onTap: isActive ? _changePassword : null,
                           ),
                           Divider(
                               color: context.theme.dividerColor,
@@ -951,6 +976,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             label: l10n.t('settings_2fa'),
                             sublabel: l10n.t('settings_2fa_sub'),
                             hasSublabel: true,
+                            enabled: isActive,
                             trailing: _switch(_twoFA, (v) => _twoFA = v),
                           ),
                           Divider(
@@ -962,6 +988,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             label: l10n.t('settings_biometrics'),
                             sublabel: l10n.t('settings_biometrics_sub'),
                             hasSublabel: true,
+                            enabled: isActive,
                             trailing:
                                 _switch(_biometrics, (v) => _biometrics = v),
                           ),
@@ -974,13 +1001,14 @@ class _SettingsPageState extends State<SettingsPage> {
                             label: l10n.t('settings_face_id'),
                             sublabel: l10n.t('settings_face_id_sub'),
                             hasSublabel: true,
+                            enabled: isActive,
                             trailing: _switch(_faceId, (v) => _faceId = v),
                           ),
                         ],
                       ),
                     ),
 
-                    // ── CONFIDENTIALITÉ & POLITIQUES ──
+                    // ── CONFIDENTIALITÉ ──
                     SettingsGroup(
                       title: l10n.t('settings_privacy'),
                       child: Column(
@@ -1011,9 +1039,10 @@ class _SettingsPageState extends State<SettingsPage> {
                           SettingsItem(
                             icon: Icons.download_rounded,
                             label: l10n.t('settings_data_export'),
+                            enabled: isActive,
                             trailing: const Icon(Icons.chevron_right_rounded,
                                 color: LightModeColors.hint),
-                            onTap: _exportData,
+                            onTap: isActive ? _exportData : null,
                           ),
                           Divider(
                               color: context.theme.dividerColor,
@@ -1022,16 +1051,19 @@ class _SettingsPageState extends State<SettingsPage> {
                           SettingsItem(
                             icon: Icons.history_rounded,
                             label: l10n.t('settings_activity_log'),
+                            enabled: isActive,
                             trailing: const Icon(Icons.chevron_right_rounded,
                                 color: LightModeColors.hint),
-                            onTap: () => context.push('/settings/activity'),
+                            onTap: isActive
+                                ? () => context.push('/settings/activity')
+                                : null,
                           ),
                         ],
                       ),
                     ),
 
-                    // ── ZONE ADMIN (visible uniquement admin) ──
-                    if (_isAdmin)
+                    // ── ZONE ADMIN ──
+                    if (_isAdmin && isActive)
                       SettingsGroup(
                         title: l10n.t('settings_section_admin'),
                         child: Column(
@@ -1063,7 +1095,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       ),
 
-                    // ── DÉCONNEXION ──
+                    // ── DÉCONNEXION (toujours disponible) ──
                     Padding(
                       padding: const EdgeInsets.only(bottom: AppSpacing.xl),
                       child: OutlinedButton.icon(
