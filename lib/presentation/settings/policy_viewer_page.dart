@@ -81,6 +81,6 @@ class _PolicyViewerPageState extends State<PolicyViewerPage> {
                     ],
                   ),
                 ),
-    );
+    ),
   }
 }
