@@ -604,47 +604,54 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _deactivateAccount() async {
-    final l10n = AppLocalizations.of(context);
-    final pw = await _askPassword(
-      title: l10n.t('settings_deactivate_title'),
-      message: l10n.t('settings_deactivate_msg'),
-    );
-    if (pw == null) return;
+  final pw = await _askPassword(
+    title: 'Désactiver le compte',
+    message: 'Le profil passera en privé. Confirmez avec votre mot de passe.',
+  );
+  if (pw == null) return;
 
-    setState(() => _busy = true);
-    try {
-      await _sb.rpc('deactivate_my_account', params: {'password': pw});
-      await context.read<AuthController>().refreshCurrentUser();
-      await _loadProfile();
-      if (mounted) _snack(l10n.t('settings_deactivate_done'));
-    } catch (e) {
-      if (mounted) _snack(l10n.t('settings_reauth_failed'), error: true);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
+  setState(() => _busy = true);
+  try {
+    await _sb.rpc('deactivate_my_account', params: {'password': pw});
+    await context.read<AuthController>().refreshCurrentUser();
+    if (!mounted) return;
+    context.go('/settings/account-status');
+  } catch (e) {
+    if (mounted) _snack('$e', error: true);
+  } finally {
+    if (mounted) setState(() => _busy = false);
   }
+}
 
   Future<void> _deleteAccount() async {
-    final l10n = AppLocalizations.of(context);
-    final pw = await _askPassword(
-      title: l10n.t('settings_delete_title'),
-      message: l10n.t('settings_delete_msg_24h'),
-      keyword: l10n.t('settings_delete_keyword'),
-    );
-    if (pw == null) return;
+  final pw = await _askPassword(
+    title: 'Supprimer le compte',
+    message: 'Action définitive. Tapez SUPPRIMER.',
+    keyword: 'SUPPRIMER',
+  );
+  if (pw == null) return;
 
-    setState(() => _busy = true);
-    try {
-      await _sb.rpc('schedule_account_deletion', params: {'password': pw});
-      await context.read<AuthController>().refreshCurrentUser();
-      await _loadProfile();
-      if (mounted) _snack(l10n.t('settings_delete_scheduled_done'));
-    } catch (e) {
-      if (mounted) _snack(l10n.t('settings_reauth_failed'), error: true);
-    } finally {
-      if (mounted) setState(() => _busy = false);
+  setState(() => _busy = true);
+  try {
+    final response = await _sb.functions.invoke(
+      'delete-user',
+      body: {'confirm_text': 'SUPPRIMER'},
+    );
+
+    if (response.status != 200) {
+      throw Exception(response.data?['error'] ?? 'HTTP ${response.status}');
     }
+
+    try {
+      await context.read<AuthController>().signOut();
+    } catch (_) {}
+    if (mounted) context.go(AppRoutes.login);
+  } catch (e) {
+    if (mounted) _snack('$e', error: true);
+  } finally {
+    if (mounted) setState(() => _busy = false);
   }
+}
 
   Future<void> _reactivateAccount() async {
     final l10n = AppLocalizations.of(context);
