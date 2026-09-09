@@ -97,10 +97,12 @@ class _AdminPolicyManagerPageState extends State<AdminPolicyManagerPage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Scaffold(
-      backgroundColor: context.theme.scaffoldBackgroundColor,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+
       appBar: AppBar(
         title: Text(l10n.t('settings_admin_policies')),
-        backgroundColor: context.theme.scaffoldBackgroundColor,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
