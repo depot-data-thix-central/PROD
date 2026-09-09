@@ -225,12 +225,11 @@ String _translateAuthError(Object e, AppLocalizations l10n) {
     return l10n.t('reg_error_network');
   }
 
-    // Cas 3 : Fallback générique (Modifié pour le débogage)
+  // Cas 3 : Fallback générique (ne jamais exposer stack trace)
   debugPrint('[Registration] ⚠️ Unmapped error: $e');
-  
-  // Retourne l'erreur brute pour la voir à l'écran
-  return e.toString(); 
+  return l10n.t('reg_error_generic');
 }
+
 
 
 // ============================================================================
@@ -863,7 +862,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
   // ── AUTH & OTP ────────────────────────────────────────────────────────────
 
-  Future<bool> _createAuthUser() async {
+    Future<bool> _createAuthUser() async {
     final l10n = AppLocalizations.of(context);
     final email = _RegValidators.sanitize(_emailC.text.trim().toLowerCase(), maxLength: _kMaxEmailLength);
     final phone = _RegValidators.sanitize(_phoneC.text.trim().replaceAll(RegExp(r'[\s.-]'), ''), maxLength: _kMaxPhoneLength);
@@ -925,13 +924,19 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     } catch (e) {
       final message = e.toString().toLowerCase();
       // Signal de succès : OTP envoyé, pas une vraie erreur
-      if (message.contains('otp_sent') || message.contains('nouveau code') || message.contains('confirm') || message.contains('inscription enregistrée')) {
+      // CORRECTION : Ajout de 'otpsent' pour capter AuthErrorCode.otpSent
+      if (message.contains('otpsent') || 
+          message.contains('otp_sent') || 
+          message.contains('nouveau code') || 
+          message.contains('confirm') || 
+          message.contains('inscription enregistrée')) {
         return true;
       }
       _showError(_translateAuthError(e, l10n)); // ← MIGRATION : utilise _translateAuthError
       return false;
     }
   }
+
 
   Future<void> _sendOtp() async {
     final l10n = AppLocalizations.of(context);
