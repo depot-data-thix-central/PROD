@@ -381,7 +381,8 @@ class AppRouter {
 
     // ✅ EMPÊCHER l'accès à la page de statut si le compte est normal/réactivé
     if (logged && isLifecycleActive && isAccountStatusRoute) {
-      return currentUser.accountType == AccountType.enterprise
+      return currentUser!.accountType == AccountType.enterprise
+
           ? AppRoutes.enterpriseDashboard
           : AppRoutes.userDashboard;
     }
