@@ -70,7 +70,8 @@ class _PendingDeletionScreenState extends State<PendingDeletionScreen> {
       if (mounted) {
         // Rafraîchir l'utilisateur force le routeur à réévaluer la règle globale
         // Le GoRouter redirigera automatiquement vers le dashboard (isPendingDeletion deviendra false)
-        await context.read<AuthController>().refreshUser();
+        await context.read<AuthController>().refreshCurrentUser();
+
       }
     } catch (e) {
       if (mounted) {
