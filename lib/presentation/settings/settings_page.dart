@@ -18,7 +18,18 @@ import 'admin_policy_manager_page.dart';
 import 'policy_viewer_page.dart';
 
 // ============================================================================
-// WIDGETS DE BASE (conservés + Semantics)
+// STATUT DE COMPTE
+// ============================================================================
+enum AccountStatus { active, deactivated, pendingDeletion }
+
+AccountStatus _statusFromString(String? s) => switch (s) {
+      'deactivated' => AccountStatus.deactivated,
+      'pending_deletion' => AccountStatus.pendingDeletion,
+      _ => AccountStatus.active,
+    };
+
+// ============================================================================
+// WIDGETS DE BASE
 // ============================================================================
 class SettingsGroup extends StatelessWidget {
   final String title;
@@ -164,7 +175,8 @@ class _LocaleChip extends StatelessWidget {
                 : context.theme.scaffoldBackgroundColor,
             borderRadius: BorderRadius.circular(AppRadius.full),
             border: Border.all(
-                color: selected ? Colors.transparent : context.theme.dividerColor),
+                color:
+                    selected ? Colors.transparent : context.theme.dividerColor),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -174,7 +186,8 @@ class _LocaleChip extends StatelessWidget {
               Text(
                 name,
                 style: context.textStyles.labelLarge?.copyWith(
-                  color: selected ? Colors.white : context.theme.colorScheme.onSurface,
+                  color:
+                      selected ? Colors.white : context.theme.colorScheme.onSurface,
                 ),
               ),
             ],
@@ -206,6 +219,113 @@ String _nameForLanguageCode(String c) => switch (c) {
     };
 
 // ============================================================================
+// BANNIÈRE DE STATUT DE COMPTE (désactivé / suppression programmée)
+// ============================================================================
+class _AccountStatusBanner extends StatefulWidget {
+  final AccountStatus status;
+  final DateTime? scheduledDeletionAt;
+  final VoidCallback onReactivate;
+  final VoidCallback onCancelDeletion;
+
+  const _AccountStatusBanner({
+    required this.status,
+    required this.scheduledDeletionAt,
+    required this.onReactivate,
+    required this.onCancelDeletion,
+  });
+
+  @override
+  State<_AccountStatusBanner> createState() => _AccountStatusBannerState();
+}
+
+class _AccountStatusBannerState extends State<_AccountStatusBanner> {
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    if (widget.status == AccountStatus.active) return const SizedBox.shrink();
+
+    final isPendingDeletion = widget.status == AccountStatus.pendingDeletion;
+    final remaining = widget.scheduledDeletionAt != null
+        ? widget.scheduledDeletionAt!.difference(DateTime.now())
+        : Duration.zero;
+    final hours = remaining.inHours.clamp(0, 24);
+    final minutes = (remaining.inMinutes % 60).clamp(0, 59);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.lg),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: isPendingDeletion
+            ? LightModeColors.error.withValues(alpha: 0.10)
+            : Colors.orange.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(
+          color: isPendingDeletion
+              ? LightModeColors.error.withValues(alpha: 0.4)
+              : Colors.orange.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isPendingDeletion
+                    ? Icons.timer_outlined
+                    : Icons.pause_circle_outline_rounded,
+                color: isPendingDeletion ? LightModeColors.error : Colors.orange,
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  isPendingDeletion
+                      ? l10n.t('settings_banner_pending_deletion_title')
+                      : l10n.t('settings_banner_deactivated_title'),
+                  style: context.textStyles.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: isPendingDeletion
+                        ? LightModeColors.error
+                        : Colors.orange.shade800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isPendingDeletion
+                ? '${l10n.t('settings_banner_pending_deletion_sub')} '
+                    '(${hours}h ${minutes}min)'
+                : l10n.t('settings_banner_deactivated_sub'),
+            style: context.textStyles.bodySmall?.copyWith(
+              color: LightModeColors.secondaryText,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.icon(
+              onPressed:
+                  isPendingDeletion ? widget.onCancelDeletion : widget.onReactivate,
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: Text(isPendingDeletion
+                  ? l10n.t('settings_cancel_deletion')
+                  : l10n.t('settings_reactivate')),
+              style: FilledButton.styleFrom(
+                backgroundColor:
+                    isPendingDeletion ? LightModeColors.error : Colors.orange,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
 // PAGE
 // ============================================================================
 class SettingsPage extends StatefulWidget {
@@ -219,6 +339,9 @@ class _SettingsPageState extends State<SettingsPage> {
 
   bool _isAdmin = false;
   bool _busy = false;
+
+  AccountStatus _accountStatus = AccountStatus.active;
+  DateTime? _scheduledDeletionAt;
 
   // Préférences persistées (profiles.preferences)
   bool _darkMode = true;
@@ -236,19 +359,21 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadProfile();
   }
 
-  // ── Chargement profil + rôle admin + préférences ─────────────
+  // ── Chargement profil + rôle admin + préférences + statut compte ──
   Future<void> _loadProfile() async {
     final uid = _sb.auth.currentUser?.id;
     if (uid == null) return;
     try {
       final row = await _sb
           .from('profiles')
-          .select('role, preferences')
+          .select('role, preferences, account_status, scheduled_deletion_at')
           .eq('id', uid)
           .maybeSingle();
       if (!mounted) return;
       final role = row?['role'] as String?;
       final prefs = (row?['preferences'] as Map?)?.cast<String, dynamic>() ?? {};
+      final rawStatus = row?['account_status'] as String?;
+      final rawDeletion = row?['scheduled_deletion_at'] as String?;
       setState(() {
         _isAdmin = role == 'admin' || role == 'superadmin';
         _darkMode = prefs['darkMode'] ?? true;
@@ -259,6 +384,9 @@ class _SettingsPageState extends State<SettingsPage> {
         _biometrics = prefs['biometrics'] ?? true;
         _faceId = prefs['faceId'] ?? false;
         _twoFA = prefs['twoFA'] ?? false;
+        _accountStatus = _statusFromString(rawStatus);
+        _scheduledDeletionAt =
+            rawDeletion != null ? DateTime.tryParse(rawDeletion) : null;
       });
     } catch (e) {
       debugPrint('[Settings] loadProfile: $e');
@@ -429,7 +557,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  // ── Désactivation (réversible) ───────────────────────────────
+  // ── Désactivation (réversible immédiatement via reactivate) ──
   Future<void> _deactivateAccount() async {
     final l10n = AppLocalizations.of(context);
     final pw = await _askPassword(
@@ -440,8 +568,8 @@ class _SettingsPageState extends State<SettingsPage> {
     setState(() => _busy = true);
     try {
       await _sb.rpc('deactivate_my_account', params: {'password': pw});
-      await _sb.auth.signOut();
-      if (mounted) context.go(AppRoutes.login);
+      await _loadProfile();
+      _snack(l10n.t('settings_deactivate_done'));
     } catch (e) {
       _snack('$e', error: true);
     } finally {
@@ -449,20 +577,50 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  // ── Suppression (irréversible) ───────────────────────────────
+  // ── Réactivation depuis état "deactivated" ────────────────────
+  Future<void> _reactivateAccount() async {
+    final l10n = AppLocalizations.of(context);
+    setState(() => _busy = true);
+    try {
+      await _sb.rpc('reactivate_my_account');
+      await _loadProfile();
+      _snack(l10n.t('settings_reactivate_done'));
+    } catch (e) {
+      _snack('$e', error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  // ── Programme la suppression définitive (24h, annulable) ──────
   Future<void> _deleteAccount() async {
     final l10n = AppLocalizations.of(context);
     final pw = await _askPassword(
       title: l10n.t('settings_delete_title'),
-      message: l10n.t('settings_delete_msg'),
+      message: l10n.t('settings_delete_msg_24h'),
       keyword: l10n.t('settings_delete_keyword'),
     );
     if (pw == null) return;
     setState(() => _busy = true);
     try {
-      await _sb.rpc('delete_my_account', params: {'password': pw});
-      await _sb.auth.signOut();
-      if (mounted) context.go(AppRoutes.login);
+      await _sb.rpc('schedule_account_deletion', params: {'password': pw});
+      await _loadProfile();
+      _snack(l10n.t('settings_delete_scheduled_done'));
+    } catch (e) {
+      _snack('$e', error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  // ── Annule une suppression programmée ──────────────────────────
+  Future<void> _cancelDeletion() async {
+    final l10n = AppLocalizations.of(context);
+    setState(() => _busy = true);
+    try {
+      await _sb.rpc('cancel_account_deletion');
+      await _loadProfile();
+      _snack(l10n.t('settings_cancel_deletion_done'));
     } catch (e) {
       _snack('$e', error: true);
     } finally {
@@ -564,6 +722,14 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
 
+                    // ── BANNIÈRE STATUT DE COMPTE ──
+                    _AccountStatusBanner(
+                      status: _accountStatus,
+                      scheduledDeletionAt: _scheduledDeletionAt,
+                      onReactivate: _reactivateAccount,
+                      onCancelDeletion: _cancelDeletion,
+                    ),
+
                     // ── COMPTE ──
                     SettingsGroup(
                       title: l10n.t('settings_account_group'),
@@ -576,7 +742,10 @@ class _SettingsPageState extends State<SettingsPage> {
                                 color: LightModeColors.hint),
                             onTap: () => context.push('/profile/edit'),
                           ),
-                          Divider(color: context.theme.dividerColor, indent: 56, height: 1),
+                          Divider(
+                              color: context.theme.dividerColor,
+                              indent: 56,
+                              height: 1),
                           SettingsItem(
                             icon: Icons.devices_rounded,
                             label: l10n.t('settings_active_sessions'),
@@ -584,28 +753,36 @@ class _SettingsPageState extends State<SettingsPage> {
                                 color: LightModeColors.hint),
                             onTap: _signOutAll,
                           ),
-                          Divider(color: context.theme.dividerColor, indent: 56, height: 1),
-                          SettingsItem(
-                            icon: Icons.pause_circle_outline_rounded,
-                            label: l10n.t('settings_deactivate'),
-                            sublabel: l10n.t('settings_deactivate_sub'),
-                            hasSublabel: true,
-                            iconColor: Colors.orange,
-                            trailing: const Icon(Icons.chevron_right_rounded,
-                                color: LightModeColors.hint),
-                            onTap: _deactivateAccount,
-                          ),
-                          Divider(color: context.theme.dividerColor, indent: 56, height: 1),
-                          SettingsItem(
-                            icon: Icons.delete_forever_rounded,
-                            label: l10n.t('settings_delete_account'),
-                            sublabel: l10n.t('settings_delete_sub'),
-                            hasSublabel: true,
-                            iconColor: LightModeColors.error,
-                            trailing: const Icon(Icons.chevron_right_rounded,
-                                color: LightModeColors.hint),
-                            onTap: _deleteAccount,
-                          ),
+                          if (_accountStatus == AccountStatus.active) ...[
+                            Divider(
+                                color: context.theme.dividerColor,
+                                indent: 56,
+                                height: 1),
+                            SettingsItem(
+                              icon: Icons.pause_circle_outline_rounded,
+                              label: l10n.t('settings_deactivate'),
+                              sublabel: l10n.t('settings_deactivate_sub'),
+                              hasSublabel: true,
+                              iconColor: Colors.orange,
+                              trailing: const Icon(Icons.chevron_right_rounded,
+                                  color: LightModeColors.hint),
+                              onTap: _deactivateAccount,
+                            ),
+                            Divider(
+                                color: context.theme.dividerColor,
+                                indent: 56,
+                                height: 1),
+                            SettingsItem(
+                              icon: Icons.delete_forever_rounded,
+                              label: l10n.t('settings_delete_account'),
+                              sublabel: l10n.t('settings_delete_sub_24h'),
+                              hasSublabel: true,
+                              iconColor: LightModeColors.error,
+                              trailing: const Icon(Icons.chevron_right_rounded,
+                                  color: LightModeColors.hint),
+                              onTap: _deleteAccount,
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -636,16 +813,20 @@ class _SettingsPageState extends State<SettingsPage> {
                                     onTap: () => localeCtrl.setSystem(),
                                   ),
                                   const SizedBox(width: 10),
-                                  ...LocaleController.supportedLocales.expand((l) => [
-                                        _LocaleChip(
-                                          flag: _flagForLanguageCode(l.languageCode),
-                                          name: _nameForLanguageCode(l.languageCode),
-                                          selected: selected?.languageCode ==
-                                              l.languageCode,
-                                          onTap: () => localeCtrl.setLocale(l),
-                                        ),
-                                        const SizedBox(width: 10),
-                                      ]),
+                                  ...LocaleController.supportedLocales
+                                      .expand((l) => [
+                                            _LocaleChip(
+                                              flag: _flagForLanguageCode(
+                                                  l.languageCode),
+                                              name: _nameForLanguageCode(
+                                                  l.languageCode),
+                                              selected: selected?.languageCode ==
+                                                  l.languageCode,
+                                              onTap: () =>
+                                                  localeCtrl.setLocale(l),
+                                            ),
+                                            const SizedBox(width: 10),
+                                          ]),
                                 ],
                               ),
                             ),
@@ -666,13 +847,17 @@ class _SettingsPageState extends State<SettingsPage> {
                             hasSublabel: true,
                             trailing: _switch(_darkMode, (v) => _darkMode = v),
                           ),
-                          Divider(color: context.theme.dividerColor, indent: 56, height: 1),
+                          Divider(
+                              color: context.theme.dividerColor,
+                              indent: 56,
+                              height: 1),
                           SettingsItem(
                             icon: Icons.contrast_rounded,
                             label: l10n.t('settings_high_contrast'),
                             sublabel: l10n.t('settings_high_contrast_sub'),
                             hasSublabel: true,
-                            trailing: _switch(_highContrast, (v) => _highContrast = v),
+                            trailing:
+                                _switch(_highContrast, (v) => _highContrast = v),
                           ),
                         ],
                       ),
@@ -688,13 +873,20 @@ class _SettingsPageState extends State<SettingsPage> {
                             label: l10n.t('settings_notif_push'),
                             trailing: _switch(_notifPush, (v) => _notifPush = v),
                           ),
-                          Divider(color: context.theme.dividerColor, indent: 56, height: 1),
+                          Divider(
+                              color: context.theme.dividerColor,
+                              indent: 56,
+                              height: 1),
                           SettingsItem(
                             icon: Icons.mail_outline_rounded,
                             label: l10n.t('settings_notif_email'),
-                            trailing: _switch(_notifEmail, (v) => _notifEmail = v),
+                            trailing:
+                                _switch(_notifEmail, (v) => _notifEmail = v),
                           ),
-                          Divider(color: context.theme.dividerColor, indent: 56, height: 1),
+                          Divider(
+                              color: context.theme.dividerColor,
+                              indent: 56,
+                              height: 1),
                           SettingsItem(
                             icon: Icons.sos_rounded,
                             label: l10n.t('settings_notif_sos'),
@@ -717,7 +909,10 @@ class _SettingsPageState extends State<SettingsPage> {
                                 color: LightModeColors.hint),
                             onTap: _changePassword,
                           ),
-                          Divider(color: context.theme.dividerColor, indent: 56, height: 1),
+                          Divider(
+                              color: context.theme.dividerColor,
+                              indent: 56,
+                              height: 1),
                           SettingsItem(
                             icon: Icons.security_rounded,
                             label: l10n.t('settings_2fa'),
@@ -725,15 +920,22 @@ class _SettingsPageState extends State<SettingsPage> {
                             hasSublabel: true,
                             trailing: _switch(_twoFA, (v) => _twoFA = v),
                           ),
-                          Divider(color: context.theme.dividerColor, indent: 56, height: 1),
+                          Divider(
+                              color: context.theme.dividerColor,
+                              indent: 56,
+                              height: 1),
                           SettingsItem(
                             icon: Icons.fingerprint_rounded,
                             label: l10n.t('settings_biometrics'),
                             sublabel: l10n.t('settings_biometrics_sub'),
                             hasSublabel: true,
-                            trailing: _switch(_biometrics, (v) => _biometrics = v),
+                            trailing:
+                                _switch(_biometrics, (v) => _biometrics = v),
                           ),
-                          Divider(color: context.theme.dividerColor, indent: 56, height: 1),
+                          Divider(
+                              color: context.theme.dividerColor,
+                              indent: 56,
+                              height: 1),
                           SettingsItem(
                             icon: Icons.face_rounded,
                             label: l10n.t('settings_face_id'),
@@ -757,15 +959,22 @@ class _SettingsPageState extends State<SettingsPage> {
                                 color: LightModeColors.hint),
                             onTap: () => context.push('/settings/policy/terms'),
                           ),
-                          Divider(color: context.theme.dividerColor, indent: 56, height: 1),
+                          Divider(
+                              color: context.theme.dividerColor,
+                              indent: 56,
+                              height: 1),
                           SettingsItem(
                             icon: Icons.privacy_tip_rounded,
                             label: l10n.t('settings_privacy_policy'),
                             trailing: const Icon(Icons.chevron_right_rounded,
                                 color: LightModeColors.hint),
-                            onTap: () => context.push('/settings/policy/privacy'),
+                            onTap: () =>
+                                context.push('/settings/policy/privacy'),
                           ),
-                          Divider(color: context.theme.dividerColor, indent: 56, height: 1),
+                          Divider(
+                              color: context.theme.dividerColor,
+                              indent: 56,
+                              height: 1),
                           SettingsItem(
                             icon: Icons.download_rounded,
                             label: l10n.t('settings_data_export'),
@@ -773,7 +982,10 @@ class _SettingsPageState extends State<SettingsPage> {
                                 color: LightModeColors.hint),
                             onTap: _exportData,
                           ),
-                          Divider(color: context.theme.dividerColor, indent: 56, height: 1),
+                          Divider(
+                              color: context.theme.dividerColor,
+                              indent: 56,
+                              height: 1),
                           SettingsItem(
                             icon: Icons.history_rounded,
                             label: l10n.t('settings_activity_log'),
@@ -799,9 +1011,13 @@ class _SettingsPageState extends State<SettingsPage> {
                               iconColor: LightModeColors.accent,
                               trailing: const Icon(Icons.chevron_right_rounded,
                                   color: LightModeColors.hint),
-                              onTap: () => context.push('/settings/admin/policies'),
+                              onTap: () =>
+                                  context.push('/settings/admin/policies'),
                             ),
-                            Divider(color: context.theme.dividerColor, indent: 56, height: 1),
+                            Divider(
+                                color: context.theme.dividerColor,
+                                indent: 56,
+                                height: 1),
                             SettingsItem(
                               icon: Icons.dashboard_customize_rounded,
                               label: l10n.t('settings_admin_dashboard'),
@@ -833,7 +1049,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
 
-                    // ── Footer ─
+                    // ── Footer ──
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
