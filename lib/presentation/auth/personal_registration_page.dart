@@ -225,10 +225,13 @@ String _translateAuthError(Object e, AppLocalizations l10n) {
     return l10n.t('reg_error_network');
   }
 
-  // Cas 3 : Fallback générique (ne jamais exposer stack trace)
+    // Cas 3 : Fallback générique (Modifié pour le débogage)
   debugPrint('[Registration] ⚠️ Unmapped error: $e');
-  return l10n.t('reg_error_generic');
+  
+  // Retourne l'erreur brute pour la voir à l'écran
+  return e.toString(); 
 }
+
 
 // ============================================================================
 // PASSWORD POLICY
