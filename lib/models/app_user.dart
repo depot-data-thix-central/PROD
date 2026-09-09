@@ -42,9 +42,13 @@ class AppUser {
   final String passwordSaltB64;
   final String passwordHashHex;
 
-  // ✅ AJOUT : Champs certification (privés, exposés via getters)
+  // Champs certification (privés, exposés via getters)
   final String? _certificationTier;
   final String? _certificationStatus;
+
+  // ✅ AJOUT : Champs statut de compte (privés, exposés via getters)
+  final String? _accountStatus;
+  final DateTime? _scheduledDeletionAt;
 
   const AppUser({
     required this.id,
@@ -84,16 +88,27 @@ class AppUser {
     required this.updatedAt,
     this.passwordSaltB64 = '',
     this.passwordHashHex = '',
-    // ✅ AJOUT : Paramètres optionnels certification
+    // Paramètres optionnels certification
     String? certificationTier,
     String? certificationStatus,
+    // ✅ AJOUT : Paramètres optionnels statut
+    String? accountStatus,
+    DateTime? scheduledDeletionAt,
   })  : _certificationTier = certificationTier,
-        _certificationStatus = certificationStatus;
+        _certificationStatus = certificationStatus,
+        _accountStatus = accountStatus,
+        _scheduledDeletionAt = scheduledDeletionAt;
 
-  // ✅ GETTERS ALIAS (résout les 3 erreurs de compilation web)
+  // GETTERS ALIAS
   String? get avatarUrl => photoUrl;
   String? get certificationTier => _certificationTier;
   String? get certificationStatus => _certificationStatus;
+  
+  // ✅ AJOUT : Getters pour le statut
+  String? get accountStatus => _accountStatus;
+  DateTime? get scheduledDeletionAt => _scheduledDeletionAt;
+  bool get isPendingDeletion => _accountStatus == 'pending_deletion';
+  bool get isDeactivated => _accountStatus == 'deactivated';
 
   // ====== FACTORY FIREBASE ======
   factory AppUser.firebase({required String uid, required String? email, required String? phone}) {
@@ -107,6 +122,7 @@ class AppUser {
       fatherName: null, motherName: null, emergencyContactName: null, emergencyContactPhone: null, emergencyContactRelation: null,
       registrationStatus: null, education: const [], experience: const [], skills: const [], enrollments: const [], languages: const [],
       biometricsEnabled: true, twoFaEnabled: false, createdAt: now, updatedAt: now,
+      accountStatus: 'active', // ✅ Statut par défaut
     );
   }
 
@@ -153,9 +169,11 @@ class AppUser {
       twoFaEnabled: (json['two_fa_enabled'] ?? json['twoFaEnabled'] ?? false) as bool,
       createdAt: _readDate(json['created_at'] ?? json['createdAt']) ?? DateTime.now(),
       updatedAt: _readDate(json['updated_at'] ?? json['updatedAt']) ?? DateTime.now(),
-      // ✅ AJOUT : Certification depuis Supabase
       certificationTier: json['certification_tier']?.toString() ?? json['certificationTier']?.toString(),
       certificationStatus: json['certification_status']?.toString() ?? json['certificationStatus']?.toString(),
+      // ✅ AJOUT : Lecture depuis Supabase
+      accountStatus: json['account_status']?.toString() ?? json['accountStatus']?.toString() ?? 'active',
+      scheduledDeletionAt: _readDate(json['scheduled_deletion_at'] ?? json['scheduledDeletionAt']),
     );
   }
 
@@ -172,13 +190,15 @@ class AppUser {
       'bio': bio,
       'registration_status': registrationStatus,
       'updated_at': DateTime.now().toIso8601String(),
-      // ✅ AJOUT
       'certification_tier': _certificationTier,
       'certification_status': _certificationStatus,
+      // ✅ AJOUT : Écriture pour Supabase
+      'account_status': _accountStatus,
+      'scheduled_deletion_at': _scheduledDeletionAt?.toIso8601String(),
     };
   }
 
-  // ====== COPYWITH (avec support certification) ======
+  // ====== COPYWITH ======
   AppUser copyWith({
     String? id, String? thixId, String? thixChat, int? thixScore, String? email, String? phone,
     String? displayName, AccountType? accountType, String? photoUrl, String? bio, String? countryOrOrigin,
@@ -189,9 +209,11 @@ class AppUser {
     List<Map<String, dynamic>>? skills, List<Map<String, dynamic>>? enrollments, List<String>? languages,
     bool? biometricsEnabled, bool? twoFaEnabled, DateTime? createdAt, DateTime? updatedAt,
     String? passwordSaltB64, String? passwordHashHex,
-    // ✅ AJOUT
     String? certificationTier,
     String? certificationStatus,
+    // ✅ AJOUT : Nouveaux paramètres
+    String? accountStatus,
+    DateTime? scheduledDeletionAt,
   }) {
     return AppUser(
       id: id ?? this.id, thixId: thixId ?? this.thixId, thixChat: thixChat ?? this.thixChat,
@@ -212,9 +234,11 @@ class AppUser {
       biometricsEnabled: biometricsEnabled ?? this.biometricsEnabled, twoFaEnabled: twoFaEnabled ?? this.twoFaEnabled,
       createdAt: createdAt ?? this.createdAt, updatedAt: updatedAt ?? this.updatedAt,
       passwordSaltB64: passwordSaltB64 ?? this.passwordSaltB64, passwordHashHex: passwordHashHex ?? this.passwordHashHex,
-      // ✅ AJOUT
       certificationTier: certificationTier ?? _certificationTier,
       certificationStatus: certificationStatus ?? _certificationStatus,
+      // ✅ AJOUT : Transmission
+      accountStatus: accountStatus ?? _accountStatus,
+      scheduledDeletionAt: scheduledDeletionAt ?? _scheduledDeletionAt,
     );
   }
 
@@ -233,9 +257,11 @@ class AppUser {
       'languages': languages, 'biometricsEnabled': biometricsEnabled, 'twoFaEnabled': twoFaEnabled,
       'createdAt': createdAt.toIso8601String(), 'updatedAt': updatedAt.toIso8601String(),
       'passwordSaltB64': passwordSaltB64, 'passwordHashHex': passwordHashHex,
-      // ✅ AJOUT
       'certificationTier': _certificationTier,
       'certificationStatus': _certificationStatus,
+      // ✅ AJOUT
+      'accountStatus': _accountStatus,
+      'scheduledDeletionAt': _scheduledDeletionAt?.toIso8601String(),
     };
   }
 
@@ -261,9 +287,11 @@ class AppUser {
       biometricsEnabled: (json['biometricsEnabled'] as bool?) ?? true, twoFaEnabled: (json['twoFaEnabled'] as bool?) ?? false,
       createdAt: DateTime.parse(json['createdAt'] as String), updatedAt: DateTime.parse(json['updatedAt'] as String),
       passwordSaltB64: (json['passwordSaltB64'] as String?) ?? '', passwordHashHex: (json['passwordHashHex'] as String?) ?? '',
-      // ✅ AJOUT
       certificationTier: json['certificationTier']?.toString(),
       certificationStatus: json['certificationStatus']?.toString(),
+      // ✅ AJOUT
+      accountStatus: json['accountStatus']?.toString() ?? 'active',
+      scheduledDeletionAt: _readDate(json['scheduledDeletionAt']),
     );
   }
 
