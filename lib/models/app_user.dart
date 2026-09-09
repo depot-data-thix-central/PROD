@@ -172,7 +172,9 @@ class AppUser {
       certificationTier: json['certification_tier']?.toString() ?? json['certificationTier']?.toString(),
       certificationStatus: json['certification_status']?.toString() ?? json['certificationStatus']?.toString(),
       // ✅ AJOUT : Lecture depuis Supabase
-      accountStatus: json['account_status']?.toString() ?? json['accountStatus']?.toString() ?? 'active',
+      accountStatus: json['account_status']?.toString() ?? 
+                     json['status']?.toString() ?? 
+                     json['accountStatus']?.toString() ?? 'active',
       scheduledDeletionAt: _readDate(json['scheduled_deletion_at'] ?? json['scheduledDeletionAt']),
     );
   }
