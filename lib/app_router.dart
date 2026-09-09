@@ -325,7 +325,7 @@ class AppRouter {
           ElevatedButton(onPressed: () => context.go(AppRoutes.home), child: const Text('Accueil')),
         ])),
       ),
-                              redirect: (context, state) async {
+    redirect: (context, state) async {
   try {
     final loc = state.matchedLocation;
     final isLoginPage = loc == AppRoutes.login;
@@ -355,15 +355,24 @@ class AppRouter {
     // RÈGLE STRICTE : Le compte est actif UNIQUEMENT si le statut exact est 'active'
     final isAccountActive = currentUser != null && (status == 'active' || status == 'completed');
     
-    // ✅ NOUVELLE RÈGLE : Vérifier si le compte est en cours de suppression
+    // ✅ NOUVEAU : VÉRIFICATIONS DU STATUT GLOBAL DU COMPTE
     final isPendingDeletion = currentUser?.isPendingDeletion == true;
+    final isDeactivated = currentUser?.isDeactivated == true;
 
     // Cas 1 : Non connecté
     if (!logged) {
       return isPublic ? null : AppRoutes.login;
     }
 
-    // ✅ NOUVEAU CAS 1.5 : Blocage global si suppression programmée
+    // ✅ NOUVEAU CAS 1.4 : Blocage global si compte DÉSACTIVÉ
+    if (logged && isDeactivated) {
+      // Si une session fantôme subsiste alors que le compte est désactivé en DB,
+      // on détruit la session et on jette l'utilisateur sur la page de connexion.
+      await auth.signOut();
+      return AppRoutes.login;
+    }
+
+    // ✅ NOUVEAU CAS 1.5 : Blocage global si SUPPRESSION programmée
     if (logged && isPendingDeletion) {
       // Redirige de force vers l'écran de suppression si on n'y est pas déjà
       if (loc != '/pending-deletion') return '/pending-deletion';
@@ -408,8 +417,7 @@ class AppRouter {
     return null;
   }
 },
-
-
+                          
 
 
           
