@@ -417,7 +417,16 @@ class AppRouter {
         GoRoute(path: AppRoutes.vault, name: 'document-vault', pageBuilder: (_, __) => const NoTransitionPage(child: DocumentVaultPage())),
         GoRoute(path: AppRoutes.settings, name: 'settings', pageBuilder: (_, __) => const NoTransitionPage(child: SettingsPage())),
         GoRoute(path: AppRoutes.profile, name: 'profile', pageBuilder: (_, __) => const NoTransitionPage(child: ProfilePage())),
-
+GoRoute(
+          path: '/settings/policy/:slug',
+          builder: (_, s) => PolicyViewerPage(
+            slug: s.pathParameters['slug']!,
+          ),
+        ),
+        GoRoute(
+          path: '/settings/admin/policies',
+          builder: (_, __) => const AdminPolicyManagerPage(),
+        ),
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) => MainAppShell(navigationShell: navigationShell),
           branches: [
@@ -453,18 +462,7 @@ class AppRouter {
               ),
             ]),
             
-            // --- EMPLACEMENT DES POLITIQUES ---
-        GoRoute(
-          path: '/settings/policy/:slug', 
-          builder: (_, s) => PolicyViewerPage(
-            slug: s.pathParameters['slug']!,
-          ),
-        ),
-        GoRoute(
-          path: '/settings/admin/policies', 
-          builder: (_, __) => const AdminPolicyManagerPage(),
-        ),
-        // ------------------------------------------
+          
 
             // === THIX CHAT ===
             StatefulShellBranch(routes: [
