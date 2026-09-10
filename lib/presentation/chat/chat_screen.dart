@@ -41,7 +41,7 @@ import 'package:thix_id/services/chat/audio_service.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
 import 'package:thix_id/services/chat/connection_service.dart';
 import 'package:thix_id/services/chat/media_saver.dart';
-
+import 'package:thix_id/data/offline/chat_offline_cache.dart';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
