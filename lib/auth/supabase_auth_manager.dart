@@ -163,13 +163,6 @@ Future<T> _authRetry<T>(
 // ============================================================================
 
 /// Implémentation Supabase de AuthManager.
-///
-/// Architecture :
-/// - signUp sans session (Confirm email ON) → NE connecte PAS, lève AuthException(otpSent)
-/// - signUp avec session + email confirmé (Confirm email OFF) → signOut + erreur configuration
-/// - verifyOTP : hydratation SEULEMENT après vérification réussie
-/// - THIX ID officiel jamais généré avant confirmation email + choix pays
-/// - Backfill profil si données manquantes
 class SupabaseAuthManager implements AuthManager {
   final SupabaseClient _client;
   final ProfileService _profiles;
@@ -212,11 +205,11 @@ class SupabaseAuthManager implements AuthManager {
           debugPrint('[Auth] ✓ User hydrated: ${user.id}');
         } catch (e) {
           debugPrint('[Auth] ⚠️ Hydrate offline, keeping session alive: $e');
-          // ✅ CORRECTIF 1A : Créer un AppUser de fallback si l'hydratation échoue (ex: hors-ligne)
           _currentUser.value ??= AppUser(
             id: user.id,
             thixId: '',
             thixChat: '',
+            thixScore: null,
             email: user.email ?? '',
             accountType: AccountType.personal,
             displayName: user.userMetadata?['full_name']?.toString() ?? user.email ?? _kDefaultDisplayName,
@@ -236,7 +229,6 @@ class SupabaseAuthManager implements AuthManager {
       return;
     }
     
-    // ✅ CORRECTIF 1B : Initial hydrate avec fallback au lieu de cleanup
     try {
       final hydrated = await _hydrateUser(u);
       _currentUser.value = hydrated;
@@ -248,6 +240,7 @@ class SupabaseAuthManager implements AuthManager {
         id: u.id,
         thixId: '',
         thixChat: '',
+        thixScore: null,
         email: u.email ?? '',
         accountType: AccountType.personal,
         displayName: u.userMetadata?['full_name']?.toString() ?? u.email ?? _kDefaultDisplayName,
@@ -345,7 +338,7 @@ class SupabaseAuthManager implements AuthManager {
   }
 
   // ==========================================================================
-  // HYDRATATION — THIX-PENDING tant que non confirmé / non finalisé
+  // HYDRATATION
   // ==========================================================================
 
   Future<AppUser> _hydrateUser(User user) async {
@@ -555,7 +548,7 @@ class SupabaseAuthManager implements AuthManager {
       if (row != null) return (row as Map).cast<String, dynamic>();
     } catch (e) {
       debugPrint('[Auth] ❌ Profiles select by id failed uid=$uid err=$e');
-      rethrow; // ✅ Laisse l'erreur remonter pour activer le fallback du correctif 1
+      rethrow;
     }
     return null;
   }
@@ -701,7 +694,6 @@ class SupabaseAuthManager implements AuthManager {
       final userMeta = <String, dynamic>{
         'display_name': sanitizedDisplayName.isEmpty ? _kDefaultDisplayName : sanitizedDisplayName,
         'account_type': accountType.name,
-        // Si ProfileDraft utilise .toJson() ou .toMap()
         if (profileDraft != null) ...profileDraft.toMap(),
       };
 
@@ -716,12 +708,10 @@ class SupabaseAuthManager implements AuthManager {
         throw AuthException(AuthErrorCode.signUpFailed);
       }
 
-      // CAS NOMINAL (Confirm email ON) : pas de session, OTP envoyé
       if (session == null) {
         throw AuthException(AuthErrorCode.otpSent);
       }
 
-      // MISCONFIGURATION (Confirm email OFF) : session + email confirmé immédiats
       if (user.emailConfirmedAt != null) {
         try {
           await _client.auth.signOut();
@@ -729,19 +719,15 @@ class SupabaseAuthManager implements AuthManager {
         throw AuthException(AuthErrorCode.serverMisconfiguration);
       }
 
-      // Cas rare : session ouverte mais email non confirmé
       try {
         await _client.auth.signOut();
       } catch (_) {}
       throw AuthException(AuthErrorCode.otpSent);
     } on sup.AuthException catch (e) {
       final mapped = _mapSupabaseAuthError(e, context: 'register');
-      
-      // Gestion spéciale "already registered"
       if (mapped.code == AuthErrorCode.accountAlreadyExists) {
         return _handleExistingAccount(normalizedEmail, sanitizedPassword);
       }
-      
       throw mapped;
     } catch (e) {
       if (e is AuthException) rethrow;
@@ -755,7 +741,6 @@ class SupabaseAuthManager implements AuthManager {
       final res = await _client.auth.signInWithPassword(email: email, password: password);
       final user = res.user;
 
-      // Compte existant mais jamais vérifié → renvoyer OTP
       if (user != null && user.emailConfirmedAt == null) {
         try {
           await _client.auth.resend(type: OtpType.signup, email: email);
@@ -776,7 +761,6 @@ class SupabaseAuthManager implements AuthManager {
       if (msg.contains('invalid login') || msg.contains('invalid credentials')) {
         throw AuthException(AuthErrorCode.accountExistsWrongPassword);
       }
-      // "Email not confirmed" → renvoi du code
       try {
         await _client.auth.resend(type: OtpType.signup, email: email);
       } catch (_) {}
@@ -827,7 +811,6 @@ class SupabaseAuthManager implements AuthManager {
         throw AuthException(AuthErrorCode.invalidOtp);
       }
 
-      // Vérification réussie : hydrater et connecter
       final appUser = await _hydrateUser(res.user!);
       _currentUser.value = appUser;
       _bindProfileSync(res.user!.id);
@@ -1046,7 +1029,6 @@ class SupabaseAuthManager implements AuthManager {
   // ERROR MAPPING
   // ==========================================================================
 
-  /// Mappe les erreurs Supabase vers des AuthErrorCode user-friendly
   AuthException _mapSupabaseAuthError(sup.AuthException e, {required String context}) {
     final msg = e.message.toLowerCase();
 
