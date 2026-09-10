@@ -171,10 +171,9 @@ class AppUser {
       updatedAt: _readDate(json['updated_at'] ?? json['updatedAt']) ?? DateTime.now(),
       certificationTier: json['certification_tier']?.toString() ?? json['certificationTier']?.toString(),
       certificationStatus: json['certification_status']?.toString() ?? json['certificationStatus']?.toString(),
-      // ✅ AJOUT : Lecture depuis Supabase
-      accountStatus: json['account_status']?.toString() ?? 
-                     json['status']?.toString() ?? 
-                     json['accountStatus']?.toString() ?? 'active',
+      
+      // ✅ CORRECTION : Lecture directe de la colonne 'status' dans Supabase
+      accountStatus: json['status']?.toString() ?? 'active',
       scheduledDeletionAt: _readDate(json['scheduled_deletion_at'] ?? json['scheduledDeletionAt']),
     );
   }
@@ -194,8 +193,9 @@ class AppUser {
       'updated_at': DateTime.now().toIso8601String(),
       'certification_tier': _certificationTier,
       'certification_status': _certificationStatus,
-      // ✅ AJOUT : Écriture pour Supabase
-      'account_status': _accountStatus,
+      
+      // ✅ CORRECTION : Écriture vers la colonne 'status' dans Supabase
+      'status': _accountStatus,
       'scheduled_deletion_at': _scheduledDeletionAt?.toIso8601String(),
     };
   }
