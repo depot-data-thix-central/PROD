@@ -211,6 +211,7 @@ class SupabaseAuthManager implements AuthManager {
             thixChat: '',
             thixScore: null,
             email: user.email ?? '',
+            phone: user.phone, // ✅ AJOUT DU PARAMÈTRE MANQUANT
             accountType: AccountType.personal,
             displayName: user.userMetadata?['full_name']?.toString() ?? user.email ?? _kDefaultDisplayName,
             createdAt: DateTime.now(),
@@ -242,6 +243,7 @@ class SupabaseAuthManager implements AuthManager {
         thixChat: '',
         thixScore: null,
         email: u.email ?? '',
+        phone: u.phone, // ✅ AJOUT DU PARAMÈTRE MANQUANT
         accountType: AccountType.personal,
         displayName: u.userMetadata?['full_name']?.toString() ?? u.email ?? _kDefaultDisplayName,
         createdAt: DateTime.now(),
