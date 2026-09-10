@@ -36,7 +36,8 @@ import 'package:thix_id/services/push_notification_service.dart';
 import 'package:thix_id/presentation/chat/call/global_call_listener.dart';
 import 'package:thix_id/presentation/common/global_notification_listener.dart';
 import 'package:thix_id/presentation/thix_sos/widgets/global_sos_listener.dart';
-
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:thix_id/data/offline/home_offline_cache.dart';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -56,6 +57,16 @@ Future<void> main() async {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+
+      try {
+        await Hive.initFlutter().timeout(_kInitTimeout);
+        await HomeOfflineCache.init().timeout(_kInitTimeout);
+        _log('✓ Offline cache OK');
+      } catch (e) {
+        _log('⚠️ Offline cache: $e');
+      }
+
+      
 
       //  Erreurs de build affichées À L'ÉCRAN (rouge) au lieu d'écran gris
       ErrorWidget.builder = (details) => Material(
@@ -82,6 +93,7 @@ Future<void> main() async {
 
       // WEB : FCM n'existe pas sur Web → skip
       if (!kIsWeb) {
+        
         try {
           await Firebase.initializeApp().timeout(_kInitTimeout);
           FirebaseMessaging.onBackgroundMessage(
