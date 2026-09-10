@@ -13,6 +13,7 @@ import 'package:thix_id/services/chat/chat_service.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
 
 import 'sos_service.dart';
+import 'sos_media_outbox.dart';
 
 class SosEvidence {
   final String type;
@@ -295,6 +296,16 @@ class SosEvidenceService {
       }
     }
 
+    // ✅ FIX : Mise en file d'attente (outbox) si non posté
+    if (!posted) {
+      SosMediaOutbox.instance.enqueue(SosOutboxItem(
+        incidentId: incidentId,
+        type: type,
+        localPath: path,
+        mime: mime,
+      ));
+    }
+
     try {
       await Supabase.instance.client.from('thix_sos_evidence').insert({
         'incident_id': incidentId,
@@ -374,7 +385,7 @@ class SosEvidenceService {
     final uid = SupabaseConfig.currentUser?.id ?? 'anon';
     final ext = p.extension(path).isEmpty ? '.bin' : p.extension(path);
     final ts = DateTime.now().millisecondsSinceEpoch;
-    final storagePath = 'sos/\( incidentId/ \){uid}_${type}_$ts$ext';
+    final storagePath = 'sos/${incidentId}/${uid}_${type}_$ts$ext'; // ✅ FIX syntaxe
     final fileBytes = await File(path).readAsBytes();
     final client = Supabase.instance.client;
 
