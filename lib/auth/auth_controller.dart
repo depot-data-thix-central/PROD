@@ -12,6 +12,7 @@
 // ============================================================================
 
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/auth/auth_manager.dart';
 import 'package:thix_id/auth/supabase_auth_manager.dart';
 import 'package:thix_id/models/app_user.dart';
@@ -19,6 +20,7 @@ import 'package:thix_id/models/account_type.dart';
 import 'package:thix_id/services/profile_service.dart';
 import 'package:thix_id/data/offline/home_offline_cache.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
+
 // ============================================================================
 // RE-EXPORTS depuis le fichier features (Riverpod StateNotifier)
 // ============================================================================
@@ -56,7 +58,12 @@ class AuthController extends ChangeNotifier {
   }
 
   AppUser? get currentUser => _auth.currentUser;
-  bool get isAuthenticated => currentUser != null;
+  
+  // ✅ CORRECTIF 2 : Le user est considéré authentifié si une session locale 
+  // Supabase existe OU s'il y a un AppUser hydraté (permet de router vers Home hors-ligne)
+  bool get isAuthenticated => 
+      currentUser != null || 
+      Supabase.instance.client.auth.currentSession != null;
 
   Future<void> init() => _auth.init();
 
@@ -141,6 +148,7 @@ class AuthController extends ChangeNotifier {
     await _auth.signOut();
     notifyListeners();
   }
+  
   Future<void> updateCurrentUser(AppUser user) async {
     await _auth.updateCurrentUser(user);
     notifyListeners();
