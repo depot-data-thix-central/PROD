@@ -370,24 +370,79 @@ redirect: (context, state) async {
       return isPublic ? null : AppRoutes.login;
     }
 
-    // 2. Compte désactivé / suppression
-    //    login + start + écran statut sont AUTORISÉS
-    //    (sinon "Se déconnecter" ne peut jamais atteindre /login)
+redirect: (context, state) async {
+  try {
+    final loc = state.matchedLocation;
+    final isLoginPage = loc == AppRoutes.login;
+    final isStartPage = loc == AppRoutes.start;
+    final isRegPage = loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
+    const accountStatusPath = '/settings/account-status';
+    final isAccountStatusRoute = loc == accountStatusPath;
+
+    // Définition des routes accessibles sans connexion
+    final isPublic = isStartPage ||
+        isLoginPage ||
+        isRegPage ||
+        loc == AppRoutes.publicProfile ||
+        loc == AppRoutes.jobs ||
+        loc == AppRoutes.opportunities ||
+        loc == AppRoutes.education ||
+        loc == AppRoutes.trainingHome ||
+        loc.startsWith('${AppRoutes.trainingDetailsBasePath}/') ||
+        loc == AppRoutes.monPays ||
+        loc.startsWith('${AppRoutes.monPays}/') ||
+        loc.startsWith('/thix-event') ||
+        loc.startsWith('/thix-retrouve') ||
+        loc.startsWith('/thix-weeding') ||
+        loc.startsWith('/thix-reservation/delivery');
+
+    final logged = auth.isAuthenticated;
+    final currentUser = auth.currentUser;
+
+    // --- ANALYSE DU STATUT DU COMPTE (Le Gardien) ---
+    // On vérifie à la fois la variable accountStatus et les booléens du modèle
+    final rawLifecycle = currentUser?.accountStatus?.toLowerCase();
+    final isDeactivated = rawLifecycle == 'deactivated' || currentUser?.isDeactivated == true;
+    final isPendingDeletion = rawLifecycle == 'pending_deletion' || currentUser?.isPendingDeletion == true;
+    final isLifecycleBlocked = isDeactivated || isPendingDeletion;
+
+    // --- ANALYSE DE L'INSCRIPTION ---
+    final regStatus = currentUser?.registrationStatus?.toLowerCase() ?? '';
+    final isRegistrationCompleted = currentUser != null &&
+        (regStatus == 'active' || regStatus == 'completed');
+
+    // ========================================================
+    // 1. PAS CONNECTÉ
+    // ========================================================
+    if (!logged) {
+      return isPublic ? null : AppRoutes.login;
+    }
+
+    // ========================================================
+    // 2. VERROUILLAGE STRICT : COMPTE DÉSACTIVÉ / SUPPRESSION
+    // ========================================================
     if (isLifecycleBlocked) {
+      // On autorise UNIQUEMENT la page de statut, l'écran de démarrage ou de login (pour se déconnecter)
       if (isAccountStatusRoute || isLoginPage || isStartPage) {
-        return null;
+        return null; // Laisser passer
       }
+      // S'il essaie d'aller AILLEURS (Dashboard, chat, paramètres...), on le bloque ici :
       return accountStatusPath;
     }
 
-    // 3. Compte sain : pas d’écran statut
+    // ========================================================
+    // 3. DÉVERROUILLAGE : COMPTE SAIN
+    // ========================================================
     if (!isLifecycleBlocked && isAccountStatusRoute) {
+      // Un utilisateur normal n'a rien à faire sur l'écran d'attente de suppression.
       return currentUser?.accountType == AccountType.enterprise
           ? AppRoutes.enterpriseDashboard
           : AppRoutes.userDashboard;
     }
 
-    // 4. Connecté + login/start → dashboard si onboarding fini
+    // ========================================================
+    // 4. DÉJÀ CONNECTÉ + SUR LOGIN/START
+    // ========================================================
     if (isLoginPage || isStartPage) {
       if (isRegistrationCompleted) {
         return currentUser!.accountType == AccountType.enterprise
@@ -397,41 +452,51 @@ redirect: (context, state) async {
       return null;
     }
 
-    // 5. Inscription déjà terminée
+    // ========================================================
+    // 5. INSCRIPTION DÉJÀ TERMINÉE MAIS SUR PAGE D'INSCRIPTION
+    // ========================================================
     if (isRegPage && isRegistrationCompleted) {
+      // Autoriser l'accès à l'étape 3 (si c'est votre logique métier de finalisation)
       if (state.uri.queryParameters['step'] == '3') return null;
+      
       return currentUser!.accountType == AccountType.enterprise
           ? AppRoutes.enterpriseDashboard
           : AppRoutes.userDashboard;
     }
 
-    // 6. Onboarding inachevé
+    // ========================================================
+    // 6. ONBOARDING INACHEVÉ
+    // ========================================================
     if (!isRegPage &&
         !isLoginPage &&
         !isStartPage &&
         !isAccountStatusRoute &&
         !isRegistrationCompleted &&
         currentUser?.registrationStatus != null) {
+          
+      // S'il essaie d'aller sur /home sans avoir fini l'onboarding, on coupe
       if (loc == AppRoutes.home) {
         await auth.signOut();
         return AppRoutes.login;
       }
+      
+      // Redirection intelligente selon son avancée
       if (regStatus == 'draft_step1') {
         return '${AppRoutes.personalReg}?step=1';
       }
       return '${AppRoutes.personalReg}?step=2';
     }
 
+    // Si tout va bien, autoriser la navigation normale
     return null;
+    
   } catch (e) {
     debugPrint('GoRouter redirect error: $e');
     return null;
   }
 },
 
-
-          
-
+         
       routes: [
         // === CORE, AUTH & MAIN ===
         GoRoute(path: AppRoutes.start, name: 'start', pageBuilder: (_, __) => const NoTransitionPage(child: ThixIdStartPage())),
