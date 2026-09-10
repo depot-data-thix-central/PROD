@@ -13,6 +13,7 @@ import 'package:thix_id/services/profile_service.dart';
 import 'package:thix_id/services/push_notification_service.dart';
 import 'package:thix_id/services/supabase_safe_write.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
+import 'package:thix_id/models/account_type.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -203,14 +204,28 @@ class SupabaseAuthManager implements AuthManager {
           await _cleanupSession();
           return;
         }
-        final hydrated = await _hydrateUser(user);
-        _currentUser.value = hydrated;
-        _bindProfileSync(user.id);
-        unawaited(PushNotificationService.instance.onSignedIn(userId: user.id));
-        debugPrint('[Auth] ✓ User hydrated: ${user.id}');
+        try {
+          final hydrated = await _hydrateUser(user);
+          _currentUser.value = hydrated;
+          _bindProfileSync(user.id);
+          unawaited(PushNotificationService.instance.onSignedIn(userId: user.id));
+          debugPrint('[Auth] ✓ User hydrated: ${user.id}');
+        } catch (e) {
+          debugPrint('[Auth] ⚠️ Hydrate offline, keeping session alive: $e');
+          // ✅ CORRECTIF 1A : Créer un AppUser de fallback si l'hydratation échoue (ex: hors-ligne)
+          _currentUser.value ??= AppUser(
+            id: user.id,
+            thixId: '',
+            thixChat: '',
+            email: user.email ?? '',
+            accountType: AccountType.personal,
+            displayName: user.userMetadata?['full_name']?.toString() ?? user.email ?? _kDefaultDisplayName,
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          );
+        }
       } catch (e) {
-        debugPrint('[Auth] ❌ Auth state hydrate failed: $e');
-        await _cleanupSession();
+        debugPrint('[Auth] ❌ Auth state error: $e');
       }
     });
 
@@ -220,13 +235,25 @@ class SupabaseAuthManager implements AuthManager {
       await _cleanupSession();
       return;
     }
+    
+    // ✅ CORRECTIF 1B : Initial hydrate avec fallback au lieu de cleanup
     try {
       final hydrated = await _hydrateUser(u);
       _currentUser.value = hydrated;
       _bindProfileSync(u.id);
       debugPrint('[Auth] ✓ Initial user hydrated: ${u.id}');
     } catch (e) {
-      debugPrint('[Auth] ❌ Initial hydration failed: $e');
+      debugPrint('[Auth] ⚠️ Initial hydration failed (likely offline): $e');
+      _currentUser.value ??= AppUser(
+        id: u.id,
+        thixId: '',
+        thixChat: '',
+        email: u.email ?? '',
+        accountType: AccountType.personal,
+        displayName: u.userMetadata?['full_name']?.toString() ?? u.email ?? _kDefaultDisplayName,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
     }
   }
 
@@ -528,6 +555,7 @@ class SupabaseAuthManager implements AuthManager {
       if (row != null) return (row as Map).cast<String, dynamic>();
     } catch (e) {
       debugPrint('[Auth] ❌ Profiles select by id failed uid=$uid err=$e');
+      rethrow; // ✅ Laisse l'erreur remonter pour activer le fallback du correctif 1
     }
     return null;
   }
