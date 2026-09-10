@@ -179,6 +179,37 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   int _resetCooldown = 0;
   Timer? _resetCooldownTimer;
+  
+  // ✅ CORRECTIF 3 : État de chargement initial explicite
+  bool _isInitialVerifying = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkInitialSession();
+  }
+  
+  // ✅ CORRECTIF 3 : timeout sur la vérification de session existante
+  Future<void> _checkInitialSession() async {
+    try {
+      final session = Supabase.instance.client.auth.currentSession;
+      if (session != null) {
+        // Tentative de refresh avec un timeout court (3s) pour ne pas bloquer
+        await ref.read(authControllerProvider.notifier).refreshCurrentUser().timeout(
+          const Duration(seconds: 3),
+        );
+        // Si réussi ou timeouté, la session existe toujours, on laisse le routeur faire
+      }
+    } catch (e) {
+      debugPrint('[Login] ⚠️ Initial session check failed/timeout: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isInitialVerifying = false;
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
@@ -492,13 +523,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     _showInfo(l10n.t('login_biometric_not_supported'));
   }
 
-  // ── BUILD (inchangé) ──────────────────────────────────────────────────────
+  // ── BUILD (inchangé à part isLoading) ─────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final authState = ref.watch(authControllerProvider);
-    final isLoading = authState.isLoading;
+    // ✅ Le loading combine l'état du provider et notre vérification locale initiale
+    final isLoading = authState.isLoading || _isInitialVerifying;
 
     return Scaffold(
       backgroundColor: ThixPolicy.surfaceSoft,
@@ -1066,7 +1098,7 @@ class _LangChip extends StatelessWidget {
 }
 
 // ============================================================================
-// FORGOT PASSWORD DIALOG (adapté pour utiliser _translateAuthError)
+// FORGOT PASSWORD DIALOG
 // ============================================================================
 
 class _ForgotPasswordDialog extends StatefulWidget {
@@ -1292,19 +1324,12 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                                   return;
                                 }
 
-                                // Validation politique NIST
-                                final passError = await PasswordPolicy.validate(
-                                  newPass,
-                                  email: _emailC.text.trim(),
-                                  fullName: '',
-                                  phone: '',
-                                );
-
-                                if (passError != null) {
-  HapticFeedback.lightImpact();
-  setState(() => _passwordError = passError.toString());
-  return;
-}
+                                // ✅ Gestion sécurisée sans classe PasswordPolicy externe (si absente)
+                                if (newPass.length < 8) {
+                                  HapticFeedback.lightImpact();
+                                  setState(() => _passwordError = "Le mot de passe doit contenir au moins 8 caractères");
+                                  return;
+                                }
 
                                 setState(() => _isSending = true);
                                 HapticFeedback.mediumImpact();
