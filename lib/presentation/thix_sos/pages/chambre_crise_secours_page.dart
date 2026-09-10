@@ -1,6 +1,6 @@
 /// THIX SOS — Chambre de crise (secours) — Production Enterprise (audité)
 /// ✅ SÉCURISÉ : syntax fix, mounted checks, timeouts, retry, validation URL,
-///    permissions, i18n, semantics, haptic, removeChannel, lifecycle
+///    permissions, i18n, semantics, haptic, removeChannel, lifecycle, ui contrast
 import 'dart:async';
 import 'package:go_router/go_router.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
@@ -157,7 +157,6 @@ class _ChambreCriseSecoursPageState
   RealtimeChannel? _eventsCh;
   Timer? _clock;
 
-  // ✅ CORRECTIF 1 : Sauvegarde locale de l'incident pour éviter qu'il ne disparaisse
   SosIncident? _incident;
 
   Set<int> _remotes = {};
@@ -173,7 +172,6 @@ class _ChambreCriseSecoursPageState
   String? _conversationId;
   Duration _elapsed = Duration.zero;
 
-  // ✅ FIX P2 : cache de la dernière photo (évite O(n) à chaque build)
   String? _latestPhotoUrlCache;
 
   @override
@@ -196,7 +194,6 @@ class _ChambreCriseSecoursPageState
 
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      // ✅ CORRECTIF 1 : Priorité à l'incident local s'il n'y a rien dans le provider
       final inc = _incident ??
           ref.read(sosIncidentProvider(widget.incidentId)).valueOrNull;
       if (inc != null) {
@@ -213,7 +210,6 @@ class _ChambreCriseSecoursPageState
     debugPrint('[SecoursRoom] 🔄 lifecycle: ${state.name}');
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
-      // Libère le canal Agora en background pour économiser la batterie
       try {
         _media.leave();
       } catch (e) {
@@ -230,7 +226,6 @@ class _ChambreCriseSecoursPageState
     await _connect();
   }
 
-  // ✅ FIX P1 : timeout + logs structurés (plus de catch silencieux)
   Future<void> _loadHistory() async {
     try {
       final rows = await _secoursRetry(
@@ -360,7 +355,6 @@ class _ChambreCriseSecoursPageState
           debugPrint('[SecoursRoom] ⚠️ Live Agora optionnel: $e');
         }
       }
-      // ✅ CORRECTIF 1 : Sauvegarde locale de l'incident lors de la connexion
       final incident = await _secoursRetry(
         () => ref
             .read(sosServiceProvider)
@@ -376,7 +370,6 @@ class _ChambreCriseSecoursPageState
           );
       debugPrint('[SecoursRoom] ✓ Connected');
       
-      // ✅ CORRECTIF 4 : Rattraper le groupe de chat s'il a été créé en retard
       if (_conversationId == null || _conversationId!.isEmpty) {
         for (var i = 0; i < 8 && mounted; i++) {
           await Future.delayed(const Duration(seconds: 2));
@@ -393,7 +386,6 @@ class _ChambreCriseSecoursPageState
           }
         }
       }
-
     } catch (e) {
       debugPrint('[SecoursRoom] ❌ connect: $e');
       if (mounted) {
@@ -405,7 +397,6 @@ class _ChambreCriseSecoursPageState
     if (mounted) setState(() => _joining = false);
   }
 
-  // ✅ FIX P0 : mounted check + timeout + friendly error + haptic
   Future<void> _photo() async {
     if (_busy || !mounted) return;
     HapticFeedback.mediumImpact();
@@ -440,7 +431,6 @@ class _ChambreCriseSecoursPageState
     if (mounted) setState(() => _busy = false);
   }
 
-  // ✅ FIX P1 : permission micro avant toggle
   Future<void> _toggleAudio() async {
     if (_busy || !mounted) return;
     HapticFeedback.mediumImpact();
@@ -537,7 +527,6 @@ class _ChambreCriseSecoursPageState
     }
   }
 
-  // ✅ CORRECTIF 2 : Ouvrir le chat correctement sans tuer la chambre
   void _openChat(SosIncident? incident) {
     final id = _conversationId ?? incident?.chatConversationId;
     if (!mounted) return;
@@ -608,9 +597,9 @@ class _ChambreCriseSecoursPageState
                         label: t,
                         child: ActionChip(
                           label: Text(t,
-                              style: ThixPolicy.captionStyle
-                                  .copyWith(color: Colors.white70)),
-                          backgroundColor: ThixPolicy.card,
+                              style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                          backgroundColor: Colors.white.withOpacity(0.15),
+                          side: BorderSide.none,
                           onPressed: () async {
                             Navigator.pop(ctx);
                             HapticFeedback.lightImpact();
@@ -645,9 +634,11 @@ class _ChambreCriseSecoursPageState
                   hintText: l10n.t('sos_instruct_custom'),
                   hintStyle: const TextStyle(color: Colors.white38),
                   filled: true,
-                  fillColor: ThixPolicy.card,
+                  fillColor: Colors.white.withOpacity(0.1),
                   border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                  ),
                 ),
               ),
             ),
@@ -676,7 +667,7 @@ class _ChambreCriseSecoursPageState
                     }
                   }
                 },
-                child: Text(l10n.t('sos_send_group')),
+                child: Text(l10n.t('sos_send_group'), style: const TextStyle(color: Colors.white)),
               ),
             ),
           ],
@@ -688,8 +679,8 @@ class _ChambreCriseSecoursPageState
   void _toast(String m) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(m),
-      backgroundColor: ThixPolicy.inkDeep,
+      content: Text(m, style: const TextStyle(color: Colors.white)),
+      backgroundColor: Colors.black87,
       duration: const Duration(seconds: 2),
     ));
   }
@@ -701,7 +692,6 @@ class _ChambreCriseSecoursPageState
     return '$h:$m:$s';
   }
 
-  // ✅ FIX P0 : syntax error corrigée
   String _fmtClock(DateTime at) {
     final l = at.toLocal();
     String two(int n) => n.toString().padLeft(2, '0');
@@ -757,7 +747,6 @@ class _ChambreCriseSecoursPageState
     _clock?.cancel();
     _uidsSub?.cancel();
 
-    // ✅ FIX P0 : unsubscribe + removeChannel (plus de canal orphelin)
     try {
       final ch = _eventsCh;
       if (ch != null) {
@@ -779,7 +768,6 @@ class _ChambreCriseSecoursPageState
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    // ✅ CORRECTIF 1 : Combiner incident local et incident du provider
     final incident = _incident ??
         ref.watch(sosIncidentProvider(widget.incidentId)).valueOrNull;
         
@@ -809,7 +797,8 @@ class _ChambreCriseSecoursPageState
       child: Scaffold(
         backgroundColor: ThixPolicy.inkDeep,
         appBar: AppBar(
-          backgroundColor: ThixPolicy.danger.withValues(alpha: 0.4),
+          backgroundColor: ThixPolicy.danger.withOpacity(0.4),
+          iconTheme: const IconThemeData(color: Colors.white),
           title: Column(
             children: [
               Semantics(
@@ -817,6 +806,7 @@ class _ChambreCriseSecoursPageState
                 child: Text(
                   incident?.publicId ?? l10n.t('sos_command_center'),
                   style: ThixPolicy.titleStyle.copyWith(
+                    color: Colors.white,
                     fontSize: 14,
                     fontWeight: ThixPolicy.bold,
                   ),
@@ -835,7 +825,7 @@ class _ChambreCriseSecoursPageState
               child: IconButton(
                 tooltip: l10n.t('sos_group'),
                 onPressed: () => _openChat(incident),
-                icon: const Icon(Icons.forum),
+                icon: const Icon(Icons.forum, color: Colors.white),
               ),
             ),
             Semantics(
@@ -848,7 +838,7 @@ class _ChambreCriseSecoursPageState
                   await _media.setMuted(!_muted);
                   if (mounted) setState(() => _muted = !_muted);
                 },
-                icon: Icon(_muted ? Icons.mic_off : Icons.mic),
+                icon: Icon(_muted ? Icons.mic_off : Icons.mic, color: Colors.white),
               ),
             ),
           ],
@@ -863,7 +853,7 @@ class _ChambreCriseSecoursPageState
                   color: Colors.black,
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                      color: ThixPolicy.danger.withValues(alpha: 0.4)),
+                      color: ThixPolicy.danger.withOpacity(0.4)),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: Stack(
@@ -878,7 +868,6 @@ class _ChambreCriseSecoursPageState
                         ),
                       )
                     else if (_latestPhotoUrlCache != null)
-                      // ✅ FIX P0 : Image.network avec validation URL
                       CachedNetworkImageSafe(url: _latestPhotoUrlCache!)
                     else
                       Center(
@@ -888,7 +877,7 @@ class _ChambreCriseSecoursPageState
                             : Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.satellite_alt,
+                                  const Icon(Icons.satellite_alt,
                                       color: Colors.white24, size: 44),
                                   const SizedBox(height: 8),
                                   Text(
@@ -905,13 +894,13 @@ class _ChambreCriseSecoursPageState
                       left: 8,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: hasLive
                               ? ThixPolicy.danger
                               : _latestPhotoUrlCache != null
                                   ? ThixPolicy.warning
-                                  : ThixPolicy.textMuted,
+                                  : Colors.white.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
@@ -969,7 +958,6 @@ class _ChambreCriseSecoursPageState
                             incident.lastLat != null &&
                             incident.lastLng != null) {
                           HapticFeedback.selectionClick();
-                          // ✅ FIX P0 : syntax error corrigée
                           final url =
                               'https://www.google.com/maps?q=${incident.lastLat},${incident.lastLng}';
                           await launchUrl(Uri.parse(url),
@@ -1017,7 +1005,6 @@ class _ChambreCriseSecoursPageState
                       icon: Icons.videocam,
                       label: l10n.t('sos_clip'),
                       onTap: _busy ? null : () => _video(10)),
-                  // ✅ CORRECTIF 3 : On remplace la vidéo de 30s par celle de 60s
                   _ControlChip(
                       icon: Icons.videocam_outlined,
                       label: l10n.t('sos_video_60'),
@@ -1091,7 +1078,6 @@ class _ChambreCriseSecoursPageState
       itemBuilder: (_, i) {
         final e = _evidence[i];
         final isPhoto = e.type == 'EVIDENCE_PHOTO';
-        // ✅ FIX P0 : validation URL avant affichage
         final validUrl = _SecoursValidators.isValidUrl(e.url);
 
         return Semantics(
@@ -1110,9 +1096,9 @@ class _ChambreCriseSecoursPageState
             },
             child: Container(
               decoration: BoxDecoration(
-                color: ThixPolicy.card,
+                color: Colors.white.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: ThixPolicy.border),
+                border: Border.all(color: Colors.white24),
               ),
               clipBehavior: Clip.antiAlias,
               child: Column(
@@ -1221,7 +1207,7 @@ class CachedNetworkImageSafe extends StatelessWidget {
 }
 
 // ============================================================================
-// STATUS CHIP — ✅ avec Semantics
+// STATUS CHIP
 // ============================================================================
 class _StatusChip extends StatelessWidget {
   const _StatusChip({
@@ -1242,20 +1228,22 @@ class _StatusChip extends StatelessWidget {
       label: label,
       child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.15),
+            color: color.withOpacity(0.2),
             borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: color.withOpacity(0.5)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, size: 14, color: color),
-              const SizedBox(width: 4),
+              const SizedBox(width: 6),
               Text(label,
-                  style:
-                      ThixPolicy.captionStyle.copyWith(color: color)),
+                  style: TextStyle(
+                      color: color, fontSize: 11, fontWeight: FontWeight.w600)),
             ],
           ),
         ),
@@ -1265,7 +1253,7 @@ class _StatusChip extends StatelessWidget {
 }
 
 // ============================================================================
-// CONTROL CHIP — ✅ avec Semantics + ThixPolicy
+// CONTROL CHIP 
 // ============================================================================
 class _ControlChip extends StatelessWidget {
   const _ControlChip({
@@ -1287,19 +1275,20 @@ class _ControlChip extends StatelessWidget {
       enabled: onTap != null,
       child: ActionChip(
         onPressed: onTap,
+        side: BorderSide.none,
         avatar: Icon(icon, size: 16, color: Colors.white),
         label: Text(label,
-            style: ThixPolicy.captionStyle
-                .copyWith(color: Colors.white, fontSize: 12)),
+            style: const TextStyle(
+                color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
         backgroundColor:
-            danger ? ThixPolicy.danger : ThixPolicy.card,
+            danger ? ThixPolicy.danger : Colors.white.withOpacity(0.15),
       ),
     );
   }
 }
 
 // ============================================================================
-// ERROR STATE — ✅ retry button
+// ERROR STATE
 // ============================================================================
 class _ErrorState extends StatelessWidget {
   const _ErrorState({required this.message, required this.onRetry});
