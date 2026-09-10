@@ -169,27 +169,29 @@ class ChatMessage {
   // ----------------------------------------------------------
 
   Map<String, dynamic> toJson() {
-    dynamic s;
-    try {
-      s = (sentiment as dynamic).toJson();
-    } catch (_) {
-      s = null;
-    }
-
     return {
       'id': id,
       'conversation_id': conversationId,
       'sender_id': senderId,
       'content': content,
       'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt?.toIso8601String(),
       'media_url': mediaUrl,
       'media_type': mediaType,
       'media_name': mediaName,
       'media_size': mediaSize,
+      'mime_type': mimeType,
+      'is_read': isRead,
+      'is_delivered': isDelivered,
+      'is_deleted': isDeleted,
       'is_ephemeral': isEphemeral,
       'ephemeral_duration': ephemeralDuration,
+      'reply_to_id': replyToId,
       'is_internal_note': isInternalNote,
-      'sentiment': s,
+      'profiles': {
+        'full_name': senderName,
+        'avatar_url': senderAvatar,
+      },
     };
   }
 
