@@ -157,6 +157,9 @@ class _ChambreCriseSecoursPageState
   RealtimeChannel? _eventsCh;
   Timer? _clock;
 
+  // ✅ CORRECTIF 1 : Sauvegarde locale de l'incident pour éviter qu'il ne disparaisse
+  SosIncident? _incident;
+
   Set<int> _remotes = {};
   final List<_EvidenceItem> _evidence = [];
   final List<_JournalRow> _journal = [];
@@ -193,7 +196,8 @@ class _ChambreCriseSecoursPageState
 
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      final inc =
+      // ✅ CORRECTIF 1 : Priorité à l'incident local s'il n'y a rien dans le provider
+      final inc = _incident ??
           ref.read(sosIncidentProvider(widget.incidentId)).valueOrNull;
       if (inc != null) {
         var d = DateTime.now().difference(inc.startedAt.toLocal());
@@ -356,12 +360,14 @@ class _ChambreCriseSecoursPageState
           debugPrint('[SecoursRoom] ⚠️ Live Agora optionnel: $e');
         }
       }
+      // ✅ CORRECTIF 1 : Sauvegarde locale de l'incident lors de la connexion
       final incident = await _secoursRetry(
         () => ref
             .read(sosServiceProvider)
             .getIncidentForRescue(widget.incidentId),
         label: 'getIncidentForRescue',
       );
+      _incident = incident;
       _conversationId = incident?.chatConversationId;
       await ref.read(sosServiceProvider).logEventPublic(
             widget.incidentId,
@@ -369,6 +375,25 @@ class _ChambreCriseSecoursPageState
             {'role': 'secours', 'conversation_id': _conversationId},
           );
       debugPrint('[SecoursRoom] ✓ Connected');
+      
+      // ✅ CORRECTIF 4 : Rattraper le groupe de chat s'il a été créé en retard
+      if (_conversationId == null || _conversationId!.isEmpty) {
+        for (var i = 0; i < 8 && mounted; i++) {
+          await Future.delayed(const Duration(seconds: 2));
+          final again = await ref
+              .read(sosServiceProvider)
+              .getIncidentForRescue(widget.incidentId);
+          if (again?.chatConversationId != null) {
+            if (!mounted) return;
+            setState(() {
+              _incident = again;
+              _conversationId = again!.chatConversationId;
+            });
+            break;
+          }
+        }
+      }
+
     } catch (e) {
       debugPrint('[SecoursRoom] ❌ connect: $e');
       if (mounted) {
@@ -512,6 +537,7 @@ class _ChambreCriseSecoursPageState
     }
   }
 
+  // ✅ CORRECTIF 2 : Ouvrir le chat correctement sans tuer la chambre
   void _openChat(SosIncident? incident) {
     final id = _conversationId ?? incident?.chatConversationId;
     if (!mounted) return;
@@ -528,11 +554,7 @@ class _ChambreCriseSecoursPageState
       updatedAt: DateTime.now(),
     );
     HapticFeedback.selectionClick();
-    // ✅ FIX P1 : navigation décommentée + context.push au lieu de maybePop
-    Navigator.of(context).maybePop();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.push(AppRoutes.chatDetail(id), extra: conversation);
-    });
+    context.push(AppRoutes.chatDetail(id), extra: conversation);
   }
 
   void _openInstructions() {
@@ -757,8 +779,10 @@ class _ChambreCriseSecoursPageState
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final incident =
+    // ✅ CORRECTIF 1 : Combiner incident local et incident du provider
+    final incident = _incident ??
         ref.watch(sosIncidentProvider(widget.incidentId)).valueOrNull;
+        
     final engine = _media.engine;
     final channel = _media.channel;
     final remoteUid = _remotes.isEmpty ? null : _remotes.first;
@@ -993,10 +1017,11 @@ class _ChambreCriseSecoursPageState
                       icon: Icons.videocam,
                       label: l10n.t('sos_clip'),
                       onTap: _busy ? null : () => _video(10)),
+                  // ✅ CORRECTIF 3 : On remplace la vidéo de 30s par celle de 60s
                   _ControlChip(
                       icon: Icons.videocam_outlined,
-                      label: l10n.t('sos_video_30s'),
-                      onTap: _busy ? null : () => _video(30)),
+                      label: l10n.t('sos_video_60'),
+                      onTap: _busy ? null : () => _video(60)),
                   _ControlChip(
                     icon: _audioArmed ? Icons.stop_circle : Icons.mic_none,
                     label: _audioArmed
@@ -1126,7 +1151,8 @@ class _ChambreCriseSecoursPageState
               ),
             ),
           ),
-        );
+        ),
+      );
       },
     );
   }
