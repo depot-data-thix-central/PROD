@@ -18,6 +18,7 @@ import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
 import '../services/sos_crisis_media_service.dart';
 import '../services/sos_remote_capture_service.dart';
 import '../services/sos_victim_capture_daemon.dart';
+import '../services/sos_evidence_service.dart';
 import '../models/sos_models.dart';
 import '../providers/sos_providers.dart';
 import 'sos_pin_page.dart';
@@ -134,6 +135,12 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage>
   bool _camOn = false;
   bool _camBusy = false;
   bool _clipBusy = false;
+  bool _photoBusy = false;
+  bool _videoBusy = false;
+  bool _audioBusy = false;
+  Timer? _audioTimer;
+  Timer? _convPoll;
+  final _evidence = SosEvidenceService();
   final _remoteCapture = SosRemoteCaptureService();
 
   @override
@@ -164,7 +171,11 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage>
           .read(sosHeartbeatControllerProvider.notifier)
           .start(widget.incidentId);
       _loadConversationId();
-      _startCamera();
+      _pollConversation();
+      // Live Agora : après 2s, pour ne pas bloquer photo/vidéo.
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) _startCamera();
+      });
     });
   }
 
@@ -180,6 +191,9 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage>
   @override
   void dispose() {
     _uiTimer?.cancel();
+    _audioTimer?.cancel();
+    _convPoll?.cancel();
+    _evidence.disposeCamera();
     WidgetsBinding.instance.removeObserver(this);
     _remoteCapture.stop();
     SosVictimCaptureDaemon.instance.stop();
@@ -326,6 +340,138 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage>
       _snack(_CrisisValidators.friendlyError(e, l10n));
     } finally {
       if (mounted) setState(() => _clipBusy = false);
+    }
+  }
+
+  void _pollConversation() {
+    _convPoll?.cancel();
+    var tries = 0;
+    _convPoll = Timer.periodic(const Duration(seconds: 2), (t) async {
+      tries++;
+      if (tries > 15 || !mounted) {
+        t.cancel();
+        return;
+      }
+      if (_resolvedConversationId != null &&
+          _resolvedConversationId!.isNotEmpty) {
+        t.cancel();
+        return;
+      }
+      try {
+        final inc = await ref
+            .read(sosServiceProvider)
+            .getIncidentById(widget.incidentId);
+        final id = inc?.chatConversationId;
+        if (id != null && id.isNotEmpty && mounted) {
+          setState(() => _resolvedConversationId = id);
+          _remoteCapture.listenAsVictim(
+            incidentId: widget.incidentId,
+            conversationId: id,
+            onInfo: _snack,
+          );
+          t.cancel();
+        }
+      } catch (_) {}
+    });
+  }
+
+  String? _conv(SosIncident incident) =>
+      incident.chatConversationId ?? _resolvedConversationId;
+
+  Future<void> _sendPhoto(SosIncident incident) async {
+    if (_photoBusy || _videoBusy || _audioBusy) return;
+    setState(() => _photoBusy = true);
+    HapticFeedback.mediumImpact();
+    final l10n = AppLocalizations.of(context);
+    try {
+      final e = await SosCrisisMediaService.instance.withCameraReleased(
+        () => _evidence.takePhoto(
+          incident.id,
+          conversationId: _conv(incident),
+          source: 'victim',
+        ),
+      );
+      if (!mounted) return;
+      _snack(e == null
+          ? l10n.t('sos_clip_unavailable')
+          : (e.postedToChat
+              ? l10n.t('sos_ev_photo_sent')
+              : l10n.t('sos_ev_photo_captured')));
+    } catch (e) {
+      if (mounted) _snack(_CrisisValidators.friendlyError(e, l10n));
+    } finally {
+      if (mounted) setState(() => _photoBusy = false);
+    }
+  }
+
+  Future<void> _sendVideo60(SosIncident incident) async {
+    if (_photoBusy || _videoBusy || _audioBusy) return;
+    setState(() => _videoBusy = true);
+    HapticFeedback.mediumImpact();
+    final l10n = AppLocalizations.of(context);
+    _snack(l10n.t('sos_clip_recording'));
+    try {
+      final e = await SosCrisisMediaService.instance.withCameraReleased(
+        () => _evidence.recordVideo(
+          incident.id,
+          conversationId: _conv(incident),
+          duration: const Duration(seconds: 60),
+          source: 'victim',
+        ),
+      );
+      if (!mounted) return;
+      _snack(e == null
+          ? l10n.t('sos_clip_unavailable')
+          : (e.postedToChat
+              ? l10n.t('sos_ev_video_sent')
+              : l10n.t('sos_ev_video_captured')));
+    } catch (e) {
+      if (mounted) _snack(_CrisisValidators.friendlyError(e, l10n));
+    } finally {
+      if (mounted) setState(() => _videoBusy = false);
+    }
+  }
+
+  Future<void> _toggleAudio20(SosIncident incident) async {
+    if (_photoBusy || _videoBusy) return;
+    final l10n = AppLocalizations.of(context);
+    HapticFeedback.mediumImpact();
+
+    if (_audioBusy) {
+      _audioTimer?.cancel();
+      try {
+        final e = await _evidence.stopAudio(
+          incident.id,
+          conversationId: _conv(incident),
+          source: 'victim',
+        );
+        if (!mounted) return;
+        setState(() => _audioBusy = false);
+        _snack(e == null
+            ? l10n.t('sos_clip_unavailable')
+            : (e.postedToChat
+                ? l10n.t('sos_ev_audio_sent')
+                : l10n.t('sos_ev_audio_captured')));
+      } catch (e) {
+        if (mounted) {
+          setState(() => _audioBusy = false);
+          _snack(_CrisisValidators.friendlyError(e, l10n));
+        }
+      }
+      return;
+    }
+
+    try {
+      await _evidence.startAudio();
+      if (!mounted) return;
+      setState(() => _audioBusy = true);
+      _snack(l10n.t('sos_ev_mic_on'));
+      _audioTimer?.cancel();
+      _audioTimer = Timer(const Duration(minutes: 20), () {
+        if (mounted && _audioBusy) _toggleAudio20(incident);
+      });
+    } catch (e) {
+      if (mounted) _snack(_CrisisValidators.friendlyError(e, l10n));
     }
   }
 
@@ -541,36 +687,45 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage>
                           children: [
                             Expanded(
                               child: _ComButton(
+                                icon: Icons.photo_camera,
+                                label: _photoBusy ? '…' : l10n.t('sos_photo'),
+                                color: ThixPolicy.primary,
+                                onTap: _photoBusy
+                                    ? () {}
+                                    : () => _sendPhoto(incident),
+                              ),
+                            ),
+                            const SizedBox(width: ThixPolicy.s8),
+                            Expanded(
+                              child: _ComButton(
+                                icon: Icons.videocam,
+                                label: _videoBusy
+                                    ? l10n.t('sos_clip_busy')
+                                    : l10n.t('sos_video_60'),
+                                color: ThixPolicy.warning,
+                                onTap: _videoBusy
+                                    ? () {}
+                                    : () => _sendVideo60(incident),
+                              ),
+                            ),
+                            const SizedBox(width: ThixPolicy.s8),
+                            Expanded(
+                              child: _ComButton(
+                                icon: _audioBusy ? Icons.stop : Icons.mic,
+                                label: _audioBusy
+                                    ? l10n.t('sos_audio_stop')
+                                    : l10n.t('sos_audio_20'),
+                                color: ThixPolicy.success,
+                                onTap: () => _toggleAudio20(incident),
+                              ),
+                            ),
+                            const SizedBox(width: ThixPolicy.s8),
+                            Expanded(
+                              child: _ComButton(
                                 icon: Icons.chat_bubble_outline,
                                 label: l10n.t('sos_chat'),
                                 color: ThixPolicy.primary,
                                 onTap: () => _openChat(incident),
-                              ),
-                            ),
-                            const SizedBox(width: ThixPolicy.s10),
-                            Expanded(
-                              child: _ComButton(
-                                icon: Icons.videocam,
-                                label: _clipBusy
-                                    ? l10n.t('sos_clip_busy')
-                                    : l10n.t('sos_clip'),
-                                color: ThixPolicy.warning,
-                                onTap: _clipBusy
-                                    ? () {}
-                                    : () => _launchClip10(incident),
-                              ),
-                            ),
-                            const SizedBox(width: ThixPolicy.s10),
-                            Expanded(
-                              child: _ComButton(
-                                icon: Icons.phone_in_talk,
-                                label: l10n.t('sos_recall'),
-                                color: ThixPolicy.success,
-                                onTap: () {
-                                  if (circleContacts.isNotEmpty) {
-                                    _callContact(circleContacts.first);
-                                  }
-                                },
                               ),
                             ),
                           ],
