@@ -8,7 +8,7 @@ import 'package:geolocator/geolocator.dart';
 
 import '../models/sos_models.dart';
 import '../services/sos_service.dart';
-import '../services/sos_call_bridge.dart';
+import '../services/sos_protocol_orchestrator.dart';
 import '../services/sos_escalation_controller.dart';
 
 const Duration _kTriggerTimeout = Duration(seconds: 12);
@@ -225,13 +225,13 @@ class TriggerSosNotifier extends StateNotifier<AsyncValue<SosIncident?>> {
 
   Future<void> _runProtocol(SosIncident incident) async {
     try {
-      final result = await SosCallBridge(
+      final result = await SosProtocolOrchestrator(
         sos: _ref.read(sosServiceProvider),
-      ).activateProtocol(incident);
+      ).run(incident);
 
       debugPrint(
         '[SosProviders] protocol chat=${result.conversationId} '
-        'calls=\( {result.answeredOrRinging}/ \){result.calls.length}',
+        'calls=${result.answeredOrRinging}/${result.calls.length}',
       );
 
       try {
