@@ -137,6 +137,7 @@ Future<T> _chatRetry<T>(
   }
 }
 
+
 // ============================================================================
 // MESSAGES PROVIDER
 // ============================================================================
@@ -195,6 +196,7 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
       state = [];
     }
   }
+
   Future<void> loadMore() async {
     if (loadingMore || !hasMore) return;
     loadingMore = true;
@@ -256,6 +258,7 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
   void removeLocal(String id) {
     state = state.where((m) => m.id != id).toList();
   }
+} // ✅ AJOUT DE L'ACCOLADE FERMANTE MANQUANTE ICI POUR ChatMsgNotifier
 
 // ============================================================================
 // CHAT LIST ITEM (GROUPING)
@@ -300,6 +303,7 @@ List<_ChatListItem> _buildChatDisplayItems(List<ChatMessage> messages) {
   }
   return items;
 }
+
 
 // ============================================================================
 // SCREEN
