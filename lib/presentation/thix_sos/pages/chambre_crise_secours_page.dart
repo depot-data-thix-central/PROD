@@ -1151,8 +1151,7 @@ class _ChambreCriseSecoursPageState
               ),
             ),
           ),
-        ),
-      );
+        );
       },
     );
   }
