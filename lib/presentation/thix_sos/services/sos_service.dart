@@ -1,24 +1,21 @@
 // lib/presentation/thix_sos/services/sos_service.dart
 
-/// THIX SOS — Service Supabase (Production Enterprise)
-/// ✅ SÉCURISÉ : timeouts, retry, validation, anti-race, PII protection
-/// ✅ ROBUSTE : logs structurés, atomicité best-effort, sanitization
+/// THIX SOS — Service Supabase
+/// Trigger rapide (incident d'abord), GPS en fond, chat UUID v4 + membres batch.
 import 'dart:math';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
 import '../models/sos_models.dart';
 
-// ============================================================================
-// CONSTANTS
-// ============================================================================
-const Duration _kQueryTimeout = Duration(seconds: 15);
-const Duration _kTriggerTimeout = Duration(seconds: 30);
-const Duration _kGeolocatorTimeout = Duration(seconds: 8);
+const Duration _kQueryTimeout = Duration(seconds: 12);
+const Duration _kTriggerTimeout = Duration(seconds: 12);
+const Duration _kGeolocatorTimeout = Duration(seconds: 4);
 const int _kMaxRetries = 1;
-const Duration _kRetryDelay = Duration(milliseconds: 600);
+const Duration _kRetryDelay = Duration(milliseconds: 400);
 const int _kMaxNameLength = 100;
 const int _kMaxRelationLength = 50;
 const int _kMaxIdLength = 64;
@@ -30,24 +27,20 @@ const int _kDefaultEventsLimit = 50;
 const int _kMaxEventsLimit = 500;
 const int _kMinCircle = 1;
 const int _kMaxCircle = 3;
+const _uuid = Uuid();
 
-// ============================================================================
-// EXCEPTION
-// ============================================================================
 class SosServiceException implements Exception {
   final String message;
   final Object? cause;
   final String? code;
-  
+
   SosServiceException(this.message, [this.cause, this.code]);
-  
+
   @override
-  String toString() => 'SosServiceException: $message${code != null ? ' [$code]' : ''}';
+  String toString() =>
+      'SosServiceException: $message${code != null ? ' [$code]' : ''}';
 }
 
-// ============================================================================
-// VALIDATORS
-// ============================================================================
 class _ServiceValidators {
   _ServiceValidators._();
 
@@ -55,6 +48,14 @@ class _ServiceValidators {
     if (id == null) return false;
     final trimmed = id.trim();
     return trimmed.isNotEmpty && trimmed.length <= _kMaxIdLength;
+  }
+
+  static bool isValidUuid(String? id) {
+    if (id == null) return false;
+    return RegExp(
+      r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+      caseSensitive: false,
+    ).hasMatch(id.trim());
   }
 
   static bool isValidName(String? name) {
@@ -91,9 +92,6 @@ class _ServiceValidators {
   }
 }
 
-// ============================================================================
-// HELPERS
-// ============================================================================
 Future<T> _serviceRetry<T>(
   Future<T> Function() fn, {
   required String label,
@@ -116,7 +114,8 @@ Future<T> _serviceRetry<T>(
       attempt++;
       if (attempt > maxRetries) {
         debugPrint('[SosService] ❌ $label: Postgrest ${e.code} ${e.message}');
-        throw SosServiceException('Erreur base de données: ${e.message}', e, e.code);
+        throw SosServiceException(
+            'Erreur base de données: ${e.message}', e, e.code);
       }
       await Future.delayed(_kRetryDelay);
     } catch (e) {
@@ -130,11 +129,9 @@ Future<T> _serviceRetry<T>(
   }
 }
 
-// ============================================================================
-// SERVICE
-// ============================================================================
 class SosService {
-  SosService({SupabaseClient? client}) : _client = client ?? SupabaseConfig.client;
+  SosService({SupabaseClient? client})
+      : _client = client ?? SupabaseConfig.client;
 
   final SupabaseClient _client;
   bool _isTriggering = false;
@@ -148,8 +145,8 @@ class SosService {
 
   void _ensureAuth() {
     if (_uid == null) {
-      debugPrint('[SosService] ⚠️ Auth required but no user');
-      throw SosServiceException('Utilisateur non authentifié', null, 'AUTH_REQUIRED');
+      throw SosServiceException(
+          'Utilisateur non authentifié', null, 'AUTH_REQUIRED');
     }
   }
 
@@ -160,27 +157,15 @@ class SosService {
     return 'SOS-THX-$ts-$n';
   }
 
-  String _generateUuid() {
-    final r = Random.secure();
-    String h(int bytes) {
-      final buffer = StringBuffer();
-      for (var i = 0; i < bytes; i++) {
-        buffer.write(r.nextInt(256).toRadixString(16).padLeft(2, '0'));
-      }
-      return buffer.toString();
-    }
-    return '${h(4)}-${h(2)}-4${h(1).substring(1)}-${(8 + r.nextInt(4)).toRadixString(16)}${h(1).substring(1)}-${h(6)}';
-  }
+  /// UUID v4 strict — compatible ChatService / colonne uuid Postgres.
+  String _generateUuid() => _uuid.v4();
 
   Future<void> logEventPublic(
     String incidentId,
     String eventType,
     Map<String, dynamic> metadata,
   ) async {
-    if (!_ServiceValidators.isValidId(incidentId)) {
-      debugPrint('[SosService] ⚠️ logEventPublic: invalid incidentId');
-      return;
-    }
+    if (!_ServiceValidators.isValidId(incidentId)) return;
     await _logEvent(incidentId, eventType, metadata);
   }
 
@@ -197,22 +182,17 @@ class SosService {
         label: 'getContacts',
       );
 
-      debugPrint('[SosService] ✓ getContacts: ${(res as List).length} contacts');
-      return res
+      return (res as List)
           .map((e) => SosContact.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
     } catch (e) {
-      debugPrint('[SosService] ❌ getContacts: $e');
       throw SosServiceException('Impossible de charger les secours', e);
     }
   }
 
   Future<List<SosContact>> getContactsByCircle(int circle) async {
     _ensureAuth();
-    if (!_ServiceValidators.isValidCircle(circle)) {
-      debugPrint('[SosService] ⚠️ Invalid circle: $circle');
-      return [];
-    }
+    if (!_ServiceValidators.isValidCircle(circle)) return [];
     try {
       final res = await _serviceRetry(
         () => _client
@@ -223,15 +203,20 @@ class SosService {
             .order('priority', ascending: true),
         label: 'getContactsByCircle[$circle]',
       );
-
-      final list = (res as List)
+      return (res as List)
           .map((e) => SosContact.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
-      debugPrint('[SosService] ✓ getContactsByCircle[$circle]: ${list.length}');
-      return list;
     } catch (e) {
-      debugPrint('[SosService] ❌ getContactsByCircle[$circle]: $e');
-      throw SosServiceException('Impossible de charger les secours du cercle $circle', e);
+      throw SosServiceException(
+          'Impossible de charger les secours du cercle $circle', e);
+    }
+  }
+
+  Future<List<SosContact>> getContactsAllCircles() async {
+    try {
+      return await getContacts();
+    } catch (_) {
+      return [];
     }
   }
 
@@ -245,15 +230,19 @@ class SosService {
   }) async {
     _ensureAuth();
     if (!_ServiceValidators.isValidCircle(circle)) {
-      throw SosServiceException('Cercle invalide (1, 2 ou 3)', null, 'INVALID_CIRCLE');
+      throw SosServiceException(
+          'Cercle invalide (1, 2 ou 3)', null, 'INVALID_CIRCLE');
     }
     if (!_ServiceValidators.isValidName(name)) {
-      throw SosServiceException('Le nom est obligatoire (max 100 caractères)', null, 'INVALID_NAME');
+      throw SosServiceException(
+          'Le nom est obligatoire (max 100 caractères)', null, 'INVALID_NAME');
     }
-    
-    final sanitizedName = _ServiceValidators.sanitizePayload(name, maxLength: _kMaxNameLength);
+
+    final sanitizedName =
+        _ServiceValidators.sanitizePayload(name, maxLength: _kMaxNameLength);
     final sanitizedRelation = relation != null
-        ? _ServiceValidators.sanitizePayload(relation, maxLength: _kMaxRelationLength)
+        ? _ServiceValidators.sanitizePayload(relation,
+            maxLength: _kMaxRelationLength)
         : null;
 
     try {
@@ -273,11 +262,8 @@ class SosService {
             .single(),
         label: 'addContact',
       );
-
-      debugPrint('[SosService] ✓ addContact: $sanitizedName (circle $circle)');
       return SosContact.fromJson(Map<String, dynamic>.from(res));
     } catch (e) {
-      debugPrint('[SosService] ❌ addContact: $e');
       throw SosServiceException('Impossible d\'ajouter le secours', e);
     }
   }
@@ -287,18 +273,20 @@ class SosService {
     if (!_ServiceValidators.isValidId(contact.id)) {
       throw SosServiceException('ID contact invalide', null, 'INVALID_ID');
     }
-    
+
     try {
       final res = await _serviceRetry(
         () => _client
             .from(_tableContacts)
             .update({
-              'name': _ServiceValidators.sanitizePayload(contact.name, maxLength: _kMaxNameLength),
+              'name': _ServiceValidators.sanitizePayload(contact.name,
+                  maxLength: _kMaxNameLength),
               'phone': contact.phone?.trim(),
               'thix_id': contact.thixId?.trim(),
               'photo_url': contact.photoUrl,
               'relation': contact.relation != null
-                  ? _ServiceValidators.sanitizePayload(contact.relation, maxLength: _kMaxRelationLength)
+                  ? _ServiceValidators.sanitizePayload(contact.relation,
+                      maxLength: _kMaxRelationLength)
                   : null,
               'circle': contact.circle,
               'priority': contact.priority,
@@ -310,13 +298,10 @@ class SosService {
             .eq('owner_id', _uid!)
             .select()
             .single(),
-        label: 'updateContact[${_ServiceValidators.maskId(contact.id)}]',
+        label: 'updateContact',
       );
-
-      debugPrint('[SosService] ✓ updateContact: ${_ServiceValidators.maskId(contact.id)}');
       return SosContact.fromJson(Map<String, dynamic>.from(res));
     } catch (e) {
-      debugPrint('[SosService] ❌ updateContact: $e');
       throw SosServiceException('Impossible de modifier le secours', e);
     }
   }
@@ -326,7 +311,6 @@ class SosService {
     if (!_ServiceValidators.isValidId(contactId)) {
       throw SosServiceException('ID contact invalide', null, 'INVALID_ID');
     }
-    
     try {
       await _serviceRetry(
         () => _client
@@ -334,21 +318,16 @@ class SosService {
             .delete()
             .eq('id', contactId)
             .eq('owner_id', _uid!),
-        label: 'deleteContact[${_ServiceValidators.maskId(contactId)}]',
+        label: 'deleteContact',
       );
-      debugPrint('[SosService] ✓ deleteContact: ${_ServiceValidators.maskId(contactId)}');
     } catch (e) {
-      debugPrint('[SosService] ❌ deleteContact: $e');
       throw SosServiceException('Impossible de supprimer le secours', e);
     }
   }
 
   Future<Map<String, dynamic>?> lookupProfileByThixId(String thixId) async {
     final normalized = thixId.trim().toUpperCase();
-    if (normalized.isEmpty || normalized.length > _kMaxIdLength) {
-      debugPrint('[SosService] ⚠️ Invalid THIX ID length');
-      return null;
-    }
+    if (normalized.isEmpty || normalized.length > _kMaxIdLength) return null;
 
     try {
       final res = await _serviceRetry(
@@ -357,18 +336,13 @@ class SosService {
             .select('id, thix_id, full_name, avatar_url')
             .ilike('thix_id', normalized)
             .maybeSingle(),
-        label: 'lookupProfileByThixId[$normalized]',
+        label: 'lookupProfileByThixId',
       );
-
-      if (res == null) {
-        debugPrint('[SosService] ℹ️ THIX ID not found: $normalized');
-        return null;
-      }
-      debugPrint('[SosService] ✓ THIX ID found: $normalized');
+      if (res == null) return null;
       return Map<String, dynamic>.from(res);
     } catch (e) {
-      debugPrint('[SosService] ❌ lookupProfileByThixId: $e');
-      throw SosServiceException('Impossible de rechercher ce THIX ID', e);
+      debugPrint('[SosService] lookupProfileByThixId: $e');
+      return null;
     }
   }
 
@@ -383,10 +357,12 @@ class SosService {
   }) async {
     _ensureAuth();
     if (!_ServiceValidators.isValidCircle(circle)) {
-      throw SosServiceException('Cercle invalide (1, 2 ou 3)', null, 'INVALID_CIRCLE');
+      throw SosServiceException(
+          'Cercle invalide (1, 2 ou 3)', null, 'INVALID_CIRCLE');
     }
     if (!_ServiceValidators.isValidId(contactUserId)) {
-      throw SosServiceException('ID utilisateur invalide', null, 'INVALID_USER_ID');
+      throw SosServiceException(
+          'ID utilisateur invalide', null, 'INVALID_USER_ID');
     }
 
     final normalizedThixId = thixId.trim().toUpperCase();
@@ -399,7 +375,7 @@ class SosService {
           .eq('thix_id', normalizedThixId)
           .eq('circle', circle)
           .maybeSingle(),
-      label: 'checkDuplicate[$normalizedThixId]',
+      label: 'checkDuplicate',
     );
 
     if (existing != null) {
@@ -416,24 +392,23 @@ class SosService {
             .from(_tableContacts)
             .insert({
               'owner_id': _uid,
-              'name': _ServiceValidators.sanitizePayload(name, maxLength: _kMaxNameLength),
+              'name': _ServiceValidators.sanitizePayload(name,
+                  maxLength: _kMaxNameLength),
               'circle': circle,
               'phone': phone?.trim(),
               'thix_id': normalizedThixId,
               'photo_url': photoUrl,
               'relation': relation != null
-                  ? _ServiceValidators.sanitizePayload(relation, maxLength: _kMaxRelationLength)
+                  ? _ServiceValidators.sanitizePayload(relation,
+                      maxLength: _kMaxRelationLength)
                   : null,
             })
             .select()
             .single(),
-        label: 'addContactFromThix[$normalizedThixId]',
+        label: 'addContactFromThix',
       );
-
-      debugPrint('[SosService] ✓ addContactFromThix: $normalizedThixId (circle $circle)');
       return SosContact.fromJson(Map<String, dynamic>.from(res));
     } catch (e) {
-      debugPrint('[SosService] ❌ addContactFromThixProfile: $e');
       throw SosServiceException('Impossible d\'ajouter le secours', e);
     }
   }
@@ -444,11 +419,20 @@ class SosService {
       final profile = await lookupProfileByThixId(c.thixId!);
       return profile?['id'] as String?;
     } catch (e) {
-      debugPrint('[SosService] ⚠️ resolveContactUserId failed: $e');
       return null;
     }
   }
 
+  /// Résout tous les contacts en parallèle (cercles 1+2+3).
+  Future<List<String>> resolveAllCircleUserIds(
+      [List<SosContact>? contacts]) async {
+    final list = contacts ?? await getContactsAllCircles();
+    if (list.isEmpty) return const [];
+    final ids = await Future.wait(list.map(resolveContactUserId));
+    return ids.whereType<String>().where((id) => id.isNotEmpty).toSet().toList();
+  }
+
+  /// Crée (ou réutilise) le groupe THIX Chat. Toujours créé, même 0 membre.
   Future<String> createSosChat({
     required String incidentId,
     required String publicId,
@@ -456,9 +440,39 @@ class SosService {
   }) async {
     _ensureAuth();
     if (!_ServiceValidators.isValidId(incidentId)) {
-      throw SosServiceException('ID incident invalide', null, 'INVALID_INCIDENT_ID');
+      throw SosServiceException(
+          'ID incident invalide', null, 'INVALID_INCIDENT_ID');
     }
-    
+
+    final existing = await getIncidentById(incidentId);
+    final existingChat = existing?.chatConversationId;
+    if (existingChat != null &&
+        existingChat.isNotEmpty &&
+        _ServiceValidators.isValidUuid(existingChat)) {
+      await _ensureParticipants(existingChat, participantUserIds);
+      return existingChat;
+    }
+
+    // RPC serveur (bypass RLS) si déployée — sinon fallback client.
+    try {
+      final rpc = await _client.rpc('create_sos_chat', params: {
+        'p_incident_id': incidentId,
+        'p_public_id': publicId,
+        'p_participant_ids': participantUserIds,
+      }).timeout(const Duration(seconds: 8));
+      final convId = rpc is String
+          ? rpc
+          : (rpc is Map ? rpc['conversation_id']?.toString() : rpc?.toString());
+      if (convId != null &&
+          convId.isNotEmpty &&
+          _ServiceValidators.isValidUuid(convId)) {
+        debugPrint('[SosService] ✓ Chat SOS via RPC');
+        return convId;
+      }
+    } catch (e) {
+      debugPrint('[SosService] RPC create_sos_chat indisponible: $e');
+    }
+
     final uid = _uid!;
     final conversationId = _generateUuid();
     final now = DateTime.now().toUtc().toIso8601String();
@@ -475,31 +489,32 @@ class SosService {
         label: 'createConversation',
       );
 
-      await _serviceRetry(
-        () => _client.from('conversation_participants').insert({
-          'conversation_id': conversationId,
-          'user_id': uid,
-          'role': 'admin',
-          'last_read_at': now,
-        }),
-        label: 'addAdminParticipant',
-      );
+      final unique = <String>{uid, ...participantUserIds}
+          .where(_ServiceValidators.isValidUuid)
+          .toList();
 
-      final uniqueParticipants = participantUserIds.toSet()..remove(uid);
-      for (final pid in uniqueParticipants) {
-        if (!_ServiceValidators.isValidId(pid)) continue;
-        try {
-          await _serviceRetry(
-            () => _client.from('conversation_participants').insert({
-              'conversation_id': conversationId,
-              'user_id': pid,
-              'role': 'member',
-              'last_read_at': now,
-            }),
-            label: 'addParticipant[${_ServiceValidators.maskId(pid)}]',
-          );
-        } catch (e) {
-          debugPrint('[SosService] ⚠️ Failed to add participant ${_ServiceValidators.maskId(pid)}: $e');
+      final rows = unique
+          .map((pid) => {
+                'conversation_id': conversationId,
+                'user_id': pid,
+                'role': pid == uid ? 'admin' : 'member',
+                'last_read_at': now,
+              })
+          .toList();
+
+      try {
+        await _serviceRetry(
+          () => _client.from('conversation_participants').insert(rows),
+          label: 'addParticipantsBatch',
+        );
+      } catch (e) {
+        debugPrint('[SosService] batch participants failed, fallback 1-by-1: $e');
+        for (final row in rows) {
+          try {
+            await _client.from('conversation_participants').insert(row);
+          } catch (err) {
+            debugPrint('[SosService] skip participant ${row['user_id']}: $err');
+          }
         }
       }
 
@@ -508,14 +523,14 @@ class SosService {
           () => _client.from('messages').insert({
             'conversation_id': conversationId,
             'sender_id': uid,
-            'content': '🔴 SOS déclenché — $publicId\nRejoignez la chambre de crise.',
-            'type': 'system',
+            'content':
+                '🔴 SOS déclenché — $publicId\nRejoignez la chambre de crise.',
             'created_at': now,
           }),
           label: 'createSystemMessage',
         );
       } catch (e) {
-        debugPrint('[SosService] ⚠️ System message failed (non-critical): $e');
+        debugPrint('[SosService] system message: $e');
       }
 
       await _serviceRetry(
@@ -528,14 +543,32 @@ class SosService {
 
       await _logEvent(incidentId, 'CHAT_CREATED', {
         'conversation_id': conversationId,
-        'participants_count': uniqueParticipants.length,
+        'participants_count': unique.length,
       });
 
-      debugPrint('[SosService] ✓ Chat SOS created: ${_ServiceValidators.maskId(conversationId)}');
+      debugPrint('[SosService] ✓ Chat SOS $conversationId');
       return conversationId;
     } catch (e) {
-      debugPrint('[SosService] ❌ createSosChat: $e');
       throw SosServiceException('Impossible de créer le chat SOS', e);
+    }
+  }
+
+  Future<void> _ensureParticipants(
+      String conversationId, List<String> userIds) async {
+    final uid = _uid;
+    if (uid == null) return;
+    final now = DateTime.now().toUtc().toIso8601String();
+    final unique = userIds.toSet()..remove(uid);
+    for (final pid in unique) {
+      if (!_ServiceValidators.isValidUuid(pid)) continue;
+      try {
+        await _client.from('conversation_participants').insert({
+          'conversation_id': conversationId,
+          'user_id': pid,
+          'role': 'member',
+          'last_read_at': now,
+        });
+      } catch (_) {}
     }
   }
 
@@ -553,21 +586,17 @@ class SosService {
             .maybeSingle(),
         label: 'getActiveIncident',
       );
-
       if (res == null) return null;
       return SosIncident.fromJson(Map<String, dynamic>.from(res));
     } catch (e) {
-      debugPrint('[SosService] ⚠️ getActiveIncident: $e');
+      debugPrint('[SosService] getActiveIncident: $e');
       return null;
     }
   }
 
   Future<SosIncident?> getIncidentById(String id) async {
     _ensureAuth();
-    if (!_ServiceValidators.isValidId(id)) {
-      debugPrint('[SosService] ⚠️ getIncidentById: invalid id');
-      return null;
-    }
+    if (!_ServiceValidators.isValidId(id)) return null;
     try {
       final res = await _serviceRetry(
         () => _client
@@ -576,45 +605,33 @@ class SosService {
             .eq('id', id)
             .eq('victim_id', _uid!)
             .maybeSingle(),
-        label: 'getIncidentById[${_ServiceValidators.maskId(id)}]',
+        label: 'getIncidentById',
       );
       if (res == null) return null;
       return SosIncident.fromJson(Map<String, dynamic>.from(res));
     } catch (e) {
-      debugPrint('[SosService] ⚠️ getIncidentById: $e');
       return null;
     }
   }
 
   Future<SosIncident?> getIncidentForRescue(String id) async {
     _ensureAuth();
-    if (!_ServiceValidators.isValidId(id)) {
-      debugPrint('[SosService] ⚠️ getIncidentForRescue: invalid id');
-      return null;
-    }
+    if (!_ServiceValidators.isValidId(id)) return null;
     try {
       final res = await _serviceRetry(
-        () => _client
-            .from(_tableIncidents)
-            .select()
-            .eq('id', id)
-            .maybeSingle(),
-        label: 'getIncidentForRescue[${_ServiceValidators.maskId(id)}]',
+        () => _client.from(_tableIncidents).select().eq('id', id).maybeSingle(),
+        label: 'getIncidentForRescue',
       );
       if (res == null) return null;
       return SosIncident.fromJson(Map<String, dynamic>.from(res));
     } catch (e) {
-      debugPrint('[SosService] ⚠️ getIncidentForRescue: $e');
       return null;
     }
   }
 
   Future<SosIncident?> findActiveByVictim(String victimId) async {
     _ensureAuth();
-    if (!_ServiceValidators.isValidId(victimId)) {
-      debugPrint('[SosService] ⚠️ findActiveByVictim: invalid victimId');
-      return null;
-    }
+    if (!_ServiceValidators.isValidId(victimId)) return null;
     try {
       final res = await _serviceRetry(
         () => _client
@@ -625,20 +642,20 @@ class SosService {
             .order('started_at', ascending: false)
             .limit(1)
             .maybeSingle(),
-        label: 'findActiveByVictim[${_ServiceValidators.maskId(victimId)}]',
+        label: 'findActiveByVictim',
       );
       if (res == null) return null;
       return SosIncident.fromJson(Map<String, dynamic>.from(res));
     } catch (e) {
-      debugPrint('[SosService] ⚠️ findActiveByVictim: $e');
       return null;
     }
   }
 
-  Future<List<SosIncident>> getHistory({int limit = _kDefaultHistoryLimit}) async {
+  Future<List<SosIncident>> getHistory(
+      {int limit = _kDefaultHistoryLimit}) async {
     _ensureAuth();
-    final safeLimit = _ServiceValidators.clampLimit(limit, _kDefaultHistoryLimit, _kMaxHistoryLimit);
-    
+    final safeLimit = _ServiceValidators.clampLimit(
+        limit, _kDefaultHistoryLimit, _kMaxHistoryLimit);
     try {
       final res = await _serviceRetry(
         () => _client
@@ -649,150 +666,157 @@ class SosService {
             .limit(safeLimit),
         label: 'getHistory',
       );
-
-      final list = (res as List)
+      return (res as List)
           .map((e) => SosIncident.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
-      debugPrint('[SosService] ✓ getHistory: ${list.length} incidents');
-      return list;
     } catch (e) {
-      debugPrint('[SosService] ❌ getHistory: $e');
       throw SosServiceException('Impossible de charger l\'historique', e);
     }
   }
 
+  /// GPS best-effort : lastKnown d'abord, jamais bloquant > 1.2s au trigger.
+  Future<Position?> peekPosition({bool precise = false}) async {
+    try {
+      var permission =
+          await Geolocator.checkPermission().timeout(_kGeolocatorTimeout);
+      if (permission == LocationPermission.denied) {
+        permission =
+            await Geolocator.requestPermission().timeout(_kGeolocatorTimeout);
+      }
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) {
+        return null;
+      }
+      if (!precise) {
+        try {
+          final last = await Geolocator.getLastKnownPosition();
+          if (last != null) return last;
+        } catch (_) {}
+      }
+      return await Geolocator.getCurrentPosition(
+        locationSettings: LocationSettings(
+          accuracy:
+              precise ? LocationAccuracy.high : LocationAccuracy.low,
+          timeLimit: precise
+              ? const Duration(seconds: 6)
+              : const Duration(milliseconds: 1200),
+        ),
+      );
+    } catch (e) {
+      debugPrint('[SosService] peekPosition: $e');
+      return null;
+    }
+  }
+
+  /// Trigger RAPIDE : crée l'incident sans attendre GPS précis ni le chat.
   Future<SosIncident> triggerSos() async {
     _ensureAuth();
 
     if (_isTriggering) {
-      debugPrint('[SosService] ⚠️ triggerSos already in progress');
-      throw SosServiceException('Un SOS est déjà en cours de déclenchement', null, 'TRIGGER_IN_PROGRESS');
+      throw SosServiceException('Un SOS est déjà en cours de déclenchement',
+          null, 'TRIGGER_IN_PROGRESS');
     }
     _isTriggering = true;
 
     try {
       final existing = await getActiveIncident();
       if (existing != null) {
-        throw SosServiceException(
-          'Un SOS est déjà en cours (${existing.publicId})',
-          null,
-          'SOS_ALREADY_ACTIVE',
-        );
+        return existing;
       }
 
-      Position? position;
-      try {
-        var permission = await Geolocator.checkPermission().timeout(_kGeolocatorTimeout);
-        if (permission == LocationPermission.denied) {
-          permission = await Geolocator.requestPermission().timeout(_kGeolocatorTimeout);
-        }
-        if (permission == LocationPermission.whileInUse ||
-            permission == LocationPermission.always) {
-          position = await Geolocator.getCurrentPosition(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.high,
-              timeLimit: _kGeolocatorTimeout,
-            ),
-          );
-          debugPrint('[SosService] 📍 GPS acquired');
-        }
-      } catch (e) {
-        debugPrint('[SosService] ⚠️ GPS acquisition failed (non-critical): $e');
-      }
+      final position = await peekPosition(precise: false);
 
       final publicId = _generatePublicId();
       final now = DateTime.now().toIso8601String();
-
       final safeLat = _ServiceValidators.roundCoordinate(position?.latitude);
       final safeLng = _ServiceValidators.roundCoordinate(position?.longitude);
 
-      try {
-        final row = await _serviceRetry(
-          () => _client
-              .from(_tableIncidents)
-              .insert({
-                'public_id': publicId,
-                'victim_id': _uid,
-                'status': SosStatus.active.dbValue,
-                'active_circle': 1,
-                'last_lat': position?.latitude,
-                'last_lng': position?.longitude,
-                'last_accuracy_m': position?.accuracy,
-                'last_location_at': position != null ? now : null,
-                'heartbeat_at': now,
-                'started_at': now,
-              })
-              .select()
-              .single(),
-          label: 'createIncident',
-          timeout: _kTriggerTimeout,
-        );
+      final row = await _serviceRetry(
+        () => _client
+            .from(_tableIncidents)
+            .insert({
+              'public_id': publicId,
+              'victim_id': _uid,
+              'status': SosStatus.callingCircle1.dbValue,
+              'active_circle': 1,
+              'last_lat': position?.latitude,
+              'last_lng': position?.longitude,
+              'last_accuracy_m': position?.accuracy,
+              'last_location_at': position != null ? now : null,
+              'heartbeat_at': now,
+              'started_at': now,
+            })
+            .select()
+            .single(),
+        label: 'createIncident',
+        timeout: _kTriggerTimeout,
+      );
 
-        final incident = SosIncident.fromJson(Map<String, dynamic>.from(row));
+      final incident = SosIncident.fromJson(Map<String, dynamic>.from(row));
 
-        if (position != null) {
-          try {
-            await _serviceRetry(
-              () => _client.from(_tableLocations).insert({
-                'incident_id': incident.id,
-                'lat': position!.latitude,
-                'lng': position!.longitude,
-                'accuracy_m': position!.accuracy,
-                'speed_mps': position!.speed,
-                'heading_deg': position!.heading,
-              }),
-              label: 'insertInitialLocation',
-            );
-          } catch (e) {
-            debugPrint('[SosService] ⚠️ Initial location insert failed: $e');
-          }
-        }
+      // Fond : position + events (ne bloque pas le retour).
+      unawaited(_postCreateIncidentWork(incident, position, publicId, safeLat, safeLng));
 
-        await _logEvent(incident.id, 'SOS_CREATED', {
-          'public_id': publicId,
-          'lat': safeLat, 
-          'lng': safeLng,
-        });
-
-        await _serviceRetry(
-          () => _client.from(_tableIncidents).update({
-            'status': SosStatus.callingCircle1.dbValue,
-            'updated_at': DateTime.now().toIso8601String(),
-          }).eq('id', incident.id),
-          label: 'escalateCircle1',
-        );
-
-        await _logEvent(incident.id, 'CIRCLE_1_STARTED', {});
-
-        debugPrint('[SosService] 🚨 SOS triggered: $publicId');
-        return incident.copyWith(status: SosStatus.callingCircle1);
-      } catch (e) {
-        debugPrint('[SosService] ❌ triggerSos: $e');
-        throw SosServiceException('Échec du déclenchement SOS', e);
-      }
+      debugPrint('[SosService] 🚨 SOS triggered fast: $publicId');
+      return incident;
+    } catch (e) {
+      debugPrint('[SosService] ❌ triggerSos: $e');
+      throw SosServiceException('Échec du déclenchement SOS', e);
     } finally {
       _isTriggering = false;
     }
   }
 
+  Future<void> _postCreateIncidentWork(
+    SosIncident incident,
+    Position? position,
+    String publicId,
+    double? safeLat,
+    double? safeLng,
+  ) async {
+    try {
+      if (position != null) {
+        await _client.from(_tableLocations).insert({
+          'incident_id': incident.id,
+          'lat': position.latitude,
+          'lng': position.longitude,
+          'accuracy_m': position.accuracy,
+          'speed_mps': position.speed,
+          'heading_deg': position.heading,
+        });
+      }
+    } catch (_) {}
+    await _logEvent(incident.id, 'SOS_CREATED', {
+      'public_id': publicId,
+      'lat': safeLat,
+      'lng': safeLng,
+    });
+    await _logEvent(incident.id, 'CIRCLE_1_STARTED', {});
+
+    // Affine le GPS en fond.
+    try {
+      final precise = await peekPosition(precise: true);
+      if (precise != null) {
+        final now = DateTime.now().toIso8601String();
+        await _client.from(_tableIncidents).update({
+          'last_lat': precise.latitude,
+          'last_lng': precise.longitude,
+          'last_accuracy_m': precise.accuracy,
+          'last_location_at': now,
+          'updated_at': now,
+        }).eq('id', incident.id);
+      }
+    } catch (_) {}
+  }
+
   Future<void> heartbeat(String incidentId, {int? batteryPct}) async {
     _ensureAuth();
-    if (!_ServiceValidators.isValidId(incidentId)) {
-      debugPrint('[SosService] ⚠️ heartbeat: invalid incidentId');
-      return;
-    }
+    if (!_ServiceValidators.isValidId(incidentId)) return;
 
     Position? position;
     try {
-      position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          timeLimit: const Duration(seconds: 5),
-        ),
-      );
-    } catch (e) {
-      debugPrint('[SosService] ⚠️ heartbeat GPS failed (non-critical): $e');
-    }
+      position = await peekPosition(precise: false);
+    } catch (_) {}
 
     final now = DateTime.now().toIso8601String();
     final patch = <String, dynamic>{
@@ -806,22 +830,16 @@ class SosService {
       patch['last_lng'] = position.longitude;
       patch['last_accuracy_m'] = position.accuracy;
       patch['last_location_at'] = now;
-
       try {
-        await _serviceRetry(
-          () => _client.from(_tableLocations).insert({
-            'incident_id': incidentId,
-            'lat': position!.latitude,
-            'lng': position!.longitude,
-            'accuracy_m': position!.accuracy,
-            'speed_mps': position!.speed,
-            'heading_deg': position!.heading,
-          }),
-          label: 'heartbeatLocation',
-        );
-      } catch (e) {
-        debugPrint('[SosService] ⚠️ heartbeat location insert failed: $e');
-      }
+        await _client.from(_tableLocations).insert({
+          'incident_id': incidentId,
+          'lat': position.latitude,
+          'lng': position.longitude,
+          'accuracy_m': position.accuracy,
+          'speed_mps': position.speed,
+          'heading_deg': position.heading,
+        });
+      } catch (_) {}
     }
 
     try {
@@ -831,22 +849,20 @@ class SosService {
             .update(patch)
             .eq('id', incidentId)
             .eq('victim_id', _uid!),
-        label: 'heartbeat[${_ServiceValidators.maskId(incidentId)}]',
+        label: 'heartbeat',
       );
     } catch (e) {
-      debugPrint('[SosService] ❌ heartbeat update failed: $e');
+      debugPrint('[SosService] heartbeat: $e');
     }
   }
 
   Future<void> escalateToCircle(String incidentId, int circle) async {
     _ensureAuth();
     if (!_ServiceValidators.isValidId(incidentId)) {
-      throw SosServiceException('ID incident invalide', null, 'INVALID_INCIDENT_ID');
+      throw SosServiceException(
+          'ID incident invalide', null, 'INVALID_INCIDENT_ID');
     }
-    if (!_ServiceValidators.isValidCircle(circle)) {
-      debugPrint('[SosService] ⚠️ escalateToCircle: invalid circle $circle');
-      return;
-    }
+    if (!_ServiceValidators.isValidCircle(circle)) return;
 
     final status = circle == 1
         ? SosStatus.callingCircle1
@@ -863,11 +879,8 @@ class SosService {
         }).eq('id', incidentId).eq('victim_id', _uid!),
         label: 'escalateToCircle[$circle]',
       );
-
       await _logEvent(incidentId, 'CIRCLE_${circle}_STARTED', {'circle': circle});
-      debugPrint('[SosService] ✓ Escalated to circle $circle');
     } catch (e) {
-      debugPrint('[SosService] ❌ escalateToCircle[$circle]: $e');
       throw SosServiceException('Échec escalade cercle $circle', e);
     }
   }
@@ -875,9 +888,9 @@ class SosService {
   Future<void> resolveIncident(String incidentId) async {
     _ensureAuth();
     if (!_ServiceValidators.isValidId(incidentId)) {
-      throw SosServiceException('ID incident invalide', null, 'INVALID_INCIDENT_ID');
+      throw SosServiceException(
+          'ID incident invalide', null, 'INVALID_INCIDENT_ID');
     }
-    
     try {
       await _serviceRetry(
         () => _client.from(_tableIncidents).update({
@@ -885,13 +898,10 @@ class SosService {
           'resolved_at': DateTime.now().toIso8601String(),
           'updated_at': DateTime.now().toIso8601String(),
         }).eq('id', incidentId).eq('victim_id', _uid!),
-        label: 'resolveIncident[${_ServiceValidators.maskId(incidentId)}]',
+        label: 'resolveIncident',
       );
-
       await _logEvent(incidentId, 'SOS_RESOLVED', {});
-      debugPrint('[SosService] ✓ Incident resolved');
     } catch (e) {
-      debugPrint('[SosService] ❌ resolveIncident: $e');
       throw SosServiceException('Impossible de terminer le SOS', e);
     }
   }
@@ -899,9 +909,9 @@ class SosService {
   Future<void> cancelIncident(String incidentId) async {
     _ensureAuth();
     if (!_ServiceValidators.isValidId(incidentId)) {
-      throw SosServiceException('ID incident invalide', null, 'INVALID_INCIDENT_ID');
+      throw SosServiceException(
+          'ID incident invalide', null, 'INVALID_INCIDENT_ID');
     }
-    
     try {
       await _serviceRetry(
         () => _client.from(_tableIncidents).update({
@@ -909,13 +919,10 @@ class SosService {
           'resolved_at': DateTime.now().toIso8601String(),
           'updated_at': DateTime.now().toIso8601String(),
         }).eq('id', incidentId).eq('victim_id', _uid!),
-        label: 'cancelIncident[${_ServiceValidators.maskId(incidentId)}]',
+        label: 'cancelIncident',
       );
-
       await _logEvent(incidentId, 'SOS_CANCELLED', {});
-      debugPrint('[SosService] ✓ Incident cancelled');
     } catch (e) {
-      debugPrint('[SosService] ❌ cancelIncident: $e');
       throw SosServiceException('Impossible d\'annuler le SOS', e);
     }
   }
@@ -926,8 +933,8 @@ class SosService {
   }) async {
     _ensureAuth();
     if (!_ServiceValidators.isValidId(incidentId)) return [];
-    final safeLimit = _ServiceValidators.clampLimit(limit, _kDefaultLocationsLimit, _kMaxLocationsLimit);
-    
+    final safeLimit = _ServiceValidators.clampLimit(
+        limit, _kDefaultLocationsLimit, _kMaxLocationsLimit);
     try {
       final res = await _serviceRetry(
         () => _client
@@ -936,23 +943,23 @@ class SosService {
             .eq('incident_id', incidentId)
             .order('captured_at', ascending: false)
             .limit(safeLimit),
-        label: 'getLocations[${_ServiceValidators.maskId(incidentId)}]',
+        label: 'getLocations',
       );
-
       return (res as List)
-          .map((e) => SosLocationPoint.fromJson(Map<String, dynamic>.from(e as Map)))
+          .map((e) =>
+              SosLocationPoint.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
-    } catch (e) {
-      debugPrint('[SosService] ⚠️ getLocations: $e');
+    } catch (_) {
       return [];
     }
   }
 
-  Future<List<SosEvent>> getEvents(String incidentId, {int limit = _kDefaultEventsLimit}) async {
+  Future<List<SosEvent>> getEvents(String incidentId,
+      {int limit = _kDefaultEventsLimit}) async {
     _ensureAuth();
     if (!_ServiceValidators.isValidId(incidentId)) return [];
-    final safeLimit = _ServiceValidators.clampLimit(limit, _kDefaultEventsLimit, _kMaxEventsLimit);
-    
+    final safeLimit = _ServiceValidators.clampLimit(
+        limit, _kDefaultEventsLimit, _kMaxEventsLimit);
     try {
       final res = await _serviceRetry(
         () => _client
@@ -961,14 +968,12 @@ class SosService {
             .eq('incident_id', incidentId)
             .order('created_at', ascending: false)
             .limit(safeLimit),
-        label: 'getEvents[${_ServiceValidators.maskId(incidentId)}]',
+        label: 'getEvents',
       );
-
       return (res as List)
           .map((e) => SosEvent.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
-    } catch (e) {
-      debugPrint('[SosService] ⚠️ getEvents: $e');
+    } catch (_) {
       return [];
     }
   }
@@ -978,10 +983,7 @@ class SosService {
     String type,
     Map<String, dynamic> payload,
   ) async {
-    if (!_ServiceValidators.isValidId(incidentId)) {
-      debugPrint('[SosService] ⚠️ _logEvent: invalid incidentId');
-      return;
-    }
+    if (!_ServiceValidators.isValidId(incidentId)) return;
     try {
       await _serviceRetry(
         () => _client.from(_tableEvents).insert({
@@ -990,10 +992,10 @@ class SosService {
           'payload': payload,
         }),
         label: 'logEvent[$type]',
-        maxRetries: 0, 
+        maxRetries: 0,
       );
     } catch (e) {
-      debugPrint('[SosService] ⚠️ _logEvent[$type] failed: $e');
+      debugPrint('[SosService] _logEvent[$type]: $e');
     }
   }
 }
