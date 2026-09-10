@@ -1,5 +1,5 @@
-/// Preuves chambre de crise — production.
-/// Capture téléphone victime → Storage → table evidence → groupe SOS.
+/// Preuves chambre de crise.
+/// Capture → Storage → groupe THIX Chat (retry si le chat n'est pas encore prêt).
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -51,24 +51,35 @@ class SosEvidenceService {
     if (conversationId != null && conversationId.isNotEmpty) {
       return conversationId;
     }
-    try {
-      final inc = await _sos.getIncidentById(incidentId);
-      return inc?.chatConversationId;
-    } catch (_) {
+    for (var i = 0; i < 8; i++) {
+      try {
+        final inc = await _sos.getIncidentById(incidentId);
+        final id = inc?.chatConversationId;
+        if (id != null && id.isNotEmpty) return id;
+      } catch (_) {}
       try {
         final inc = await _sos.getIncidentForRescue(incidentId);
-        return inc?.chatConversationId;
-      } catch (_) {
-        return null;
-      }
+        final id = inc?.chatConversationId;
+        if (id != null && id.isNotEmpty) return id;
+      } catch (_) {}
+      await Future.delayed(Duration(milliseconds: 400 * (i + 1)));
     }
+    return null;
   }
 
   Future<void> _ensureCamera({bool audio = false}) async {
     if (kIsWeb) {
-      throw Exception('Capture silencieuse indisponible sur web — app native requise');
+      throw Exception('Capture silencieuse indisponible sur web');
     }
-    if (_camCtrl != null && _camCtrl!.value.isInitialized) return;
+    if (_camCtrl != null && _camCtrl!.value.isInitialized) {
+      if (_camCtrl!.value.isRecordingVideo) {
+        try {
+          await _camCtrl!.stopVideoRecording();
+        } catch (_) {}
+      }
+      return;
+    }
+    await disposeCamera();
     final cams = await availableCameras();
     if (cams.isEmpty) throw Exception('Aucune caméra');
     final rear = cams.firstWhere(
@@ -118,18 +129,24 @@ class SosEvidenceService {
     );
   }
 
-  /// Vidéo silencieuse. Défaut 10s (clip victime / commande secours).
+  /// Vidéo. Plafond 60 s.
   Future<SosEvidence?> recordVideo(
     String incidentId, {
     String? conversationId,
     Duration duration = const Duration(seconds: 10),
     String source = 'rescue',
   }) async {
+    final capped = duration.inSeconds > 60
+        ? const Duration(seconds: 60)
+        : (duration.inSeconds < 3
+            ? const Duration(seconds: 3)
+            : duration);
+
     String? path;
     try {
       await _ensureCamera(audio: true);
       await _camCtrl!.startVideoRecording();
-      await Future.delayed(duration);
+      await Future.delayed(capped);
       final x = await _camCtrl!.stopVideoRecording();
       path = x.path;
     } catch (e) {
@@ -145,7 +162,7 @@ class SosEvidenceService {
     if (path == null && !kIsWeb) {
       final x = await _picker.pickVideo(
         source: ImageSource.camera,
-        maxDuration: duration,
+        maxDuration: capped,
       );
       if (x == null) return null;
       path = x.path;
@@ -159,7 +176,7 @@ class SosEvidenceService {
       mime: 'video/mp4',
       conversationId: conversationId,
       source: source,
-      durationMs: duration.inMilliseconds,
+      durationMs: capped.inMilliseconds,
     );
   }
 
@@ -173,8 +190,10 @@ class SosEvidenceService {
   Future<void> startAudio() async {
     if (_recordingAudio) return;
     final dir = await getTemporaryDirectory();
-    _audioPath =
-        p.join(dir.path, 'sos_audio_${DateTime.now().millisecondsSinceEpoch}.m4a');
+    _audioPath = p.join(
+      dir.path,
+      'sos_audio_${DateTime.now().millisecondsSinceEpoch}.m4a',
+    );
     await _recorder.start(
       const RecordConfig(encoder: AudioEncoder.aacLc),
       path: _audioPath!,
@@ -260,7 +279,7 @@ class SosEvidenceService {
 
     var posted = false;
     if (conv != null && conv.isNotEmpty && url != null && url.isNotEmpty) {
-      for (var i = 0; i < 3 && !posted; i++) {
+      for (var i = 0; i < 4 && !posted; i++) {
         try {
           await _postToSosGroup(
             conversationId: conv,
@@ -271,7 +290,7 @@ class SosEvidenceService {
           posted = true;
         } catch (e) {
           debugPrint('SosEvidence chat retry $i: $e');
-          await Future.delayed(Duration(milliseconds: 400 * (i + 1)));
+          await Future.delayed(Duration(milliseconds: 500 * (i + 1)));
         }
       }
     }
@@ -329,11 +348,18 @@ class SosEvidenceService {
       'audio' => '🎤 Preuve SOS — audio',
       _ => '📎 Preuve SOS',
     };
+    // ChatService accepte souvent image / video / audio plutôt que photo.
+    final mediaType = switch (type) {
+      'photo' => 'image',
+      'video' => 'video',
+      'audio' => 'audio',
+      _ => type,
+    };
     await chat.sendMessage(
       conversationId: conversationId,
       content: label,
       mediaUrl: url,
-      mediaType: type,
+      mediaType: mediaType,
       mediaName: name,
       mediaSize: size,
     );
@@ -347,8 +373,8 @@ class SosEvidenceService {
   }) async {
     final uid = SupabaseConfig.currentUser?.id ?? 'anon';
     final ext = p.extension(path).isEmpty ? '.bin' : p.extension(path);
-    final storagePath =
-        'sos/\( incidentId/ \){uid}_\( {type}_ \){DateTime.now().millisecondsSinceEpoch}$ext';
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final storagePath = 'sos/\( incidentId/ \){uid}_${type}_$ts$ext';
     final fileBytes = await File(path).readAsBytes();
     final client = Supabase.instance.client;
 
