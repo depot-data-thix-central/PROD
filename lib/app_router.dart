@@ -430,73 +430,135 @@ redirect: (context, state) async {
       return accountStatusPath;
     }
 
-    // ========================================================
-    // 3. DÉVERROUILLAGE : COMPTE SAIN
-    // ========================================================
-    if (!isLifecycleBlocked && isAccountStatusRoute) {
-      // Un utilisateur normal n'a rien à faire sur l'écran d'attente de suppression.
-      return currentUser?.accountType == AccountType.enterprise
-          ? AppRoutes.enterpriseDashboard
-          : AppRoutes.userDashboard;
-    }
-
-    // ========================================================
-    // 4. DÉJÀ CONNECTÉ + SUR LOGIN/START
-    // ========================================================
-    if (isLoginPage || isStartPage) {
-      if (isRegistrationCompleted) {
-        return currentUser!.accountType == AccountType.enterprise
-            ? AppRoutes.enterpriseDashboard
-            : AppRoutes.userDashboard;
-      }
-      return null;
-    }
-
-    // ========================================================
-    // 5. INSCRIPTION DÉJÀ TERMINÉE MAIS SUR PAGE D'INSCRIPTION
-    // ========================================================
-    if (isRegPage && isRegistrationCompleted) {
-      // Autoriser l'accès à l'étape 3 (si c'est votre logique métier de finalisation)
-      if (state.uri.queryParameters['step'] == '3') return null;
-      
-      return currentUser!.accountType == AccountType.enterprise
-          ? AppRoutes.enterpriseDashboard
-          : AppRoutes.userDashboard;
-    }
-
-    // ========================================================
-    // 6. ONBOARDING INACHEVÉ
-    // ========================================================
-    if (!isRegPage &&
-        !isLoginPage &&
-        !isStartPage &&
-        !isAccountStatusRoute &&
-        !isRegistrationCompleted &&
-        currentUser?.registrationStatus != null) {
-          
-      // S'il essaie d'aller sur /home sans avoir fini l'onboarding, on coupe
-      if (loc == AppRoutes.home) {
-        await auth.signOut();
-        return AppRoutes.login;
-      }
-      
-      // Redirection intelligente selon son avancée
-      if (regStatus == 'draft_step1') {
-        return '${AppRoutes.personalReg}?step=1';
-      }
-      return '${AppRoutes.personalReg}?step=2';
-    }
-
-    // Si tout va bien, autoriser la navigation normale
-    return null;
+class AppRouter {
+  static GoRouter create(
+    AuthController auth, {
+    Listenable? extraRefreshListenable,
+    GlobalKey<NavigatorState>? navigatorKey,
+  }) {
+    final refresh = extraRefreshListenable ?? auth;
+    return GoRouter(
+      navigatorKey: navigatorKey,
+      initialLocation: AppRoutes.home,
+      refreshListenable: refresh,
+      errorBuilder: (context, state) => Scaffold(
+        backgroundColor: const Color(0xFF0B3D91),
+        body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('THIX ID CENTRAL', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 20)),
+          const SizedBox(height: 8),
+          Text('Route non trouvée: ${state.matchedLocation}', style: const TextStyle(color: Colors.white70)),
+          const SizedBox(height: 16),
+          ElevatedButton(onPressed: () => context.go(AppRoutes.home), child: const Text('Accueil')),
+        ])),
+      ),
     
-  } catch (e) {
-    debugPrint('GoRouter redirect error: $e');
-    return null;
-  }
-},
+      // ==========================================
+      // LE GARDIEN UNIQUE (Un seul bloc redirect)
+      // ==========================================
+      redirect: (context, state) async {
+        try {
+          final loc = state.matchedLocation;
+          final isLoginPage = loc == AppRoutes.login;
+          final isStartPage = loc == AppRoutes.start;
+          final isRegPage = loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
+          const accountStatusPath = '/settings/account-status';
+          final isAccountStatusRoute = loc == accountStatusPath;
 
-         
+          // Définition des routes accessibles sans connexion
+          final isPublic = isStartPage ||
+              isLoginPage ||
+              isRegPage ||
+              loc == AppRoutes.publicProfile ||
+              loc == AppRoutes.jobs ||
+              loc == AppRoutes.opportunities ||
+              loc == AppRoutes.education ||
+              loc == AppRoutes.trainingHome ||
+              loc.startsWith('${AppRoutes.trainingDetailsBasePath}/') ||
+              loc == AppRoutes.monPays ||
+              loc.startsWith('${AppRoutes.monPays}/') ||
+              loc.startsWith('/thix-event') ||
+              loc.startsWith('/thix-retrouve') ||
+              loc.startsWith('/thix-weeding') ||
+              loc.startsWith('/thix-reservation/delivery');
+
+          final logged = auth.isAuthenticated;
+          final currentUser = auth.currentUser;
+
+          // --- ANALYSE DU STATUT DU COMPTE ---
+          final rawLifecycle = currentUser?.accountStatus?.toLowerCase();
+          final isDeactivated = rawLifecycle == 'deactivated' || currentUser?.isDeactivated == true;
+          final isPendingDeletion = rawLifecycle == 'pending_deletion' || currentUser?.isPendingDeletion == true;
+          final isLifecycleBlocked = isDeactivated || isPendingDeletion;
+
+          // --- ANALYSE DE L'INSCRIPTION ---
+          final regStatus = currentUser?.registrationStatus?.toLowerCase() ?? '';
+          final isRegistrationCompleted = currentUser != null &&
+              (regStatus == 'active' || regStatus == 'completed');
+
+          // 1. PAS CONNECTÉ
+          if (!logged) {
+            return isPublic ? null : AppRoutes.login;
+          }
+
+          // 2. VERROUILLAGE STRICT : COMPTE DÉSACTIVÉ / SUPPRESSION
+          if (isLifecycleBlocked) {
+            if (isAccountStatusRoute || isLoginPage || isStartPage) {
+              return null; 
+            }
+            return accountStatusPath;
+          }
+
+          // 3. DÉVERROUILLAGE : COMPTE SAIN
+          if (!isLifecycleBlocked && isAccountStatusRoute) {
+            return currentUser?.accountType == AccountType.enterprise
+                ? AppRoutes.enterpriseDashboard
+                : AppRoutes.userDashboard;
+          }
+
+          // 4. DÉJÀ CONNECTÉ + SUR LOGIN/START
+          if (isLoginPage || isStartPage) {
+            if (isRegistrationCompleted) {
+              return currentUser!.accountType == AccountType.enterprise
+                  ? AppRoutes.enterpriseDashboard
+                  : AppRoutes.userDashboard;
+            }
+            return null;
+          }
+
+          // 5. INSCRIPTION DÉJÀ TERMINÉE MAIS SUR PAGE D'INSCRIPTION
+          if (isRegPage && isRegistrationCompleted) {
+            if (state.uri.queryParameters['step'] == '3') return null;
+            return currentUser!.accountType == AccountType.enterprise
+                ? AppRoutes.enterpriseDashboard
+                : AppRoutes.userDashboard;
+          }
+
+          // 6. ONBOARDING INACHEVÉ
+          if (!isRegPage &&
+              !isLoginPage &&
+              !isStartPage &&
+              !isAccountStatusRoute &&
+              !isRegistrationCompleted &&
+              currentUser?.registrationStatus != null) {
+                
+            if (loc == AppRoutes.home) {
+              await auth.signOut();
+              return AppRoutes.login;
+            }
+            if (regStatus == 'draft_step1') {
+              return '${AppRoutes.personalReg}?step=1';
+            }
+            return '${AppRoutes.personalReg}?step=2';
+          }
+
+          return null;
+          
+        } catch (e) {
+          debugPrint('GoRouter redirect error: $e');
+          return null;
+        }
+      },
+
       routes: [
         // === CORE, AUTH & MAIN ===
         GoRoute(path: AppRoutes.start, name: 'start', pageBuilder: (_, __) => const NoTransitionPage(child: ThixIdStartPage())),
