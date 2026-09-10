@@ -408,20 +408,26 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadProfile();
   }
 
-  Future<void> _loadProfile() async {
+      Future<void> _loadProfile() async {
     final uid = _sb.auth.currentUser?.id;
     if (uid == null) return;
     try {
       final row = await _sb
           .from('profiles')
-          .select('role, preferences, account_status, scheduled_deletion_at')
+          // CORRECTION 1 : On demande 'status' au lieu de 'account_status'
+          .select('role, preferences, status, scheduled_deletion_at')
           .eq('id', uid)
           .maybeSingle();
+          
       if (!mounted) return;
+      
       final role = row?['role'] as String?;
       final prefs = (row?['preferences'] as Map?)?.cast<String, dynamic>() ?? {};
-      final rawStatus = row?['account_status'] as String?;
+      
+      // CORRECTION 2 : On lit la clé 'status' depuis les données retournées
+      final rawStatus = row?['status'] as String?;
       final rawDeletion = row?['scheduled_deletion_at'] as String?;
+      
       setState(() {
         _isAdmin = role == 'admin' || role == 'superadmin';
         _darkMode = prefs['darkMode'] ?? true;
@@ -440,6 +446,7 @@ class _SettingsPageState extends State<SettingsPage> {
       debugPrint('[Settings] loadProfile: $e');
     }
   }
+
 
   Future<void> _savePrefs() async {
     final uid = _sb.auth.currentUser?.id;
