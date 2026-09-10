@@ -175,5 +175,11 @@ class ChatConversation {
         'client_avatar_url': clientAvatar,
         'escalated_by_name': escalatedByName,
         'agent_avatar_url': agentAvatar,
+        'last_message_preview': lastMessage?.content,
+        'last_message_id': lastMessage?.id,
+        'last_message_sender_id': lastMessage?.senderId,
+        'last_message_at': lastMessage?.createdAt.toIso8601String(),
+        'last_message_is_read': lastMessage?.isRead,
+        'last_message_is_delivered': lastMessage?.isDelivered,
       };
 }
