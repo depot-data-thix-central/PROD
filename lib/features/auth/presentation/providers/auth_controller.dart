@@ -1,16 +1,20 @@
 // lib/features/auth/presentation/providers/auth_controller.dart
-// lib/features/auth/presentation/providers/auth_controller.dart
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // ✅ IMPORT AJOUTÉ
+
 import 'package:thix_id/auth/auth_manager.dart' show AuthManager, PhoneAuthSession, ProfileDraft;
 import 'package:thix_id/auth/supabase_auth_manager.dart' show SupabaseAuthManager, AuthException, AuthErrorCode;
 import 'package:thix_id/auth/auth_manager.dart';
-import 'package:thix_id/auth/supabase_auth_manager.dart'; // ✅ Import complet (pas show)
+import 'package:thix_id/auth/supabase_auth_manager.dart';
 import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/models/account_type.dart';
 import 'package:thix_id/services/profile_service.dart';
 
-// Le reste du fichier reste IDENTIQUE
+// ✅ IMPORTS POUR VIDER LE CACHE À LA DÉCONNEXION
+import 'package:thix_id/data/offline/home_offline_cache.dart';
+import 'package:thix_id/data/offline/chat_offline_cache.dart';
+
 // ============================================================================
 // PARTIE 1 : Legacy ChangeNotifier (utilisé par main.dart et app_router)
 // ============================================================================
@@ -35,7 +39,11 @@ class AuthController extends ChangeNotifier {
   }
 
   AppUser? get currentUser => _auth.currentUser;
-  bool get isAuthenticated => currentUser != null;
+  
+  // ✅ CORRECTIF 2 : Autoriser le mode hors-ligne si une session Supabase existe
+  bool get isAuthenticated => 
+      currentUser != null || 
+      Supabase.instance.client.auth.currentSession != null;
 
   Future<void> init() => _auth.init();
 
@@ -111,6 +119,13 @@ class AuthController extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    // ✅ VIDER LES CACHES LORS DE LA DÉCONNEXION VOLONTAIRE
+    try {
+      await HomeOfflineCache.instance.clear();
+      await ChatOfflineCache.instance.clear();
+    } catch (e) {
+      debugPrint('[Auth] offline cache clear: $e');
+    }
     await _auth.signOut();
     notifyListeners();
   }
@@ -277,6 +292,7 @@ class AuthControllerNotifier extends AsyncNotifier<AppUser?> {
         email: email,
         password: password,
         displayName: displayName,
+        accountType: AccountType.enterprise,
         rememberMe: rememberMe,
         profileDraft: draft,
       );
@@ -394,7 +410,7 @@ class AuthControllerNotifier extends AsyncNotifier<AppUser?> {
   Future<void> signOut() async {
     state = const AsyncLoading();
     try {
-      await _auth.signOut();
+      await _auth.signOut(); // Le _auth.signOut va appeler les clear() grâce à la Partie 1
       state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
