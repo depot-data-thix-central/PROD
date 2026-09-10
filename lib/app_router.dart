@@ -333,7 +333,7 @@ class AppRouter {
       // ========================================================
       // LE GARDIEN UNIQUE - GESTION DES REDIRECTIONS ET SÉCURITÉ
       // ========================================================
-      redirect: (context, state) async {
+      redirect: (context, state) {
         try {
           final loc = state.matchedLocation;
           final isLoginPage = loc == AppRoutes.login;
@@ -362,23 +362,39 @@ class AppRouter {
           final logged = auth.isAuthenticated;
           final currentUser = auth.currentUser;
 
-          // --- ANALYSE DU STATUT DU COMPTE ---
-          final rawLifecycle = currentUser?.accountStatus?.toLowerCase();
-          final isDeactivated = rawLifecycle == 'deactivated' || currentUser?.isDeactivated == true;
-          final isPendingDeletion = rawLifecycle == 'pending_deletion' || currentUser?.isPendingDeletion == true;
-          final isLifecycleBlocked = isDeactivated || isPendingDeletion;
-
-          // --- ANALYSE DE L'INSCRIPTION ---
-          final regStatus = currentUser?.registrationStatus?.toLowerCase() ?? '';
-          final isRegistrationCompleted = currentUser != null &&
-              (regStatus == 'active' || regStatus == 'completed');
-
           // 1. PAS CONNECTÉ
           if (!logged) {
             return isPublic ? null : AppRoutes.login;
           }
 
-          // 2. VERROUILLAGE STRICT : COMPTE DÉSACTIVÉ / SUPPRESSION
+          // 2. CONNECTÉ MAIS PROFIL EN CHARGEMENT (OU HORS-LIGNE)
+          // Grâce au Correctif 2, isAuthenticated est true via la session locale
+          // même si currentUser est null le temps de s'hydrater.
+          if (currentUser == null) {
+            // On redirige vers l'accueil (qui gère le mode hors-ligne via le cache)
+            // pour éviter de rester bloqué sur l'écran de login.
+            if (isLoginPage || isStartPage) {
+              return AppRoutes.home;
+            }
+            return null; // On laisse l'utilisateur où il est
+          }
+
+          // --- ANALYSE DU STATUT DU COMPTE ---
+          final rawLifecycle = currentUser.accountStatus?.toLowerCase();
+          final isDeactivated = rawLifecycle == 'deactivated' || currentUser.isDeactivated == true;
+          final isPendingDeletion = rawLifecycle == 'pending_deletion' || currentUser.isPendingDeletion == true;
+          final isLifecycleBlocked = isDeactivated || isPendingDeletion;
+
+          // --- ANALYSE DE L'INSCRIPTION ---
+          final regStatus = currentUser.registrationStatus?.toLowerCase() ?? '';
+          final isRegistrationCompleted = (regStatus == 'active' || regStatus == 'completed');
+          
+          // Détermination sécurisée du dashboard cible
+          final targetDashboard = currentUser.accountType == AccountType.enterprise
+              ? AppRoutes.enterpriseDashboard
+              : AppRoutes.userDashboard;
+
+          // 3. VERROUILLAGE STRICT : COMPTE DÉSACTIVÉ / SUPPRESSION
           if (isLifecycleBlocked) {
             if (isAccountStatusRoute || isLoginPage || isStartPage) {
               return null; 
@@ -386,42 +402,40 @@ class AppRouter {
             return accountStatusPath;
           }
 
-          // 3. DÉVERROUILLAGE : COMPTE SAIN
+          // 4. DÉVERROUILLAGE : COMPTE SAIN
           if (!isLifecycleBlocked && isAccountStatusRoute) {
-            return currentUser?.accountType == AccountType.enterprise
-                ? AppRoutes.enterpriseDashboard
-                : AppRoutes.userDashboard;
+            return targetDashboard;
           }
 
-          // 4. DÉJÀ CONNECTÉ + SUR LOGIN/START
+          // 5. DÉJÀ CONNECTÉ + SUR LOGIN/START
           if (isLoginPage || isStartPage) {
             if (isRegistrationCompleted) {
-              return currentUser!.accountType == AccountType.enterprise
-                  ? AppRoutes.enterpriseDashboard
-                  : AppRoutes.userDashboard;
+              return targetDashboard;
             }
             return null;
           }
 
-          // 5. INSCRIPTION DÉJÀ TERMINÉE MAIS SUR PAGE D'INSCRIPTION
+          // 6. INSCRIPTION DÉJÀ TERMINÉE MAIS SUR PAGE D'INSCRIPTION
           if (isRegPage && isRegistrationCompleted) {
             if (state.uri.queryParameters['step'] == '3') return null;
-            return currentUser!.accountType == AccountType.enterprise
-                ? AppRoutes.enterpriseDashboard
-                : AppRoutes.userDashboard;
+            return targetDashboard;
           }
 
-          // 6. ONBOARDING INACHEVÉ
+          // 7. ONBOARDING INACHEVÉ
           if (!isRegPage &&
               !isLoginPage &&
               !isStartPage &&
               !isAccountStatusRoute &&
               !isRegistrationCompleted &&
-              currentUser?.registrationStatus != null) {
+              currentUser.registrationStatus != null) {
                 
             if (loc == AppRoutes.home) {
-              await auth.signOut();
-              return AppRoutes.login;
+              // NE PAS appeler auth.signOut() ici ! Cela crée des bugs de routing (le "bordel").
+              // Rediriger proprement vers l'étape manquante.
+              if (regStatus == 'draft_step1') {
+                return '${AppRoutes.personalReg}?step=1';
+              }
+              return '${AppRoutes.personalReg}?step=2';
             }
             if (regStatus == 'draft_step1') {
               return '${AppRoutes.personalReg}?step=1';
