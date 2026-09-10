@@ -160,6 +160,7 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
   Future<void> loadInitial() async {
     debugPrint('[ChatMsg] 🚀 Loading initial for $convId');
     page = 0;
+    final uid = Supabase.instance.client.auth.currentUser?.id;
     try {
       final msgs = await _chatRetry(
         () => svc.getMessages(convId, limit: pageSize, offset: 0),
@@ -169,12 +170,31 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
       msgs.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       state = msgs;
       debugPrint('[ChatMsg] ✓ Loaded ${msgs.length} messages');
+      if (uid != null) {
+        unawaited(ChatOfflineCache.instance.saveMessages(
+          uid,
+          convId,
+          msgs.map((m) => m.toJson()).toList(),
+        ));
+      }
     } catch (e) {
       debugPrint('[ChatMsg] ❌ Load initial error: $e');
+      if (uid != null) {
+        final cached = ChatOfflineCache.instance.readMessages(uid, convId);
+        if (cached.isNotEmpty) {
+          state = cached
+              .map(ChatMessage.fromJson)
+              .where((m) => m.id.isNotEmpty)
+              .toList()
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          hasMore = false;
+          debugPrint('[ChatMsg] 📴 Restored ${state.length} cached messages');
+          return;
+        }
+      }
       state = [];
     }
   }
-
   Future<void> loadMore() async {
     if (loadingMore || !hasMore) return;
     loadingMore = true;
@@ -221,13 +241,21 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
       final seen = <String>{};
       current = current.where((m) => seen.add(m.id)).toList();
       state = current;
+
+      final uid = Supabase.instance.client.auth.currentUser?.id;
+      if (uid != null) {
+        unawaited(ChatOfflineCache.instance.saveMessages(
+          uid,
+          convId,
+          state.map((m) => m.toJson()).toList(),
+        ));
+      }
     }
   }
 
   void removeLocal(String id) {
     state = state.where((m) => m.id != id).toList();
   }
-}
 
 // ============================================================================
 // CHAT LIST ITEM (GROUPING)
