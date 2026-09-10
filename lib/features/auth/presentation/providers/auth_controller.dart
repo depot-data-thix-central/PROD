@@ -1,7 +1,7 @@
 // lib/features/auth/presentation/providers/auth_controller.dart
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // ✅ IMPORT AJOUTÉ
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/auth/auth_manager.dart' show AuthManager, PhoneAuthSession, ProfileDraft;
 import 'package:thix_id/auth/supabase_auth_manager.dart' show SupabaseAuthManager, AuthException, AuthErrorCode;
@@ -11,7 +11,6 @@ import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/models/account_type.dart';
 import 'package:thix_id/services/profile_service.dart';
 
-// ✅ IMPORTS POUR VIDER LE CACHE À LA DÉCONNEXION
 import 'package:thix_id/data/offline/home_offline_cache.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
 
@@ -20,12 +19,6 @@ import 'package:thix_id/data/offline/chat_offline_cache.dart';
 // ============================================================================
 
 /// Contrôleur legacy basé sur ChangeNotifier.
-///
-/// Utilisé par :
-/// - `main.dart` (via `ChangeNotifierProvider.value`)
-/// - `app_router.dart` (via `refreshListenable`)
-///
-/// ⚠️ Ne pas supprimer : `main.dart` attend un `ChangeNotifier`.
 class AuthController extends ChangeNotifier {
   static AuthController? _instance;
   static AuthController get instance => _instance ??= AuthController();
@@ -40,7 +33,6 @@ class AuthController extends ChangeNotifier {
 
   AppUser? get currentUser => _auth.currentUser;
   
-  // ✅ CORRECTIF 2 : Autoriser le mode hors-ligne si une session Supabase existe
   bool get isAuthenticated => 
       currentUser != null || 
       Supabase.instance.client.auth.currentSession != null;
@@ -119,7 +111,6 @@ class AuthController extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
-    // ✅ VIDER LES CACHES LORS DE LA DÉCONNEXION VOLONTAIRE
     try {
       await HomeOfflineCache.instance.clear();
       await ChatOfflineCache.instance.clear();
@@ -179,32 +170,15 @@ class AuthController extends ChangeNotifier {
 }
 
 // ============================================================================
-// PARTIE 2 : AsyncNotifier Riverpod (utilisé par tous les écrans modernes)
+// PARTIE 2 : AsyncNotifier Riverpod
 // ============================================================================
 
-/// Provider principal Riverpod — API AsyncValue.
-///
-/// Usage dans les widgets (ConsumerStatefulWidget, ConsumerWidget) :
-/// ```dart
-/// // Lire l'état (AsyncValue<AppUser?>)
-/// final authAsync = ref.watch(authControllerProvider);
-/// final user = authAsync.valueOrNull;
-///
-/// // Actions
-/// await ref.read(authControllerProvider.notifier).signIn(...);
-/// await ref.read(authControllerProvider.notifier).signOut();
-/// ```
 final authControllerProvider =
     AsyncNotifierProvider<AuthControllerNotifier, AppUser?>(
   AuthControllerNotifier.new,
 );
 
-/// Notifier Async qui wrappe le legacy [AuthController] singleton.
-///
-/// Cette classe permet aux widgets modernes d'utiliser l'API `ref.watch`
-/// tout en s'appuyant sur le singleton legacy (nécessaire pour `main.dart`).
 class AuthControllerNotifier extends AsyncNotifier<AppUser?> {
-  /// Accès au singleton legacy.
   AuthController get _auth => AuthController.instance;
 
   @override
@@ -219,19 +193,13 @@ class AuthControllerNotifier extends AsyncNotifier<AppUser?> {
     }
   }
 
-  // ── GETTERS ────────────────────────────────────────────────────────────
-
-  /// Utilisateur courant (lecture directe, sans AsyncValue).
   AppUser? get currentUser => _auth.currentUser;
 
-  /// Vrai si l'utilisateur courant est administrateur.
   bool get isAdmin {
     final user = state.value;
     if (user == null) return false;
     return user.role == 'admin' || user.role == 'super_admin';
   }
-
-  // ── AUTH ACTIONS ───────────────────────────────────────────────────────
 
   Future<void> signIn({
     required String identifier,
@@ -261,7 +229,6 @@ class AuthControllerNotifier extends AsyncNotifier<AppUser?> {
   }) async {
     state = const AsyncLoading();
     try {
-      // Convertir Map vers ProfileDraft si besoin
       final draft = profileDraft != null ? ProfileDraft.fromMap(profileDraft) : null;
       final user = await _auth.registerPersonal(
         email: email,
@@ -288,11 +255,11 @@ class AuthControllerNotifier extends AsyncNotifier<AppUser?> {
     state = const AsyncLoading();
     try {
       final draft = profileDraft != null ? ProfileDraft.fromMap(profileDraft) : null;
+      // ✅ Correction ici : Pas de paramètre accountType superflu
       final user = await _auth.registerEnterprise(
         email: email,
         password: password,
         displayName: displayName,
-        accountType: AccountType.enterprise,
         rememberMe: rememberMe,
         profileDraft: draft,
       );
@@ -410,7 +377,7 @@ class AuthControllerNotifier extends AsyncNotifier<AppUser?> {
   Future<void> signOut() async {
     state = const AsyncLoading();
     try {
-      await _auth.signOut(); // Le _auth.signOut va appeler les clear() grâce à la Partie 1
+      await _auth.signOut();
       state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
