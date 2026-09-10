@@ -1,6 +1,5 @@
-/// THIX SOS — Riverpod providers (Production Enterprise)
-/// ✅ SÉCURISÉ : timeouts, retry, mounted guards, validation, structured logs
-/// ✅ ROBUSTE : race-condition protection, autoDispose, error propagation
+/// THIX SOS — Riverpod providers
+/// Trigger rapide : le protocole chat/appels part en background.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -12,22 +11,16 @@ import '../services/sos_service.dart';
 import '../services/sos_call_bridge.dart';
 import '../services/sos_escalation_controller.dart';
 
-// ============================================================================
-// CONSTANTS
-// ============================================================================
-const Duration _kTriggerTimeout = Duration(seconds: 30);
-const Duration _kHeartbeatTimeout = Duration(seconds: 15);
-const Duration _kGeolocatorTimeout = Duration(seconds: 10);
+const Duration _kTriggerTimeout = Duration(seconds: 12);
+const Duration _kHeartbeatTimeout = Duration(seconds: 12);
+const Duration _kGeolocatorTimeout = Duration(seconds: 6);
 const Duration _kDefaultHeartbeatInterval = Duration(seconds: 15);
 const Duration _kEscalationDelay = Duration(seconds: 15);
 const int _kMaxRetries = 1;
-const Duration _kRetryDelay = Duration(milliseconds: 600);
+const Duration _kRetryDelay = Duration(milliseconds: 400);
 const int _kMinThixIdLength = 4;
 const int _kMaxThixIdLength = 32;
 
-// ============================================================================
-// VALIDATORS
-// ============================================================================
 class _ProvidersValidators {
   _ProvidersValidators._();
 
@@ -38,7 +31,6 @@ class _ProvidersValidators {
         trimmed.length > _kMaxThixIdLength) {
       return false;
     }
-    // Autorise lettres, chiffres, tirets, underscores
     return RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(trimmed);
   }
 
@@ -48,9 +40,6 @@ class _ProvidersValidators {
   }
 }
 
-// ============================================================================
-// HELPERS
-// ============================================================================
 Future<T> _providersRetry<T>(
   Future<T> Function() fn, {
   required String label,
@@ -67,7 +56,6 @@ Future<T> _providersRetry<T>(
         debugPrint('[SosProviders] ❌ $label: timeout after $attempt');
         rethrow;
       }
-      debugPrint('[SosProviders] ⏱️ $label timeout — retry $attempt/$maxRetries');
       await Future.delayed(_kRetryDelay);
     } catch (e) {
       attempt++;
@@ -80,31 +68,15 @@ Future<T> _providersRetry<T>(
   }
 }
 
-// ============================================================================
-// SERVICE (singleton)
-// ============================================================================
 final sosServiceProvider = Provider<SosService>((ref) {
   return SosService();
 });
 
-// ============================================================================
-// CONTACTS
-// ============================================================================
 final sosContactsProvider =
     FutureProvider.autoDispose<List<SosContact>>((ref) async {
-  debugPrint('[SosProviders] 📥 Loading contacts');
-  try {
-    final contacts = await ref.watch(sosServiceProvider).getContacts();
-    debugPrint('[SosProviders] ✓ Loaded ${contacts.length} contacts');
-    return contacts;
-  } catch (e, stack) {
-    debugPrint('[SosProviders] ❌ getContacts: $e');
-    debugPrint('[SosProviders] Stack: $stack');
-    rethrow;
-  }
+  return ref.watch(sosServiceProvider).getContacts();
 });
 
-// ✅ FIX : utilise `read(future)` dans un `async` au lieu de `watch(future)`
 final sosContactsCircleProvider =
     FutureProvider.autoDispose.family<List<SosContact>, int>((ref, circle) async {
   final all = await ref.read(sosContactsProvider.future);
@@ -125,51 +97,28 @@ final sosContactsCountProvider = Provider.autoDispose<Map<int, int>>((ref) {
   );
 });
 
-// ============================================================================
-// RECHERCHE PROFIL (THIX ID) — ✅ avec validation
-// ============================================================================
 final thixIdLookupProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>?, String>(
         (ref, thixId) async {
-  if (!_ProvidersValidators.isValidThixId(thixId)) {
-    debugPrint('[SosProviders] ⚠️ Invalid THIX ID: $thixId');
-    return null;
-  }
-  debugPrint('[SosProviders] 🔍 Looking up THIX ID: $thixId');
-  try {
-    return await _providersRetry(
-      () => ref.watch(sosServiceProvider).lookupProfileByThixId(thixId),
-      label: 'thixIdLookup[$thixId]',
-    );
-  } catch (e) {
-    debugPrint('[SosProviders] ❌ thixIdLookup error: $e');
-    rethrow;
-  }
+  if (!_ProvidersValidators.isValidThixId(thixId)) return null;
+  return _providersRetry(
+    () => ref.watch(sosServiceProvider).lookupProfileByThixId(thixId),
+    label: 'thixIdLookup',
+  );
 });
 
-// ============================================================================
-// INCIDENT ACTIF & HISTORIQUE
-// ============================================================================
 final activeSosProvider =
     FutureProvider.autoDispose<SosIncident?>((ref) async {
   try {
     return await ref.watch(sosServiceProvider).getActiveIncident();
   } catch (e) {
-    debugPrint('[SosProviders] ❌ getActiveIncident: $e');
     return null;
   }
 });
 
 final sosHistoryProvider =
     FutureProvider.autoDispose<List<SosIncident>>((ref) async {
-  debugPrint('[SosProviders] 📥 Loading history');
-  try {
-    return await ref.watch(sosServiceProvider).getHistory();
-  } catch (e, stack) {
-    debugPrint('[SosProviders] ❌ getHistory: $e');
-    debugPrint('[SosProviders] Stack: $stack');
-    rethrow;
-  }
+  return ref.watch(sosServiceProvider).getHistory();
 });
 
 final sosIncidentProvider =
@@ -179,7 +128,6 @@ final sosIncidentProvider =
   try {
     return await ref.watch(sosServiceProvider).getIncidentById(sanitized);
   } catch (e) {
-    debugPrint('[SosProviders] ❌ getIncidentById[$sanitized]: $e');
     return null;
   }
 });
@@ -200,50 +148,42 @@ final sosLocationsProvider =
   },
 );
 
-// ============================================================================
-// POSITION GPS — ✅ avec timeout + logs structurés
-// ============================================================================
 final sosUserPositionProvider =
     FutureProvider.autoDispose<({double lat, double lng})?>((ref) async {
-  debugPrint('[SosProviders] 📍 Getting user position');
   try {
     final serviceOn = await Geolocator.isLocationServiceEnabled()
         .timeout(_kGeolocatorTimeout);
-    if (!serviceOn) {
-      debugPrint('[SosProviders] ⚠️ Location service disabled');
-      return null;
-    }
+    if (!serviceOn) return null;
 
-    var permission = await Geolocator.checkPermission()
-        .timeout(_kGeolocatorTimeout);
+    var permission =
+        await Geolocator.checkPermission().timeout(_kGeolocatorTimeout);
     if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission()
-          .timeout(_kGeolocatorTimeout);
+      permission =
+          await Geolocator.requestPermission().timeout(_kGeolocatorTimeout);
     }
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever) {
-      debugPrint('[SosProviders] ⚠️ Location permission: $permission');
       return null;
     }
 
+    try {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) return (lat: last.latitude, lng: last.longitude);
+    } catch (_) {}
+
     final pos = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.medium,
-        timeLimit: _kGeolocatorTimeout,
+        accuracy: LocationAccuracy.low,
+        timeLimit: Duration(seconds: 3),
       ),
-    ).timeout(_kGeolocatorTimeout);
-
-    debugPrint('[SosProviders] ✓ Position: ${pos.latitude}, ${pos.longitude}');
+    );
     return (lat: pos.latitude, lng: pos.longitude);
   } catch (e) {
-    debugPrint('[SosProviders] ❌ sosUserPositionProvider: $e');
+    debugPrint('[SosProviders] position: $e');
     return null;
   }
 });
 
-// ============================================================================
-// DÉCLENCHEMENT SOS — ✅ FIX: autoDispose, race condition, timeout, mounted
-// ============================================================================
 final triggerSosProvider = StateNotifierProvider.autoDispose<
     TriggerSosNotifier, AsyncValue<SosIncident?>>(
   (ref) => TriggerSosNotifier(ref),
@@ -253,88 +193,70 @@ class TriggerSosNotifier extends StateNotifier<AsyncValue<SosIncident?>> {
   TriggerSosNotifier(this._ref) : super(const AsyncData(null));
 
   final Ref _ref;
-  bool _isTriggering = false; // ✅ FIX : flag anti-race-condition
+  bool _isTriggering = false;
 
   Future<SosIncident?> trigger() async {
-    // ✅ FIX : empêche double-trigger
-    if (_isTriggering) {
-      debugPrint('[SosProviders] ⚠️ Trigger already in progress');
-      return state.valueOrNull;
-    }
-
+    if (_isTriggering) return state.valueOrNull;
     _isTriggering = true;
     state = const AsyncLoading();
 
     try {
-      state = await AsyncValue.guard(() async {
-        // ✅ FIX : timeout + retry sur l'appel service
-        final incident = await _providersRetry(
-          () => _ref.read(sosServiceProvider).triggerSos(),
-          label: 'triggerSos',
-          timeout: _kTriggerTimeout,
-        );
+      final incident = await _providersRetry(
+        () => _ref.read(sosServiceProvider).triggerSos(),
+        label: 'triggerSos',
+        timeout: _kTriggerTimeout,
+      );
 
-        if (incident == null) {
-          debugPrint('[SosProviders] ⚠️ triggerSos returned null');
-          return null;
-        }
+      state = AsyncData(incident);
+      _safeInvalidate(activeSosProvider);
+      _safeInvalidate(sosHistoryProvider);
 
-        debugPrint('[SosProviders] 🚨 SOS triggered: ${incident.id}');
-
-        // Activation du protocole (chat + appels + escalade)
-        try {
-          final result = await _providersRetry(
-            () => SosCallBridge(
-              sos: _ref.read(sosServiceProvider),
-            ).activateProtocol(incident),
-            label: 'activateProtocol',
-            timeout: _kTriggerTimeout,
-          );
-
-          debugPrint(
-            '[SosProviders] ✓ SOS protocol: chat=${result.conversationId} '
-            'calls=${result.answeredOrRinging}/${result.calls.length}',
-          );
-
-          // ✅ FIX : syntax error corrigée (interpolation Dart correcte)
-
-          _ref.read(sosEscalationProvider).start(
-                incident.id,
-                startCircle: 1,
-              );
-        } catch (e) {
-          debugPrint('[SosProviders] ⚠️ SOS protocol partial failure: $e');
-          // On continue — le SOS est créé, le protocole peut être partiel
-        }
-
-        // ✅ FIX : invalidations wrapped dans try/catch
-        _safeInvalidate(activeSosProvider);
-        _safeInvalidate(sosHistoryProvider);
-
-        return incident;
-      });
+      // Protocole (chat + appels + SOS_STARTED) : NE PAS await.
+      unawaited(_runProtocol(incident));
+      return incident;
+    } catch (e, st) {
+      debugPrint('[SosProviders] trigger: $e');
+      state = AsyncError(e, st);
+      return null;
     } finally {
       _isTriggering = false;
     }
-
-    return state.valueOrNull;
   }
 
-  /// ✅ Invalidation sécurisée (ignore erreurs si ref déjà disposed)
+  Future<void> _runProtocol(SosIncident incident) async {
+    try {
+      final result = await SosCallBridge(
+        sos: _ref.read(sosServiceProvider),
+      ).activateProtocol(incident);
+
+      debugPrint(
+        '[SosProviders] protocol chat=${result.conversationId} '
+        'calls=\( {result.answeredOrRinging}/ \){result.calls.length}',
+      );
+
+      try {
+        _ref.read(sosEscalationProvider).start(
+              incident.id,
+              startCircle: 1,
+            );
+      } catch (e) {
+        debugPrint('[SosProviders] escalation: $e');
+      }
+      _safeInvalidate(activeSosProvider);
+    } catch (e) {
+      debugPrint('[SosProviders] protocol background: $e');
+    }
+  }
+
   void _safeInvalidate(ProviderBase provider) {
     try {
       _ref.invalidate(provider);
-    } catch (e) {
-      debugPrint('[SosProviders] ⚠️ Invalidate failed: $e');
-    }
+    } catch (_) {}
   }
 
   void reset() => state = const AsyncData(null);
 }
 
-// ============================================================================
-// HEARTBEAT — ✅ logs + timeout + mounted checks
-// ============================================================================
 final sosHeartbeatControllerProvider =
     StateNotifierProvider.autoDispose<SosHeartbeatController, bool>(
   (ref) => SosHeartbeatController(ref),
@@ -355,43 +277,31 @@ class SosHeartbeatController extends StateNotifier<bool> {
     state = true;
     _tickCount = 0;
     _timer = Timer.periodic(interval, (_) => _tick());
-    debugPrint('[SosProviders] 💓 Heartbeat started for $incidentId');
     _tick();
   }
 
   Future<void> _tick() async {
     final id = _incidentId;
     if (id == null || !state) return;
-
     _tickCount++;
     try {
       await _providersRetry(
         () => _ref.read(sosServiceProvider).heartbeat(id),
-        label: 'heartbeat[$id]',
+        label: 'heartbeat',
         timeout: _kHeartbeatTimeout,
-        maxRetries: 0, // heartbeat ne doit pas retry (évite surcharge)
+        maxRetries: 0,
       );
-
       if (_tickCount % 4 == 0) {
-        debugPrint('[SosProviders] 💓 Heartbeat #$id: $_tickCount');
-      }
-
-      // ✅ FIX : invalidation sécurisée
-      try {
-        _ref.invalidate(activeSosProvider);
-      } catch (e) {
-        debugPrint('[SosProviders] ⚠️ Heartbeat invalidate failed: $e');
+        try {
+          _ref.invalidate(activeSosProvider);
+        } catch (_) {}
       }
     } catch (e) {
-      // ✅ FIX : plus de catch silencieux — log structuré
-      debugPrint('[SosProviders] ❌ Heartbeat #$id failed: $e');
+      debugPrint('[SosProviders] heartbeat: $e');
     }
   }
 
   void stop() {
-    if (_timer != null) {
-      debugPrint('[SosProviders] 💓 Heartbeat stopped ($_tickCount ticks)');
-    }
     _timer?.cancel();
     _timer = null;
     _incidentId = null;
@@ -406,9 +316,6 @@ class SosHeartbeatController extends StateNotifier<bool> {
   }
 }
 
-// ============================================================================
-// ESCALADE SOS (Cercles)
-// ============================================================================
 final sosEscalationProvider =
     Provider.autoDispose<SosEscalationController>((ref) {
   final controller = SosEscalationController(
@@ -419,9 +326,6 @@ final sosEscalationProvider =
   return controller;
 });
 
-// ============================================================================
-// ACTIONS CONTACTS — ✅ validation + logs + mounted guards
-// ============================================================================
 final sosContactActionsProvider = Provider<SosContactActions>((ref) {
   return SosContactActions(ref);
 });
@@ -432,13 +336,10 @@ class SosContactActions {
 
   SosService get _service => _ref.read(sosServiceProvider);
 
-  /// ✅ Invalidation sécurisée
   void _safeInvalidate() {
     try {
       _ref.invalidate(sosContactsProvider);
-    } catch (e) {
-      debugPrint('[SosProviders] ⚠️ Contact invalidate failed: $e');
-    }
+    } catch (_) {}
   }
 
   Future<SosContact> add({
@@ -448,25 +349,18 @@ class SosContactActions {
     String? thixId,
     String? relation,
   }) async {
-    debugPrint('[SosProviders] ➕ Adding contact: $name (circle $circle)');
-    try {
-      final c = await _providersRetry(
-        () => _service.addContact(
-          name: name,
-          circle: circle,
-          phone: phone,
-          thixId: thixId,
-          relation: relation,
-        ),
-        label: 'addContact',
-      );
-      _safeInvalidate();
-      debugPrint('[SosProviders] ✓ Contact added: ${c.id}');
-      return c;
-    } catch (e) {
-      debugPrint('[SosProviders] ❌ addContact: $e');
-      rethrow;
-    }
+    final c = await _providersRetry(
+      () => _service.addContact(
+        name: name,
+        circle: circle,
+        phone: phone,
+        thixId: thixId,
+        relation: relation,
+      ),
+      label: 'addContact',
+    );
+    _safeInvalidate();
+    return c;
   }
 
   Future<SosContact> addFromThix({
@@ -481,61 +375,39 @@ class SosContactActions {
     if (!_ProvidersValidators.isValidThixId(thixId)) {
       throw ArgumentError('Invalid THIX ID: $thixId');
     }
-    debugPrint('[SosProviders] ➕ Adding contact from THIX: $thixId (circle $circle)');
-    try {
-      final c = await _providersRetry(
-        () => _service.addContactFromThixProfile(
-          thixId: thixId,
-          contactUserId: contactUserId,
-          name: name,
-          circle: circle,
-          photoUrl: photoUrl,
-          phone: phone,
-          relation: relation,
-        ),
-        label: 'addContactFromThix[$thixId]',
-      );
-      _safeInvalidate();
-      debugPrint('[SosProviders] ✓ Contact added from THIX: ${c.id}');
-      return c;
-    } catch (e) {
-      debugPrint('[SosProviders] ❌ addFromThix: $e');
-      rethrow;
-    }
+    final c = await _providersRetry(
+      () => _service.addContactFromThixProfile(
+        thixId: thixId,
+        contactUserId: contactUserId,
+        name: name,
+        circle: circle,
+        photoUrl: photoUrl,
+        phone: phone,
+        relation: relation,
+      ),
+      label: 'addFromThix',
+    );
+    _safeInvalidate();
+    return c;
   }
 
   Future<void> update(SosContact contact) async {
-    debugPrint('[SosProviders] ✏️ Updating contact: ${contact.id}');
-    try {
-      await _providersRetry(
-        () => _service.updateContact(contact),
-        label: 'updateContact[${contact.id}]',
-      );
-      _safeInvalidate();
-    } catch (e) {
-      debugPrint('[SosProviders] ❌ updateContact: $e');
-      rethrow;
-    }
+    await _providersRetry(
+      () => _service.updateContact(contact),
+      label: 'updateContact',
+    );
+    _safeInvalidate();
   }
 
   Future<void> delete(String id) async {
-    debugPrint('[SosProviders] 🗑️ Deleting contact: $id');
-    try {
-      await _providersRetry(
-        () => _service.deleteContact(id),
-        label: 'deleteContact[$id]',
-      );
-      _safeInvalidate();
-    } catch (e) {
-      debugPrint('[SosProviders] ❌ deleteContact: $e');
-      rethrow;
-    }
+    await _providersRetry(
+      () => _service.deleteContact(id),
+      label: 'deleteContact',
+    );
+    _safeInvalidate();
   }
 }
 
-// ============================================================================
-// RÉSOUDRE / ANNULER — ✅ mounted guards + logs
-// ============================================================================
 final sosResolveProvider =
     StateNotifierProvider.autoDispose<SosResolveNotifier, AsyncValue<void>>(
   (ref) => SosResolveNotifier(ref),
@@ -548,65 +420,47 @@ class SosResolveNotifier extends StateNotifier<AsyncValue<void>> {
   Future<bool> resolve(String incidentId) async {
     final sanitized = _ProvidersValidators.sanitizeIncidentId(incidentId);
     if (sanitized == null) return false;
-
-    debugPrint('[SosProviders] ✅ Resolving incident: $sanitized');
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       await _providersRetry(
         () => _ref.read(sosServiceProvider).resolveIncident(sanitized),
-        label: 'resolveIncident[$sanitized]',
+        label: 'resolveIncident',
       );
       _safeStopControllers();
       _safeInvalidate(activeSosProvider);
       _safeInvalidate(sosHistoryProvider);
     });
-
-    final success = !state.hasError;
-    debugPrint('[SosProviders] ${success ? '✓' : '❌'} Resolve: $success');
-    return success;
+    return !state.hasError;
   }
 
   Future<bool> cancel(String incidentId) async {
     final sanitized = _ProvidersValidators.sanitizeIncidentId(incidentId);
     if (sanitized == null) return false;
-
-    debugPrint('[SosProviders] 🚫 Cancelling incident: $sanitized');
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       await _providersRetry(
         () => _ref.read(sosServiceProvider).cancelIncident(sanitized),
-        label: 'cancelIncident[$sanitized]',
+        label: 'cancelIncident',
       );
       _safeStopControllers();
       _safeInvalidate(activeSosProvider);
       _safeInvalidate(sosHistoryProvider);
     });
-
-    final success = !state.hasError;
-    debugPrint('[SosProviders] ${success ? '✓' : '❌'} Cancel: $success');
-    return success;
+    return !state.hasError;
   }
 
-  /// ✅ Arrêt sécurisé des controllers (heartbeat + escalation)
   void _safeStopControllers() {
     try {
       _ref.read(sosHeartbeatControllerProvider.notifier).stop();
-    } catch (e) {
-      debugPrint('[SosProviders] ⚠️ Stop heartbeat failed: $e');
-    }
+    } catch (_) {}
     try {
       _ref.read(sosEscalationProvider).stop();
-    } catch (e) {
-      debugPrint('[SosProviders] ⚠️ Stop escalation failed: $e');
-    }
+    } catch (_) {}
   }
 
-  /// ✅ Invalidation sécurisée
   void _safeInvalidate(ProviderBase provider) {
     try {
       _ref.invalidate(provider);
-    } catch (e) {
-      debugPrint('[SosProviders] ⚠️ Invalidate failed: $e');
-    }
+    } catch (_) {}
   }
 }
