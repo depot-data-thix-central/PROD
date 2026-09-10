@@ -17,7 +17,7 @@ import 'package:thix_id/auth/supabase_auth_manager.dart';
 import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/models/account_type.dart';
 import 'package:thix_id/services/profile_service.dart';
-
+import 'package:thix_id/data/offline/home_offline_cache.dart';
 // ============================================================================
 // RE-EXPORTS depuis le fichier features (Riverpod StateNotifier)
 // ============================================================================
@@ -131,10 +131,14 @@ class AuthController extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    try {
+      await HomeOfflineCache.instance.clear();
+    } catch (e) {
+      debugPrint('[Auth] offline cache clear: $e');
+    }
     await _auth.signOut();
     notifyListeners();
   }
-
   Future<void> updateCurrentUser(AppUser user) async {
     await _auth.updateCurrentUser(user);
     notifyListeners();
