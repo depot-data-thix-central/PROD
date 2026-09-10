@@ -205,6 +205,8 @@ class SupabaseAuthManager implements AuthManager {
           debugPrint('[Auth] ✓ User hydrated: ${user.id}');
         } catch (e) {
           debugPrint('[Auth] ⚠️ Hydrate offline, keeping session alive: $e');
+          
+          // ✅ FALLBACK COMPLET (Satisfait toutes les exigences du constucteur de AppUser)
           _currentUser.value ??= AppUser(
             id: user.id,
             thixId: '',
@@ -212,9 +214,18 @@ class SupabaseAuthManager implements AuthManager {
             thixScore: null,
             email: user.email ?? '',
             phone: user.phone,
-            photoUrl: user.userMetadata?['avatar_url']?.toString(), // ✅ AJOUT DU PARAMÈTRE MANQUANT
-            accountType: AccountType.personal,
             displayName: user.userMetadata?['full_name']?.toString() ?? user.email ?? _kDefaultDisplayName,
+            accountType: AccountType.personal,
+            photoUrl: user.userMetadata?['avatar_url']?.toString(),
+            bio: null,
+            countryOrOrigin: null,
+            education: const [],
+            experience: const [],
+            skills: const [],
+            enrollments: const [],
+            languages: const [],
+            biometricsEnabled: true,
+            twoFaEnabled: false,
             createdAt: DateTime.now(),
             updatedAt: DateTime.now(),
           );
@@ -238,6 +249,8 @@ class SupabaseAuthManager implements AuthManager {
       debugPrint('[Auth] ✓ Initial user hydrated: ${u.id}');
     } catch (e) {
       debugPrint('[Auth] ⚠️ Initial hydration failed (likely offline): $e');
+      
+      // ✅ FALLBACK COMPLET (Satisfait toutes les exigences du constucteur de AppUser)
       _currentUser.value ??= AppUser(
         id: u.id,
         thixId: '',
@@ -245,9 +258,18 @@ class SupabaseAuthManager implements AuthManager {
         thixScore: null,
         email: u.email ?? '',
         phone: u.phone,
-        photoUrl: u.userMetadata?['avatar_url']?.toString(), // ✅ AJOUT DU PARAMÈTRE MANQUANT
-        accountType: AccountType.personal,
         displayName: u.userMetadata?['full_name']?.toString() ?? u.email ?? _kDefaultDisplayName,
+        accountType: AccountType.personal,
+        photoUrl: u.userMetadata?['avatar_url']?.toString(),
+        bio: null,
+        countryOrOrigin: null,
+        education: const [],
+        experience: const [],
+        skills: const [],
+        enrollments: const [],
+        languages: const [],
+        biometricsEnabled: true,
+        twoFaEnabled: false,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
