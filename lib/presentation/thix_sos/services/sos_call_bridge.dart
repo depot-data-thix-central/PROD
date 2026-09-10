@@ -1,8 +1,7 @@
 // lib/presentation/thix_sos/services/sos_call_bridge.dart
 
-/// Pont SOS → THIX Chat + Call (Agora) + fallback tel — Production Enterprise
-/// ✅ SÉCURISÉ : timeouts, race-condition, RGPD (hash logs), kIsWeb guards
-/// ✅ ROBUSTE : retry, parallel calls, cleanup on error, validation
+/// Pont SOS → THIX Chat + appels.
+/// Chat TOUJOURS créé (même 0 membre résolu). Agora caméra reporté hors trigger.
 import 'dart:async';
 import 'dart:convert';
 
@@ -18,25 +17,17 @@ import 'sos_crisis_media_service.dart';
 import 'sos_service.dart';
 import 'sos_victim_capture_daemon.dart';
 
-// ============================================================================
-// CONSTANTS
-// ============================================================================
-const Duration _kChatTimeout = Duration(seconds: 20);
-const Duration _kCallTimeout = Duration(seconds: 15);
-const Duration _kCameraTimeout = Duration(seconds: 30);
+const Duration _kChatTimeout = Duration(seconds: 12);
+const Duration _kCallTimeout = Duration(seconds: 10);
 const Duration _kPhoneTimeout = Duration(seconds: 5);
 const int _kMaxRetries = 1;
-const Duration _kRetryDelay = Duration(milliseconds: 600);
+const Duration _kRetryDelay = Duration(milliseconds: 400);
 const int _kMaxPhoneLength = 20;
 const int _kMaxNameLength = 80;
 
-// ============================================================================
-// VALIDATORS & SANITIZERS
-// ============================================================================
 class _BridgeValidators {
   _BridgeValidators._();
 
-  /// ✅ RGPD : ne logger que les 4 premiers caractères + hash
   static String safeName(String? name) {
     if (name == null || name.trim().isEmpty) return 'Unknown';
     final trimmed = name.trim();
@@ -44,21 +35,17 @@ class _BridgeValidators {
     return '${trimmed.substring(0, _kMaxNameLength)}…';
   }
 
-  /// ✅ RGPD : masque le numéro sauf les 3 premiers et 2 derniers chiffres
   static String safePhone(String? phone) {
     if (phone == null || phone.trim().isEmpty) return '';
     final cleaned = phone.replaceAll(RegExp(r'[^\d+]'), '');
     if (cleaned.length <= 5) return '***';
-    return '${cleaned.substring(0, 3)}***${cleaned.substring(cleaned.length - 2)}';
+    return '\( {cleaned.substring(0, 3)}*** \){cleaned.substring(cleaned.length - 2)}';
   }
 
-  /// Nettoyage pour éviter injection dans payloads
   static String sanitizePayload(String? input, {int maxLength = 200}) {
     if (input == null) return '';
     final trimmed = input.trim();
-    if (trimmed.length > maxLength) {
-      return trimmed.substring(0, maxLength);
-    }
+    if (trimmed.length > maxLength) return trimmed.substring(0, maxLength);
     return trimmed;
   }
 
@@ -69,9 +56,6 @@ class _BridgeValidators {
   }
 }
 
-// ============================================================================
-// HELPERS
-// ============================================================================
 Future<T> _bridgeRetry<T>(
   Future<T> Function() fn, {
   required String label,
@@ -88,7 +72,6 @@ Future<T> _bridgeRetry<T>(
         debugPrint('[SosBridge] ❌ $label: timeout after $attempt');
         rethrow;
       }
-      debugPrint('[SosBridge] ⏱️ $label timeout — retry $attempt/$maxRetries');
       await Future.delayed(_kRetryDelay);
     } catch (e) {
       attempt++;
@@ -101,9 +84,6 @@ Future<T> _bridgeRetry<T>(
   }
 }
 
-// ============================================================================
-// BRIDGE
-// ============================================================================
 class SosCallBridge {
   SosCallBridge({
     SosService? sos,
@@ -113,152 +93,122 @@ class SosCallBridge {
 
   final SosService _sos;
   final CallSignalingService _signaling;
-  bool _isActivating = false; // ✅ FIX P0 : flag anti-race-condition
+  bool _isActivating = false;
 
-  /// Au déclenchement SOS :
-  /// 1) Chat groupe cercle 1
-  /// 2) Appels audio (THIX) + SMS/tel si pas de compte
+  /// 1) Groupe Chat TOUJOURS (cercles 1+2+3)
+  /// 2) Event SOS_STARTED pour ouvrir la chambre secours
+  /// 3) Appels cercle 1 en parallèle
+  /// 4) Daemon capture (sans Agora au trigger)
   Future<SosActivationResult> activateProtocol(SosIncident incident) async {
-    // ✅ FIX P0 : empêche double-trigger
     if (_isActivating) {
       debugPrint('[SosBridge] ⚠️ Activation already in progress');
       return SosActivationResult(
         incident: incident,
-        conversationId: null,
+        conversationId: incident.chatConversationId,
         calls: const [],
       );
     }
     _isActivating = true;
 
-    String? conversationId;
-    bool cameraStarted = false;
+    String? conversationId = incident.chatConversationId;
 
     try {
-      const circle = 1;
-      final contacts = await _sos.getContactsByCircle(circle);
-      debugPrint('[SosBridge] 🚀 Activating protocol — ${contacts.length} contacts circle 1');
+      final allContacts = await _sos.getContactsAllCircles();
+      final circle1 =
+          allContacts.where((c) => c.circle == 1).toList(growable: false);
 
-      // Résoudre les userIds THIX
-      final userIds = <String>[];
-      for (final c in contacts) {
-        final id = await _sos.resolveContactUserId(c);
-        if (id != null && id.isNotEmpty) userIds.add(id);
-      }
+      final userIds = await _sos.resolveAllCircleUserIds(allContacts);
+      final circle1Ids = await _sos.resolveAllCircleUserIds(circle1);
 
-      // 1) Chat SOS groupe
-      if (userIds.isNotEmpty) {
-        try {
-          conversationId = await _bridgeRetry(
-            () => _sos.createSosChat(
-              incidentId: incident.id,
-              publicId: incident.publicId,
-              participantUserIds: userIds,
-            ),
-            label: 'createSosChat',
-            timeout: _kChatTimeout,
-          );
-          debugPrint('[SosBridge] ✓ Chat SOS created: $conversationId');
-        } catch (e) {
-          debugPrint('[SosBridge] ❌ Chat SOS failed: $e');
-        }
-      } else {
-        debugPrint('[SosBridge] ⚠️ No THIX users in circle 1 — no chat');
-      }
-
-      // 2) Appels parallèles (performance)
-      final calls = await callCircle(
-        incident: incident,
-        circle: circle,
-        contacts: contacts,
+      debugPrint(
+        '[SosBridge] protocol contacts=${allContacts.length} '
+        'resolved=\( {userIds.length} c1= \){circle1.length}',
       );
 
-      // 3) Caméra crise — avec permission check
-      if (!kIsWeb) {
-        try {
-          final hasCam = await _ensureCameraPermission();
-          if (hasCam) {
-            await _bridgeRetry(
-              () => SosCrisisMediaService.instance
-                  .startVictimBroadcast(incident.id),
-              label: 'startVictimBroadcast',
-              timeout: _kCameraTimeout,
-            );
-            cameraStarted = true;
-            await _sos.logEventPublic(incident.id, 'CAMERA_CHANNEL_READY', {
-              'channel': SosCrisisMediaService.channelFor(incident.id),
-              'mode': 'victim_broadcast',
-            });
-            debugPrint('[SosBridge] ✓ Camera broadcast started');
-          } else {
-            await _sos.logEventPublic(incident.id, 'CAMERA_CHANNEL_FAILED', {
-              'error': 'permission_denied',
-            });
-            debugPrint('[SosBridge] ⚠️ Camera permission denied');
-          }
-        } catch (e) {
-          debugPrint('[SosBridge] ❌ Camera broadcast failed: $e');
-          await _sos.logEventPublic(
-            incident.id,
-            'CAMERA_CHANNEL_FAILED',
-            {'error': _BridgeValidators.sanitizePayload(e.toString(), maxLength: 100)},
-          );
-        }
-      }
-
-      // 4) Annonce publique SOS_STARTED
+      // Chat : toujours, même 0 membre résolu (victime seule).
       try {
-        await _sos.logEventPublic(incident.id, 'SOS_STARTED', {
-          'circle1_user_ids': userIds,
-          'victim_id': SupabaseConfig.currentUser?.id,
-          'public_id': incident.publicId,
-          'conversation_id': conversationId,
-        });
+        conversationId = await _bridgeRetry(
+          () => _sos.createSosChat(
+            incidentId: incident.id,
+            publicId: incident.publicId,
+            participantUserIds: userIds,
+          ),
+          label: 'createSosChat',
+          timeout: _kChatTimeout,
+        );
+        debugPrint('[SosBridge] ✓ Chat SOS $conversationId');
       } catch (e) {
-        debugPrint('[SosBridge] ⚠️ SOS_STARTED log failed: $e');
+        debugPrint('[SosBridge] ❌ Chat SOS failed: $e');
       }
 
-      // 5) Écoute des commandes secours (background)
+      // Daemon avant les appels : les CMD_* marchent même si l'appel rate.
       try {
         await SosVictimCaptureDaemon.instance.start(
           incidentId: incident.id,
           conversationId: conversationId,
         );
       } catch (e) {
-        debugPrint('[SosBridge] ⚠️ VictimCaptureDaemon start failed: $e');
+        debugPrint('[SosBridge] daemon: $e');
       }
+
+      // SOS_STARTED : déclenche GlobalSosListener côté secours.
+      try {
+        await _sos.logEventPublic(incident.id, 'SOS_STARTED', {
+          'circle1_user_ids': circle1Ids,
+          'all_user_ids': userIds,
+          'victim_id': SupabaseConfig.currentUser?.id,
+          'public_id': incident.publicId,
+          'conversation_id': conversationId,
+        });
+      } catch (e) {
+        debugPrint('[SosBridge] SOS_STARTED: $e');
+      }
+
+      List<SosCallAttempt> calls = const [];
+      try {
+        calls = await callCircle(
+          incident: incident,
+          circle: 1,
+          contacts: circle1,
+        );
+      } catch (e) {
+        debugPrint('[SosBridge] calls: $e');
+      }
+
+      // Caméra live : NE PAS démarrer ici (timeout bouton + sos_error_camera).
+      // La chambre de crise victime lance Agora à l'ouverture.
 
       return SosActivationResult(
         incident: incident,
         conversationId: conversationId,
-        calls: calls, // Correction : calls au lieu de calls.calls
+        calls: calls,
       );
     } catch (e, stack) {
-      // ✅ FIX P0 : cleanup on error
-      debugPrint('[SosBridge] ❌ activateProtocol failed: $e');
-      debugPrint('[SosBridge] Stack: $stack');
-      await _cleanupOnError(incident.id, conversationId, cameraStarted);
-      rethrow;
+      debugPrint('[SosBridge] ❌ activateProtocol failed: $e\n$stack');
+      return SosActivationResult(
+        incident: incident,
+        conversationId: conversationId,
+        calls: const [],
+      );
     } finally {
       _isActivating = false;
     }
   }
 
-  /// Appelle tous les secours d'un cercle en parallèle (performance)
   Future<List<SosCallAttempt>> callCircle({
     required SosIncident incident,
     required int circle,
     required List<SosContact> contacts,
   }) async {
-    // Lancement de tous les appels simultanément
+    if (contacts.isEmpty) return const [];
     final futures = contacts.map((contact) => _callOneContact(
           incident: incident,
           circle: circle,
           contact: contact,
         ));
-    return await Future.wait(futures);
+    return Future.wait(futures);
   }
 
-  /// ✅ Cleanup si activateProtocol échoue
   Future<void> _cleanupOnError(
     String incidentId,
     String? conversationId,
@@ -267,18 +217,10 @@ class SosCallBridge {
     try {
       if (cameraStarted) {
         await SosCrisisMediaService.instance.leave();
-        debugPrint('[SosBridge] 🧹 Camera stopped (cleanup)');
       }
-      if (conversationId != null) {
-        // TODO: archiver le chat SOS orphelin côté serveur
-        debugPrint('[SosBridge] 🧹 Orphan chat SOS: $conversationId');
-      }
-    } catch (e) {
-      debugPrint('[SosBridge] ⚠️ Cleanup error: $e');
-    }
+    } catch (_) {}
   }
 
-  /// ✅ FIX P1 : permissions caméra
   Future<bool> _ensureCameraPermission() async {
     if (kIsWeb) return true;
     try {
@@ -286,10 +228,26 @@ class SosCallBridge {
       if (status.isGranted) return true;
       final res = await Permission.camera.request();
       return res.isGranted;
-    } catch (e) {
-      debugPrint('[SosBridge] ⚠️ Camera permission check failed: $e');
+    } catch (_) {
       return false;
     }
+  }
+
+  /// Optionnel : à appeler depuis la chambre de crise, PAS depuis le bouton SOS.
+  Future<void> startCrisisCamera(String incidentId) async {
+    if (kIsWeb) return;
+    final hasCam = await _ensureCameraPermission();
+    if (!hasCam) {
+      await _sos.logEventPublic(incidentId, 'CAMERA_CHANNEL_FAILED', {
+        'error': 'permission_denied',
+      });
+      return;
+    }
+    await SosCrisisMediaService.instance.startVictimBroadcast(incidentId);
+    await _sos.logEventPublic(incidentId, 'CAMERA_CHANNEL_READY', {
+      'channel': SosCrisisMediaService.channelFor(incidentId),
+      'mode': 'victim_broadcast',
+    });
   }
 
   Future<SosCallAttempt> _callOneContact({
@@ -300,7 +258,6 @@ class SosCallBridge {
     final safeName = _BridgeValidators.safeName(contact.name);
     final calleeId = await _sos.resolveContactUserId(contact);
 
-    // 1) Appel in-app THIX (Agora) si compte lié — AUDIO UNIQUEMENT
     if (calleeId != null && calleeId.isNotEmpty) {
       try {
         final invite = await _bridgeRetry(
@@ -312,14 +269,12 @@ class SosCallBridge {
           timeout: _kCallTimeout,
         );
 
-        // ✅ FIX P0 : payload sans info personnelle en clair
         await _sos.logEventPublic(incident.id, 'CALL_STARTED', {
           'circle': circle,
           'contact_hash': base64Encode(utf8.encode(safeName)).substring(0, 8),
           'mode': 'thix_audio',
         });
 
-        debugPrint('[SosBridge] 📞 THIX call started: $safeName');
         return SosCallAttempt(
           contactName: contact.name,
           circle: circle,
@@ -329,34 +284,26 @@ class SosCallBridge {
           channelName: invite.channelName,
         );
       } catch (e) {
-        debugPrint('[SosBridge] ❌ THIX call failed: $safeName — $e');
         await _sos.logEventPublic(incident.id, 'CALL_FAILED', {
           'circle': circle,
           'mode': 'thix_audio',
-          // ✅ FIX : sanitize error (pas de stack trace complet)
           'error': _BridgeValidators.sanitizePayload(e.toString(), maxLength: 100),
         });
-        // continue vers fallback tel
       }
     }
 
-    // 2) Fallback : appel téléphonique natif
     final phone = contact.phone?.trim();
     if (_BridgeValidators.isValidPhone(phone)) {
       final ok = await _launchPhone(phone!);
-      final safePhone = _BridgeValidators.safePhone(phone);
-
       await _sos.logEventPublic(
         incident.id,
         ok ? 'CALL_PHONE_LAUNCHED' : 'CALL_PHONE_FAILED',
         {
           'circle': circle,
-          'phone_masked': safePhone, // ✅ RGPD : numéro masqué
+          'phone_masked': _BridgeValidators.safePhone(phone),
           'mode': 'native_phone',
         },
       );
-
-      debugPrint('[SosBridge] 📱 Phone call ${ok ? 'OK' : 'FAILED'}: $safeName ($safePhone)');
       return SosCallAttempt(
         contactName: contact.name,
         circle: circle,
@@ -366,13 +313,11 @@ class SosCallBridge {
       );
     }
 
-    // 3) Rien à appeler
     await _sos.logEventPublic(incident.id, 'CALL_SKIPPED', {
       'circle': circle,
       'reason': 'no_thix_user_no_phone',
     });
 
-    debugPrint('[SosBridge] ⏭️ Skipped: $safeName (no THIX + no phone)');
     return SosCallAttempt(
       contactName: contact.name,
       circle: circle,
@@ -382,38 +327,26 @@ class SosCallBridge {
     );
   }
 
-  // ✅ FIX P0 : kIsWeb guard + mode explicite + sanitization
   Future<bool> _launchPhone(String raw) async {
-    if (kIsWeb) {
-      debugPrint('[SosBridge] ⚠️ tel: not supported on web');
-      return false;
-    }
-
+    if (kIsWeb) return false;
     final cleaned = raw.replaceAll(RegExp(r'[^\d+]'), '');
     if (cleaned.isEmpty || !_BridgeValidators.isValidPhone(cleaned)) {
-      debugPrint('[SosBridge] ⚠️ Invalid phone number');
       return false;
     }
-
     final uri = Uri(scheme: 'tel', path: cleaned);
     try {
       final canLaunch = await canLaunchUrl(uri).timeout(_kPhoneTimeout);
       if (!canLaunch) return false;
-      // ✅ FIX : mode explicite pour comportement prévisible
       return await launchUrl(
         uri,
         mode: LaunchMode.externalApplication,
       ).timeout(_kPhoneTimeout);
-    } catch (e) {
-      debugPrint('[SosBridge] ❌ launchPhone: $e');
+    } catch (_) {
       return false;
     }
   }
 }
 
-// ============================================================================
-// MODELS
-// ============================================================================
 enum SosCallMode { thixAudio, nativePhone, none }
 
 class SosCallAttempt {
