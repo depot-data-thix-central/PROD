@@ -167,6 +167,7 @@ import 'package:thix_id/presentation/thix_reservation/bus/pages/agency/agency_qr
 import 'package:thix_id/presentation/thix_reservation/bus/pages/agency/agency_seats_page.dart';
 import 'package:thix_id/presentation/thix_reservation/bus/data/models/bus_trip_model.dart';
 import 'package:thix_id/presentation/thix_reservation/bus/data/models/booking_model.dart';
+
 // === THIX RESERVATION (DELIVERY) ===
 import 'package:thix_id/presentation/thix_reservation/delivery/pages/client/delivery_home_page.dart';
 import 'package:thix_id/presentation/thix_reservation/delivery/pages/client/delivery_checkout_page.dart';
@@ -270,6 +271,7 @@ import 'package:thix_id/presentation/thix_recherche/pages/signaler_page.dart';
 import 'package:thix_id/presentation/thix_recherche/pages/creer_alerte_page.dart';
 import 'package:thix_id/presentation/thix_recherche/pages/mes_alertes_page.dart';
 import 'package:thix_id/presentation/thix_sos/pages/chambre_crise_secours_page.dart';
+
 // === ADMIN SYSTEM GLOBAL ===
 import 'package:thix_id/presentation/admin/admin_page.dart';
 import 'package:thix_id/presentation/admin/admin_routes.dart';
@@ -311,10 +313,12 @@ class AppRouter {
     GlobalKey<NavigatorState>? navigatorKey,
   }) {
     final refresh = extraRefreshListenable ?? auth;
+    
     return GoRouter(
       navigatorKey: navigatorKey,
       initialLocation: AppRoutes.home,
       refreshListenable: refresh,
+      
       errorBuilder: (context, state) => Scaffold(
         backgroundColor: const Color(0xFF0B3D91),
         body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -325,136 +329,10 @@ class AppRouter {
           ElevatedButton(onPressed: () => context.go(AppRoutes.home), child: const Text('Accueil')),
         ])),
       ),
-    
-redirect: (context, state) async {
-  try {
-    final loc = state.matchedLocation;
-    final isLoginPage = loc == AppRoutes.login;
-    final isStartPage = loc == AppRoutes.start;
-    final isRegPage =
-        loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
-    const accountStatusPath = '/settings/account-status';
-    final isAccountStatusRoute = loc == accountStatusPath;
-
-    final isPublic = isStartPage ||
-        isLoginPage ||
-        isRegPage ||
-        loc == AppRoutes.publicProfile ||
-        loc == AppRoutes.jobs ||
-        loc == AppRoutes.opportunities ||
-        loc == AppRoutes.education ||
-        loc == AppRoutes.trainingHome ||
-        loc.startsWith('${AppRoutes.trainingDetailsBasePath}/') ||
-        loc == AppRoutes.monPays ||
-        loc.startsWith('${AppRoutes.monPays}/') ||
-        loc.startsWith('/thix-event') ||
-        loc.startsWith('/thix-retrouve') ||
-        loc.startsWith('/thix-weeding') ||
-        loc.startsWith('/thix-reservation/delivery');
-
-    final logged = auth.isAuthenticated;
-    final currentUser = auth.currentUser;
-
-    final rawLifecycle = currentUser?.accountStatus?.toLowerCase();
-    // null / vide = on ne bloque PAS (évite de piéger tout le monde)
-    final isDeactivated = rawLifecycle == 'deactivated';
-    final isPendingDeletion = rawLifecycle == 'pending_deletion';
-    final isLifecycleBlocked = isDeactivated || isPendingDeletion;
-
-    final regStatus = currentUser?.registrationStatus?.toLowerCase() ?? '';
-    final isRegistrationCompleted = currentUser != null &&
-        (regStatus == 'active' || regStatus == 'completed');
-
-    // 1. Pas connecté → login autorisé
-    if (!logged) {
-      return isPublic ? null : AppRoutes.login;
-    }
-
-redirect: (context, state) async {
-  try {
-    final loc = state.matchedLocation;
-    final isLoginPage = loc == AppRoutes.login;
-    final isStartPage = loc == AppRoutes.start;
-    final isRegPage = loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
-    const accountStatusPath = '/settings/account-status';
-    final isAccountStatusRoute = loc == accountStatusPath;
-
-    // Définition des routes accessibles sans connexion
-    final isPublic = isStartPage ||
-        isLoginPage ||
-        isRegPage ||
-        loc == AppRoutes.publicProfile ||
-        loc == AppRoutes.jobs ||
-        loc == AppRoutes.opportunities ||
-        loc == AppRoutes.education ||
-        loc == AppRoutes.trainingHome ||
-        loc.startsWith('${AppRoutes.trainingDetailsBasePath}/') ||
-        loc == AppRoutes.monPays ||
-        loc.startsWith('${AppRoutes.monPays}/') ||
-        loc.startsWith('/thix-event') ||
-        loc.startsWith('/thix-retrouve') ||
-        loc.startsWith('/thix-weeding') ||
-        loc.startsWith('/thix-reservation/delivery');
-
-    final logged = auth.isAuthenticated;
-    final currentUser = auth.currentUser;
-
-    // --- ANALYSE DU STATUT DU COMPTE (Le Gardien) ---
-    // On vérifie à la fois la variable accountStatus et les booléens du modèle
-    final rawLifecycle = currentUser?.accountStatus?.toLowerCase();
-    final isDeactivated = rawLifecycle == 'deactivated' || currentUser?.isDeactivated == true;
-    final isPendingDeletion = rawLifecycle == 'pending_deletion' || currentUser?.isPendingDeletion == true;
-    final isLifecycleBlocked = isDeactivated || isPendingDeletion;
-
-    // --- ANALYSE DE L'INSCRIPTION ---
-    final regStatus = currentUser?.registrationStatus?.toLowerCase() ?? '';
-    final isRegistrationCompleted = currentUser != null &&
-        (regStatus == 'active' || regStatus == 'completed');
-
-    // ========================================================
-    // 1. PAS CONNECTÉ
-    // ========================================================
-    if (!logged) {
-      return isPublic ? null : AppRoutes.login;
-    }
-
-    // ========================================================
-    // 2. VERROUILLAGE STRICT : COMPTE DÉSACTIVÉ / SUPPRESSION
-    // ========================================================
-    if (isLifecycleBlocked) {
-      // On autorise UNIQUEMENT la page de statut, l'écran de démarrage ou de login (pour se déconnecter)
-      if (isAccountStatusRoute || isLoginPage || isStartPage) {
-        return null; // Laisser passer
-      }
-      // S'il essaie d'aller AILLEURS (Dashboard, chat, paramètres...), on le bloque ici :
-      return accountStatusPath;
-    }
-
-class AppRouter {
-  static GoRouter create(
-    AuthController auth, {
-    Listenable? extraRefreshListenable,
-    GlobalKey<NavigatorState>? navigatorKey,
-  }) {
-    final refresh = extraRefreshListenable ?? auth;
-    return GoRouter(
-      navigatorKey: navigatorKey,
-      initialLocation: AppRoutes.home,
-      refreshListenable: refresh,
-      errorBuilder: (context, state) => Scaffold(
-        backgroundColor: const Color(0xFF0B3D91),
-        body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('THIX ID CENTRAL', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 20)),
-          const SizedBox(height: 8),
-          Text('Route non trouvée: ${state.matchedLocation}', style: const TextStyle(color: Colors.white70)),
-          const SizedBox(height: 16),
-          ElevatedButton(onPressed: () => context.go(AppRoutes.home), child: const Text('Accueil')),
-        ])),
-      ),
-    
-      // ==========================================
-      // LE GARDIEN UNIQUE (Un seul bloc redirect)
-      // ==========================================
+      
+      // ========================================================
+      // LE GARDIEN UNIQUE - GESTION DES REDIRECTIONS ET SÉCURITÉ
+      // ========================================================
       redirect: (context, state) async {
         try {
           final loc = state.matchedLocation;
@@ -552,7 +430,6 @@ class AppRouter {
           }
 
           return null;
-          
         } catch (e) {
           debugPrint('GoRouter redirect error: $e');
           return null;
@@ -577,13 +454,12 @@ class AppRouter {
         GoRoute(path: AppRoutes.profile, name: 'profile', pageBuilder: (_, __) => const NoTransitionPage(child: ProfilePage())),
 
         GoRoute(
-  path: '/settings/account-status',
-  name: 'accountStatus', // Optionnel mais recommandé
-  pageBuilder: (_, __) => const NoTransitionPage(
-    child: SettingsAccountStatusScreen(),
-  ),
-),
-
+          path: '/settings/account-status',
+          name: 'accountStatus', 
+          pageBuilder: (_, __) => const NoTransitionPage(
+            child: SettingsAccountStatusScreen(),
+          ),
+        ),
 
         GoRoute(
           path: '/settings/policy/:slug',
@@ -630,8 +506,6 @@ class AppRouter {
               ),
             ]),
             
-          
-
             // === THIX CHAT ===
             StatefulShellBranch(routes: [
               GoRoute(path: AppRoutes.chat, name: 'chat', pageBuilder: (_, __) => const NoTransitionPage(child: ChatListPage()), routes: [
@@ -696,13 +570,13 @@ class AppRouter {
         ]),
 
         GoRoute(
-  path: 'chambre-secours/:id',
-  name: 'thixSosChambreSecours',
-  builder: (context, state) => ChambreCriseSecoursPage(
-    incidentId: state.pathParameters['id']!,
-    victimUserId: state.uri.queryParameters['victim'],
-  ),
-),
+          path: 'chambre-secours/:id',
+          name: 'thixSosChambreSecours',
+          builder: (context, state) => ChambreCriseSecoursPage(
+            incidentId: state.pathParameters['id']!,
+            victimUserId: state.uri.queryParameters['victim'],
+          ),
+        ),
         GoRoute(path: '/thix-retrouve', name: 'thixRetrouve', builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 2), routes: [
           GoRoute(path: 'detail', name: 'thixRetrouveDetail', pageBuilder: (_, __) => const NoTransitionPage(child: ObjectDetailPage())),
           GoRoute(path: 'ai-match', name: 'thixRetrouveAiMatch', pageBuilder: (_, __) => const NoTransitionPage(child: AiMatchPage())),
@@ -895,10 +769,10 @@ class AppRouter {
           },
         ),
         GoRoute(
-  path: '/thix-ia',
-  name: 'thix-ia-home',
-  builder: (context, state) => const ThixIaHomePage(), // 
-),
+          path: '/thix-ia',
+          name: 'thix-ia-home',
+          builder: (context, state) => const ThixIaHomePage(), 
+        ),
 
         // === THIX RESERVATION (DELIVERY) ===
         GoRoute(path: AppRoutes.deliveryHome, name: 'delivery-home', pageBuilder: (_, __) => NoTransitionPage(child: app_provider.ChangeNotifierProvider(create: (_) => DeliveryClientProvider()..init(), child: const DeliveryHomePage()))),
