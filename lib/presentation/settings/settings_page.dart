@@ -612,16 +612,47 @@ class _SettingsPageState extends State<SettingsPage> {
 
   setState(() => _busy = true);
   try {
-    await _sb.rpc('deactivate_my_account', params: {'password': pw});
+    // ---- 1. LOG : Début du processus ----
+    debugPrint('[Deactivate] Début du processus pour désactiver le compte.');
+
+    final email = _sb.auth.currentUser?.email;
+    if (email == null) {
+      throw Exception('Impossible de trouver l\'email de la session.');
+    }
+
+    // ---- 2. VÉRIFICATION DU MOT DE PASSE CÔTÉ FLUTTER ----
+    debugPrint('[Deactivate] Vérification du mot de passe pour $email...');
+    try {
+      await _sb.auth.signInWithPassword(email: email, password: pw);
+      debugPrint('[Deactivate] Mot de passe correct.');
+    } on AuthException catch (authErr) {
+      debugPrint('[Deactivate] AuthException: ${authErr.message}');
+      throw Exception('Mot de passe incorrect.');
+    }
+
+    // ---- 3. APPEL DU RPC ----
+    debugPrint('[Deactivate] Appel de la fonction RPC deactivate_my_account...');
+    // Plus besoin d'envoyer le mot de passe au RPC, il a déjà été vérifié !
+    await _sb.rpc('deactivate_my_account'); 
+    debugPrint('[Deactivate] RPC exécuté avec succès.');
+
     await context.read<AuthController>().refreshCurrentUser();
     if (!mounted) return;
     context.go('/settings/account-status');
-  } catch (e) {
+    
+  } catch (e, stackTrace) {
+    // ---- IMPRESSION DE L'ERREUR DÉTAILLÉE ----
+    debugPrint('====================================');
+    debugPrint('[ERREUR CRITIQUE] _deactivateAccount');
+    debugPrint('Erreur : $e');
+    debugPrint('StackTrace : $stackTrace');
+    debugPrint('====================================');
     if (mounted) _snack('$e', error: true);
   } finally {
     if (mounted) setState(() => _busy = false);
   }
 }
+
 
   Future<void> _deleteAccount() async {
   final pw = await _askPassword(
