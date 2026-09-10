@@ -97,17 +97,20 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
     final triggerState = ref.watch(triggerSosProvider);
     final isTriggering = triggerState.isLoading;
 
-    // ✅ FIX P0 : Les écouteurs Riverpod doivent être dans le build, pas dans initState.
-    // Cela évite les conflits de cycle de vie et les écrans figés.
     ref.listen<AsyncValue<SosIncident?>>(activeSosProvider, (prev, next) {
       final incident = next.valueOrNull;
       if (incident != null && incident.isActive && mounted) {
-        // Microtask évite les collisions de rendu pendant les transitions d'onglets
+   
         Future.microtask(() {
           if (mounted) {
             Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (_) => SosActifPage(incidentId: incident.id)),
-            );
+          MaterialPageRoute(
+            builder: (_) => ChambreCrisePage(
+              incidentId: incident.id,
+              conversationId: incident.chatConversationId,
+            ),
+          ),
+        );
           }
         });
       }
@@ -322,10 +325,14 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
         ref.read(sosHeartbeatControllerProvider.notifier).start(incident.id);
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (_) => SosActifPage(incidentId: incident.id),
+            builder: (_) => ChambreCrisePage(
+              incidentId: incident.id,
+              conversationId: incident.chatConversationId,
+            ),
           ),
         );
       } else if (mounted) {
+        
         final err = ref.read(triggerSosProvider).error;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
