@@ -10,6 +10,7 @@ import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
 import 'package:thix_id/services/chat/presence_service.dart';
+import 'package:thix_id/data/offline/chat_offline_cache.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -170,7 +171,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   Timer? _searchDebounce;
   Timer? _refreshDebounce;
   RealtimeChannel? _channel;
-  ProviderSubscription<String?>? _authSubscription; // ✅ TYPE CORRIGÉ EN String?
+  ProviderSubscription<String?>? _authSubscription;
   bool _isDisposed = false;
   bool _isLoadInProgress = false;
   String? _currentUserId;
@@ -202,7 +203,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
   void _bindAuthChanges() {
     _authSubscription = _ref.listen<String?>(
-      supabaseUserIdProvider, // ✅ Utilisation du bon provider
+      supabaseUserIdProvider,
       (previous, next) {
         final prevId = previous; 
         final nextId = next;     
@@ -238,7 +239,13 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     _currentUserId = userId;
     debugPrint('[ChatList] 🌐 Init for user ${_obfuscate(userId)}');
 
-    _presenceService.initPresence();
+    // Essayer d'initier la présence, ne pas bloquer si on est hors-ligne
+    try {
+      _presenceService.initPresence();
+    } catch (e) {
+      debugPrint('[ChatList] ⚠️ initPresence failed (likely offline): $e');
+    }
+    
     await loadInitial();
     _subscribeRealtime();
   }
@@ -396,14 +403,35 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
 
       _applyFilter();
       debugPrint('[ChatList] ✓ Loaded ${convs.length} conversations');
+
+      // Sauvegarde des conversations dans le cache local
+      unawaited(ChatOfflineCache.instance.saveConversations(
+        _currentUserId!,
+        convs.map(_convToCache).toList(),
+      ));
     } catch (e) {
       debugPrint('[ChatList] ❌ loadInitial error: $e');
-      if (!_isDisposed) {
+      if (_isDisposed) return;
+
+      final cached = ChatOfflineCache.instance.readConversations(_currentUserId!);
+      if (cached.isNotEmpty) {
+        final convs = cached.map(_convFromCache).whereType<ChatConversation>().toList();
+        _indexedAll = convs.map((c) => _IndexedConversation(c)).toList();
         state = state.copyWith(
+          all: convs,
+          hasMore: false,
           isLoading: false,
-          lastError: 'Échec du chargement des conversations',
+          lastError: 'Hors ligne',
         );
+        _applyFilter();
+        debugPrint('[ChatList] 📴 Restored ${convs.length} cached conversations');
+        return;
       }
+
+      state = state.copyWith(
+        isLoading: false,
+        lastError: 'Échec du chargement des conversations',
+      );
     } finally {
       _isLoadInProgress = false;
     }
@@ -599,6 +627,31 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
   }
 
   // ── HELPERS ──────────────────────────────────────────────────────────
+
+  Map<String, dynamic> _convToCache(ChatConversation c) {
+    // Si ChatConversation a déjà une méthode toJson(), tu peux simplement utiliser :
+    // return c.toJson();
+    
+    return {
+      'id': c.id,
+      'title': c.displayName,
+      'last_message': c.lastMessage?.content,
+      'updated_at': c.lastMessage?.createdAt.toIso8601String() ?? '',
+      'unread_count': c.unreadCount,
+      'is_group': c.isGroup,
+      'group_name': c.groupName,
+    };
+  }
+
+  ChatConversation? _convFromCache(Map<String, dynamic> m) {
+    try {
+      // TODO: Si tu as une factory fromJson sur ton modèle, décommente cette ligne :
+      // return ChatConversation.fromJson(m);
+    } catch (e) {
+      debugPrint('[ChatList] ⚠️ Impossible de parser la conversation depuis le cache: $e');
+    }
+    return null;
+  }
 
   String _obfuscate(String? s) {
     if (s == null || s.length <= 8) return '***';
