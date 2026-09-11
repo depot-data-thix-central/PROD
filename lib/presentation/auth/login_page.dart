@@ -17,6 +17,9 @@ import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/nav.dart';
 import 'package:thix_id/presentation/auth/personal_registration_page.dart';
 
+// 🛡️ IMPORT AJOUTÉ POUR LA SÉCURITÉ
+import 'package:thix_id/core/security/security_reporter.dart';
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -421,6 +424,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           success: false,
           failureReason: 'account_suspended',
         );
+
+        // 🛡️ AJOUT : Rapport de compte suspendu
+        SecurityReporter.reportLoginBlocked(
+          identifier: finalIdentifier.trim(),
+          reason: 'compte désactivé / en suppression',
+        );
+
         throw Exception('account_suspended');
       }
 
@@ -463,10 +473,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       if (kDebugMode) debugPrint('[Login] ❌ Sign in error: $e');
       if (!mounted) return;
 
+      final loginIdentifier = _identifierC.text.trim();
+      final reason = e is AuthException ? e.code.name : e.toString();
+
       await _logLoginAttempt(
-        identifier: _identifierC.text.trim(),
+        identifier: loginIdentifier,
         success: false,
-        failureReason: e is AuthException ? e.code.name : e.toString(),
+        failureReason: reason,
+      );
+
+      // 🛡️ AJOUT : Traque des accès forcés / échecs de connexion (Brute Force)
+      SecurityReporter.reportLoginFailure(
+        identifier: loginIdentifier,
+        reason: reason,
       );
 
       _failedAttempts += 1;
