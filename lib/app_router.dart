@@ -29,6 +29,8 @@ import 'package:thix_id/presentation/settings/settings_page.dart';
 import 'package:thix_id/presentation/common/main_app_shell.dart';
 import 'package:thix_id/presentation/certification/certification_tiers_page.dart';
 import 'package:thix_id/presentation/settings/settings_account_status_screen.dart';
+import 'package:thix_id/presentation/settings/data_export_page.dart';
+import 'package:thix_id/presentation/settings/activity_log_page.dart';
 
 // === THIX CHAT ===
 import 'package:thix_id/models/chat/chat_conversation.dart';
@@ -485,6 +487,17 @@ class AppRouter {
           path: '/settings/admin/policies',
           builder: (_, __) => const AdminPolicyManagerPage(),
         ),
+                GoRoute(
+          path: '/settings/export',
+          name: 'dataExport',
+          pageBuilder: (_, __) => const NoTransitionPage(child: DataExportPage()),
+        ),
+        GoRoute(
+          path: '/settings/activity',
+          name: 'activityLog',
+          pageBuilder: (_, __) => const NoTransitionPage(child: ActivityLogPage()),
+        ),
+
         StatefulShellRoute.indexedStack(
           builder: (context, state, navigationShell) => MainAppShell(navigationShell: navigationShell),
           branches: [
