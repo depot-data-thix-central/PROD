@@ -392,7 +392,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                     ),
                   ),
 
-                  SliverToBoxAdapter(child: _buildStories(l10n, currentUser.id, liveHostIds)),
+                  SliverToBoxAdapter(child: _buildStories(l10n, currentUser.id, liveHostIds, currentUser.photoUrl)),
                   const SliverToBoxAdapter(child: AudioSpacesStrip()),
                   SliverToBoxAdapter(child: _buildFilters(l10n)),
 
