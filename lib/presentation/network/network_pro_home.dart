@@ -25,9 +25,18 @@ import 'widgets/post_card.dart';
 import 'widgets/story_viewer.dart';
 import 'widgets/audio_spaces_strip.dart';
 
-import 'package:thix_id/presentation/network/live/live_prep_screen.dart';
 import 'package:thix_id/presentation/network/live/live_viewer_screen.dart';
 import 'package:thix_id/presentation/network/live/create_audio_space_sheet.dart';
+
+// ============================================================================
+// PALETTE MONOCHROME — plus de bleu, tout en nuances de gris/noir
+// ============================================================================
+class _Mono {
+  _Mono._();
+  static const Color accent = Color(0xFF3F3F46); // gris ardoise foncé — remplace ThixPolicy.primary
+  static const Color accentDeep = Color(0xFF18181B); // gris quasi-noir — remplace primaryDeep
+  static const Color accentSoft = Color(0xFF71717A); // gris moyen pour icônes secondaires
+}
 
 final _storiesProvider = StateProvider<List<NetworkStory>>((ref) => []);
 final _loadingStoriesProvider = StateProvider<bool>((ref) => true);
@@ -168,6 +177,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     WidgetsBinding.instance.addPostFrameCallback((_) => _init());
   }
 
+  // ── Navigation auto-rétractable : se cache dès qu'on scrolle vers le bas,
+  //    réapparaît dès qu'on remonte OU dès que le scroll s'arrête. ──────────
   void _onScroll() {
     if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
@@ -194,6 +205,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       }
     });
 
+    // Dès que le scroll s'immobilise (250ms sans mouvement), on réaffiche
+    // la barre automatiquement — c'est le comportement "entre au repos".
     _navStopTimer?.cancel();
     _navStopTimer = Timer(const Duration(milliseconds: 250), () {
       if (mounted) {
@@ -341,7 +354,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     if (currentUser == null) {
       return const Scaffold(
         backgroundColor: ThixPolicy.surfaceSoft,
-        body: Center(child: CircularProgressIndicator(color: ThixPolicy.primary)),
+        body: Center(child: CircularProgressIndicator(color: _Mono.accent)),
       );
     }
 
@@ -355,11 +368,11 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
         backgroundColor: ThixPolicy.surfaceSoft,
         body: Stack(
           children: [
-            Positioned(top: -80, right: -40, child: _buildGradientOrb(ThixPolicy.primary, 240)),
-            Positioned(bottom: 180, left: -80, child: _buildGradientOrb(ThixPolicy.primaryDeep, 280)),
+            Positioned(top: -80, right: -40, child: _buildGradientOrb(_Mono.accent, 240)),
+            Positioned(bottom: 180, left: -80, child: _buildGradientOrb(_Mono.accentDeep, 280)),
 
             RefreshIndicator(
-              color: ThixPolicy.primary,
+              color: _Mono.accent,
               backgroundColor: ThixPolicy.card,
               onRefresh: _onRefresh,
               child: CustomScrollView(
@@ -370,7 +383,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
 
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
                       child: _QuickPostEntryCard(
                         l10n: l10n,
                         avatarUrl: currentUser.photoUrl,
@@ -442,6 +455,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
+  // ── App bar : icône Live (sensors) retirée — seul l'espace audio reste ──
   Widget _buildSliverAppBar(AppLocalizations l10n, {required String? avatarUrl, required String currentUserId}) {
     return SliverAppBar(
       backgroundColor: Colors.transparent,
@@ -474,24 +488,10 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
             height: 34,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: const Color(0xFF7C4DFF).withValues(alpha: 0.12),
-              border: Border.all(color: const Color(0xFF7C4DFF).withValues(alpha: 0.35), width: 1),
+              color: _Mono.accentSoft.withValues(alpha: 0.12),
+              border: Border.all(color: _Mono.accentSoft.withValues(alpha: 0.35), width: 1),
             ),
-            child: const Icon(Icons.mic_none_rounded, size: 18, color: Color(0xFF7C4DFF)),
-          ),
-        ),
-        const SizedBox(width: 8),
-        GestureDetector(
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LivePrepScreen())),
-          child: Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: ThixPolicy.danger.withValues(alpha: 0.1),
-              border: Border.all(color: ThixPolicy.danger.withValues(alpha: 0.3), width: 1),
-            ),
-            child: const Icon(Icons.sensors_rounded, size: 18, color: ThixPolicy.danger),
+            child: const Icon(Icons.mic_none_rounded, size: 18, color: _Mono.accentSoft),
           ),
         ),
         const SizedBox(width: 8),
@@ -529,6 +529,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
+  // ── Stories : cartes agrandies, fallback sur la photo de profil si vide ──
   Widget _buildStories(AppLocalizations l10n, String currentUserId, Set<String> liveHostIds) {
     final loadingStories = ref.watch(_loadingStoriesProvider);
     final stories = ref.watch(_storiesProvider);
@@ -536,12 +537,12 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     if (loadingStories) {
       return Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
-        height: 120,
+        height: 136,
         alignment: Alignment.center,
         child: const SizedBox(
           width: 18,
           height: 18,
-          child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary),
+          child: CircularProgressIndicator(strokeWidth: 2, color: _Mono.accent),
         ),
       );
     }
@@ -558,7 +559,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: SizedBox(
-        height: 120,
+        // ── Agrandi : 120 → 136 ──
+        height: 136,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -566,15 +568,18 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
           separatorBuilder: (_, __) => const SizedBox(width: 10),
           itemBuilder: (c, i) {
             if (i == 0) {
+              final myAvatar = myStories.isNotEmpty ? myStories.first.userAvatar : avatarUrl;
               return _StoryCard(
                 isMe: true,
                 hasStory: myStories.isNotEmpty,
                 isLive: liveHostIds.contains(currentUserId),
                 name: myStories.isNotEmpty ? l10n.t('network_your_story') : l10n.t('network_create'),
+                // Si pas de story : on simule la photo de profil comme fond
+                // au lieu d'un rectangle gris vide.
                 coverUrl: myStories.isNotEmpty
                     ? (myStories.first.imageUrl.isNotEmpty ? myStories.first.imageUrl : myStories.first.userAvatar)
-                    : null,
-                avatarUrl: myStories.isNotEmpty ? myStories.first.userAvatar : null,
+                    : avatarUrl,
+                avatarUrl: myAvatar,
                 onTap: myStories.isNotEmpty
                     ? () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StoryViewer(stories: myStories, initialIndex: 0)))
                     : _openCreateStory,
@@ -590,7 +595,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
               hasStory: true,
               isLive: liveHostIds.contains(userId),
               name: firstStory.userName.split(' ').first,
-              coverUrl: firstStory.imageUrl.isNotEmpty ? firstStory.imageUrl : null,
+              // Fallback identique : photo de profil si pas d'image de story.
+              coverUrl: firstStory.imageUrl.isNotEmpty ? firstStory.imageUrl : firstStory.userAvatar,
               avatarUrl: firstStory.userAvatar,
               onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StoryViewer(stories: userStories, initialIndex: 0))),
             );
@@ -669,8 +675,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
               children: [
                 Container(
                   padding: const EdgeInsets.all(5),
-                  decoration: BoxDecoration(color: ThixPolicy.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
-                  child: const Icon(Icons.explore_rounded, size: 14, color: ThixPolicy.primary),
+                  decoration: BoxDecoration(color: _Mono.accent.withValues(alpha: 0.1), shape: BoxShape.circle),
+                  child: const Icon(Icons.explore_rounded, size: 14, color: _Mono.accent),
                 ),
                 const SizedBox(width: 8),
                 Text(l10n.t('network_discover_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.w800, fontSize: 13.5, color: ThixPolicy.textMain)),
@@ -713,7 +719,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                                   },
                                   child: Container(
                                     padding: const EdgeInsets.all(3),
-                                    decoration: BoxDecoration(color: ThixPolicy.primary, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
+                                    decoration: BoxDecoration(color: _Mono.accent, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
                                     child: const Icon(Icons.add, size: 10, color: Colors.white),
                                   ),
                                 ),
@@ -854,8 +860,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
               ListTile(
                 leading: Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: ThixPolicy.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
-                  child: const Icon(Icons.link_rounded, color: ThixPolicy.primary, size: 20),
+                  decoration: BoxDecoration(color: _Mono.accent.withValues(alpha: 0.1), shape: BoxShape.circle),
+                  child: const Icon(Icons.link_rounded, color: _Mono.accent, size: 20),
                 ),
                 title: Text(l10n.t('network_copy_link'), style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontWeight: FontWeight.w600, fontSize: 14)),
                 onTap: () async {
@@ -924,10 +930,10 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                             width: 42,
                             height: 42,
                             decoration: BoxDecoration(
-                              gradient: const LinearGradient(colors: [ThixPolicy.primary, ThixPolicy.primaryDeep]),
+                              gradient: const LinearGradient(colors: [_Mono.accent, _Mono.accentDeep]),
                               shape: BoxShape.circle,
                               boxShadow: [
-                                BoxShadow(color: ThixPolicy.primary.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 3)),
+                                BoxShadow(color: _Mono.accent.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 3)),
                               ],
                             ),
                             child: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
@@ -961,13 +967,13 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
         child: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: active ? ThixPolicy.primary.withValues(alpha: 0.1) : Colors.transparent,
+            color: active ? _Mono.accent.withValues(alpha: 0.1) : Colors.transparent,
             shape: BoxShape.circle,
           ),
           child: Icon(
             ic,
             size: 21,
-            color: active ? ThixPolicy.primary : ThixPolicy.textSecondary.withValues(alpha: 0.8),
+            color: active ? _Mono.accent : ThixPolicy.textSecondary.withValues(alpha: 0.8),
           ),
         ),
       ),
@@ -975,6 +981,9 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
   }
 }
 
+// ============================================================================
+// BANDE "QUOI DE NEUF" — réduite (avatar plus petit, paddings compacts)
+// ============================================================================
 class _QuickPostEntryCard extends StatelessWidget {
   final AppLocalizations l10n;
   final String? avatarUrl;
@@ -985,10 +994,11 @@ class _QuickPostEntryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      // ── Padding réduit : 10 → 6 vertical ──
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
         boxShadow: [
           BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 6, offset: const Offset(0, 2)),
@@ -996,37 +1006,39 @@ class _QuickPostEntryCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          RoundAvatar(size: 38, imageUrl: avatarUrl),
-          const SizedBox(width: 10),
+          // ── Avatar réduit : 38 → 30 ──
+          RoundAvatar(size: 30, imageUrl: avatarUrl),
+          const SizedBox(width: 8),
           Expanded(
             child: GestureDetector(
               onTap: onTap,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                // ── Padding interne réduit ──
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
                 ),
                 child: Text(
                   l10n.t('network_quick_post_hint'),
-                  style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 13),
+                  style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 12.5),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Container(
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: ThixPolicy.primary.withValues(alpha: 0.1),
+              color: _Mono.accent.withValues(alpha: 0.1),
             ),
             child: IconButton(
               onPressed: onTap,
-              icon: const Icon(Icons.image_rounded, color: ThixPolicy.primary, size: 20),
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              icon: const Icon(Icons.image_rounded, color: _Mono.accent, size: 18),
+              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
               padding: EdgeInsets.zero,
             ),
           ),
@@ -1036,6 +1048,9 @@ class _QuickPostEntryCard extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// CARTE DE STORY — agrandie, fallback photo de profil si pas de contenu
+// ============================================================================
 class _StoryCard extends StatelessWidget {
   final bool isMe;
   final bool hasStory;
@@ -1059,13 +1074,20 @@ class _StoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Si aucune image de couverture n'est disponible, on utilise la photo
+    // de profil comme fond (au lieu d'un rectangle gris vide).
+    final effectiveBackground = (coverUrl != null && coverUrl!.isNotEmpty)
+        ? coverUrl
+        : (avatarUrl != null && avatarUrl!.isNotEmpty ? avatarUrl : null);
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 82,
+        // ── Agrandi : 82 → 96 de large ──
+        width: 96,
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: isLive ? ThixPolicy.danger : Colors.white.withValues(alpha: 0.85),
             width: isLive ? 1.5 : 1,
@@ -1078,21 +1100,21 @@ class _StoryCard extends StatelessWidget {
           children: [
             Positioned.fill(
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: (coverUrl != null && coverUrl!.isNotEmpty)
+                borderRadius: BorderRadius.circular(16),
+                child: effectiveBackground != null
                     ? CachedNetworkImage(
-                        imageUrl: coverUrl!,
+                        imageUrl: effectiveBackground,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(color: Colors.transparent),
-                        errorWidget: (_, __, ___) => Container(color: Colors.transparent),
+                        placeholder: (_, __) => Container(color: ThixPolicy.surfaceSoft),
+                        errorWidget: (_, __, ___) => Container(color: ThixPolicy.surfaceSoft),
                       )
-                    : Container(color: Colors.transparent),
+                    : Container(color: ThixPolicy.surfaceSoft),
               ),
             ),
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(16),
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
@@ -1102,33 +1124,33 @@ class _StoryCard extends StatelessWidget {
               ),
             ),
             Positioned(
-              top: 6,
-              left: 6,
-              child: RoundAvatar(size: 26, imageUrl: avatarUrl, isLive: isLive),
+              top: 8,
+              left: 8,
+              child: RoundAvatar(size: 30, imageUrl: avatarUrl, isLive: isLive),
             ),
             if (isMe)
               Positioned(
-                top: 20,
-                left: 20,
+                top: 24,
+                left: 24,
                 child: GestureDetector(
                   onTap: onAdd,
                   child: Container(
                     width: 18,
                     height: 18,
-                    decoration: BoxDecoration(shape: BoxShape.circle, color: ThixPolicy.primary, border: Border.all(color: Colors.white, width: 1.5)),
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: _Mono.accent, border: Border.all(color: Colors.white, width: 1.5)),
                     child: const Icon(Icons.add_rounded, size: 12, color: Colors.white),
                   ),
                 ),
               ),
             Positioned(
-              bottom: 8,
-              left: 6,
-              right: 6,
+              bottom: 10,
+              left: 8,
+              right: 8,
               child: Text(
                 name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: ThixPolicy.captionStyle.copyWith(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 11),
+                style: ThixPolicy.captionStyle.copyWith(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 11.5),
               ),
             ),
           ],
