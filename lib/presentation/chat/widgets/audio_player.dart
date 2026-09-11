@@ -191,11 +191,19 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
     try {
       await _player.setSourceUrl(safeUrl).timeout(_kLoadTimeout);
-      final d = await _player.getDuration();
+      var d = await _player.getDuration();
+      
+      // ✅ Force un play/pause rapide pour les fichiers m4a/mp4 qui renvoient une durée 0
+      if (d == null || d.inMilliseconds <= 0) {
+        await _player.play(UrlSource(safeUrl));
+        await _player.pause();
+        d = await _player.getDuration();
+      }
+      
       if (d != null && d.inMilliseconds > 0) {
         _duration.value = d;
       } else if (widget.totalDuration != null && widget.totalDuration! > 0) {
-        _duration.value = Duration(seconds: widget.totalDuration!);
+        _duration.value = Duration(milliseconds: widget.totalDuration!);
       }
       if (mounted) setState(() => _isLoading = false);
     } catch (e) {
@@ -217,12 +225,15 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
     if (_isPlaying.value) {
       await _player.pause();
     } else {
-      // Si à la fin, reset d'abord
-      if (_position.value >= _duration.value && _duration.value.inMilliseconds > 0) {
+      final url = _PlayerValidators.sanitizeUrl(_currentUrl);
+      if (url == null) return;
+      if (_position.value >= _duration.value &&
+          _duration.value.inMilliseconds > 0) {
         await _player.seek(Duration.zero);
         _position.value = Duration.zero;
       }
-      await _player.resume();
+      // ✅ Utilise play() avec UrlSource au lieu de resume() pour démarrer correctement
+      await _player.play(UrlSource(url));
       widget.onPlay?.call();
     }
   }
