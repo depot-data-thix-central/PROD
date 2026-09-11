@@ -529,8 +529,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // ── Stories : cartes agrandies, fallback sur la photo de profil si vide ──
-  Widget _buildStories(AppLocalizations l10n, String currentUserId, Set<String> liveHostIds) {
+    // ── Stories : cartes agrandies, fallback sur la photo de profil si vide ──
+  Widget _buildStories(AppLocalizations l10n, String currentUserId, Set<String> liveHostIds, String? avatarUrl) {
     final loadingStories = ref.watch(_loadingStoriesProvider);
     final stories = ref.watch(_storiesProvider);
 
@@ -605,6 +605,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       ),
     );
   }
+
 
   Widget _buildFilters(AppLocalizations l10n) {
     final feedType = ref.watch(_feedTypeProvider);
