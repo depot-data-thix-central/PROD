@@ -378,7 +378,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     try {
       String finalIdentifier = identifier;
 
-      // Résolution téléphone → email via RPC
+      // 1. Résolution téléphone → email via RPC
       if (_LoginValidators.looksLikePhone(identifier) && !identifier.contains('@')) {
         try {
           final response = await Supabase.instance.client.rpc(
@@ -401,7 +401,24 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         }
       }
 
-      // Connexion standard
+      // ⛔ 2. Vérifier la liste noire avant toute tentative
+      // (On utilise finalIdentifier pour vérifier l'email même si l'utilisateur a entré son téléphone)
+      final blocked = await Supabase.instance.client.rpc(
+        'is_blocked',
+        params: {'p_type': 'identifier', 'p_value': finalIdentifier.toLowerCase()},
+      );
+      
+      if (blocked == true) {
+        SecurityReporter.reportLoginBlocked(
+          identifier: finalIdentifier,
+          reason: 'identifiant en liste noire',
+        );
+        // On affiche l'erreur (utilise la clé de traduction pour compte suspendu/bloqué)
+        _showError(l10n.t('login_error_suspended')); 
+        return; // Stoppe l'exécution ici
+      }
+
+      // 3. Connexion standard
       await authNotifier.signIn(
         identifier: finalIdentifier,
         password: password,
@@ -415,7 +432,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         throw Exception('user_not_found_after_login');
       }
 
-      // Vérification statut compte
+      // 4. Vérification statut compte (base de données)
       final accountStatus = user.registrationStatus?.toLowerCase() ?? '';
 
       if (accountStatus == 'suspended') {
@@ -425,7 +442,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           failureReason: 'account_suspended',
         );
 
-        // 🛡️ AJOUT : Rapport de compte suspendu
         SecurityReporter.reportLoginBlocked(
           identifier: finalIdentifier.trim(),
           reason: 'compte désactivé / en suppression',
@@ -445,7 +461,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         return;
       }
 
-      // Vérification MFA
+      // 5. Vérification MFA
       if (user.twoFaEnabled == true) {
         await _logLoginAttempt(
           identifier: finalIdentifier,
@@ -456,7 +472,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         return;
       }
 
-      // Succès
+      // 6. Succès
       await _logLoginAttempt(
         identifier: finalIdentifier,
         success: true,
@@ -469,6 +485,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
       debugPrint('[Login] ✓ Sign in successful, redirecting to: $target');
       context.go(target);
+      
     } catch (e) {
       if (kDebugMode) debugPrint('[Login] ❌ Sign in error: $e');
       if (!mounted) return;
@@ -482,7 +499,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         failureReason: reason,
       );
 
-      // 🛡️ AJOUT : Traque des accès forcés / échecs de connexion (Brute Force)
       SecurityReporter.reportLoginFailure(
         identifier: loginIdentifier,
         reason: reason,
@@ -497,6 +513,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       }
     }
   }
+
 
   // ── PASSWORD RESET ────────────────────────────────────────────────────────
 
