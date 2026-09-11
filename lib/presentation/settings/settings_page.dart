@@ -5,7 +5,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/auth/auth_controller.dart';
@@ -28,7 +27,7 @@ AccountStatus _statusFromString(String? s) => switch (s) {
     };
 
 // ============================================================================
-// WIDGETS DE BASE (inchangés)
+// WIDGETS DE BASE
 // ============================================================================
 class SettingsGroup extends StatelessWidget {
   final String title;
@@ -76,7 +75,7 @@ class SettingsItem extends StatelessWidget {
   final Widget trailing;
   final VoidCallback? onTap;
   final Color? iconColor;
-  final bool enabled; // ← nouveau
+  final bool enabled;
 
   const SettingsItem({
     super.key,
@@ -239,7 +238,7 @@ class _AccountStatusBanner extends StatefulWidget {
   final DateTime? scheduledDeletionAt;
   final VoidCallback onReactivate;
   final VoidCallback onCancelDeletion;
-  final VoidCallback onViewFullPage; // ← nouveau : ouvre la page dédiée
+  final VoidCallback onViewFullPage;
 
   const _AccountStatusBanner({
     required this.status,
@@ -408,13 +407,12 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadProfile();
   }
 
-      Future<void> _loadProfile() async {
+  Future<void> _loadProfile() async {
     final uid = _sb.auth.currentUser?.id;
     if (uid == null) return;
     try {
       final row = await _sb
           .from('profiles')
-          // CORRECTION 1 : On demande 'status' au lieu de 'account_status'
           .select('role, preferences, status, scheduled_deletion_at')
           .eq('id', uid)
           .maybeSingle();
@@ -424,7 +422,6 @@ class _SettingsPageState extends State<SettingsPage> {
       final role = row?['role'] as String?;
       final prefs = (row?['preferences'] as Map?)?.cast<String, dynamic>() ?? {};
       
-      // CORRECTION 2 : On lit la clé 'status' depuis les données retournées
       final rawStatus = row?['status'] as String?;
       final rawDeletion = row?['scheduled_deletion_at'] as String?;
       
@@ -446,7 +443,6 @@ class _SettingsPageState extends State<SettingsPage> {
       debugPrint('[Settings] loadProfile: $e');
     }
   }
-
 
   Future<void> _savePrefs() async {
     final uid = _sb.auth.currentUser?.id;
@@ -611,85 +607,79 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _deactivateAccount() async {
-  final pw = await _askPassword(
-    title: 'Désactiver le compte',
-    message: 'Le profil passera en privé. Confirmez avec votre mot de passe.',
-  );
-  if (pw == null) return;
+    final pw = await _askPassword(
+      title: 'Désactiver le compte',
+      message: 'Le profil passera en privé. Confirmez avec votre mot de passe.',
+    );
+    if (pw == null) return;
 
-  setState(() => _busy = true);
-  try {
-    // ---- 1. LOG : Début du processus ----
-    debugPrint('[Deactivate] Début du processus pour désactiver le compte.');
-
-    final email = _sb.auth.currentUser?.email;
-    if (email == null) {
-      throw Exception('Impossible de trouver l\'email de la session.');
-    }
-
-    // ---- 2. VÉRIFICATION DU MOT DE PASSE CÔTÉ FLUTTER ----
-    debugPrint('[Deactivate] Vérification du mot de passe pour $email...');
+    setState(() => _busy = true);
     try {
-      await _sb.auth.signInWithPassword(email: email, password: pw);
-      debugPrint('[Deactivate] Mot de passe correct.');
-    } on AuthException catch (authErr) {
-      debugPrint('[Deactivate] AuthException: ${authErr.message}');
-      throw Exception('Mot de passe incorrect.');
+      debugPrint('[Deactivate] Début du processus pour désactiver le compte.');
+
+      final email = _sb.auth.currentUser?.email;
+      if (email == null) {
+        throw Exception('Impossible de trouver l\'email de la session.');
+      }
+
+      debugPrint('[Deactivate] Vérification du mot de passe pour $email...');
+      try {
+        await _sb.auth.signInWithPassword(email: email, password: pw);
+        debugPrint('[Deactivate] Mot de passe correct.');
+      } on AuthException catch (authErr) {
+        debugPrint('[Deactivate] AuthException: ${authErr.message}');
+        throw Exception('Mot de passe incorrect.');
+      }
+
+      debugPrint('[Deactivate] Appel de la fonction RPC deactivate_my_account...');
+      await _sb.rpc('deactivate_my_account'); 
+      debugPrint('[Deactivate] RPC exécuté avec succès.');
+
+      await context.read<AuthController>().refreshCurrentUser();
+      if (!mounted) return;
+      context.go('/settings/account-status');
+      
+    } catch (e, stackTrace) {
+      debugPrint('====================================');
+      debugPrint('[ERREUR CRITIQUE] _deactivateAccount');
+      debugPrint('Erreur : $e');
+      debugPrint('StackTrace : $stackTrace');
+      debugPrint('====================================');
+      if (mounted) _snack('$e', error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
-
-    // ---- 3. APPEL DU RPC ----
-    debugPrint('[Deactivate] Appel de la fonction RPC deactivate_my_account...');
-    // Plus besoin d'envoyer le mot de passe au RPC, il a déjà été vérifié !
-    await _sb.rpc('deactivate_my_account'); 
-    debugPrint('[Deactivate] RPC exécuté avec succès.');
-
-    await context.read<AuthController>().refreshCurrentUser();
-    if (!mounted) return;
-    context.go('/settings/account-status');
-    
-  } catch (e, stackTrace) {
-    // ---- IMPRESSION DE L'ERREUR DÉTAILLÉE ----
-    debugPrint('====================================');
-    debugPrint('[ERREUR CRITIQUE] _deactivateAccount');
-    debugPrint('Erreur : $e');
-    debugPrint('StackTrace : $stackTrace');
-    debugPrint('====================================');
-    if (mounted) _snack('$e', error: true);
-  } finally {
-    if (mounted) setState(() => _busy = false);
   }
-}
-
 
   Future<void> _deleteAccount() async {
-  final pw = await _askPassword(
-    title: 'Supprimer le compte',
-    message: 'Action définitive. Tapez SUPPRIMER.',
-    keyword: 'SUPPRIMER',
-  );
-  if (pw == null) return;
-
-  setState(() => _busy = true);
-  try {
-    final response = await _sb.functions.invoke(
-      'delete-user',
-      body: {'confirm_text': 'SUPPRIMER'},
+    final pw = await _askPassword(
+      title: 'Supprimer le compte',
+      message: 'Action définitive. Tapez SUPPRIMER.',
+      keyword: 'SUPPRIMER',
     );
+    if (pw == null) return;
 
-    if (response.status != 200) {
-      throw Exception(response.data?['error'] ?? 'HTTP ${response.status}');
-    }
-
+    setState(() => _busy = true);
     try {
-      await context.read<AuthController>().signOut();
-    } catch (_) {}
-    if (mounted) context.go(AppRoutes.login);
-  } catch (e) {
-    if (mounted) _snack('$e', error: true);
-  } finally {
-    if (mounted) setState(() => _busy = false);
+      final response = await _sb.functions.invoke(
+        'delete-user',
+        body: {'confirm_text': 'SUPPRIMER'},
+      );
+
+      if (response.status != 200) {
+        throw Exception(response.data?['error'] ?? 'HTTP ${response.status}');
+      }
+
+      try {
+        await context.read<AuthController>().signOut();
+      } catch (_) {}
+      if (mounted) context.go(AppRoutes.login);
+    } catch (e) {
+      if (mounted) _snack('$e', error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
-}
 
   Future<void> _reactivateAccount() async {
     final l10n = AppLocalizations.of(context);
@@ -714,23 +704,6 @@ class _SettingsPageState extends State<SettingsPage> {
       await context.read<AuthController>().refreshCurrentUser();
       await _loadProfile();
       if (mounted) _snack(l10n.t('settings_cancel_deletion_done'));
-    } catch (e) {
-      if (mounted) _snack('$e', error: true);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _exportData() async {
-    final l10n = AppLocalizations.of(context);
-    setState(() => _busy = true);
-    try {
-      final data = await _sb.rpc('export_my_data');
-      await Share.share(
-        jsonEncode(data),
-        subject: 'THIX ID — ${l10n.t('settings_data_export')}',
-      );
-      if (mounted) _snack(l10n.t('settings_data_export_done'));
     } catch (e) {
       if (mounted) _snack('$e', error: true);
     } finally {
@@ -1081,13 +1054,14 @@ class _SettingsPageState extends State<SettingsPage> {
                               color: context.theme.dividerColor,
                               indent: 56,
                               height: 1),
+                          // NOUVELLE ACTION POUR EXPORT DE DONNÉES
                           SettingsItem(
                             icon: Icons.download_rounded,
                             label: l10n.t('settings_data_export'),
                             enabled: isActive,
                             trailing: const Icon(Icons.chevron_right_rounded,
                                 color: LightModeColors.hint),
-                            onTap: isActive ? _exportData : null,
+                            onTap: isActive ? () => context.push('/settings/export') : null,
                           ),
                           Divider(
                               color: context.theme.dividerColor,
