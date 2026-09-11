@@ -39,6 +39,10 @@ import 'package:thix_id/presentation/thix_sos/widgets/global_sos_listener.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:thix_id/data/offline/home_offline_cache.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
+
+// 🛡️ IMPORT AJOUTÉ POUR LE SUIVI DES CRASHS (PROD)
+import 'package:thix_id/core/security/security_reporter.dart';
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -90,6 +94,11 @@ Future<void> main() async {
 
       FlutterError.onError = (details) {
         FlutterError.presentError(details);
+        // 🛡️ AJOUT : traque des crashs de l'application
+        SecurityReporter.reportClientError(
+          source: 'flutter_error',
+          message: '${details.exception}',
+        );
         _log('❌ FlutterError: ${details.exception}');
       };
 
@@ -154,6 +163,11 @@ Future<void> main() async {
       _log('✓ runApp called');
     },
     (error, stack) {
+      // 🛡️ AJOUT : traque des erreurs non interceptées
+      SecurityReporter.reportClientError(
+        source: 'zone_error',
+        message: '$error',
+      );
       _log('❌ Uncaught: $error');
       runApp(MaterialApp(
         home: Scaffold(
