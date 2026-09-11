@@ -3,6 +3,7 @@
 // PostCard — Production Enterprise (THIX PRO / THIX ID)
 //
 // ✅ CORRECTIONS APPLIQUÉES:
+// - Cache Optimiste: Les Likes, Saves et Reposts ne redeviennent plus gris au scroll !
 // - Suppression des 'const' incorrects sur les widgets dynamiques
 // - Typage explicite <String, dynamic> pour toutes les Maps
 // - Vérification mounted après chaque await
@@ -75,7 +76,6 @@ class _PostCardConfig {
   static const int maxLikersFetched = 5;
   static const int avatarFallbackSize = 256;
 
-  // ✅ Bordures de séparation (remplacent les marges entre cartes)
   static const double cardBottomBorderWidth = 1.2;
   static const double cardFirstTopBorderWidth = 2.0;
 }
@@ -201,7 +201,7 @@ String? _safeImageUrl(String? url) {
 }
 
 // ============================================================================
-// CACHE LRU
+// CACHE LRU & OPTIMISTE (✅ CORRIGE LE BUG DU LIKE QUI DISPARAÎT AU SCROLL)
 // ============================================================================
 
 class _CacheEntry<T> {
@@ -216,6 +216,13 @@ class _PostCardCache {
 
   final LinkedHashMap<String, _CacheEntry<List<String>>> _likers = LinkedHashMap();
   final LinkedHashMap<String, _CacheEntry<Map<String, dynamic>>> _linkPreviews = LinkedHashMap();
+
+  // ✅ Cache optimiste pour conserver les actions lors du scroll
+  final Map<String, bool> optimisticLikes = {};
+  final Map<String, int> optimisticLikeCounts = {};
+  final Map<String, bool> optimisticSaves = {};
+  final Map<String, bool> optimisticReposts = {};
+  final Map<String, int> optimisticRepostCounts = {};
 
   List<String>? getLikers(String postId) => _get(_likers, postId);
   void setLikers(String postId, List<String> avatars) => _set(_likers, postId, avatars);
@@ -242,7 +249,7 @@ class _PostCardCache {
 }
 
 // ============================================================================
-// STATE NOTIFIER (✅ AVEC _isDisposed)
+// STATE NOTIFIER (✅ AVEC _isDisposed ET CACHE OPTIMISTE)
 // ============================================================================
 
 final postItemProvider = StateNotifierProvider.autoDispose<PostItemNotifier, NetworkPost>(
@@ -250,7 +257,41 @@ final postItemProvider = StateNotifierProvider.autoDispose<PostItemNotifier, Net
 );
 
 class PostItemNotifier extends StateNotifier<NetworkPost> {
-  PostItemNotifier(super.post, this.ref);
+  PostItemNotifier(NetworkPost post, this.ref) : super(post) {
+    // ✅ Restaurer l'état optimiste si le widget a été recyclé au scroll
+    bool changed = false;
+    bool newIsLiked = state.isLiked;
+    int newLikesCount = state.likesCount;
+    bool newIsSaved = state.isSaved;
+    bool newIsReposted = state.isReposted;
+    int newRepostsCount = state.repostsCount;
+
+    if (_PostCardCache.instance.optimisticLikes.containsKey(post.id)) {
+      newIsLiked = _PostCardCache.instance.optimisticLikes[post.id]!;
+      newLikesCount = _PostCardCache.instance.optimisticLikeCounts[post.id] ?? state.likesCount;
+      changed = true;
+    }
+    if (_PostCardCache.instance.optimisticSaves.containsKey(post.id)) {
+      newIsSaved = _PostCardCache.instance.optimisticSaves[post.id]!;
+      changed = true;
+    }
+    if (_PostCardCache.instance.optimisticReposts.containsKey(post.id)) {
+      newIsReposted = _PostCardCache.instance.optimisticReposts[post.id]!;
+      newRepostsCount = _PostCardCache.instance.optimisticRepostCounts[post.id] ?? state.repostsCount;
+      changed = true;
+    }
+
+    if (changed) {
+      state = state.copyWith(
+        isLiked: newIsLiked,
+        likesCount: newLikesCount,
+        isSaved: newIsSaved,
+        isReposted: newIsReposted,
+        repostsCount: newRepostsCount,
+      );
+    }
+  }
+
   final Ref ref;
 
   bool _likeBusy = false;
@@ -270,11 +311,13 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
 
     final wasLiked = state.isLiked;
     final oldCount = state.likesCount;
+    final newLiked = !wasLiked;
+    final newCount = wasLiked ? (oldCount - 1).clamp(0, 1 << 30) : oldCount + 1;
 
-    state = state.copyWith(
-      isLiked: !wasLiked,
-      likesCount: wasLiked ? (oldCount - 1).clamp(0, 1 << 30) : oldCount + 1,
-    );
+    // Mise à jour immédiate + sauvegarde en cache pour résister au scroll
+    state = state.copyWith(isLiked: newLiked, likesCount: newCount);
+    _PostCardCache.instance.optimisticLikes[state.id] = newLiked;
+    _PostCardCache.instance.optimisticLikeCounts[state.id] = newCount;
 
     try {
       final service = ref.read(networkServiceProvider);
@@ -282,6 +325,8 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
         final result = await service.togglePostLike(state.id).timeout(_PostCardConfig.networkTimeout);
         if (_isDisposed) return;
         state = state.copyWith(isLiked: result.liked, likesCount: result.likesCount);
+        _PostCardCache.instance.optimisticLikes[state.id] = result.liked;
+        _PostCardCache.instance.optimisticLikeCounts[state.id] = result.likesCount;
       } catch (_) {
         if (_isDisposed) return;
         if (wasLiked) {
@@ -292,8 +337,11 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       }
     } catch (e) {
       _PostCardLogger.error('toggleLike failed', {'postId': state.id});
+      // Retour à l'état initial en cas d'erreur complète
       if (!_isDisposed) {
         state = state.copyWith(isLiked: wasLiked, likesCount: oldCount);
+        _PostCardCache.instance.optimisticLikes[state.id] = wasLiked;
+        _PostCardCache.instance.optimisticLikeCounts[state.id] = oldCount;
       }
     } finally {
       if (!_isDisposed) {
@@ -305,7 +353,11 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
   Future<void> toggleSave() async {
     if (!_isAuthenticated || _isDisposed) return;
     final was = state.isSaved;
-    state = state.copyWith(isSaved: !was);
+    final newSaved = !was;
+    
+    state = state.copyWith(isSaved: newSaved);
+    _PostCardCache.instance.optimisticSaves[state.id] = newSaved;
+
     try {
       final service = ref.read(networkServiceProvider);
       if (was) {
@@ -317,6 +369,7 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       _PostCardLogger.error('toggleSave failed', {'postId': state.id});
       if (!_isDisposed) {
         state = state.copyWith(isSaved: was);
+        _PostCardCache.instance.optimisticSaves[state.id] = was;
       }
     }
   }
@@ -329,7 +382,10 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
 
   void incrementRepost() {
     if (!_isDisposed) {
-      state = state.copyWith(repostsCount: state.repostsCount + 1, isReposted: true);
+      final newCount = state.repostsCount + 1;
+      state = state.copyWith(repostsCount: newCount, isReposted: true);
+      _PostCardCache.instance.optimisticReposts[state.id] = true;
+      _PostCardCache.instance.optimisticRepostCounts[state.id] = newCount;
     }
   }
 }
@@ -353,10 +409,6 @@ class PostCard extends ConsumerStatefulWidget {
   final bool isFollowingAuthor;
   final VoidCallback? onFollow;
 
-  /// ✅ NOUVEAU : à passer à `true` uniquement pour la toute première
-  /// carte du feed (ex: `isFirst: index == 0` dans votre ListView.builder).
-  /// Ajoute une bordure or plus marquée en haut pour séparer le feed
-  /// de l'en-tête au-dessus, sans affecter les autres cartes.
   final bool isFirst;
 
   const PostCard({
@@ -1441,8 +1493,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           _ActionBtn(
             icon: isLiked ? Icons.bolt_rounded : Icons.bolt_outlined,
             label: '',
-            // ✅ "pulse" (like) plus visible : contraste relevé (0.8 → 0.95)
-            // pour l'état non-liké ; couleur pleine pour l'état liké.
             color: isLiked ? ThixPolicy.danger : ThixPolicy.textSecondary.withValues(alpha: 0.95),
             onTap: () async {
               if (!_isAuthenticated) return;
@@ -1593,12 +1643,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
 
           WidgetsBinding.instance.addPostFrameCallback((_) => _registerImpression(post.id));
 
-          // ✅ ESPACEMENT : plus de margin horizontal/vertical, plus de
-          // coins arrondis ni d'ombre — les cartes sont désormais jointes
-          // (edge-to-edge) et séparées uniquement par une fine bande or.
-          // La toute première carte du feed (isFirst: true) reçoit en plus
-          // une bordure or plus marquée en haut, pour se distinguer de
-          // l'en-tête au-dessus sans casser l'empilement des suivantes.
           return RepaintBoundary(
             child: Container(
               margin: EdgeInsets.zero,
