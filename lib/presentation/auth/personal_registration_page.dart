@@ -17,7 +17,8 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/nav.dart';
-
+import 'package:thix_id/presentation/settings/policy_viewer_page.dart';
+import 'package:flutter/gestures.dart';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -567,6 +568,10 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   final _otpC = TextEditingController();
   final _thixChatC = TextEditingController();
 
+  // ── Consentement CGU / Confidentialité (étape 1, bloquant) ──
+  bool _acceptedTerms = false;
+  bool _acceptedPrivacy = false;
+
   String _thixIdGenerated = '';
 
   String? _passwordError;
@@ -838,6 +843,12 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       return;
     }
 
+    // ── Blocage : les deux cases doivent être cochées ──
+    if (!_acceptedTerms || !_acceptedPrivacy) {
+      _showError(l10n.t('auth_terms_required'));
+      return;
+    }
+
     HapticFeedback.selectionClick();
     setState(() => _step = 2);
     debugPrint('[Registration] ➡️ Step 2');
@@ -918,6 +929,9 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
               'phone_number': phone.isEmpty ? null : phone,
               'registration_status': 'draft_step2',
               'account_status': 'pending',
+              // Traçabilité du consentement (audit / conformité)
+              'terms_accepted_at': DateTime.now().toUtc().toIso8601String(),
+              'privacy_accepted_at': DateTime.now().toUtc().toIso8601String(),
             },
           );
       return true;
@@ -1138,6 +1152,13 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     context.go(AppRoutes.userDashboard);
   }
 
+  void _openPolicy(String slug) {
+    HapticFeedback.selectionClick();
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => PolicyViewerPage(slug: slug)),
+    );
+  }
+
   // ── BUILD ─────────────────────────────────────────────────────────────────
 
   @override
@@ -1255,6 +1276,12 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
           occupationC: _occupationC,
           onPickDob: _pickDob,
           countries: _countries,
+          acceptedTerms: _acceptedTerms,
+          acceptedPrivacy: _acceptedPrivacy,
+          onAcceptedTermsChanged: (v) => setState(() => _acceptedTerms = v ?? false),
+          onAcceptedPrivacyChanged: (v) => setState(() => _acceptedPrivacy = v ?? false),
+          onOpenTerms: () => _openPolicy('terms'),
+          onOpenPrivacy: () => _openPolicy('privacy'),
         );
       case 2:
         return _Step2Account(
@@ -1319,17 +1346,21 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         onPressed = null;
     }
 
+    // Étape 1 : bouton désactivé tant que les deux cases ne sont pas cochées.
+    final bool step1Blocked = _step == 1 && (!_acceptedTerms || !_acceptedPrivacy);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
       child: Semantics(
         button: true,
         label: label,
-        enabled: !isLoading,
+        enabled: !isLoading && !step1Blocked,
         child: ElevatedButton(
-          onPressed: isLoading ? null : onPressed,
+          onPressed: (isLoading || step1Blocked) ? null : onPressed,
           style: ElevatedButton.styleFrom(
             backgroundColor: ThixPolicy.primary,
             foregroundColor: ThixPolicy.onBrand,
+            disabledBackgroundColor: ThixPolicy.primary.withOpacity(0.4),
             padding: const EdgeInsets.symmetric(vertical: 18),
             elevation: 4,
             shadowColor: ThixPolicy.primary.withOpacity(0.4),
@@ -1427,6 +1458,12 @@ class _Step1Profile extends StatelessWidget {
   final ValueChanged<String?> onCountryChanged;
   final VoidCallback onPickDob;
   final List<String> countries;
+  final bool acceptedTerms;
+  final bool acceptedPrivacy;
+  final ValueChanged<bool?> onAcceptedTermsChanged;
+  final ValueChanged<bool?> onAcceptedPrivacyChanged;
+  final VoidCallback onOpenTerms;
+  final VoidCallback onOpenPrivacy;
 
   const _Step1Profile({
     required this.nameC,
@@ -1436,6 +1473,12 @@ class _Step1Profile extends StatelessWidget {
     required this.onCountryChanged,
     required this.onPickDob,
     required this.countries,
+    required this.acceptedTerms,
+    required this.acceptedPrivacy,
+    required this.onAcceptedTermsChanged,
+    required this.onAcceptedPrivacyChanged,
+    required this.onOpenTerms,
+    required this.onOpenPrivacy,
   });
 
   @override
@@ -1488,7 +1531,103 @@ class _Step1Profile extends StatelessWidget {
           controller: occupationC,
           maxLength: _kMaxOccupationLength,
         ),
+        const SizedBox(height: ThixPolicy.s24),
+        const Divider(color: ThixPolicy.border),
+        const SizedBox(height: ThixPolicy.s16),
+        _ConsentCheckboxRow(
+          value: acceptedTerms,
+          onChanged: onAcceptedTermsChanged,
+          prefixText: l10n.t('auth_accept_terms'),
+          linkText: l10n.t('settings_terms'),
+          onLinkTap: onOpenTerms,
+          semanticsLabel: l10n.t('settings_terms'),
+        ),
+        const SizedBox(height: ThixPolicy.s8),
+        _ConsentCheckboxRow(
+          value: acceptedPrivacy,
+          onChanged: onAcceptedPrivacyChanged,
+          prefixText: l10n.t('auth_accept_terms'),
+          linkText: l10n.t('settings_privacy_policy'),
+          onLinkTap: onOpenPrivacy,
+          semanticsLabel: l10n.t('settings_privacy_policy'),
+        ),
       ],
+    );
+  }
+}
+
+/// Ligne "case à cocher + texte + lien tappable" pour CGU / Confidentialité.
+/// Le lien ouvre [PolicyViewerPage] sans décocher/valider automatiquement —
+/// l'utilisateur doit explicitement cocher la case après lecture.
+class _ConsentCheckboxRow extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool?> onChanged;
+  final String prefixText;
+  final String linkText;
+  final VoidCallback onLinkTap;
+  final String semanticsLabel;
+
+  const _ConsentCheckboxRow({
+    required this.value,
+    required this.onChanged,
+    required this.prefixText,
+    required this.linkText,
+    required this.onLinkTap,
+    required this.semanticsLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: '$semanticsLabel — ${value ? "accepté" : "non accepté"}',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onChanged(!value);
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Transform.translate(
+                offset: const Offset(-8, 0),
+                child: Checkbox(
+                  value: value,
+                  onChanged: onChanged,
+                  activeColor: ThixPolicy.primary,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                ),
+              ),
+              const SizedBox(width: 2),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: RichText(
+                    text: TextSpan(
+                      style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMain),
+                      children: [
+                        TextSpan(text: '$prefixText '),
+                        TextSpan(
+                          text: linkText,
+                          style: ThixPolicy.bodySmallStyle.copyWith(
+                            color: ThixPolicy.primary,
+                            fontWeight: ThixPolicy.semiBold,
+                            decoration: TextDecoration.underline,
+                          ),
+                          recognizer: (TapGestureRecognizer()..onTap = onLinkTap),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
