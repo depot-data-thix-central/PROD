@@ -1,5 +1,6 @@
 // lib/models/event_model.dart
 import 'ticket_tier.dart';
+
 class Event {
   final String id;
   final String title;
@@ -10,6 +11,7 @@ class Event {
   final String? bannerUrl;
   final DateTime startDate;
   final DateTime? endDate;
+  final DateTime? ticketOpeningDate; // 🟢 Ajouté
   final String location;
   final String? address;
   final String city;
@@ -20,7 +22,7 @@ class Event {
   final int? remainingTickets;
   final bool isFeatured;
   final bool isRecommended;
-  final bool enableWaitingQueue; // 🟢 Ajout ici
+  final bool enableWaitingQueue;
   final String status;
   final String? organizerId;
   final String? organizerName;
@@ -46,6 +48,7 @@ class Event {
     this.bannerUrl,
     required this.startDate,
     this.endDate,
+    this.ticketOpeningDate, // 🟢 Ajouté
     required this.location,
     this.address,
     required this.city,
@@ -56,7 +59,7 @@ class Event {
     this.remainingTickets,
     required this.isFeatured,
     this.isRecommended = false,
-    this.enableWaitingQueue = false, // 🟢 Ajout ici
+    this.enableWaitingQueue = false,
     required this.status,
     this.organizerId,
     this.organizerName,
@@ -83,6 +86,7 @@ class Event {
       bannerUrl: json['banner_url'],
       startDate: json['start_date'] != null ? DateTime.parse(json['start_date']) : DateTime.now(),
       endDate: json['end_date'] != null ? DateTime.parse(json['end_date']) : null,
+      ticketOpeningDate: json['ticket_opening_date'] != null ? DateTime.parse(json['ticket_opening_date']) : null, // 🟢 Ajouté
       location: json['location'] ?? '',
       address: json['address'],
       city: json['city'] ?? '',
@@ -93,7 +97,7 @@ class Event {
       remainingTickets: json['remaining_tickets'],
       isFeatured: json['is_featured'] ?? false,
       isRecommended: json['is_recommended'] ?? false,
-      enableWaitingQueue: json['enable_waiting_queue'] ?? false, // 🟢 Ajout ici
+      enableWaitingQueue: json['enable_waiting_queue'] ?? false,
       status: json['status'] ?? 'upcoming',
       organizerId: json['organizer_id'],
       organizerName: json['organizer_name'],
@@ -123,6 +127,7 @@ class Event {
       if (bannerUrl != null) 'banner_url': bannerUrl,
       'start_date': startDate.toIso8601String(),
       if (endDate != null) 'end_date': endDate!.toIso8601String(),
+      if (ticketOpeningDate != null) 'ticket_opening_date': ticketOpeningDate!.toIso8601String(), // 🟢 Ajouté
       'location': location,
       if (address != null) 'address': address,
       'city': city,
@@ -133,7 +138,7 @@ class Event {
       if (remainingTickets != null) 'remaining_tickets': remainingTickets,
       'is_featured': isFeatured,
       'is_recommended': isRecommended,
-      'enable_waiting_queue': enableWaitingQueue, // 🟢 Ajout ici
+      'enable_waiting_queue': enableWaitingQueue,
       'status': status,
       if (organizerId != null) 'organizer_id': organizerId,
       if (organizerName != null) 'organizer_name': organizerName,
@@ -160,6 +165,7 @@ class Event {
     String? bannerUrl,
     DateTime? startDate,
     DateTime? endDate,
+    DateTime? ticketOpeningDate, // 🟢 Ajouté
     String? location,
     String? address,
     String? city,
@@ -170,7 +176,7 @@ class Event {
     int? remainingTickets,
     bool? isFeatured,
     bool? isRecommended,
-    bool? enableWaitingQueue, // 🟢 Ajout ici
+    bool? enableWaitingQueue,
     String? status,
     String? organizerId,
     String? organizerName,
@@ -195,6 +201,7 @@ class Event {
       bannerUrl: bannerUrl ?? this.bannerUrl,
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
+      ticketOpeningDate: ticketOpeningDate ?? this.ticketOpeningDate, // 🟢 Ajouté
       location: location ?? this.location,
       address: address ?? this.address,
       city: city ?? this.city,
@@ -205,7 +212,7 @@ class Event {
       remainingTickets: remainingTickets ?? this.remainingTickets,
       isFeatured: isFeatured ?? this.isFeatured,
       isRecommended: isRecommended ?? this.isRecommended,
-      enableWaitingQueue: enableWaitingQueue ?? this.enableWaitingQueue, // 🟢 Ajout ici
+      enableWaitingQueue: enableWaitingQueue ?? this.enableWaitingQueue,
       status: status ?? this.status,
       organizerId: organizerId ?? this.organizerId,
       organizerName: organizerName ?? this.organizerName,
