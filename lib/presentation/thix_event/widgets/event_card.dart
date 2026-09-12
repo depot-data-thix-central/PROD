@@ -11,7 +11,7 @@
 // - Logging structuré (_EventCardLogger)
 // - Utilisation EventTheme + ThixPolicy
 // - Fallback image robuste avec icône par catégorie
-// - Gestion dynamique des badges Pré-commande & File d'attente
+// - Gestion dynamique des badges Pré-commande, File d'attente & Complet
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -34,7 +34,8 @@ class EventTheme {
   static const Color textSecondary = Color(0xFFA8B6CC);
   static const Color textMuted = Color(0xFF64748B);
   static const Color success = ThixPolicy.success;
-  static const Color warning = Colors.orangeAccent; // 🟢 Ajout pour pré-commande
+  static const Color warning = Colors.orangeAccent; // 🟠 Pré-commande / File d'attente
+  static const Color danger = Color(0xFFEF4444);    // 🔴 Complet (Sold out)
 }
 
 // ============================================================================
@@ -79,11 +80,9 @@ class _Sanitizer {
 
   static String url(String? input) {
     if (input == null || input.isEmpty) return '';
-    // Only allow http/https
     if (!input.startsWith('http://') && !input.startsWith('https://')) {
       return '';
     }
-    // Remove any javascript: or data: injection attempts
     var s = input.replaceAll(RegExp(r'javascript:', caseSensitive: false), '');
     if (s.length > 2048) s = s.substring(0, 2048);
     return s;
@@ -118,29 +117,27 @@ String _categoryKey(String category) {
   }
 }
 
-/// Couleur d'accent par catégorie (tokens sémantiques)
 Color _categoryAccent(String category) {
   switch (category.toLowerCase()) {
     case 'musique':
     case 'concert':
-      return const Color(0xFF6B3BFF); // Violet musique
+      return const Color(0xFF6B3BFF);
     case 'sport':
     case 'match':
-      return ThixPolicy.success; // Vert sport
+      return ThixPolicy.success;
     case 'festival':
-      return const Color(0xFFEC4899); // Rose festival
+      return const Color(0xFFEC4899);
     case 'culture':
-      return ThixPolicy.domainLearning; // Bleu culture
+      return ThixPolicy.domainLearning;
     case 'business':
-      return ThixPolicy.domainJobs; // Vert business
+      return ThixPolicy.domainJobs;
     case 'conference':
-      return ThixPolicy.domainInfo; // Bleu info
+      return ThixPolicy.domainInfo;
     default:
       return EventTheme.primary;
   }
 }
 
-/// Icône par catégorie
 IconData _categoryIcon(String category) {
   switch (category.toLowerCase()) {
     case 'musique':
@@ -254,10 +251,10 @@ class _EventCardState extends State<EventCard> {
     final categoryLabel = l10n.t(_categoryKey(category));
     final icon = _categoryIcon(category);
 
-    // 🟢 Vérification de l'état de la billetterie (Pré-commande)
-    final bool isPreorderActive = widget.event.ticketOpeningDate != null &&
-        widget.event.ticketOpeningDate!.isAfter(DateTime.now());
-    final bool isQueueEnabled = widget.event.enableWaitingQueue;
+    // 🟢 Logique d'état : Complet, Pré-commande, File d'attente
+    final bool isPreOrder = widget.event.ticketOpenDate != null && DateTime.now().isBefore(widget.event.ticketOpenDate!);
+    final bool soldOut = widget.event.remainingTickets != null && widget.event.remainingTickets! <= 0;
+    final bool useQueue = soldOut || (isPreOrder && widget.event.enableWaitingQueue);
 
     return Semantics(
       button: true,
@@ -288,7 +285,7 @@ class _EventCardState extends State<EventCard> {
                         : _buildImageFallback(accent, icon),
                   ),
 
-                  // 🟢 Badges Catégorie + Pré-commande encapsulés proprement
+                  // 🟢 Badges (Catégorie + Statut)
                   Positioned(
                     top: 10,
                     left: 10,
@@ -296,10 +293,7 @@ class _EventCardState extends State<EventCard> {
                       children: [
                         // Badge catégorie
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: accent.withOpacity(0.9),
                             borderRadius: BorderRadius.circular(ThixPolicy.s8),
@@ -314,14 +308,28 @@ class _EventCardState extends State<EventCard> {
                           ),
                         ),
                         
-                        // Badge Pré-commande / File d'attente
-                        if (isQueueEnabled && isPreorderActive) ...[
+                        // Badge Complet / Pré-commande
+                        if (soldOut) ...[
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 4,
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: EventTheme.danger.withOpacity(0.9),
+                              borderRadius: BorderRadius.circular(ThixPolicy.s8),
                             ),
+                            child: const Text(
+                              'COMPLET',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 8,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ] else if (isPreOrder) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                             decoration: BoxDecoration(
                               color: EventTheme.warning.withOpacity(0.9),
                               borderRadius: BorderRadius.circular(ThixPolicy.s8),
@@ -365,18 +373,14 @@ class _EventCardState extends State<EventCard> {
                             decoration: BoxDecoration(
                               color: Colors.black.withOpacity(0.45),
                               shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.12),
-                              ),
+                              border: Border.all(color: Colors.white.withOpacity(0.12)),
                             ),
                             child: Icon(
                               widget.event.isLiked
                                   ? Icons.favorite_rounded
                                   : Icons.favorite_border_rounded,
                               size: 14,
-                              color: widget.event.isLiked
-                                  ? EventTheme.primary
-                                  : Colors.white,
+                              color: widget.event.isLiked ? EventTheme.primary : Colors.white,
                             ),
                           ),
                         ),
@@ -389,10 +393,7 @@ class _EventCardState extends State<EventCard> {
                       bottom: 10,
                       left: 10,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 3,
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                         decoration: BoxDecoration(
                           color: EventTheme.success,
                           borderRadius: BorderRadius.circular(ThixPolicy.s6),
@@ -413,16 +414,11 @@ class _EventCardState extends State<EventCard> {
                     bottom: 10,
                     right: 10,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.black.withOpacity(0.6),
                         borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.12),
-                        ),
+                        border: Border.all(color: Colors.white.withOpacity(0.12)),
                       ),
                       child: Text(
                         widget.event.formattedPrice,
@@ -445,7 +441,7 @@ class _EventCardState extends State<EventCard> {
                       safeTitle,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: EventTheme.textMain,
                         fontSize: 12.5,
                         fontWeight: FontWeight.w800,
@@ -455,7 +451,7 @@ class _EventCardState extends State<EventCard> {
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.calendar_today_rounded,
                           size: 10,
                           color: EventTheme.textMuted,
@@ -463,7 +459,7 @@ class _EventCardState extends State<EventCard> {
                         const SizedBox(width: 4),
                         Text(
                           widget.event.shortDate,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: EventTheme.textMuted,
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
@@ -474,7 +470,7 @@ class _EventCardState extends State<EventCard> {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.location_on_rounded,
                           size: 10,
                           color: EventTheme.textMuted,
@@ -485,7 +481,7 @@ class _EventCardState extends State<EventCard> {
                             safeLocation,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: EventTheme.textMuted,
                               fontSize: 10,
                             ),
@@ -495,17 +491,17 @@ class _EventCardState extends State<EventCard> {
                     ),
                     const SizedBox(height: 10),
                     
-                    // 🟢 Bouton d'action dynamique (Réservation ou File d'attente)
+                    // 🟢 Bouton d'action dynamique
                     Semantics(
                       button: true,
-                      label: isPreorderActive ? 'Rejoindre la file' : l10n.t('event_book_now'),
+                      label: soldOut ? 'File d\'attente' : (isPreOrder ? 'Pré-commande' : 'Réserver'),
                       child: SizedBox(
                         width: double.infinity,
                         height: 36,
                         child: ElevatedButton(
                           onPressed: _handleTap,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: isPreorderActive ? EventTheme.warning : Colors.white,
+                            backgroundColor: useQueue ? EventTheme.warning : Colors.white,
                             foregroundColor: Colors.black,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
@@ -513,10 +509,15 @@ class _EventCardState extends State<EventCard> {
                             ),
                           ),
                           child: Text(
-                            isPreorderActive ? 'Rejoindre la file' : l10n.t('event_book_now'),
+                            soldOut
+                                ? "FILE D'ATTENTE"
+                                : (isPreOrder && widget.event.enableWaitingQueue
+                                    ? "PRÉ-COMMANDE"
+                                    : l10n.t('event_book_now')),
                             style: const TextStyle(
                               fontSize: 11,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.5,
                             ),
                           ),
                         ),
@@ -545,9 +546,9 @@ class _EventCardState extends State<EventCard> {
     final categoryLabel = l10n.t(_categoryKey(category));
     final icon = _categoryIcon(category);
 
-    // 🟢 Vérification de l'état
-    final bool isPreorderActive = widget.event.ticketOpeningDate != null &&
-        widget.event.ticketOpeningDate!.isAfter(DateTime.now());
+    // 🟢 Logique d'état
+    final bool isPreOrder = widget.event.ticketOpenDate != null && DateTime.now().isBefore(widget.event.ticketOpenDate!);
+    final bool soldOut = widget.event.remainingTickets != null && widget.event.remainingTickets! <= 0;
 
     return Semantics(
       button: true,
@@ -574,8 +575,7 @@ class _EventCardState extends State<EventCard> {
                             width: 64,
                             height: 64,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                _buildCompactFallback(accent, icon),
+                            errorBuilder: (_, __, ___) => _buildCompactFallback(accent, icon),
                           )
                         : _buildCompactFallback(accent, icon),
                   ),
@@ -602,9 +602,7 @@ class _EventCardState extends State<EventCard> {
                                   ? Icons.favorite_rounded
                                   : Icons.favorite_border_rounded,
                               size: 10,
-                              color: widget.event.isLiked
-                                  ? EventTheme.primary
-                                  : Colors.white,
+                              color: widget.event.isLiked ? EventTheme.primary : Colors.white,
                             ),
                           ),
                         ),
@@ -620,10 +618,7 @@ class _EventCardState extends State<EventCard> {
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
                             color: accent.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(ThixPolicy.s6),
@@ -638,14 +633,28 @@ class _EventCardState extends State<EventCard> {
                             ),
                           ),
                         ),
-                        // 🟢 Badge compact pré-commande
-                        if (isPreorderActive) ...[
+                        // 🟢 Badge compact Complet ou Pré-commande
+                        if (soldOut) ...[
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 5,
-                              vertical: 2,
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: EventTheme.danger.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(ThixPolicy.s6),
                             ),
+                            child: const Text(
+                              'COMPLET',
+                              style: TextStyle(
+                                color: EventTheme.danger,
+                                fontSize: 7,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ] else if (isPreOrder) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                             decoration: BoxDecoration(
                               color: EventTheme.warning.withOpacity(0.2),
                               borderRadius: BorderRadius.circular(ThixPolicy.s6),
@@ -667,7 +676,7 @@ class _EventCardState extends State<EventCard> {
                       safeTitle,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: EventTheme.textMain,
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -676,7 +685,7 @@ class _EventCardState extends State<EventCard> {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.calendar_today_rounded,
                           size: 9,
                           color: EventTheme.textMuted,
@@ -684,7 +693,7 @@ class _EventCardState extends State<EventCard> {
                         const SizedBox(width: 3),
                         Text(
                           widget.event.shortDate,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: EventTheme.textMuted,
                             fontSize: 9,
                           ),
