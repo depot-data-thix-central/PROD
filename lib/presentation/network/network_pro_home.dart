@@ -381,16 +381,11 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                 slivers: [
                   _buildSliverAppBar(l10n, avatarUrl: currentUser.photoUrl, currentUserId: currentUser.id),
 
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-                      child: _QuickPostEntryCard(
-                        l10n: l10n,
-                        avatarUrl: currentUser.photoUrl,
-                        onTap: () => showDialog(context: context, builder: (_) => const CreatePostDialog()),
-                      ),
-                    ),
-                  ),
+                  // ── Barre "Quoi de neuf ?" retirée : redondante avec le
+                  //    bouton "+" flottant de la barre de navigation, qui
+                  //    ouvre déjà CreatePostDialog. Un seul point d'entrée
+                  //    pour publier = interface plus sobre, plus lisible.
+                  const SliverToBoxAdapter(child: SizedBox(height: 6)),
 
                   SliverToBoxAdapter(child: _buildStories(l10n, currentUser.id, liveHostIds, currentUser.photoUrl)),
                   const SliverToBoxAdapter(child: AudioSpacesStrip()),
@@ -481,6 +476,24 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
         style: ThixPolicy.h2Style.copyWith(fontWeight: FontWeight.w900, letterSpacing: -0.5, color: ThixPolicy.textMain, fontSize: 18),
       ),
       actions: [
+        // ── Entrée de publication rapide : icône compacte dans l'app bar,
+        //    remplace l'ancienne barre "Quoi de neuf ?" pleine largeur.
+        GestureDetector(
+          onTap: () => showDialog(context: context, builder: (_) => const CreatePostDialog()),
+          child: Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(colors: [_Mono.accent, _Mono.accentDeep]),
+              boxShadow: [
+                BoxShadow(color: _Mono.accent.withValues(alpha: 0.25), blurRadius: 6, offset: const Offset(0, 2)),
+              ],
+            ),
+            child: const Icon(Icons.edit_rounded, size: 16, color: Colors.white),
+          ),
+        ),
+        const SizedBox(width: 8),
         GestureDetector(
           onTap: _openCreateAudioSpace,
           child: Container(
@@ -977,73 +990,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
             color: active ? _Mono.accent : ThixPolicy.textSecondary.withValues(alpha: 0.8),
           ),
         ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// BANDE "QUOI DE NEUF" — réduite (avatar plus petit, paddings compacts)
-// ============================================================================
-class _QuickPostEntryCard extends StatelessWidget {
-  final AppLocalizations l10n;
-  final String? avatarUrl;
-  final VoidCallback onTap;
-
-  const _QuickPostEntryCard({required this.l10n, required this.avatarUrl, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      // ── Padding réduit : 10 → 6 vertical ──
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 6, offset: const Offset(0, 2)),
-        ],
-      ),
-      child: Row(
-        children: [
-          // ── Avatar réduit : 38 → 30 ──
-          RoundAvatar(size: 30, imageUrl: avatarUrl),
-          const SizedBox(width: 8),
-          Expanded(
-            child: GestureDetector(
-              onTap: onTap,
-              child: Container(
-                // ── Padding interne réduit ──
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
-                ),
-                child: Text(
-                  l10n.t('network_quick_post_hint'),
-                  style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 12.5),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _Mono.accent.withValues(alpha: 0.1),
-            ),
-            child: IconButton(
-              onPressed: onTap,
-              icon: const Icon(Icons.image_rounded, color: _Mono.accent, size: 18),
-              constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-              padding: EdgeInsets.zero,
-            ),
-          ),
-        ],
       ),
     );
   }
