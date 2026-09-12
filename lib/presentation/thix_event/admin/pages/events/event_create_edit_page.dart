@@ -22,14 +22,11 @@ import 'package:thix_id/models/ticket_tier.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 
-// ── IMPORTS ABSOLUS DE L'ADMINISTRATION (100% Sécurisés) ──
+// ── IMPORTS ABSOLUS DE L'ADMINISTRATION ──
 import 'package:thix_id/presentation/thix_event/admin/core/admin_guards.dart';
 import 'package:thix_id/presentation/thix_event/admin/providers/admin_event_provider.dart';
 import 'package:thix_id/presentation/thix_event/admin/services/admin_event_service.dart';
 
-// ============================================================================
-// EVENT THEME
-// ============================================================================
 class EventTheme {
   static const Color bg = ThixPolicy.inkDeep;
   static const Color surface = Color(0xFF101B30);
@@ -44,9 +41,6 @@ class EventTheme {
   static const Color danger = ThixPolicy.danger;
 }
 
-// ============================================================================
-// LOGGING
-// ============================================================================
 class _EventCreateEditLogger {
   static const _tag = 'EventCreateEdit';
   static void info(String m, [Map<String, dynamic>? d]) => _log('INFO', m, d);
@@ -54,9 +48,7 @@ class _EventCreateEditLogger {
 
   static void _log(String l, String m, Map<String, dynamic>? d) {
     if (!kDebugMode && l == 'INFO') return;
-    final data = d != null
-        ? ' ${d.entries.map((e) => '${e.key}=${e.value}').join(', ')}'
-        : '';
+    final data = d != null ? ' ${d.entries.map((e) => '${e.key}=${e.value}').join(', ')}' : '';
     debugPrint('[$_tag] [$l] $m$data');
   }
 }
@@ -89,9 +81,6 @@ const List<_DropdownOption> _kVisibility = [
   _DropdownOption('featured', 'admin_event_vis_featured'),
 ];
 
-// ============================================================================
-// PAGE
-// ============================================================================
 class EventCreateEditPage extends ConsumerStatefulWidget {
   final Event? eventToEdit;
   const EventCreateEditPage({super.key, this.eventToEdit});
@@ -114,7 +103,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
   late String _category, _currency, _status;
   late DateTime _startDate;
   DateTime? _endDate;
-  DateTime? _ticketOpeningDate; // 🟢 Date d'ouverture de la billetterie
+  DateTime? _ticketOpeningDate;
   bool _saving = false;
   bool _enableWaitingQueue = false;
   String _publishSection = 'upcoming';
@@ -130,7 +119,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
     _descCtrl = TextEditingController(text: e?.description ?? '');
     _locationCtrl = TextEditingController(text: e?.location ?? '');
     _addressCtrl = TextEditingController(text: e?.address ?? '');
-    _cityCtrl = TextEditingController(text: e?.city ?? 'LUBUMBASH, RDC');
+    _cityCtrl = TextEditingController(text: e?.city ?? 'LUBUMBASHI, RDC');
     _subCatCtrl = TextEditingController(text: e?.subCategory ?? '');
     _orgCtrl = TextEditingController(text: e?.organizerName ?? '');
     _phoneCtrl = TextEditingController(text: e?.contactPhone ?? '');
@@ -140,7 +129,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
     _status = e?.status ?? 'upcoming';
     _startDate = e?.startDate ?? DateTime.now().add(const Duration(days: 7));
     _endDate = e?.endDate;
-    _ticketOpeningDate = e?.ticketOpeningDate; // 🟢 Récupération
+    _ticketOpeningDate = e?.ticketOpeningDate; // Corrigé grâce au modèle mis à jour
     _enableWaitingQueue = e?.enableWaitingQueue ?? false;
     _publishSection = e?.isFeatured == true
         ? 'featured'
@@ -297,7 +286,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
         city: _cityCtrl.text.trim(),
         startDate: _startDate,
         endDate: _endDate,
-        ticketOpeningDate: _ticketOpeningDate, // 🟢 Sauvegarde de la date d'ouverture billetterie
+        ticketOpeningDate: _ticketOpeningDate, // Corrigé
         price: minPrice,
         priceCurrency: _currency,
         isFree: minPrice == 0 && _tiers.length == 1,
@@ -506,8 +495,8 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                           Row(
                             children: [
                               if (_ticketOpeningDate != null)
-                                InkWell(
-                                  onPressed: () => setState(() => _ticketOpeningDate = null),
+                                GestureDetector( // Corrigé (remplacement InkWell non valide par GestureDetector pour l'icône)
+                                  onTap: () => setState(() => _ticketOpeningDate = null),
                                   child: const Icon(Icons.clear_rounded, size: 16, color: Colors.redAccent),
                                 ),
                               const SizedBox(width: 8),
@@ -680,7 +669,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
         fillColor: EventTheme.surface,
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: const BorderSide(color: EventTheme.border)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPieceBorder: EventTheme.border), borderSide: const BorderSide(color: EventTheme.border)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: const BorderSide(color: EventTheme.border)), // Corrigé la coquille "ThixPieceBorder"
         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: const BorderSide(color: Colors.white24, width: 1.2)),
         errorStyle: TextStyle(color: EventTheme.danger, fontSize: 10),
       );
