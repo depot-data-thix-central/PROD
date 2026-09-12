@@ -299,7 +299,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     final l10n = AppLocalizations.of(context);
     
     // Vérifier si c'est dû à une pré-commande
-    final bool isPreOrder = _event.ticketOpenDate != null && DateTime.now().isBefore(_event.ticketOpenDate!);
+    final bool isPreOrder = _event.ticketOpeningDate != null && DateTime.now().isBefore(_event.ticketOpeningDate!);
     
     try {
       final showQueue = await showDialog<bool>(
@@ -736,7 +736,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     final int remaining = tier.remaining ?? tier.capacity;
     
     // NOUVELLE LOGIQUE : Précommande / File d'attente
-    final bool isPreOrder = _event.ticketOpenDate != null && DateTime.now().isBefore(_event.ticketOpenDate!);
+    final bool isPreOrder = _event.ticketOpeningDate != null && DateTime.now().isBefore(_event.ticketOpeningDate!);
     final bool soldOut = (tier.capacity > 0 && remaining <= 0) || (tier.remaining != null && tier.remaining! <= 0);
     final bool useQueue = soldOut || (isPreOrder && _event.enableWaitingQueue);
     
@@ -843,7 +843,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
 
   Widget _defaultCard(AppLocalizations l10n) {
     // NOUVELLE LOGIQUE : Précommande / File d'attente
-    final bool isPreOrder = _event.ticketOpenDate != null && DateTime.now().isBefore(_event.ticketOpenDate!);
+    final bool isPreOrder = _event.ticketOpeningDate != null && DateTime.now().isBefore(_event.ticketOpeningDate!);
     final bool soldOut = (_event.remainingTickets != null && _event.remainingTickets! <= 0);
     final bool useQueue = soldOut || (isPreOrder && _event.enableWaitingQueue);
     
@@ -936,7 +936,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
 
   Widget _seatCard(AppLocalizations l10n) {
     // NOUVELLE LOGIQUE : Précommande / File d'attente
-    final bool isPreOrder = _event.ticketOpenDate != null && DateTime.now().isBefore(_event.ticketOpenDate!);
+    final bool isPreOrder = _event.ticketOpeningDate != null && DateTime.now().isBefore(_event.ticketOpeningDate!);
     final bool soldOut = _availableSeats <= 0;
     final bool useQueue = soldOut || (isPreOrder && _event.enableWaitingQueue);
     
@@ -1016,7 +1016,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
         : _event.formattedPrice;
     
     // NOUVELLE LOGIQUE : Précommande / File d'attente globale
-    final bool isPreOrder = _event.ticketOpenDate != null && DateTime.now().isBefore(_event.ticketOpenDate!);
+    final bool isPreOrder = _event.ticketOpeningDate != null && DateTime.now().isBefore(_event.ticketOpeningDate!);
     final bool soldOut = (_event.remainingTickets != null && _event.remainingTickets! <= 0);
     final bool useQueue = soldOut || (isPreOrder && _event.enableWaitingQueue);
         
