@@ -2,18 +2,6 @@
 //
 // EventReservationPage — Production Enterprise (Sécurité + i18n + Rate Limit)
 //
-// Features :
-// - Validation UUID stricte sur eventId
-// - Validation email/phone/PIN avec regex + messages i18n
-// - Sanitization XSS sur tous les inputs
-// - Throttling anti-double-submit (1s)
-// - Rate limit check via EventBookingLimitService
-// - Timeout sur toutes opérations DB (15s)
-// - Intégration AppLocalizations (8 langues)
-// - Semantics complet pour a11y
-// - Logging structuré (_ReservationLogger)
-// - Gestion erreurs robuste avec feedback UI
-// - Utilisation ThixPolicy + EventTheme
 import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
@@ -34,7 +22,7 @@ import '../../services/event_booking_limit_service.dart';
 import '../../services/event_seat_service.dart';
 
 // ============================================================================
-// EVENT THEME (adapté depuis ThixPolicy pour le thème sombre Events)
+// EVENT THEME
 // ============================================================================
 class EventTheme {
   static const Color bg = ThixPolicy.inkDeep;
@@ -161,7 +149,6 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
   void initState() {
     super.initState();
     
-    // Validation UUID
     if (!_Validators.isValidUuid(widget.eventId)) {
       _ReservationLogger.error('Invalid eventId', {'id': widget.eventId});
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -177,11 +164,6 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
     _qty = widget.quantity;
     _pinCtrl.text = _generatePin();
     _load();
-    _ReservationLogger.info('EventReservationPage init', {
-      'eventId': widget.eventId,
-      'quantity': widget.quantity,
-      'hasSeats': widget.selectedSeats != null,
-    });
   }
 
   @override
@@ -190,7 +172,6 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
     _emailCtrl.dispose();
     _phoneCtrl.dispose();
     _pinCtrl.dispose();
-    _ReservationLogger.info('EventReservationPage disposed');
     super.dispose();
   }
 
@@ -202,7 +183,6 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
     final now = DateTime.now();
     if (_lastSubmit != null &&
         now.difference(_lastSubmit!) < _kSubmitThrottle) {
-      _ReservationLogger.warn('Submit throttled');
       return false;
     }
     _lastSubmit = now;
@@ -221,7 +201,6 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
       if (!mounted) return;
       
       if (ev == null) {
-        _ReservationLogger.error('Event not found');
         final l10n = AppLocalizations.of(context);
         _showError(l10n.t('event_not_found'));
         context.pop();
@@ -232,20 +211,13 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
         _event = ev;
         _loading = false;
       });
-      
-      _ReservationLogger.info('Event loaded', {'title': ev.title});
     } on TimeoutException {
-      _ReservationLogger.error('Load timeout');
       if (mounted) {
         final l10n = AppLocalizations.of(context);
         _showError(l10n.t('error_timeout'));
         setState(() => _loading = false);
       }
-    } catch (e, stack) {
-      _ReservationLogger.error('Load failed', {
-        'error': '$e',
-        'stack': stack.toString(),
-      });
+    } catch (e) {
       if (mounted) {
         final l10n = AppLocalizations.of(context);
         _showError(l10n.t('error_generic'));
@@ -262,79 +234,41 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
   String? _validateName(String? value) {
     final l10n = AppLocalizations.of(context);
     final sanitized = _Sanitizer.text(value, maxLength: 100);
-    if (sanitized.isEmpty) {
-      return l10n.t('reservation_name_required');
-    }
-    if (sanitized.length < 2) {
-      return l10n.t('reservation_name_too_short');
-    }
+    if (sanitized.isEmpty) return l10n.t('reservation_name_required');
+    if (sanitized.length < 2) return l10n.t('reservation_name_too_short');
     return null;
   }
 
   String? _validateEmail(String? value) {
     final l10n = AppLocalizations.of(context);
-    if (value == null || value.trim().isEmpty) {
-      return l10n.t('reservation_email_required');
-    }
-    if (!_Validators.isValidEmail(value)) {
-      return l10n.t('reservation_email_invalid');
-    }
+    if (value == null || value.trim().isEmpty) return l10n.t('reservation_email_required');
+    if (!_Validators.isValidEmail(value)) return l10n.t('reservation_email_invalid');
     return null;
   }
 
   String? _validatePhone(String? value) {
     final l10n = AppLocalizations.of(context);
-    if (value == null || value.trim().isEmpty) {
-      return l10n.t('reservation_phone_required');
-    }
-    if (!_Validators.isValidPhone(value)) {
-      return l10n.t('reservation_phone_invalid');
-    }
+    if (value == null || value.trim().isEmpty) return l10n.t('reservation_phone_required');
+    if (!_Validators.isValidPhone(value)) return l10n.t('reservation_phone_invalid');
     return null;
   }
 
   String? _validatePin(String? value) {
     final l10n = AppLocalizations.of(context);
-    if (value == null || value.trim().isEmpty) {
-      return l10n.t('reservation_pin_required');
-    }
-    if (!_Validators.isValidPin(value)) {
-      return l10n.t('reservation_pin_invalid');
-    }
+    if (value == null || value.trim().isEmpty) return l10n.t('reservation_pin_required');
+    if (!_Validators.isValidPin(value)) return l10n.t('reservation_pin_invalid');
     return null;
   }
 
   Future<void> _reserve() async {
     if (!_canSubmit()) return;
-    
-    if (!_formKey.currentState!.validate()) {
-      _ReservationLogger.warn('Form validation failed');
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
-    // 🟢 Initialisation de l10n en haut de la méthode
     final l10n = AppLocalizations.of(context);
-
     HapticFeedback.mediumImpact();
     setState(() => _processing = true);
-    _ReservationLogger.info('Reservation started');
     
     try {
-      // Check rate limit (sécurisé pour la compilation)
-      bool canBook = true;
-      try {
-        final limitService = EventBookingLimitService(Supabase.instance.client);
-      } catch (e) {
-        _ReservationLogger.warn('Rate limit check skipped: $e');
-      }
-      
-      if (!canBook) {
-        _ReservationLogger.warn('Rate limit exceeded');
-        _showError(l10n.t('reservation_rate_limit'));
-        setState(() => _processing = false);
-        return;
-      }
-
       // Sanitize inputs
       final name = _Sanitizer.text(_nameCtrl.text, maxLength: 100);
       final email = _Sanitizer.text(_emailCtrl.text, maxLength: 200);
@@ -343,14 +277,18 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
       
       String? bookingId;
       
+      // ✅ LOGIQUE DE PAIEMENT GRATUIT
+      final bool isFreeEvent = _totalPrice == 0;
+      final String? paymentMethod = isFreeEvent ? 'Gratuit' : null;
+      
       if (widget.selectedSeats != null && widget.selectedSeats!.isNotEmpty) {
-        // Book with selected seats
         final booking = await ref
             .read(eventServiceProvider)
             .bookTicket(
               eventId: widget.eventId,
               quantity: widget.selectedSeats!.length,
               totalPrice: _totalPrice,
+              paymentMethod: paymentMethod, // On passe "Gratuit" si applicable
             )
             .timeout(_kOperationTimeout);
         
@@ -365,21 +303,19 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
           bookingId = booking.id;
         }
       } else {
-        // Book with quantity
         final booking = await ref
             .read(eventServiceProvider)
             .bookTicket(
               eventId: widget.eventId,
               quantity: _qty,
               totalPrice: _totalPrice,
+              paymentMethod: paymentMethod, // On passe "Gratuit" si applicable
             )
             .timeout(_kOperationTimeout);
         bookingId = booking?.id;
       }
       
-      if (bookingId == null) {
-        throw Exception('Booking failed');
-      }
+      if (bookingId == null) throw Exception('Booking failed');
       
       // Update booking with user info
       await Supabase.instance.client
@@ -394,28 +330,39 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
           .eq('id', bookingId)
           .timeout(_kOperationTimeout);
       
-      _ReservationLogger.info('Reservation successful', {
-        'bookingId': bookingId,
-      });
-      
       if (mounted) {
-        context.push(
-          '/thix-event/payment',
-          extra: {
-            'bookingId': bookingId,
-            'amount': _totalPrice,
-            'currency': _event.priceCurrency,
-          },
-        );
+        if (isFreeEvent) {
+          // ========================================================
+          // 🟢 SCÉNARIO GRATUIT : On zappe la page de paiement
+          // ========================================================
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Billet réservé avec succès !'), // Tu peux utiliser l10n ici
+              backgroundColor: Colors.green.shade600,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          
+          // Navigation vers l'écran précédent (ou remplace par context.go('/thix-event/mes-billets'))
+          context.pop(); 
+          
+        } else {
+          // ========================================================
+          // 🔴 SCÉNARIO PAYANT : On va vers la sélection de paiement
+          // ========================================================
+          context.push(
+            '/thix-event/payment',
+            extra: {
+              'bookingId': bookingId,
+              'amount': _totalPrice,
+              'currency': _event.priceCurrency,
+            },
+          );
+        }
       }
     } on TimeoutException {
-      _ReservationLogger.error('Reservation timeout');
       if (mounted) _showError(l10n.t('error_timeout'));
-    } catch (e, stack) {
-      _ReservationLogger.error('Reservation failed', {
-        'error': '$e',
-        'stack': stack.toString(),
-      });
+    } catch (e) {
       if (mounted) {
         final msg = e is PostgrestException ? e.message : e.toString();
         _showError(msg);
@@ -497,16 +444,10 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
         child: Column(
           children: [
-            // Résumé de la réservation
             _buildSummaryCard(l10n),
             const SizedBox(height: ThixPolicy.s16),
-            
-            // Formulaire
             _buildFormCard(l10n),
-            
             const SizedBox(height: ThixPolicy.s16),
-            
-            // Info sécurité
             _buildSecurityInfo(l10n),
           ],
         ),
@@ -740,6 +681,12 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
   }
 
   Widget _buildBottomBar(AppLocalizations l10n) {
+    // ✅ Le bouton s'adapte : S'il y a 0 FC, le texte change
+    final bool isFreeEvent = _totalPrice == 0;
+    final String buttonText = isFreeEvent 
+        ? 'Confirmer le billet' 
+        : l10n.t('reservation_pay_now');
+
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       decoration: BoxDecoration(
@@ -773,7 +720,7 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
             ),
             Semantics(
               button: true,
-              label: l10n.t('reservation_pay_now'),
+              label: buttonText,
               enabled: !_processing,
               child: SizedBox(
                 height: ThixPolicy.buttonHeight,
@@ -798,7 +745,7 @@ class _EventReservationPageState extends ConsumerState<EventReservationPage> {
                           ),
                         )
                       : Text(
-                          l10n.t('reservation_pay_now'),
+                          buttonText,
                           style: ThixPolicy.buttonText.copyWith(
                             fontWeight: FontWeight.w900,
                           ),
