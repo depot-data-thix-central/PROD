@@ -39,7 +39,7 @@ static const String certification = '/certification';
   static const String opportunities = '/opportunities';
   static const String admin = '/admin';
   static const String thixMarket = '/market';
-
+static const String thixInfoDownloads = '/thix-info/downloads';
   // Éducation
   static const String education = '/education';
   static const String trainingHome = '/education';
