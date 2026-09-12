@@ -49,7 +49,7 @@ static const String thixInfoDownloads = '/thix-info/downloads';
   static const String thixMediaVideo = '/thix-media-video';
   static const String adminMedia = '/admin-media';
   static const String thixMedia = '/thix-media';
-
+static const String thixInfoSpace = '/thix-info/space/:space';
   // ═══════════════════════════════════════════════════════════════
   // THIX MONEY - FULL PRODUCTION - VÉRIFIE THIX_ID EN BASE
   // ═══════════════════════════════════════════════════════════════
