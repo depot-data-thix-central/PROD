@@ -7,6 +7,7 @@
 // - Validation UUID stricte des IDs
 // - Throttling anti-spam (500ms) sur toutes les actions
 // - Gestion réelle Sold Out via EventSeatService + Queue
+// - Gestion File d'attente / Pré-commande avant l'ouverture de la billetterie
 // - Intégration AppLocalizations (8 langues)
 // - Semantics complet pour a11y
 // - Logging structuré (_EventLogger)
@@ -140,7 +141,6 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
   }
 
   Future<void> _load() async {
-    // Validation UUID
     final uuidRegex = RegExp(
       r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
     );
@@ -162,7 +162,6 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
         return;
       }
 
-      // Sanitization inputs
       final safeEvent = ev.copyWith(
         title: _EventSanitizer.text(ev.title, maxLength: 200),
         description: _EventSanitizer.text(ev.description),
@@ -201,7 +200,6 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
       _EventLogger.info('Seats loaded', {'count': _availableSeats});
     } catch (e) {
       _EventLogger.warn('Seat map load failed', {'error': '$e'});
-      // Non-critical: continue without seat map
     }
   }
 
@@ -225,7 +223,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     } catch (e) {
       _EventLogger.error('Toggle fav failed', {'error': '$e'});
       if (mounted) {
-        setState(() => _isFavorite = !_isFavorite); // Rollback
+        setState(() => _isFavorite = !_isFavorite);
         _showError('Failed to update favorites');
       }
     }
@@ -249,7 +247,6 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     }
   }
 
-  // 🎯 MODIFICATION ICI : Ajout de 'async', 'await' et rafraîchissement au retour
   Future<void> _goReservation({TicketTier? tier}) async {
     if (!_throttle()) return;
     
@@ -267,14 +264,12 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
       )
     );
 
-    // Rafraîchir les données quand on revient de la page de réservation
     if (mounted) {
       _load();
       _loadSeats();
     }
   }
 
-  // 🎯 MODIFICATION ICI : Ajout de 'async', 'await' et rafraîchissement au retour
   Future<void> _goSeats() async {
     if (!_throttle()) return;
     
@@ -288,7 +283,6 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
       )
     );
 
-    // Rafraîchir les données quand on revient de la page de sélection de sièges
     if (mounted) {
       _load();
       _loadSeats();
@@ -304,6 +298,9 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
 
     final l10n = AppLocalizations.of(context);
     
+    // Vérifier si c'est dû à une pré-commande
+    final bool isPreOrder = _event.ticketOpenDate != null && DateTime.now().isBefore(_event.ticketOpenDate!);
+    
     try {
       final showQueue = await showDialog<bool>(
         context: context,
@@ -314,7 +311,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
             side: const BorderSide(color: _ThixColors.cardBorder)
           ),
           title: Text(
-            l10n.t('event_sold_out_title'), 
+            isPreOrder ? "Pré-commande / File d'attente" : l10n.t('event_sold_out_title'), 
             textAlign: TextAlign.center, 
             style: const TextStyle(fontWeight: FontWeight.w900, color: Colors.white, fontSize: 18)
           ),
@@ -331,7 +328,9 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
               ),
               const SizedBox(height: 20),
               Text(
-                l10n.t('event_sold_out_msg'), 
+                isPreOrder 
+                    ? "La billetterie n'est pas encore ouverte. Rejoignez la file d'attente virtuelle pour être prioritaire dès l'ouverture."
+                    : l10n.t('event_sold_out_msg'), 
                 textAlign: TextAlign.center, 
                 style: const TextStyle(color: _ThixColors.textSecondary, height: 1.4, fontSize: 14)
               ),
@@ -735,7 +734,11 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
 
   Widget _tierCard(AppLocalizations l10n, TicketTier tier) {
     final int remaining = tier.remaining ?? tier.capacity;
+    
+    // NOUVELLE LOGIQUE : Précommande / File d'attente
+    final bool isPreOrder = _event.ticketOpenDate != null && DateTime.now().isBefore(_event.ticketOpenDate!);
     final bool soldOut = (tier.capacity > 0 && remaining <= 0) || (tier.remaining != null && tier.remaining! <= 0);
+    final bool useQueue = soldOut || (isPreOrder && _event.enableWaitingQueue);
     
     return Container(
       margin: const EdgeInsets.only(bottom: 16), 
@@ -744,11 +747,11 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
         color: _ThixColors.surface, 
         borderRadius: BorderRadius.circular(24), 
         border: Border.all(
-          color: soldOut 
+          color: useQueue 
               ? _ThixColors.cardBorder 
               : _ThixColors.primary.withOpacity(0.4)
         ),
-        boxShadow: soldOut 
+        boxShadow: useQueue 
             ? [] 
             : [BoxShadow(color: _ThixColors.primary.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 5))]
       ), 
@@ -765,7 +768,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                       Icon(
                         Icons.confirmation_num_rounded, 
                         size: 18, 
-                        color: soldOut ? _ThixColors.textMuted : _ThixColors.primary
+                        color: useQueue ? _ThixColors.textMuted : _ThixColors.primary
                       ), 
                       const SizedBox(width: 8), 
                       Text(
@@ -773,7 +776,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                         style: TextStyle(
                           fontSize: 16, 
                           fontWeight: FontWeight.w900, 
-                          color: soldOut ? _ThixColors.textMuted : Colors.white
+                          color: useQueue ? _ThixColors.textMuted : Colors.white
                         )
                       )
                     ]
@@ -783,11 +786,11 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                     Text(
                       soldOut 
                           ? l10n.t('event_sold_out_short') 
-                          : l10n.t('event_remaining_seats', args: [remaining.toString()]), 
+                          : (isPreOrder ? "Bientôt disponible" : l10n.t('event_remaining_seats', args: [remaining.toString()])), 
                       style: TextStyle(
                         fontSize: 12, 
                         fontWeight: FontWeight.w800, 
-                        color: soldOut ? _ThixColors.danger : _ThixColors.primary
+                        color: soldOut ? _ThixColors.danger : (isPreOrder ? _ThixColors.warning : _ThixColors.primary)
                       )
                     ),
                 ]
@@ -799,7 +802,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                 style: TextStyle(
                   fontSize: 20, 
                   fontWeight: FontWeight.w900, 
-                  color: soldOut ? _ThixColors.textMuted : Colors.white
+                  color: useQueue ? _ThixColors.textMuted : Colors.white
                 )
               ),
             ]
@@ -809,18 +812,18 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
             width: double.infinity, 
             height: 52, 
             child: ElevatedButton(
-              onPressed: soldOut ? _joinQueue : () => _goReservation(tier: tier), 
+              onPressed: useQueue ? _joinQueue : () => _goReservation(tier: tier), 
               style: ElevatedButton.styleFrom(
-                backgroundColor: soldOut 
+                backgroundColor: useQueue 
                     ? _ThixColors.warning.withOpacity(0.15) 
                     : Colors.white, 
-                foregroundColor: soldOut 
+                foregroundColor: useQueue 
                     ? _ThixColors.warning 
                     : Colors.black, 
                 elevation: 0, 
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16), 
-                  side: soldOut 
+                  side: useQueue 
                       ? const BorderSide(color: _ThixColors.warning) 
                       : BorderSide.none
                 )
@@ -828,7 +831,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
               child: Text(
                 soldOut 
                     ? l10n.t('event_queue_btn') 
-                    : l10n.t('event_book_btn'), 
+                    : (isPreOrder && _event.enableWaitingQueue ? "PRÉ-COMMANDE" : l10n.t('event_book_btn')), 
                 style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5)
               )
             ),
@@ -839,7 +842,10 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
   }
 
   Widget _defaultCard(AppLocalizations l10n) {
+    // NOUVELLE LOGIQUE : Précommande / File d'attente
+    final bool isPreOrder = _event.ticketOpenDate != null && DateTime.now().isBefore(_event.ticketOpenDate!);
     final bool soldOut = (_event.remainingTickets != null && _event.remainingTickets! <= 0);
+    final bool useQueue = soldOut || (isPreOrder && _event.enableWaitingQueue);
     
     return Container(
       padding: const EdgeInsets.all(20), 
@@ -847,11 +853,11 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
         color: _ThixColors.surface, 
         borderRadius: BorderRadius.circular(24), 
         border: Border.all(
-          color: soldOut 
+          color: useQueue 
               ? _ThixColors.cardBorder 
               : _ThixColors.primary.withOpacity(0.4)
         ),
-        boxShadow: soldOut 
+        boxShadow: useQueue 
             ? [] 
             : [BoxShadow(color: _ThixColors.primary.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 5))]
       ), 
@@ -868,7 +874,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                     style: TextStyle(
                       fontWeight: FontWeight.w900, 
                       fontSize: 16, 
-                      color: soldOut ? _ThixColors.textMuted : Colors.white
+                      color: useQueue ? _ThixColors.textMuted : Colors.white
                     )
                   ),
                   const SizedBox(height: 6),
@@ -876,11 +882,11 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                     Text(
                       soldOut 
                           ? l10n.t('event_all_sold') 
-                          : l10n.t('event_limited_seats'), 
+                          : (isPreOrder ? "Bientôt disponible" : l10n.t('event_limited_seats')), 
                       style: TextStyle(
                         fontSize: 12, 
                         fontWeight: FontWeight.w800, 
-                        color: soldOut ? _ThixColors.danger : _ThixColors.primary
+                        color: soldOut ? _ThixColors.danger : (isPreOrder ? _ThixColors.warning : _ThixColors.primary)
                       )
                     )
                 ]
@@ -889,7 +895,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                 _event.formattedPrice, 
                 style: TextStyle(
                   fontWeight: FontWeight.w900, 
-                  color: soldOut ? _ThixColors.textMuted : Colors.white, 
+                  color: useQueue ? _ThixColors.textMuted : Colors.white, 
                   fontSize: 20
                 )
               )
@@ -900,17 +906,17 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
             width: double.infinity, 
             height: 52, 
             child: ElevatedButton(
-              onPressed: soldOut ? _joinQueue : () => _goReservation(), 
+              onPressed: useQueue ? _joinQueue : () => _goReservation(), 
               style: ElevatedButton.styleFrom(
-                backgroundColor: soldOut 
+                backgroundColor: useQueue 
                     ? _ThixColors.warning.withOpacity(0.15) 
                     : Colors.white, 
-                foregroundColor: soldOut 
+                foregroundColor: useQueue 
                     ? _ThixColors.warning 
                     : Colors.black, 
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16), 
-                  side: soldOut 
+                  side: useQueue 
                       ? const BorderSide(color: _ThixColors.warning) 
                       : BorderSide.none
                 )
@@ -918,7 +924,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
               child: Text(
                 soldOut 
                     ? l10n.t('event_queue_btn') 
-                    : l10n.t('event_book_now_btn'), 
+                    : (isPreOrder && _event.enableWaitingQueue ? "PRÉ-COMMANDE" : l10n.t('event_book_now_btn')), 
                 style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5)
               )
             ),
@@ -929,18 +935,22 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
   }
 
   Widget _seatCard(AppLocalizations l10n) {
-    final soldOut = _availableSeats <= 0;
+    // NOUVELLE LOGIQUE : Précommande / File d'attente
+    final bool isPreOrder = _event.ticketOpenDate != null && DateTime.now().isBefore(_event.ticketOpenDate!);
+    final bool soldOut = _availableSeats <= 0;
+    final bool useQueue = soldOut || (isPreOrder && _event.enableWaitingQueue);
+    
     return Container(
       padding: const EdgeInsets.all(20), 
       decoration: BoxDecoration(
         color: _ThixColors.surface, 
         borderRadius: BorderRadius.circular(24), 
         border: Border.all(
-          color: soldOut 
+          color: useQueue 
               ? _ThixColors.cardBorder 
               : _ThixColors.primary.withOpacity(0.4)
         ),
-        boxShadow: soldOut 
+        boxShadow: useQueue 
             ? [] 
             : [BoxShadow(color: _ThixColors.primary.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 5))]
       ), 
@@ -950,18 +960,18 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
             children: [
               Icon(
                 Icons.event_seat_rounded, 
-                color: soldOut ? _ThixColors.textMuted : _ThixColors.primary, 
+                color: useQueue ? _ThixColors.textMuted : _ThixColors.primary, 
                 size: 22
               ), 
               const SizedBox(width: 12), 
               Text(
                 soldOut 
                     ? l10n.t('event_sold_out_short') 
-                    : l10n.t('event_numbered_seats', args: [_availableSeats.toString()]), 
+                    : (isPreOrder ? "Bientôt disponible" : l10n.t('event_numbered_seats', args: [_availableSeats.toString()])), 
                 style: TextStyle(
                   fontWeight: FontWeight.w900, 
                   fontSize: 16, 
-                  color: soldOut ? _ThixColors.textMuted : Colors.white
+                  color: useQueue ? _ThixColors.textMuted : Colors.white
                 )
               )
             ]
@@ -971,17 +981,17 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
             width: double.infinity, 
             height: 52, 
             child: ElevatedButton(
-              onPressed: soldOut ? _joinQueue : _goSeats, 
+              onPressed: useQueue ? _joinQueue : _goSeats, 
               style: ElevatedButton.styleFrom(
-                backgroundColor: soldOut 
+                backgroundColor: useQueue 
                     ? _ThixColors.warning.withOpacity(0.15) 
                     : Colors.white, 
-                foregroundColor: soldOut 
+                foregroundColor: useQueue 
                     ? _ThixColors.warning 
                     : Colors.black, 
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16), 
-                  side: soldOut 
+                  side: useQueue 
                       ? const BorderSide(color: _ThixColors.warning) 
                       : BorderSide.none
                 )
@@ -989,7 +999,7 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
               child: Text(
                 soldOut 
                     ? l10n.t('event_queue_btn') 
-                    : l10n.t('event_choose_seats_btn'), 
+                    : (isPreOrder && _event.enableWaitingQueue ? "PRÉ-COMMANDE" : l10n.t('event_choose_seats_btn')), 
                 style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5)
               )
             ),
@@ -1004,6 +1014,11 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     final price = _event.ticketTiers.isNotEmpty 
         ? '${_event.ticketTiers.first.price.toInt()} ${_event.priceCurrency}' 
         : _event.formattedPrice;
+    
+    // NOUVELLE LOGIQUE : Précommande / File d'attente globale
+    final bool isPreOrder = _event.ticketOpenDate != null && DateTime.now().isBefore(_event.ticketOpenDate!);
+    final bool soldOut = (_event.remainingTickets != null && _event.remainingTickets! <= 0);
+    final bool useQueue = soldOut || (isPreOrder && _event.enableWaitingQueue);
         
     return Container(
       color: Colors.transparent,
@@ -1041,25 +1056,45 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                   ),
                   const Spacer(),
                   GestureDetector(
-                    onTap: () => _hasSeatMap ? _goSeats() : _goReservation(), 
+                    onTap: () {
+                       if (useQueue) {
+                         _joinQueue();
+                       } else {
+                         _hasSeatMap ? _goSeats() : _goReservation();
+                       }
+                    }, 
                     child: Container(
                       height: 52, 
                       padding: const EdgeInsets.symmetric(horizontal: 28), 
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [_ThixColors.primary, _ThixColors.primaryDeep]
+                        gradient: LinearGradient(
+                          colors: useQueue 
+                              ? [_ThixColors.warning, Colors.orange] 
+                              : [_ThixColors.primary, _ThixColors.primaryDeep]
                         ),
                         borderRadius: BorderRadius.circular(26),
-                        boxShadow: [BoxShadow(color: _ThixColors.primary.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))]
+                        boxShadow: [
+                           BoxShadow(
+                             color: (useQueue ? _ThixColors.warning : _ThixColors.primary).withOpacity(0.3), 
+                             blurRadius: 10, 
+                             offset: const Offset(0, 4)
+                           )
+                        ]
                       ), 
                       child: Row(
                         children: [
                           Text(
-                            l10n.t('event_book_btn'), 
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15)
+                            soldOut 
+                                ? "FILE D'ATTENTE" 
+                                : (isPreOrder && _event.enableWaitingQueue ? "PRÉ-COMMANDE" : l10n.t('event_book_btn')), 
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)
                           ), 
                           const SizedBox(width: 8), 
-                          const Icon(Icons.confirmation_num_rounded, size: 18, color: Colors.white)
+                          Icon(
+                            useQueue ? Icons.queue_rounded : Icons.confirmation_num_rounded, 
+                            size: 18, 
+                            color: Colors.white
+                          )
                         ]
                       )
                     ),
