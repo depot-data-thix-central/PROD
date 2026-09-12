@@ -1,4 +1,3 @@
-// lib/services/event_booking_limit_service.dart
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
 import '../models/event_booking_limit.dart';
@@ -96,13 +95,13 @@ class EventBookingLimitService {
     }
   }
 
-  // ✅ CORRIGÉ : Vérifier les tentatives suspectes (sans utiliser count)
+  // ✅ CORRIGÉ : Vérifier les tentatives suspectes sans crasher sur le cast
   Future<bool> isSuspiciousActivity(String eventId) async {
     final userId = currentUserId;
     if (userId.isEmpty) return false;
 
     try {
-      // Compter les tentatives dans les dernières minutes
+      // Compter les tentatives dans les 5 dernières minutes
       final fiveMinutesAgo = DateTime.now().subtract(const Duration(minutes: 5));
       
       final response = await _supabase
@@ -112,7 +111,6 @@ class EventBookingLimitService {
           .eq('user_id', userId)
           .gte('attempted_at', fiveMinutesAgo.toIso8601String());
       
-      // ✅ CORRECTION : Compter manuellement en Dart
       final count = (response as List).length;
       return count > 10;
     } catch (e) {
@@ -122,7 +120,7 @@ class EventBookingLimitService {
   }
 
   Future<String> _getClientIp() async {
-    // TODO: Implémenter récupération IP
+    // TODO: Implémenter récupération IP si nécessaire à l'avenir
     return 'unknown';
   }
 }
