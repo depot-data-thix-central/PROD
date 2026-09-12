@@ -164,6 +164,14 @@ class NetworkService extends ChangeNotifier {
     return seed;
   }
 
+  // ⚠️ Filtre tolérant : exclut les posts marqués is_hidden = true,
+  // sans jamais planter si le champ est absent de la ligne (vue non
+  // encore alignée sur le schéma de la table posts).
+  bool _isVisible(Map<String, dynamic> j) {
+    final v = j['is_hidden'];
+    return v != true; // null, false, absent → visible ; true → masqué
+  }
+
   Future<List<NetworkPost>> getFeedPosts({
     int limit = 20,
     int? offset,
@@ -210,6 +218,10 @@ class NetworkService extends ChangeNotifier {
     }
   }
 
+  // Le RPC get_smart_feed / get_smart_feed_v2 gère lui-même le scoring
+  // pondéré (réseau/populaire/découverte/épinglés). Le filtrage is_hidden
+  // pour ce flux doit être fait côté SQL (voir fix_smart_feed_v2.sql),
+  // avant le calcul du smart_score — jamais ici, pour ne pas fausser le mix.
   Future<List<NetworkPost>> _fetchSmartFeed({
     required String uid,
     required int limit,
@@ -289,13 +301,18 @@ class NetworkService extends ChangeNotifier {
           .from('posts_view')
           .select()
           .eq('is_public', true)
-          .eq('is_hidden', false)
           .isFilter('community_id', null)
           .order('created_at', ascending: false)
           .range(offset, offset + limit - 1)
           .timeout(_requestTimeout);
 
-      return _parsePostsSafely(res as List);
+      final rows = (res as List)
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .where(_isVisible)
+          .toList();
+
+      return _parsePostsSafely(rows);
     } catch (e) {
       _NetworkServiceLogger.error('Recent feed fallback failed', {'error': '$e'});
       return [];
@@ -311,13 +328,18 @@ class NetworkService extends ChangeNotifier {
         .from('posts_view')
         .select()
         .inFilter('user_id', connIds.toList())
-        .eq('is_hidden', false)
         .isFilter('community_id', null)
         .order('created_at', ascending: false)
         .range(offset, offset + limit - 1)
         .timeout(_requestTimeout);
 
-    return _parsePostsSafely(res as List);
+    final rows = (res as List)
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where(_isVisible)
+        .toList();
+
+    return _parsePostsSafely(rows);
   }
 
   Future<List<NetworkPost>> _fetchPopularFeed({required int limit, required int offset}) async {
@@ -325,13 +347,18 @@ class NetworkService extends ChangeNotifier {
         .from('posts_view')
         .select()
         .eq('is_public', true)
-        .eq('is_hidden', false)
         .isFilter('community_id', null)
         .order('likes_count', ascending: false)
         .range(offset, offset + limit - 1)
         .timeout(_requestTimeout);
 
-    return _parsePostsSafely(res as List);
+    final rows = (res as List)
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .where(_isVisible)
+        .toList();
+
+    return _parsePostsSafely(rows);
   }
 
   // ─────────────────────────────────────────────────────────────
