@@ -249,13 +249,14 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
     }
   }
 
-  void _goReservation({TicketTier? tier}) {
+  // 🎯 MODIFICATION ICI : Ajout de 'async', 'await' et rafraîchissement au retour
+  Future<void> _goReservation({TicketTier? tier}) async {
     if (!_throttle()) return;
     
     HapticFeedback.mediumImpact();
     _EventLogger.info('Go to reservation', {'tier': tier?.name});
     
-    Navigator.push(
+    await Navigator.push(
       context, 
       MaterialPageRoute(
         builder: (_) => EventReservationPage(
@@ -265,20 +266,33 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
         )
       )
     );
+
+    // Rafraîchir les données quand on revient de la page de réservation
+    if (mounted) {
+      _load();
+      _loadSeats();
+    }
   }
 
-  void _goSeats() {
+  // 🎯 MODIFICATION ICI : Ajout de 'async', 'await' et rafraîchissement au retour
+  Future<void> _goSeats() async {
     if (!_throttle()) return;
     
     HapticFeedback.mediumImpact();
     _EventLogger.info('Go to seat selection');
     
-    Navigator.push(
+    await Navigator.push(
       context, 
       MaterialPageRoute(
         builder: (_) => SeatSelectionPage(eventId: _event.id, event: _event)
       )
     );
+
+    // Rafraîchir les données quand on revient de la page de sélection de sièges
+    if (mounted) {
+      _load();
+      _loadSeats();
+    }
   }
 
   Future<void> _joinQueue() async {
@@ -444,7 +458,6 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // Suppression du RadialGradient bleu
                   Positioned.fill(
                     child: Container(color: _ThixColors.bg),
                   ),
@@ -467,7 +480,6 @@ class _EventDetailPageState extends ConsumerState<EventDetailPage> {
                           )
                         ),
                   
-                  // Fondu vers le noir parfait au lieu du bleu
                   DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
