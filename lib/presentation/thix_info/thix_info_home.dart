@@ -10,7 +10,8 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../../providers/news_provider.dart';
 import '../../providers/downloads_provider.dart';
 import '../../models/news_article.dart';
-
+import '../../services/thix_downloader.dart';
+import 'thix_info_space_page.dart';
 // ============================================================================
 // COMPOSANT RÉUTILISABLE : BOÎTE EN VERRE (GLASSMORPHISM)
 // ============================================================================
