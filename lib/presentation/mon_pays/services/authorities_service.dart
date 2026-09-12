@@ -184,7 +184,8 @@ Si tu ne trouves pas une information précise, mets une chaîne vide "" ou null,
       final response = await _client
           .from('authorities')
           .select('*')
-          .eq('is_active', true)
+          // ✅ CORRECTION : Tolère si is_active est true OU s'il n'est pas défini (null)
+          .or('is_active.eq.true,is_active.is.null')
           .order('name');
       return response.map((json) => Authority.fromJson(json)).toList();
     } catch (e) {
