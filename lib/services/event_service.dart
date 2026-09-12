@@ -43,13 +43,15 @@ class EventService {
   }) async {
     try {
       final now = DateTime.now();
+      // On garde l'événement visible jusqu'à 4 heures après son heure de début officielle
+      final cutoff = now.subtract(const Duration(hours: 4)).toIso8601String();
       
-      // ✅ CORRECTION : On accepte 'upcoming', 'ongoing' ou les statuts vides (null)
-      // Et on retire le blocage strict sur start_date pour voir les tests
       var query = _supabase
           .from('events')
           .select('*')
-          .or('status.eq.upcoming,status.eq.ongoing,status.is.null'); 
+          .or('status.eq.upcoming,status.eq.ongoing,status.is.null')
+          // ✅ CORRECTION : Filtre strict pour masquer les dates passées
+          .gte('start_date', cutoff); 
 
       if (category != null && category != 'all' && category != 'featured') {
         query = query.eq('category', category);
@@ -77,7 +79,7 @@ class EventService {
       }
 
       final res = await query
-          .order('created_at', ascending: false) // ✅ Tri par date de création pour voir tes tests en premier
+          .order('start_date', ascending: true) // Tri par date de début (plus logique pour les événements)
           .range(page * limit, page * limit + limit - 1) as List<dynamic>;
 
       if (res.isEmpty) return [];
@@ -97,10 +99,11 @@ class EventService {
 
   Future<List<Event>> getPopularEvents({int limit = 10}) async {
     try {
+      final cutoff = DateTime.now().subtract(const Duration(hours: 4)).toIso8601String();
       final res = await _supabase.from('events')
           .select('*')
-          // ✅ CORRECTION : Tolérance sur le statut
           .or('status.eq.upcoming,status.eq.ongoing,status.is.null')
+          .gte('start_date', cutoff) // ✅ Filtre anti dates passées
           .order('views_count', ascending: false)
           .limit(limit) as List<dynamic>;
           
@@ -112,10 +115,11 @@ class EventService {
 
   Future<List<Event>> getRecentEvents({int limit = 10}) async {
     try {
+      final cutoff = DateTime.now().subtract(const Duration(hours: 4)).toIso8601String();
       final res = await _supabase.from('events')
           .select('*')
-          // ✅ CORRECTION : Tolérance sur le statut
           .or('status.eq.upcoming,status.eq.ongoing,status.is.null')
+          .gte('start_date', cutoff) // ✅ Filtre anti dates passées
           .order('created_at', ascending: false)
           .limit(limit) as List<dynamic>;
           
@@ -147,12 +151,13 @@ class EventService {
 
   Future<List<Event>> getFeaturedEvents() async {
     try {
+      final cutoff = DateTime.now().subtract(const Duration(hours: 4)).toIso8601String();
       final res = await _supabase.from('events')
           .select('*')
-          .eq('is_featured', true) // DOIT être coché dans Supabase pour apparaître ici
-          // ✅ CORRECTION : On retire le blocage des dates pour faciliter les tests
+          .eq('is_featured', true)
           .or('status.eq.upcoming,status.eq.ongoing,status.is.null')
-          .order('created_at', ascending: false)
+          .gte('start_date', cutoff) // ✅ Filtre anti dates passées
+          .order('start_date', ascending: true) // Tri chronologique pour la une
           .limit(10) as List<dynamic>;
           
       final ids = res.map((e) => (e['id'] ?? '').toString()).toList();
