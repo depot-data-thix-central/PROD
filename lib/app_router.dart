@@ -211,7 +211,7 @@ import 'package:thix_id/presentation/thix_info/search_page.dart' as infoSearch;
 import 'package:thix_id/presentation/thix_info/category_articles_page.dart';
 import 'package:thix_id/presentation/thix_info/saved_articles_page.dart';
 import 'package:thix_id/presentation/thix_info/breaking_news_page.dart';
-
+import 'package:thix_id/presentation/thix_info/thix_downloads_page.dart';
 // === JOBS & OPPORTUNITIES ===
 import 'package:thix_id/presentation/jobs/jobs_page.dart';
 import 'package:thix_id/presentation/jobs/job_apply_page.dart';
@@ -683,7 +683,11 @@ class AppRouter {
         GoRoute(path: '/thix-event/admin/analytics', name: 'thixEventAdminAnalytics', pageBuilder: (_, __) => const NoTransitionPage(child: AnalyticsPage())),
         GoRoute(path: '/thix-event/payment', builder: (context, state) => EventPaymentPage(bookingId: ((state.extra as Map<String, dynamic>?) ?? {})['bookingId'] as String? ?? '', amount: ((state.extra as Map<String, dynamic>?) ?? {})['amount'] as double? ?? 0.0, currency: ((state.extra as Map<String, dynamic>?) ?? {})['currency'] as String? ?? 'USD')),
         GoRoute(path: '/thix-event/ticket/:id', builder: (context, state) => EventTicketPage(bookingId: state.pathParameters['id']!)),
-
+GoRoute(path: AppRoutes.thixInfoSpace, name: 'thixInfoSpace',
+    pageBuilder: (_, state) => NoTransitionPage(
+        child: ThixInfoSpacePage(space: state.pathParameters['space']!))),
+GoRoute(path: '/thix-info/downloads', name: 'thixInfoDownloads',
+    pageBuilder: (_, __) => const NoTransitionPage(child: ThixDownloadsPage())),
         // === THIX RESERVATION (BUS & GENERAL) ===
         GoRoute(
           path: AppRoutes.reservation,
