@@ -6,12 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+// ✅ POLICY THIX APPLIQUÉE
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../../providers/news_provider.dart';
-import '../../providers/downloads_provider.dart';
 import '../../models/news_article.dart';
-import '../../services/thix_downloader.dart';
-import 'thix_info_space_page.dart';
+
 // ============================================================================
 // COMPOSANT RÉUTILISABLE : BOÎTE EN VERRE (GLASSMORPHISM)
 // ============================================================================
@@ -52,27 +51,6 @@ class GlassBox extends StatelessWidget {
 }
 
 // ============================================================================
-// DÉFINITION D'UN ESPACE (Magazine / Podcast / Découverte)
-// ============================================================================
-class _SpaceDef {
-  final String slug;
-  final String name;
-  final String dbCategory; // catégorie en base
-  final IconData icon;
-  final Color color;
-  final String tagline;
-
-  const _SpaceDef({
-    required this.slug,
-    required this.name,
-    required this.dbCategory,
-    required this.icon,
-    required this.color,
-    required this.tagline,
-  });
-}
-
-// ============================================================================
 // PAGE PRINCIPALE : THIX INFO
 // ============================================================================
 class ThixInfoHome extends ConsumerStatefulWidget {
@@ -94,35 +72,6 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   int _page = 0;
   int _navIndex = 0;
 
-  // ── 3 ESPACES PRO ──
-  static const List<_SpaceDef> _spaces = [
-    _SpaceDef(
-      slug: 'magazine',
-      name: 'Magazine',
-      dbCategory: 'Magazine',
-      icon: Icons.auto_stories_rounded,
-      color: Color(0xFFD4AF37), // Gold premium
-      tagline: 'Lectures pro & longs formats',
-    ),
-    _SpaceDef(
-      slug: 'podcast',
-      name: 'Podcasts',
-      dbCategory: 'Podcast',
-      icon: Icons.headphones_rounded,
-      color: Color(0xFF6366F1), // Indigo audio
-      tagline: 'Audio & conversations',
-    ),
-    _SpaceDef(
-      slug: 'decouverte',
-      name: 'Découverte',
-      dbCategory: 'Découverte',
-      icon: Icons.explore_rounded,
-      color: Color(0xFF10B981), // Émeraude
-      tagline: 'Explorer le monde',
-    ),
-  ];
-
-  // Catégories classiques
   final List<Map<String, String>> cats = const [
     {'slug': 'featured', 'name': 'À la une'},
     {'slug': 'politique', 'name': 'Politique'},
@@ -142,7 +91,6 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
       ref.read(newsProvider).loadSavedArticles();
       _startAuto();
       _startBreakingScroll();
-      _preloadSpaces();
     });
   }
 
@@ -175,14 +123,6 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
     });
   }
 
-  /// Précharge chaque espace pour affichage immédiat
-  Future<void> _preloadSpaces() async {
-    final prov = ref.read(newsProvider);
-    for (final s in _spaces) {
-      await prov.fetchArticlesByCategory(s.dbCategory);
-    }
-  }
-
   @override
   void dispose() {
     _timer?.cancel();
@@ -198,7 +138,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
     final prov = ref.watch(newsProvider);
     final featured = prov.articles.where((e) => e.isFeatured).toList();
     final breaking = prov.articles.where((e) => e.isBreaking).toList();
-    final recents = prov.articles.where((e) => !e.isFeatured).toList();
+    final recents = prov.articles; // ⬅️ LOGIQUE ANCIENNE CONSERVÉE
 
     return Scaffold(
       backgroundColor: ThixPolicy.inkDeep,
@@ -225,64 +165,55 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
           RefreshIndicator(
             color: Colors.white,
             backgroundColor: Colors.white.withOpacity(0.1),
-            onRefresh: () async {
-              await ref.read(newsProvider).fetchArticles(category: 'all');
-              await _preloadSpaces();
-            },
+            onRefresh: () async =>
+                ref.read(newsProvider).fetchArticles(category: 'all'),
             child: CustomScrollView(
               controller: _mainScrollCtrl,
               physics: const BouncingScrollPhysics(
                   parent: AlwaysScrollableScrollPhysics()),
               slivers: [
                 _buildAppBar(),
+
+                // FLASH INFO EN TEMPS RÉEL
                 if (breaking.isNotEmpty)
                   SliverToBoxAdapter(child: _buildFlashTicker(breaking)),
+
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s20)),
+
+                // CHAÎNES & ÉDITEURS (Magazine / Podcasts / Découverte)
                 SliverToBoxAdapter(child: _buildChannelsSection()),
+
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s24)),
+
+                // CATÉGORIES STICKY
                 SliverPersistentHeader(
                     pinned: true,
-                    delegate: _CategoryHeaderDelegate(child: _buildCategories())),
-                const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s24)),
+                    delegate:
+                        _CategoryHeaderDelegate(child: _buildCategories())),
+
+                const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s20)),
+
+                // HERO : À LA UNE
                 SliverToBoxAdapter(
                     child: featured.isNotEmpty
                         ? _buildHeroCarousel(featured)
                         : _buildLoadingHero()),
+
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s40)),
 
-                // ═══════════════════════════════════════════════════════════════
-                // ESPACE 1 : MAGAZINE — Lectures pro
-                // ═══════════════════════════════════════════════════════════════
+                // LE FIL D'INFO — DISPOSITION & LOGIQUE ANCIENNES INTACTES
                 SliverToBoxAdapter(
-                    child: _buildMagazineSpace(_spaceItems('Magazine'))),
-                const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s40)),
-
-                // ═══════════════════════════════════════════════════════════════
-                // ESPACE 2 : PODCASTS — Audio avec téléchargement
-                // ═══════════════════════════════════════════════════════════════
-                SliverToBoxAdapter(
-                    child: _buildPodcastSpace(_spaceItems('Podcast'))),
-                const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s40)),
-
-                // ═══════════════════════════════════════════════════════════════
-                // ESPACE 3 : DÉCOUVERTE — Exploration
-                // ═══════════════════════════════════════════════════════════════
-                SliverToBoxAdapter(
-                    child: _buildDecouverteSpace(_spaceItems('Découverte'))),
-                const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s40)),
-
-                // ═══════════════════════════════════════════════════════════════
-                // FIL D'ACTUALITÉ (toutes catégories confondues)
-                // ═══════════════════════════════════════════════════════════════
-                SliverToBoxAdapter(
-                    child: _buildSectionTitle("Le fil de l'info", Icons.timeline_rounded)),
+                    child:
+                        _buildSectionTitle("Le fil de l'info", Icons.timeline_rounded)),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
                 _buildNewsFeed(recents, prov),
+
                 const SliverToBoxAdapter(child: SizedBox(height: 140)),
               ],
             ),
           ),
 
+          // BOTTOM NAV FLOTTANTE EN VERRE
           Positioned(
               bottom: ThixPolicy.s24,
               left: ThixPolicy.s16,
@@ -293,13 +224,8 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
     );
   }
 
-  List<NewsArticle> _spaceItems(String dbCategory) =>
-      ref.watch(newsProvider).articles
-          .where((a) => a.category == dbCategory)
-          .toList();
-
   // ─────────────────────────────────────────────────────────────
-  // APP BAR
+  // APP BAR PREMIUM
   // ─────────────────────────────────────────────────────────────
   Widget _buildAppBar() {
     return SliverAppBar(
@@ -349,7 +275,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // FLASH INFO
+  // 1. FLASH INFO (TEMPS RÉEL)
   // ─────────────────────────────────────────────────────────────
   Widget _buildFlashTicker(List<NewsArticle> list) {
     return Padding(
@@ -413,20 +339,48 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // CHAÎNES & ÉDITEURS (avec les 4 historiques)
+  // 2. CHAÎNES & ÉDITEURS — Magazine / Podcasts / Découverte
+  //    (Magazine remplace Le Quotidien, Podcasts remplace Nova Doc)
   // ─────────────────────────────────────────────────────────────
   Widget _buildChannelsSection() {
     final channels = [
-      {'name': 'THIX TV', 'icon': Icons.tv_rounded, 'color': ThixPolicy.domainMedia},
-      {'name': 'THIX Radio', 'icon': Icons.radio_rounded, 'color': ThixPolicy.domainNetwork},
-      {'name': 'Le Quotidien', 'icon': Icons.article_rounded, 'color': ThixPolicy.domainInfo},
-      {'name': 'Nova Doc', 'icon': Icons.movie_filter_rounded, 'color': ThixPolicy.domainLearning},
+      {
+        'name': 'THIX TV',
+        'icon': Icons.tv_rounded,
+        'color': ThixPolicy.domainMedia,
+        'route': ''
+      },
+      {
+        'name': 'THIX Radio',
+        'icon': Icons.radio_rounded,
+        'color': ThixPolicy.domainNetwork,
+        'route': ''
+      },
+      {
+        'name': 'Magazine',
+        'icon': Icons.auto_stories_rounded,
+        'color': const Color(0xFFD4AF37),
+        'route': '/thix-info/space/magazine'
+      },
+      {
+        'name': 'Podcasts',
+        'icon': Icons.headphones_rounded,
+        'color': const Color(0xFF6366F1),
+        'route': '/thix-info/space/podcast'
+      },
+      {
+        'name': 'Découverte',
+        'icon': Icons.explore_rounded,
+        'color': const Color(0xFF10B981),
+        'route': '/thix-info/space/decouverte'
+      },
     ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildSectionTitle('Chaînes & Éditeurs', Icons.broadcast_on_personal_rounded),
+        _buildSectionTitle(
+            'Chaînes & Éditeurs', Icons.broadcast_on_personal_rounded),
         const SizedBox(height: ThixPolicy.s16),
         SizedBox(
           height: 96,
@@ -437,25 +391,35 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
             separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s16),
             itemBuilder: (_, i) {
               final c = channels[i];
-              return Column(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(ThixPolicy.s16),
-                    decoration: BoxDecoration(
-                      color: (c['color'] as Color).withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(ThixPolicy.rLg),
-                      border: Border.all(
-                          color: (c['color'] as Color).withOpacity(0.3),
-                          width: 1),
+              final route = c['route'] as String;
+              return GestureDetector(
+                onTap: route.isEmpty
+                    ? null
+                    : () {
+                        HapticFeedback.selectionClick();
+                        context.push(route);
+                      },
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(ThixPolicy.s16),
+                      decoration: BoxDecoration(
+                        color: (c['color'] as Color).withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+                        border: Border.all(
+                            color: (c['color'] as Color).withOpacity(0.3),
+                            width: 1),
+                      ),
+                      child: Icon(c['icon'] as IconData,
+                          color: c['color'] as Color, size: 28),
                     ),
-                    child: Icon(c['icon'] as IconData,
-                        color: c['color'] as Color, size: 28),
-                  ),
-                  const SizedBox(height: ThixPolicy.s8),
-                  Text(c['name'] as String,
-                      style: ThixPolicy.captionStyle.copyWith(
-                          color: Colors.white70, fontWeight: ThixPolicy.bold)),
-                ],
+                    const SizedBox(height: ThixPolicy.s8),
+                    Text(c['name'] as String,
+                        style: ThixPolicy.captionStyle.copyWith(
+                            color: Colors.white70,
+                            fontWeight: ThixPolicy.bold)),
+                  ],
+                ),
               );
             },
           ),
@@ -465,7 +429,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // CATÉGORIES STICKY
+  // CATÉGORIES (STICKY GLASS)
   // ─────────────────────────────────────────────────────────────
   Widget _buildCategories() {
     return ClipRRect(
@@ -506,8 +470,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                   child: Text(
                     c['name']!,
                     style: ThixPolicy.labelStyle.copyWith(
-                      fontWeight:
-                          sel ? ThixPolicy.bold : ThixPolicy.semiBold,
+                      fontWeight: sel ? ThixPolicy.bold : ThixPolicy.semiBold,
                       color: sel ? ThixPolicy.inkDeep : Colors.white70,
                     ),
                   ),
@@ -521,7 +484,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // HERO À LA UNE
+  // 3. HERO (À LA UNE) AVEC GLASS TEXT
   // ─────────────────────────────────────────────────────────────
   Widget _buildHeroCarousel(List<NewsArticle> list) {
     return SizedBox(
@@ -590,15 +553,17 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                               style: ThixPolicy.h2Style
                                   .copyWith(color: Colors.white)),
                           const SizedBox(height: ThixPolicy.s12),
-                          Row(children: [
-                            const Icon(Icons.schedule_rounded,
-                                size: 14, color: Colors.white70),
-                            const SizedBox(width: ThixPolicy.s6),
-                            Text('Il y a 2h',
-                                style: ThixPolicy.labelStyle.copyWith(
-                                    color: Colors.white70,
-                                    fontWeight: ThixPolicy.semiBold)),
-                          ]),
+                          Row(
+                            children: [
+                              const Icon(Icons.schedule_rounded,
+                                  size: 14, color: Colors.white70),
+                              const SizedBox(width: ThixPolicy.s6),
+                              Text('Il y a 2h',
+                                  style: ThixPolicy.labelStyle.copyWith(
+                                      color: Colors.white70,
+                                      fontWeight: ThixPolicy.semiBold)),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -612,494 +577,9 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
     );
   }
 
-  Widget _buildLoadingHero() => Container(
-      margin: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-      height: 420,
-      decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(ThixPolicy.rXl)),
-      child: const Center(
-          child: CircularProgressIndicator(color: Colors.white)));
-
-  // ═══════════════════════════════════════════════════════════════
-  // ESPACE 1 : MAGAZINE (lecture pro — style presse)
-  // ═══════════════════════════════════════════════════════════════
-  Widget _buildMagazineSpace(List<NewsArticle> list) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSpaceHeader(_spaces[0]),
-        const SizedBox(height: ThixPolicy.s16),
-        if (list.isEmpty)
-          _emptySpace('Aucun article Magazine publié', _spaces[0])
-        else
-          SizedBox(
-            height: 340,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-              scrollDirection: Axis.horizontal,
-              itemCount: list.length,
-              separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s16),
-              itemBuilder: (_, i) => _magazineCard(list[i]),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _magazineCard(NewsArticle a) {
-    return GestureDetector(
-      onTap: () => context.push('/thix-info/article/${a.id}'),
-      child: SizedBox(
-        width: 260,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Couverture premium
-            ClipRRect(
-              borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-              child: SizedBox(
-                height: 180,
-                width: double.infinity,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    a.imageUrl != null
-                        ? Image.network(a.imageUrl!, fit: BoxFit.cover)
-                        : Container(color: Colors.white.withOpacity(0.08)),
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                            begin: Alignment.bottomCenter,
-                            end: Alignment.topCenter,
-                            colors: [
-                              Colors.black.withOpacity(0.6),
-                              Colors.transparent,
-                            ]),
-                      ),
-                    ),
-                    // Badge "Lecture pro"
-                    Positioned(
-                      top: ThixPolicy.s10,
-                      left: ThixPolicy.s10,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFD4AF37),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text('LECTURE PRO',
-                            style: TextStyle(
-                                color: Colors.black,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 1)),
-                      ),
-                    ),
-                    // Durée de lecture estimée
-                    Positioned(
-                      bottom: ThixPolicy.s10,
-                      right: ThixPolicy.s10,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.6),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.auto_stories_rounded,
-                                size: 12, color: Colors.white),
-                            const SizedBox(width: 4),
-                            Text('${(a.content.length / 1500).ceil()} min',
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: ThixPolicy.s12),
-            // Titre style magazine
-            Text(a.title,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: ThixPolicy.titleStyle.copyWith(
-                    color: Colors.white,
-                    fontWeight: ThixPolicy.bold,
-                    height: 1.2)),
-            const SizedBox(height: ThixPolicy.s6),
-            Text(a.summary ?? '',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: ThixPolicy.bodySmallStyle
-                    .copyWith(color: Colors.white60, height: 1.4)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // ESPACE 2 : PODCASTS (audio + téléchargement)
-  // ═══════════════════════════════════════════════════════════════
-  Widget _buildPodcastSpace(List<NewsArticle> list) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSpaceHeader(_spaces[1]),
-        const SizedBox(height: ThixPolicy.s16),
-        if (list.isEmpty)
-          _emptySpace('Aucun podcast publié', _spaces[1])
-        else
-          SizedBox(
-            height: 240,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-              scrollDirection: Axis.horizontal,
-              itemCount: list.length,
-              separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s16),
-              itemBuilder: (_, i) => _podcastCard(list[i]),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _podcastCard(NewsArticle a) {
-    final dl = ref.watch(downloadsProvider);
-    final downloading = dl.isDownloading(a.id);
-    final downloaded = dl.isDownloaded(a.id);
-    final currentItem = dl.items
-        .firstWhere((i) => i.id == a.id, orElse: () => DownloadItem(
-              id: '',
-              title: '',
-              url: '',
-              fileName: '',
-              mediaType: 'podcast',
-              status: DownloadStatus.pending,
-              createdAt: DateTime.now(),
-            ));
-
-    return GestureDetector(
-      onTap: () => context.push('/thix-info/article/${a.id}'),
-      child: SizedBox(
-        width: 200,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Couverture carrée
-            ClipRRect(
-              borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-              child: SizedBox(
-                height: 150,
-                width: 150,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    a.imageUrl != null
-                        ? Image.network(a.imageUrl!, fit: BoxFit.cover)
-                        : Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  const Color(0xFF6366F1).withOpacity(0.6),
-                                  const Color(0xFF4338CA).withOpacity(0.8),
-                                ],
-                              ),
-                            ),
-                            child: const Center(
-                                child: Icon(Icons.graphic_eq_rounded,
-                                    size: 48, color: Colors.white70)),
-                          ),
-                    // Bouton PLAY central
-                    Center(
-                      child: GlassBox(
-                        padding: const EdgeInsets.all(ThixPolicy.s12),
-                        borderRadius: ThixPolicy.rFull,
-                        blur: 20,
-                        color: Colors.white.withOpacity(0.15),
-                        child: const Icon(Icons.play_arrow_rounded,
-                            color: Colors.white, size: 28),
-                      ),
-                    ),
-                    // Bouton TÉLÉCHARGEMENT en bas à droite
-                    Positioned(
-                      bottom: ThixPolicy.s8,
-                      right: ThixPolicy.s8,
-                      child: _downloadButton(a, downloading, downloaded, currentItem),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: ThixPolicy.s12),
-            Text(a.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: ThixPolicy.bodyStyle.copyWith(
-                    fontWeight: ThixPolicy.bold, color: Colors.white)),
-            const SizedBox(height: ThixPolicy.s4),
-            Row(
-              children: [
-                const Icon(Icons.graphic_eq_rounded,
-                    size: 12, color: Colors.white38),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text('Épisode • ${a.viewsCount} écoutes',
-                      style: ThixPolicy.microStyle
-                          .copyWith(color: Colors.white38)),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _downloadButton(NewsArticle a, bool downloading, bool downloaded,
-      DownloadItem item) {
-    if (downloading) {
-      return SizedBox(
-        width: 32,
-        height: 32,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            SizedBox(
-              width: 32,
-              height: 32,
-              child: CircularProgressIndicator(
-                value: item.progress,
-                strokeWidth: 2.5,
-                backgroundColor: Colors.black45,
-                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-              ),
-            ),
-            Text('${(item.progress * 100).toInt()}%',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w900)),
-          ],
-        ),
-      );
-    }
-    if (downloaded) {
-      return Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(Icons.check_rounded, color: Color(0xFF10B981), size: 18),
-      );
-    }
-    return GestureDetector(
-      onTap: () => ref.read(downloadsProvider).downloadArticle(a),
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.9),
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(Icons.download_rounded,
-            color: Colors.black87, size: 18),
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // ESPACE 3 : DÉCOUVERTE (exploration immersive)
-  // ═══════════════════════════════════════════════════════════════
-  Widget _buildDecouverteSpace(List<NewsArticle> list) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSpaceHeader(_spaces[2]),
-        const SizedBox(height: ThixPolicy.s16),
-        if (list.isEmpty)
-          _emptySpace('Aucun contenu Découverte', _spaces[2])
-        else
-          SizedBox(
-            height: 260,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-              scrollDirection: Axis.horizontal,
-              itemCount: list.length,
-              separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s12),
-              itemBuilder: (_, i) => _decouverteCard(list[i]),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _decouverteCard(NewsArticle a) {
-    return GestureDetector(
-      onTap: () => context.push('/thix-info/article/${a.id}'),
-      child: SizedBox(
-        width: 180,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              a.imageUrl != null
-                  ? Image.network(a.imageUrl!, fit: BoxFit.cover)
-                  : Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              const Color(0xFF10B981).withOpacity(0.4),
-                              const Color(0xFF065F46).withOpacity(0.8),
-                            ]),
-                      ),
-                      child: const Center(
-                          child: Icon(Icons.explore_rounded,
-                              size: 48, color: Colors.white54)),
-                    ),
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                      colors: [
-                        Colors.black.withOpacity(0.85),
-                        Colors.transparent
-                      ]),
-                ),
-              ),
-              Positioned(
-                bottom: ThixPolicy.s12,
-                left: ThixPolicy.s12,
-                right: ThixPolicy.s12,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.explore_rounded,
-                        size: 18, color: Colors.white),
-                    const SizedBox(height: ThixPolicy.s6),
-                    Text(a.title,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: ThixPolicy.bodySmallStyle.copyWith(
-                            color: Colors.white,
-                            fontWeight: ThixPolicy.bold)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // WIDGETS GÉNÉRIQUES D'ESPACE
-  // ═══════════════════════════════════════════════════════════════
-  Widget _buildSpaceHeader(_SpaceDef s) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(ThixPolicy.s8),
-            decoration: BoxDecoration(
-              color: s.color.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-              border: Border.all(color: s.color.withOpacity(0.3), width: 1),
-            ),
-            child: Icon(s.icon, color: s.color, size: 20),
-          ),
-          const SizedBox(width: ThixPolicy.s12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(s.name,
-                    style: ThixPolicy.h2Style.copyWith(
-                        color: Colors.white, letterSpacing: -0.5)),
-                const SizedBox(height: 2),
-                Text(s.tagline,
-                    style: ThixPolicy.microStyle.copyWith(
-                        color: Colors.white54, letterSpacing: 0.3)),
-              ],
-            ),
-          ),
-          GestureDetector(
-            onTap: () => context.push('/thix-info/space/${s.slug}'),
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: ThixPolicy.s12, vertical: ThixPolicy.s6),
-              decoration: BoxDecoration(
-                color: s.color.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(ThixPolicy.rXl),
-                border: Border.all(color: s.color.withOpacity(0.3), width: 1),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Tout voir',
-                      style: ThixPolicy.labelStyle.copyWith(
-                          color: s.color, fontWeight: ThixPolicy.bold)),
-                  const SizedBox(width: 2),
-                  Icon(Icons.arrow_forward_ios_rounded,
-                      size: 10, color: s.color),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _emptySpace(String msg, _SpaceDef s) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-      child: Container(
-        height: 160,
-        padding: const EdgeInsets.all(ThixPolicy.s20),
-        decoration: BoxDecoration(
-          color: s.color.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          border: Border.all(color: s.color.withOpacity(0.2), width: 1),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(s.icon, size: 32, color: s.color.withOpacity(0.5)),
-            const SizedBox(height: ThixPolicy.s8),
-            Text(msg,
-                style: ThixPolicy.bodySmallStyle
-                    .copyWith(color: Colors.white54)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // FIL D'ACTUALITÉ
-  // ═══════════════════════════════════════════════════════════════
+  // ─────────────────────────────────────────────────────────────
+  // 4. FIL D'ACTUALITÉ — CODE ANCIEN CONSERVÉ À L'IDENTIQUE
+  // ─────────────────────────────────────────────────────────────
   Widget _buildNewsFeed(List<NewsArticle> list, NewsProvider prov) {
     if (list.isEmpty) {
       return SliverToBoxAdapter(
@@ -1109,6 +589,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                     ThixPolicy.bodyStyle.copyWith(color: Colors.white54))),
       );
     }
+
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) {
@@ -1179,8 +660,32 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
     );
   }
 
+  Widget _buildSectionTitle(String t, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+      child: Row(
+        children: [
+          Icon(icon, size: 22, color: Colors.white),
+          const SizedBox(width: ThixPolicy.s10),
+          Text(t,
+              style: ThixPolicy.h2Style.copyWith(
+                  color: Colors.white, letterSpacing: -0.5)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingHero() => Container(
+      margin: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+      height: 420,
+      decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(ThixPolicy.rXl)),
+      child: const Center(
+          child: CircularProgressIndicator(color: Colors.white)));
+
   // ─────────────────────────────────────────────────────────────
-  // BOTTOM NAV FLOTTANTE
+  // BOTTOM NAV FLOTTANTE — DISPOSITION ANCIENNE RESTAURÉE
   // ─────────────────────────────────────────────────────────────
   Widget _buildFloatingBottomNav() {
     return GlassBox(
@@ -1192,6 +697,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
         children: [
           _navItem(Icons.public_rounded, 'À la une', 0),
           _navItem(Icons.grid_view_rounded, 'Explorer', 1),
+          // Bouton central "DIRECT" Accent
           GestureDetector(
             onTap: () => setState(() => _navIndex = 2),
             child: AnimatedContainer(
@@ -1218,8 +724,8 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
               ),
             ),
           ),
-          _navItem(Icons.download_rounded, 'Téléchargés', 3,
-              onTap: () => context.push('/thix-info/downloads')),
+          _navItem(Icons.bookmark_rounded, 'Sauvegardes', 3,
+              onTap: () => context.push('/thix-info/saved')),
           _navItem(Icons.person_rounded, 'Profil', 4),
         ],
       ),
@@ -1248,21 +754,6 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
       ),
     );
   }
-
-  Widget _buildSectionTitle(String t, IconData icon) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-      child: Row(
-        children: [
-          Icon(icon, size: 22, color: Colors.white),
-          const SizedBox(width: ThixPolicy.s10),
-          Text(t,
-              style: ThixPolicy.h2Style.copyWith(
-                  color: Colors.white, letterSpacing: -0.5)),
-        ],
-      ),
-    );
-  }
 }
 
 class _CategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
@@ -1273,7 +764,8 @@ class _CategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
   @override
   double get maxExtent => 54;
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) =>
+  Widget build(
+          BuildContext context, double shrinkOffset, bool overlapsContent) =>
       child;
   @override
   bool shouldRebuild(_CategoryHeaderDelegate oldDelegate) => false;
