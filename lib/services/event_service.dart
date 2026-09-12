@@ -10,7 +10,7 @@ class EventService {
   final _uuid = const Uuid();
   EventService(this._supabase);
 
-  String get currentUserId => _supabase.auth.currentUser?.id?? '';
+  String get currentUserId => _supabase.auth.currentUser?.id ?? '';
 
   // ============ HELPERS ============
   Future<Set<String>> _likedIds(List<String> ids) async {
@@ -43,12 +43,18 @@ class EventService {
   }) async {
     try {
       final now = DateTime.now();
-      var query = _supabase.from('events').select('*').eq('status', 'upcoming').gte('start_date', now.subtract(const Duration(hours: 1)).toIso8601String());
+      
+      // ✅ CORRECTION : On accepte 'upcoming', 'ongoing' ou les statuts vides (null)
+      // Et on retire le blocage strict sur start_date pour voir les tests
+      var query = _supabase
+          .from('events')
+          .select('*')
+          .or('status.eq.upcoming,status.eq.ongoing,status.is.null'); 
 
-      if (category!= null && category!= 'all' && category!= 'featured') {
+      if (category != null && category != 'all' && category != 'featured') {
         query = query.eq('category', category);
       }
-      if (city!= null && city!= 'all') {
+      if (city != null && city != 'all') {
         query = query.eq('city', city);
       }
 
@@ -65,15 +71,17 @@ class EventService {
         query = query.gte('start_date', start.toIso8601String()).lt('start_date', end.toIso8601String());
       }
 
-      if (search!= null && search.trim().isNotEmpty) {
+      if (search != null && search.trim().isNotEmpty) {
         final q = search.trim();
         query = query.or('title.ilike.%$q%,description.ilike.%$q%,location.ilike.%$q%');
       }
 
-      final res = await query.order('start_date', ascending: true).range(page * limit, page * limit + limit - 1) as List<dynamic>;
+      final res = await query
+          .order('created_at', ascending: false) // ✅ Tri par date de création pour voir tes tests en premier
+          .range(page * limit, page * limit + limit - 1) as List<dynamic>;
 
       if (res.isEmpty) return [];
-      final ids = res.map((e) => (e['id']?? '').toString()).toList();
+      final ids = res.map((e) => (e['id'] ?? '').toString()).toList();
       final likedSet = await _likedIds(ids);
 
       return res.map((e) {
@@ -89,8 +97,14 @@ class EventService {
 
   Future<List<Event>> getPopularEvents({int limit = 10}) async {
     try {
-      final res = await _supabase.from('events').select('*').eq('status', 'upcoming').gte('start_date', DateTime.now().toIso8601String()).order('views_count', ascending: false).limit(limit) as List<dynamic>;
-      final ids = res.map((e) => (e['id']?? '').toString()).toList();
+      final res = await _supabase.from('events')
+          .select('*')
+          // ✅ CORRECTION : Tolérance sur le statut
+          .or('status.eq.upcoming,status.eq.ongoing,status.is.null')
+          .order('views_count', ascending: false)
+          .limit(limit) as List<dynamic>;
+          
+      final ids = res.map((e) => (e['id'] ?? '').toString()).toList();
       final liked = await _likedIds(ids);
       return res.map((e) { final m = Map<String, dynamic>.from((e as Map).cast<String, dynamic>()); return Event.fromJson({...m, 'is_liked': liked.contains(m['id'].toString())}); }).toList();
     } catch (_) { return []; }
@@ -98,8 +112,14 @@ class EventService {
 
   Future<List<Event>> getRecentEvents({int limit = 10}) async {
     try {
-      final res = await _supabase.from('events').select('*').eq('status', 'upcoming').order('created_at', ascending: false).limit(limit) as List<dynamic>;
-      final ids = res.map((e) => (e['id']?? '').toString()).toList();
+      final res = await _supabase.from('events')
+          .select('*')
+          // ✅ CORRECTION : Tolérance sur le statut
+          .or('status.eq.upcoming,status.eq.ongoing,status.is.null')
+          .order('created_at', ascending: false)
+          .limit(limit) as List<dynamic>;
+          
+      final ids = res.map((e) => (e['id'] ?? '').toString()).toList();
       final liked = await _likedIds(ids);
       return res.map((e) { final m = Map<String, dynamic>.from((e as Map).cast<String, dynamic>()); return Event.fromJson({...m, 'is_liked': liked.contains(m['id'].toString())}); }).toList();
     } catch (_) { return []; }
@@ -110,7 +130,7 @@ class EventService {
     if (uid.isEmpty) return [];
     try {
       var query = _supabase.from('events').select('*');
-      if (status!= null && status!= 'all') query = query.eq('status', status);
+      if (status != null && status != 'all') query = query.eq('status', status);
       final res = await query.order('created_at', ascending: false).limit(100) as List<dynamic>;
       return res.map((e) => Event.fromJson(Map<String, dynamic>.from((e as Map).cast<String, dynamic>()))).toList();
     } catch (_) { return []; }
@@ -127,8 +147,15 @@ class EventService {
 
   Future<List<Event>> getFeaturedEvents() async {
     try {
-      final res = await _supabase.from('events').select('*').eq('is_featured', true).eq('status', 'upcoming').gte('start_date', DateTime.now().toIso8601String()).order('start_date').limit(10) as List<dynamic>;
-      final ids = res.map((e) => (e['id']?? '').toString()).toList();
+      final res = await _supabase.from('events')
+          .select('*')
+          .eq('is_featured', true) // DOIT être coché dans Supabase pour apparaître ici
+          // ✅ CORRECTION : On retire le blocage des dates pour faciliter les tests
+          .or('status.eq.upcoming,status.eq.ongoing,status.is.null')
+          .order('created_at', ascending: false)
+          .limit(10) as List<dynamic>;
+          
+      final ids = res.map((e) => (e['id'] ?? '').toString()).toList();
       final liked = await _likedIds(ids);
       return res.map((e) { final m = Map<String, dynamic>.from((e as Map).cast<String, dynamic>()); return Event.fromJson({...m, 'is_liked': liked.contains(m['id'].toString())}); }).toList();
     } catch (_) { return []; }
@@ -162,7 +189,7 @@ class EventService {
     final uid = currentUserId; if (uid.isEmpty) return [];
     try {
       final res = await _supabase.from('event_favorites').select('event:event_id(*)').eq('user_id', uid).order('created_at', ascending: false).limit(100) as List<dynamic>;
-      return res.where((e) => e['event']!= null).map((e) => Event.fromJson({...Map<String, dynamic>.from((e['event'] as Map).cast<String, dynamic>()), 'is_liked': true})).toList();
+      return res.where((e) => e['event'] != null).map((e) => Event.fromJson({...Map<String, dynamic>.from((e['event'] as Map).cast<String, dynamic>()), 'is_liked': true})).toList();
     } catch (_) { return []; }
   }
 
@@ -184,7 +211,7 @@ class EventService {
     final uid = currentUserId; if (uid.isEmpty) return [];
     try {
       final res = await _supabase.from('event_bookings').select('*, events:event_id(title, image_url, start_date, location)').eq('user_id', uid).order('booking_date', ascending: false).limit(100) as List<dynamic>;
-      return res.map((e) { final ev = e['events']; return EventBooking.fromJson({...Map<String, dynamic>.from((e as Map).cast<String, dynamic>()), if (ev!= null)...{'event_title': ev['title'], 'event_image_url': ev['image_url'], 'event_date': ev['start_date'], 'event_location': ev['location']}}); }).toList();
+      return res.map((e) { final ev = e['events']; return EventBooking.fromJson({...Map<String, dynamic>.from((e as Map).cast<String, dynamic>()), if (ev != null)...{'event_title': ev['title'], 'event_image_url': ev['image_url'], 'event_date': ev['start_date'], 'event_location': ev['location']}}); }).toList();
     } catch (_) { return []; }
   }
 
@@ -196,11 +223,11 @@ class EventService {
     bool isFeatured = false, String? organizerName, String? contactPhone, String? contactEmail,
   }) async {
     final res = await _supabase.from('events').insert({
-      'title': title, 'description': description, 'category': category, if (subCategory!= null) 'sub_category': subCategory,
-      'start_date': startDate.toIso8601String(), if (endDate!= null) 'end_date': endDate.toIso8601String(),
-      'location': location, 'city': city, if (address!= null) 'address': address, 'price': price, 'price_currency': priceCurrency,
+      'title': title, 'description': description, 'category': category, if (subCategory != null) 'sub_category': subCategory,
+      'start_date': startDate.toIso8601String(), if (endDate != null) 'end_date': endDate.toIso8601String(),
+      'location': location, 'city': city, if (address != null) 'address': address, 'price': price, 'price_currency': priceCurrency,
       'is_free': isFree, 'capacity': capacity, 'remaining_tickets': capacity, 'image_url': imageUrl, 'banner_url': bannerUrl,
-      'is_featured': isFeatured, 'status': startDate.isAfter(DateTime.now())? 'upcoming' : 'ongoing',
+      'is_featured': isFeatured, 'status': startDate.isAfter(DateTime.now()) ? 'upcoming' : 'ongoing',
       'organizer_id': currentUserId, 'organizer_name': organizerName, 'contact_phone': contactPhone, 'contact_email': contactEmail,
       'created_at': DateTime.now().toIso8601String(), 'updated_at': DateTime.now().toIso8601String(),
     }).select().single();
@@ -226,7 +253,12 @@ class EventService {
   Future<Map<String, dynamic>> getAdminStats() async {
     try {
       final total = await _supabase.from('events').select('id').count(CountOption.exact);
-      final upcoming = await _supabase.from('events').select('id').eq('status', 'upcoming').gte('start_date', DateTime.now().toIso8601String()).count(CountOption.exact);
+      
+      final upcoming = await _supabase.from('events')
+          .select('id')
+          .or('status.eq.upcoming,status.is.null')
+          .count(CountOption.exact);
+          
       return {'total_events': total.count, 'upcoming_events': upcoming.count, 'total_views': 0, 'total_likes': 0};
     } catch (_) { return {'total_events': 0, 'upcoming_events': 0, 'total_views': 0, 'total_likes': 0}; }
   }
