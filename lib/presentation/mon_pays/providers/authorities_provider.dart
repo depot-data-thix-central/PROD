@@ -91,21 +91,23 @@ Future<List<Authority>> topAuthorities(Ref ref) async {
     return sb.toString();
   }
 
-  final targetTitles = {
-    normalize('Président de la République'),
-    normalize('Première Ministre'),
-    normalize('Président du Sénat'),
-    normalize('Président de l\'Assemblée Nationale'),
-  };
-
-  final filtered = all.where((a) => targetTitles.contains(normalize(a.title))).toList();
+  // ✅ CORRECTION : Utilisation de `contains` sur la chaîne sans accent 
+  // pour être tolérant aux espaces, majuscules, ou textes additionnels.
+  final filtered = all.where((a) {
+    final t = normalize(a.title);
+    return t.contains('president de la republique') ||
+           t.contains('premiere ministre') ||
+           t.contains('premier ministre') ||
+           t.contains('senat') ||
+           t.contains('assemblee');
+  }).toList();
 
   int getPriority(String title) {
     final t = normalize(title);
-    if (t.contains('président de la république')) return 1;
-    if (t.contains('première ministre') || t.contains('premier ministre')) return 2;
-    if (t.contains('sénat')) return 3;
-    if (t.contains('assemblée')) return 4;
+    if (t.contains('president de la republique')) return 1;
+    if (t.contains('premiere ministre') || t.contains('premier ministre')) return 2;
+    if (t.contains('senat')) return 3;
+    if (t.contains('assemblee')) return 4;
     return 99;
   }
 
