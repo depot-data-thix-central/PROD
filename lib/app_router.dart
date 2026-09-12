@@ -212,6 +212,7 @@ import 'package:thix_id/presentation/thix_info/category_articles_page.dart';
 import 'package:thix_id/presentation/thix_info/saved_articles_page.dart';
 import 'package:thix_id/presentation/thix_info/breaking_news_page.dart';
 import 'package:thix_id/presentation/thix_info/thix_downloads_page.dart';
+import 'package:thix_id/presentation/thix_info/thix_info_space_page.dart';
 // === JOBS & OPPORTUNITIES ===
 import 'package:thix_id/presentation/jobs/jobs_page.dart';
 import 'package:thix_id/presentation/jobs/job_apply_page.dart';
@@ -688,6 +689,13 @@ GoRoute(path: AppRoutes.thixInfoSpace, name: 'thixInfoSpace',
         child: ThixInfoSpacePage(space: state.pathParameters['space']!))),
 GoRoute(path: '/thix-info/downloads', name: 'thixInfoDownloads',
     pageBuilder: (_, __) => const NoTransitionPage(child: ThixDownloadsPage())),
+        GoRoute(
+          path: AppRoutes.thixInfoSpace,
+          name: 'thixInfoSpace',
+          pageBuilder: (_, state) => NoTransitionPage(
+            child: ThixInfoSpacePage(space: state.pathParameters['space']!),
+          ),
+        ),
         // === THIX RESERVATION (BUS & GENERAL) ===
         GoRoute(
           path: AppRoutes.reservation,
