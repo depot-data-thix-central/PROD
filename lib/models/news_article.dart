@@ -16,11 +16,10 @@ class NewsArticle {
   final String? createdBy;
   bool isLiked;
   bool isSaved;
+  final Map<String, dynamic> magazineExtras; // ⬅️ NOUVEAU
 
-  // ─── ALIAS POUR LA COMPATIBILITÉ AVEC L'INTERFACE ───
   String? get coverImageUrl => imageUrl;
   String? get author => createdBy;
-  // ────────────────────────────────────────────────────
 
   NewsArticle({
     required this.id,
@@ -39,6 +38,7 @@ class NewsArticle {
     this.createdBy,
     this.isLiked = false,
     this.isSaved = false,
+    this.magazineExtras = const {},
   });
 
   factory NewsArticle.fromJson(Map<String, dynamic> json) {
@@ -54,15 +54,17 @@ class NewsArticle {
       isFeatured: json['is_featured'] ?? false,
       isBreaking: json['is_breaking'] ?? false,
       status: json['status']?.toString() ?? 'published',
-      publishedAt: json['published_at'] != null 
-          ? DateTime.parse(json['published_at'].toString()) 
+      publishedAt: json['published_at'] != null
+          ? DateTime.parse(json['published_at'].toString())
           : DateTime.now(),
-      createdAt: json['created_at'] != null 
-          ? DateTime.parse(json['created_at'].toString()) 
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'].toString())
           : DateTime.now(),
       createdBy: json['created_by']?.toString(),
       isLiked: json['is_liked'] ?? false,
       isSaved: json['is_saved'] ?? false,
+      magazineExtras:
+          (json['magazine_extras'] as Map?)?.cast<String, dynamic>() ?? const {},
     );
   }
 
@@ -82,6 +84,7 @@ class NewsArticle {
       'published_at': publishedAt.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
       'created_by': createdBy,
+      'magazine_extras': magazineExtras,
     };
   }
 
@@ -96,12 +99,13 @@ class NewsArticle {
     int? viewsCount,
     bool? isFeatured,
     bool? isBreaking,
-    String? status,
+    bool? status,
     DateTime? publishedAt,
     DateTime? createdAt,
     String? createdBy,
     bool? isLiked,
     bool? isSaved,
+    Map<String, dynamic>? magazineExtras,
   }) {
     return NewsArticle(
       id: id ?? this.id,
@@ -120,25 +124,25 @@ class NewsArticle {
       createdBy: createdBy ?? this.createdBy,
       isLiked: isLiked ?? this.isLiked,
       isSaved: isSaved ?? this.isSaved,
+      magazineExtras: magazineExtras ?? this.magazineExtras,
     );
   }
 }
 
-// Extension pour les listes d'articles
 extension NewsArticleListExtension on List<NewsArticle> {
   List<NewsArticle> get featured => where((a) => a.isFeatured).toList();
   List<NewsArticle> get breaking => where((a) => a.isBreaking).toList();
   List<NewsArticle> get published => where((a) => a.status == 'published').toList();
-  
+
   List<NewsArticle> byCategory(String category) {
     return where((a) => a.category == category).toList();
   }
-  
+
   List<NewsArticle> mostViewed({int limit = 10}) {
     final sorted = [...this]..sort((a, b) => b.viewsCount.compareTo(a.viewsCount));
     return sorted.take(limit).toList();
   }
-  
+
   List<NewsArticle> mostRecent({int limit = 10}) {
     final sorted = [...this]..sort((a, b) => b.publishedAt.compareTo(a.publishedAt));
     return sorted.take(limit).toList();
