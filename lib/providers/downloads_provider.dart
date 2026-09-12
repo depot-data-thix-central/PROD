@@ -5,45 +5,42 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/news_article.dart';
 import '../services/thix_downloader.dart';
 
-@immutable
-class DownloadsState {
-  final List<DownloadItem> items;
-  final bool isLoading;
+class DownloadsNotifier extends ChangeNotifier {
+  final List<DownloadItem> _items = [];
+  bool _isLoading = false;
 
-  const DownloadsState({this.items = const [], this.isLoading = false});
-
-  DownloadsState copyWith({List<DownloadItem>? items, bool? isLoading}) {
-    return DownloadsState(
-      items: items ?? this.items,
-      isLoading: isLoading ?? this.isLoading,
-    );
-  }
+  // ─── GETTERS EXPOSÉS DIRECTEMENT (API simple) ───
+  List<DownloadItem> get items => _items;
+  bool get isLoading => _isLoading;
 
   List<DownloadItem> get active =>
-      items.where((i) => i.status == DownloadStatus.downloading || i.status == DownloadStatus.pending).toList();
+      _items.where((i) =>
+          i.status == DownloadStatus.downloading ||
+          i.status == DownloadStatus.pending).toList();
 
   List<DownloadItem> get completed =>
-      items.where((i) => i.status == DownloadStatus.completed).toList();
+      _items.where((i) => i.status == DownloadStatus.completed).toList();
 
   List<DownloadItem> get failed =>
-      items.where((i) => i.status == DownloadStatus.failed).toList();
+      _items.where((i) => i.status == DownloadStatus.failed).toList();
 
   bool isDownloading(String id) =>
-      items.any((i) => i.id == id && i.status == DownloadStatus.downloading);
+      _items.any((i) => i.id == id && i.status == DownloadStatus.downloading);
 
   bool isDownloaded(String id) =>
-      items.any((i) => i.id == id && i.status == DownloadStatus.completed);
-}
+      _items.any((i) => i.id == id && i.status == DownloadStatus.completed);
 
-class DownloadsNotifier extends ChangeNotifier {
-  DownloadsState _state = const DownloadsState();
-  DownloadsState get state => _state;
-
-  /// Lance le téléchargement d'un article (podcast ou vidéo)
-  Future<void> downloadArticle(NewsArticle article) async {
-    if (_state.isDownloading(article.id) || _state.isDownloaded(article.id)) {
-      return;
+  DownloadItem? findById(String id) {
+    try {
+      return _items.firstWhere((i) => i.id == id);
+    } catch (_) {
+      return null;
     }
+  }
+
+  // ─── ACTIONS ───
+  Future<void> downloadArticle(NewsArticle article) async {
+    if (isDownloading(article.id) || isDownloaded(article.id)) return;
 
     final mediaType = article.videoUrl != null ? 'video' : 'podcast';
     final url = article.videoUrl ?? '';
@@ -64,71 +61,63 @@ class DownloadsNotifier extends ChangeNotifier {
       createdAt: DateTime.now(),
     );
 
-    _state = _state.copyWith(items: [..._state.items, item]);
+    _items.add(item);
     notifyListeners();
 
     final result = await ThixDownloader.instance.download(
       item: item,
       onProgress: (received, total) {
-        final idx = _state.items.indexWhere((i) => i.id == article.id);
+        final idx = _items.indexWhere((i) => i.id == article.id);
         if (idx == -1) return;
-        final updated = List<DownloadItem>.from(_state.items);
-        updated[idx] = updated[idx].copyWith(
+        _items[idx] = _items[idx].copyWith(
           downloadedBytes: received,
           totalBytes: total,
         );
-        _state = _state.copyWith(items: updated);
         notifyListeners();
       },
     );
 
-    final idx = _state.items.indexWhere((i) => i.id == article.id);
+    final idx = _items.indexWhere((i) => i.id == article.id);
     if (idx != -1) {
-      final updated = List<DownloadItem>.from(_state.items);
-      updated[idx] = result;
-      _state = _state.copyWith(items: updated);
+      _items[idx] = result;
       notifyListeners();
     }
   }
 
   Future<void> deleteDownload(String id) async {
-    final item = _state.items.firstWhere((i) => i.id == id, orElse: () => throw Exception());
+    final item = findById(id);
+    if (item == null) return;
     if (item.localPath != null) {
       await ThixDownloader.instance.delete(item.localPath!);
     }
-    _state = _state.copyWith(
-      items: _state.items.where((i) => i.id != id).toList(),
-    );
+    _items.removeWhere((i) => i.id == id);
     notifyListeners();
   }
 
   Future<void> retry(String id) async {
-    final item = _state.items.firstWhere((i) => i.id == id, orElse: () => throw Exception());
-    final idx = _state.items.indexOf(item);
-    final updated = List<DownloadItem>.from(_state.items);
-    updated[idx] = item.copyWith(status: DownloadStatus.downloading, error: null);
-    _state = _state.copyWith(items: updated);
+    final item = findById(id);
+    if (item == null) return;
+    final idx = _items.indexOf(item);
+    _items[idx] = item.copyWith(status: DownloadStatus.downloading, error: null);
     notifyListeners();
 
     final result = await ThixDownloader.instance.download(item: item);
-    final i2 = _state.items.indexWhere((i) => i.id == id);
+    final i2 = _items.indexWhere((i) => i.id == id);
     if (i2 != -1) {
-      final u2 = List<DownloadItem>.from(_state.items);
-      u2[i2] = result;
-      _state = _state.copyWith(items: u2);
+      _items[i2] = result;
       notifyListeners();
     }
   }
 
   String _extensionFromUrl(String url) {
     final u = url.toLowerCase().split('?').first;
-    if (u.endsWith('.mp4')) return 'mp4';
-    if (u.endsWith('.m3u8')) return 'mp4';
     if (u.endsWith('.mp3')) return 'mp3';
     if (u.endsWith('.wav')) return 'wav';
     if (u.endsWith('.m4a')) return 'm4a';
     if (u.endsWith('.ogg')) return 'ogg';
-    return 'mp4'; // default vidéo
+    if (u.endsWith('.mp4')) return 'mp4';
+    if (u.endsWith('.m3u8')) return 'mp4';
+    return 'mp4';
   }
 }
 
