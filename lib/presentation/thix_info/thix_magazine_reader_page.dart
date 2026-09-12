@@ -338,8 +338,7 @@ class _ThixMagazineReaderPageState
                   Text(a.summary!,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 13.5, color: Colors.white87, height: 1.5)),
+                      style: TextStyle(fontSize: 13.5, color: Colors.white.withOpacity(0.87), height: 1.5)),
                 const SizedBox(height: 14),
                 Row(
                   children: [
@@ -602,10 +601,7 @@ class _ThixMagazineReaderPageState
                         const SizedBox(width: 8),
                         Expanded(
                             child: Text(k,
-                                style: const TextStyle(
-                                    fontSize: 12.5,
-                                    color: Colors.white87,
-                                    height: 1.45))),
+                                style: TextStyle(fontSize: 12.5, color: Colors.white.withOpacity(0.87), height: 1.45))
                       ],
                     ),
                   ),
