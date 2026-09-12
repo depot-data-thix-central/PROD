@@ -726,7 +726,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
 
   Widget _magazineCard(NewsArticle a) {
     return GestureDetector(
-      onTap: () => context.push('/thix-info/article/${a.id}'),
+      onTap: () => context.push('/thix-info/magazine/${a.id}'),
       child: SizedBox(
         width: 260,
         child: Column(
