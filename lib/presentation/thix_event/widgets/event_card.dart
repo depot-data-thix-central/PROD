@@ -1,6 +1,6 @@
 // lib/presentation/thix_event/widgets/event_card.dart
 //
-// EventCard — Production Enterprise (i18n + Sécurité + A11y)
+// EventCard — Production Enterprise (i18n + Sécurité + A11y + Waiting Queue)
 //
 // Features :
 // - Intégration AppLocalizations (8 langues)
@@ -11,6 +11,7 @@
 // - Logging structuré (_EventCardLogger)
 // - Utilisation EventTheme + ThixPolicy
 // - Fallback image robuste avec icône par catégorie
+// - Gestion dynamique des badges Pré-commande & File d'attente
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -33,6 +34,7 @@ class EventTheme {
   static const Color textSecondary = Color(0xFFA8B6CC);
   static const Color textMuted = Color(0xFF64748B);
   static const Color success = ThixPolicy.success;
+  static const Color warning = Colors.orangeAccent; // 🟢 Ajout pour pré-commande
 }
 
 // ============================================================================
@@ -252,6 +254,11 @@ class _EventCardState extends State<EventCard> {
     final categoryLabel = l10n.t(_categoryKey(category));
     final icon = _categoryIcon(category);
 
+    // 🟢 Vérification de l'état de la billetterie (Pré-commande)
+    final bool isPreorderActive = widget.event.ticketOpeningDate != null &&
+        widget.event.ticketOpeningDate!.isAfter(DateTime.now());
+    final bool isQueueEnabled = widget.event.enableWaitingQueue;
+
     return Semantics(
       button: true,
       label: '$safeTitle, ${widget.event.shortDate}, $safeLocation, ${widget.event.formattedPrice}',
@@ -281,27 +288,62 @@ class _EventCardState extends State<EventCard> {
                         : _buildImageFallback(accent, icon),
                   ),
 
-                  // Badge catégorie
+                  // 🟢 Badges Catégorie + Pré-commande encapsulés proprement
                   Positioned(
                     top: 10,
                     left: 10,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: accent.withOpacity(0.9),
-                        borderRadius: BorderRadius.circular(ThixPolicy.s8),
-                      ),
-                      child: Text(
-                        categoryLabel,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 8.5,
-                          fontWeight: FontWeight.w800,
+                    child: Row(
+                      children: [
+                        // Badge catégorie
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: accent.withOpacity(0.9),
+                            borderRadius: BorderRadius.circular(ThixPolicy.s8),
+                          ),
+                          child: Text(
+                            categoryLabel,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         ),
-                      ),
+                        
+                        // Badge Pré-commande / File d'attente
+                        if (isQueueEnabled && isPreorderActive) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: EventTheme.warning.withOpacity(0.9),
+                              borderRadius: BorderRadius.circular(ThixPolicy.s8),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.hourglass_top_rounded, size: 9, color: Colors.black),
+                                SizedBox(width: 3),
+                                Text(
+                                  'PRÉ-COMMANDE',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
 
@@ -452,16 +494,18 @@ class _EventCardState extends State<EventCard> {
                       ],
                     ),
                     const SizedBox(height: 10),
+                    
+                    // 🟢 Bouton d'action dynamique (Réservation ou File d'attente)
                     Semantics(
                       button: true,
-                      label: l10n.t('event_book_now'),
+                      label: isPreorderActive ? 'Rejoindre la file' : l10n.t('event_book_now'),
                       child: SizedBox(
                         width: double.infinity,
                         height: 36,
                         child: ElevatedButton(
                           onPressed: _handleTap,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white,
+                            backgroundColor: isPreorderActive ? EventTheme.warning : Colors.white,
                             foregroundColor: Colors.black,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
@@ -469,7 +513,7 @@ class _EventCardState extends State<EventCard> {
                             ),
                           ),
                           child: Text(
-                            l10n.t('event_book_now'),
+                            isPreorderActive ? 'Rejoindre la file' : l10n.t('event_book_now'),
                             style: const TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w800,
@@ -500,6 +544,10 @@ class _EventCardState extends State<EventCard> {
     final accent = _categoryAccent(category);
     final categoryLabel = l10n.t(_categoryKey(category));
     final icon = _categoryIcon(category);
+
+    // 🟢 Vérification de l'état
+    final bool isPreorderActive = widget.event.ticketOpeningDate != null &&
+        widget.event.ticketOpeningDate!.isAfter(DateTime.now());
 
     return Semantics(
       button: true,
@@ -569,24 +617,50 @@ class _EventCardState extends State<EventCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: accent.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(ThixPolicy.s6),
-                        border: Border.all(color: accent.withOpacity(0.25)),
-                      ),
-                      child: Text(
-                        categoryLabel,
-                        style: TextStyle(
-                          color: accent,
-                          fontSize: 8,
-                          fontWeight: FontWeight.w800,
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: accent.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(ThixPolicy.s6),
+                            border: Border.all(color: accent.withOpacity(0.25)),
+                          ),
+                          child: Text(
+                            categoryLabel,
+                            style: TextStyle(
+                              color: accent,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         ),
-                      ),
+                        // 🟢 Badge compact pré-commande
+                        if (isPreorderActive) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: EventTheme.warning.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(ThixPolicy.s6),
+                            ),
+                            child: const Text(
+                              'PRÉ-COMMANDE',
+                              style: TextStyle(
+                                color: EventTheme.warning,
+                                fontSize: 7,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(
