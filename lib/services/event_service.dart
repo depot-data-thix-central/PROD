@@ -43,14 +43,12 @@ class EventService {
   }) async {
     try {
       final now = DateTime.now();
-      // On garde l'événement visible jusqu'à 4 heures après son heure de début officielle
       final cutoff = now.subtract(const Duration(hours: 4)).toIso8601String();
       
       var query = _supabase
           .from('events')
           .select('*')
           .or('status.eq.upcoming,status.eq.ongoing,status.is.null')
-          // ✅ CORRECTION : Filtre strict pour masquer les dates passées
           .gte('start_date', cutoff); 
 
       if (category != null && category != 'all' && category != 'featured') {
@@ -60,7 +58,6 @@ class EventService {
         query = query.eq('city', city);
       }
 
-      // date filter server-side
       if (dateFilter == 'today') {
         final start = DateTime(now.year, now.month, now.day);
         final end = start.add(const Duration(days: 1));
@@ -79,7 +76,7 @@ class EventService {
       }
 
       final res = await query
-          .order('start_date', ascending: true) // Tri par date de début (plus logique pour les événements)
+          .order('start_date', ascending: true)
           .range(page * limit, page * limit + limit - 1) as List<dynamic>;
 
       if (res.isEmpty) return [];
@@ -103,7 +100,7 @@ class EventService {
       final res = await _supabase.from('events')
           .select('*')
           .or('status.eq.upcoming,status.eq.ongoing,status.is.null')
-          .gte('start_date', cutoff) // ✅ Filtre anti dates passées
+          .gte('start_date', cutoff)
           .order('views_count', ascending: false)
           .limit(limit) as List<dynamic>;
           
@@ -119,7 +116,7 @@ class EventService {
       final res = await _supabase.from('events')
           .select('*')
           .or('status.eq.upcoming,status.eq.ongoing,status.is.null')
-          .gte('start_date', cutoff) // ✅ Filtre anti dates passées
+          .gte('start_date', cutoff)
           .order('created_at', ascending: false)
           .limit(limit) as List<dynamic>;
           
@@ -156,8 +153,8 @@ class EventService {
           .select('*')
           .eq('is_featured', true)
           .or('status.eq.upcoming,status.eq.ongoing,status.is.null')
-          .gte('start_date', cutoff) // ✅ Filtre anti dates passées
-          .order('start_date', ascending: true) // Tri chronologique pour la une
+          .gte('start_date', cutoff)
+          .order('start_date', ascending: true)
           .limit(10) as List<dynamic>;
           
       final ids = res.map((e) => (e['id'] ?? '').toString()).toList();
@@ -198,18 +195,34 @@ class EventService {
     } catch (_) { return []; }
   }
 
-  // ============ RESERVATION ============
+  // ============ RESERVATION (AVEC GESTION D'ERREUR EXPLICITE) ============
   Future<EventBooking?> bookTicket({required String eventId, required int quantity, required double totalPrice, String? paymentMethod}) async {
-    final uid = currentUserId; if (uid.isEmpty) throw Exception('Non connecté');
+    final uid = currentUserId; 
+    if (uid.isEmpty) throw Exception('Non connecté');
+    
     try {
       final code = 'THIX-${_uuid.v4().substring(0, 12).toUpperCase()}';
       final res = await _retry(() => _supabase.from('event_bookings').insert({
-        'event_id': eventId, 'user_id': uid, 'ticket_quantity': quantity, 'total_price': totalPrice,
-        'payment_method': paymentMethod, 'payment_status': 'paid', 'ticket_code': code, 'qr_code': code, 'status': 'confirmed', 'booking_date': DateTime.now().toIso8601String(),
+        'event_id': eventId, 
+        'user_id': uid, 
+        'ticket_quantity': quantity, 
+        'total_price': totalPrice,
+        'payment_method': paymentMethod, 
+        'payment_status': 'paid', 
+        'ticket_code': code, 
+        'qr_code': code, 
+        'status': 'confirmed', 
+        'booking_date': DateTime.now().toIso8601String(),
       }).select().single());
+      
       try { await _supabase.rpc('decrement_remaining_tickets', params: {'e_id': eventId, 'qty': quantity}); } catch (_) {}
+      
       return EventBooking.fromJson(Map<String, dynamic>.from((res as Map).cast<String, dynamic>()));
-    } catch (e) { debugPrint('bookTicket error: $e'); return null; }
+    } catch (e) { 
+      debugPrint('❌ bookTicket error: $e'); 
+      // ⚠️ On relance l'erreur pour la voir en vrai dans l'appli !
+      throw Exception('Erreur DB: $e'); 
+    }
   }
 
   Future<List<EventBooking>> getMyTickets() async {
