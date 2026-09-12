@@ -9,6 +9,8 @@ import 'package:go_router/go_router.dart';
 // ✅ POLICY THIX APPLIQUÉE
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../../providers/news_provider.dart';
+import '../../providers/downloads_provider.dart';
+import '../../services/thix_downloader.dart';
 import '../../models/news_article.dart';
 
 // ============================================================================
@@ -51,6 +53,27 @@ class GlassBox extends StatelessWidget {
 }
 
 // ============================================================================
+// DÉFINITION DES ESPACES (Magazine / Podcasts / Découverte)
+// ============================================================================
+class _SpaceDef {
+  final String slug;
+  final String name;
+  final String dbCategory;
+  final IconData icon;
+  final Color color;
+  final String tagline;
+
+  const _SpaceDef({
+    required this.slug,
+    required this.name,
+    required this.dbCategory,
+    required this.icon,
+    required this.color,
+    required this.tagline,
+  });
+}
+
+// ============================================================================
 // PAGE PRINCIPALE : THIX INFO
 // ============================================================================
 class ThixInfoHome extends ConsumerStatefulWidget {
@@ -71,6 +94,33 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   Timer? _breakingTimer;
   int _page = 0;
   int _navIndex = 0;
+
+  static const List<_SpaceDef> _spaces = [
+    _SpaceDef(
+      slug: 'magazine',
+      name: 'Magazine',
+      dbCategory: 'Magazine',
+      icon: Icons.auto_stories_rounded,
+      color: Color(0xFFD4AF37),
+      tagline: 'Lectures pro & longs formats',
+    ),
+    _SpaceDef(
+      slug: 'podcast',
+      name: 'Podcasts',
+      dbCategory: 'Podcast',
+      icon: Icons.headphones_rounded,
+      color: Color(0xFF6366F1),
+      tagline: 'Audio & conversations',
+    ),
+    _SpaceDef(
+      slug: 'decouverte',
+      name: 'Découverte',
+      dbCategory: 'Découverte',
+      icon: Icons.explore_rounded,
+      color: Color(0xFF10B981),
+      tagline: 'Explorer le monde',
+    ),
+  ];
 
   final List<Map<String, String>> cats = const [
     {'slug': 'featured', 'name': 'À la une'},
@@ -133,6 +183,11 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
     super.dispose();
   }
 
+  List<NewsArticle> _spaceItems(String dbCategory) =>
+      ref.watch(newsProvider).articles
+          .where((a) => a.category == dbCategory)
+          .toList();
+
   @override
   Widget build(BuildContext context) {
     final prov = ref.watch(newsProvider);
@@ -180,7 +235,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
 
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s20)),
 
-                // CHAÎNES & ÉDITEURS (Magazine / Podcasts / Découverte)
+                // CHAÎNES & ÉDITEURS (5 boutons : Magazine / Podcasts / Découverte)
                 SliverToBoxAdapter(child: _buildChannelsSection()),
 
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s24)),
@@ -199,7 +254,15 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                         ? _buildHeroCarousel(featured)
                         : _buildLoadingHero()),
 
-                const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s40)),
+                // ═══ ESPACES (masqués automatiquement si vides) ═══
+                SliverToBoxAdapter(
+                    child: _buildMagazineSection(_spaceItems('Magazine'))),
+                SliverToBoxAdapter(
+                    child: _buildPodcastSection(_spaceItems('Podcast'))),
+                SliverToBoxAdapter(
+                    child: _buildDecouverteSection(_spaceItems('Découverte'))),
+
+                const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s32)),
 
                 // LE FIL D'INFO — DISPOSITION & LOGIQUE ANCIENNES INTACTES
                 SliverToBoxAdapter(
@@ -339,8 +402,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 2. CHAÎNES & ÉDITEURS — Magazine / Podcasts / Découverte
-  //    (Magazine remplace Le Quotidien, Podcasts remplace Nova Doc)
+  // 2. CHAÎNES & ÉDITEURS — 5 BOUTONS
   // ─────────────────────────────────────────────────────────────
   Widget _buildChannelsSection() {
     final channels = [
@@ -484,7 +546,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 3. HERO (À LA UNE) AVEC GLASS TEXT
+  // 3. HERO (À LA UNE)
   // ─────────────────────────────────────────────────────────────
   Widget _buildHeroCarousel(List<NewsArticle> list) {
     return SizedBox(
@@ -573,6 +635,423 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // ESPACES : MAGAZINE / PODCASTS / DÉCOUVERTE
+  // (widgets conservés — section masquée si aucun contenu)
+  // ═══════════════════════════════════════════════════════════════
+
+  Widget _spaceHeader(_SpaceDef s) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(ThixPolicy.s8),
+            decoration: BoxDecoration(
+              color: s.color.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+              border: Border.all(color: s.color.withOpacity(0.3), width: 1),
+            ),
+            child: Icon(s.icon, color: s.color, size: 20),
+          ),
+          const SizedBox(width: ThixPolicy.s12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(s.name,
+                    style: ThixPolicy.h2Style.copyWith(
+                        color: Colors.white, letterSpacing: -0.5)),
+                const SizedBox(height: 2),
+                Text(s.tagline,
+                    style: ThixPolicy.microStyle.copyWith(
+                        color: Colors.white54, letterSpacing: 0.3)),
+              ],
+            ),
+          ),
+          GestureDetector(
+            onTap: () => context.push('/thix-info/space/${s.slug}'),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: ThixPolicy.s12, vertical: ThixPolicy.s6),
+              decoration: BoxDecoration(
+                color: s.color.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(ThixPolicy.rXl),
+                border: Border.all(color: s.color.withOpacity(0.3), width: 1),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Tout voir',
+                      style: ThixPolicy.labelStyle.copyWith(
+                          color: s.color, fontWeight: ThixPolicy.bold)),
+                  const SizedBox(width: 2),
+                  Icon(Icons.arrow_forward_ios_rounded,
+                      size: 10, color: s.color),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── MAGAZINE : cartes lecture pro ───
+  Widget _buildMagazineSection(List<NewsArticle> list) {
+    if (list.isEmpty) return const SizedBox.shrink(); // masqué si vide
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: ThixPolicy.s40),
+        _spaceHeader(_spaces[0]),
+        const SizedBox(height: ThixPolicy.s16),
+        SizedBox(
+          height: 300,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+            scrollDirection: Axis.horizontal,
+            itemCount: list.length,
+            separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s16),
+            itemBuilder: (_, i) => _magazineCard(list[i]),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _magazineCard(NewsArticle a) {
+    return GestureDetector(
+      onTap: () => context.push('/thix-info/article/${a.id}'),
+      child: SizedBox(
+        width: 260,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+              child: SizedBox(
+                height: 180,
+                width: double.infinity,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    a.imageUrl != null
+                        ? Image.network(a.imageUrl!, fit: BoxFit.cover)
+                        : Container(color: Colors.white.withOpacity(0.08)),
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
+                            colors: [
+                              Colors.black.withOpacity(0.6),
+                              Colors.transparent,
+                            ]),
+                      ),
+                    ),
+                    Positioned(
+                      top: ThixPolicy.s10,
+                      left: ThixPolicy.s10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD4AF37),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text('LECTURE PRO',
+                            style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 1)),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: ThixPolicy.s10,
+                      right: ThixPolicy.s10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.6),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.auto_stories_rounded,
+                                size: 12, color: Colors.white),
+                            const SizedBox(width: 4),
+                            Text('${(a.content.length / 1500).ceil()} min',
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: ThixPolicy.s12),
+            Text(a.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: ThixPolicy.titleStyle.copyWith(
+                    color: Colors.white,
+                    fontWeight: ThixPolicy.bold,
+                    height: 1.2)),
+            const SizedBox(height: ThixPolicy.s6),
+            Text(a.summary ?? '',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: ThixPolicy.bodySmallStyle
+                    .copyWith(color: Colors.white60, height: 1.4)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── PODCASTS : cover + play + téléchargement ───
+  Widget _buildPodcastSection(List<NewsArticle> list) {
+    if (list.isEmpty) return const SizedBox.shrink(); // masqué si vide
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: ThixPolicy.s40),
+        _spaceHeader(_spaces[1]),
+        const SizedBox(height: ThixPolicy.s16),
+        SizedBox(
+          height: 230,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+            scrollDirection: Axis.horizontal,
+            itemCount: list.length,
+            separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s16),
+            itemBuilder: (_, i) => _podcastCard(list[i]),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _podcastCard(NewsArticle a) {
+    final dl = ref.watch(downloadsProvider);
+    final downloading = dl.isDownloading(a.id);
+    final downloaded = dl.isDownloaded(a.id);
+    final currentItem = dl.findById(a.id);
+
+    return GestureDetector(
+      onTap: () => context.push('/thix-info/article/${a.id}'),
+      child: SizedBox(
+        width: 160,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+              child: SizedBox(
+                height: 150,
+                width: 150,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    a.imageUrl != null
+                        ? Image.network(a.imageUrl!, fit: BoxFit.cover)
+                        : Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  const Color(0xFF6366F1).withOpacity(0.6),
+                                  const Color(0xFF4338CA).withOpacity(0.8),
+                                ],
+                              ),
+                            ),
+                            child: const Center(
+                                child: Icon(Icons.graphic_eq_rounded,
+                                    size: 40, color: Colors.white70)),
+                          ),
+                    Center(
+                      child: GlassBox(
+                        padding: const EdgeInsets.all(ThixPolicy.s10),
+                        borderRadius: ThixPolicy.rFull,
+                        blur: 20,
+                        color: Colors.white.withOpacity(0.15),
+                        child: const Icon(Icons.play_arrow_rounded,
+                            color: Colors.white, size: 24),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: ThixPolicy.s8,
+                      right: ThixPolicy.s8,
+                      child: _downloadButton(a, downloading, downloaded, currentItem),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: ThixPolicy.s12),
+            Text(a.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: ThixPolicy.bodySmallStyle.copyWith(
+                    fontWeight: ThixPolicy.bold, color: Colors.white70)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _downloadButton(NewsArticle a, bool downloading, bool downloaded,
+      DownloadItem? currentItem) {
+    if (downloading && currentItem != null) {
+      return SizedBox(
+        width: 32,
+        height: 32,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(
+              width: 32,
+              height: 32,
+              child: CircularProgressIndicator(
+                value: currentItem.progress,
+                strokeWidth: 2.5,
+                backgroundColor: Colors.black45,
+                valueColor:
+                    const AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
+            Text('${(currentItem.progress * 100).toInt()}%',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 8,
+                    fontWeight: FontWeight.w900)),
+          ],
+        ),
+      );
+    }
+    if (downloaded) {
+      return Container(
+        width: 32,
+        height: 32,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(Icons.check_rounded,
+            color: Color(0xFF10B981), size: 18),
+      );
+    }
+    return GestureDetector(
+      onTap: () => ref.read(downloadsProvider).downloadArticle(a),
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.9),
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(Icons.download_rounded,
+            color: Colors.black87, size: 18),
+      ),
+    );
+  }
+
+  // ─── DÉCOUVERTE : cartes immersives ───
+  Widget _buildDecouverteSection(List<NewsArticle> list) {
+    if (list.isEmpty) return const SizedBox.shrink(); // masqué si vide
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: ThixPolicy.s40),
+        _spaceHeader(_spaces[2]),
+        const SizedBox(height: ThixPolicy.s16),
+        SizedBox(
+          height: 240,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+            scrollDirection: Axis.horizontal,
+            itemCount: list.length,
+            separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s12),
+            itemBuilder: (_, i) => _decouverteCard(list[i]),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _decouverteCard(NewsArticle a) {
+    return GestureDetector(
+      onTap: () => context.push('/thix-info/article/${a.id}'),
+      child: SizedBox(
+        width: 170,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              a.imageUrl != null
+                  ? Image.network(a.imageUrl!, fit: BoxFit.cover)
+                  : Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              const Color(0xFF10B981).withOpacity(0.4),
+                              const Color(0xFF065F46).withOpacity(0.8),
+                            ]),
+                      ),
+                      child: const Center(
+                          child: Icon(Icons.explore_rounded,
+                              size: 40, color: Colors.white54)),
+                    ),
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        Colors.black.withOpacity(0.85),
+                        Colors.transparent
+                      ]),
+                ),
+              ),
+              Positioned(
+                bottom: ThixPolicy.s12,
+                left: ThixPolicy.s12,
+                right: ThixPolicy.s12,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.explore_rounded,
+                        size: 16, color: Colors.white),
+                    const SizedBox(height: ThixPolicy.s6),
+                    Text(a.title,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: ThixPolicy.bodySmallStyle.copyWith(
+                            color: Colors.white,
+                            fontWeight: ThixPolicy.bold)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -685,7 +1164,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
           child: CircularProgressIndicator(color: Colors.white)));
 
   // ─────────────────────────────────────────────────────────────
-  // BOTTOM NAV FLOTTANTE — DISPOSITION ANCIENNE RESTAURÉE
+  // BOTTOM NAV FLOTTANTE — DISPOSITION ANCIENNE
   // ─────────────────────────────────────────────────────────────
   Widget _buildFloatingBottomNav() {
     return GlassBox(
@@ -697,7 +1176,6 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
         children: [
           _navItem(Icons.public_rounded, 'À la une', 0),
           _navItem(Icons.grid_view_rounded, 'Explorer', 1),
-          // Bouton central "DIRECT" Accent
           GestureDetector(
             onTap: () => setState(() => _navIndex = 2),
             child: AnimatedContainer(
