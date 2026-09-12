@@ -28,7 +28,7 @@ import 'package:thix_id/presentation/thix_event/admin/providers/admin_event_prov
 import 'package:thix_id/presentation/thix_event/admin/services/admin_event_service.dart';
 
 // ============================================================================
-// EVENT THEME (adapté depuis ThixPolicy — Admin Events)
+// EVENT THEME
 // ============================================================================
 class EventTheme {
   static const Color bg = ThixPolicy.inkDeep;
@@ -61,9 +61,6 @@ class _EventCreateEditLogger {
   }
 }
 
-// ============================================================================
-// DROPDOWN OPTIONS (Data-driven)
-// ============================================================================
 class _DropdownOption {
   final String value;
   final String labelKey;
@@ -117,8 +114,9 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
   late String _category, _currency, _status;
   late DateTime _startDate;
   DateTime? _endDate;
+  DateTime? _ticketOpeningDate; // 🟢 Date d'ouverture de la billetterie
   bool _saving = false;
-  bool _enableWaitingQueue = false; // 🟢 Ajout de l'état pour la file d'attente
+  bool _enableWaitingQueue = false;
   String _publishSection = 'upcoming';
   Uint8List? _imgBytes, _bannerBytes;
   final _picker = ImagePicker();
@@ -142,7 +140,8 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
     _status = e?.status ?? 'upcoming';
     _startDate = e?.startDate ?? DateTime.now().add(const Duration(days: 7));
     _endDate = e?.endDate;
-    _enableWaitingQueue = e?.enableWaitingQueue ?? false; // 🟢 Récupération si édition
+    _ticketOpeningDate = e?.ticketOpeningDate; // 🟢 Récupération
+    _enableWaitingQueue = e?.enableWaitingQueue ?? false;
     _publishSection = e?.isFeatured == true
         ? 'featured'
         : e?.isRecommended == true
@@ -161,7 +160,6 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
         }
       ];
     }
-    _EventCreateEditLogger.info('Init', {'editMode': e != null});
   }
 
   @override
@@ -178,21 +176,15 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
     super.dispose();
   }
 
-  // ────────────────────────────────────────────────────────────
-  // ACTIONS
-  // ────────────────────────────────────────────────────────────
   Future<void> _pick(bool isBanner) async {
     try {
-      final x =
-          await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+      final x = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
       if (x != null) {
         final b = await x.readAsBytes();
         if (!mounted) return;
         setState(() => isBanner ? _bannerBytes = b : _imgBytes = b);
       }
-    } catch (e) {
-      _EventCreateEditLogger.error('Image pick failed', {'error': '$e'});
-    }
+    } catch (_) {}
   }
 
   Future<DateTime?> _pickDateTime(DateTime init) async {
@@ -203,10 +195,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
       lastDate: DateTime.now().add(const Duration(days: 730)),
       builder: (c, child) => Theme(
         data: ThemeData.dark().copyWith(
-          colorScheme: ColorScheme.dark(
-            primary: EventTheme.primary,
-            surface: EventTheme.surface,
-          ),
+          colorScheme: ColorScheme.dark(primary: EventTheme.primary, surface: EventTheme.surface),
         ),
         child: child!,
       ),
@@ -242,51 +231,22 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
         ),
         title: Text(
           l10n.t('admin_event_dialog_add_tier'),
-          style: ThixPolicy.titleStyle.copyWith(
-            color: EventTheme.textMain,
-            fontSize: 14,
-            fontWeight: FontWeight.w800,
-          ),
+          style: ThixPolicy.titleStyle.copyWith(color: EventTheme.textMain, fontSize: 14, fontWeight: FontWeight.w800),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              controller: n,
-              style: TextStyle(color: EventTheme.textMain),
-              decoration: _decoDialog(l10n.t('admin_event_dialog_name')),
-            ),
+            TextField(controller: n, style: TextStyle(color: EventTheme.textMain), decoration: _decoDialog(l10n.t('admin_event_dialog_name'))),
             const SizedBox(height: 8),
-            TextField(
-              controller: p,
-              keyboardType: TextInputType.number,
-              style: TextStyle(color: EventTheme.textMain),
-              decoration: _decoDialog(
-                l10n.tn('admin_event_dialog_price', {'currency': _currency}),
-              ),
-            ),
+            TextField(controller: p, keyboardType: TextInputType.number, style: TextStyle(color: EventTheme.textMain), decoration: _decoDialog(l10n.tn('admin_event_dialog_price', {'currency': _currency}))),
             const SizedBox(height: 8),
-            TextField(
-              controller: ca,
-              keyboardType: TextInputType.number,
-              style: TextStyle(color: EventTheme.textMain),
-              decoration: _decoDialog(l10n.t('admin_event_dialog_capacity')),
-            ),
+            TextField(controller: ca, keyboardType: TextInputType.number, style: TextStyle(color: EventTheme.textMain), decoration: _decoDialog(l10n.t('admin_event_dialog_capacity'))),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              l10n.t('admin_event_dialog_cancel'),
-              style: TextStyle(color: EventTheme.textMuted),
-            ),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(l10n.t('admin_event_dialog_cancel'), style: TextStyle(color: EventTheme.textMuted))),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.black,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black),
             onPressed: () {
               if (n.text.isEmpty) return;
               HapticFeedback.selectionClick();
@@ -308,22 +268,12 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
     final l10n = AppLocalizations.of(context);
     final role = await AdminGuard.getCurrentRole();
     if (!AdminGuard.canWrite(role)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.t('admin_event_err_readonly')),
-          backgroundColor: EventTheme.danger,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('admin_event_err_readonly')), backgroundColor: EventTheme.danger));
       return;
     }
     if (!_formKey.currentState!.validate()) return;
     if (_tiers.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.t('admin_event_err_min_tier')),
-          backgroundColor: EventTheme.danger,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('admin_event_err_min_tier')), backgroundColor: EventTheme.danger));
       return;
     }
 
@@ -334,72 +284,50 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
       final isFeatured = _publishSection == 'featured';
       final isRecommended = _publishSection == 'recommended';
       final totalCap = _tiers.fold<int>(0, (s, t) => s + (t['capacity'] as int));
-      final minPrice =
-          _tiers.map((t) => t['price'] as double).reduce((a, b) => a < b ? a : b);
+      final minPrice = _tiers.map((t) => t['price'] as double).reduce((a, b) => a < b ? a : b);
 
       final event = Event(
         id: widget.eventToEdit?.id ?? '',
         title: _titleCtrl.text.trim(),
         description: _descCtrl.text.trim(),
         category: _category,
-        subCategory: _subCatCtrl.text.trim().isEmpty
-            ? null
-            : _subCatCtrl.text.trim(),
+        subCategory: _subCatCtrl.text.trim().isEmpty ? null : _subCatCtrl.text.trim(),
         location: _locationCtrl.text.trim(),
-        address: _addressCtrl.text.trim().isEmpty
-            ? null
-            : _addressCtrl.text.trim(),
+        address: _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
         city: _cityCtrl.text.trim(),
         startDate: _startDate,
         endDate: _endDate,
+        ticketOpeningDate: _ticketOpeningDate, // 🟢 Sauvegarde de la date d'ouverture billetterie
         price: minPrice,
         priceCurrency: _currency,
         isFree: minPrice == 0 && _tiers.length == 1,
         capacity: totalCap,
-        remainingTickets: widget.eventToEdit == null
-            ? totalCap
-            : widget.eventToEdit?.remainingTickets,
+        remainingTickets: widget.eventToEdit == null ? totalCap : widget.eventToEdit?.remainingTickets,
         isFeatured: isFeatured,
         isRecommended: isRecommended,
-        enableWaitingQueue: _enableWaitingQueue, // 🟢 Passage de la valeur
+        enableWaitingQueue: _enableWaitingQueue,
         status: _status,
-        organizerName: _orgCtrl.text.trim().isEmpty
-            ? null
-            : _orgCtrl.text.trim(),
-        contactPhone: _phoneCtrl.text.trim().isEmpty
-            ? null
-            : _phoneCtrl.text.trim(),
-        contactEmail: _emailCtrl.text.trim().isEmpty
-            ? null
-            : _emailCtrl.text.trim(),
+        organizerName: _orgCtrl.text.trim().isEmpty ? null : _orgCtrl.text.trim(),
+        contactPhone: _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
+        contactEmail: _emailCtrl.text.trim().isEmpty ? null : _emailCtrl.text.trim(),
         viewsCount: widget.eventToEdit?.viewsCount ?? 0,
         likesCount: widget.eventToEdit?.likesCount ?? 0,
         sharesCount: widget.eventToEdit?.sharesCount ?? 0,
         createdAt: widget.eventToEdit?.createdAt ?? DateTime.now(),
         imageUrl: widget.eventToEdit?.imageUrl,
         bannerUrl: widget.eventToEdit?.bannerUrl,
-        ticketTiers:
-            _tiers.map<TicketTier>((t) => TicketTier.fromJson(t)).toList(),
+        ticketTiers: _tiers.map<TicketTier>((t) => TicketTier.fromJson(t)).toList(),
       );
 
       await svc.upsertEvent(event, imageBytes: _imgBytes, bannerBytes: _bannerBytes);
       await ref.read(adminEventProvider.notifier).loadEvents(refresh: true);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(l10n.t('admin_event_success')),
-          backgroundColor: EventTheme.success,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('admin_event_success')), backgroundColor: EventTheme.success));
       context.pop();
-      _EventCreateEditLogger.info('Event saved', {'id': event.id});
     } catch (e) {
-      _EventCreateEditLogger.error('Save failed', {'error': '$e'});
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e'), backgroundColor: EventTheme.danger),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e'), backgroundColor: EventTheme.danger));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -413,16 +341,12 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
     }
   }
 
-  // ────────────────────────────────────────────────────────────
-  // BUILD
-  // ────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final locale = Localizations.localeOf(context).languageCode;
     final mediaQuery = MediaQuery.of(context);
-    final reduceMotion =
-        mediaQuery.accessibleNavigation || mediaQuery.disableAnimations;
+    final reduceMotion = mediaQuery.accessibleNavigation || mediaQuery.disableAnimations;
     final isEdit = widget.eventToEdit != null;
 
     return Scaffold(
@@ -431,74 +355,37 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
         preferredSize: const Size.fromHeight(56),
         child: ClipRRect(
           child: BackdropFilter(
-            filter: ImageFilter.blur(
-              sigmaX: reduceMotion ? 0 : 20,
-              sigmaY: reduceMotion ? 0 : 20,
-            ),
+            filter: ImageFilter.blur(sigmaX: reduceMotion ? 0 : 20, sigmaY: reduceMotion ? 0 : 20),
             child: AppBar(
               backgroundColor: EventTheme.bg.withOpacity(0.85),
               elevation: 0,
-              leading: Semantics(
-                button: true,
-                label: l10n.t('common_back'),
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back_rounded,
-                      color: Colors.white, size: 18),
-                  onPressed: () => context.pop(),
-                ),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 18),
+                onPressed: () => context.pop(),
               ),
               title: Text(
-                isEdit
-                    ? l10n.t('admin_event_edit')
-                    : l10n.t('admin_event_create'),
-                style: ThixPolicy.labelStyle.copyWith(
-                  color: EventTheme.textMain,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                ),
+                isEdit ? l10n.t('admin_event_edit') : l10n.t('admin_event_create'),
+                style: ThixPolicy.labelStyle.copyWith(color: EventTheme.textMain, fontSize: 13, fontWeight: FontWeight.w800),
               ),
             ),
           ),
         ),
       ),
       bottomNavigationBar: Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          bottom: 16 + MediaQuery.of(context).padding.bottom,
-          top: 8,
-        ),
-        child: Semantics(
-          button: true,
-          enabled: !_saving,
-          label: isEdit
-              ? l10n.t('admin_event_btn_save')
-              : l10n.t('admin_event_btn_create'),
-          child: SizedBox(
-            height: 48,
-            child: ElevatedButton(
-              onPressed: _saving ? null : _save,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Colors.black,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(24)),
-              ),
-              child: _saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.black),
-                    )
-                  : Text(
-                      isEdit
-                          ? l10n.t('admin_event_btn_save')
-                          : l10n.t('admin_event_btn_create'),
-                      style: ThixPolicy.labelStyle.copyWith(
-                          fontWeight: FontWeight.w900, fontSize: 12),
-                    ),
+        padding: EdgeInsets.only(left: 16, right: 16, bottom: 16 + MediaQuery.of(context).padding.bottom, top: 8),
+        child: SizedBox(
+          height: 48,
+          child: ElevatedButton(
+            onPressed: _saving ? null : _save,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
             ),
+            child: _saving
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                : Text(isEdit ? l10n.t('admin_event_btn_save') : l10n.t('admin_event_btn_create'),
+                    style: ThixPolicy.labelStyle.copyWith(fontWeight: FontWeight.w900, fontSize: 12)),
           ),
         ),
       ),
@@ -509,42 +396,15 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
           children: [
             Row(
               children: [
-                Expanded(
-                  child: Semantics(
-                    button: true,
-                    label: l10n.t('admin_event_cover'),
-                    child: _imgPicker(
-                      l10n.t('admin_event_cover'),
-                      _imgBytes,
-                      widget.eventToEdit?.imageUrl,
-                      () => _pick(false),
-                    ),
-                  ),
-                ),
+                Expanded(child: _imgPicker(l10n.t('admin_event_cover'), _imgBytes, widget.eventToEdit?.imageUrl, () => _pick(false))),
                 const SizedBox(width: 12),
-                Expanded(
-                  child: Semantics(
-                    button: true,
-                    label: l10n.t('admin_event_banner'),
-                    child: _imgPicker(
-                      l10n.t('admin_event_banner'),
-                      _bannerBytes,
-                      widget.eventToEdit?.bannerUrl,
-                      () => _pick(true),
-                    ),
-                  ),
-                ),
+                Expanded(child: _imgPicker(l10n.t('admin_event_banner'), _bannerBytes, widget.eventToEdit?.bannerUrl, () => _pick(true))),
               ],
             ),
             const SizedBox(height: 18),
-            _field(_titleCtrl, l10n.t('admin_event_title'),
-                validator: (v) =>
-                    v!.isEmpty ? l10n.t('admin_event_err_title_req') : null),
+            _field(_titleCtrl, l10n.t('admin_event_title'), validator: (v) => v!.isEmpty ? l10n.t('admin_event_err_title_req') : null),
             const SizedBox(height: 12),
-            _field(_descCtrl, l10n.t('admin_event_desc'),
-                maxLines: 4,
-                validator: (v) =>
-                    v!.length < 10 ? l10n.t('admin_event_err_desc_min') : null),
+            _field(_descCtrl, l10n.t('admin_event_desc'), maxLines: 4, validator: (v) => v!.length < 10 ? l10n.t('admin_event_err_desc_min') : null),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -554,26 +414,16 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                     dropdownColor: EventTheme.surface,
                     style: TextStyle(color: EventTheme.textMain),
                     decoration: _deco(l10n.t('admin_event_category')),
-                    items: _kCategories
-                        .map((c) => DropdownMenuItem(
-                            value: c.value, child: Text(l10n.t(c.labelKey))))
-                        .toList(),
+                    items: _kCategories.map((c) => DropdownMenuItem(value: c.value, child: Text(l10n.t(c.labelKey)))).toList(),
                     onChanged: (v) => setState(() => _category = v!),
                   ),
                 ),
                 const SizedBox(width: 12),
-                Expanded(
-                    child: _field(_subCatCtrl, l10n.t('admin_event_subcategory'))),
+                Expanded(child: _field(_subCatCtrl, l10n.t('admin_event_subcategory'))),
               ],
             ),
             const SizedBox(height: 18),
-            Text(
-              l10n.t('admin_event_datetime'),
-              style: ThixPolicy.labelStyle.copyWith(
-                  color: EventTheme.textMain,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 12),
-            ),
+            Text(l10n.t('admin_event_datetime'), style: ThixPolicy.labelStyle.copyWith(color: EventTheme.textMain, fontWeight: FontWeight.w800, fontSize: 12)),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -588,13 +438,8 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(_fmtDt(_startDate, locale),
-                              style: TextStyle(
-                                  color: EventTheme.textMain,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600)),
-                          const Icon(Icons.access_time_rounded,
-                              size: 14, color: EventTheme.primary),
+                          Text(_fmtDt(_startDate, locale), style: TextStyle(color: EventTheme.textMain, fontSize: 11, fontWeight: FontWeight.w600)),
+                          const Icon(Icons.access_time_rounded, size: 14, color: EventTheme.primary),
                         ],
                       ),
                     ),
@@ -612,15 +457,8 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            _endDate == null
-                                ? l10n.t('admin_event_add_end')
-                                : _fmtDt(_endDate!, locale),
-                            style: TextStyle(
-                                color: EventTheme.textMain, fontSize: 11),
-                          ),
-                          const Icon(Icons.access_time_rounded,
-                              size: 14, color: EventTheme.textMuted),
+                          Text(_endDate == null ? l10n.t('admin_event_add_end') : _fmtDt(_endDate!, locale), style: TextStyle(color: EventTheme.textMain, fontSize: 11)),
+                          const Icon(Icons.access_time_rounded, size: 14, color: EventTheme.textMuted),
                         ],
                       ),
                     ),
@@ -629,19 +467,67 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
               ],
             ),
             const SizedBox(height: 18),
+            
+            // 🟢 SECTION : DATE D'OUVERTURE DE LA BILLETTERIE (PRÉ-COMMANDE)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: EventTheme.surface,
+                borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                border: Border.all(color: EventTheme.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Ouverture de la Billetterie (Pré-commande)',
+                    style: TextStyle(color: EventTheme.textMain, fontWeight: FontWeight.w800, fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Si défini, les acheteurs entreront en file d\'attente avant cette date.',
+                    style: TextStyle(color: EventTheme.textMuted, fontSize: 10),
+                  ),
+                  const SizedBox(height: 10),
+                  InkWell(
+                    onTap: () async {
+                      final dt = await _pickDateTime(_ticketOpeningDate ?? DateTime.now());
+                      if (dt != null) setState(() => _ticketOpeningDate = dt);
+                    },
+                    child: InputDecorator(
+                      decoration: _deco('Date et heure d\'ouverture'),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _ticketOpeningDate == null ? 'Aucune (Ouvert immédiatement)' : _fmtDt(_ticketOpeningDate!, locale),
+                            style: TextStyle(color: _ticketOpeningDate == null ? EventTheme.textMuted : EventTheme.textMain, fontSize: 11),
+                          ),
+                          Row(
+                            children: [
+                              if (_ticketOpeningDate != null)
+                                InkWell(
+                                  onPressed: () => setState(() => _ticketOpeningDate = null),
+                                  child: const Icon(Icons.clear_rounded, size: 16, color: Colors.redAccent),
+                                ),
+                              const SizedBox(width: 8),
+                              const Icon(Icons.calendar_today_rounded, size: 14, color: EventTheme.primary),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+
             Row(
               children: [
-                Expanded(
-                    child: _field(_cityCtrl, l10n.t('admin_event_city'),
-                        validator: (v) => v!.isEmpty
-                            ? l10n.t('admin_event_err_city_req')
-                            : null)),
+                Expanded(child: _field(_cityCtrl, l10n.t('admin_event_city'), validator: (v) => v!.isEmpty ? l10n.t('admin_event_err_city_req') : null)),
                 const SizedBox(width: 12),
-                Expanded(
-                    child: _field(_locationCtrl, l10n.t('admin_event_location'),
-                        validator: (v) => v!.isEmpty
-                            ? l10n.t('admin_event_err_loc_req')
-                            : null)),
+                Expanded(child: _field(_locationCtrl, l10n.t('admin_event_location'), validator: (v) => v!.isEmpty ? l10n.t('admin_event_err_loc_req') : null)),
               ],
             ),
             const SizedBox(height: 12),
@@ -651,34 +537,22 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
               children: [
                 Expanded(child: _field(_orgCtrl, l10n.t('admin_event_organizer'))),
                 const SizedBox(width: 12),
-                Expanded(
-                    child: _field(_phoneCtrl, l10n.t('admin_event_phone'),
-                        keyboard: TextInputType.phone)),
+                Expanded(child: _field(_phoneCtrl, l10n.t('admin_event_phone'), keyboard: TextInputType.phone)),
               ],
             ),
             const SizedBox(height: 12),
-            _field(_emailCtrl, l10n.t('admin_event_email'),
-                keyboard: TextInputType.emailAddress),
+            _field(_emailCtrl, l10n.t('admin_event_email'), keyboard: TextInputType.emailAddress),
             const SizedBox(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  l10n.t('admin_event_tiers_title'),
-                  style: ThixPolicy.labelStyle.copyWith(
-                      color: EventTheme.textMain,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 12),
-                ),
+                Text(l10n.t('admin_event_tiers_title'), style: ThixPolicy.labelStyle.copyWith(color: EventTheme.textMain, fontWeight: FontWeight.w800, fontSize: 12)),
                 DropdownButton<String>(
                   value: _currency,
                   dropdownColor: EventTheme.surface,
                   underline: const SizedBox(),
-                  style: TextStyle(
-                      color: EventTheme.textMain, fontWeight: FontWeight.w800),
-                  items: const ['FC', 'USD', 'EUR']
-                      .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                      .toList(),
+                  style: TextStyle(color: EventTheme.textMain, fontWeight: FontWeight.w800),
+                  items: const ['FC', 'USD', 'EUR'].map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                   onChanged: (v) => setState(() => _currency = v!),
                 ),
               ],
@@ -694,62 +568,27 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                 children: [
                   ..._tiers.asMap().entries.map((e) {
                     final t = e.value;
-                    return Semantics(
-                      label:
-                          '${t['name']}, ${t['price']} $_currency, ${t['capacity']}',
-                      child: ListTile(
-                        title: Text(
-                          t['name'],
-                          style: TextStyle(
-                              color: EventTheme.textMain,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12),
-                        ),
-                        subtitle: Text(
-                          '${t['price']} $_currency • ${t['capacity']} ${l10n.t('admin_event_dialog_capacity').toLowerCase()}',
-                          style: TextStyle(
-                              color: EventTheme.textMuted, fontSize: 11),
-                        ),
-                        trailing: Semantics(
-                          button: true,
-                          label: l10n.t('common_delete'),
-                          child: IconButton(
-                            icon: const Icon(Icons.delete_outline_rounded,
-                                color: EventTheme.danger, size: 18),
-                            onPressed: () {
-                              HapticFeedback.lightImpact();
-                              setState(() => _tiers.removeAt(e.key));
-                            },
-                          ),
-                        ),
+                    return ListTile(
+                      title: Text(t['name'], style: TextStyle(color: EventTheme.textMain, fontWeight: FontWeight.w700, fontSize: 12)),
+                      subtitle: Text('${t['price']} $_currency • ${t['capacity']} places', style: TextStyle(color: EventTheme.textMuted, fontSize: 11)),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded, color: EventTheme.danger, size: 18),
+                        onPressed: () => setState(() => _tiers.removeAt(e.key)),
                       ),
                     );
                   }),
                   const Divider(color: EventTheme.border, height: 1),
-                  Semantics(
-                    button: true,
-                    label: l10n.t('admin_event_add_tier_btn'),
-                    child: InkWell(
-                      onTap: _addTierDialog,
-                      borderRadius:
-                          const BorderRadius.vertical(bottom: Radius.circular(14)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.add_circle_outline_rounded,
-                                color: Colors.white, size: 16),
-                            const SizedBox(width: 8),
-                            Text(
-                              l10n.t('admin_event_add_tier_btn'),
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 11),
-                            ),
-                          ],
-                        ),
+                  InkWell(
+                    onTap: _addTierDialog,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.add_circle_outline_rounded, color: Colors.white, size: 16),
+                          const SizedBox(width: 8),
+                          Text(l10n.t('admin_event_add_tier_btn'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 11)),
+                        ],
                       ),
                     ),
                   ),
@@ -762,10 +601,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
               dropdownColor: EventTheme.surface,
               style: TextStyle(color: EventTheme.textMain),
               decoration: _deco(l10n.t('admin_event_status')),
-              items: _kStatuses
-                  .map((c) => DropdownMenuItem(
-                      value: c.value, child: Text(l10n.t(c.labelKey))))
-                  .toList(),
+              items: _kStatuses.map((c) => DropdownMenuItem(value: c.value, child: Text(l10n.t(c.labelKey)))).toList(),
               onChanged: (v) => setState(() => _status = v!),
             ),
             const SizedBox(height: 12),
@@ -774,14 +610,10 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
               dropdownColor: EventTheme.surface,
               style: TextStyle(color: EventTheme.textMain),
               decoration: _deco(l10n.t('admin_event_visibility')),
-              items: _kVisibility
-                  .map((c) => DropdownMenuItem(
-                      value: c.value, child: Text(l10n.t(c.labelKey))))
-                  .toList(),
+              items: _kVisibility.map((c) => DropdownMenuItem(value: c.value, child: Text(l10n.t(c.labelKey)))).toList(),
               onChanged: (v) => setState(() => _publishSection = v!),
             ),
             const SizedBox(height: 18),
-            // 🟢 SECTION SWITCH POUR LA FILE D'ATTENTE / PRÉ-COMMANDE
             Container(
               decoration: BoxDecoration(
                 color: EventTheme.surface,
@@ -789,27 +621,11 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                 border: Border.all(color: EventTheme.border),
               ),
               child: SwitchListTile(
-                title: Text(
-                  'Activer la file d\'attente / Pré-commande',
-                  style: TextStyle(
-                    color: EventTheme.textMain,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12,
-                  ),
-                ),
-                subtitle: Text(
-                  'Si l\'événement est complet ou en pré-commande, les utilisateurs patienteront dans une file d\'attente virtuelle.',
-                  style: TextStyle(
-                    color: EventTheme.textMuted,
-                    fontSize: 11,
-                  ),
-                ),
+                title: Text('Activer la file d\'attente / Pré-commande', style: TextStyle(color: EventTheme.textMain, fontWeight: FontWeight.w800, fontSize: 12)),
+                subtitle: Text('Force les utilisateurs à patienter dans une file virtuelle si la billetterie n\'est pas ouverte ou si l\'événement est complet.', style: TextStyle(color: EventTheme.textMuted, fontSize: 11)),
                 value: _enableWaitingQueue,
                 activeColor: EventTheme.primary,
-                onChanged: (val) {
-                  HapticFeedback.selectionClick();
-                  setState(() => _enableWaitingQueue = val);
-                },
+                onChanged: (val) => setState(() => _enableWaitingQueue = val),
               ),
             ),
             const SizedBox(height: 40),
@@ -819,11 +635,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
     );
   }
 
-  // ────────────────────────────────────────────────────────────
-  // SUB-WIDGETS
-  // ────────────────────────────────────────────────────────────
-  Widget _imgPicker(
-      String label, Uint8List? bytes, String? url, VoidCallback tap) {
+  Widget _imgPicker(String label, Uint8List? bytes, String? url, VoidCallback tap) {
     return InkWell(
       onTap: tap,
       borderRadius: BorderRadius.circular(ThixPolicy.rMd),
@@ -835,41 +647,22 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
           border: Border.all(color: EventTheme.border),
         ),
         child: bytes != null
-            ? ClipRRect(
-                borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                child: Image.memory(bytes, fit: BoxFit.cover),
-              )
+            ? ClipRRect(borderRadius: BorderRadius.circular(ThixPolicy.rMd), child: Image.memory(bytes, fit: BoxFit.cover))
             : url != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                    child: Image.network(url, fit: BoxFit.cover),
-                  )
+                ? ClipRRect(borderRadius: BorderRadius.circular(ThixPolicy.rMd), child: Image.network(url, fit: BoxFit.cover))
                 : Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.add_a_photo_rounded,
-                          color: Colors.white, size: 18),
+                      const Icon(Icons.add_a_photo_rounded, color: Colors.white, size: 18),
                       const SizedBox(height: 6),
-                      Text(
-                        label,
-                        style: TextStyle(
-                            color: EventTheme.textMuted,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700),
-                      ),
+                      Text(label, style: TextStyle(color: EventTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w700)),
                     ],
                   ),
       ),
     );
   }
 
-  Widget _field(
-    TextEditingController c,
-    String label, {
-    int maxLines = 1,
-    TextInputType? keyboard,
-    String? Function(String?)? validator,
-  }) {
+  Widget _field(TextEditingController c, String label, {int maxLines = 1, TextInputType? keyboard, String? Function(String?)? validator}) {
     return TextFormField(
       controller: c,
       maxLines: maxLines,
@@ -885,20 +678,10 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
         labelStyle: TextStyle(color: EventTheme.textMuted, fontSize: 11),
         filled: true,
         fillColor: EventTheme.surface,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          borderSide: const BorderSide(color: EventTheme.border),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          borderSide: const BorderSide(color: EventTheme.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          borderSide: const BorderSide(color: Colors.white24, width: 1.2),
-        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: const BorderSide(color: EventTheme.border)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPieceBorder: EventTheme.border), borderSide: const BorderSide(color: EventTheme.border)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: const BorderSide(color: Colors.white24, width: 1.2)),
         errorStyle: TextStyle(color: EventTheme.danger, fontSize: 10),
       );
 
@@ -907,19 +690,9 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
         labelStyle: TextStyle(color: EventTheme.textMuted, fontSize: 11),
         filled: true,
         fillColor: EventTheme.surfaceAlt,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-          borderSide: const BorderSide(color: EventTheme.border),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-          borderSide: const BorderSide(color: EventTheme.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-          borderSide: const BorderSide(color: Colors.white24),
-        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm), borderSide: const BorderSide(color: EventTheme.border)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm), borderSide: const BorderSide(color: EventTheme.border)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm), borderSide: const BorderSide(color: Colors.white24)),
       );
 }
