@@ -19,7 +19,8 @@ class Event {
   final int? capacity;
   final int? remainingTickets;
   final bool isFeatured;
-  final bool isRecommended; // 🟢 Ajout ici
+  final bool isRecommended;
+  final bool enableWaitingQueue; // 🟢 Ajout ici
   final String status;
   final String? organizerId;
   final String? organizerName;
@@ -32,7 +33,6 @@ class Event {
   final DateTime? updatedAt;
   final List<TicketTier> ticketTiers;
 
-  // Champs pour l'état local de l'utilisateur (Likes & Favoris)
   final bool isLiked;
   final bool isSaved;
 
@@ -55,7 +55,8 @@ class Event {
     this.capacity,
     this.remainingTickets,
     required this.isFeatured,
-    this.isRecommended = false, // 🟢 Ajout ici (valeur par défaut pour éviter de casser le vieux code)
+    this.isRecommended = false,
+    this.enableWaitingQueue = false, // 🟢 Ajout ici
     required this.status,
     this.organizerId,
     this.organizerName,
@@ -91,7 +92,8 @@ class Event {
       capacity: json['capacity'],
       remainingTickets: json['remaining_tickets'],
       isFeatured: json['is_featured'] ?? false,
-      isRecommended: json['is_recommended'] ?? false, // 🟢 Ajout ici
+      isRecommended: json['is_recommended'] ?? false,
+      enableWaitingQueue: json['enable_waiting_queue'] ?? false, // 🟢 Ajout ici
       status: json['status'] ?? 'upcoming',
       organizerId: json['organizer_id'],
       organizerName: json['organizer_name'],
@@ -104,8 +106,8 @@ class Event {
       updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
       isLiked: json['is_liked'] ?? false,
       ticketTiers: json['ticket_tiers'] != null 
-    ? (json['ticket_tiers'] as List).map((i) => TicketTier.fromJson(i)).toList() 
-    : [],
+        ? (json['ticket_tiers'] as List).map((i) => TicketTier.fromJson(i)).toList() 
+        : [],
       isSaved: json['is_saved'] ?? false,
     );
   }
@@ -130,7 +132,8 @@ class Event {
       if (capacity != null) 'capacity': capacity,
       if (remainingTickets != null) 'remaining_tickets': remainingTickets,
       'is_featured': isFeatured,
-      'is_recommended': isRecommended, // 🟢 Ajout ici
+      'is_recommended': isRecommended,
+      'enable_waiting_queue': enableWaitingQueue, // 🟢 Ajout ici
       'status': status,
       if (organizerId != null) 'organizer_id': organizerId,
       if (organizerName != null) 'organizer_name': organizerName,
@@ -144,7 +147,6 @@ class Event {
       'is_liked': isLiked,
       'is_saved': isSaved,
       'ticket_tiers': ticketTiers.map((e) => e.toJson()).toList(),
-
     };
   }
 
@@ -167,7 +169,8 @@ class Event {
     int? capacity,
     int? remainingTickets,
     bool? isFeatured,
-    bool? isRecommended, // 🟢 Ajout ici
+    bool? isRecommended,
+    bool? enableWaitingQueue, // 🟢 Ajout ici
     String? status,
     String? organizerId,
     String? organizerName,
@@ -201,7 +204,8 @@ class Event {
       capacity: capacity ?? this.capacity,
       remainingTickets: remainingTickets ?? this.remainingTickets,
       isFeatured: isFeatured ?? this.isFeatured,
-      isRecommended: isRecommended ?? this.isRecommended, // 🟢 Ajout ici
+      isRecommended: isRecommended ?? this.isRecommended,
+      enableWaitingQueue: enableWaitingQueue ?? this.enableWaitingQueue, // 🟢 Ajout ici
       status: status ?? this.status,
       organizerId: organizerId ?? this.organizerId,
       organizerName: organizerName ?? this.organizerName,
@@ -218,7 +222,6 @@ class Event {
     );
   }
 
-  // --- GETTER : PRIX FORMATÉ ---
   String get formattedPrice {
     if (isFree || price <= 0) return 'Gratuit';
     final priceString = price.truncateToDouble() == price 
@@ -227,25 +230,21 @@ class Event {
     return '$priceString $priceCurrency';
   }
 
-  // --- GETTER : DATE COURTE ---
   String get shortDate {
     final months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
     return '${startDate.day} ${months[startDate.month - 1]}';
   }
 
-  // --- GETTER : DATE FORMATÉE ---
   String get formattedDate {
     final months = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
     return '${startDate.day} ${months[startDate.month - 1]} ${startDate.year}';
   }
 
-  // --- GETTER : LABEL DE CATÉGORIE ---
   String get categoryLabel {
     if (category.isEmpty) return 'Événement';
     return category[0].toUpperCase() + category.substring(1).toLowerCase();
   }
 
-  // --- GETTER : PLAGE HORAIRE ---
   String get timeRange {
     String startHour = '${startDate.hour.toString().padLeft(2, '0')}:${startDate.minute.toString().padLeft(2, '0')}';
     if (endDate != null) {
@@ -255,7 +254,6 @@ class Event {
     return startHour;
   }
   
-  // --- GETTERS : STATUTS TEMPORELS ---
   bool get isUpcoming => startDate.isAfter(DateTime.now());
   bool get isPastEvent => endDate != null 
       ? endDate!.isBefore(DateTime.now()) 
