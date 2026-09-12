@@ -118,6 +118,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
   late DateTime _startDate;
   DateTime? _endDate;
   bool _saving = false;
+  bool _enableWaitingQueue = false; // 🟢 Ajout de l'état pour la file d'attente
   String _publishSection = 'upcoming';
   Uint8List? _imgBytes, _bannerBytes;
   final _picker = ImagePicker();
@@ -141,6 +142,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
     _status = e?.status ?? 'upcoming';
     _startDate = e?.startDate ?? DateTime.now().add(const Duration(days: 7));
     _endDate = e?.endDate;
+    _enableWaitingQueue = e?.enableWaitingQueue ?? false; // 🟢 Récupération si édition
     _publishSection = e?.isFeatured == true
         ? 'featured'
         : e?.isRecommended == true
@@ -359,6 +361,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
             : widget.eventToEdit?.remainingTickets,
         isFeatured: isFeatured,
         isRecommended: isRecommended,
+        enableWaitingQueue: _enableWaitingQueue, // 🟢 Passage de la valeur
         status: _status,
         organizerName: _orgCtrl.text.trim().isEmpty
             ? null
@@ -776,6 +779,38 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                       value: c.value, child: Text(l10n.t(c.labelKey))))
                   .toList(),
               onChanged: (v) => setState(() => _publishSection = v!),
+            ),
+            const SizedBox(height: 18),
+            // 🟢 SECTION SWITCH POUR LA FILE D'ATTENTE / PRÉ-COMMANDE
+            Container(
+              decoration: BoxDecoration(
+                color: EventTheme.surface,
+                borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                border: Border.all(color: EventTheme.border),
+              ),
+              child: SwitchListTile(
+                title: Text(
+                  'Activer la file d\'attente / Pré-commande',
+                  style: TextStyle(
+                    color: EventTheme.textMain,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+                subtitle: Text(
+                  'Si l\'événement est complet ou en pré-commande, les utilisateurs patienteront dans une file d\'attente virtuelle.',
+                  style: TextStyle(
+                    color: EventTheme.textMuted,
+                    fontSize: 11,
+                  ),
+                ),
+                value: _enableWaitingQueue,
+                activeColor: EventTheme.primary,
+                onChanged: (val) {
+                  HapticFeedback.selectionClick();
+                  setState(() => _enableWaitingQueue = val);
+                },
+              ),
             ),
             const SizedBox(height: 40),
           ],
