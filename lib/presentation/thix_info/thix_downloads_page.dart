@@ -12,7 +12,7 @@ class ThixDownloadsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(downloadsProvider);
+    final notifier = ref.watch(downloadsProvider);
 
     return Scaffold(
       backgroundColor: ThixPolicy.inkDeep,
@@ -23,7 +23,7 @@ class ThixDownloadsPage extends ConsumerWidget {
         title: Text('Mes téléchargements',
             style: ThixPolicy.h3Style.copyWith(color: Colors.white)),
       ),
-      body: state.items.isEmpty
+      body: notifier.items.isEmpty
           ? Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -35,7 +35,8 @@ class ThixDownloadsPage extends ConsumerWidget {
                       style:
                           ThixPolicy.titleStyle.copyWith(color: Colors.white70)),
                   const SizedBox(height: ThixPolicy.s8),
-                  Text('Téléchargez des podcasts ou vidéos pour les écouter hors ligne',
+                  Text(
+                      'Téléchargez des podcasts ou vidéos pour les écouter hors ligne',
                       textAlign: TextAlign.center,
                       style: ThixPolicy.bodySmallStyle
                           .copyWith(color: Colors.white38)),
@@ -45,21 +46,21 @@ class ThixDownloadsPage extends ConsumerWidget {
           : ListView(
               padding: const EdgeInsets.all(ThixPolicy.s16),
               children: [
-                if (state.active.isNotEmpty) ...[
-                  _header('En cours (${state.active.length})'),
-                  ...state.active.map((i) => _tile(context, ref, i, active: true)),
+                if (notifier.active.isNotEmpty) ...[
+                  _header('En cours (${notifier.active.length})'),
+                  ...notifier.active.map((i) => _tile(ref, i, active: true)),
                   const SizedBox(height: ThixPolicy.s24),
                 ],
-                if (state.completed.isNotEmpty) ...[
-                  _header('Terminés (${state.completed.length})'),
-                  ...state.completed
-                      .map((i) => _tile(context, ref, i, active: false)),
+                if (notifier.completed.isNotEmpty) ...[
+                  _header('Terminés (${notifier.completed.length})'),
+                  ...notifier.completed
+                      .map((i) => _tile(ref, i, active: false)),
                 ],
-                if (state.failed.isNotEmpty) ...[
+                if (notifier.failed.isNotEmpty) ...[
                   const SizedBox(height: ThixPolicy.s24),
-                  _header('Échoués (${state.failed.length})'),
-                  ...state.failed
-                      .map((i) => _tile(context, ref, i, active: false)),
+                  _header('Échoués (${notifier.failed.length})'),
+                  ...notifier.failed
+                      .map((i) => _tile(ref, i, active: false)),
                 ],
               ],
             ),
@@ -70,11 +71,12 @@ class ThixDownloadsPage extends ConsumerWidget {
         padding: const EdgeInsets.only(bottom: ThixPolicy.s12),
         child: Text(t,
             style: ThixPolicy.labelStyle.copyWith(
-                color: Colors.white54, letterSpacing: 1.2, fontWeight: ThixPolicy.bold)),
+                color: Colors.white54,
+                letterSpacing: 1.2,
+                fontWeight: ThixPolicy.bold)),
       );
 
-  Widget _tile(BuildContext ctx, WidgetRef ref, DownloadItem item,
-      {required bool active}) {
+  Widget _tile(WidgetRef ref, DownloadItem item, {required bool active}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: ThixPolicy.s12),
       child: GlassBox(
@@ -107,15 +109,16 @@ class ThixDownloadsPage extends ConsumerWidget {
                   Text(item.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: ThixPolicy.bodyStyle
-                          .copyWith(color: Colors.white, fontWeight: ThixPolicy.bold)),
+                      style: ThixPolicy.bodyStyle.copyWith(
+                          color: Colors.white, fontWeight: ThixPolicy.bold)),
                   const SizedBox(height: ThixPolicy.s4),
                   Row(
                     children: [
                       Icon(item.mediaType == 'video'
                               ? Icons.videocam_rounded
                               : Icons.graphic_eq_rounded,
-                          size: 12, color: Colors.white38),
+                          size: 12,
+                          color: Colors.white38),
                       const SizedBox(width: ThixPolicy.s4),
                       Text(item.mediaType == 'video' ? 'Vidéo' : 'Audio',
                           style: ThixPolicy.microStyle
@@ -144,7 +147,7 @@ class ThixDownloadsPage extends ConsumerWidget {
                   if (item.status == DownloadStatus.failed)
                     Padding(
                       padding: const EdgeInsets.only(top: ThixPolicy.s6),
-                      child: Text('Échec : ${item.error}',
+                      child: Text('Échec : ${item.error ?? 'inconnu'}',
                           style: ThixPolicy.microStyle
                               .copyWith(color: ThixPolicy.danger)),
                     ),
@@ -162,7 +165,7 @@ class ThixDownloadsPage extends ConsumerWidget {
   Widget _tileAction(WidgetRef ref, DownloadItem item) {
     switch (item.status) {
       case DownloadStatus.downloading:
-        return SizedBox(
+        return const SizedBox(
           width: 28,
           height: 28,
           child: CircularProgressIndicator(
