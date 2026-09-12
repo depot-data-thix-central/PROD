@@ -591,30 +591,33 @@ class _ThixMagazineReaderPageState
                   ],
                 ),
                 const SizedBox(height: 12),
-for (final k in keyPoints)
-  Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(Icons.check_circle, size: 15, color: _gold),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            k,
-            style: TextStyle(
-              fontSize: 12.5,
-              color: Colors.white.withOpacity(0.87),
-              height: 1.45,
+                for (final k in keyPoints)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.check_circle, size: 15, color: _gold),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            k,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.white.withOpacity(0.87),
+                              height: 1.45,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 16),
+              ],
             ),
           ),
-        ),
-      ],
-    ),
-  ),
-const SizedBox(height: 16),
-
         ],
+        const SizedBox(height: 16),
         // ── CARTE AUTEUR ──
         Container(
           width: double.infinity,
