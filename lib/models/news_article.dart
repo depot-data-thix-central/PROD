@@ -99,7 +99,7 @@ class NewsArticle {
     int? viewsCount,
     bool? isFeatured,
     bool? isBreaking,
-    bool? status,
+    String? status,
     DateTime? publishedAt,
     DateTime? createdAt,
     String? createdBy,
