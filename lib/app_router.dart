@@ -213,6 +213,8 @@ import 'package:thix_id/presentation/thix_info/saved_articles_page.dart';
 import 'package:thix_id/presentation/thix_info/breaking_news_page.dart';
 import 'package:thix_id/presentation/thix_info/thix_downloads_page.dart';
 import 'package:thix_id/presentation/thix_info/thix_info_space_page.dart';
+import 'package:thix_id/presentation/thix_info/thix_magazine_reader_page.dart';
+
 // === JOBS & OPPORTUNITIES ===
 import 'package:thix_id/presentation/jobs/jobs_page.dart';
 import 'package:thix_id/presentation/jobs/job_apply_page.dart';
@@ -696,6 +698,7 @@ GoRoute(path: '/thix-info/downloads', name: 'thixInfoDownloads',
             child: ThixInfoSpacePage(space: state.pathParameters['space']!),
           ),
         ),
+        GoRoute(path: AppRoutes.thixInfoMagazine, name: 'thixInfoMagazine', pageBuilder: (_, state) => NoTransitionPage(child: ThixMagazineReaderPage(articleId: state.pathParameters['articleId']!))),
         // === THIX RESERVATION (BUS & GENERAL) ===
         GoRoute(
           path: AppRoutes.reservation,
