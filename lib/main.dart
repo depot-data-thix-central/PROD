@@ -102,7 +102,19 @@ Future<void> main() async {
         ),
       );
 
+      // ✅ CORRECTIF : Filtre intelligent des erreurs réseau/auth
       FlutterError.onError = (details) {
+        final msg = details.exceptionAsString().toLowerCase();
+        final isNetworkAuthError = msg.contains('authretryablefetchexception') ||
+            msg.contains('socketexception') ||
+            msg.contains('connection reset') ||
+            msg.contains('stream has already been listened');
+
+        if (isNetworkAuthError) {
+          _log('⚠️ FlutterError network/stream ignored: ${details.exception}');
+          return; // on ne présente pas l'erreur rouge pour ces cas
+        }
+
         FlutterError.presentError(details);
         // 🛡️ AJOUT : traque des crashs de l'application
         SecurityReporter.reportClientError(
@@ -186,12 +198,23 @@ Future<void> main() async {
       );
       _log('❌ Uncaught (appLaunched=$_appLaunched): $error');
 
-      // ⚠️ CORRECTIF : ne reconstruire l'écran d'erreur QUE si l'app
-      // n'a jamais réussi à démarrer. Si elle tourne déjà (cas typique :
-      // AuthRetryableFetchException du timer de refresh token Supabase
-      // pendant une coupure réseau), on se contente de logger — un second
-      // runApp() ici créerait un conflit d'arbre de widgets / bloquerait
-      // le thread principal (ANR "Thix Hub isn't responding").
+      // ✅ CORRECTIF FORT : une fois l'app lancée, on ignore complètement
+      // les erreurs réseau de refresh token (cas typique après inactivité / offline).
+      // Ça évite l'ANR "Thix Hub isn't responding" et l'écran rouge inutile.
+      final errorStr = error.toString().toLowerCase();
+      final isNetworkAuthError = errorStr.contains('authretryablefetchexception') ||
+          errorStr.contains('socketexception') ||
+          errorStr.contains('connection reset') ||
+          errorStr.contains('clientexception') ||
+          errorStr.contains('failed host lookup') ||
+          errorStr.contains('network is unreachable');
+
+      if (_appLaunched && isNetworkAuthError) {
+        _log('⚠️ Network/Auth error ignored (app already running, likely offline)');
+        return; // ← ne fait rien, pas de runApp, pas d'écran d'erreur
+      }
+
+      // Seulement si l'app n'a JAMAIS réussi à démarrer
       if (!_appLaunched) {
         runApp(MaterialApp(
           home: Scaffold(
@@ -246,6 +269,22 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
     final localeController = ref.read(localeControllerProvider);
     if (locales != null && locales.isNotEmpty) {
       localeController.refreshSystemLocale(locales);
+    }
+  }
+
+  // ✅ CORRECTIF : Ajout de la gestion du cycle de vie
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    _log('Lifecycle: $state');
+
+    // Quand l'app revient au premier plan après inactivité
+    if (state == AppLifecycleState.resumed) {
+      // On laisse AuthController gérer (il a déjà des fallbacks offline).
+      // L'important est de ne PAS forcer un refresh token ici.
+      // Si tu as un ConnectivityService, tu peux checker ici et passer
+      // un flag offline à AuthController.
+      _log('App resumed → session handled by AuthController (offline-safe)');
     }
   }
 
