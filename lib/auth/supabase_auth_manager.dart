@@ -148,9 +148,16 @@ Future<T> _authRetry<T>(
       rethrow; // Pas de retry sur erreurs auth (credentials invalides, etc.)
     } catch (e) {
       attempt++;
-      if (attempt > maxRetries) {
-        debugPrint('[Auth] ❌ $label error after $attempt attempts: $e');
-        rethrow;
+      final msg = e.toString().toLowerCase();
+      final isNetwork = msg.contains('socket') ||
+          msg.contains('network') ||
+          msg.contains('connection reset') ||
+          msg.contains('authretryable') ||
+          msg.contains('failed host lookup');
+
+      if (isNetwork || attempt > maxRetries) {
+        debugPrint('[Auth] ❌ $label network/final error: $e');
+        throw AuthException(AuthErrorCode.networkError, rawMessage: e.toString());
       }
       debugPrint('[Auth] ⚠️ $label error — retry $attempt/$maxRetries: $e');
       await Future.delayed(_kRetryDelay);
@@ -171,6 +178,9 @@ class SupabaseAuthManager implements AuthManager {
   StreamSubscription<AuthState>? _sub;
   StreamSubscription<ThixProfile?>? _profileSub;
 
+  bool _initialized = false;          // ← NOUVEAU
+  bool _isBindingProfile = false;     // ← NOUVEAU (évite race)
+
   SupabaseAuthManager({SupabaseClient? client, ProfileService? profiles})
       : _client = client ?? SupabaseConfig.client,
         _profiles = profiles ?? ProfileService();
@@ -187,61 +197,63 @@ class SupabaseAuthManager implements AuthManager {
 
   @override
   Future<void> init() async {
+    if (_initialized) {
+      debugPrint('[Auth] ⚠️ init() déjà appelé → skip');
+      return;
+    }
+    _initialized = true;
+
     debugPrint('[Auth] 🚀 Initializing auth manager');
+
+    // Annule proprement l'ancien listener
     await _sub?.cancel();
+    _sub = null;
 
-    _sub = _client.auth.onAuthStateChange.listen((state) async {
-      try {
-        final user = state.session?.user;
-        if (user == null) {
-          await _cleanupSession();
-          return;
-        }
-        try {
-          final hydrated = await _hydrateUser(user);
-          _currentUser.value = hydrated;
-          _bindProfileSync(user.id);
-          unawaited(PushNotificationService.instance.onSignedIn(userId: user.id));
-          debugPrint('[Auth] ✓ User hydrated: ${user.id}');
-        } catch (e) {
-          debugPrint('[Auth] ⚠️ Hydrate offline, keeping session alive: $e');
-          
-          // ✅ FALLBACK COMPLET (Satisfait toutes les exigences du constucteur de AppUser)
-          _currentUser.value ??= AppUser(
-            id: user.id,
-            thixId: '',
-            thixChat: '',
-            thixScore: null,
-            email: user.email ?? '',
-            phone: user.phone,
-            displayName: user.userMetadata?['full_name']?.toString() ?? user.email ?? _kDefaultDisplayName,
-            accountType: AccountType.personal,
-            photoUrl: user.userMetadata?['avatar_url']?.toString(),
-            bio: null,
-            countryOrOrigin: null,
-            education: const [],
-            experience: const [],
-            skills: const [],
-            enrollments: const [],
-            languages: const [],
-            biometricsEnabled: true,
-            twoFaEnabled: false,
-            createdAt: DateTime.now(),
-            updatedAt: DateTime.now(),
-          );
-        }
-      } catch (e) {
-        debugPrint('[Auth] ❌ Auth state error: $e');
-      }
-    });
+    try {
+      _sub = _client.auth.onAuthStateChange.listen(
+        (state) async {
+          try {
+            final user = state.session?.user;
+            if (user == null) {
+              await _cleanupSession();
+              return;
+            }
 
+            try {
+              final hydrated = await _hydrateUser(user);
+              _currentUser.value = hydrated;
+              _bindProfileSync(user.id);
+              unawaited(PushNotificationService.instance.onSignedIn(userId: user.id));
+              debugPrint('[Auth] ✓ User hydrated: ${user.id}');
+            } catch (e) {
+              // ✅ Offline / network → on garde la session locale
+              debugPrint('[Auth] ⚠️ Hydrate offline, keeping session alive: $e');
+              _currentUser.value ??= _buildFallbackUser(user);
+            }
+          } catch (e) {
+            // Ne jamais laisser remonter une erreur de stream
+            debugPrint('[Auth] ❌ Auth state error (swallowed): $e');
+          }
+        },
+        onError: (e, st) {
+          // Très important : empêche "Stream has already been listened to"
+          // et les AuthRetryableFetchException de crasher l'UI
+          debugPrint('[Auth] ⚠️ onAuthStateChange error (ignored): $e');
+        },
+        cancelOnError: false,
+      );
+    } catch (e) {
+      debugPrint('[Auth] ❌ Failed to attach onAuthStateChange: $e');
+    }
+
+    // Hydratation initiale
     final s = _client.auth.currentSession;
     final u = s?.user;
     if (u == null) {
       await _cleanupSession();
       return;
     }
-    
+
     try {
       final hydrated = await _hydrateUser(u);
       _currentUser.value = hydrated;
@@ -249,31 +261,35 @@ class SupabaseAuthManager implements AuthManager {
       debugPrint('[Auth] ✓ Initial user hydrated: ${u.id}');
     } catch (e) {
       debugPrint('[Auth] ⚠️ Initial hydration failed (likely offline): $e');
-      
-      // ✅ FALLBACK COMPLET (Satisfait toutes les exigences du constucteur de AppUser)
-      _currentUser.value ??= AppUser(
-        id: u.id,
-        thixId: '',
-        thixChat: '',
-        thixScore: null,
-        email: u.email ?? '',
-        phone: u.phone,
-        displayName: u.userMetadata?['full_name']?.toString() ?? u.email ?? _kDefaultDisplayName,
-        accountType: AccountType.personal,
-        photoUrl: u.userMetadata?['avatar_url']?.toString(),
-        bio: null,
-        countryOrOrigin: null,
-        education: const [],
-        experience: const [],
-        skills: const [],
-        enrollments: const [],
-        languages: const [],
-        biometricsEnabled: true,
-        twoFaEnabled: false,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
+      _currentUser.value ??= _buildFallbackUser(u);
     }
+  }
+
+  AppUser _buildFallbackUser(User user) {
+    return AppUser(
+      id: user.id,
+      thixId: '',
+      thixChat: '',
+      thixScore: null,
+      email: user.email ?? '',
+      phone: user.phone,
+      displayName: user.userMetadata?['full_name']?.toString() ??
+          user.email ??
+          _kDefaultDisplayName,
+      accountType: AccountType.personal,
+      photoUrl: user.userMetadata?['avatar_url']?.toString(),
+      bio: null,
+      countryOrOrigin: null,
+      education: const [],
+      experience: const [],
+      skills: const [],
+      enrollments: const [],
+      languages: const [],
+      biometricsEnabled: true,
+      twoFaEnabled: false,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
   }
 
   Future<void> _cleanupSession() async {
@@ -299,68 +315,92 @@ class SupabaseAuthManager implements AuthManager {
   }
 
   void _bindProfileSync(String uid) {
-    unawaited(_profileSub?.cancel());
+    if (_isBindingProfile) return;
+    _isBindingProfile = true;
 
-    _profileSub = _profiles.streamMyProfile(uid).listen(
-      (p) {
-        if (p == null) return;
-        final cur = _currentUser.value;
-        if (cur == null || cur.id != uid) return;
+    unawaited(() async {
+      try {
+        await _profileSub?.cancel();
+        _profileSub = null;
 
-        final incomingThixId = p.thixId.trim();
-        final resolvedThixId = (!_isPendingThixId(incomingThixId)) ? incomingThixId : cur.thixId;
+        _profileSub = _profiles.streamMyProfile(uid).listen(
+          (p) {
+            if (p == null) return;
+            final cur = _currentUser.value;
+            if (cur == null || cur.id != uid) return;
 
-        final merged = cur.copyWith(
-          thixId: resolvedThixId,
-          thixChat: (p.thixChat ?? '').trim().isEmpty ? cur.thixChat : (p.thixChat ?? '').trim(),
-          displayName: p.displayName.trim().isEmpty ? cur.displayName : p.displayName.trim(),
-          photoUrl: (p.photoUrl ?? '').trim().isEmpty ? cur.photoUrl : p.photoUrl,
-          bio: p.bio ?? cur.bio,
-          occupation: p.occupation ?? cur.occupation,
-          profession: p.profession ?? cur.profession,
-          countryOrOrigin: p.countryOrOrigin ?? cur.countryOrOrigin,
-          contactPhone: p.contactPhone ?? cur.contactPhone,
-          maritalStatus: p.maritalStatus ?? cur.maritalStatus,
-          gender: p.gender ?? cur.gender,
-          dateOfBirth: p.dateOfBirth ?? cur.dateOfBirth,
-          placeOfBirth: p.placeOfBirth ?? cur.placeOfBirth,
-          nationality: p.nationality ?? cur.nationality,
-          address: p.address ?? cur.address,
-          fatherName: p.fatherName ?? cur.fatherName,
-          motherName: p.motherName ?? cur.motherName,
-          emergencyContactName: p.emergencyContactName ?? cur.emergencyContactName,
-          emergencyContactPhone: p.emergencyContactPhone ?? cur.emergencyContactPhone,
-          emergencyContactRelation: p.emergencyContactRelation ?? cur.emergencyContactRelation,
-          languages: p.languages,
-          education: p.education,
-          experience: p.experience,
-          skills: p.skills,
-          updatedAt: p.updatedAt,
+            final incomingThixId = p.thixId.trim();
+            final resolvedThixId =
+                (!_isPendingThixId(incomingThixId)) ? incomingThixId : cur.thixId;
+
+            final merged = cur.copyWith(
+              thixId: resolvedThixId,
+              thixChat: (p.thixChat ?? '').trim().isEmpty
+                  ? cur.thixChat
+                  : (p.thixChat ?? '').trim(),
+              displayName: p.displayName.trim().isEmpty
+                  ? cur.displayName
+                  : p.displayName.trim(),
+              photoUrl: (p.photoUrl ?? '').trim().isEmpty
+                  ? cur.photoUrl
+                  : p.photoUrl,
+              bio: p.bio ?? cur.bio,
+              occupation: p.occupation ?? cur.occupation,
+              profession: p.profession ?? cur.profession,
+              countryOrOrigin: p.countryOrOrigin ?? cur.countryOrOrigin,
+              contactPhone: p.contactPhone ?? cur.contactPhone,
+              maritalStatus: p.maritalStatus ?? cur.maritalStatus,
+              gender: p.gender ?? cur.gender,
+              dateOfBirth: p.dateOfBirth ?? cur.dateOfBirth,
+              placeOfBirth: p.placeOfBirth ?? cur.placeOfBirth,
+              nationality: p.nationality ?? cur.nationality,
+              address: p.address ?? cur.address,
+              fatherName: p.fatherName ?? cur.fatherName,
+              motherName: p.motherName ?? cur.motherName,
+              emergencyContactName:
+                  p.emergencyContactName ?? cur.emergencyContactName,
+              emergencyContactPhone:
+                  p.emergencyContactPhone ?? cur.emergencyContactPhone,
+              emergencyContactRelation:
+                  p.emergencyContactRelation ?? cur.emergencyContactRelation,
+              languages: p.languages,
+              education: p.education,
+              experience: p.experience,
+              skills: p.skills,
+              updatedAt: p.updatedAt,
+            );
+
+            final unchanged = merged.displayName == cur.displayName &&
+                merged.photoUrl == cur.photoUrl &&
+                merged.bio == cur.bio &&
+                merged.countryOrOrigin == cur.countryOrOrigin &&
+                merged.occupation == cur.occupation &&
+                merged.profession == cur.profession &&
+                merged.thixChat == cur.thixChat &&
+                merged.thixId == cur.thixId &&
+                merged.contactPhone == cur.contactPhone &&
+                merged.maritalStatus == cur.maritalStatus &&
+                merged.gender == cur.gender &&
+                merged.dateOfBirth == cur.dateOfBirth &&
+                listEquals(merged.languages, cur.languages) &&
+                merged.updatedAt == cur.updatedAt;
+
+            if (unchanged) return;
+            _currentUser.value = merged;
+            debugPrint('[Auth] ✓ Profile synced for $uid');
+          },
+          onError: (e, st) {
+            // Ne jamais laisser l'erreur de stream tuer l'app
+            debugPrint('[Auth] ❌ Profile sync stream failed uid=$uid err=$e');
+          },
+          cancelOnError: false,
         );
-
-        final unchanged = merged.displayName == cur.displayName &&
-            merged.photoUrl == cur.photoUrl &&
-            merged.bio == cur.bio &&
-            merged.countryOrOrigin == cur.countryOrOrigin &&
-            merged.occupation == cur.occupation &&
-            merged.profession == cur.profession &&
-            merged.thixChat == cur.thixChat &&
-            merged.thixId == cur.thixId &&
-            merged.contactPhone == cur.contactPhone &&
-            merged.maritalStatus == cur.maritalStatus &&
-            merged.gender == cur.gender &&
-            merged.dateOfBirth == cur.dateOfBirth &&
-            listEquals(merged.languages, cur.languages) &&
-            merged.updatedAt == cur.updatedAt;
-
-        if (unchanged) return;
-        _currentUser.value = merged;
-        debugPrint('[Auth] ✓ Profile synced for $uid');
-      },
-      onError: (e, st) {
-        debugPrint('[Auth] ❌ Profile sync stream failed uid=$uid err=$e');
-      },
-    );
+      } catch (e) {
+        debugPrint('[Auth] ⚠️ _bindProfileSync error: $e');
+      } finally {
+        _isBindingProfile = false;
+      }
+    }());
   }
 
   // ==========================================================================
@@ -573,6 +613,16 @@ class SupabaseAuthManager implements AuthManager {
       );
       if (row != null) return (row as Map).cast<String, dynamic>();
     } catch (e) {
+      final msg = e.toString().toLowerCase();
+      // En offline on ne rethrow pas → on laisse le fallback s'occuper
+      if (msg.contains('socket') ||
+          msg.contains('network') ||
+          msg.contains('connection') ||
+          msg.contains('timeout') ||
+          msg.contains('authretryable')) {
+        debugPrint('[Auth] ⚠️ Profiles select offline/network → null (uid=$uid)');
+        return null;
+      }
       debugPrint('[Auth] ❌ Profiles select by id failed uid=$uid err=$e');
       rethrow;
     }
@@ -1085,8 +1135,11 @@ class SupabaseAuthManager implements AuthManager {
   @override
   void dispose() {
     debugPrint('[Auth] 🧹 Disposing AuthManager');
+    _initialized = false;
     _sub?.cancel();
+    _sub = null;
     _profileSub?.cancel();
+    _profileSub = null;
     _currentUser.dispose();
   }
 }
