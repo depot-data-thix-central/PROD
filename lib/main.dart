@@ -12,6 +12,10 @@
 // ✅ Support RTL automatique pour l'Arabe via Directionality
 // ✅ localeListResolutionCallback pour meilleur fallback
 // ✅ Rebuild automatique de MaterialApp lors du changement de langue
+// ✅ CORRECTIF ANR OFFLINE : le catch de runZonedGuarded ne relance plus runApp()
+//    si l'app a déjà démarré — évite le double arbre de widgets / blocage UI
+//    quand une erreur réseau (ex. AuthRetryableFetchException lors du refresh
+//    token en mode offline) remonte hors des try/catch internes.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -53,6 +57,12 @@ void _log(String message) => debugPrint('[MAIN] $message');
 
 //  Instance GLOBALE créée AVANT runApp, injectée dans Riverpod
 late final LocaleController _localeController;
+
+// ⚠️ CORRECTIF : flag pour savoir si l'app a déjà été lancée avec succès.
+// Empêche le catch global de runZonedGuarded de relancer un second runApp()
+// par-dessus l'app déjà en cours d'exécution (cause du blocage UI/ANR
+// observé en mode offline lors d'erreurs de refresh token non catchables).
+bool _appLaunched = false;
 
 // ============================================================================
 // MAIN
@@ -150,6 +160,12 @@ Future<void> main() async {
         _log('⚠️ Auth: $e');
       }
 
+      // ⚠️ CORRECTIF : on marque l'app comme lancée AVANT runApp,
+      // pour que toute erreur survenant pendant ou après runApp()
+      // (y compris pendant le build initial) soit traitée comme
+      // "post-lancement" par le catch ci-dessous.
+      _appLaunched = true;
+
       runApp(
         ProviderScope(
           // INJECTION : le provider reçoit la vraie instance
@@ -168,21 +184,30 @@ Future<void> main() async {
         source: 'zone_error',
         message: '$error',
       );
-      _log('❌ Uncaught: $error');
-      runApp(MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: SelectableText(
-                '❌ Erreur de démarrage :\n$error',
-                style: const TextStyle(color: Colors.redAccent, fontSize: 13),
-                textAlign: TextAlign.center,
+      _log('❌ Uncaught (appLaunched=$_appLaunched): $error');
+
+      // ⚠️ CORRECTIF : ne reconstruire l'écran d'erreur QUE si l'app
+      // n'a jamais réussi à démarrer. Si elle tourne déjà (cas typique :
+      // AuthRetryableFetchException du timer de refresh token Supabase
+      // pendant une coupure réseau), on se contente de logger — un second
+      // runApp() ici créerait un conflit d'arbre de widgets / bloquerait
+      // le thread principal (ANR "Thix Hub isn't responding").
+      if (!_appLaunched) {
+        runApp(MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: SelectableText(
+                  '❌ Erreur de démarrage :\n$error',
+                  style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
               ),
             ),
           ),
-        ),
-      ));
+        ));
+      }
     },
   );
 }
