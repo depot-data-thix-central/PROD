@@ -1,4 +1,3 @@
-// lib/services/opportunity_service.dart
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -8,6 +7,7 @@ import 'package:thix_id/models/opportunity_application.dart';
 import 'package:thix_id/models/opportunity_item.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
 
+/// 🎯 Service opportunités : CRUD + cache local + upload image
 class OpportunityService {
   static const String table = 'thix_opportunities';
   static const _kOpps = 'thix_opportunities_v1';
@@ -16,8 +16,13 @@ class OpportunityService {
   /// Supabase Storage bucket for opportunity images.
   static const String imageBucket = 'thix_opportunity_images';
 
-  /// Upload an image to Supabase Storage and return a public URL.
-  Future<String> uploadOpportunityImage({required Uint8List bytes, required String extension}) async {
+  // ═══════════════════════════════════════════════════════════════
+  // UPLOAD IMAGE
+  // ═══════════════════════════════════════════════════════════════
+  Future<String> uploadOpportunityImage({
+    required Uint8List bytes,
+    required String extension,
+  }) async {
     final ext = extension.trim().isEmpty ? 'jpg' : extension.trim().toLowerCase();
     final uid = SupabaseConfig.currentUser?.id ?? 'anon';
     final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
@@ -46,16 +51,18 @@ class OpportunityService {
       final msg = e.toString();
       debugPrint('OpportunityService.uploadOpportunityImage failed err=$msg');
       if (msg.contains('Bucket') && msg.contains('not found')) {
-        throw Exception("Bucket Supabase Storage introuvable: '$imageBucket'. Crée-le (public) dans Supabase → Storage.");
+        throw Exception(
+            "Bucket Supabase Storage introuvable: '$imageBucket'. Crée-le (public) dans Supabase → Storage.");
       }
       throw Exception('Upload image échoué: $msg');
     }
   }
 
-  /// Récupère la liste des opportunités publiques (exclut les brouillons pour les utilisateurs normaux)
+  // ═══════════════════════════════════════════════════════════════
+  // LISTE (avec cache offline)
+  // ═══════════════════════════════════════════════════════════════
   Future<List<OpportunityItem>> listOpportunities() async {
     try {
-      // On interroge Supabase en filtrant pour ne renvoyer que les offres actives
       final res = await SupabaseService.select(
         table,
         select: '*',
@@ -64,9 +71,9 @@ class OpportunityService {
         limit: 200,
       );
 
-      // Filtrage dynamique pour exclure les 'draft' (brouillons) côté client si la base renvoie tout
+      // Filtrage : exclut brouillons et archivés côté client (fallback si RLS laisse passer)
       final filteredRows = res.where((row) {
-        final status = row['status'] ?? 'published';
+        final status = (row['status'] ?? 'published').toString();
         return status == 'published' || status == 'countdown';
       }).toList();
 
@@ -75,23 +82,23 @@ class OpportunityService {
       return items;
     } catch (e) {
       debugPrint('OpportunityService.listOpportunities supabase failed err=$e');
-
-      // En cas de hors-ligne, lecture du cache local
+      // Fallback cache local
       try {
         final prefs = await SharedPreferences.getInstance();
         final raw = prefs.getString(_kOpps);
-        if (raw != null && raw.trim().isEmpty == false) {
+        if (raw != null && raw.trim().isNotEmpty) {
           return OpportunityItem.decodeList(raw);
         }
       } catch (cacheErr) {
         debugPrint('Lecture du cache échouée: $cacheErr');
       }
-
       return [];
     }
   }
 
-  /// Crée une nouvelle opportunité depuis l'Espace Admin
+  // ═══════════════════════════════════════════════════════════════
+  // CRÉATION (Espace Admin)
+  // ═══════════════════════════════════════════════════════════════
   Future<void> createOpportunity(OpportunityItem item) async {
     try {
       final payload = <String, dynamic>{
@@ -105,8 +112,8 @@ class OpportunityService {
         'description': item.description,
         'eligibility': item.eligibility,
         'apply_url': item.applyUrl,
-        if (item.imageAssetPath != null && item.imageAssetPath!.trim().isNotEmpty) 'image_url': item.imageAssetPath,
-        'status': 'published', // Corrigé pour correspondre à la contrainte SQL Supabase
+        'image_url': item.imageAssetPath, // ⬅️ CLÉ DB = 'image_url'
+        'status': item.status.isEmpty ? 'published' : item.status, // ⬅️ Respecte le statut du modèle
       };
       await SupabaseService.insert(table, payload);
     } catch (e) {
@@ -115,19 +122,57 @@ class OpportunityService {
     }
   }
 
-  /// Récupère une opportunité spécifique par son ID
+  // ═══════════════════════════════════════════════════════════════
+  // MISE À JOUR (Espace Admin)
+  // ═══════════════════════════════════════════════════════════════
+  Future<void> updateOpportunity(OpportunityItem item) async {
+    try {
+      final payload = <String, dynamic>{
+        'title': item.title,
+        'organizer': item.organizer,
+        'location': item.location,
+        'category': item.category,
+        'reward_label': item.rewardLabel,
+        'deadline_label': item.deadlineLabel,
+        'deadline': item.deadline.toIso8601String(),
+        'description': item.description,
+        'eligibility': item.eligibility,
+        'apply_url': item.applyUrl,
+        'image_url': item.imageAssetPath,
+        'status': item.status.isEmpty ? 'published' : item.status,
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      await SupabaseService.update(table, payload, eq: {'id': item.id});
+    } catch (e) {
+      debugPrint('OpportunityService.updateOpportunity supabase failed err=$e');
+      rethrow;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // SUPPRESSION (Espace Admin)
+  // ═══════════════════════════════════════════════════════════════
+  Future<void> deleteOpportunity(String id) async {
+    try {
+      await SupabaseService.delete(table, eq: {'id': id});
+    } catch (e) {
+      debugPrint('OpportunityService.deleteOpportunity supabase failed err=$e');
+      rethrow;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // FETCH PAR ID
+  // ═══════════════════════════════════════════════════════════════
   Future<OpportunityItem?> fetchOpportunity(String id) async {
     final v = id.trim();
     if (v.isEmpty) return null;
 
     try {
-      final res = await SupabaseService.select(
-        table,
-        select: '*',
-      );
+      final res = await SupabaseService.select(table, select: '*');
       final match = res.firstWhere(
         (r) => (r['id'] ?? '').toString() == v,
-        orElse: () => {},
+        orElse: () => <String, dynamic>{},
       );
       if (match.isNotEmpty) {
         return _mapRows([match]).first;
@@ -136,7 +181,7 @@ class OpportunityService {
       debugPrint('OpportunityService.fetchOpportunity error: $e');
     }
 
-    // Fallback sur la liste globale si échec
+    // Fallback sur la liste globale
     final all = await listOpportunities();
     for (final o in all) {
       if (o.id == v) return o;
@@ -144,7 +189,9 @@ class OpportunityService {
     return null;
   }
 
-  /// Soumet une candidature à une opportunité
+  // ═══════════════════════════════════════════════════════════════
+  // CANDIDATURE
+  // ═══════════════════════════════════════════════════════════════
   Future<void> submitApplication({
     required String opportunityId,
     required String applicantThixId,
@@ -163,7 +210,9 @@ class OpportunityService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_kApplications);
-      final list = (raw == null || raw.trim().isEmpty) ? <OpportunityApplication>[] : OpportunityApplication.decodeList(raw).toList(growable: true);
+      final list = (raw == null || raw.trim().isEmpty)
+          ? <OpportunityApplication>[]
+          : OpportunityApplication.decodeList(raw).toList(growable: true);
       list.insert(0, app);
       await prefs.setString(_kApplications, OpportunityApplication.encodeList(list));
     } catch (e) {
@@ -172,6 +221,9 @@ class OpportunityService {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // HELPERS
+  // ═══════════════════════════════════════════════════════════════
   String _id(String prefix) {
     final rnd = Random.secure();
     final n = List.generate(10, (_) => rnd.nextInt(16).toRadixString(16)).join();
@@ -180,6 +232,7 @@ class OpportunityService {
 
   List<OpportunityItem> _mapRows(List<Map<String, dynamic>> rows) {
     final now = DateTime.now();
+
     DateTime parseDate(dynamic v) {
       if (v == null) return now;
       if (v is DateTime) return v;
@@ -199,7 +252,12 @@ class OpportunityService {
     List<String> pickList(Map<String, dynamic> r, List<String> keys) {
       for (final k in keys) {
         final v = r[k];
-        if (v is List) return v.map((e) => e.toString()).where((e) => e.trim().isNotEmpty).toList(growable: false);
+        if (v is List) {
+          return v
+              .map((e) => e.toString())
+              .where((e) => e.trim().isNotEmpty)
+              .toList(growable: false);
+        }
       }
       return const <String>[];
     }
@@ -216,7 +274,10 @@ class OpportunityService {
       final description = pick(r, const ['description', 'content'], fallback: '');
       final eligibility = pickList(r, const ['eligibility', 'requirements']);
       final applyUrl = pick(r, const ['apply_url', 'applyUrl', 'url'], fallback: '');
-      final imageUrl = pick(r, const ['image_url', 'imageUrl', 'cover_url', 'coverUrl'], fallback: '');
+      // ⬅️ Lecture image : priorité à image_url (DB), fallback image_asset_path (ancien)
+      final imageUrl = pick(r, const ['image_url', 'imageUrl', 'image_asset_path', 'cover_url', 'coverUrl'], fallback: '');
+      final status = pick(r, const ['status'], fallback: 'published');
+
       return OpportunityItem(
         id: id,
         title: title,
@@ -230,6 +291,7 @@ class OpportunityService {
         eligibility: eligibility,
         applyUrl: applyUrl,
         imageAssetPath: imageUrl.isEmpty ? null : imageUrl,
+        status: status,
         createdAt: parseDate(r['created_at'] ?? r['createdAt']),
         updatedAt: parseDate(r['updated_at'] ?? r['updatedAt']),
       );
