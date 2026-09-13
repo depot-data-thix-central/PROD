@@ -659,7 +659,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                       color: Colors.black.withOpacity(0.05), blurRadius: 14),
                 ],
               ),
-              child: const Icon(Icons.workspaces_outline_rounded,
+              child: const Icon(Icons.workspaces_outline, // <- corrigé ici
                   size: 34, color: ThixPolicy.textSecondary),
             ),
             const SizedBox(height: 16),
@@ -676,6 +676,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
       ),
     );
   }
+
 
   Widget _buildNoResult() {
     return Container(
