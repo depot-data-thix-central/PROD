@@ -1,8 +1,8 @@
-/// THIX RETROUVE — Design maquette (Production, blindé)
-/// ✅ Cartes colorées via Container (rendu garanti web + mobile)
-/// ✅ zéro clé l10n brute : fallback automatique si clé manquante
-/// ✅ États vide / erreur / chargement TOUJOURS visibles
-/// ✅ Routes, providers, extra détail, sanitizer, semantics : INTACTS
+/// THIX RETROUVE — Design maquette claire (Production)
+/// ✅ Reprend 100% de la logique du code de base (routes, providers,
+///    sanitizer, semantics, throttle, modal, logs)
+/// ✅ Design photo : fond clair, cartes or/bleu, liste lignes, nav compacte
+/// ✅ zéro clé l10n brute (fallback automatique) — aucun patch l10n requis
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -20,8 +20,9 @@ import 'models/objet_model.dart';
 import 'providers/objet_providers.dart';
 
 // ============================================================================
-// TOKENS
+// DESIGN TOKENS (clair — maquette)
 // ============================================================================
+
 const Color _kBg = Color(0xFFF7F9FC);
 const Color _kSurface = Color(0xFFFFFFFF);
 const Color _kTextMain = Color(0xFF12233D);
@@ -31,19 +32,22 @@ const Color _kBorder = Color(0xFFE5EAF1);
 const Color _kSkeleton = Color(0xFFE8EDF3);
 const Color _kGold = Color(0xFFE0A400);
 const Color _kRed = Color(0xFFE5484D);
+
 const double _kRadiusLg = 18.0;
 const double _kRadiusMd = 14.0;
 
-const int _kMaxVisibleObjects = 6;
+const int _kMaxVisibleObjects = 8;
 const int _kMaxTitleLength = 80;
 const int _kMaxLocationLength = 60;
 const Duration _kTapThrottle = Duration(milliseconds: 400);
 
 // ============================================================================
-// SANITIZER
+// SANITIZER (identique base)
 // ============================================================================
+
 class _RetrouveSanitizer {
   _RetrouveSanitizer._();
+
   static String sanitizeText(String? input, {required int maxLength}) {
     if (input == null) return '';
     final s = input
@@ -63,8 +67,10 @@ class _RetrouveSanitizer {
 // ============================================================================
 // SCREEN
 // ============================================================================
+
 class ThixRetrouveScreen extends ConsumerStatefulWidget {
   const ThixRetrouveScreen({super.key});
+
   @override
   ConsumerState<ThixRetrouveScreen> createState() => _ThixRetrouveScreenState();
 }
@@ -72,7 +78,7 @@ class ThixRetrouveScreen extends ConsumerStatefulWidget {
 class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
   DateTime? _lastTap;
 
-  /// 🛡️ Traduction SÛRE : retourne le fallback si la clé n'existe pas
+  /// 🛡️ Traduction sûre : fallback si clé absente (jamais de clé brute)
   String _tr(AppLocalizations l10n, String key, String fallback) {
     final v = l10n.t(key);
     return (v == key || v.trim().isEmpty) ? fallback : v;
@@ -106,7 +112,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                   children: [
                     _buildActionCards(context, l10n),
                     const SizedBox(height: 12),
-                    _buildMapCard(context, l10n),
+                    _buildMapShortcut(context, l10n),
                     const SizedBox(height: 22),
                     _buildSectionHeader(context, l10n),
                     const SizedBox(height: 10),
@@ -122,16 +128,20 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── HEADER ─
+  // ── HEADER : THIX RETROUVE + petit commentaire ────────────────
   Widget _buildHeader(AppLocalizations l10n) {
     return Container(
       color: _kSurface,
       padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
       child: Row(
         children: [
-          IconButton(
-            icon: const Icon(Icons.menu_rounded, color: _kTextMain, size: 22),
-            onPressed: () {},
+          Semantics(
+            button: true,
+            label: l10n.t('common_menu'),
+            child: IconButton(
+              icon: const Icon(Icons.menu_rounded, color: _kTextMain, size: 22),
+              onPressed: () {},
+            ),
           ),
           Expanded(
             child: Column(
@@ -155,17 +165,21 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
               ],
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.notifications_none_rounded,
-                color: _kTextMain, size: 22),
-            onPressed: () {},
+          Semantics(
+            button: true,
+            label: l10n.t('common_notifications'),
+            child: IconButton(
+              icon: const Icon(Icons.notifications_none_rounded,
+                  color: _kTextMain, size: 22),
+              onPressed: () {},
+            ),
           ),
         ],
       ),
     );
   }
 
-  // ── CARTES D'ACTION (Container coloré = rendu garanti) ──
+  // ── CARTES D'ACTION or / bleu (photo) ────────────────────────
   Widget _buildActionCards(BuildContext context, AppLocalizations l10n) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -202,110 +216,121 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     required String subtitle,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
-        decoration: BoxDecoration(
-          color: color, // ⬅️ couleur DIRECTE (pas via Material)
-          borderRadius: BorderRadius.circular(_kRadiusLg),
-          boxShadow: [
-            BoxShadow(
-              color: color.withOpacity(0.25),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: Colors.white, size: 34),
-            const SizedBox(height: 10),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                height: 1.2,
+    return Semantics(
+      button: true,
+      label: '$title. $subtitle',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(_kRadiusLg),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.25),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.9),
-                fontSize: 11,
-                height: 1.3,
+            ],
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: Colors.white, size: 34),
+              const SizedBox(height: 10),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  height: 1.2,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontSize: 11,
+                  height: 1.3,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ── CARTE MAP ──
-  Widget _buildMapCard(BuildContext context, AppLocalizations l10n) {
-    return GestureDetector(
-      onTap: () =>
-          _throttledTap(() => context.pushNamed('thixRetrouveCarte')),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: _kSurface,
-          borderRadius: BorderRadius.circular(_kRadiusMd),
-          border: Border.all(color: _kBorder),
-          boxShadow: const [
-            BoxShadow(
-                color: Color(0x0A0F172A), blurRadius: 8, offset: Offset(0, 2)),
-          ],
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _tr(l10n, 'retrouve_map_title',
-                        'Voir les objets autour de moi'),
-                    style: const TextStyle(
-                      color: _kTextMain,
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w800,
+  // ── CARTE MAP (photo) ────────────────────────────────────────
+  Widget _buildMapShortcut(BuildContext context, AppLocalizations l10n) {
+    return Semantics(
+      button: true,
+      label: l10n.t('retrouve_map_title'),
+      child: GestureDetector(
+        onTap: () =>
+            _throttledTap(() => context.pushNamed('thixRetrouveCarte')),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: _kSurface,
+            borderRadius: BorderRadius.circular(_kRadiusMd),
+            border: Border.all(color: _kBorder),
+            boxShadow: [
+              BoxShadow(
+                color: _kTextMain.withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _tr(l10n, 'retrouve_map_title',
+                          'Voir les objets autour de moi'),
+                      style: const TextStyle(
+                        color: _kTextMain,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _tr(l10n, 'retrouve_map_subtitle', 'Explorer sur la carte'),
-                    style: const TextStyle(color: _kTextSec, fontSize: 11.5),
-                  ),
-                ],
+                    const SizedBox(height: 4),
+                    Text(
+                      _tr(l10n, 'retrouve_map_subtitle', 'Explorer sur la carte'),
+                      style: const TextStyle(color: _kTextSec, fontSize: 11.5),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: ThixPolicy.primary.withOpacity(0.10),
-                borderRadius: BorderRadius.circular(10),
+              const SizedBox(width: 10),
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: ThixPolicy.primary.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.location_on_rounded,
+                    color: ThixPolicy.primary, size: 22),
               ),
-              child: Icon(Icons.location_on_rounded,
-                  color: ThixPolicy.primary, size: 22),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ── HEADER SECTION ──
+  // ── HEADER DE SECTION ───────────────────────────────────────
   Widget _buildSectionHeader(BuildContext context, AppLocalizations l10n) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -313,26 +338,38 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
         Text(
           _tr(l10n, 'retrouve_recent_objects', 'Objets récents'),
           style: const TextStyle(
-              color: _kTextMain, fontSize: 15, fontWeight: FontWeight.w800),
+            color: _kTextMain,
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+          ),
         ),
-        GestureDetector(
-          onTap: () => _throttledTap(
-              () => context.pushNamed('thixRetrouveMesRecherches')),
-          child: Text(
-            _tr(l10n, 'common_see_all', 'Voir tout'),
-            style: TextStyle(
+        Semantics(
+          button: true,
+          label: l10n.t('common_see_all'),
+          child: GestureDetector(
+            onTap: () => _throttledTap(
+              () => context.pushNamed('thixRetrouveMesRecherches'),
+            ),
+            child: Text(
+              _tr(l10n, 'common_see_all', 'Voir tout'),
+              style: TextStyle(
                 color: ThixPolicy.primary,
                 fontSize: 12,
-                fontWeight: FontWeight.w700),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ),
         ),
       ],
     );
   }
 
-  // ── LISTE OBJETS ──
-  Widget _buildObjetsList(BuildContext context, AppLocalizations l10n,
-      AsyncValue<List<ObjetModel>> objetsAsync) {
+  // ── LISTE OBJETS (lignes, photo) ────────────────────────────
+  Widget _buildObjetsList(
+    BuildContext context,
+    AppLocalizations l10n,
+    AsyncValue<List<ObjetModel>> objetsAsync,
+  ) {
     return objetsAsync.when(
       data: (objets) {
         if (objets.isEmpty) return _buildEmptyState(l10n);
@@ -352,7 +389,10 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
   }
 
   Widget _buildObjectRow(
-      BuildContext context, AppLocalizations l10n, ObjetModel obj) {
+    BuildContext context,
+    AppLocalizations l10n,
+    ObjetModel obj,
+  ) {
     final isLost = obj.statut == StatutObjet.perdu;
     final statusColor = isLost ? _kRed : ThixPolicy.success;
     final i18n = I18nService.of(context);
@@ -363,108 +403,134 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
         maxLength: _kMaxLocationLength);
     final safeImageUrl = _RetrouveSanitizer.sanitizeImageUrl(obj.imageUrl);
 
-    return GestureDetector(
-      onTap: () => _throttledTap(() {
-        HapticFeedback.selectionClick();
-        context.pushNamed('thixRetrouveDetail', extra: {
-          'title': safeTitle,
-          'status': obj.statutLabel,
-          'location': safeLocation,
-          'time': i18n.relativeTime(obj.date),
-          'description':
-              _RetrouveSanitizer.sanitizeText(obj.description, maxLength: 500),
-          'imageUrl': safeImageUrl,
-        });
-      }),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: _kSurface,
-          borderRadius: BorderRadius.circular(_kRadiusMd),
-          border: Border.all(color: _kBorder),
-          boxShadow: const [
-            BoxShadow(
-                color: Color(0x0A0F172A), blurRadius: 8, offset: Offset(0, 2)),
-          ],
-        ),
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: SizedBox(
-                width: 56,
-                height: 56,
-                child: safeImageUrl != null
-                    ? CachedNetworkImage(
-                        imageUrl: safeImageUrl,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(color: _kSkeleton),
-                        errorWidget: (_, __, ___) => _thumbPlaceholder(),
-                      )
-                    : _thumbPlaceholder(),
+    return Semantics(
+      button: true,
+      label: '$safeTitle. ${obj.statutLabel}. $safeLocation',
+      child: GestureDetector(
+        onTap: () => _throttledTap(() {
+          HapticFeedback.selectionClick();
+          context.pushNamed(
+            'thixRetrouveDetail',
+            extra: {
+              'title': safeTitle,
+              'status': obj.statutLabel,
+              'location': safeLocation,
+              'time': i18n.relativeTime(obj.date),
+              'description': _RetrouveSanitizer.sanitizeText(obj.description,
+                  maxLength: 500),
+              'imageUrl': safeImageUrl,
+            },
+          );
+        }),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: _kSurface,
+            borderRadius: BorderRadius.circular(_kRadiusMd),
+            border: Border.all(color: _kBorder),
+            boxShadow: [
+              BoxShadow(
+                color: _kTextMain.withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    safeTitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+            ],
+          ),
+          child: Row(
+            children: [
+              // Vignette photo
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: safeImageUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: safeImageUrl,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => const Center(
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                          errorWidget: (_, __, ___) => _thumbPlaceholder(),
+                        )
+                      : _thumbPlaceholder(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Infos
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      safeTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
                         color: _kTextMain,
                         fontSize: 13.5,
-                        fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      Text(
-                        obj.statutLabel,
-                        style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Text(
+                          obj.statutLabel,
+                          style: TextStyle(
                             color: statusColor,
                             fontSize: 11,
-                            fontWeight: FontWeight.w800),
-                      ),
-                      Text(' • ${i18n.relativeTime(obj.date)}',
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        Text(
+                          ' • ${i18n.relativeTime(obj.date)}',
                           style: const TextStyle(
-                              color: _kTextSec, fontSize: 11)),
-                    ],
-                  ),
-                  if (safeLocation.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(safeLocation,
+                              color: _kTextSec, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                    if (safeLocation.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        safeLocation,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            color: _kTextMuted, fontSize: 11)),
+                            color: _kTextMuted, fontSize: 11),
+                      ),
+                    ],
                   ],
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: (obj.hasRecompense ? _kGold : statusColor)
-                    .withOpacity(0.12),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                obj.hasRecompense
-                    ? _tr(l10n, 'retrouve_badge_reward', 'RÉCOMPENSE')
-                    : obj.statutLabel.toUpperCase(),
-                style: TextStyle(
-                  color: obj.hasRecompense ? _kGold : statusColor,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.4,
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              // Badge droit : RÉCOMPENSE ou statut
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: (obj.hasRecompense ? _kGold : statusColor)
+                      .withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  obj.hasRecompense
+                      ? _tr(l10n, 'retrouve_badge_reward', 'RÉCOMPENSE')
+                      : obj.statutLabel.toUpperCase(),
+                  style: TextStyle(
+                    color: obj.hasRecompense ? _kGold : statusColor,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -477,7 +543,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
         ),
       );
 
-  // ── ÉTATS (toujours visibles) ──
+  // ── ÉTATS VIDE / ERREUR ─────────────────────────────────────
   Widget _buildEmptyState(AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
@@ -488,19 +554,21 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
       ),
       child: Column(
         children: [
-          const Icon(Icons.inventory_2_outlined, size: 36, color: _kTextMuted),
+          const Icon(Icons.inventory_2_outlined,
+              size: 36, color: _kTextMuted),
           const SizedBox(height: 10),
-          Text(_tr(l10n, 'retrouve_empty_title', 'Aucun objet pour le moment'),
-              style: const TextStyle(
-                  color: _kTextMain,
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w700)),
+          Text(
+            _tr(l10n, 'retrouve_empty_title', 'Aucun objet pour le moment'),
+            style: const TextStyle(
+                color: _kTextMain, fontSize: 13.5, fontWeight: FontWeight.w700),
+          ),
           const SizedBox(height: 4),
           Text(
-              _tr(l10n, 'retrouve_empty_subtitle',
-                  'Déclarez un objet perdu ou trouvé pour commencer.'),
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: _kTextSec, fontSize: 11.5)),
+            _tr(l10n, 'retrouve_empty_subtitle',
+                'Déclarez un objet perdu ou trouvé pour commencer.'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: _kTextSec, fontSize: 11.5),
+          ),
         ],
       ),
     );
@@ -519,8 +587,10 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
         children: [
           const Icon(Icons.cloud_off_rounded, size: 30, color: _kTextMuted),
           const SizedBox(height: 8),
-          Text(_tr(l10n, 'retrouve_load_error', 'Chargement impossible'),
-              style: const TextStyle(color: _kTextSec, fontSize: 12.5)),
+          Text(
+            _tr(l10n, 'retrouve_load_error', 'Chargement impossible'),
+            style: const TextStyle(color: _kTextSec, fontSize: 12.5),
+          ),
           const SizedBox(height: 10),
           ElevatedButton(
             onPressed: () => ref.invalidate(objetsRecentsProvider),
@@ -539,7 +609,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── BOTTOM NAV RÉDUITE ──
+  // ── BOTTOM NAV COMPACTE (photo) ─────────────────────────────
   Widget _buildBottomNav(BuildContext context, AppLocalizations l10n) {
     return Container(
       color: _kSurface,
@@ -553,23 +623,29 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
               _tr(l10n, 'nav_searches', 'Services'), false,
               onTap: () => _throttledTap(
                   () => context.pushNamed('thixRetrouveMesRecherches'))),
-          GestureDetector(
-            onTap: () => _showAddModal(context, l10n),
-            child: Container(
-              margin: const EdgeInsets.only(top: 2),
-              padding: const EdgeInsets.all(11),
-              decoration: BoxDecoration(
-                color: _kGold,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                      color: _kGold.withOpacity(0.35),
+          // Bouton central or
+          Semantics(
+            button: true,
+            label: l10n.t('retrouve_add_action'),
+            child: GestureDetector(
+              onTap: () => _showAddModal(context, l10n),
+              child: Container(
+                margin: const EdgeInsets.only(top: 2),
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: _kGold,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: _kGold.withValues(alpha: 0.35),
                       blurRadius: 8,
-                      offset: const Offset(0, 3)),
-                ],
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.grid_view_rounded,
+                    color: Colors.white, size: 20),
               ),
-              child: const Icon(Icons.grid_view_rounded,
-                  color: Colors.white, size: 20),
             ),
           ),
           _navItem(Icons.chat_bubble_outline_rounded,
@@ -587,36 +663,41 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
 
   Widget _navItem(IconData icon, String label, bool selected,
       {required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        onTap();
-      },
-      child: SizedBox(
-        width: 52,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-                color: selected ? ThixPolicy.primary : _kTextMuted, size: 18),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                color: selected ? ThixPolicy.primary : _kTextMuted,
-                fontSize: 8.5,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: SizedBox(
+          width: 52,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon,
+                  color: selected ? ThixPolicy.primary : _kTextMuted, size: 18),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  color: selected ? ThixPolicy.primary : _kTextMuted,
+                  fontSize: 8.5,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ── MODAL AJOUT ──
+  // ── MODAL D'AJOUT (clair) ───────────────────────────────────
   void _showAddModal(BuildContext context, AppLocalizations l10n) {
     HapticFeedback.mediumImpact();
     showModalBottomSheet(
@@ -636,16 +717,20 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                    color: _kBorder, borderRadius: BorderRadius.circular(2)),
+                  color: _kBorder,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
               const SizedBox(height: 16),
               Text(
-                  _tr(l10n, 'retrouve_add_modal_title',
-                      'Que voulez-vous déclarer ?'),
-                  style: const TextStyle(
-                      color: _kTextMain,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800)),
+                _tr(l10n, 'retrouve_add_modal_title',
+                    'Que voulez-vous déclarer ?'),
+                style: const TextStyle(
+                  color: _kTextMain,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
               const SizedBox(height: 14),
               _modalAction(
                 sheetCtx,
@@ -659,7 +744,8 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                 sheetCtx,
                 color: ThixPolicy.primary,
                 icon: Icons.inventory_2_rounded,
-                label: _tr(l10n, 'retrouve_modal_found', "J'ai trouvé un objet"),
+                label:
+                    _tr(l10n, 'retrouve_modal_found', "J'ai trouvé un objet"),
                 onTap: () => _navigateToDeclare(context, StatutObjet.trouve),
               ),
             ],
@@ -669,51 +755,61 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  Widget _modalAction(BuildContext sheetCtx,
-      {required Color color,
-      required IconData icon,
-      required String label,
-      required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.pop(sheetCtx);
-        onTap();
-      },
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: _kBg,
-          borderRadius: BorderRadius.circular(_kRadiusMd),
-          border: Border.all(color: _kBorder),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(9),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.14),
-                borderRadius: BorderRadius.circular(10),
+  Widget _modalAction(
+    BuildContext sheetCtx, {
+    required Color color,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: () {
+          Navigator.pop(sheetCtx);
+          onTap();
+        },
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: _kBg,
+            borderRadius: BorderRadius.circular(_kRadiusMd),
+            border: Border.all(color: _kBorder),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: color, size: 20),
               ),
-              child: Icon(icon, color: color, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(label,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  label,
                   style: const TextStyle(
-                      color: _kTextMain,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700)),
-            ),
-            const Icon(Icons.chevron_right_rounded,
-                color: _kTextMuted, size: 18),
-          ],
+                    color: _kTextMain,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded,
+                  color: _kTextMuted, size: 18),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ── LOGIQUE INTACTE ──
-  Future<void> _navigateToDeclare(BuildContext context, StatutObjet type) async {
+  // ── HELPERS LOGIQUE (identiques base) ───────────────────────
+  Future<void> _navigateToDeclare(
+      BuildContext context, StatutObjet type) async {
     _throttledTap(() async {
       HapticFeedback.lightImpact();
       if (!context.mounted) return;
@@ -736,10 +832,12 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
 }
 
 // ============================================================================
-// SKELETON VISIBLE (gris)
+// SKELETON — lignes grises visibles
 // ============================================================================
+
 class _SkeletonList extends StatefulWidget {
   const _SkeletonList();
+
   @override
   State<_SkeletonList> createState() => _SkeletonListState();
 }
@@ -747,12 +845,14 @@ class _SkeletonList extends StatefulWidget {
 class _SkeletonListState extends State<_SkeletonList>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
+
   @override
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 900))
-      ..repeat(reverse: true);
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
   }
 
   @override
