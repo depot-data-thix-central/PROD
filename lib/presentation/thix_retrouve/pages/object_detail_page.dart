@@ -1,38 +1,38 @@
-/// Object Detail Page — Enterprise Glass Design (Production)
-/// ✅ Cohérent avec THIX RETROUVE : glass monochrome, texte blanc
-/// ✅ Ajout du sélecteur de modules (SOS / RECHERCHE / RETROUVE) pour la cohérence
-/// ✅ Pastilles de statut (pas de badges solides)
+/// Object Detail Page — Light Premium Design (Production)
+/// ✅ Cohérent avec THIX RETROUVE : fond blanc, cartes propres, texte sombre
+/// ✅ Pastilles de statut colorées sur fond clair
 /// ✅ i18n complet + sanitization + Semantics + HapticFeedback
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
-import 'dart:ui';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 
 // ============================================================================
-// DESIGN TOKENS (identiques à l'écran RETROUVE)
+// DESIGN TOKENS (Light Premium — identiques à ThixRetrouveScreen)
 // ============================================================================
 
-const double _kGlassSurface = 0.05;
-const double _kGlassSurfaceHi = 0.08;
-const double _kGlassBorder = 0.09;
-const double _kRadiusLg = 20.0;
-const double _kRadiusMd = 16.0;
-const double _kRadiusSm = 12.0;
+const Color _kBg = Color(0xFFF7F9FC);
+const Color _kSurface = Color(0xFFFFFFFF);
+const Color _kTextMain = Color(0xFF12233D);
+const Color _kTextSec = Color(0xFF5A6B84);
+const Color _kTextMuted = Color(0xFF93A1B5);
+const Color _kBorder = Color(0xFFE5EAF1);
+const Color _kGold = Color(0xFFE0A400);
+const Color _kRed = Color(0xFFE5484D);
+
+const double _kRadiusLg = 18.0;
+const double _kRadiusMd = 14.0;
 
 const int _kMaxTitleLength = 100;
 const int _kMaxDescriptionLength = 2000;
 const int _kMaxLocationLength = 150;
 
-// Texte primaire GARANTI blanc sur fond sombre (indépendant du thème)
-const Color _kTextPrimary = Colors.white;
-
 // ============================================================================
-// SANITIZER
+// SANITIZER (inchangé)
 // ============================================================================
 
 class _DetailSanitizer {
@@ -55,15 +55,15 @@ class _DetailSanitizer {
 }
 
 // ============================================================================
-// GLASS CARD
+// SURFACE CARD (carte blanche avec ombre douce)
 // ============================================================================
 
-class _GlassCard extends StatelessWidget {
+class _SurfaceCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
   final double radius;
 
-  const _GlassCard({
+  const _SurfaceCard({
     required this.child,
     this.padding = const EdgeInsets.all(14),
     this.radius = _kRadiusMd,
@@ -74,19 +74,16 @@ class _GlassCard extends StatelessWidget {
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.white.withValues(alpha: _kGlassSurfaceHi),
-            Colors.white.withValues(alpha: _kGlassSurface),
-          ],
-        ),
+        color: _kSurface,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: _kGlassBorder),
-          width: 1,
-        ),
+        border: Border.all(color: _kBorder, width: 1),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A0F172A),
+            blurRadius: 10,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: child,
     );
@@ -120,12 +117,12 @@ class ObjectDetailPage extends StatelessWidget {
   Color _statusColor(String status) {
     final s = status.toUpperCase();
     if (s.contains('PERDU') || s.contains('LOST')) {
-      return ThixPolicy.domainOpportunity;
+      return _kRed;
     }
     if (s.contains('TROUV') || s.contains('FOUND')) {
       return ThixPolicy.success;
     }
-    return ThixPolicy.textMuted;
+    return _kTextMuted;
   }
 
   @override
@@ -146,17 +143,17 @@ class ObjectDetailPage extends StatelessWidget {
         '${safeTitle.substring(0, safeTitle.length.clamp(0, 30))}');
 
     return Scaffold(
-      backgroundColor: ThixPolicy.inkDeep,
-      // ✅ AppBar transparente, fond unifié
+      backgroundColor: _kBg,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: _kSurface,
         elevation: 0,
+        scrolledUnderElevation: 1,
         leading: Semantics(
           button: true,
           label: l10n.t('common_back'),
           child: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                color: _kTextPrimary, size: 20),
+                color: _kTextMain, size: 20),
             onPressed: () {
               HapticFeedback.lightImpact();
               Navigator.pop(context);
@@ -166,7 +163,7 @@ class ObjectDetailPage extends StatelessWidget {
         title: Text(
           l10n.t('object_detail_title'),
           style: const TextStyle(
-            color: _kTextPrimary,
+            color: _kTextMain,
             fontSize: 15,
             fontWeight: FontWeight.w700,
           ),
@@ -178,7 +175,7 @@ class ObjectDetailPage extends StatelessWidget {
             label: l10n.t('common_more_options'),
             child: IconButton(
               icon: const Icon(Icons.more_vert_rounded,
-                  color: _kTextPrimary, size: 20),
+                  color: _kTextMain, size: 20),
               onPressed: () {
                 HapticFeedback.selectionClick();
                 _showOptionsMenu(context, l10n, safeTitle, safeDescription,
@@ -188,207 +185,137 @@ class ObjectDetailPage extends StatelessWidget {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // ── Onglets supérieurs pour conserver l'identité visuelle ──
-          _buildModuleTabs(context),
-          const SizedBox(height: 10),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Image ──
+            _buildImageSection(l10n, safeImageUrl, statusColor),
+            const SizedBox(height: 18),
 
-          // ── Contenu principal scrollable ──
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ── Image (glass card) ──
-                  _buildImageSection(l10n, safeImageUrl, statusColor),
-                  const SizedBox(height: 18),
-
-                  // ── Title + status pill ──
-                  Semantics(
-                    header: true,
-                    child: Text(
-                      safeTitle.isEmpty ? l10n.t('object_no_title') : safeTitle,
-                      style: const TextStyle(
-                        color: _kTextPrimary, // Blanc pur garanti
-                        fontSize: 21,
-                        fontWeight: FontWeight.w800,
-                        height: 1.25,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      _statusPill(statusColor, status),
-                      if (time.isNotEmpty)
-                        Text(
-                          time,
-                          style: TextStyle(
-                            color: ThixPolicy.textMuted,
-                            fontSize: 12,
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-
-                  // ── Location (chip glass) ──
-                  if (safeLocation.isNotEmpty)
-                    _GlassCard(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 10, horizontal: 12),
-                      radius: _kRadiusSm,
-                      child: Row(
-                        children: [
-                          Icon(Icons.location_on_outlined,
-                              size: 14, color: ThixPolicy.textMuted),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              safeLocation,
-                              style: TextStyle(
-                                color: ThixPolicy.textMuted,
-                                fontSize: 12.5,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(height: 14),
-
-                  // ── Description (glass card) ──
-                  if (safeDescription.isNotEmpty) ...[
-                    Text(
-                      l10n.t('object_description_label'),
-                      style: TextStyle(
-                        color: ThixPolicy.textMuted,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _GlassCard(
-                      child: Text(
-                        safeDescription,
-                        style: const TextStyle(
-                          color: _kTextPrimary,
-                          fontSize: 14,
-                          height: 1.55,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-
-                  // ── Reward (glass teinté subtil) ──
-                  if (safeReward.isNotEmpty) ...[
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: ThixPolicy.warning.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(_kRadiusMd),
-                        border: Border.all(
-                          color: ThixPolicy.warning.withValues(alpha: 0.25),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.card_giftcard_rounded,
-                              color: ThixPolicy.warning, size: 20),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              l10n.t('object_reward'),
-                              style: TextStyle(
-                                color: ThixPolicy.textMuted,
-                                fontSize: 12.5,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            safeReward,
-                            style: const TextStyle(
-                              color: _kTextPrimary,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-
-                  // ── Actions ──
-                  _buildActionButtons(context, l10n, safeTitle, safeDescription,
-                      safeLocation, safeImageUrl),
-                ],
+            // ── Title + status pill ──
+            Semantics(
+              header: true,
+              child: Text(
+                safeTitle.isEmpty ? l10n.t('object_no_title') : safeTitle,
+                style: const TextStyle(
+                  color: _kTextMain,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w800,
+                  height: 1.25,
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ========================================================================
-  // MODULE TABS (Pour cohérence avec la page principale)
-  // ========================================================================
-
-  Widget _buildModuleTabs(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-        ),
-        child: Row(
-          children: [
-            _buildTabItem('SOS', isActive: false),
-            _buildTabItem('RECHERCHE', isActive: false),
-            _buildTabItem('RETROUVE', isActive: true),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTabItem(String label, {required bool isActive}) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          if (!isActive) HapticFeedback.selectionClick();
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: isActive
-              ? BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.2)),
-                )
-              : null,
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: isActive ? const Color(0xFFFACC15) : Colors.white.withValues(alpha: 0.5),
-              fontSize: 11,
-              fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
-              letterSpacing: 0.8,
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _statusPill(statusColor, status),
+                if (time.isNotEmpty)
+                  Text(
+                    time,
+                    style: const TextStyle(
+                      color: _kTextSec,
+                      fontSize: 12,
+                    ),
+                  ),
+              ],
             ),
-          ),
+            const SizedBox(height: 14),
+
+            // ── Location ──
+            if (safeLocation.isNotEmpty)
+              _SurfaceCard(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                child: Row(
+                  children: [
+                    Icon(Icons.location_on_outlined,
+                        size: 16, color: _kTextSec),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        safeLocation,
+                        style: const TextStyle(
+                          color: _kTextSec,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 14),
+
+            // ── Description ──
+            if (safeDescription.isNotEmpty) ...[
+              Text(
+                l10n.t('object_description_label'),
+                style: const TextStyle(
+                  color: _kTextSec,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _SurfaceCard(
+                child: Text(
+                  safeDescription,
+                  style: const TextStyle(
+                    color: _kTextMain,
+                    fontSize: 14,
+                    height: 1.55,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+
+            // ── Reward ──
+            if (safeReward.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: _kGold.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(_kRadiusMd),
+                  border: Border.all(color: _kGold.withOpacity(0.25)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.card_giftcard_rounded,
+                        color: _kGold, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        l10n.t('object_reward'),
+                        style: const TextStyle(
+                          color: _kTextSec,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      safeReward,
+                      style: const TextStyle(
+                        color: _kTextMain,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+
+            // ── Actions ──
+            _buildActionButtons(context, l10n, safeTitle, safeDescription,
+                safeLocation, safeImageUrl),
+          ],
         ),
       ),
     );
@@ -403,98 +330,90 @@ class ObjectDetailPage extends StatelessWidget {
     String? imageUrl,
     Color statusColor,
   ) {
-    return RepaintBoundary(
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(_kRadiusLg),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(_kRadiusLg),
+      child: Container(
+        width: double.infinity,
+        height: 250,
+        decoration: BoxDecoration(
+          color: _kSurface,
+          borderRadius: BorderRadius.circular(_kRadiusLg),
+          border: Border.all(color: _kBorder),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0A0F172A),
+              blurRadius: 10,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
         child: Stack(
           children: [
-            Container(
-              width: double.infinity,
-              height: 250,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.white.withValues(alpha: _kGlassSurfaceHi),
-                    Colors.white.withValues(alpha: _kGlassSurface),
-                  ],
-                ),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: _kGlassBorder),
-                ),
-              ),
-              child: imageUrl != null
-                  ? CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => const Center(
-                        child: SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: _kTextPrimary,
-                          ),
-                        ),
-                      ),
-                      errorWidget: (_, __, ___) => Icon(
-                        Icons.broken_image_rounded,
-                        size: 48,
-                        color: _kTextPrimary.withValues(alpha: 0.25),
-                      ),
-                    )
-                  : Center(
-                      child: Icon(
-                        Icons.inventory_2_outlined,
-                        size: 56,
-                        color: _kTextPrimary.withValues(alpha: 0.25),
+            imageUrl != null
+                ? CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    height: 250,
+                    placeholder: (_, __) => const Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                     ),
-            ),
-            // ✅ Pastille glass (plus de badge solide)
+                    errorWidget: (_, __, ___) => const Center(
+                      child: Icon(Icons.broken_image_rounded,
+                          size: 48, color: _kTextMuted),
+                    ),
+                  )
+                : const Center(
+                    child: Icon(Icons.inventory_2_outlined,
+                        size: 56, color: _kTextMuted),
+                  ),
+            // Pastille statut
             if (status.isNotEmpty)
               Positioned(
                 top: 12,
                 left: 12,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(999),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: ThixPolicy.inkDeep.withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: statusColor.withValues(alpha: 0.4),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.95),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: statusColor.withOpacity(0.3)),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x140F172A),
+                        blurRadius: 4,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: statusColor,
+                          shape: BoxShape.circle,
                         ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: BoxDecoration(
-                              color: statusColor,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            status.toUpperCase(),
-                            style: TextStyle(
-                              color: statusColor,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
+                      const SizedBox(width: 6),
+                      Text(
+                        status.toUpperCase(),
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
               ),
@@ -508,9 +427,9 @@ class ObjectDetailPage extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        border: Border.all(color: color.withOpacity(0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -582,7 +501,7 @@ class ObjectDetailPage extends StatelessWidget {
         ),
         const SizedBox(height: 12),
 
-        // ── Share (glass outline) ──
+        // ── Share (outline) ──
         Semantics(
           button: true,
           label: l10n.t('object_share_button'),
@@ -591,31 +510,35 @@ class ObjectDetailPage extends StatelessWidget {
             child: InkWell(
               onTap: () {
                 HapticFeedback.mediumImpact();
-                _handleShare(context, l10n, title, description, location,
-                    imageUrl);
+                _handleShare(
+                    context, l10n, title, description, location, imageUrl);
               },
               borderRadius: BorderRadius.circular(_kRadiusMd),
               child: Container(
                 width: double.infinity,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: _kGlassSurface),
+                  color: _kSurface,
                   borderRadius: BorderRadius.circular(_kRadiusMd),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.14),
-                  ),
+                  border: Border.all(color: _kBorder),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x0A0F172A),
+                      blurRadius: 6,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
                 ),
                 alignment: Alignment.center,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.share_rounded,
-                        color: _kTextPrimary, size: 17),
+                    Icon(Icons.share_rounded, color: _kTextMain, size: 17),
                     const SizedBox(width: 8),
                     Text(
                       l10n.t('object_share_button'),
                       style: const TextStyle(
-                        color: _kTextPrimary,
+                        color: _kTextMain,
                         fontSize: 14.5,
                         fontWeight: FontWeight.w700,
                       ),
@@ -631,7 +554,7 @@ class ObjectDetailPage extends StatelessWidget {
   }
 
   // ========================================================================
-  // HANDLERS
+  // HANDLERS (inchangés)
   // ========================================================================
 
   void _handleContact(
@@ -701,50 +624,46 @@ ${l10n.t('object_share_via_thix')}
   ) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetCtx) => ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            color: ThixPolicy.inkDeep.withValues(alpha: 0.7),
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-            child: SafeArea(
-              top: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _menuItem(
-                    sheetCtx,
-                    icon: Icons.flag_rounded,
-                    tint: ThixPolicy.danger,
-                    label: l10n.t('object_report'),
-                    onTap: () {
-                      HapticFeedback.mediumImpact();
-                      debugPrint('[ObjectDetail] 🚩 Report tapped');
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  _menuItem(
-                    sheetCtx,
-                    icon: Icons.share_rounded,
-                    tint: ThixPolicy.primary,
-                    label: l10n.t('object_share_button'),
-                    onTap: () => _handleShare(context, l10n, title,
-                        description, location, imageUrl),
-                  ),
-                ],
+      backgroundColor: _kSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: _kBorder,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
+              const SizedBox(height: 16),
+              _menuItem(
+                sheetCtx,
+                icon: Icons.flag_rounded,
+                tint: _kRed,
+                label: l10n.t('object_report'),
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  debugPrint('[ObjectDetail] 🚩 Report tapped');
+                },
+              ),
+              const SizedBox(height: 10),
+              _menuItem(
+                sheetCtx,
+                icon: Icons.share_rounded,
+                tint: ThixPolicy.primary,
+                label: l10n.t('object_share_button'),
+                onTap: () => _handleShare(
+                    context, l10n, title, description, location, imageUrl),
+              ),
+            ],
           ),
         ),
       ),
@@ -769,14 +688,19 @@ ${l10n.t('object_share_via_thix')}
             onTap();
           },
           borderRadius: BorderRadius.circular(_kRadiusMd),
-          child: _GlassCard(
+          child: Container(
             padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: _kBg,
+              borderRadius: BorderRadius.circular(_kRadiusMd),
+              border: Border.all(color: _kBorder),
+            ),
             child: Row(
               children: [
                 Container(
                   padding: const EdgeInsets.all(9),
                   decoration: BoxDecoration(
-                    color: tint.withValues(alpha: 0.14),
+                    color: tint.withOpacity(0.14),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(icon, color: tint, size: 18),
@@ -786,14 +710,14 @@ ${l10n.t('object_share_via_thix')}
                   child: Text(
                     label,
                     style: const TextStyle(
-                      color: _kTextPrimary,
+                      color: _kTextMain,
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
-                Icon(Icons.chevron_right_rounded,
-                    color: ThixPolicy.textMuted, size: 18),
+                const Icon(Icons.chevron_right_rounded,
+                    color: _kTextMuted, size: 18),
               ],
             ),
           ),
