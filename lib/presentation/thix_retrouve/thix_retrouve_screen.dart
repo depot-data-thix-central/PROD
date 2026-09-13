@@ -32,8 +32,8 @@ const Color _kTextMuted = Color(0xFF93A1B5);
 const Color _kBorder = Color(0xFFE5EAF1);
 const Color _kGold = Color(0xFFE0A400); // or maquette
 const Color _kRed = Color(0xFFE5484D); // statut Perdu
-const Color _kRadiusLg = 18.0;
-const Color _kRadiusMd = 14.0;
+const double _kRadiusLg = 18.0;
+const double _kRadiusMd = 14.0;
 
 const int _kMaxVisibleObjects = 6;
 const int _kMaxTitleLength = 80;
