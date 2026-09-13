@@ -18,6 +18,9 @@ class ProfileService {
   // Désactivation automatique des tables optionnelles si elles n'existent pas
   static final Set<String> _disabledOptionalTables = <String>{};
 
+  // Cache des streams pour éviter "Stream has already been listened to"
+  final Map<String, Stream<ThixProfile?>> _profileStreamCache = {};
+
   static bool _isMissingTableError(Object e) =>
       e is PostgrestException &&
       (e.code == 'PGRST205' || e.message.contains('Could not find the table'));
@@ -68,8 +71,6 @@ class ProfileService {
           .order('updated_at', ascending: false)
           .range(start, end);
 
-      // `res` est déjà un List<Map<String, dynamic>> (PostgrestList),
-      // le type check et le cast explicites sont donc inutiles.
       final rows = res.toList();
 
       return rows
@@ -106,36 +107,90 @@ class ProfileService {
     }
   }
 
-  // ─── Streams en temps réel (Supabase Realtime) ────────────────────────
+  // ─── Streams en temps réel (Supabase Realtime) avec Cache ────────────
 
   Stream<ThixProfile?> streamMyProfile(String userId) {
-    return _streamProfileById(userId);
+    return _getOrCreateProfileStream('id', userId);
   }
 
   Stream<ThixProfile?> streamPublicProfileByThixId(String thixId) {
     final normalized = thixId.trim().toUpperCase();
-    return _streamProfileByEq('thix_id', normalized);
+    return _getOrCreateProfileStream('thix_id', normalized);
   }
 
   Stream<ThixProfile?> streamPublicProfileByUserId(String userId) {
     final uid = userId.trim();
     if (uid.isEmpty) return const Stream<ThixProfile?>.empty();
-    return _streamProfileByEq('id', uid);
+    return _getOrCreateProfileStream('id', uid);
   }
 
-  Stream<ThixProfile?> _streamProfileById(String userId) {
-    return _streamProfileByEq('id', userId);
+  Stream<ThixProfile?> _getOrCreateProfileStream(String column, String value) {
+    final cacheKey = '$column:$value';
+
+    // Réutilise le stream déjà créé
+    if (_profileStreamCache.containsKey(cacheKey)) {
+      return _profileStreamCache[cacheKey]!;
+    }
+
+    final controller = StreamController<ThixProfile?>.broadcast();
+    late final StreamSubscription sub;
+
+    try {
+      sub = SupabaseConfig.client
+          .from(table)
+          .stream(primaryKey: ['id'])
+          .eq(column, value)
+          .listen(
+            (rows) {
+              if (controller.isClosed) return;
+              if (rows.isEmpty) {
+                controller.add(null);
+              } else {
+                try {
+                  controller.add(ThixProfile.fromPrivateRow(rows.first));
+                } catch (e) {
+                  debugPrint('ProfileService: parse error: $e');
+                  controller.add(null);
+                }
+              }
+            },
+            onError: (e, st) {
+              // En offline / network error → on envoie null au lieu de crasher
+              debugPrint('ProfileService stream error ($cacheKey): $e');
+              if (!controller.isClosed) {
+                controller.add(null);
+              }
+            },
+            cancelOnError: false,
+          );
+    } catch (e) {
+      debugPrint('ProfileService: failed to create stream $cacheKey: $e');
+      // Stream vide en cas d’échec total
+      return const Stream<ThixProfile?>.empty();
+    }
+
+    // Quand plus personne n’écoute, on nettoie
+    controller.onCancel = () {
+      // Petit délai pour éviter de tuer le stream trop vite si un autre listener arrive
+      Future.delayed(const Duration(seconds: 2), () {
+        if (!controller.hasListener && !controller.isClosed) {
+          sub.cancel();
+          controller.close();
+          _profileStreamCache.remove(cacheKey);
+          debugPrint('ProfileService: cleaned stream $cacheKey');
+        }
+      });
+    };
+
+    final stream = controller.stream;
+    _profileStreamCache[cacheKey] = stream;
+    return stream;
   }
 
-  Stream<ThixProfile?> _streamProfileByEq(String column, String value) {
-    return SupabaseConfig.client
-        .from(table)
-        .stream(primaryKey: ['id'])
-        .eq(column, value)
-        .map((rows) {
-          if (rows.isEmpty) return null;
-          return ThixProfile.fromPrivateRow(rows.first);
-        });
+  /// Nettoie tous les streams en cache (à appeler au logout par exemple)
+  void clearStreamCache() {
+    _profileStreamCache.clear();
+    debugPrint('ProfileService: stream cache cleared');
   }
 
   // ─── Fetch ponctuels (sans cache) ──────────────────────────────────────
@@ -264,7 +319,6 @@ class ProfileService {
 
     final data = <String, dynamic>{};
 
-    // Transforme les String vides ("") en null
     void put(String k, Object? v) {
       if (v is String) {
         final trimmed = v.trim();
@@ -280,7 +334,6 @@ class ProfileService {
       }
     }
 
-    // Renommé sans underscore : c'est une variable/fonction locale, pas privée.
     double? parseDoubleOrNull(String? s) {
       if (s == null) return null;
       final t = s.trim().replaceAll(',', '.');
@@ -554,7 +607,6 @@ class ProfileService {
 
   // ─── Génération et Réservation 100% DART (Fallback) ────────────────────
 
-  /// Génère un nouveau THIX ID unique
   Future<String> generateThixId({
     required String uid,
     String? prefix,
@@ -596,7 +648,6 @@ class ProfileService {
     return newId;
   }
 
-  /// Réserve un pseudonyme THIX CHAT en vérifiant son unicité
   Future<String> reserveThixChat({required String userId, required String desired}) async {
     final formattedHandle = desired.startsWith('@') ? desired : '@$desired';
 
