@@ -142,7 +142,8 @@ class OpportunityService {
         'status': item.status.isEmpty ? 'published' : item.status,
         'updated_at': DateTime.now().toIso8601String(),
       };
-      await SupabaseService.update(table, payload, eq: {'id': item.id});
+      // 🟢 CORRECTION ICI : Remplacement de "eq:" par "filters:"
+      await SupabaseService.update(table, payload, filters: {'id': item.id});
     } catch (e) {
       debugPrint('OpportunityService.updateOpportunity supabase failed err=$e');
       rethrow;
@@ -154,7 +155,8 @@ class OpportunityService {
   // ═══════════════════════════════════════════════════════════════
   Future<void> deleteOpportunity(String id) async {
     try {
-      await SupabaseService.delete(table, eq: {'id': id});
+      // 🟢 CORRECTION ICI : Remplacement de "eq:" par "filters:"
+      await SupabaseService.delete(table, filters: {'id': id});
     } catch (e) {
       debugPrint('OpportunityService.deleteOpportunity supabase failed err=$e');
       rethrow;
