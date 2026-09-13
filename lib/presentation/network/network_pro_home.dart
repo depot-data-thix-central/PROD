@@ -29,13 +29,13 @@ import 'package:thix_id/presentation/network/live/live_viewer_screen.dart';
 import 'package:thix_id/presentation/network/live/create_audio_space_sheet.dart';
 
 // ============================================================================
-// PALETTE MONOCHROME — plus de bleu, tout en nuances de gris/noir
+// PALETTE MONOCHROME
 // ============================================================================
 class _Mono {
   _Mono._();
-  static const Color accent = Color(0xFF3F3F46); // gris ardoise foncé — remplace ThixPolicy.primary
-  static const Color accentDeep = Color(0xFF18181B); // gris quasi-noir — remplace primaryDeep
-  static const Color accentSoft = Color(0xFF71717A); // gris moyen pour icônes secondaires
+  static const Color accent = Color(0xFF3F3F46); 
+  static const Color accentDeep = Color(0xFF18181B); 
+  static const Color accentSoft = Color(0xFF71717A); 
 }
 
 final _storiesProvider = StateProvider<List<NetworkStory>>((ref) => []);
@@ -177,8 +177,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     WidgetsBinding.instance.addPostFrameCallback((_) => _init());
   }
 
-  // ── Navigation auto-rétractable : se cache dès qu'on scrolle vers le bas,
-  //    réapparaît dès qu'on remonte OU dès que le scroll s'arrête. ──────────
   void _onScroll() {
     if (!_scrollController.hasClients) return;
     final pos = _scrollController.position;
@@ -205,8 +203,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       }
     });
 
-    // Dès que le scroll s'immobilise (250ms sans mouvement), on réaffiche
-    // la barre automatiquement — c'est le comportement "entre au repos".
     _navStopTimer?.cancel();
     _navStopTimer = Timer(const Duration(milliseconds: 250), () {
       if (mounted) {
@@ -280,7 +276,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     _lastRefreshTime = DateTime.now();
     await Future.wait([_loadStories(), _loadSuggestions()]);
     ref.invalidate(activeLiveSessionsProvider);
-    ref.invalidate(activeAudioSpacesProvider);
   }
 
   Future<void> _openCreateStory() async {
@@ -380,14 +375,11 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                 physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
                 slivers: [
                   _buildSliverAppBar(l10n, avatarUrl: currentUser.photoUrl, currentUserId: currentUser.id),
-
-                  // ── Barre "Quoi de neuf ?" retirée : redondante avec le
-                  //    bouton "+" flottant de la barre de navigation, qui
-                  //    ouvre déjà CreatePostDialog. Un seul point d'entrée
-                  //    pour publier = interface plus sobre, plus lisible.
                   const SliverToBoxAdapter(child: SizedBox(height: 6)),
 
+                  // Section Stories
                   SliverToBoxAdapter(child: _buildStories(l10n, currentUser.id, liveHostIds, currentUser.photoUrl)),
+                  
                   const SliverToBoxAdapter(child: AudioSpacesStrip()),
                   SliverToBoxAdapter(child: _buildFilters(l10n)),
 
@@ -413,16 +405,26 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                         itemCount: posts.length,
                         itemBuilder: (c, i) {
                           final post = posts[i];
-                          return PostCard(
-                            key: ValueKey(post.id),
-                            post: post,
-                            currentProfileId: currentUser.id,
-                            isFirst: i == 0,
-                            onLike: null,
-                            onComment: () => _openComments(post.id),
-                            onShare: () => _showShareSheet(l10n, post),
-                            onDelete: () => ref.read(feedProvider.notifier).deletePost(post.id),
-                            onRefresh: null,
+                          return Column(
+                            children: [
+                              // Mix des publications : Séparateur épais type Facebook
+                              if (i > 0)
+                                Container(
+                                  height: 8,
+                                  color: Colors.black.withValues(alpha: 0.05),
+                                ),
+                              PostCard(
+                                key: ValueKey(post.id),
+                                post: post,
+                                currentProfileId: currentUser.id,
+                                isFirst: i == 0,
+                                onLike: null,
+                                onComment: () => _openComments(post.id),
+                                onShare: () => _showShareSheet(l10n, post),
+                                onDelete: () => ref.read(feedProvider.notifier).deletePost(post.id),
+                                onRefresh: null,
+                              ),
+                            ],
                           );
                         },
                       );
@@ -450,7 +452,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-  // ── App bar : icône Live (sensors) retirée — seul l'espace audio reste ──
   Widget _buildSliverAppBar(AppLocalizations l10n, {required String? avatarUrl, required String currentUserId}) {
     return SliverAppBar(
       backgroundColor: Colors.transparent,
@@ -476,8 +477,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
         style: ThixPolicy.h2Style.copyWith(fontWeight: FontWeight.w900, letterSpacing: -0.5, color: ThixPolicy.textMain, fontSize: 18),
       ),
       actions: [
-        // ── Entrée de publication rapide : icône compacte dans l'app bar,
-        //    remplace l'ancienne barre "Quoi de neuf ?" pleine largeur.
         GestureDetector(
           onTap: () => showDialog(context: context, builder: (_) => const CreatePostDialog()),
           child: Container(
@@ -542,15 +541,16 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
-    // ── Stories : cartes agrandies, fallback sur la photo de profil si vide ──
+  // ── Stories : Arrière-plan blanc, rectangle vertical ──
   Widget _buildStories(AppLocalizations l10n, String currentUserId, Set<String> liveHostIds, String? avatarUrl) {
     final loadingStories = ref.watch(_loadingStoriesProvider);
     final stories = ref.watch(_storiesProvider);
 
     if (loadingStories) {
       return Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        height: 136,
+        color: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        height: 220,
         alignment: Alignment.center,
         child: const SizedBox(
           width: 18,
@@ -569,16 +569,16 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     }
     final otherUsersList = groupedOtherStories.keys.toList();
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+    return Container(
+      color: Colors.white, // Fond totalement blanc pour l'espace stories
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: SizedBox(
-        // ── Agrandi : 120 → 136 ──
-        height: 136,
+        height: 200, // Hauteur augmentée pour le format rectangle haut (Facebook)
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           itemCount: otherUsersList.length + 1,
-          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
           itemBuilder: (c, i) {
             if (i == 0) {
               final myAvatar = myStories.isNotEmpty ? myStories.first.userAvatar : avatarUrl;
@@ -587,8 +587,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                 hasStory: myStories.isNotEmpty,
                 isLive: liveHostIds.contains(currentUserId),
                 name: myStories.isNotEmpty ? l10n.t('network_your_story') : l10n.t('network_create'),
-                // Si pas de story : on simule la photo de profil comme fond
-                // au lieu d'un rectangle gris vide.
                 coverUrl: myStories.isNotEmpty
                     ? (myStories.first.imageUrl.isNotEmpty ? myStories.first.imageUrl : myStories.first.userAvatar)
                     : avatarUrl,
@@ -608,7 +606,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
               hasStory: true,
               isLive: liveHostIds.contains(userId),
               name: firstStory.userName.split(' ').first,
-              // Fallback identique : photo de profil si pas d'image de story.
               coverUrl: firstStory.imageUrl.isNotEmpty ? firstStory.imageUrl : firstStory.userAvatar,
               avatarUrl: firstStory.userAvatar,
               onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => StoryViewer(stories: userStories, initialIndex: 0))),
@@ -618,7 +615,6 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       ),
     );
   }
-
 
   Widget _buildFilters(AppLocalizations l10n) {
     final feedType = ref.watch(_feedTypeProvider);
@@ -906,6 +902,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
     );
   }
 
+  // ── Barre de navigation : réduite en taille ──
   Widget _buildBottomNav(AppLocalizations l10n, bool visible) {
     return AnimatedSlide(
       duration: const Duration(milliseconds: 220),
@@ -919,14 +916,14 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
           child: SafeArea(
             top: false,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
+              padding: const EdgeInsets.fromLTRB(36, 0, 36, 12),
               child: _Glass(
-                radius: 28,
+                radius: 24,
                 alpha: 0.88,
                 blur: 14,
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 child: SizedBox(
-                  height: 50,
+                  height: 46, // Hauteur réduite
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
@@ -941,8 +938,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                             showDialog(context: context, builder: (_) => const CreatePostDialog());
                           },
                           child: Container(
-                            width: 42,
-                            height: 42,
+                            width: 36, // Bouton central réduit
+                            height: 36,
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(colors: [_Mono.accent, _Mono.accentDeep]),
                               shape: BoxShape.circle,
@@ -950,7 +947,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                                 BoxShadow(color: _Mono.accent.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 3)),
                               ],
                             ),
-                            child: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
+                            child: const Icon(Icons.add_rounded, color: Colors.white, size: 20),
                           ),
                         ),
                       ),
@@ -979,14 +976,14 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
         },
         behavior: HitTestBehavior.opaque,
         child: Container(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
             color: active ? _Mono.accent.withValues(alpha: 0.1) : Colors.transparent,
             shape: BoxShape.circle,
           ),
           child: Icon(
             ic,
-            size: 21,
+            size: 20, // Taille d'icône légèrement réduite
             color: active ? _Mono.accent : ThixPolicy.textSecondary.withValues(alpha: 0.8),
           ),
         ),
@@ -996,7 +993,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
 }
 
 // ============================================================================
-// CARTE DE STORY — agrandie, fallback photo de profil si pas de contenu
+// CARTE DE STORY — Rectangle haut avec bordures ajustées
 // ============================================================================
 class _StoryCard extends StatelessWidget {
   final bool isMe;
@@ -1021,8 +1018,6 @@ class _StoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Si aucune image de couverture n'est disponible, on utilise la photo
-    // de profil comme fond (au lieu d'un rectangle gris vide).
     final effectiveBackground = (coverUrl != null && coverUrl!.isNotEmpty)
         ? coverUrl
         : (avatarUrl != null && avatarUrl!.isNotEmpty ? avatarUrl : null);
@@ -1030,24 +1025,23 @@ class _StoryCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        // ── Agrandi : 82 → 96 de large ──
-        width: 96,
+        width: 110, // Largeur pour un aspect rectangle haut
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.5),
-          borderRadius: BorderRadius.circular(16),
+          color: ThixPolicy.surfaceSoft,
+          borderRadius: BorderRadius.circular(12), // Coins légèrement plus carrés, type FB
           border: Border.all(
-            color: isLive ? ThixPolicy.danger : Colors.white.withValues(alpha: 0.85),
+            color: isLive ? ThixPolicy.danger : Colors.black.withValues(alpha: 0.05),
             width: isLive ? 1.5 : 1,
           ),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 4, offset: const Offset(0, 2)),
+            BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 2)),
           ],
         ),
         child: Stack(
           children: [
             Positioned.fill(
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(12),
                 child: effectiveBackground != null
                     ? CachedNetworkImage(
                         imageUrl: effectiveBackground,
@@ -1061,11 +1055,11 @@ class _StoryCard extends StatelessWidget {
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(12),
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Colors.black.withValues(alpha: 0.55)],
+                    colors: [Colors.transparent, Colors.black.withValues(alpha: 0.65)],
                   ),
                 ),
               ),
@@ -1073,31 +1067,31 @@ class _StoryCard extends StatelessWidget {
             Positioned(
               top: 8,
               left: 8,
-              child: RoundAvatar(size: 30, imageUrl: avatarUrl, isLive: isLive),
+              child: RoundAvatar(size: 34, imageUrl: avatarUrl, isLive: isLive),
             ),
             if (isMe)
               Positioned(
-                top: 24,
-                left: 24,
+                top: 26,
+                left: 26,
                 child: GestureDetector(
                   onTap: onAdd,
                   child: Container(
-                    width: 18,
-                    height: 18,
-                    decoration: BoxDecoration(shape: BoxShape.circle, color: _Mono.accent, border: Border.all(color: Colors.white, width: 1.5)),
-                    child: const Icon(Icons.add_rounded, size: 12, color: Colors.white),
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: _Mono.accent, border: Border.all(color: Colors.white, width: 2)),
+                    child: const Icon(Icons.add_rounded, size: 14, color: Colors.white),
                   ),
                 ),
               ),
             Positioned(
-              bottom: 10,
-              left: 8,
-              right: 8,
+              bottom: 12,
+              left: 10,
+              right: 10,
               child: Text(
                 name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: ThixPolicy.captionStyle.copyWith(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 11.5),
+                style: ThixPolicy.captionStyle.copyWith(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
               ),
             ),
           ],
