@@ -65,6 +65,7 @@ const int _kMaxRetries = 2;
 /// Whitelist des buckets autorisés
 const Set<String> _kAllowedBuckets = {
   'audio_uploads',
+  'chat-media',      
   'images',
   'videos',
   'documents',
