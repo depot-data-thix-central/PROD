@@ -2424,7 +2424,7 @@ class _LikersStackState extends State<_LikersStack> {
   }
 
   @override
-  Widget build(BuildContext context) {
+    Widget build(BuildContext context) {
     final displayCount = min(_PostCardConfig.maxLikersFetched, widget.count);
     final extra = widget.count - displayCount;
     final colors = [_Mono.accent, ThixPolicy.danger, _Mono.accentDeep, ThixPolicy.info, ThixPolicy.domainMedia];
@@ -2459,6 +2459,29 @@ class _LikersStackState extends State<_LikersStack> {
               );
             }),
           ),
+          
+          // 1. On ferme le Padding des avatars supplémentaires
           if (extra > 0)
             Padding(
-    
+              padding: const EdgeInsets.only(left: 4),
+              child: Text(
+                '+$extra',
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ),
+            
+          const SizedBox(width: 8),
+          
+          // 2. On affiche le texte généré ("Aimé par vous et X autres")
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 13, color: Colors.grey),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          
+        ], 
+      ),   
+    );     
+  }        
