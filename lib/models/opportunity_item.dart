@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+/// 📋 Modèle d'opportunité (bourse, emploi, subvention, concours…)
 class OpportunityItem {
   final String id;
   final String title;
@@ -11,10 +12,19 @@ class OpportunityItem {
   final DateTime deadline;
   final String description;
   final List<String> eligibility;
+
   /// External link where the user completes the application.
   /// Example: https://example.com/apply
   final String? applyUrl;
+
+  /// URL de l'image/logo de l'opportunité (Supabase Storage).
+  /// Le nom du champ Dart est `imageAssetPath` pour compatibilité avec le code
+  /// existant, mais la clé JSON/DB est bien `image_url`.
   final String? imageAssetPath;
+
+  /// Statut de publication : 'published' | 'countdown' | 'draft' | 'archived'
+  final String status;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -31,10 +41,17 @@ class OpportunityItem {
     required this.eligibility,
     required this.applyUrl,
     required this.imageAssetPath,
+    this.status = 'published', // ⬅️ VALEUR PAR DÉFAUT
     required this.createdAt,
     required this.updatedAt,
   });
 
+  // ─── GETTERS ───
+  bool get isPublished => status == 'published' || status == 'countdown';
+  bool get isDraft => status == 'draft';
+  bool get isArchived => status == 'archived';
+
+  // ─── COPYWITH ───
   OpportunityItem copyWith({
     String? id,
     String? title,
@@ -48,6 +65,7 @@ class OpportunityItem {
     List<String>? eligibility,
     String? applyUrl,
     String? imageAssetPath,
+    String? status,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -64,11 +82,13 @@ class OpportunityItem {
       eligibility: eligibility ?? this.eligibility,
       applyUrl: applyUrl ?? this.applyUrl,
       imageAssetPath: imageAssetPath ?? this.imageAssetPath,
+      status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
+  // ─── SÉRIALISATION ───
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -82,7 +102,8 @@ class OpportunityItem {
       'description': description,
       'eligibility': eligibility,
       'apply_url': applyUrl,
-      'image_asset_path': imageAssetPath,
+      'image_url': imageAssetPath, // ⬅️ CLÉ JSON = 'image_url' (aligné DB)
+      'status': status, // ⬅️ AJOUT
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -91,34 +112,49 @@ class OpportunityItem {
   static OpportunityItem fromJson(Map<String, dynamic> json) {
     DateTime parseDate(Object? v) {
       if (v is String) return DateTime.tryParse(v) ?? DateTime.now();
+      if (v is DateTime) return v;
       return DateTime.now();
     }
 
+    String str(Object? v) => (v ?? '').toString();
+
+    // ⬅️ Lecture image : priorité à image_url (DB), fallback image_asset_path (ancien cache)
+    final rawImg = json['image_url'] ?? json['image_asset_path'];
+    final img = (rawImg ?? '').toString().trim();
+
     return OpportunityItem(
-      id: (json['id'] ?? '').toString(),
-      title: (json['title'] ?? '').toString(),
-      organizer: (json['organizer'] ?? '').toString(),
-      location: (json['location'] ?? '').toString(),
-      category: (json['category'] ?? '').toString(),
-      rewardLabel: (json['reward_label'] ?? '').toString(),
-      deadlineLabel: (json['deadline_label'] ?? '').toString(),
+      id: str(json['id']),
+      title: str(json['title']),
+      organizer: str(json['organizer']),
+      location: str(json['location']),
+      category: str(json['category']),
+      rewardLabel: str(json['reward_label']),
+      deadlineLabel: str(json['deadline_label']),
       deadline: parseDate(json['deadline']),
-      description: (json['description'] ?? '').toString(),
+      description: str(json['description']),
       eligibility: (json['eligibility'] is List)
-          ? (json['eligibility'] as List).map((e) => e.toString()).toList(growable: false)
+          ? (json['eligibility'] as List)
+              .map((e) => e.toString())
+              .toList(growable: false)
           : const <String>[],
-      applyUrl: (json['apply_url'] ?? '').toString().trim().isEmpty ? null : (json['apply_url'] ?? '').toString(),
-      imageAssetPath: (json['image_asset_path'] ?? '').toString().trim().isEmpty ? null : (json['image_asset_path'] ?? '').toString(),
+      applyUrl: str(json['apply_url']).isEmpty ? null : str(json['apply_url']),
+      imageAssetPath: img.isEmpty ? null : img,
+      status: str(json['status']).isEmpty ? 'published' : str(json['status']), // ⬅️ AJOUT
       createdAt: parseDate(json['created_at']),
       updatedAt: parseDate(json['updated_at']),
     );
   }
 
-  static String encodeList(List<OpportunityItem> items) => jsonEncode(items.map((e) => e.toJson()).toList(growable: false));
+  static String encodeList(List<OpportunityItem> items) =>
+      jsonEncode(items.map((e) => e.toJson()).toList(growable: false));
 
   static List<OpportunityItem> decodeList(String raw) {
+    if (raw.trim().isEmpty) return const [];
     final decoded = jsonDecode(raw);
     if (decoded is! List) return const [];
-    return decoded.whereType<Map>().map((m) => OpportunityItem.fromJson(m.cast<String, dynamic>())).toList(growable: false);
+    return decoded
+        .whereType<Map>()
+        .map((m) => OpportunityItem.fromJson(m.cast<String, dynamic>()))
+        .toList(growable: false);
   }
 }
