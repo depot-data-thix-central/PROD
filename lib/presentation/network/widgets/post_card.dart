@@ -14,18 +14,10 @@
 // - Protection _isDisposed dans le Notifier
 // - Gestion propre des StreamSubscription (AudioPlayer)
 //
-// ✅ AJUSTEMENTS UI :
-// - Palette alignée sur network_pro_home.dart (_Mono monochrome) pour les
-//   accents non-sémantiques ; le rouge du like reste un signal d'action.
-// - Badge "Épinglé" visible dans le header quand post.isPinned == true.
-// - Marges horizontales/verticales supprimées entre les cartes
-// - Cartes jointes par une fine bordure or (au lieu de coins arrondis + ombre)
-// - Paramètre `isFirst` pour marquer la séparation avec le haut du feed
-// - Icône "pulse" (like) plus contrastée/visible
-// - Aperçu de lien : repli visuel sobre pour les liens de partage
-//   (facebook.com/share, share.google) qui ne peuvent pas être résolus
-//   côté client — la vraie correction se fait dans la fonction Edge
-//   `link-preview` (suivre les redirections avant de scraper les meta tags).
+// ✅ NOUVELLES CORRECTIONS (Mise à jour UI) :
+// - _LikersStack : Alignement strict sur ThixPolicy (suppression de Colors.grey)
+// - _OriginalPostEmbed : Refonte du placeholder avec la palette _Mono
+// - _FullScreenVideoPlayer : Ajustement de l'AppBar (elevation: 0)
 
 import 'dart:async';
 import 'dart:collection';
@@ -101,10 +93,6 @@ class _PostCardConfig {
   static const double cardBottomBorderWidth = 1.2;
   static const double cardFirstTopBorderWidth = 2.0;
 
-  /// Domaines connus de liens "de partage" qui redirigent vers un contenu
-  /// réel — sans suivre la redirection côté serveur, on ne peut afficher
-  /// que la plateforme, jamais l'article. Sert uniquement à adapter le
-  /// message affiché à l'utilisateur.
   static const Set<String> knownRedirectDomains = {
     'facebook.com',
     'fb.me',
@@ -197,9 +185,6 @@ class _PostCardValidators {
     return options.every((opt) => opt is Map && opt.containsKey('text') && opt.containsKey('votes'));
   }
 
-  /// Le domaine fait-il partie des redirecteurs connus (share.google,
-  /// facebook.com/share, etc.) dont l'aperçu ne peut pas montrer l'article
-  /// réel sans résolution côté serveur ?
   static bool isKnownRedirectDomain(String url) {
     final host = Uri.tryParse(url)?.host.toLowerCase().replaceFirst('www.', '') ?? '';
     return _PostCardConfig.knownRedirectDomains.any((d) => host == d || host.endsWith('.$d'));
@@ -244,7 +229,7 @@ String? _safeImageUrl(String? url) {
 }
 
 // ============================================================================
-// CACHE LRU & OPTIMISTE (✅ CORRIGE LE BUG DU LIKE QUI DISPARAÎT AU SCROLL)
+// CACHE LRU & OPTIMISTE
 // ============================================================================
 
 class _CacheEntry<T> {
@@ -260,7 +245,6 @@ class _PostCardCache {
   final LinkedHashMap<String, _CacheEntry<List<String>>> _likers = LinkedHashMap();
   final LinkedHashMap<String, _CacheEntry<Map<String, dynamic>>> _linkPreviews = LinkedHashMap();
 
-  // ✅ Cache optimiste pour conserver les actions lors du scroll
   final Map<String, bool> optimisticLikes = {};
   final Map<String, int> optimisticLikeCounts = {};
   final Map<String, bool> optimisticSaves = {};
@@ -292,7 +276,7 @@ class _PostCardCache {
 }
 
 // ============================================================================
-// STATE NOTIFIER (✅ AVEC _isDisposed, CACHE OPTIMISTE ET VÉRITÉ SERVEUR)
+// STATE NOTIFIER
 // ============================================================================
 
 final postItemProvider = StateNotifierProvider.autoDispose<PostItemNotifier, NetworkPost>(
@@ -301,7 +285,6 @@ final postItemProvider = StateNotifierProvider.autoDispose<PostItemNotifier, Net
 
 class PostItemNotifier extends StateNotifier<NetworkPost> {
   PostItemNotifier(NetworkPost post, this.ref) : super(post) {
-    // ✅ Restaurer l'état optimiste si le widget a été recyclé au scroll
     bool changed = false;
     bool newIsLiked = state.isLiked;
     int newLikesCount = state.likesCount;
@@ -336,10 +319,6 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       );
     }
 
-    // 🔒 SÉCURISATION DU LIKE : si aucune trace optimiste locale n'existe
-    // (ex: source de feed qui ne renvoie pas is_liked, comme le smart feed),
-    // on va vérifier la vraie valeur côté serveur pour ne jamais afficher
-    // un état de like incohérent avec la base.
     if (!hasOptimisticLike && _isAuthenticated) {
       _verifyLikeStatusFromServer(post.id);
     }
@@ -375,8 +354,6 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       if (reallyLiked != state.isLiked) {
         state = state.copyWith(isLiked: reallyLiked);
       }
-      // On mémorise le résultat vérifié pour éviter de re-vérifier à
-      // chaque recyclage du widget pendant le scroll.
       _PostCardCache.instance.optimisticLikes[postId] = reallyLiked;
       _PostCardCache.instance.optimisticLikeCounts[postId] = state.likesCount;
     } catch (e) {
@@ -393,7 +370,6 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
     final newLiked = !wasLiked;
     final newCount = wasLiked ? (oldCount - 1).clamp(0, 1 << 30) : oldCount + 1;
 
-    // Mise à jour immédiate + sauvegarde en cache pour résister au scroll
     state = state.copyWith(isLiked: newLiked, likesCount: newCount);
     _PostCardCache.instance.optimisticLikes[state.id] = newLiked;
     _PostCardCache.instance.optimisticLikeCounts[state.id] = newCount;
@@ -416,7 +392,6 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       }
     } catch (e) {
       _PostCardLogger.error('toggleLike failed', {'postId': state.id});
-      // Retour à l'état initial en cas d'erreur complète
       if (!_isDisposed) {
         state = state.copyWith(isLiked: wasLiked, likesCount: oldCount);
         _PostCardCache.instance.optimisticLikes[state.id] = wasLiked;
@@ -479,17 +454,25 @@ class _OriginalPostEmbed extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // TODO: Intégrer l'affichage du post d'origine ou charger via networkServiceProvider
+    // TODO: Intégrer l'affichage complet du post d'origine ou charger via networkServiceProvider
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.5),
+        color: _Mono.accent.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
+        border: Border.all(color: _Mono.accent.withValues(alpha: 0.15)),
       ),
-      child: Text(
-        'Post référencé ($postId)',
-        style: const TextStyle(fontSize: 12, color: Colors.grey),
+      child: Row(
+        children: [
+          const Icon(Icons.repeat_rounded, color: ThixPolicy.textSecondary, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Post original référencé ($postId)',
+              style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -504,7 +487,7 @@ class _FullScreenGallery extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.transparent, iconTheme: const IconThemeData(color: Colors.white)),
+      appBar: AppBar(backgroundColor: Colors.transparent, iconTheme: const IconThemeData(color: Colors.white), elevation: 0),
       body: PageView.builder(
         controller: PageController(initialPage: initialIndex),
         itemCount: imageUrls.length,
@@ -524,14 +507,13 @@ class _FullScreenVideoPlayer extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.transparent, iconTheme: const IconThemeData(color: Colors.white)),
+      appBar: AppBar(backgroundColor: Colors.transparent, iconTheme: const IconThemeData(color: Colors.white), elevation: 0),
       body: const Center(
-        child: Text('Lecteur vidéo', style: TextStyle(color: Colors.white)),
+        child: Text('Lecteur vidéo (À implémenter)', style: TextStyle(color: Colors.white)),
       ),
     );
   }
 }
-
 
 // ============================================================================
 // COMPOSANT PRINCIPAL
@@ -1664,9 +1646,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           _ActionBtn(
             icon: isLiked ? Icons.bolt_rounded : Icons.bolt_outlined,
             label: '',
-            // Le like garde une couleur sémantique dédiée (rouge = actif),
-            // volontairement distincte de la palette monochrome — c'est un
-            // signal d'action, pas un élément de marque.
             color: isLiked ? ThixPolicy.danger : ThixPolicy.textSecondary.withValues(alpha: 0.95),
             onTap: () async {
               if (!_isAuthenticated) return;
@@ -2206,9 +2185,6 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
     final hasOgImage = ogImage != null;
     final hasRealArticleData = title.isNotEmpty || hasOgImage;
 
-    // Lien de partage sans données d'article réel (redirection non résolue
-    // côté serveur) : on affiche un repli compact et honnête plutôt que le
-    // logo géant de la plateforme.
     if (!hasRealArticleData && _isRedirectDomain) {
       return _buildRedirectFallback();
     }
@@ -2280,10 +2256,6 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
     );
   }
 
-  /// Repli compact pour les liens de partage (facebook.com/share,
-  /// share.google...) dont l'aperçu ne peut pas montrer l'article réel
-  /// sans que la fonction Edge `link-preview` suive la redirection côté
-  /// serveur. Aligné sur la palette monochrome de l'app.
   Widget _buildRedirectFallback() {
     return GestureDetector(
       onTap: () async {
@@ -2488,7 +2460,7 @@ class _LikersStackState extends State<_LikersStack> {
   }
 
   @override
-    Widget build(BuildContext context) {
+  Widget build(BuildContext context) {
     final displayCount = min(_PostCardConfig.maxLikersFetched, widget.count);
     final extra = widget.count - displayCount;
     final colors = [_Mono.accent, ThixPolicy.danger, _Mono.accentDeep, ThixPolicy.info, ThixPolicy.domainMedia];
@@ -2524,27 +2496,31 @@ class _LikersStackState extends State<_LikersStack> {
             }),
           ),
           
-          // 1. On ferme le Padding des avatars supplémentaires
           if (extra > 0)
             Padding(
               padding: const EdgeInsets.only(left: 4),
               child: Text(
                 '+$extra',
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                style: ThixPolicy.captionStyle.copyWith(
+                  fontSize: 12,
+                  color: ThixPolicy.textSecondary,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             
           const SizedBox(width: 8),
           
-          // 2. On affiche le texte généré ("Aimé par vous et X autres")
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(fontSize: 13, color: Colors.grey),
+              style: ThixPolicy.captionStyle.copyWith(
+                fontSize: 12.5,
+                color: ThixPolicy.textSecondary,
+              ),
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          
         ], 
       ),   
     );     
