@@ -1,8 +1,8 @@
-/// THIX RETROUVE — Enterprise Glass Design (Production)
-/// ✅ Glassmorphism subtil : surfaces blanches translucides, palette réduite
-/// ✅ Actions compactes icône + libellé (plus de grandes cartes)
-/// ✅ Objets en grille carrée 2 colonnes (photo-first, lisibilité maximale)
-/// ✅ Ajout du sélecteur de module haut (blanc/glass) + correction contraste titre
+/// THIX RETROUVE — Light Premium Design (Production)
+/// ✅ Fond blanc propre, surfaces en cartes blanches avec ombre douce
+/// ✅ Palette claire : slate-50 / slate-900 / slate-500
+/// ✅ Actions compactes icône + libellé
+/// ✅ Grille carrée 2 colonnes, photo-first
 /// ✅ i18n + sanitization + Semantics + HapticFeedback + logs
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
@@ -22,12 +22,18 @@ import 'models/objet_model.dart';
 import 'providers/objet_providers.dart';
 
 // ============================================================================
-// DESIGN TOKENS (Glass Enterprise)
+// DESIGN TOKENS (Light Premium)
 // ============================================================================
 
-const double _kGlassSurface = 0.05;   // opacité surface
-const double _kGlassSurfaceHi = 0.08; // opacité haut du dégradé
-const double _kGlassBorder = 0.09;    // opacité bordure
+// Palette claire — slate
+const Color _kBg = Color(0xFFF8FAFC);           // slate-50
+const Color _kSurface = Color(0xFFFFFFFF);       // blanc pur
+const Color _kTextMain = Color(0xFF0F172A);      // slate-900
+const Color _kTextSec = Color(0xFF475569);       // slate-600
+const Color _kTextMuted = Color(0xFF94A3B8);     // slate-400
+const Color _kBorder = Color(0xFFE2E8F0);        // slate-200
+const Color _kBorderSoft = Color(0xFFF1F5F9);    // slate-100
+
 const double _kRadiusLg = 20.0;
 const double _kRadiusMd = 16.0;
 const double _kRadiusSm = 12.0;
@@ -61,15 +67,15 @@ class _RetrouveSanitizer {
 }
 
 // ============================================================================
-// GLASS CARD (surface réutilisable, sans blur coûteux)
+// CARD (surface blanche propre avec ombre douce)
 // ============================================================================
 
-class _GlassCard extends StatelessWidget {
+class _SurfaceCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
   final double radius;
 
-  const _GlassCard({
+  const _SurfaceCard({
     required this.child,
     this.padding = const EdgeInsets.all(14),
     this.radius = _kRadiusMd,
@@ -80,19 +86,16 @@ class _GlassCard extends StatelessWidget {
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Colors.white.withValues(alpha: _kGlassSurfaceHi),
-            Colors.white.withValues(alpha: _kGlassSurface),
-          ],
-        ),
+        color: _kSurface,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: _kGlassBorder),
-          width: 1,
-        ),
+        border: Border.all(color: _kBorder, width: 1),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A0F172A),
+            blurRadius: 10,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: child,
     );
@@ -119,23 +122,19 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     final objetsAsync = ref.watch(objetsRecentsProvider);
 
     return Scaffold(
-      backgroundColor: ThixPolicy.inkDeep,
+      backgroundColor: _kBg,
       body: Stack(
         children: [
-          _buildBackgroundGlow(),
-
           SafeArea(
             bottom: false,
             child: Column(
               children: [
-                const SizedBox(height: 8),
-                _buildModuleTabs(context), // Ajout des onglets du haut
                 _buildHeader(l10n),
 
                 Expanded(
                   child: RefreshIndicator(
                     color: ThixPolicy.primary,
-                    backgroundColor: ThixPolicy.card,
+                    backgroundColor: _kSurface,
                     onRefresh: () async {
                       HapticFeedback.lightImpact();
                       debugPrint('[Retrouve] 🔄 Refresh');
@@ -167,7 +166,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
             ),
           ),
 
-          // Bottom nav flottante
+          // Bottom nav flottante (fond blanc premium)
           Positioned(
             left: 16,
             right: 16,
@@ -175,83 +174,6 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
             child: _buildBottomNav(context, l10n),
           ),
         ],
-      ),
-    );
-  }
-
-  // ── Fond : halo unique très discret ─────────────────────────
-  Widget _buildBackgroundGlow() {
-    return Positioned(
-      top: -120,
-      right: -100,
-      child: IgnorePointer(
-        child: Container(
-          width: 280,
-          height: 280,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(
-              colors: [
-                ThixPolicy.primary.withValues(alpha: 0.14),
-                Colors.transparent,
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Tabs Supérieurs (SOS / RECHERCHE / RETROUVE) ─────────────
-  Widget _buildModuleTabs(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-        ),
-        child: Row(
-          children: [
-            _buildTabItem('SOS', isActive: false),
-            _buildTabItem('RECHERCHE', isActive: false),
-            _buildTabItem('RETROUVE', isActive: true), // Actif
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTabItem(String label, {required bool isActive}) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          if (!isActive) HapticFeedback.selectionClick();
-          // Logique de navigation à ajouter plus tard si besoin
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: isActive
-              ? BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.2)),
-                )
-              : null,
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: isActive ? const Color(0xFFFACC15) : Colors.white.withValues(alpha: 0.5), // Jaune (Warning) ou Gris clair
-              fontSize: 11,
-              fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
-              letterSpacing: 0.8,
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -266,8 +188,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
             button: true,
             label: l10n.t('common_menu'),
             child: IconButton(
-              icon: Icon(Icons.menu_rounded,
-                  color: ThixPolicy.textMuted, size: 22),
+              icon: Icon(Icons.menu_rounded, color: _kTextSec, size: 22),
               onPressed: () {},
             ),
           ),
@@ -276,7 +197,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
               'THIX CENTRAL',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: ThixPolicy.textMuted,
+                color: _kTextSec,
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 2.0,
@@ -288,7 +209,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
             label: l10n.t('common_notifications'),
             child: IconButton(
               icon: Icon(Icons.notifications_none_rounded,
-                  color: ThixPolicy.textMuted, size: 22),
+                  color: _kTextSec, size: 22),
               onPressed: () {},
             ),
           ),
@@ -297,7 +218,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── Hero compact avec correction du texte sombre ────────────
+  // ── Hero compact ────────────────────────────────────────────
   Widget _buildHero(AppLocalizations l10n) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -307,8 +228,8 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
             children: [
               TextSpan(
                 text: 'THIX ',
-                style: const TextStyle(
-                  color: Colors.white, // CORRECTION : Blanc pur pour enlever le sombre
+                style: TextStyle(
+                  color: _kTextMain,
                   fontSize: 26,
                   fontWeight: FontWeight.w800,
                 ),
@@ -327,13 +248,13 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
         const SizedBox(height: 4),
         Text(
           l10n.t('retrouve_tagline'),
-          style: TextStyle(color: ThixPolicy.textMuted, fontSize: 13),
+          style: TextStyle(color: _kTextSec, fontSize: 13, height: 1.4),
         ),
       ],
     );
   }
 
-  // ── Actions Perdu / Trouvé — COMPACTES, icône + libellé court ──
+  // ── Actions Perdu / Trouvé — COMPACTES ──
   Widget _buildActionRow(BuildContext context, AppLocalizations l10n) {
     return Row(
       children: [
@@ -373,40 +294,38 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
           onTap: onTap,
           borderRadius: BorderRadius.circular(_kRadiusSm),
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.white.withValues(alpha: _kGlassSurfaceHi),
-                  Colors.white.withValues(alpha: _kGlassSurface),
-                ],
-              ),
+              color: _kSurface,
               borderRadius: BorderRadius.circular(_kRadiusSm),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: _kGlassBorder),
-              ),
+              border: Border.all(color: _kBorder, width: 1),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0A0F172A),
+                  blurRadius: 6,
+                  offset: Offset(0, 2),
+                ),
+              ],
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 30,
-                  height: 30,
+                  width: 32,
+                  height: 32,
                   decoration: BoxDecoration(
-                    color: tint.withValues(alpha: 0.16),
+                    color: tint.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(9),
                   ),
                   child: Icon(icon, color: tint, size: 16),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Flexible(
                   child: Text(
                     label,
                     style: TextStyle(
-                      color: ThixPolicy.textMain,
-                      fontSize: 12.5,
+                      color: _kTextMain,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
                     maxLines: 1,
@@ -421,7 +340,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── Raccourci carte ──────────────────────────────────────────
+  // ── Raccourci carte ─────
   Widget _buildMapShortcut(BuildContext context, AppLocalizations l10n) {
     return Semantics(
       button: true,
@@ -434,28 +353,26 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
           ),
           borderRadius: BorderRadius.circular(_kRadiusSm),
           child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.white.withValues(alpha: _kGlassSurfaceHi),
-                  Colors.white.withValues(alpha: _kGlassSurface),
-                ],
-              ),
+              color: _kSurface,
               borderRadius: BorderRadius.circular(_kRadiusSm),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: _kGlassBorder),
-              ),
+              border: Border.all(color: _kBorder, width: 1),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0A0F172A),
+                  blurRadius: 6,
+                  offset: Offset(0, 2),
+                ),
+              ],
             ),
             child: Row(
               children: [
                 Container(
-                  width: 30,
-                  height: 30,
+                  width: 32,
+                  height: 32,
                   decoration: BoxDecoration(
-                    color: ThixPolicy.primary.withValues(alpha: 0.16),
+                    color: ThixPolicy.primary.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(9),
                   ),
                   child: Icon(Icons.map_outlined,
@@ -466,16 +383,15 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                   child: Text(
                     l10n.t('retrouve_map_title'),
                     style: TextStyle(
-                      color: ThixPolicy.textMain,
-                      fontSize: 12.5,
+                      color: _kTextMain,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                Icon(Icons.chevron_right_rounded,
-                    color: ThixPolicy.textMuted, size: 16),
+                Icon(Icons.chevron_right_rounded, color: _kTextMuted, size: 18),
               ],
             ),
           ),
@@ -492,7 +408,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
         Text(
           l10n.t('retrouve_recent_objects'),
           style: TextStyle(
-            color: ThixPolicy.textMain,
+            color: _kTextMain,
             fontSize: 15,
             fontWeight: FontWeight.w800,
           ),
@@ -504,13 +420,21 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
             onTap: () => _throttledTap(
               () => context.pushNamed('thixRetrouveMesRecherches'),
             ),
-            child: Text(
-              l10n.t('common_see_all'),
-              style: TextStyle(
-                color: ThixPolicy.primary,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  l10n.t('common_see_all'),
+                  style: TextStyle(
+                    color: ThixPolicy.primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 2),
+                Icon(Icons.arrow_forward_ios_rounded,
+                    color: ThixPolicy.primary, size: 10),
+              ],
             ),
           ),
         ),
@@ -518,7 +442,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── Grille objets ───────────────────────────────────────────
+  // ── Grille objets ──
   Widget _buildObjetsGrid(
     BuildContext context,
     AppLocalizations l10n,
@@ -548,23 +472,32 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
   }
 
   Widget _buildEmptyState(AppLocalizations l10n) {
-    return _GlassCard(
+    return _SurfaceCard(
       radius: _kRadiusLg,
       padding: const EdgeInsets.symmetric(vertical: 36),
       child: Center(
         child: Column(
           children: [
-            Icon(Icons.inventory_2_outlined,
-                size: 40, color: ThixPolicy.textMuted.withValues(alpha: 0.5)),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: _kBorderSoft,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.inventory_2_outlined,
+                  size: 32, color: _kTextMuted),
+            ),
             const SizedBox(height: 12),
             Text(
               l10n.t('retrouve_empty_title'),
-              style: TextStyle(color: ThixPolicy.textMain, fontSize: 14),
+              style: TextStyle(
+                  color: _kTextMain, fontSize: 14, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 4),
             Text(
               l10n.t('retrouve_empty_subtitle'),
-              style: TextStyle(color: ThixPolicy.textMuted, fontSize: 12),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: _kTextSec, fontSize: 12),
             ),
           ],
         ),
@@ -574,29 +507,30 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
 
   Widget _buildErrorState(AppLocalizations l10n, Object err) {
     debugPrint('[Retrouve] ❌ Error: $err');
-    return _GlassCard(
+    return _SurfaceCard(
       radius: _kRadiusLg,
       padding: const EdgeInsets.symmetric(vertical: 28),
       child: Center(
         child: Column(
           children: [
-            Icon(Icons.cloud_off_rounded,
-                size: 32, color: ThixPolicy.textMuted),
+            Icon(Icons.cloud_off_rounded, size: 32, color: _kTextMuted),
             const SizedBox(height: 10),
             Text(
               l10n.t('retrouve_load_error'),
-              style: TextStyle(color: ThixPolicy.textMuted, fontSize: 13),
+              style: TextStyle(color: _kTextSec, fontSize: 13),
             ),
             const SizedBox(height: 12),
-            TextButton(
+            ElevatedButton(
               onPressed: () => ref.invalidate(objetsRecentsProvider),
-              child: Text(
-                l10n.t('common_retry'),
-                style: TextStyle(
-                  color: ThixPolicy.primary,
-                  fontWeight: FontWeight.w700,
-                ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ThixPolicy.primary,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
+              child: Text(l10n.t('common_retry'),
+                  style: const TextStyle(fontWeight: FontWeight.w700)),
             ),
           ],
         ),
@@ -604,6 +538,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
+  // ── CARTE OBJET CARRÉE ──
   Widget _buildObjectCard(
     BuildContext context,
     AppLocalizations l10n,
@@ -646,28 +581,28 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
           child: Container(
             clipBehavior: Clip.antiAlias,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.white.withValues(alpha: _kGlassSurfaceHi),
-                  Colors.white.withValues(alpha: _kGlassSurface),
-                ],
-              ),
+              color: _kSurface,
               borderRadius: BorderRadius.circular(_kRadiusMd),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: _kGlassBorder),
-              ),
+              border: Border.all(color: _kBorder, width: 1),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0A0F172A),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // ── Zone photo ──
                 Expanded(
                   flex: 6,
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
                       _buildThumbnail(safeImageUrl),
+                      // Pastille statut
                       Positioned(
                         top: 8,
                         left: 8,
@@ -680,8 +615,10 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                           child: Container(
                             padding: const EdgeInsets.all(5),
                             decoration: BoxDecoration(
-                              color: ThixPolicy.inkDeep.withValues(alpha: 0.55),
+                              color: Colors.white.withOpacity(0.92),
                               shape: BoxShape.circle,
+                              border: Border.all(
+                                  color: _kBorder, width: 1),
                             ),
                             child: Semantics(
                               label: l10n.t('retrouve_has_reward'),
@@ -693,6 +630,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                     ],
                   ),
                 ),
+                // ── Zone infos ──
                 Expanded(
                   flex: 4,
                   child: Padding(
@@ -704,7 +642,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                         Text(
                           safeTitle,
                           style: TextStyle(
-                            color: ThixPolicy.textMain,
+                            color: _kTextMain,
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
                           ),
@@ -716,13 +654,13 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                           Row(
                             children: [
                               Icon(Icons.location_on_outlined,
-                                  size: 11, color: ThixPolicy.textMuted),
+                                  size: 11, color: _kTextMuted),
                               const SizedBox(width: 3),
                               Expanded(
                                 child: Text(
                                   safeLocation,
                                   style: TextStyle(
-                                    color: ThixPolicy.textMuted,
+                                    color: _kTextSec,
                                     fontSize: 10.5,
                                   ),
                                   maxLines: 1,
@@ -735,7 +673,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                         Text(
                           i18n.relativeTime(obj.date),
                           style: TextStyle(
-                            color: ThixPolicy.textMuted,
+                            color: _kTextMuted,
                             fontSize: 10,
                           ),
                           maxLines: 1,
@@ -755,50 +693,54 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
 
   Widget _buildThumbnail(String? imageUrl) {
     return Container(
-      color: Colors.white.withValues(alpha: 0.06),
+      color: _kBorderSoft,
       child: imageUrl != null
           ? CachedNetworkImage(
               imageUrl: imageUrl,
               fit: BoxFit.cover,
               placeholder: (_, __) => const Center(
                 child: SizedBox(
-                  width: 16,
-                  height: 16,
+                  width: 18,
+                  height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
               errorWidget: (_, __, ___) => Center(
-                child: Icon(
-                  Icons.inventory_2_rounded,
-                  color: ThixPolicy.textMuted,
-                  size: 28,
-                ),
+                child: Icon(Icons.inventory_2_rounded,
+                    color: _kTextMuted, size: 28),
               ),
             )
           : Center(
               child: Icon(Icons.inventory_2_rounded,
-                  color: ThixPolicy.textMuted, size: 28),
+                  color: _kTextMuted, size: 28),
             ),
     );
   }
 
   Widget _statusPill(Color color, String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: ThixPolicy.inkDeep.withValues(alpha: 0.55),
+        color: Colors.white.withOpacity(0.95),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.5)),
+        border: Border.all(color: color.withOpacity(0.3), width: 1),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x140F172A),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 5,
-            height: 5,
+            width: 6,
+            height: 6,
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 5),
           Text(
             label.toUpperCase(),
             style: TextStyle(
@@ -813,66 +755,62 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── Bottom nav glass ────────────────────────────────────────
+  // ── Bottom nav blanche premium ─────────────────────────────────
   Widget _buildBottomNav(BuildContext context, AppLocalizations l10n) {
-    return RepaintBoundary(
-      child: ClipRRect(
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+      decoration: BoxDecoration(
+        color: _kSurface,
         borderRadius: BorderRadius.circular(28),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-            decoration: BoxDecoration(
-              color: ThixPolicy.inkDeep.withValues(alpha: 0.55),
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.08),
+        border: Border.all(color: _kBorder, width: 1),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x140F172A),
+            blurRadius: 20,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _navItem(Icons.home_rounded, l10n.t('nav_home'), false,
+              onTap: () {}),
+          _navItem(Icons.manage_search_rounded, l10n.t('nav_searches'), true,
+              onTap: () => _throttledTap(
+                  () => context.pushNamed('thixRetrouveMesRecherches'))),
+          // Bouton central
+          Semantics(
+            button: true,
+            label: l10n.t('retrouve_add_action'),
+            child: GestureDetector(
+              onTap: () => _showAddModal(context, l10n),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: ThixPolicy.primary,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: ThixPolicy.primary.withOpacity(0.3),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.add_rounded,
+                    color: Colors.white, size: 22),
               ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _navItem(Icons.home_rounded, l10n.t('nav_home'), false,
-                    onTap: () {}),
-                _navItem(Icons.manage_search_rounded,
-                    l10n.t('nav_searches'), true,
-                    onTap: () => _throttledTap(() => context
-                        .pushNamed('thixRetrouveMesRecherches'))),
-                Semantics(
-                  button: true,
-                  label: l10n.t('retrouve_add_action'),
-                  child: GestureDetector(
-                    onTap: () => _showAddModal(context, l10n),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: ThixPolicy.primary,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: ThixPolicy.primary.withValues(alpha: 0.35),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(Icons.add_rounded,
-                          color: Colors.white, size: 22),
-                    ),
-                  ),
-                ),
-                _navItem(Icons.chat_bubble_outline_rounded,
-                    l10n.t('nav_messages'), false,
-                    onTap: () =>
-                        _throttledTap(() => context.pushNamed(AppRoutes.chat))),
-                _navItem(Icons.person_outline_rounded,
-                    l10n.t('nav_profile'), false,
-                    onTap: () => _throttledTap(
-                        () => context.pushNamed(AppRoutes.profile))),
-              ],
-            ),
           ),
-        ),
+          _navItem(Icons.chat_bubble_outline_rounded,
+              l10n.t('nav_messages'), false,
+              onTap: () =>
+                  _throttledTap(() => context.pushNamed(AppRoutes.chat))),
+          _navItem(Icons.person_outline_rounded, l10n.t('nav_profile'), false,
+              onTap: () =>
+                  _throttledTap(() => context.pushNamed(AppRoutes.profile))),
+        ],
       ),
     );
   }
@@ -894,19 +832,16 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon,
-                  color: selected
-                      ? ThixPolicy.textMain
-                      : ThixPolicy.textMuted,
+                  color:
+                      selected ? ThixPolicy.primary : _kTextMuted,
                   size: 20),
               const SizedBox(height: 3),
               Text(
                 label,
                 style: TextStyle(
-                  color: selected
-                      ? ThixPolicy.textMain
-                      : ThixPolicy.textMuted,
+                  color: selected ? ThixPolicy.primary : _kTextMuted,
                   fontSize: 9,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -918,7 +853,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── Modal d'ajout ───────────────────────────────────────────
+  // ── Modal d'ajout (clair) ───────────────────────────────────
   void _showAddModal(BuildContext context, AppLocalizations l10n) {
     HapticFeedback.mediumImpact();
     showModalBottomSheet(
@@ -926,51 +861,48 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
       backgroundColor: Colors.transparent,
       builder: (sheetCtx) => ClipRRect(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            color: ThixPolicy.inkDeep.withValues(alpha: 0.7),
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-            child: SafeArea(
-              top: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+        child: Container(
+          color: _kSurface,
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: _kBorder,
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  const SizedBox(height: 20),
-                  Text(
-                    l10n.t('retrouve_add_modal_title'),
-                    style: TextStyle(
-                      color: ThixPolicy.textMain,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                    ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  l10n.t('retrouve_add_modal_title'),
+                  style: TextStyle(
+                    color: _kTextMain,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
                   ),
-                  const SizedBox(height: 16),
-                  _modalAction(
-                    sheetCtx,
-                    tint: ThixPolicy.domainOpportunity,
-                    icon: Icons.search_off_rounded,
-                    label: l10n.t('retrouve_modal_lost'),
-                    onTap: () => _navigateToDeclare(context, StatutObjet.perdu),
-                  ),
-                  const SizedBox(height: 10),
-                  _modalAction(
-                    sheetCtx,
-                    tint: ThixPolicy.success,
-                    icon: Icons.inventory_2_rounded,
-                    label: l10n.t('retrouve_modal_found'),
-                    onTap: () => _navigateToDeclare(context, StatutObjet.trouve),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 16),
+                _modalAction(
+                  sheetCtx,
+                  tint: ThixPolicy.domainOpportunity,
+                  icon: Icons.search_off_rounded,
+                  label: l10n.t('retrouve_modal_lost'),
+                  onTap: () => _navigateToDeclare(context, StatutObjet.perdu),
+                ),
+                const SizedBox(height: 10),
+                _modalAction(
+                  sheetCtx,
+                  tint: ThixPolicy.success,
+                  icon: Icons.inventory_2_rounded,
+                  label: l10n.t('retrouve_modal_found'),
+                  onTap: () => _navigateToDeclare(context, StatutObjet.trouve),
+                ),
+              ],
             ),
           ),
         ),
@@ -996,14 +928,19 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
             onTap();
           },
           borderRadius: BorderRadius.circular(_kRadiusMd),
-          child: _GlassCard(
+          child: Container(
             padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: _kSurface,
+              borderRadius: BorderRadius.circular(_kRadiusMd),
+              border: Border.all(color: _kBorder, width: 1),
+            ),
             child: Row(
               children: [
                 Container(
                   padding: const EdgeInsets.all(9),
                   decoration: BoxDecoration(
-                    color: tint.withValues(alpha: 0.14),
+                    color: tint.withOpacity(0.14),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(icon, color: tint, size: 20),
@@ -1013,14 +950,14 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                   child: Text(
                     label,
                     style: TextStyle(
-                      color: ThixPolicy.textMain,
+                      color: _kTextMain,
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
                 Icon(Icons.chevron_right_rounded,
-                    color: ThixPolicy.textMuted, size: 18),
+                    color: _kTextMuted, size: 18),
               ],
             ),
           ),
@@ -1029,6 +966,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
+  // ── Helpers logique ─────────────────────────────────────────
   Future<void> _navigateToDeclare(BuildContext context, StatutObjet type) async {
     _throttledTap(() async {
       HapticFeedback.lightImpact();
@@ -1050,6 +988,10 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     callback();
   }
 }
+
+// ============================================================================
+// SKELETON — grille 2 colonnes (light)
+// ============================================================================
 
 class _SkeletonGrid extends StatefulWidget {
   const _SkeletonGrid();
@@ -1092,14 +1034,12 @@ class _SkeletonGridState extends State<_SkeletonGrid>
       itemBuilder: (_, __) => AnimatedBuilder(
         animation: _ctrl,
         builder: (_, __) => Opacity(
-          opacity: 0.4 + 0.3 * _ctrl.value,
+          opacity: 0.5 + 0.35 * _ctrl.value,
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
+              color: _kBorder,
               borderRadius: BorderRadius.circular(_kRadiusMd),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.06),
-              ),
+              border: Border.all(color: _kBorder),
             ),
           ),
         ),
