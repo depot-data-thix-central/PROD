@@ -398,8 +398,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                     ? CachedNetworkImage(
                         imageUrl: safeImageUrl,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) =>
-                            const Container(color: _kSkeleton),
+                        placeholder: (_, __) => Container(color: _kSkeleton),
                         errorWidget: (_, __, ___) => _thumbPlaceholder(),
                       )
                     : _thumbPlaceholder(),
