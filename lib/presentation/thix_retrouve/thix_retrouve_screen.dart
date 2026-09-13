@@ -2,6 +2,7 @@
 /// ✅ Glassmorphism subtil : surfaces blanches translucides, palette réduite
 /// ✅ Actions compactes icône + libellé (plus de grandes cartes)
 /// ✅ Objets en grille carrée 2 colonnes (photo-first, lisibilité maximale)
+/// ✅ Ajout du sélecteur de module haut (blanc/glass) + correction contraste titre
 /// ✅ i18n + sanitization + Semantics + HapticFeedback + logs
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
@@ -127,6 +128,8 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
             bottom: false,
             child: Column(
               children: [
+                const SizedBox(height: 8),
+                _buildModuleTabs(context), // Ajout des onglets du haut
                 _buildHeader(l10n),
 
                 Expanded(
@@ -164,7 +167,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
             ),
           ),
 
-          // Bottom nav flottante (seul élément avec vrai blur)
+          // Bottom nav flottante
           Positioned(
             left: 16,
             right: 16,
@@ -192,6 +195,60 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                 ThixPolicy.primary.withValues(alpha: 0.14),
                 Colors.transparent,
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Tabs Supérieurs (SOS / RECHERCHE / RETROUVE) ─────────────
+  Widget _buildModuleTabs(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Row(
+          children: [
+            _buildTabItem('SOS', isActive: false),
+            _buildTabItem('RECHERCHE', isActive: false),
+            _buildTabItem('RETROUVE', isActive: true), // Actif
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabItem(String label, {required bool isActive}) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          if (!isActive) HapticFeedback.selectionClick();
+          // Logique de navigation à ajouter plus tard si besoin
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: isActive
+              ? BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2)),
+                )
+              : null,
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isActive ? const Color(0xFFFACC15) : Colors.white.withValues(alpha: 0.5), // Jaune (Warning) ou Gris clair
+              fontSize: 11,
+              fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
+              letterSpacing: 0.8,
             ),
           ),
         ),
@@ -240,7 +297,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── Hero compact ────────────────────────────────────────────
+  // ── Hero compact avec correction du texte sombre ────────────
   Widget _buildHero(AppLocalizations l10n) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -250,8 +307,8 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
             children: [
               TextSpan(
                 text: 'THIX ',
-                style: TextStyle(
-                  color: ThixPolicy.textMain,
+                style: const TextStyle(
+                  color: Colors.white, // CORRECTION : Blanc pur pour enlever le sombre
                   fontSize: 26,
                   fontWeight: FontWeight.w800,
                 ),
@@ -301,8 +358,6 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // Action compacte : icône dans un badge + libellé sur une ligne.
-  // Ne prend qu'une hauteur réduite — plus de sous-titre, plus de grande carte.
   Widget _buildCompactAction({
     required Color tint,
     required IconData icon,
@@ -366,7 +421,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── Raccourci carte — compact, icône seule + texte court ─────
+  // ── Raccourci carte ──────────────────────────────────────────
   Widget _buildMapShortcut(BuildContext context, AppLocalizations l10n) {
     return Semantics(
       button: true,
@@ -463,7 +518,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── Grille objets — 2 colonnes, cartes carrées, photo-first ──
+  // ── Grille objets ───────────────────────────────────────────
   Widget _buildObjetsGrid(
     BuildContext context,
     AppLocalizations l10n,
@@ -549,7 +604,6 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── CARTE OBJET CARRÉE — photo en haut (60%), infos compactes en bas ──
   Widget _buildObjectCard(
     BuildContext context,
     AppLocalizations l10n,
@@ -608,14 +662,12 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // ── Zone photo (occupe la majorité du carré) ──
                 Expanded(
                   flex: 6,
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
                       _buildThumbnail(safeImageUrl),
-                      // Pastille statut en overlay coin haut-gauche
                       Positioned(
                         top: 8,
                         left: 8,
@@ -641,7 +693,6 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                     ],
                   ),
                 ),
-                // ── Zone infos compactes ──
                 Expanded(
                   flex: 4,
                   child: Padding(
@@ -762,7 +813,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── Bottom nav glass (blur) ─────────────────────────────────
+  // ── Bottom nav glass ────────────────────────────────────────
   Widget _buildBottomNav(BuildContext context, AppLocalizations l10n) {
     return RepaintBoundary(
       child: ClipRRect(
@@ -787,7 +838,6 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                     l10n.t('nav_searches'), true,
                     onTap: () => _throttledTap(() => context
                         .pushNamed('thixRetrouveMesRecherches'))),
-                // Bouton central
                 Semantics(
                   button: true,
                   label: l10n.t('retrouve_add_action'),
@@ -979,7 +1029,6 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── Helpers logique ─────────────────────────────────────────
   Future<void> _navigateToDeclare(BuildContext context, StatutObjet type) async {
     _throttledTap(() async {
       HapticFeedback.lightImpact();
@@ -1001,10 +1050,6 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     callback();
   }
 }
-
-// ============================================================================
-// SKELETON — grille 2 colonnes, cohérente avec le layout final
-// ============================================================================
 
 class _SkeletonGrid extends StatefulWidget {
   const _SkeletonGrid();
