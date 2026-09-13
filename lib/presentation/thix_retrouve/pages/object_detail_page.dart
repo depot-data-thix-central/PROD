@@ -1,5 +1,6 @@
 /// Object Detail Page — Enterprise Glass Design (Production)
 /// ✅ Cohérent avec THIX RETROUVE : glass monochrome, texte blanc
+/// ✅ Ajout du sélecteur de modules (SOS / RECHERCHE / RETROUVE) pour la cohérence
 /// ✅ Pastilles de statut (pas de badges solides)
 /// ✅ i18n complet + sanitization + Semantics + HapticFeedback
 import 'package:cached_network_image/cached_network_image.dart';
@@ -187,140 +188,207 @@ class ObjectDetailPage extends StatelessWidget {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Image (glass card) ──
-            _buildImageSection(l10n, safeImageUrl, statusColor),
-            const SizedBox(height: 18),
+      body: Column(
+        children: [
+          // ── Onglets supérieurs pour conserver l'identité visuelle ──
+          _buildModuleTabs(context),
+          const SizedBox(height: 10),
 
-            // ── Title + status pill ──
-            Semantics(
-              header: true,
-              child: Text(
-                safeTitle.isEmpty ? l10n.t('object_no_title') : safeTitle,
-                style: const TextStyle(
-                  color: _kTextPrimary,
-                  fontSize: 21,
-                  fontWeight: FontWeight.w800,
-                  height: 1.25,
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                _statusPill(statusColor, status),
-                if (time.isNotEmpty)
-                  Text(
-                    time,
-                    style: TextStyle(
-                      color: ThixPolicy.textMuted,
-                      fontSize: 12,
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 14),
+          // ── Contenu principal scrollable ──
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Image (glass card) ──
+                  _buildImageSection(l10n, safeImageUrl, statusColor),
+                  const SizedBox(height: 18),
 
-            // ── Location (chip glass) ──
-            if (safeLocation.isNotEmpty)
-              _GlassCard(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                radius: _kRadiusSm,
-                child: Row(
-                  children: [
-                    Icon(Icons.location_on_outlined,
-                        size: 14, color: ThixPolicy.textMuted),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        safeLocation,
-                        style: TextStyle(
-                          color: ThixPolicy.textMuted,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            const SizedBox(height: 14),
-
-            // ── Description (glass card) ──
-            if (safeDescription.isNotEmpty) ...[
-              Text(
-                l10n.t('object_description_label'),
-                style: TextStyle(
-                  color: ThixPolicy.textMuted,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.8,
-                ),
-              ),
-              const SizedBox(height: 8),
-              _GlassCard(
-                child: Text(
-                  safeDescription,
-                  style: const TextStyle(
-                    color: _kTextPrimary,
-                    fontSize: 14,
-                    height: 1.55,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-            ],
-
-            // ── Reward (glass teinté subtil) ──
-            if (safeReward.isNotEmpty) ...[
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: ThixPolicy.warning.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(_kRadiusMd),
-                  border: Border.all(
-                    color: ThixPolicy.warning.withValues(alpha: 0.25),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.card_giftcard_rounded,
-                        color: ThixPolicy.warning, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        l10n.t('object_reward'),
-                        style: TextStyle(
-                          color: ThixPolicy.textMuted,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      safeReward,
+                  // ── Title + status pill ──
+                  Semantics(
+                    header: true,
+                    child: Text(
+                      safeTitle.isEmpty ? l10n.t('object_no_title') : safeTitle,
                       style: const TextStyle(
-                        color: _kTextPrimary,
-                        fontSize: 15,
+                        color: _kTextPrimary, // Blanc pur garanti
+                        fontSize: 21,
                         fontWeight: FontWeight.w800,
+                        height: 1.25,
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _statusPill(statusColor, status),
+                      if (time.isNotEmpty)
+                        Text(
+                          time,
+                          style: TextStyle(
+                            color: ThixPolicy.textMuted,
+                            fontSize: 12,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
 
-            // ── Actions ──
-            _buildActionButtons(context, l10n, safeTitle, safeDescription,
-                safeLocation, safeImageUrl),
+                  // ── Location (chip glass) ──
+                  if (safeLocation.isNotEmpty)
+                    _GlassCard(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 10, horizontal: 12),
+                      radius: _kRadiusSm,
+                      child: Row(
+                        children: [
+                          Icon(Icons.location_on_outlined,
+                              size: 14, color: ThixPolicy.textMuted),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              safeLocation,
+                              style: TextStyle(
+                                color: ThixPolicy.textMuted,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 14),
+
+                  // ── Description (glass card) ──
+                  if (safeDescription.isNotEmpty) ...[
+                    Text(
+                      l10n.t('object_description_label'),
+                      style: TextStyle(
+                        color: ThixPolicy.textMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _GlassCard(
+                      child: Text(
+                        safeDescription,
+                        style: const TextStyle(
+                          color: _kTextPrimary,
+                          fontSize: 14,
+                          height: 1.55,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+
+                  // ── Reward (glass teinté subtil) ──
+                  if (safeReward.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.warning.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(_kRadiusMd),
+                        border: Border.all(
+                          color: ThixPolicy.warning.withValues(alpha: 0.25),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.card_giftcard_rounded,
+                              color: ThixPolicy.warning, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              l10n.t('object_reward'),
+                              style: TextStyle(
+                                color: ThixPolicy.textMuted,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            safeReward,
+                            style: const TextStyle(
+                              color: _kTextPrimary,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+
+                  // ── Actions ──
+                  _buildActionButtons(context, l10n, safeTitle, safeDescription,
+                      safeLocation, safeImageUrl),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ========================================================================
+  // MODULE TABS (Pour cohérence avec la page principale)
+  // ========================================================================
+
+  Widget _buildModuleTabs(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Row(
+          children: [
+            _buildTabItem('SOS', isActive: false),
+            _buildTabItem('RECHERCHE', isActive: false),
+            _buildTabItem('RETROUVE', isActive: true),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabItem(String label, {required bool isActive}) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          if (!isActive) HapticFeedback.selectionClick();
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: isActive
+              ? BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2)),
+                )
+              : null,
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isActive ? const Color(0xFFFACC15) : Colors.white.withValues(alpha: 0.5),
+              fontSize: 11,
+              fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
+              letterSpacing: 0.8,
+            ),
+          ),
         ),
       ),
     );
