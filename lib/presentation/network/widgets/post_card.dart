@@ -470,6 +470,70 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
 }
 
 // ============================================================================
+// WIDGETS MANQUANTS (ÉDITION & PLEIN ÉCRAN)
+// ============================================================================
+
+class _OriginalPostEmbed extends ConsumerWidget {
+  final String postId;
+  const _OriginalPostEmbed({required this.postId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // TODO: Intégrer l'affichage du post d'origine ou charger via networkServiceProvider
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.8)),
+      ),
+      child: Text(
+        'Post référencé ($postId)',
+        style: const TextStyle(fontSize: 12, color: Colors.grey),
+      ),
+    );
+  }
+}
+
+class _FullScreenGallery extends StatelessWidget {
+  final List<String> imageUrls;
+  final int initialIndex;
+  const _FullScreenGallery({required this.imageUrls, required this.initialIndex});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.transparent, iconTheme: const IconThemeData(color: Colors.white)),
+      body: PageView.builder(
+        controller: PageController(initialPage: initialIndex),
+        itemCount: imageUrls.length,
+        itemBuilder: (_, index) => Center(
+          child: CachedNetworkImage(imageUrl: imageUrls[index], fit: BoxFit.contain),
+        ),
+      ),
+    );
+  }
+}
+
+class _FullScreenVideoPlayer extends StatelessWidget {
+  final String videoUrl;
+  const _FullScreenVideoPlayer({required this.videoUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(backgroundColor: Colors.transparent, iconTheme: const IconThemeData(color: Colors.white)),
+      body: const Center(
+        child: Text('Lecteur vidéo', style: TextStyle(color: Colors.white)),
+      ),
+    );
+  }
+}
+
+
+// ============================================================================
 // COMPOSANT PRINCIPAL
 // ============================================================================
 
