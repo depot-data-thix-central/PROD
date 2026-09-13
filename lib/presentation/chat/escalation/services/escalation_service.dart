@@ -29,6 +29,10 @@
 //   - getCurrentLevelForAgent : maintenant requête DB réelle
 //   - getPendingEscalations : filtre par agentId ET level (était level seul)
 //   - acceptEscalation : ne modifie plus to_agent_id (respecte la cible)
+//   - createEscalation / rejectEscalation : conversations.current_level est
+//     une colonne INTEGER en base — on y écrit désormais `level.tier` (int)
+//     au lieu de `_levelToDb(level)` (string), qui causait :
+//     "invalid input syntax for type integer: technical"
 // ============================================================================
 
 import 'dart:async';
@@ -177,7 +181,10 @@ class EscalationService {
   /// Sérialise un status en valeur DB (string).
   String _statusToDb(EscalationStatus status) => status.name;
 
-  /// Sérialise un level en valeur DB (string).
+  /// Sérialise un level en valeur DB (string) — utilisé UNIQUEMENT pour
+  /// les colonnes texte de `escalation_steps` (`to_level`, `from_level`).
+  /// Ne jamais utiliser pour `conversations.current_level`, qui est un
+  /// INTEGER en base : utiliser `level.tier` dans ce cas.
   String _levelToDb(EscalationLevel level) => level.name;
 
   /// Sérialise une priority en valeur DB (string).
@@ -395,12 +402,16 @@ class EscalationService {
       );
 
       // 4. Update conversation status
+      // ⚠️ CORRECTIF : `current_level` est un INTEGER en base.
+      // On envoie `toLevel.tier` (int) et non `_levelToDb(toLevel)` (string),
+      // sinon Postgres renvoie :
+      // "invalid input syntax for type integer: technical"
       await _retry(
         () => _supabase
             .from('conversations')
             .update({
               'escalation_status': 'escalated',
-              'current_level': _levelToDb(toLevel),
+              'current_level': toLevel.tier,
               'is_escalated': true,
               'escalated_at': DateTime.now().toUtc().toIso8601String(),
             })
@@ -581,12 +592,14 @@ class EscalationService {
       final step = EscalationStep.fromJson(map);
 
       // 3. Reset conversation
+      // ⚠️ CORRECTIF : même raison que dans createEscalation() —
+      // `current_level` est un INTEGER, on utilise `.tier` (int).
       await _retry(
         () => _supabase
             .from('conversations')
             .update({
               'escalation_status': 'active',
-              'current_level': _levelToDb(EscalationLevel.agent),
+              'current_level': EscalationLevel.agent.tier,
               'is_escalated': false,
             })
             .eq('id', step.conversationId),
