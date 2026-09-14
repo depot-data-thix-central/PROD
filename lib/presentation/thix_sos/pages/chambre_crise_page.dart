@@ -1,5 +1,15 @@
 /// THIX SOS — Chambre de crise (victime) — Production Enterprise (audité)
 /// ✅ SÉCURISÉ : validation URL, permissions, timeouts, retry, i18n, semantics
+///
+/// ✅ AJUSTEMENT UX/SÉCURITÉ :
+/// - Le live Agora n'est plus démarré automatiquement à l'ouverture de la
+///   salle. C'est désormais une action manuelle et optionnelle
+///   ("Activer la vidéo en direct"), car il échoue plus souvent que la
+///   capture manuelle sur un réseau instable et peut afficher une erreur
+///   systématique inutile aux victimes.
+/// - En cas d'échec du live, un message PERSISTANT (pas un SnackBar
+///   éphémère) explique la situation et redirige clairement vers
+///   Photo/Vidéo/Audio, qui restent le système fiable et toujours actif.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -134,6 +144,9 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage>
   final Map<String, DateTime> _quickSentAt = {};
   bool _camOn = false;
   bool _camBusy = false;
+  // ✅ NOUVEAU : suivi persistant de l'échec du live, pour afficher un
+  // message qui reste visible (au lieu d'un SnackBar qui disparaît).
+  bool _camFailed = false;
   bool _clipBusy = false;
   bool _photoBusy = false;
   bool _videoBusy = false;
@@ -172,10 +185,11 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage>
           .start(widget.incidentId);
       _loadConversationId();
       _pollConversation();
-      // Live Agora : après 2s, pour ne pas bloquer photo/vidéo.
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) _startCamera();
-      });
+      // ✅ RETIRÉ : démarrage automatique de la caméra live après 2s.
+      // La capture manuelle (Photo/Vidéo/Audio) reste active en permanence
+      // et fiable ; le live Agora est désormais une action manuelle et
+      // optionnelle, déclenchée depuis _LiveVideoOptInCard ou l'icône
+      // CAM/LIVE du header.
     });
   }
 
@@ -217,11 +231,17 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage>
 
   Future<void> _startCamera() async {
     if (_camOn || _camBusy) return;
-    setState(() => _camBusy = true);
+    setState(() {
+      _camBusy = true;
+      _camFailed = false;
+    });
     try {
       final hasPerm = await _ensureCameraPermission();
       if (!hasPerm) {
-        if (mounted) _snack(AppLocalizations.of(context).t('sos_error_permission'));
+        if (mounted) {
+          setState(() => _camFailed = true);
+          _snack(AppLocalizations.of(context).t('sos_error_permission'));
+        }
         return;
       }
       await _crisisRetry(
@@ -235,6 +255,10 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage>
     } catch (e) {
       debugPrint('[ChambreCrise] ❌ caméra: $e');
       if (mounted) {
+        // ✅ _camFailed reste vrai jusqu'à un nouveau succès ou une
+        // fermeture manuelle du message — contrairement au SnackBar,
+        // la carte persiste et guide vers la capture manuelle.
+        setState(() => _camFailed = true);
         _snack(AppLocalizations.of(context).t('sos_error_camera'));
       }
     } finally {
@@ -259,10 +283,16 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage>
       }
     } catch (e) {
       if (!mounted) return;
+      setState(() => _camFailed = true);
       _snack(_CrisisValidators.friendlyError(e, AppLocalizations.of(context)));
     } finally {
       if (mounted) setState(() => _camBusy = false);
     }
+  }
+
+  void _dismissCamFailedBanner() {
+    if (!mounted) return;
+    setState(() => _camFailed = false);
   }
 
   // ✅ FIX P1 : timeout + log structuré (plus de catch silencieux)
@@ -664,6 +694,16 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage>
                       children: [
                         _StatusStrip(incident: incident, camOn: _camOn),
                         const SizedBox(height: ThixPolicy.s16),
+                        // ✅ NOUVEAU : carte d'activation manuelle/optionnelle
+                        // du live, ou message persistant en cas d'échec.
+                        _LiveVideoOptInCard(
+                          camOn: _camOn,
+                          camBusy: _camBusy,
+                          camFailed: _camFailed,
+                          onActivate: _toggleCamera,
+                          onDismissFailure: _dismissCamFailedBanner,
+                        ),
+                        const SizedBox(height: ThixPolicy.s16),
                         _section(l10n.t('sos_section_location')),
                         const SizedBox(height: ThixPolicy.s8),
                         _LiveMapCard(incident: incident),
@@ -863,6 +903,189 @@ class _ChambreCrisePageState extends ConsumerState<ChambreCrisePage>
         fontWeight: ThixPolicy.bold,
         color: ThixPolicy.textSecondary,
         letterSpacing: 0.5,
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ✅ NOUVEAU WIDGET : CARTE D'ACTIVATION VIDÉO LIVE (OPTIONNELLE)
+// ============================================================================
+/// Trois états visuels :
+/// - Inactif (camOn=false, camBusy=false, camFailed=false) : proposition
+///   neutre d'activer le live, clairement marquée "optionnel".
+/// - Connexion (camBusy=true) : indicateur de chargement.
+/// - Échec (camFailed=true) : message persistant orienté solution, qui
+///   redirige vers Photo/Vidéo/Audio et propose de réessayer ou de fermer.
+/// - Actif (camOn=true) : rien à afficher ici, le statut LIVE est déjà
+///   visible dans le header et _StatusStrip.
+class _LiveVideoOptInCard extends StatelessWidget {
+  const _LiveVideoOptInCard({
+    required this.camOn,
+    required this.camBusy,
+    required this.camFailed,
+    required this.onActivate,
+    required this.onDismissFailure,
+  });
+
+  final bool camOn;
+  final bool camBusy;
+  final bool camFailed;
+  final VoidCallback onActivate;
+  final VoidCallback onDismissFailure;
+
+  @override
+  Widget build(BuildContext context) {
+    if (camOn) return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context);
+
+    if (camFailed) {
+      return Container(
+        width: double.infinity,
+        padding: ThixPolicy.cardPadding,
+        decoration: BoxDecoration(
+          color: ThixPolicy.warning.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+          border: Border.all(color: ThixPolicy.warning.withValues(alpha: 0.4)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.videocam_off_outlined,
+                    color: ThixPolicy.warning, size: 20),
+                const SizedBox(width: ThixPolicy.s8),
+                Expanded(
+                  child: Text(
+                    l10n.t('sos_live_video_unavailable_title'),
+                    style: ThixPolicy.bodyStyle.copyWith(
+                      fontWeight: ThixPolicy.bold,
+                      color: ThixPolicy.textMain,
+                    ),
+                  ),
+                ),
+                Semantics(
+                  button: true,
+                  label: l10n.t('common_close'),
+                  child: InkWell(
+                    onTap: onDismissFailure,
+                    borderRadius: BorderRadius.circular(20),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(Icons.close, size: 18, color: ThixPolicy.textMuted),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: ThixPolicy.s8),
+            Text(
+              l10n.t('sos_live_video_unavailable_hint'),
+              style: ThixPolicy.bodySmallStyle.copyWith(
+                color: ThixPolicy.textSecondary,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: ThixPolicy.s12),
+            Semantics(
+              button: true,
+              label: l10n.t('sos_live_video_retry'),
+              child: OutlinedButton.icon(
+                onPressed: camBusy
+                    ? null
+                    : () {
+                        HapticFeedback.lightImpact();
+                        onActivate();
+                      },
+                icon: const Icon(Icons.refresh, size: 16),
+                label: Text(l10n.t('sos_live_video_retry')),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: ThixPolicy.warning,
+                  side: BorderSide(color: ThixPolicy.warning.withValues(alpha: 0.5)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: ThixPolicy.cardPadding,
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+        border: Border.all(color: ThixPolicy.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: ThixPolicy.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              camBusy ? Icons.sync : Icons.videocam_outlined,
+              color: ThixPolicy.primary,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: ThixPolicy.s12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.t('sos_live_video_optional_title'),
+                  style: ThixPolicy.bodyStyle.copyWith(
+                    fontWeight: ThixPolicy.semiBold,
+                    color: ThixPolicy.textMain,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  camBusy
+                      ? l10n.t('sos_live_video_connecting')
+                      : l10n.t('sos_live_video_optional_hint'),
+                  style: ThixPolicy.captionStyle.copyWith(
+                    color: ThixPolicy.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: ThixPolicy.s8),
+          if (camBusy)
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            Semantics(
+              button: true,
+              label: l10n.t('sos_live_video_activate'),
+              child: ElevatedButton(
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  onActivate();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ThixPolicy.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                ),
+                child: Text(
+                  l10n.t('sos_live_video_activate'),
+                  style: const TextStyle(fontSize: 12.5),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
