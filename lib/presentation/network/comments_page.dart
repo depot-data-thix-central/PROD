@@ -1,3 +1,4 @@
+
 // lib/presentation/network/widgets/comments_page.dart
 import 'dart:async';
 import 'dart:typed_data';
@@ -39,8 +40,6 @@ class _CommentValidators {
   _CommentValidators._();
 
   static const int maxCommentLength = 2000;
-  // ✅ NOUVEAU : limite de caractères spécifique aux comptes gratuits.
-  static const int maxCommentLengthFree = 280;
   static const int maxAudioDurationSeconds = 30;
   static const int maxImageSizeMB = 10;
 
@@ -60,7 +59,6 @@ class _CommentValidators {
 // ============================================================================
 // EMOJIS / REACTIONS / FLAGS
 // ============================================================================
-// ✅ CORRIGÉ : Retrait du mot-clé "static"
 const List<String> _emojis = [
   '😀','😃','😄','😁','😆','😅','😂','🤣','🥲','🥹',
   '😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗',
@@ -145,19 +143,9 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
 
   bool _showStickers = false;
 
-  // ─── LOGIQUE DES LIMITES ───
-  bool _isLoadingLimits = true;
-  String _userTier = 'gratuit';
-  bool get _isFree => _userTier == 'gratuit' || _userTier == 'none';
-
-  // ✅ NOUVEAU : longueur maximale de commentaire selon le palier du compte.
-  int get _maxCommentLengthForUser =>
-      _isFree ? _CommentValidators.maxCommentLengthFree : _CommentValidators.maxCommentLength;
-
   @override
   void initState() {
     super.initState();
-    _loadUserLimits();
     _controller.addListener(_onTextChanged);
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 400) {
@@ -178,29 +166,6 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     super.dispose();
   }
 
-  Future<void> _loadUserLimits() async {
-    try {
-      final uid = Supabase.instance.client.auth.currentUser?.id ?? widget.currentProfileId;
-      final profile = await Supabase.instance.client
-          .from('profiles')
-          .select('certification_tier')
-          .eq('id', uid)
-          .maybeSingle();
-
-      final tier = (profile?['certification_tier']?.toString().toLowerCase()) ?? 'gratuit';
-
-      if (mounted) {
-        setState(() {
-          _userTier = tier;
-          _isLoadingLimits = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('[Comments] Load limits error: $e');
-      if (mounted) setState(() => _isLoadingLimits = false);
-    }
-  }
-
   void _onTextChanged() {
     setState(() {});
   }
@@ -213,47 +178,6 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
       debugPrint('[Comments] Load post error: $e');
       if (mounted) setState(() => _isLoadingPost = false);
     }
-  }
-
-  // ─── DIALOG UPGRADE (uniquement pour l'audio) ───
-  void _showUpgradeDialog(String featureName, String requiredTier) {
-    HapticFeedback.heavyImpact();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: ThixPolicy.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
-        title: Row(
-          children: [
-            const Icon(Icons.workspace_premium_rounded, color: ThixPolicy.gold, size: 28),
-            const SizedBox(width: 8),
-            Text('Fonctionnalité bloquée', style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
-          ],
-        ),
-        content: Text(
-          "$featureName est réservée aux comptes $requiredTier et supérieurs.\n\nMettez à niveau votre compte pour débloquer cette fonctionnalité.",
-          style: ThixPolicy.bodyStyle.copyWith(height: 1.4),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text('Plus tard', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: ThixPolicy.gold,
-              foregroundColor: ThixPolicy.inkDeep,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
-            ),
-            onPressed: () {
-              Navigator.pop(ctx);
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const CertificationTiersPage()));
-            },
-            child: Text('Voir les offres', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold)),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<bool> _checkPermissionWithDisclosure(Permission permission, String explanation) async {
@@ -319,13 +243,8 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     return newStatus.isGranted;
   }
 
-  // ─── AUDIO (bloqué pour gratuits uniquement) ───
+  // ─── AUDIO (disponible pour tous) ───
   Future<void> _startRecording() async {
-    if (_isFree) {
-      _showUpgradeDialog('Les commentaires vocaux', 'Standard');
-      return;
-    }
-
     final hasPerm = await _checkPermissionWithDisclosure(
       Permission.microphone,
       "Pour enregistrer un commentaire vocal, THIX ID a besoin d'accéder à votre microphone.",
@@ -396,10 +315,6 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
   }
 
   Future<void> _pickImage() async {
-    if (_isFree) {
-      _showUpgradeDialog('Les images dans les commentaires', 'Standard');
-      return;
-    }
     final result = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
     if (result != null && result.files.isNotEmpty) {
       final file = result.files.first;
@@ -440,8 +355,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
         imageUrl = await ns.uploadImageBytes(_imageBytes!, fileExtension: 'jpg', bucket: 'post_images');
       }
 
-      // ✅ Applique la limite de caractères correspondant au palier de l'utilisateur.
-      String finalContent = _CommentValidators.sanitize(text, maxLength: _maxCommentLengthForUser);
+      String finalContent = _CommentValidators.sanitize(text, maxLength: _CommentValidators.maxCommentLength);
       if (finalContent.isEmpty) {
         if (audioUrl != null) finalContent = '🎤 Note vocale';
         else if (imageUrl != null) finalContent = '📷 Photo';
@@ -618,7 +532,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
         content: TextField(
           controller: ctrl,
           maxLines: 4,
-          maxLength: _maxCommentLengthForUser,
+          maxLength: _CommentValidators.maxCommentLength,
           style: ThixPolicy.bodyStyle,
           decoration: InputDecoration(
             filled: true,
@@ -645,7 +559,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
       try {
         await Supabase.instance.client
             .from('comments')
-            .update({'content': _CommentValidators.sanitize(newContent, maxLength: _maxCommentLengthForUser)})
+            .update({'content': _CommentValidators.sanitize(newContent, maxLength: _CommentValidators.maxCommentLength)})
             .eq('id', comment.id);
         ref.invalidate(commentsProvider(widget.postId));
         if (mounted) {
@@ -1160,8 +1074,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                           focusNode: _focusNode,
                           maxLines: 4,
                           minLines: 1,
-                          // ✅ Limite de caractères dynamique : 280 pour les comptes gratuits, 2000 sinon.
-                          maxLength: _maxCommentLengthForUser,
+                          maxLength: _CommentValidators.maxCommentLength,
                           onTap: () {
                             if (_showStickers) setState(() => _showStickers = false);
                           },
@@ -1211,22 +1124,6 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                       ),
                     ],
                   ),
-                  // ✅ Indication de la limite pour les comptes gratuits, discrète sous le champ.
-                  if (_isFree)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4, right: 8),
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Text(
-                          '${_controller.text.length}/${_CommentValidators.maxCommentLengthFree}',
-                          style: ThixPolicy.microStyle.copyWith(
-                            color: _controller.text.length >= _CommentValidators.maxCommentLengthFree
-                                ? ThixPolicy.danger
-                                : ThixPolicy.textMuted,
-                          ),
-                        ),
-                      ),
-                    ),
                 ],
               ),
           ],
@@ -1682,3 +1579,4 @@ class _CommentAudioPlayerState extends State<_CommentAudioPlayer> {
     );
   }
 }
+ 
