@@ -7,12 +7,13 @@
 // - Toggle caméra (front/back), micro, flash
 // - Mode audience (public/privé/abonnés)
 // - Indicateur qualité réseau
-// - Sanitization titre/description
-// - Draft auto-save
+// - Sanitization titre/description renforcée (cohérente avec chat live)
+// - Draft auto-save en JSON (anti-corruption)
 // - Countdown avant démarrage
-// - i18n complet + Semantics
+// - i18n complet (y compris messages d'erreur) + Semantics
 // - Logging structuré + throttling
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:camera/camera.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -35,10 +36,11 @@ import 'live_host_page.dart';
 
 const int _kMaxTitleLength = 80;
 const int _kMaxDescLength = 500;
+const int _kMaxTagsLength = 120;
 const Duration _kThrottle = Duration(milliseconds: 500);
 const Duration _kNetworkCheckInterval = Duration(seconds: 5);
 const Duration _kCountdownDuration = Duration(seconds: 3);
-const String _kDraftKey = 'go_live_draft_v1';
+const String _kDraftKey = 'go_live_draft_v2'; // ✅ v2: format JSON
 
 // ============================================================================
 // LOGGING
@@ -59,35 +61,46 @@ class _GoLiveLogger {
 }
 
 // ============================================================================
-// SANITIZER (anti-XSS + validation)
+// SANITIZER (anti-XSS renforcé — aligné sur live_host_page/live_viewer_page)
 // ============================================================================
 
 class _LiveSanitizer {
   _LiveSanitizer._();
 
-  static String title(String? input) {
+  /// ✅ Nettoyage récursif des balises (anti-évasion par imbrication),
+  /// blocage javascript:/data:, suppression caractères de contrôle et
+  /// caractères Unicode d'usurpation (RTL override, largeur nulle).
+  static String _clean(String? input, {required int maxLength}) {
     if (input == null) return '';
-    var s = input
-        .replaceAll(RegExp(r'<[^>]*>'), '')
+    var s = input;
+
+    String prev;
+    do {
+      prev = s;
+      s = s.replaceAll(RegExp(r'<[^>]*>'), '');
+    } while (s != prev);
+
+    s = s
+        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
+        .replaceAll(RegExp(r'data:text/html', caseSensitive: false), '')
+        .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
         .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '')
+        .replaceAll(
+            RegExp(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]'), '')
         .trim();
-    if (s.length > _kMaxTitleLength) {
-      s = s.substring(0, _kMaxTitleLength);
-    }
+
+    if (s.length > maxLength) s = s.substring(0, maxLength);
     return s;
   }
 
-  static String description(String? input) {
-    if (input == null) return '';
-    var s = input
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '')
-        .trim();
-    if (s.length > _kMaxDescLength) {
-      s = s.substring(0, _kMaxDescLength);
-    }
-    return s;
-  }
+  static String title(String? input) =>
+      _clean(input, maxLength: _kMaxTitleLength);
+
+  static String description(String? input) =>
+      _clean(input, maxLength: _kMaxDescLength);
+
+  static String tags(String? input) =>
+      _clean(input, maxLength: _kMaxTagsLength);
 }
 
 // ============================================================================
@@ -117,6 +130,16 @@ extension _AudienceX on _Audience {
       case _Audience.private:
         return l10n.t('live_audience_private');
     }
+  }
+
+  /// ✅ Clé stable pour sérialisation JSON (indépendante de l'ordre de l'enum)
+  String get storageKey => name;
+
+  static _Audience fromStorageKey(String? key) {
+    return _Audience.values.firstWhere(
+      (a) => a.name == key,
+      orElse: () => _Audience.public,
+    );
   }
 }
 
@@ -241,25 +264,28 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
   }
 
   // ════════════════════════════════════════════════════════════
-  // DRAFT (auto-save)
+  // DRAFT (auto-save) — ✅ FIX: JSON au lieu de '|||' join/split
   // ════════════════════════════════════════════════════════════
+  // L'ancien format concaténait les champs avec '|||' comme séparateur.
+  // Si le titre ou la description contenait accidentellement "|||",
+  // le parsing décalait tous les champs suivants et corrompait le draft
+  // silencieusement. JSON élimine ce risque structurellement.
 
   Future<void> _loadDraft() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final data = prefs.getString(_kDraftKey);
-      if (data == null) return;
+      final raw = prefs.getString(_kDraftKey);
+      if (raw == null) return;
 
-      final parts = data.split('|||');
-      if (parts.length >= 3) {
-        setState(() {
-          _titleCtrl.text = parts[0];
-          _descCtrl.text = parts[1];
-          _category = parts[2];
-          if (parts.length > 3) _tagsCtrl.text = parts[3];
-        });
-        _GoLiveLogger.info('Draft loaded');
-      }
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      setState(() {
+        _titleCtrl.text = (map['title'] as String?) ?? '';
+        _descCtrl.text = (map['description'] as String?) ?? '';
+        _tagsCtrl.text = (map['tags'] as String?) ?? '';
+        _category = (map['category'] as String?) ?? 'general';
+        _audience = _AudienceX.fromStorageKey(map['audience'] as String?);
+      });
+      _GoLiveLogger.info('Draft loaded');
     } catch (e) {
       _GoLiveLogger.warn('Draft load failed', {'error': '$e'});
     }
@@ -268,13 +294,14 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
   Future<void> _saveDraft() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final data = [
-        _titleCtrl.text,
-        _descCtrl.text,
-        _category,
-        _tagsCtrl.text,
-      ].join('|||');
-      await prefs.setString(_kDraftKey, data);
+      final map = {
+        'title': _titleCtrl.text,
+        'description': _descCtrl.text,
+        'tags': _tagsCtrl.text,
+        'category': _category,
+        'audience': _audience.storageKey,
+      };
+      await prefs.setString(_kDraftKey, jsonEncode(map));
     } catch (e) {
       _GoLiveLogger.warn('Draft save failed', {'error': '$e'});
     }
@@ -432,6 +459,12 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
       return;
     }
 
+    // ✅ Sanitizés même s'ils ne sont pas encore envoyés au backend
+    // (voir TODO plus bas) — évite au minimum de stocker du texte non
+    // nettoyé dans le draft local.
+    final description = _LiveSanitizer.description(_descCtrl.text);
+    final tags = _LiveSanitizer.tags(_tagsCtrl.text);
+
     if (_networkQuality == _NetworkQuality.offline) {
       _snack(l10n.t('live_error_offline'), error: true);
       return;
@@ -476,10 +509,23 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
       'title': title,
       'category': _category,
       'audience': _audience.name,
+      // ⚠️ description/tags calculés mais toujours pas envoyés à start()
+      // ci-dessous — voir TODO. On les logue pour visibilité en dev.
+      'descLen': description.length,
+      'tagsLen': tags.length,
     });
 
+    // ⚠️ TODO (bloquant fonctionnel) : `description`, `tags` et `_audience`
+    // sont saisis par l'utilisateur dans le formulaire "Options avancées"
+    // mais ne sont PAS transmis à goLiveNotifierProvider.start() ci-dessous.
+    // Résultat : un viewer choisit "Live privé" ou tape une description,
+    // clique "Démarrer", et ces choix sont silencieusement ignorés.
+    // → Il faut soit étendre la signature de start() dans
+    //   go_live_provider.dart pour accepter description/tags/audience et
+    //   les répercuter jusqu'à l'INSERT Supabase (table `lives`), soit
+    //   masquer ces champs de l'UI tant qu'ils ne sont pas branchés.
     await ref.read(goLiveNotifierProvider.notifier).start(
-          title: title.isEmpty ? 'Live THIX' : title,
+          title: title,
           category: _category,
         );
   }
@@ -514,12 +560,14 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
           ),
         );
       } else if (next is GoLiveError) {
-        // ✅ NOUVEAU BLOC DE GESTION DES ERREURS
+        // ✅ FIX: préfixe "Erreur :" codé en dur en français supprimé.
+        // Le message vient déjà soit du serveur (rawMessage), soit d'une
+        // clé i18n traduite dans les 7 langues de l'app.
         final msg = next.rawMessage.isNotEmpty
             ? next.rawMessage
             : l10n.t(next.i18nKey);
 
-        _snack('Erreur : $msg', error: true);
+        _snack(msg, error: true);
 
         // Option : proposer de reprendre un live déjà actif
         if (next.code == GoLiveErrorCode.alreadyActive &&
