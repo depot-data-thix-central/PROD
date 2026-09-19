@@ -13,6 +13,7 @@
 // - Low-latency mode pour live interactif
 // - Lifecycle management (pause/resume streams)
 // - Protection double-init / double-leave
+// - État cohérent même en cas d'échec précoce (permissions/init)
 // - Error classification typée
 // - Cleanup complet dispose (event handlers + streams)
 import 'dart:async';
@@ -472,9 +473,8 @@ class LiveRtcService {
   }
 
   void _handleAgoraError(ErrorCodeType err, String msg) {
-    // ✅ CORRECTION ICI : Ajout des parenthèses à .value()
     final int code = err.value();
-    
+
     _RtcLogger.error('Agora error', {'code': code, 'msg': msg});
 
     // Classification : certaines erreurs sont non-fatales
@@ -506,15 +506,22 @@ class LiveRtcService {
       throw RtcException('invalid_creds', 'Invalid Agora credentials');
     }
 
-    _isHost = true;
-    _currentChannel = creds.channelName;
     _RtcLogger.info('Starting as host',
         {'channel': creds.channelName, 'uid': creds.uid});
 
-    await _ensurePermissions(asHost: true);
-    await initialize(creds.appId);
-
+    // ✅ FIX: permissions et init sont désormais DANS le try/catch.
+    // Avant, _isHost et _currentChannel étaient assignés avant ces appels ;
+    // si l'utilisateur refusait la permission caméra/micro (cas fréquent),
+    // l'exception remontait mais le service restait avec isHost=true et
+    // currentChannel défini alors qu'aucune connexion n'avait eu lieu —
+    // état incohérent pour tout code observant ces getters.
     try {
+      await _ensurePermissions(asHost: true);
+      await initialize(creds.appId);
+
+      _isHost = true;
+      _currentChannel = creds.channelName;
+
       await _engine!
           .setClientRole(role: ClientRoleType.clientRoleBroadcaster)
           .timeout(_kRtcTimeout);
@@ -567,15 +574,17 @@ class LiveRtcService {
       throw RtcException('invalid_creds', 'Invalid Agora credentials');
     }
 
-    _isHost = false;
-    _currentChannel = creds.channelName;
     _RtcLogger.info('Joining as audience',
         {'channel': creds.channelName, 'uid': creds.uid});
 
-    await _ensurePermissions(asHost: false);
-    await initialize(creds.appId);
-
+    // ✅ FIX: même correctif que startAsHost — permissions/init dans le try.
     try {
+      await _ensurePermissions(asHost: false);
+      await initialize(creds.appId);
+
+      _isHost = false;
+      _currentChannel = creds.channelName;
+
       await _engine!
           .setClientRole(role: ClientRoleType.clientRoleAudience)
           .timeout(_kRtcTimeout);
