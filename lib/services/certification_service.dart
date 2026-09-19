@@ -87,75 +87,72 @@ class CertificationService {
     }
   }
 
-  /// Demande d'upgrade vers un tier supérieur
+  /// Demande d'upgrade vers un tier supérieur.
+  /// ✅ FIX: l'ancienne implémentation faisait un SELECT (vérifier qu'aucune
+  /// demande pending n'existe) puis un INSERT séparé — deux appels
+  /// concurrents (double-tap, retry réseau) pouvaient tous deux passer le
+  /// SELECT avant que l'un des deux n'écrive, créant 2 demandes pending.
+  /// L'écriture passe désormais par une RPC transactionnelle
+  /// (rpc_request_certification_upgrade) protégée en plus par un index
+  /// unique partiel côté DB : même en cas de course, le second INSERT
+  /// échoue proprement au lieu de dupliquer la ligne.
   Future<void> requestUpgrade({
     required CertificationTier requestedTier,
     String? reason,
   }) async {
-    // 🔒 Blocage pour le niveau "Officiel / Institutions"
+    // 🔒 Règles métier simples : pas besoin d'aller en base pour celles-ci.
     if (requestedTier.isInviteOnly) {
       throw Exception(
         'Le niveau Officiel / Institutions est accessible uniquement sur invitation THIX.',
       );
     }
 
-    // Le palier gratuit n'est pas une demande d'upgrade valide
     if (requestedTier == CertificationTier.free) {
-      throw Exception('Le compte Gratuit est le niveau par défaut, aucune demande nécessaire.');
+      throw Exception(
+          'Le compte Gratuit est le niveau par défaut, aucune demande nécessaire.');
     }
 
     final uid = _uid;
     if (uid == null) throw Exception('Non authentifié');
 
     final current = await getMyCertification();
-
     if (requestedTier.rank <= current.tier.rank && current.isCertified) {
       throw Exception('Vous avez déjà ce niveau ou un niveau supérieur');
     }
 
-    // Empêcher plusieurs demandes pending
-    final existing = await _client
-        .from('certification_requests')
-        .select('id')
-        .eq('user_id', uid)
-        .eq('status', 'pending')
-        .maybeSingle();
-
-    if (existing != null) {
-      throw Exception('Une demande est déjà en cours de traitement');
+    try {
+      await _client.rpc('rpc_request_certification_upgrade', params: {
+        'p_requested_tier': requestedTier.value,
+        'p_reason': reason,
+      });
+    } on PostgrestException catch (e) {
+      // ✅ On traduit les erreurs connues de la RPC en messages utilisateur
+      // propres, et on ne laisse jamais un message technique brut remonter.
+      if (e.message.contains('already_pending')) {
+        throw Exception('Une demande est déjà en cours de traitement');
+      }
+      if (e.message.contains('not_authenticated')) {
+        throw Exception('Non authentifié');
+      }
+      debugPrint('requestUpgrade rpc error: $e');
+      throw Exception('Impossible d\'envoyer la demande. Réessayez plus tard.');
     }
-
-    await _client.from('certification_requests').insert({
-      'user_id': uid,
-      'requested_tier': requestedTier.value,
-      'current_tier': current.tier.value,
-      'status': 'pending',
-      'reason': reason,
-    });
-
-    // Marquer le profil en pending
-    await _client.from('profiles').update({
-      'certification_status': CertificationStatus.pending.value,
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    }).eq('id', uid);
   }
 
-  /// Annuler sa demande en attente
+  /// Annuler sa demande en attente.
+  /// ✅ FIX: passe désormais par une RPC transactionnelle qui ne remet le
+  /// profil à "none" que si une demande a réellement été annulée ET que le
+  /// profil est encore "pending" — élimine le risque d'écraser un statut
+  /// "approved"/"generated" déjà confirmé par un webhook de paiement
+  /// pendant que le client tentait ce fallback suite à une erreur réseau.
   Future<void> cancelPendingRequest() async {
     final uid = _uid;
     if (uid == null) return;
 
-    await _client
-        .from('certification_requests')
-        .update({
-          'status': 'cancelled',
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        })
-        .eq('user_id', uid)
-        .eq('status', 'pending');
-
-    await _client.from('profiles').update({
-      'certification_status': CertificationStatus.none.value,
-    }).eq('id', uid);
+    try {
+      await _client.rpc('rpc_cancel_pending_certification');
+    } catch (e) {
+      debugPrint('cancelPendingRequest rpc error: $e');
+    }
   }
 }
