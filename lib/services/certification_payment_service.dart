@@ -31,12 +31,6 @@ class CertificationPaymentService {
 
   String? get _uid => _client.auth.currentUser?.id;
 
-  /// Standard + Premium → auto après paiement
-  /// Entreprise → pending admin
-  /// Officiel → invitation (non payable)
-  bool _isAutoApprove(CertificationTier tier) =>
-      tier == CertificationTier.standard || tier == CertificationTier.premium;
-
   /// Démarre un paiement pour un tier (Standard / Premium / Entreprise)
   Future<CertificationPaymentResult> initiate({
     required CertificationTier tier,
@@ -65,7 +59,9 @@ class CertificationPaymentService {
     final amountUsd = tier.priceUsd!;
     final amountCdf = quote.cdfForUsd(amountUsd).toDouble();
 
-    // 1. Enregistrer le paiement local
+    // 1. Enregistrer le paiement local — c'est CETTE ligne (amount_cdf,
+    // tier) qui fait foi côté serveur pour toute la suite du flux, jamais
+    // une valeur renvoyée plus tard par le client.
     final insert = await _client
         .from('certification_payments')
         .insert({
@@ -94,38 +90,54 @@ class CertificationPaymentService {
     }
 
     // 2. THIX Money (interne, pas de gateway)
+    //
+    // ✅ FIX SÉCURITÉ CRITIQUE : l'ancienne version faisait la déduction
+    // wallet PUIS accordait la certification via un `_client.from('profiles')
+    // .update(...)` exécuté avec les droits du client authentifié. Comme
+    // cet update touchait `profiles` — la même table que RLS autorise
+    // souvent un utilisateur à modifier pour son propre id — RIEN
+    // n'empêchait un utilisateur d'appeler cet update directement depuis
+    // l'app, sans jamais passer par le paiement, pour s'auto-certifier
+    // gratuitement. Toute la logique (déduction + octroi certification)
+    // est désormais dans une seule RPC serveur transactionnelle
+    // (rpc_pay_certification_with_wallet), et une policy RLS + trigger
+    // empêchent maintenant toute écriture cliente directe sur les colonnes
+    // de certification de `profiles`.
     if (paymentMethod == 'thix_money') {
-      final ok = await _payWithThixMoney(uid, amountCdf);
-      final now = DateTime.now().toUtc().toIso8601String();
+      try {
+        final result = await _client.rpc(
+          'rpc_pay_certification_with_wallet',
+          params: {'p_payment_id': paymentId},
+        ) as Map<String, dynamic>;
 
-      await _client.from('certification_payments').update({
-        'status': ok ? 'paid' : 'failed',
-        'paid_at': ok ? now : null,
-        'updated_at': now,
-      }).eq('id', paymentId);
-
-      if (ok) await _onPaidSuccess(uid, tier, paymentId, requestId);
-
-      return CertificationPaymentResult(
-        success: ok,
-        status: ok ? 'paid' : 'failed',
-        paymentId: paymentId,
-        error: ok ? null : 'Solde THIX Money insuffisant',
-      );
+        final ok = result['success'] == true;
+        return CertificationPaymentResult(
+          success: ok,
+          status: ok ? 'paid' : 'failed',
+          paymentId: paymentId,
+          error: ok ? null : (result['error']?.toString() ?? 'Paiement échoué'),
+        );
+      } catch (e) {
+        debugPrint('THIX Money cert RPC error: $e');
+        return CertificationPaymentResult(
+          success: false,
+          status: 'failed',
+          paymentId: paymentId,
+          error: 'Solde THIX Money insuffisant ou erreur de paiement',
+        );
+      }
     }
 
-    // 3. Mobile Money / Carte → Edge Function WonyaSoft dédiée
+    // 3. Mobile Money / Carte → Edge Function WonyaSoft dédiée.
+    // ✅ On n'envoie plus 'amount'/'amount_usd'/'tier' au corps de la
+    // requête : l'Edge Function les relit désormais depuis la ligne
+    // certification_payments en base (voir process-certification-payment),
+    // ce qui empêche toute tentative de payer un montant modifié.
     try {
       final response = await _client.functions.invoke(
         'process-certification-payment',
         body: {
           'payment_id': paymentId,
-          'user_id': uid,
-          'tier': tier.value,
-          'amount': amountCdf,
-          'amount_usd': amountUsd,
-          'currency': 'CDF',
-          'payment_method': _normalizeMethod(paymentMethod),
           if (phoneNumber != null && phoneNumber.isNotEmpty)
             'phone_number': phoneNumber,
         },
@@ -143,13 +155,6 @@ class CertificationPaymentService {
         final ref = data['transaction_id']?.toString() ??
             data['ref_transa']?.toString();
 
-        await _client.from('certification_payments').update({
-          'status': 'awaiting_payment',
-          'gateway_ref': ref,
-          'gateway_payload': data,
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        }).eq('id', paymentId);
-
         return CertificationPaymentResult(
           success: true,
           status: 'awaiting_payment',
@@ -162,12 +167,6 @@ class CertificationPaymentService {
       final err = (data is Map ? data['error']?.toString() : null) ??
           'Échec initiation paiement certification';
 
-      await _client.from('certification_payments').update({
-        'status': 'failed',
-        'gateway_payload': data,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      }).eq('id', paymentId);
-
       return CertificationPaymentResult(
         success: false,
         status: 'failed',
@@ -176,81 +175,12 @@ class CertificationPaymentService {
       );
     } catch (e) {
       debugPrint('❌ CertificationPaymentService: $e');
-      await _client.from('certification_payments').update({
-        'status': 'failed',
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      }).eq('id', paymentId);
-
       return CertificationPaymentResult(
         success: false,
         status: 'failed',
         paymentId: paymentId,
         error: e.toString(),
       );
-    }
-  }
-
-  String _normalizeMethod(String method) {
-    switch (method) {
-      case 'orange_money':
-      case 'africell':
-      case 'mtn':
-      case 'mobile_money':
-        return 'mobile_money';
-      case 'card':
-      case 'carte':
-        return 'card';
-      default:
-        return method; // mpesa, airtel, etc.
-    }
-  }
-
-  Future<bool> _payWithThixMoney(String userId, double amountCdf) async {
-    try {
-      final result = await _client.rpc('deduct_wallet_balance', params: {
-        'user_id': userId,
-        'amount': amountCdf,
-      });
-      return result == true;
-    } catch (e) {
-      debugPrint('THIX Money cert: $e');
-      return false;
-    }
-  }
-
-  /// Après paiement réussi (THIX Money immédiat, ou rappel local si besoin)
-  /// - Standard + Premium → tier actif tout de suite
-  /// - Entreprise → status pending (admin)
-  Future<void> _onPaidSuccess(
-    String userId,
-    CertificationTier tier,
-    String paymentId,
-    String? requestId,
-  ) async {
-    final now = DateTime.now().toUtc().toIso8601String();
-    final auto = _isAutoApprove(tier);
-
-    if (requestId != null) {
-      await _client.from('certification_requests').update({
-        'status': auto ? 'approved' : 'pending',
-        if (auto) 'reviewed_at': now,
-        'updated_at': now,
-      }).eq('id', requestId);
-    }
-
-    if (auto) {
-      await _client.from('profiles').update({
-        'certification_tier': tier.value,
-        'certification_status': 'approved',
-        'certified_at': now,
-      }).eq('id', userId);
-      debugPrint('✅ Auto-approved ${tier.value} for $userId');
-    } else {
-      // Entreprise : payé, en attente d'approbation admin
-      await _client.from('profiles').update({
-        'certification_status': 'pending',
-      }).eq('id', userId);
-      debugPrint('⏳ Enterprise pending admin for $userId');
     }
   }
 
