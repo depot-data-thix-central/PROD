@@ -4,11 +4,11 @@
 //
 // Features production :
 // - Preview locale Agora avec mute/flip/video-off
-// - Chat realtime avec sanitization XSS + throttling
+// - Chat realtime avec sanitization XSS renforcée + throttling
 // - Durée live chronométrée + stats (viewers/likes)
 // - Réactions emoji animées (burst flottant)
 // - Monitoring qualité réseau
-// - Partage du live (copie lien)
+// - Partage du live (copie lien, ID encodé)
 // - Semantics complet + haptics
 // - Logging structuré
 import 'dart:async';
@@ -37,7 +37,8 @@ const int _kMaxMessagesInMemory = 80;
 const Duration _kStatsPolling = Duration(seconds: 3);
 const Duration _kChatThrottle = Duration(milliseconds: 600);
 const Duration _kActionThrottle = Duration(milliseconds: 400);
-const List<String> _kReactions = ['❤️', '🔥', '👏', '', ''];
+// ✅ FIX: 2 emojis vides remplacés par des emojis valides
+const List<String> _kReactions = ['❤️', '🔥', '👏', '😂', '😮'];
 
 // ============================================================================
 // LOGGING
@@ -58,21 +59,62 @@ class _LiveHostLogger {
 }
 
 // ============================================================================
-// SANITIZER (anti-XSS)
+// SANITIZER (anti-XSS + anti-spoofing)
 // ============================================================================
 
 class _LiveSanitizer {
   _LiveSanitizer._();
+
+  static const int _kMaxUsernameLength = 24;
+  static const List<String> _kAllowedTypes = ['chat', 'reaction', 'gift'];
+
+  /// ✅ Nettoie un message de chat : supprime les balises HTML de façon
+  /// récursive (contre l'évasion par imbrication / balises cassées),
+  /// bloque les vecteurs javascript:/data:/on*=, supprime les caractères
+  /// de contrôle et les caractères Unicode d'usurpation (RTL override,
+  /// largeur nulle) utilisés pour falsifier l'affichage.
   static String chat(String? input) {
     if (input == null) return '';
-    var s = input
-        .replaceAll(RegExp(r'<[^>]*>'), '')
+    var s = input;
+
+    String prev;
+    do {
+      prev = s;
+      s = s.replaceAll(RegExp(r'<[^>]*>'), '');
+    } while (s != prev);
+
+    s = s
         .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
+        .replaceAll(RegExp(r'data:text/html', caseSensitive: false), '')
         .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
         .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '')
+        .replaceAll(
+            RegExp(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]'), '')
         .trim();
+
     if (s.length > _kMaxChatLength) s = s.substring(0, _kMaxChatLength);
     return s;
+  }
+
+  /// ✅ Nettoie et tronque un pseudo reçu du realtime (évite l'overflow UI
+  /// et l'usurpation via caractères de contrôle/bidi).
+  static String username(String? input) {
+    final cleaned = chat(input);
+    if (cleaned.isEmpty) return 'User';
+    return cleaned.length > _kMaxUsernameLength
+        ? '${cleaned.substring(0, _kMaxUsernameLength)}…'
+        : cleaned;
+  }
+
+  /// ✅ Restreint le type de message à une liste blanche connue.
+  static String messageType(String? input) {
+    final t = (input ?? 'chat').trim().toLowerCase();
+    return _kAllowedTypes.contains(t) ? t : 'chat';
+  }
+
+  /// ✅ Construit une URL de partage sûre (ID de session encodé).
+  static String shareUrl(String sessionId) {
+    return 'https://thix.id/live/${Uri.encodeComponent(sessionId)}';
   }
 }
 
@@ -186,7 +228,7 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
   // BOOTSTRAP
   // ════════════════════════════════════════════════════════════
 
-    Future<void> _bootstrap() async {
+  Future<void> _bootstrap() async {
     try {
       await _rtc.startAsHost(widget.creds);
       if (!mounted) return;
@@ -200,14 +242,12 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
       _LiveHostLogger.error('Bootstrap failed',
           {'error': '$e', 'stack': stack.toString()});
       if (!mounted) return;
-      
-      // ✅ La ligne est maintenant propre et sans restes de code en dessous
+
       _snack(AppLocalizations.of(context).t('live_error_generic'), error: true);
-      
+
       Navigator.of(context).pop();
     }
   }
-
 
   // ════════════════════════════════════════════════════════════
   // REALTIME CHAT (Supabase)
@@ -229,8 +269,9 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
           callback: (payload) {
             final row = payload.newRecord;
             final text = _LiveSanitizer.chat(row['text']?.toString());
-            final user = (row['username'] ?? 'User').toString();
-            final type = (row['type'] ?? 'chat').toString();
+            // ✅ FIX: username et type désormais sanitizés (anti-spoofing / anti-overflow)
+            final user = _LiveSanitizer.username(row['username']?.toString());
+            final type = _LiveSanitizer.messageType(row['type']?.toString());
             if (!mounted || text.isEmpty) return;
 
             setState(() {
@@ -363,6 +404,16 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
     ));
   }
 
+  // ✅ FIX: helper unique pour éviter la duplication de logique username
+  // entre _sendChat et _sendReaction, avec sanitization systématique.
+  String _currentUsername() {
+    final user = Supabase.instance.client.auth.currentUser;
+    final raw = user?.userMetadata?['username']?.toString() ??
+        user?.email?.split('@').first ??
+        'Host';
+    return _LiveSanitizer.username(raw);
+  }
+
   // ════════════════════════════════════════════════════════════
   // ACTIONS
   // ════════════════════════════════════════════════════════════
@@ -411,10 +462,7 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
 
     if (mounted) setState(() => _chatSending = true);
     try {
-      final user = Supabase.instance.client.auth.currentUser;
-      final name = user?.userMetadata?['username']?.toString() ??
-          user?.email?.split('@').first ??
-          'Host';
+      final name = _currentUsername();
       await ref.read(liveServiceProvider).sendMessage(
             liveId: widget.session.id,
             text: text,
@@ -438,10 +486,7 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
   Future<void> _sendReaction(String emoji) async {
     if (!_throttleChat()) return;
     HapticFeedback.lightImpact();
-    final user = Supabase.instance.client.auth.currentUser;
-    final name = user?.userMetadata?['username']?.toString() ??
-        user?.email?.split('@').first ??
-        'Host';
+    final name = _currentUsername();
     try {
       await ref.read(liveServiceProvider).sendMessage(
             liveId: widget.session.id,
@@ -463,7 +508,9 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
   void _shareLive(AppLocalizations l10n) {
     if (!_throttleAction()) return;
     HapticFeedback.lightImpact();
-    final link = 'https://thix.id/live/${widget.session.id}';
+    // ✅ FIX: ID de session encodé pour éviter d'injecter des caractères
+    // non sûrs dans le lien copié.
+    final link = _LiveSanitizer.shareUrl(widget.session.id);
     Clipboard.setData(ClipboardData(text: link));
     _snack(l10n.t('live_link_copied'));
   }
@@ -519,7 +566,9 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
     }
 
     if (!mounted) return;
-    Navigator.of(context).popUntil((r) => r.isFirst || r.settings.name != null);
+    // ✅ FIX: navigation simplifiée — l'ancienne combinaison
+    // popUntil + pop pouvait fermer 2 écrans d'un coup et éjecter
+    // l'utilisateur hors de l'app au lieu de revenir à l'écran précédent.
     if (Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
     }
@@ -764,6 +813,10 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
                                         ),
                                       ],
                                     ),
+                                    // ✅ FIX: borne l'affichage même si un
+                                    // pseudo/texte sanitizé reste long.
+                                    maxLines: 3,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 );
                               },
@@ -866,7 +919,6 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
                         ),
                         Semantics(
                           button: true,
-                          // ✅ CORRECTION ICI : Utilisation de .t() au lieu d'un accès direct
                           label: l10n.t('live_send'),
                           child: _RoundBtn(
                             icon: Icons.send_rounded,
@@ -891,7 +943,6 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
                       const CircularProgressIndicator(color: Colors.white),
                       const SizedBox(height: 12),
                       Text(
-                        // ✅ CORRECTION ICI : Utilisation de .t()
                         l10n.t('live_ending'),
                         style: const TextStyle(
                             color: Colors.white70, fontSize: 13),
@@ -976,7 +1027,6 @@ class _NetworkIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = q.color();
     return Semantics(
-      // ✅ CORRECTION ICI : Utilisation de .t() pour le label réseau
       label: '${l10n.t('live_network_quality')}: ${q.label(l10n)}',
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
