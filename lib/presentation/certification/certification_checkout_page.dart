@@ -11,6 +11,12 @@ import 'package:thix_id/services/bcc_exchange_rate_service.dart';
 import 'package:thix_id/services/certification_payment_service.dart';
 import 'package:thix_id/services/certification_service.dart';
 
+// ✅ Timeout dédié à l'initiation de paiement — évite un blocage indéfini
+// de l'UI si le fournisseur de paiement ou le réseau est capricieux.
+const Duration _kPaymentInitiateTimeout = Duration(seconds: 20);
+const int _kMinPhoneLength = 9;
+const int _kMaxPhoneLength = 15;
+
 class CertificationCheckoutPage extends ConsumerStatefulWidget {
   final CertificationTier tier;
   final String? requestId;
@@ -82,12 +88,40 @@ class _CertificationCheckoutPageState
   // ── LOGIQUE DE SECOURS POUR ANNULER LA DEMANDE ──
   Future<void> _cancelRequestFallback() async {
     try {
-      // ✅ APPEL DE LA BONNE MÉTHODE DÉFINIE DANS LE SERVICE
       await ref.read(certificationServiceProvider).cancelPendingRequest();
       ref.invalidate(myCertificationProvider);
     } catch (e) {
       debugPrint("Erreur lors du nettoyage de la requête : $e");
     }
+  }
+
+  /// ✅ Traduit une exception technique en message affichable, sans jamais
+  /// laisser fuiter un détail interne (message Postgrest brut, stack, etc.)
+  /// vers l'utilisateur. Nos propres `Exception(...)` métier (françaises,
+  /// déjà pensées pour l'affichage) sont passées telles quelles ; tout le
+  /// reste tombe sur un message générique, le détail restant en log.
+  String _friendlyError(Object e) {
+    if (e is TimeoutException) {
+      return 'Le service met du temps à répondre. Réessayez.';
+    }
+    final msg = e.toString();
+    final looksLikeOurException =
+        msg.startsWith('Exception: ') && !msg.contains('Postgrest');
+    if (looksLikeOurException) {
+      return msg.replaceFirst('Exception: ', '');
+    }
+    debugPrint('Payment error (not shown to user): $e');
+    return 'Une erreur est survenue. Veuillez réessayer.';
+  }
+
+  bool _isValidPhone(String raw) {
+    final digits = raw.trim();
+    if (digits.length < _kMinPhoneLength || digits.length > _kMaxPhoneLength) {
+      return false;
+    }
+    // Formatter du champ limite déjà aux chiffres et '+', on vérifie juste
+    // qu'il reste au moins un chiffre significatif après un éventuel '+'.
+    return RegExp(r'^\+?[0-9]{9,15}$').hasMatch(digits);
   }
 
   Future<void> _pay(ExchangeRateQuote? quote) async {
@@ -96,8 +130,8 @@ class _CertificationCheckoutPageState
       _toast('Ce niveau n\'est pas payable', error: true);
       return;
     }
-    if (_selected.needsPhone && _phoneCtrl.text.trim().length < 9) {
-      _toast('Numéro de téléphone requis', error: true);
+    if (_selected.needsPhone && !_isValidPhone(_phoneCtrl.text)) {
+      _toast('Numéro de téléphone invalide', error: true);
       return;
     }
 
@@ -113,27 +147,37 @@ class _CertificationCheckoutPageState
                 requestedTier: widget.tier,
                 reason: 'Checkout certification',
               );
-        } catch (_) {
-          // déjà une demande pending → on continue le paiement
+        } on Exception catch (e) {
+          // ✅ FIX: on ne masque plus TOUTES les erreurs ici — seulement le
+          // cas attendu où une demande pending existe déjà (auquel cas on
+          // enchaîne directement sur le paiement). Toute autre erreur
+          // (session expirée, tier invalide...) doit interrompre le flux
+          // et remonter au catch englobant plutôt que d'être ignorée en
+          // silence, ce qui aurait pu déclencher un paiement pour une
+          // demande invalide.
+          if (!e.toString().contains('déjà en cours de traitement')) {
+            rethrow;
+          }
         }
       }
 
-      // 2. Initier le paiement
-      final result =
-          await ref.read(certificationPaymentServiceProvider).initiate(
-                tier: widget.tier,
-                paymentMethod: _method,
-                phoneNumber:
-                    _selected.needsPhone ? _phoneCtrl.text.trim() : null,
-                requestId: requestId,
-              );
+      // 2. Initier le paiement (avec timeout explicite)
+      final result = await ref
+          .read(certificationPaymentServiceProvider)
+          .initiate(
+            tier: widget.tier,
+            paymentMethod: _method,
+            phoneNumber: _selected.needsPhone ? _phoneCtrl.text.trim() : null,
+            requestId: requestId,
+          )
+          .timeout(_kPaymentInitiateTimeout);
 
       if (!mounted) return;
 
       // 🚨 CAS D'ÉCHEC IMMÉDIAT
       if (!result.success) {
         _toast(result.error ?? 'Paiement échoué', error: true);
-        await _cancelRequestFallback(); // On annule la requête
+        await _cancelRequestFallback();
         return;
       }
 
@@ -155,7 +199,7 @@ class _CertificationCheckoutPageState
             ),
           ),
         );
-        
+
         if (mounted) {
           if (ok != true) {
             // L'utilisateur a quitté la page d'attente sans payer ou échec
@@ -171,8 +215,8 @@ class _CertificationCheckoutPageState
 
       _toast('Paiement initié');
     } catch (e) {
-      _toast(e.toString().replaceFirst('Exception: ', ''), error: true);
-      // 🚨 CAS CRASH / ERREUR RÉSEAU
+      // ✅ FIX: message filtré au lieu du e.toString() brut
+      _toast(_friendlyError(e), error: true);
       await _cancelRequestFallback();
     } finally {
       if (mounted) setState(() => _paying = false);
@@ -197,9 +241,9 @@ class _CertificationCheckoutPageState
     final rateAsync = ref.watch(usdCdfRateProvider);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF4F6FA), // Uniformisé avec la page Tiers
+      backgroundColor: const Color(0xFFF4F6FA),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0A1628), // Bleu Marine THIX
+        backgroundColor: const Color(0xFF0A1628),
         foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
@@ -225,7 +269,6 @@ class _CertificationCheckoutPageState
                   padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
                   physics: const BouncingScrollPhysics(),
                   children: [
-                    // ── Récap tier (Design Premium) ──
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
@@ -303,7 +346,6 @@ class _CertificationCheckoutPageState
                     ),
                     const SizedBox(height: 20),
 
-                    // ── Montant (Carte claire et épurée) ──
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
@@ -439,8 +481,8 @@ class _CertificationCheckoutPageState
                                           style: TextStyle(
                                             fontWeight: FontWeight.w900,
                                             fontSize: 14,
-                                            color: sel 
-                                                ? m.color 
+                                            color: sel
+                                                ? m.color
                                                 : const Color(0xFF1E293B),
                                           ),
                                         ),
@@ -484,11 +526,13 @@ class _CertificationCheckoutPageState
                       TextField(
                         controller: _phoneCtrl,
                         keyboardType: TextInputType.phone,
+                        maxLength: _kMaxPhoneLength + 1, // +1 pour le '+'
                         inputFormatters: [
                           FilteringTextInputFormatter.allow(RegExp(r'[0-9+]')),
                         ],
                         decoration: InputDecoration(
                           hintText: 'ex: 0991234567',
+                          counterText: '',
                           hintStyle: const TextStyle(color: Color(0xFF94A3B8)),
                           prefixIcon: Icon(Icons.phone_rounded, color: _selected.color),
                           filled: true,
@@ -513,7 +557,6 @@ class _CertificationCheckoutPageState
                 ),
               ),
 
-              // ── CTA (Bouton d'action) ──
               Container(
                 padding: EdgeInsets.fromLTRB(
                   20,
@@ -592,7 +635,7 @@ class _PayMethod {
 }
 
 // ─────────────────────────────────────────────────────────────
-// PAGE D'ATTENTE PAIEMENT (Mise au propre avec le Bleu Marine)
+// PAGE D'ATTENTE PAIEMENT
 // ─────────────────────────────────────────────────────────────
 
 class CertificationPaymentWaitingPage extends ConsumerStatefulWidget {
@@ -631,7 +674,6 @@ class _CertificationPaymentWaitingPageState
   Future<void> _poll() async {
     _ticks++;
     if (_ticks > 40) {
-      // \~2 min
       _timer?.cancel();
       if (mounted) setState(() => _status = 'expired');
       return;
@@ -666,7 +708,7 @@ class _CertificationPaymentWaitingPageState
             end: Alignment.bottomCenter,
             colors: [
               Color(0xFF06101D),
-              Color(0xFF0A1628), // THIX Navy Blue
+              Color(0xFF0A1628),
             ],
           ),
         ),
@@ -676,7 +718,7 @@ class _CertificationPaymentWaitingPageState
               Align(
                 alignment: Alignment.centerLeft,
                 child: IconButton(
-                  onPressed: () => Navigator.pop(context, false), // Renvoie false par défaut
+                  onPressed: () => Navigator.pop(context, false),
                   icon: const Icon(Icons.close_rounded, color: Colors.white54),
                 ),
               ),
@@ -760,7 +802,7 @@ class _CertificationPaymentWaitingPageState
                             ),
                           ),
                         ],
-                        const SizedBox(height: 60), // Espace pour centrer un peu plus haut
+                        const SizedBox(height: 60),
                       ],
                     ),
                   ),
