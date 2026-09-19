@@ -4,12 +4,12 @@
 //
 // Features production :
 // - Vidéo host Agora avec fallback placeholder
-// - Chat realtime avec sanitization XSS + throttling + auto-scroll
-// - Likes avec animations flottantes + double-tap
-// - Réactions emoji (❤️🔥👏)
+// - Chat realtime avec sanitization XSS renforcée + throttling + auto-scroll
+// - Likes avec animations flottantes + double-tap (sans écrasement concurrent)
+// - Réactions emoji (❤️🔥👏😂😮)
 // - Indicateur qualité réseau
 // - Profil host (tap sur titre)
-// - Partage du live
+// - Partage du live (ID encodé)
 // - Confirmation avant sortie
 // - Semantics complet + haptics
 // - Logging structuré
@@ -41,7 +41,8 @@ const Duration _kStatsPolling = Duration(seconds: 3);
 const Duration _kChatThrottle = Duration(milliseconds: 600);
 const Duration _kLikeThrottle = Duration(milliseconds: 300);
 const Duration _kActionThrottle = Duration(milliseconds: 400);
-const List<String> _kReactions = ['❤️', '🔥', '👏', '', ''];
+// ✅ FIX: 2 emojis vides remplacés
+const List<String> _kReactions = ['❤️', '🔥', '👏', '😂', '😮'];
 
 // ============================================================================
 // LOGGING
@@ -62,21 +63,59 @@ class _LiveViewerLogger {
 }
 
 // ============================================================================
-// SANITIZER (anti-XSS)
+// SANITIZER (anti-XSS + anti-spoofing)
 // ============================================================================
 
 class _LiveSanitizer {
   _LiveSanitizer._();
+
+  static const int _kMaxUsernameLength = 24;
+  static const List<String> _kAllowedTypes = ['chat', 'reaction', 'gift'];
+
+  /// ✅ Nettoyage récursif des balises (anti-évasion par imbrication),
+  /// blocage javascript:/data:/on*=, suppression caractères de contrôle
+  /// et caractères Unicode d'usurpation (RTL override, largeur nulle).
   static String chat(String? input) {
     if (input == null) return '';
-    var s = input
-        .replaceAll(RegExp(r'<[^>]*>'), '')
+    var s = input;
+
+    String prev;
+    do {
+      prev = s;
+      s = s.replaceAll(RegExp(r'<[^>]*>'), '');
+    } while (s != prev);
+
+    s = s
         .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
+        .replaceAll(RegExp(r'data:text/html', caseSensitive: false), '')
         .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
         .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '')
+        .replaceAll(
+            RegExp(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]'), '')
         .trim();
+
     if (s.length > _kMaxChatLength) s = s.substring(0, _kMaxChatLength);
     return s;
+  }
+
+  /// ✅ Nettoie et tronque un pseudo reçu du realtime.
+  static String username(String? input) {
+    final cleaned = chat(input);
+    if (cleaned.isEmpty) return 'User';
+    return cleaned.length > _kMaxUsernameLength
+        ? '${cleaned.substring(0, _kMaxUsernameLength)}…'
+        : cleaned;
+  }
+
+  /// ✅ Restreint le type de message à une liste blanche connue.
+  static String messageType(String? input) {
+    final t = (input ?? 'chat').trim().toLowerCase();
+    return _kAllowedTypes.contains(t) ? t : 'chat';
+  }
+
+  /// ✅ Construit une URL de partage sûre (ID encodé).
+  static String shareUrl(String liveId) {
+    return 'https://thix.id/live/${Uri.encodeComponent(liveId)}';
   }
 }
 
@@ -265,8 +304,9 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
           callback: (payload) {
             final row = payload.newRecord;
             final text = _LiveSanitizer.chat(row['text']?.toString());
-            final user = (row['username'] ?? 'User').toString();
-            final type = (row['type'] ?? 'chat').toString();
+            // ✅ FIX: username et type sanitizés
+            final user = _LiveSanitizer.username(row['username']?.toString());
+            final type = _LiveSanitizer.messageType(row['type']?.toString());
             if (!mounted || text.isEmpty) return;
 
             setState(() {
@@ -416,6 +456,15 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
     ));
   }
 
+  // ✅ FIX: helper unique username, sanitizé systématiquement
+  String _currentUsername() {
+    final user = Supabase.instance.client.auth.currentUser;
+    final raw = user?.userMetadata?['username']?.toString() ??
+        user?.email?.split('@').first ??
+        'Viewer';
+    return _LiveSanitizer.username(raw);
+  }
+
   // ════════════════════════════════════════════════════════════
   // ACTIONS
   // ════════════════════════════════════════════════════════════
@@ -427,10 +476,7 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
 
     if (mounted) setState(() => _chatSending = true);
     try {
-      final user = Supabase.instance.client.auth.currentUser;
-      final name = user?.userMetadata?['username']?.toString() ??
-          user?.email?.split('@').first ??
-          'Viewer';
+      final name = _currentUsername();
       await ref.read(liveServiceProvider).sendMessage(
             liveId: _session!.id,
             text: text,
@@ -467,28 +513,23 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
             params: {'p_live_id': liveId},
           )
           .timeout(const Duration(seconds: 5));
-    } catch (_) {
-      // Fallback update non atomique si RPC absente
-      try {
-        await Supabase.instance.client
-            .from('lives')
-            .update({'like_count': _likeCount}).eq(
-          'id',
-          _session?.id ?? widget.liveId,
-        );
-      } catch (e) {
-        _LiveViewerLogger.warn('Like fallback failed', {'error': '$e'});
-      }
+    } catch (e) {
+      // ✅ FIX SÉCURITÉ CRITIQUE : l'ancien fallback faisait
+      // update({'like_count': _likeCount}) — un simple set non atomique
+      // qui écrasait le compteur global avec la valeur locale du viewer.
+      // Si un autre viewer avait liké entre-temps, son like disparaissait.
+      // On ne fait plus qu'un log : l'UI reste optimiste localement,
+      // le prochain polling stats (_startStatsPolling) resynchronisera
+      // la vraie valeur serveur sans risque d'écrasement.
+      _LiveViewerLogger.warn('Like RPC failed (no unsafe fallback)',
+          {'error': '$e'});
     }
   }
 
   Future<void> _sendReaction(String emoji) async {
     if (!_throttleChat() || _session == null) return;
     HapticFeedback.lightImpact();
-    final user = Supabase.instance.client.auth.currentUser;
-    final name = user?.userMetadata?['username']?.toString() ??
-        user?.email?.split('@').first ??
-        'Viewer';
+    final name = _currentUsername();
     try {
       await ref.read(liveServiceProvider).sendMessage(
             liveId: _session!.id,
@@ -526,7 +567,8 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   void _shareLive(AppLocalizations l10n) {
     if (!_throttleAction()) return;
     HapticFeedback.lightImpact();
-    final link = 'https://thix.id/live/${widget.liveId}';
+    // ✅ FIX: ID encodé pour éviter d'injecter des caractères non sûrs
+    final link = _LiveSanitizer.shareUrl(widget.liveId);
     Clipboard.setData(ClipboardData(text: link));
     _snack(l10n.t('live_link_copied'));
   }
@@ -870,6 +912,9 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
                                         ),
                                       ],
                                     ),
+                                    // ✅ FIX: borne l'affichage
+                                    maxLines: 3,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 );
                               },
