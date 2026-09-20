@@ -11,6 +11,17 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// ⚠️ IMPORTANT : Columns marked as [criticalColumns] will cause an immediate
 /// failure if they don't exist in the schema. Never remove critical columns
 /// silently as this can lead to data inconsistencies.
+///
+/// ⚠️ SECURITY NOTE: This class must never treat a protected-column-guard
+/// exception (raised by trg_guard_profiles_protected_columns on `profiles`,
+/// message prefix 'protected_column_change_denied') as an "unknown column"
+/// case. That trigger intentionally blocks writes to account_status,
+/// status, thix_id, thix_chat, role, etc. from client-authenticated calls.
+/// _isUnknownColumn() currently only matches PGRST204/42703 and
+/// "does not exist"/"Could not find" messages, which do NOT overlap with
+/// the guard's P0001 exception — keep it that way. If this ever changes,
+/// a silently-retried write could mask a blocked security-relevant
+/// mutation as ordinary schema drift.
 class SupabaseSafeWrite {
   SupabaseSafeWrite._();
 
@@ -37,6 +48,24 @@ class SupabaseSafeWrite {
     return false;
   }
 
+  /// ✅ Colonnes que `profiles` ne doit jamais voir silencieusement retirées
+  /// d'un payload en cas d'erreur "colonne inconnue" — elles sont gérées
+  /// exclusivement par des fonctions serveur SECURITY DEFINER
+  /// (finalize_registration, deactivate_my_account, etc.) et protégées par
+  /// trg_guard_profiles_protected_columns. Si l'une d'elles disparaissait
+  /// un jour du schema cache (migration cassée), on veut un échec bruyant,
+  /// pas une écriture partielle silencieuse.
+  static const List<String> profilesCriticalColumns = [
+    'thix_id',
+    'thix_chat',
+    'account_status',
+    'status',
+    'registration_status',
+    'certification_tier',
+    'certification_status',
+    'role',
+  ];
+
   /// Upserts [payload] into [table].
   ///
   /// If Supabase rejects a column due to schema cache, we remove it and retry.
@@ -49,8 +78,8 @@ class SupabaseSafeWrite {
     required String table,
     required Map<String, dynamic> payload,
     String? onConflict,
-    int maxRetries = 6, // ⭐ Réduit de 24 à 6 pour production
-    List<String> criticalColumns = const [], // ⭐ NOUVEAU
+    int maxRetries = 6,
+    List<String> criticalColumns = const [],
     Future<void> Function()? onUnknownColumn,
   }) async {
     final data = Map<String, dynamic>.from(payload);
@@ -84,7 +113,6 @@ class SupabaseSafeWrite {
           rethrow;
         }
         
-        // ⭐ NOUVEAU : Fail-fast pour les colonnes critiques
         if (criticalColumns.contains(col)) {
           final errorMsg = 'CRITICAL: Column "$col" is marked as critical but does not exist in schema. '
               'This indicates a missing migration. table=$table';
@@ -100,7 +128,6 @@ class SupabaseSafeWrite {
         }
         
         data.remove(col);
-        // ⭐ AMÉLIORÉ : Log WARNING au lieu de debugPrint
         if (kDebugMode) {
           print('⚠️ WARNING: SupabaseSafeWrite.upsert removed unknown column "$col" from payload. '
               'This may indicate a missing migration. table=$table');
