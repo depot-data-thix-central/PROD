@@ -17,14 +17,11 @@ import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/nav.dart';
 import 'package:thix_id/presentation/auth/personal_registration_page.dart';
 
-// 🛡️ IMPORT AJOUTÉ POUR LA SÉCURITÉ
 import 'package:thix_id/core/security/security_reporter.dart';
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-const int _kLockoutThreshold = 5;
-const int _kLockoutDuration = 30;
 const int _kResetCooldownDuration = 45;
 const int _kMaxEmailLength = 254;
 const int _kMaxPasswordLength = 128;
@@ -60,17 +57,10 @@ class _LoginValidators {
 }
 
 // ============================================================================
-// AUTH ERROR TRANSLATOR (MIGRATION CLÉ)
+// AUTH ERROR TRANSLATOR
 // ============================================================================
 
-/// Traduit un [AuthErrorCode] en message user-friendly via i18n.
-///
-/// Chaque code d'erreur a sa propre clé de traduction, garantissant :
-/// - Cohérence des messages dans toute l'application
-/// - Traduction facile dans toutes les langues supportées
-/// - Pas d'exposition de détails techniques à l'utilisateur
 String _translateAuthError(Object e, AppLocalizations l10n) {
-  // Cas 1 : AuthException custom (avec code enum)
   if (e is AuthException) {
     switch (e.code) {
       case AuthErrorCode.identifierRequired:
@@ -137,7 +127,6 @@ String _translateAuthError(Object e, AppLocalizations l10n) {
     }
   }
 
-  // Cas 2 : Erreurs business spécifiques (non-authentification)
   final msg = e.toString().toLowerCase();
   if (msg.contains('account_suspended') || msg.contains('suspended')) {
     return l10n.t('login_error_suspended');
@@ -154,8 +143,10 @@ String _translateAuthError(Object e, AppLocalizations l10n) {
   if (msg.contains('user_not_found_after_login')) {
     return l10n.t('auth_error_sign_in_failed');
   }
+  if (msg.contains('login_locked')) {
+    return l10n.t('login_error_locked');
+  }
 
-  // Cas 3 : Fallback générique (ne jamais exposer stack trace)
   debugPrint('[Login] ⚠️ Unmapped error: $e');
   return l10n.t('auth_error_technical');
 }
@@ -176,14 +167,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   final _passwordC = TextEditingController();
   bool _rememberMe = true;
 
-  int _failedAttempts = 0;
+  // ✅ FIX: le compteur _failedAttempts en mémoire locale a été retiré —
+  // il repartait à zéro à chaque redémarrage de l'app ou navigation hors
+  // de la page, donc ne freinait jamais un vrai attaquant scripté. Le
+  // rate-limiting est désormais géré côté serveur (check_login_allowed /
+  // record_failed_login / clear_login_attempts), par identifiant, avec
+  // une fenêtre glissante de 15 min et un verrou de 30s après 5 échecs —
+  // impossible à contourner en relançant l'app.
   int _lockoutSecondsLeft = 0;
   Timer? _lockoutTimer;
 
   int _resetCooldown = 0;
   Timer? _resetCooldownTimer;
-  
-  // ✅ CORRECTIF 3 : État de chargement initial explicite
+
   bool _isInitialVerifying = true;
 
   @override
@@ -191,17 +187,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     super.initState();
     _checkInitialSession();
   }
-  
-  // ✅ CORRECTIF 3 : timeout sur la vérification de session existante
+
   Future<void> _checkInitialSession() async {
     try {
       final session = Supabase.instance.client.auth.currentSession;
       if (session != null) {
-        // Tentative de refresh avec un timeout court (3s) pour ne pas bloquer
         await ref.read(authControllerProvider.notifier).refreshCurrentUser().timeout(
           const Duration(seconds: 3),
         );
-        // Si réussi ou timeouté, la session existe toujours, on laisse le routeur faire
       }
     } catch (e) {
       debugPrint('[Login] ⚠️ Initial session check failed/timeout: $e');
@@ -278,12 +271,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
-  // ── LOCKOUT TIMER ─────────────────────────────────────────────────────────
+  // ── LOCKOUT TIMER (affichage UI seulement — l'application réelle est
+  // faite côté serveur via check_login_allowed) ────────────────────────────
 
-  void _startLockoutTimer() {
+  void _startLockoutTimer(int seconds) {
     _lockoutTimer?.cancel();
-    setState(() => _lockoutSecondsLeft = _kLockoutDuration);
-    debugPrint('[Login] 🔒 Lockout started: ${_kLockoutDuration}s');
+    setState(() => _lockoutSecondsLeft = seconds);
+    debugPrint('[Login] 🔒 Lockout started: ${seconds}s');
 
     _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
@@ -292,10 +286,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       }
       if (_lockoutSecondsLeft <= 1) {
         timer.cancel();
-        setState(() {
-          _lockoutSecondsLeft = 0;
-          _failedAttempts = 0;
-        });
+        setState(() => _lockoutSecondsLeft = 0);
         debugPrint('[Login] ✓ Lockout ended');
       } else {
         setState(() => _lockoutSecondsLeft -= 1);
@@ -352,6 +343,60 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
+  // ── RATE LIMITING SERVEUR ─────────────────────────────────────────────────
+
+  /// ✅ Vérifie AVANT toute tentative si l'identifiant est actuellement
+  /// verrouillé côté serveur (5 échecs / 15 min → verrou de 30s). Contrairement
+  /// à l'ancien compteur en mémoire, ceci fonctionne même après un
+  /// redémarrage de l'app, et ne peut pas être contourné en rappelant
+  /// signInWithPassword directement (l'edge/RPC est le seul chemin légitime
+  /// utilisé par l'app, mais surtout : même en bypassant l'app, Supabase Auth
+  /// a son propre rate-limit serveur sur signInWithPassword — cette couche
+  /// ajoute la granularité par identifiant métier pour une UX cohérente).
+  Future<bool> _checkLoginAllowed(String identifier) async {
+    try {
+      final result = await Supabase.instance.client.rpc(
+        'check_login_allowed',
+        params: {'p_identifier': identifier},
+      );
+      final map = result is Map ? Map<String, dynamic>.from(result) : <String, dynamic>{};
+      final allowed = map['allowed'] == true;
+      if (!allowed) {
+        final seconds = (map['seconds_remaining'] as num?)?.toInt() ?? 30;
+        _startLockoutTimer(seconds);
+      }
+      return allowed;
+    } catch (e) {
+      debugPrint('[Login] ⚠️ check_login_allowed failed (fail-open): $e');
+      // Fail-open : si la vérification serveur elle-même échoue (réseau),
+      // on ne bloque pas la connexion légitime — Supabase Auth garde son
+      // propre rate-limit en dernier recours.
+      return true;
+    }
+  }
+
+  Future<void> _recordFailedLogin(String identifier) async {
+    try {
+      await Supabase.instance.client.rpc(
+        'record_failed_login',
+        params: {'p_identifier': identifier},
+      );
+    } catch (e) {
+      debugPrint('[Login] ⚠️ record_failed_login failed: $e');
+    }
+  }
+
+  Future<void> _clearLoginAttempts(String identifier) async {
+    try {
+      await Supabase.instance.client.rpc(
+        'clear_login_attempts',
+        params: {'p_identifier': identifier},
+      );
+    } catch (e) {
+      debugPrint('[Login] ⚠️ clear_login_attempts failed: $e');
+    }
+  }
+
   // ── SIGN IN ───────────────────────────────────────────────────────────────
 
   Future<void> _signIn() async {
@@ -367,6 +412,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     if (identifier.isEmpty || password.isEmpty) {
       _showError(l10n.t('login_error_empty_fields'));
+      return;
+    }
+
+    // ✅ Vérification serveur AVANT toute tentative — remplace l'ancien
+    // compteur en mémoire par un verrou réel, par identifiant.
+    final allowed = await _checkLoginAllowed(identifier.toLowerCase());
+    if (!allowed) {
+      _showError('${l10n.t('login_error_too_many_attempts_prefix')} $_lockoutSecondsLeft${l10n.t('login_seconds_suffix')}');
       return;
     }
 
@@ -402,20 +455,18 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       }
 
       // ⛔ 2. Vérifier la liste noire avant toute tentative
-      // (On utilise finalIdentifier pour vérifier l'email même si l'utilisateur a entré son téléphone)
       final blocked = await Supabase.instance.client.rpc(
         'is_blocked',
         params: {'p_type': 'identifier', 'p_value': finalIdentifier.toLowerCase()},
       );
-      
+
       if (blocked == true) {
         SecurityReporter.reportLoginBlocked(
           identifier: finalIdentifier,
           reason: 'identifiant en liste noire',
         );
-        // On affiche l'erreur (utilise la clé de traduction pour compte suspendu/bloqué)
-        _showError(l10n.t('login_error_suspended')); 
-        return; // Stoppe l'exécution ici
+        _showError(l10n.t('login_error_suspended'));
+        return;
       }
 
       // 3. Connexion standard
@@ -433,28 +484,55 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       }
 
       // 4. Vérification statut compte (base de données)
-      final accountStatus = user.registrationStatus?.toLowerCase() ?? '';
+      //
+      // ✅ FIX CRITIQUE : l'ancien code lisait `user.registrationStatus`
+      // pour décider si le compte était actif, alors que cette colonne ne
+      // vaut jamais 'active' pour un flux d'inscription standard (elle
+      // vaut 'completed' une fois finalize_registration() appelée avec
+      // succès). Résultat : tout utilisateur avec un compte parfaitement
+      // actif était systématiquement redirigé vers l'étape de finalisation
+      // d'inscription à chaque connexion. Le vrai indicateur du cycle de
+      // vie du compte (actif / désactivé / en suppression) est
+      // `user.accountStatus`, alimenté par la colonne `profiles.status`.
+      final status = user.accountStatus?.toLowerCase() ?? '';
 
-      if (accountStatus == 'suspended') {
+      if (status == 'deactivated') {
         await _logLoginAttempt(
           identifier: finalIdentifier,
           success: false,
-          failureReason: 'account_suspended',
+          failureReason: 'account_deactivated',
         );
-
         SecurityReporter.reportLoginBlocked(
           identifier: finalIdentifier.trim(),
           reason: 'compte désactivé / en suppression',
         );
-
         throw Exception('account_suspended');
       }
 
-      if (accountStatus != 'active') {
+      if (status == 'pending_deletion') {
         await _logLoginAttempt(
           identifier: finalIdentifier,
           success: false,
-          failureReason: 'account_not_active',
+          failureReason: 'account_pending_deletion',
+        );
+        SecurityReporter.reportLoginBlocked(
+          identifier: finalIdentifier.trim(),
+          reason: 'compte désactivé / en suppression',
+        );
+        throw Exception('account_suspended');
+      }
+
+      // registrationStatus reste le bon indicateur pour "inscription pas
+      // terminée" — 'completed' pour un flux standard, 'active' accepté
+      // aussi pour compatibilité avec les comptes existants créés par un
+      // ancien mécanisme d'activation.
+      final regStatus = user.registrationStatus?.toLowerCase() ?? '';
+      const completedStatuses = {'completed', 'active'};
+      if (!completedStatuses.contains(regStatus)) {
+        await _logLoginAttempt(
+          identifier: finalIdentifier,
+          success: false,
+          failureReason: 'registration_not_completed',
         );
         context.go('${AppRoutes.personalReg}?step=3');
         _showError(l10n.t('login_error_finalize_registration'));
@@ -477,15 +555,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         identifier: finalIdentifier,
         success: true,
       );
+      // ✅ Efface le compteur d'échecs côté serveur après une connexion
+      // réussie, pour ce même identifiant.
+      await _clearLoginAttempts(finalIdentifier.toLowerCase());
 
-      _failedAttempts = 0;
       final target = user.accountType == AccountType.enterprise
           ? AppRoutes.enterpriseDashboard
           : AppRoutes.userDashboard;
 
       debugPrint('[Login] ✓ Sign in successful, redirecting to: $target');
       context.go(target);
-      
+
     } catch (e) {
       if (kDebugMode) debugPrint('[Login] ❌ Sign in error: $e');
       if (!mounted) return;
@@ -504,13 +584,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         reason: reason,
       );
 
-      _failedAttempts += 1;
-      if (_failedAttempts >= _kLockoutThreshold) {
-        _startLockoutTimer();
-        _showError('${l10n.t('login_error_too_many_attempts_prefix')} $_kLockoutDuration${l10n.t('login_seconds_suffix')}');
-      } else {
-        _showError(_translateAuthError(e, l10n));
-      }
+      // ✅ Enregistre l'échec côté serveur (fonctionne même sans session,
+      // contrairement à _logLoginAttempt qui exige un uid). C'est ce qui
+      // permet réellement de détecter/freiner un bruteforce par mot de
+      // passe — l'ancien système ne journalisait jamais ces cas car
+      // aucune session n'existe après un login raté.
+      await _recordFailedLogin(loginIdentifier.toLowerCase());
+
+      _showError(_translateAuthError(e, l10n));
     }
   }
 
@@ -559,13 +640,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     _showInfo(l10n.t('login_biometric_not_supported'));
   }
 
-  // ── BUILD (inchangé à part isLoading) ─────────────────────────────────────
+  // ── BUILD ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final authState = ref.watch(authControllerProvider);
-    // ✅ Le loading combine l'état du provider et notre vérification locale initiale
     final isLoading = authState.isLoading || _isInitialVerifying;
 
     return Scaffold(
@@ -951,7 +1031,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 }
 
 // ============================================================================
-// SECURE INPUT (inchangé)
+// SECURE INPUT
 // ============================================================================
 
 class _SecureInput extends StatefulWidget {
@@ -1047,7 +1127,7 @@ class _SecureInputState extends State<_SecureInput> {
 }
 
 // ============================================================================
-// SOCIAL AUTH BUTTON (inchangé)
+// SOCIAL AUTH BUTTON
 // ============================================================================
 
 class _SocialAuth extends StatelessWidget {
@@ -1091,7 +1171,7 @@ class _SocialAuth extends StatelessWidget {
 }
 
 // ============================================================================
-// LANGUAGE CHIP (inchangé)
+// LANGUAGE CHIP
 // ============================================================================
 
 class _LangChip extends StatelessWidget {
@@ -1360,7 +1440,6 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                                   return;
                                 }
 
-                                // ✅ Gestion sécurisée sans classe PasswordPolicy externe (si absente)
                                 if (newPass.length < 8) {
                                   HapticFeedback.lightImpact();
                                   setState(() => _passwordError = "Le mot de passe doit contenir au moins 8 caractères");
