@@ -71,6 +71,7 @@ dependencies:
   any_link_preview: ^3.0.2             #  UPGRADED : 3.0.0 → 3.0.2 (bug fixes)
   path: ^1.9.0
   highlight: ^0.7.0
+  
   # ═══════════════════════════════════════════════════════════════════════
   # MEDIA & COMMUNICATION
   # ═══════════════════════════════════════════════════════════════════════
@@ -88,10 +89,10 @@ dependencies:
   # ═══════════════════════════════════════════════════════════════════════
   # IDENTIFICATION & SCANNING
   # ═══════════════════════════════════════════════════════════════════════
-  geolocator: ^13.0.2                  #  DOWNGRADED : 14.0.2 → 13.0.2 (stabilité)
-  geocoding: ^3.0.0                    #  DOWNGRADED : 4.0.0 → 3.0.0 (compatibilité)
+  geolocator: ^13.0.2                  
+  geocoding: ^3.0.0                    
   nfc_manager: ^4.2.1
-  mobile_scanner: ^6.0.2               #  DOWNGRADED : 7.4.0 → 6.0.2 (stabilité)
+  mobile_scanner: ^6.0.2               
   qr_flutter: ^4.1.0
   barcode_widget: ^2.0.4
 
@@ -99,8 +100,10 @@ dependencies:
   # NOTIFICATIONS & SHARING
   # ═══════════════════════════════════════════════════════════════════════
   flutter_local_notifications: ^18.0.1
-  permission_handler: ^11.3.1          #  DOWNGRADED : 13.0.0 → 11.3.1 (stabilité, retire override)
+  permission_handler: ^11.3.1          #
   share_plus: ^10.0.0
+  app_badge_plus: ^1.1.2
+  
 
   # ═══════════════════════════════════════════════════════════════════════
   # NOTIFICATIONS PUSH (Firebase)
