@@ -16,6 +16,12 @@ import 'package:thix_id/presentation/common/notifications_sheet.dart';
 import '../../theme.dart';
 
 // ============================================================================
+// CONSTANTS
+// ============================================================================
+const Duration _kNetworkTimeout = Duration(seconds: 15);
+const int _kMinPasswordLength = 8;
+
+// ============================================================================
 // STATUT DE COMPTE
 // ============================================================================
 enum AccountStatus { active, deactivated, pendingDeletion }
@@ -407,6 +413,20 @@ class _SettingsPageState extends State<SettingsPage> {
     _loadProfile();
   }
 
+  // ✅ Helper timeout — évite qu'un appel réseau bloqué laisse _busy=true
+  // indéfiniment. Comme le Scaffold masque tout (y compris le bouton
+  // retour) tant que _busy est vrai, un appel sans timeout pouvait
+  // bloquer l'utilisateur sur un écran de chargement sans issue.
+  Future<T> _withTimeout<T>(Future<T> future, {String? context}) {
+    return future.timeout(
+      _kNetworkTimeout,
+      onTimeout: () {
+        debugPrint('[Settings] ⏱️ Timeout: ${context ?? 'unknown'}');
+        throw TimeoutException(context ?? 'network_timeout');
+      },
+    );
+  }
+
   Future<void> _loadProfile() async {
     final uid = _sb.auth.currentUser?.id;
     if (uid == null) return;
@@ -416,15 +436,15 @@ class _SettingsPageState extends State<SettingsPage> {
           .select('role, preferences, status, scheduled_deletion_at')
           .eq('id', uid)
           .maybeSingle();
-          
+
       if (!mounted) return;
-      
+
       final role = row?['role'] as String?;
       final prefs = (row?['preferences'] as Map?)?.cast<String, dynamic>() ?? {};
-      
+
       final rawStatus = row?['status'] as String?;
       final rawDeletion = row?['scheduled_deletion_at'] as String?;
-      
+
       setState(() {
         _isAdmin = role == 'admin' || role == 'superadmin';
         _darkMode = prefs['darkMode'] ?? true;
@@ -479,6 +499,21 @@ class _SettingsPageState extends State<SettingsPage> {
     ));
   }
 
+  /// ✅ Traduit une exception technique en message affichable, sans jamais
+  /// exposer un message Supabase brut ou un corps de réponse HTTP à
+  /// l'utilisateur (l'ancien code faisait _snack('$e', error: true) dans
+  /// _deactivateAccount et _deleteAccount).
+  String _friendlyError(Object e, AppLocalizations l10n) {
+    if (e is TimeoutException) {
+      return l10n.t('settings_network_timeout');
+    }
+    if (e is AuthException) {
+      return l10n.t('settings_reauth_failed');
+    }
+    debugPrint('[Settings] error (not shown to user): $e');
+    return l10n.t('reg_error_generic');
+  }
+
   Future<String?> _askPassword({
     required String title,
     required String message,
@@ -527,6 +562,11 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           FilledButton(
             onPressed: () {
+              if (pwCtrl.text.isEmpty) {
+                Navigator.pop(ctx, false);
+                _snack(l10n.t('settings_password_current'), error: true);
+                return;
+              }
               if (keyword != null && kwCtrl.text.trim() != keyword) {
                 Navigator.pop(ctx, false);
                 _snack(l10n.t('settings_delete_keyword_mismatch'), error: true);
@@ -588,7 +628,16 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
     if (ok != true) return;
-    if (newCtrl.text.length < 8 || newCtrl.text != confirmCtrl.text) {
+
+    // ⚠️ NOTE : longueur minimale seulement ici, contrairement à
+    // l'inscription qui applique en plus zxcvbn (force) + vérification
+    // HIBP (mot de passe déjà compromis). Politique incohérente entre les
+    // deux écrans — recommandé d'unifier avec PasswordPolicy.validate()
+    // de personal_registration_page.dart si tu veux le même niveau de
+    // protection ici. Je n'ai pas ajouté cette dépendance sans confirmation
+    // pour ne pas alourdir cette page sans ton accord.
+    if (newCtrl.text.length < _kMinPasswordLength ||
+        newCtrl.text != confirmCtrl.text) {
       _snack(l10n.t('auth_passwords_mismatch'), error: true);
       return;
     }
@@ -596,8 +645,14 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final email = _sb.auth.currentUser?.email;
       if (email == null) throw Exception('no session');
-      await _sb.auth.signInWithPassword(email: email, password: current);
-      await _sb.auth.updateUser(UserAttributes(password: newCtrl.text));
+      await _withTimeout(
+        _sb.auth.signInWithPassword(email: email, password: current),
+        context: 'changePassword.reauth',
+      );
+      await _withTimeout(
+        _sb.auth.updateUser(UserAttributes(password: newCtrl.text)),
+        context: 'changePassword.update',
+      );
       _snack(l10n.t('settings_password_changed'));
     } catch (e) {
       _snack(l10n.t('settings_reauth_failed'), error: true);
@@ -607,6 +662,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _deactivateAccount() async {
+    final l10n = AppLocalizations.of(context);
     final pw = await _askPassword(
       title: 'Désactiver le compte',
       message: 'Le profil passera en privé. Confirmez avec votre mot de passe.',
@@ -624,34 +680,41 @@ class _SettingsPageState extends State<SettingsPage> {
 
       debugPrint('[Deactivate] Vérification du mot de passe pour $email...');
       try {
-        await _sb.auth.signInWithPassword(email: email, password: pw);
+        await _withTimeout(
+          _sb.auth.signInWithPassword(email: email, password: pw),
+          context: 'deactivate.reauth',
+        );
         debugPrint('[Deactivate] Mot de passe correct.');
       } on AuthException catch (authErr) {
         debugPrint('[Deactivate] AuthException: ${authErr.message}');
-        throw Exception('Mot de passe incorrect.');
+        rethrow;
       }
 
       debugPrint('[Deactivate] Appel de la fonction RPC deactivate_my_account...');
-      await _sb.rpc('deactivate_my_account'); 
+      await _withTimeout(
+        _sb.rpc('deactivate_my_account'),
+        context: 'deactivate.rpc',
+      );
       debugPrint('[Deactivate] RPC exécuté avec succès.');
 
       await context.read<AuthController>().refreshCurrentUser();
       if (!mounted) return;
       context.go('/settings/account-status');
-      
     } catch (e, stackTrace) {
       debugPrint('====================================');
       debugPrint('[ERREUR CRITIQUE] _deactivateAccount');
       debugPrint('Erreur : $e');
       debugPrint('StackTrace : $stackTrace');
       debugPrint('====================================');
-      if (mounted) _snack('$e', error: true);
+      // ✅ FIX: message traduit au lieu de l'exception brute ('$e')
+      if (mounted) _snack(_friendlyError(e, l10n), error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _deleteAccount() async {
+    final l10n = AppLocalizations.of(context);
     final pw = await _askPassword(
       title: 'Supprimer le compte',
       message: 'Action définitive. Tapez SUPPRIMER.',
@@ -661,9 +724,29 @@ class _SettingsPageState extends State<SettingsPage> {
 
     setState(() => _busy = true);
     try {
-      final response = await _sb.functions.invoke(
-        'delete-user',
-        body: {'confirm_text': 'SUPPRIMER'},
+      // ✅ FIX SÉCURITÉ CRITIQUE : l'ancienne version demandait un mot de
+      // passe dans le dialog (`pw`) mais ne l'utilisait JAMAIS — il n'était
+      // ni envoyé à l'edge function, ni vérifié côté client. N'importe
+      // quelle session active (téléphone déverrouillé oublié, token
+      // compromis) pouvait donc supprimer définitivement le compte sans
+      // connaître le vrai mot de passe, en tapant simplement "SUPPRIMER".
+      // On réauthentifie maintenant explicitement avant l'appel, comme le
+      // fait déjà _deactivateAccount pour une action bien moins destructrice.
+      final email = _sb.auth.currentUser?.email;
+      if (email == null) {
+        throw Exception('Impossible de trouver l\'email de la session.');
+      }
+      await _withTimeout(
+        _sb.auth.signInWithPassword(email: email, password: pw),
+        context: 'delete.reauth',
+      );
+
+      final response = await _withTimeout(
+        _sb.functions.invoke(
+          'delete-user',
+          body: {'confirm_text': 'SUPPRIMER'},
+        ),
+        context: 'delete.function',
       );
 
       if (response.status != 200) {
@@ -675,7 +758,8 @@ class _SettingsPageState extends State<SettingsPage> {
       } catch (_) {}
       if (mounted) context.go(AppRoutes.login);
     } catch (e) {
-      if (mounted) _snack('$e', error: true);
+      // ✅ FIX: message traduit au lieu de l'exception brute ('$e')
+      if (mounted) _snack(_friendlyError(e, l10n), error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -685,12 +769,15 @@ class _SettingsPageState extends State<SettingsPage> {
     final l10n = AppLocalizations.of(context);
     setState(() => _busy = true);
     try {
-      await _sb.rpc('reactivate_my_account');
+      await _withTimeout(
+        _sb.rpc('reactivate_my_account'),
+        context: 'reactivate',
+      );
       await context.read<AuthController>().refreshCurrentUser();
       await _loadProfile();
       if (mounted) _snack(l10n.t('settings_reactivate_done'));
     } catch (e) {
-      if (mounted) _snack('$e', error: true);
+      if (mounted) _snack(_friendlyError(e, l10n), error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -700,12 +787,15 @@ class _SettingsPageState extends State<SettingsPage> {
     final l10n = AppLocalizations.of(context);
     setState(() => _busy = true);
     try {
-      await _sb.rpc('cancel_account_deletion');
+      await _withTimeout(
+        _sb.rpc('cancel_account_deletion'),
+        context: 'cancelDeletion',
+      );
       await context.read<AuthController>().refreshCurrentUser();
       await _loadProfile();
       if (mounted) _snack(l10n.t('settings_cancel_deletion_done'));
     } catch (e) {
-      if (mounted) _snack('$e', error: true);
+      if (mounted) _snack(_friendlyError(e, l10n), error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -715,9 +805,14 @@ class _SettingsPageState extends State<SettingsPage> {
     final l10n = AppLocalizations.of(context);
     setState(() => _busy = true);
     try {
-      await _sb.auth.signOut(scope: SignOutScope.global);
+      await _withTimeout(
+        _sb.auth.signOut(scope: SignOutScope.global),
+        context: 'signOutAll',
+      );
       if (mounted) _snack(l10n.t('settings_sign_out_all_done'));
       if (mounted) context.go(AppRoutes.login);
+    } catch (e) {
+      if (mounted) _snack(_friendlyError(e, l10n), error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1054,7 +1149,6 @@ class _SettingsPageState extends State<SettingsPage> {
                               color: context.theme.dividerColor,
                               indent: 56,
                               height: 1),
-                          // NOUVELLE ACTION POUR EXPORT DE DONNÉES
                           SettingsItem(
                             icon: Icons.download_rounded,
                             label: l10n.t('settings_data_export'),
