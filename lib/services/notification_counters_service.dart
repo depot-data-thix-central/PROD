@@ -2,16 +2,19 @@
 /// ✅ SÉCURISÉ : Validation UID/section, sanitization, timeout
 /// ✅ ROBUSTE : Retry avec backoff exponentiel, error handling, fallback polling
 /// ✅ OBSERVABLE : Logs structurés avec masquage UID (RGPD)
+/// ✅ BADGE ICÔNE : Synchronisation automatique du badge de l'app (WhatsApp-style)
 ///
 /// Service pour calculer et diffuser en temps réel les compteurs de
 /// notifications non lues par section, pour alimenter les badges de
 /// HomeServicesConstellation et de la cloche de notifications du header.
+/// Met aussi à jour le badge numérique sur l'icône de l'application.
 ///
 /// **Architecture** :
 /// - Realtime Supabase avec fallback polling (5s)
 /// - Retry avec backoff exponentiel (500ms → 8s max)
 /// - Validation stricte des UIDs et sections
 /// - Logs structurés avec masquage UID (RGPD)
+/// - AppBadgePlus pour le badge de l'icône (iOS + Android OEM)
 ///
 /// **Edge cases gérés** :
 /// - UID invalide → Stream vide + log
@@ -19,11 +22,12 @@
 /// - Erreur Supabase → Retry avec backoff exponentiel
 /// - Section inconnue → Ignorée silencieusement
 /// - Types non reconnus → Filtrés automatiquement
+/// - Badge non supporté par le launcher → no-op silencieux
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
 
 // ============================================================================
@@ -164,7 +168,7 @@ class _Validators {
   /// Exemple : `abc123def456ghi789` → `abc1...789`
   static String maskUid(String uid) {
     if (uid.length <= 8) return '***';
-    return '${uid.substring(0, 4)}...${uid.substring(uid.length - 3)}';
+    return '\( {uid.substring(0, 4)}... \){uid.substring(uid.length - 3)}';
   }
 
   /// Sanitize un type de notification
@@ -182,6 +186,8 @@ class _Validators {
 /// Calcule et diffuse en temps réel les compteurs de notifications non
 /// lues par section, pour alimenter les badges de HomeServicesConstellation
 /// et de la cloche de notifications du header.
+/// Met également à jour le badge numérique sur l'icône de l'application
+/// (comportement type WhatsApp).
 class NotificationCountersService {
   final SupabaseClient _client;
 
@@ -258,6 +264,7 @@ class NotificationCountersService {
   /// - UID invalide → `Stream.value(SectionBadgeCounts.zero)`
   /// - Erreur réseau → Fallback polling automatique (5s)
   /// - Realtime Supabase → Mise à jour instantanée
+  /// - Badge de l'icône mis à jour automatiquement à chaque nouveau total
   ///
   /// **Usage** :
   /// ```dart
@@ -269,12 +276,16 @@ class NotificationCountersService {
   Stream<SectionBadgeCounts> streamCounts(String uid) {
     if (!_Validators.isValidUid(uid)) {
       debugPrint('[NotifCounters] ⚠️ Invalid UID, returning zero stream');
+      unawaited(_updateAppIconBadge(0));
       return Stream<SectionBadgeCounts>.value(SectionBadgeCounts.zero);
-
     }
 
     debugPrint('[NotifCounters] 🚀 Starting stream for ${_Validators.maskUid(uid)}');
-    return _streamUnreadTypes(uid).map(_buildCounts);
+    return _streamUnreadTypes(uid).map((types) {
+      final counts = _buildCounts(types);
+      unawaited(_updateAppIconBadge(counts.total));
+      return counts;
+    });
   }
 
   /// Récupération ponctuelle (non réactive) — utile pour un
@@ -286,6 +297,7 @@ class NotificationCountersService {
   Future<SectionBadgeCounts> fetchCounts(String uid) async {
     if (!_Validators.isValidUid(uid)) {
       debugPrint('[NotifCounters] ⚠️ Invalid UID for fetchCounts');
+      await _updateAppIconBadge(0);
       return SectionBadgeCounts.zero;
     }
 
@@ -305,7 +317,9 @@ class NotificationCountersService {
 
       debugPrint('[NotifCounters] ✓ Fetched ${types.length} unread for '
           '${_Validators.maskUid(uid)}');
-      return _buildCounts(types);
+      final counts = _buildCounts(types);
+      await _updateAppIconBadge(counts.total);
+      return counts;
     } on TimeoutException {
       debugPrint('[NotifCounters] ❌ fetchCounts timeout for '
           '${_Validators.maskUid(uid)}');
@@ -353,7 +367,12 @@ class NotificationCountersService {
           .timeout(_kQueryTimeout);
 
       debugPrint('[NotifCounters] ✓ Marked ${types.length} types as read '
-          'for section $section (${_Validators.maskUid(uid)})');
+          'for section \( section ( \){_Validators.maskUid(uid)})');
+
+      // Recalcule le total et met à jour le badge de l'icône
+      final counts = await fetchCounts(uid);
+      // fetchCounts met déjà à jour le badge
+
       return true;
     } on TimeoutException {
       debugPrint('[NotifCounters] ❌ markSectionSeen timeout for '
@@ -362,6 +381,41 @@ class NotificationCountersService {
     } catch (e) {
       debugPrint('[NotifCounters] ❌ markSectionSeen failed: $e');
       return false;
+    }
+  }
+
+  /// Force la mise à jour du badge de l'icône avec un total donné.
+  /// Utile si tu veux forcer un reset depuis l'extérieur.
+  Future<void> syncAppIconBadge(int total) => _updateAppIconBadge(total);
+
+  // ========================================================================
+  // PRIVATE : BADGE ICÔNE (WhatsApp-style)
+  // ========================================================================
+
+  /// Met à jour le badge numérique sur l'icône de l'application.
+  ///
+  /// - `count > 0` → affiche le nombre
+  /// - `count == 0` → retire le badge
+  /// - Non supporté par le launcher → no-op silencieux
+  Future<void> _updateAppIconBadge(int count) async {
+    try {
+      final supported = await AppBadgePlus.isSupported();
+      if (!supported) {
+        if (kDebugMode) {
+          debugPrint('[NotifCounters] ℹ️ App badge not supported by this launcher');
+        }
+        return;
+      }
+
+      final safeCount = count < 0 ? 0 : count;
+      await AppBadgePlus.updateBadge(safeCount);
+
+      if (kDebugMode) {
+        debugPrint('[NotifCounters] 🔢 App icon badge → $safeCount');
+      }
+    } catch (e) {
+      // Ne jamais faire planter l'app pour un badge
+      debugPrint('[NotifCounters] ⚠️ Failed to update app icon badge: $e');
     }
   }
 
