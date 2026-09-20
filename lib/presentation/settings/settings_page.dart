@@ -634,8 +634,7 @@ class _SettingsPageState extends State<SettingsPage> {
     // HIBP (mot de passe déjà compromis). Politique incohérente entre les
     // deux écrans — recommandé d'unifier avec PasswordPolicy.validate()
     // de personal_registration_page.dart si tu veux le même niveau de
-    // protection ici. Je n'ai pas ajouté cette dépendance sans confirmation
-    // pour ne pas alourdir cette page sans ton accord.
+    // protection ici.
     if (newCtrl.text.length < _kMinPasswordLength ||
         newCtrl.text != confirmCtrl.text) {
       _snack(l10n.t('auth_passwords_mismatch'), error: true);
@@ -706,7 +705,6 @@ class _SettingsPageState extends State<SettingsPage> {
       debugPrint('Erreur : $e');
       debugPrint('StackTrace : $stackTrace');
       debugPrint('====================================');
-      // ✅ FIX: message traduit au lieu de l'exception brute ('$e')
       if (mounted) _snack(_friendlyError(e, l10n), error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -724,14 +722,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     setState(() => _busy = true);
     try {
-      // ✅ FIX SÉCURITÉ CRITIQUE : l'ancienne version demandait un mot de
-      // passe dans le dialog (`pw`) mais ne l'utilisait JAMAIS — il n'était
-      // ni envoyé à l'edge function, ni vérifié côté client. N'importe
-      // quelle session active (téléphone déverrouillé oublié, token
-      // compromis) pouvait donc supprimer définitivement le compte sans
-      // connaître le vrai mot de passe, en tapant simplement "SUPPRIMER".
-      // On réauthentifie maintenant explicitement avant l'appel, comme le
-      // fait déjà _deactivateAccount pour une action bien moins destructrice.
+      // Réauthentification côté client — première barrière.
       final email = _sb.auth.currentUser?.email;
       if (email == null) {
         throw Exception('Impossible de trouver l\'email de la session.');
@@ -741,10 +732,21 @@ class _SettingsPageState extends State<SettingsPage> {
         context: 'delete.reauth',
       );
 
+      // ✅ FIX: le mot de passe est désormais aussi transmis à l'edge
+      // function, qui le revérifie côté serveur (voir delete-user corrigée)
+      // avant d'appeler soft_delete_user. La réauth ci-dessus, faite avec
+      // le client de l'app, ne protège que ce chemin d'appel précis — un
+      // client modifié ou un appel HTTP direct à l'edge function pouvait
+      // auparavant contourner cette vérification entièrement. Le serveur
+      // ne fait donc plus confiance uniquement à la présence d'un token
+      // de session valide pour une action aussi destructrice.
       final response = await _withTimeout(
         _sb.functions.invoke(
           'delete-user',
-          body: {'confirm_text': 'SUPPRIMER'},
+          body: {
+            'confirm_text': 'SUPPRIMER',
+            'password': pw,
+          },
         ),
         context: 'delete.function',
       );
@@ -758,7 +760,6 @@ class _SettingsPageState extends State<SettingsPage> {
       } catch (_) {}
       if (mounted) context.go(AppRoutes.login);
     } catch (e) {
-      // ✅ FIX: message traduit au lieu de l'exception brute ('$e')
       if (mounted) _snack(_friendlyError(e, l10n), error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
