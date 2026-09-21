@@ -89,6 +89,9 @@ class _EdValidators {
     if (msg.contains('permission') || msg.contains('policy')) return 'Accès non autorisé.';
     if (msg.contains('not found')) return 'Ressource introuvable.';
     if (msg.contains('too large') || msg.contains('size')) return 'Fichier trop volumineux.';
+    if (msg.contains('protected_column_change_denied')) {
+      return 'Ce champ ne peut pas être modifié depuis cet écran.';
+    }
     return 'Une erreur est survenue. Réessayez.';
   }
 }
@@ -473,7 +476,7 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
   late final TextEditingController _nameC, _competenceC, _bioC, _countryOriginC;
   late final TextEditingController _contactPhoneC, _dobC, _pobC, _nationalityC;
   late final TextEditingController _maritalC, _genderC, _occupationC, _addressC;
-  late final TextEditingController _fatherNameC, _motherNameC, _thixChatC;
+  late final TextEditingController _fatherNameC, _motherNameC;
   late final TextEditingController _originProvinceC, _originTerritoryC, _originSectorC;
   late final TextEditingController _residenceCountryC, _residenceProvinceC, _residenceCityC;
   late final TextEditingController _residenceTerritoryC, _residenceCommuneC;
@@ -482,10 +485,37 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
   late final TextEditingController _heightC, _weightC, _bloodGroupC, _disabilityDescC;
   late final TextEditingController _nationalIdNumberC, _idDocTypeC, _idIssueDateC, _idExpiryDateC, _idIssuePlaceC;
 
+  // ✅ FIX SÉCURITÉ : thix_chat n'est plus un champ éditable depuis cet
+  // écran. Il est désormais protégé côté serveur par
+  // trg_guard_profiles_protected_columns (aucun utilisateur non-admin ne
+  // peut le modifier via un simple UPDATE). Le seul chemin légitime pour
+  // changer son thix_chat est une RPC serveur dédiée qui revalide le
+  // format, la liste des chats réservés et l'unicité — comme le fait déjà
+  // finalize_registration() à l'inscription. Tant que cette RPC de
+  // modification post-inscription n'existe pas, ce champ reste en lecture
+  // seule ici pour éviter un appel qui échouerait silencieusement (ou
+  // qui, avant le fix serveur, aurait permis de réclamer n'importe quel
+  // chat sans validation).
+  late final TextEditingController _thixChatDisplayC;
+
   bool _hasDisability = false;
   PlatformFile? _idFront, _idBack, _idSelfie;
   String? _idFrontDocId, _idBackDocId, _idSelfieDocId;
-  String? _idVerificationStatus;
+
+  // ✅ FIX SÉCURITÉ CRITIQUE : id_verification_status n'est plus envoyé au
+  // serveur depuis cet écran. Avant ce fix, cette valeur était construite
+  // côté client (mise à 'pending' après un simple pick de fichier, sans
+  // garantie que l'upload avait réellement abouti) puis transmise telle
+  // quelle à updateProfile(), qui l'écrivait sans aucune validation
+  // serveur. Un client modifié pouvait envoyer n'importe quelle valeur
+  // ('approved', 'verified', etc.) et s'auto-certifier d'identité sans
+  // jamais avoir fourni de documents réels. Cette colonne est maintenant
+  // protégée par trg_guard_profiles_protected_columns : seul un processus
+  // serveur (revue admin, webhook d'un prestataire de vérification
+  // d'identité tiers) peut la faire évoluer. On garde ici uniquement la
+  // valeur reçue du profil pour l'AFFICHER, jamais pour la renvoyer.
+  String? _idVerificationStatusDisplay;
+
   PlatformFile? _pickedPhoto;
 
   final _photos = ProfilePhotoService();
@@ -519,7 +549,7 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
     _addressC = _register(p.address ?? a.address ?? '');
     _fatherNameC = _register(p.fatherName ?? a.fatherName ?? '');
     _motherNameC = _register(p.motherName ?? a.motherName ?? '');
-    _thixChatC = _register(p.thixChat ?? '');
+    _thixChatDisplayC = _register(p.thixChat ?? '');
     _originProvinceC = _register(p.originProvince ?? '');
     _originTerritoryC = _register(p.originTerritory ?? '');
     _originSectorC = _register(p.originSector ?? '');
@@ -548,7 +578,7 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
     _idFrontDocId = p.idDocumentFrontDocId;
     _idBackDocId = p.idDocumentBackDocId;
     _idSelfieDocId = p.idDocumentSelfieDocId;
-    _idVerificationStatus = p.idVerificationStatus;
+    _idVerificationStatusDisplay = p.idVerificationStatus;
   }
 
   @override
@@ -660,7 +690,13 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
     if (kind == 'front') _idFrontDocId = docId;
     if (kind == 'back') _idBackDocId = docId;
     if (kind == 'selfie') _idSelfieDocId = docId;
-    _idVerificationStatus = 'pending';
+
+    // ✅ FIX: on ne construit plus idVerificationStatus ici pour l'envoyer
+    // nous-mêmes — c'est désormais au serveur (trigger sur les inserts de
+    // documents, ou fonction dédiée appelée après upload confirmé) de
+    // faire passer le profil à 'pending' une fois les 3 documents reçus.
+    // On se contente de rafraîchir l'affichage local pour l'utilisateur.
+    _idVerificationStatusDisplay = 'pending';
   }
 
   Future<void> _save() async {
@@ -711,6 +747,13 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
       await _uploadIdIfNeeded(uid: widget.profile.userId, kind: 'selfie');
 
       // Save profile (tous les champs sanitisés)
+      //
+      // ✅ FIX: thixChat et idVerificationStatus ne sont plus transmis ici.
+      // Ces deux colonnes sont protégées côté serveur
+      // (trg_guard_profiles_protected_columns) — un envoi ici échouerait
+      // désormais avec 'protected_column_change_denied', et avant ce fix
+      // serveur, ces champs auraient permis un contournement des règles
+      // d'unicité/format du chat et une auto-certification d'identité.
       await _edRetry(
         () => widget.profileService.updateProfile(
           userId: widget.profile.userId,
@@ -757,8 +800,7 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
           idDocumentFrontDocId: _idFrontDocId,
           idDocumentBackDocId: _idBackDocId,
           idDocumentSelfieDocId: _idSelfieDocId,
-          idVerificationStatus: _idVerificationStatus,
-          thixChat: _EdValidators.sanitize(_thixChatC.text, maxLength: 50),
+          // idVerificationStatus volontairement omis (voir commentaire ci-dessus)
           photoUrl: newPhotoUrl,
         ),
         label: 'updateProfile',
@@ -1032,7 +1074,20 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
               const SizedBox(height: 12),
               TextField(controller: _competenceC, maxLines: 3, maxLength: _kMaxDescriptionLength, decoration: _inputDecor(l10n.t('editors_competence'), Icons.psychology_rounded)),
               const SizedBox(height: 12),
-              TextField(controller: _thixChatC, maxLength: 50, decoration: _inputDecor('THIX CHAT (@handle)', Icons.alternate_email_rounded)),
+              // ✅ FIX: champ en lecture seule — voir commentaire sur
+              // _thixChatDisplayC dans les déclarations d'état. Modifier
+              // le chat THIX nécessite un flux dédié (pas encore
+              // implémenté) qui revalide format/liste-réservée/unicité
+              // côté serveur.
+              TextField(
+                controller: _thixChatDisplayC,
+                readOnly: true,
+                maxLength: 50,
+                decoration: _inputDecor('THIX CHAT (@handle)', Icons.alternate_email_rounded).copyWith(
+                  suffixIcon: const Icon(Icons.lock_outline_rounded, size: 18, color: ThixPolicy.textMuted),
+                  helperText: l10n.t('editors_thix_chat_readonly_hint'),
+                ),
+              ),
             ]),
           ),
 
@@ -1122,7 +1177,25 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
                   border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
                 ),
                 child: Column(children: [
-                  Text(l10n.t('editors_id_photos'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 13)),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(l10n.t('editors_id_photos'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 13)),
+                      if (_idVerificationStatusDisplay != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: ThixPolicy.surfaceSoft,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: ThixPolicy.border),
+                          ),
+                          child: Text(
+                            _idVerificationStatusDisplay!,
+                            style: ThixPolicy.captionStyle.copyWith(fontSize: 10, fontWeight: ThixPolicy.semiBold),
+                          ),
+                        ),
+                    ],
+                  ),
                   const SizedBox(height: 12),
                   Row(children: [
                     Expanded(child: _idSlot(kind: 'front', docId: _idFrontDocId, label: l10n.t('editors_id_front'), icon: Icons.front_hand_rounded)),
@@ -1479,7 +1552,6 @@ class _EducationEditorBodyState extends State<_EducationEditorBody> {
         label: 'deleteEducation',
       );
 
-      // Seulement après succès DB
       setState(() {
         _localEducation = copy;
         if (_editingIndex == index) _reset();
