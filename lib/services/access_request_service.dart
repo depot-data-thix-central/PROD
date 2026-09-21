@@ -243,29 +243,43 @@ class AccessRequestService {
   }
 
   Future<void> setStatus({required String requestId, required String status}) async {
-    if (_disabled) return;
-    try {
-      try {
-        await _client.rpc('thix_set_access_request_status', params: {
-          'p_request_id': requestId,
-          'p_new_status': status,
-        });
-        return;
-      } catch (e) {
-        debugPrint('AccessRequestService: rpc thix_set_access_request_status failed, fallback to update. err=$e');
-      }
-
-      final payload = <String, dynamic>{'status': status};
-      if (status.trim().toLowerCase() == 'approved') {
-        payload['approved_until'] = DateTime.now().toUtc().add(const Duration(minutes: 10)).toIso8601String();
-      }
-      await SupabaseSafeWrite.update(client: _client, table: _activeTable, patch: payload, filters: {'id': requestId});
-    } catch (e) {
-      await _disableIfMissing(e);
-      debugPrint('AccessRequestService: setStatus failed id=$requestId status=$status err=$e');
-      rethrow;
-    }
+  if (_disabled) return;
+  final authedUid = _client.auth.currentUser?.id;
+  if (authedUid == null) {
+    throw Exception('not_authenticated');
   }
+  try {
+    try {
+      await _client.rpc('thix_set_access_request_status', params: {
+        'p_request_id': requestId,
+        'p_new_status': status,
+      });
+      return;
+    } catch (e) {
+      debugPrint('AccessRequestService: rpc thix_set_access_request_status failed, fallback to update. err=$e');
+    }
+
+    // ✅ FIX: le fallback update() ne s'exécute désormais que si la ligne
+    // appartient bien à l'utilisateur courant (profile_id = auth.uid()),
+    // empêchant un utilisateur de s'auto-approuver l'accès au profil de
+    // quelqu'un d'autre en appelant setStatus avec l'id d'une requête
+    // dont il n'est pas le propriétaire cible.
+    final payload = <String, dynamic>{'status': status};
+    if (status.trim().toLowerCase() == 'approved') {
+      payload['approved_until'] = DateTime.now().toUtc().add(const Duration(minutes: 10)).toIso8601String();
+    }
+    await SupabaseSafeWrite.update(
+      client: _client,
+      table: _activeTable,
+      patch: payload,
+      filters: {'id': requestId, 'profile_id': authedUid},
+    );
+  } catch (e) {
+    await _disableIfMissing(e);
+    debugPrint('AccessRequestService: setStatus failed id=$requestId status=$status err=$e');
+    rethrow;
+  }
+}
 
   Future<void> approveFor10Minutes({required String requestId}) => setStatus(requestId: requestId, status: 'approved');
 
