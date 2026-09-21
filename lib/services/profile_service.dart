@@ -251,6 +251,32 @@ class ProfileService {
 
   // ─── Mises à jour du profil principal ──────────────────────────────────
 
+  /// ✅ FIX SÉCURITÉ CRITIQUE (x2) :
+  ///
+  /// 1. `thixChat` : ce paramètre n'écrit plus jamais `thix_chat`. Cette
+  ///    colonne est désormais protégée côté serveur par
+  ///    trg_guard_profiles_protected_columns — un simple UPDATE
+  ///    (authenticated, non-admin) échoue avec
+  ///    'protected_column_change_denied'. Avant ce fix, updateProfile()
+  ///    envoyait ce champ tel quel, sans jamais revalider le format
+  ///    (@[a-z0-9._]{3,20}), la liste des chats réservés (@admin, @thix,
+  ///    etc.) ni l'unicité de façon atomique — un utilisateur pouvait
+  ///    réclamer n'importe quel chat, y compris un chat réservé, via cet
+  ///    écran. Le paramètre est conservé dans la signature pour ne pas
+  ///    casser les appelants existants, mais il est désormais ignoré ici
+  ///    avec un avertissement de log — tant qu'une RPC serveur dédiée
+  ///    (ex: update_my_thix_chat, appliquant les mêmes règles que
+  ///    finalize_registration) n'existe pas pour le changement de chat
+  ///    post-inscription.
+  ///
+  /// 2. `idVerificationStatus` : ce paramètre n'écrit plus jamais
+  ///    `id_verification_status`. Cette colonne est également protégée
+  ///    par le même trigger. Avant ce fix, un client pouvait envoyer
+  ///    n'importe quelle valeur ('approved', 'verified'...) et
+  ///    s'auto-certifier d'identité sans jamais avoir fourni de documents
+  ///    réels. Seul un processus serveur (revue admin après upload,
+  ///    webhook d'un prestataire tiers de vérification d'identité) doit
+  ///    pouvoir faire évoluer ce statut.
   Future<void> updateProfile({
     required String userId,
     String? displayName,
@@ -263,6 +289,10 @@ class ProfileService {
     String? countryOrOrigin,
     String? maritalStatus,
     String? gender,
+    @Deprecated(
+      'thix_chat est protégé côté serveur (trg_guard_profiles_protected_columns). '
+      'Ce paramètre est ignoré — utilisez une future RPC dédiée pour changer le chat.',
+    )
     String? thixChat,
     String? contactPhone,
     String? dateOfBirth,
@@ -299,6 +329,10 @@ class ProfileService {
     String? idDocumentFrontDocId,
     String? idDocumentBackDocId,
     String? idDocumentSelfieDocId,
+    @Deprecated(
+      'id_verification_status est protégé côté serveur (trg_guard_profiles_protected_columns). '
+      'Ce paramètre est ignoré — seul un processus serveur peut le modifier.',
+    )
     String? idVerificationStatus,
     String? competence,
     List<Map<String, dynamic>>? languagesDetailed,
@@ -316,6 +350,19 @@ class ProfileService {
     final effectiveUserId = (authedUid != null && authedUid.trim().isNotEmpty)
         ? authedUid
         : userId;
+
+    if (thixChat != null) {
+      debugPrint(
+        '[ProfileService] ⚠️ updateProfile: thixChat="$thixChat" fourni mais IGNORÉ '
+        '(colonne protégée côté serveur — voir doc de la méthode).',
+      );
+    }
+    if (idVerificationStatus != null) {
+      debugPrint(
+        '[ProfileService] ⚠️ updateProfile: idVerificationStatus="$idVerificationStatus" fourni mais IGNORÉ '
+        '(colonne protégée côté serveur — voir doc de la méthode).',
+      );
+    }
 
     final data = <String, dynamic>{};
 
@@ -351,7 +398,7 @@ class ProfileService {
     put('country_or_origin', countryOrOrigin);
     put('marital_status', maritalStatus);
     put('gender', gender);
-    put('thix_chat', thixChat);
+    // ✅ FIX: 'thix_chat' n'est plus écrit ici — colonne protégée serveur.
     put('contact_phone', contactPhone);
     put('date_of_birth', dateOfBirth);
     put('place_of_birth', placeOfBirth);
@@ -391,7 +438,8 @@ class ProfileService {
     put('id_document_front_doc_id', idDocumentFrontDocId);
     put('id_document_back_doc_id', idDocumentBackDocId);
     put('id_document_selfie_doc_id', idDocumentSelfieDocId);
-    put('id_verification_status', idVerificationStatus);
+    // ✅ FIX: 'id_verification_status' n'est plus écrit ici — colonne
+    // protégée serveur (voir doc de la méthode).
     put('competence', competence);
     put('languages_detailed', languagesDetailed);
     put('trainings', trainings);
@@ -648,30 +696,29 @@ class ProfileService {
     return newId;
   }
 
+  // ✅ FIX SÉCURITÉ : reserveThixChat() désactivée. Elle écrivait
+  // directement 'thix_chat' via un simple UPDATE, sans jamais valider le
+  // format (@[a-z0-9._]{3,20}), sans vérifier la liste des chats réservés
+  // (@admin, @thix, @support, etc.), et avec une vérification d'unicité
+  // non atomique (SELECT puis UPDATE séparés — une course entre deux
+  // appels simultanés pouvait laisser passer un doublon). Elle est de
+  // toute façon désormais bloquée par trg_guard_profiles_protected_columns
+  // côté serveur (échoue avec 'protected_column_change_denied'). Elle
+  // lève maintenant explicitement pour que tout appelant restant soit
+  // immédiatement visible en test, plutôt que d'échouer silencieusement
+  // avec une erreur Postgrest peu claire.
+  @Deprecated(
+    'reserveThixChat est désactivée — thix_chat est protégé côté serveur. '
+    'Utilisez finalize_registration() (première réservation, à l\'inscription) '
+    'ou une future RPC dédiée pour un changement post-inscription.',
+  )
   Future<String> reserveThixChat({required String userId, required String desired}) async {
-    final formattedHandle = desired.startsWith('@') ? desired : '@$desired';
-
-    try {
-      final existing = await SupabaseConfig.client
-          .from(table)
-          .select('id')
-          .eq('thix_chat', formattedHandle)
-          .neq('id', userId)
-          .maybeSingle();
-
-      if (existing != null) {
-        throw Exception('Ce pseudo THIX CHAT est déjà utilisé.');
-      }
-
-      await SupabaseConfig.client.from(table).update({
-        'thix_chat': formattedHandle,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      }).eq('id', userId);
-
-      return formattedHandle;
-    } catch (e) {
-      debugPrint('Error reserveThixChat: $e');
-      rethrow;
-    }
+    throw UnsupportedError(
+      'reserveThixChat() est désactivée : thix_chat est protégé côté '
+      'serveur (trg_guard_profiles_protected_columns) et cette méthode ne '
+      'validait ni le format, ni la liste des chats réservés, ni '
+      'l\'unicité de façon atomique. Utilisez finalize_registration() ou '
+      'une RPC serveur dédiée pour tout changement de chat.',
+    );
   }
 }
