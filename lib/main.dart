@@ -41,7 +41,6 @@ import 'package:thix_id/presentation/chat/call/global_call_listener.dart';
 import 'package:thix_id/presentation/common/global_notification_listener.dart';
 import 'package:thix_id/presentation/thix_sos/widgets/global_sos_listener.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:thix_id/data/offline/home_offline_cache.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
 
 // 🛡️ IMPORT AJOUTÉ POUR LE SUIVI DES CRASHS (PROD)
@@ -75,7 +74,6 @@ Future<void> main() async {
 
       try {
         await Hive.initFlutter().timeout(_kInitTimeout);
-        await HomeOfflineCache.init().timeout(_kInitTimeout);
         await ChatOfflineCache.init().timeout(_kInitTimeout);
         _log('✓ Offline cache OK');
       } catch (e) {
