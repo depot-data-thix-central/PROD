@@ -12,7 +12,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:image/image.dart' as img;
-import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'package:thix_id/auth/auth_controller.dart';
 import 'package:thix_id/models/thix_profile.dart';
@@ -23,7 +22,7 @@ import 'package:thix_id/services/profile_service.dart';
 import 'package:thix_id/services/notification_counters_service.dart';
 import 'package:thix_id/services/thix_id_service.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/data/offline/home_offline_cache.dart';
+import 'package:thix_id/widgets/no_connection_overlay.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
@@ -102,19 +101,19 @@ class _HomeValidators {
     try {
       final image = img.decodeImage(bytes);
       if (image == null) return false;
-      
+
       final width = image.width;
       final height = image.height;
-      
+
       if (width < _kMinImageWidth || height < _kMinImageHeight) {
         return false;
       }
-      
+
       final aspectRatio = width / height;
       if (aspectRatio > _kMaxAspectRatio || aspectRatio < 1 / _kMaxAspectRatio) {
         return false;
       }
-      
+
       return true;
     } catch (_) {
       return false;
@@ -179,13 +178,11 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   bool _searching = false;
   bool _isAdmin = false;
   bool _uploadingBanner = false;
-  bool _offline = false;
 
   @override
   void initState() {
     super.initState();
     debugPrint('[HomePage] 🏠 Page opened');
-    _bootstrapOffline();
     _checkAdminRole();
   }
 
@@ -195,41 +192,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
     _headlinesController.dispose();
     debugPrint('[HomePage] 👋 Page disposed');
     super.dispose();
-  }
-
-  // ============================================================
-  // OFFLINE SUPPORT
-  // ============================================================
-  Future<void> _bootstrapOffline() async {
-    final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null) return;
-
-    await HomeOfflineCache.instance.clearIfOtherUser(uid);
-
-    final net = await Connectivity().checkConnectivity();
-    final online = !net.contains(ConnectivityResult.none);
-
-    if (!online) {
-      final local = HomeOfflineCache.instance.read(uid: uid);
-      if (!mounted) return;
-      setState(() => _offline = true);
-      debugPrint('[HomePage] 📴 offline snapshot=${local != null}');
-      return;
-    }
-
-    _persistSnapshot(uid);
-  }
-
-  Future<void> _persistSnapshot(String uid) async {
-    final user = context.read<AuthController>().currentUser;
-    await HomeOfflineCache.instance.save(
-      uid: uid,
-      displayName: user?.displayName,
-      thixId: user?.thixId,
-      certificationTier: user?.certificationTier,
-      certificationStatus: user?.certificationStatus,
-      banners: const [],
-    );
   }
 
   // ============================================================
@@ -256,9 +218,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
         final isAdmin = role == 'admin' || role == 'entreprise' || role == 'support';
         setState(() => _isAdmin = isAdmin);
         debugPrint('[HomePage] ✓ Admin check: $isAdmin (role=$role)');
-        
-        final uid = user.id;
-        unawaited(_persistSnapshot(uid));
       }
     } catch (e) {
       debugPrint('[HomePage] ⚠️ Admin check failed (non-critical): $e');
@@ -308,7 +267,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
       }
 
       final file = result.files.first;
-      
+
       // Validation 1: Type de fichier
       if (!_HomeValidators.isValidFileType(file.extension)) {
         _showError(l10n.t('home_banner_invalid_type'));
@@ -560,7 +519,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   void _handleServiceTap(String serviceKey) {
     HapticFeedback.selectionClick();
     final uid = context.read<AuthController>().currentUser?.id;
-    
+
     if (uid != null) {
       final section = _mapServiceToSection(serviceKey);
       if (section != null) {
@@ -680,7 +639,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
             : l10n.t('home_greeting');
 
     final photoUrl = auth.currentUser?.photoUrl;
-    
+
     final badgeCountsStream = auth.currentUser == null
         ? Stream<SectionBadgeCounts>.value(SectionBadgeCounts.zero)
         : _counters.streamCounts(auth.currentUser!.id);
@@ -689,41 +648,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
       backgroundColor: ThixPolicy.surfaceSoft,
       body: Stack(
         children: [
-          if (_offline)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                bottom: false,
-                child: Material(
-                  color: const Color(0xFFF59E0B),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.wifi_off, size: 16, color: Colors.white),
-                        const SizedBox(width: 8),
-                        const Expanded(
-                          child: Text(
-                            'Hors ligne — dernière version enregistrée',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            setState(() => _offline = false);
-                            _bootstrapOffline();
-                            _checkAdminRole();
-                          },
-                          child: const Text('Réessayer', style: TextStyle(color: Colors.white)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
           _HomeBackground(),
           _HomeContent(
             safeTop: safeTop,
@@ -749,6 +673,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
             onScanQrTap: _openScanQr,
           ),
           if (_searching) _SearchingOverlay(),
+          const NoConnectionOverlay(),
         ],
       ),
     );
@@ -1033,7 +958,7 @@ class _BannerUploadDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    
+
     return BackdropFilter(
       filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
       child: AlertDialog(
