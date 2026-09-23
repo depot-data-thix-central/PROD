@@ -3,11 +3,13 @@
 // EventPaymentPage — Production Enterprise (Sécurité + i18n + A11y)
 //
 // Features :
+// - Paiements via SerdiPay (M-Pesa, Airtel, Orange, Afrimoney, Carte)
 // - Validation UUID stricte sur bookingId
 // - Validation phone regex international
 // - Sanitization XSS sur tous les inputs
 // - Throttling anti-double-pay (1s)
-// - Timeout stream 5 minutes
+// - Stream principal sur 'event_bookings' + fallback sur 'serdipay_transactions'
+// - Timeout 5 minutes (couvre 2 min max SerdiPay selon documentation)
 // - Intégration AppLocalizations (8 langues)
 // - Semantics complet pour a11y
 // - Logging structuré (_PaymentLogger)
@@ -26,7 +28,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/thix_design_policy.dart';
 import '../../l10n/app_localizations.dart';
-import '../../providers/event_payment_provider.dart';
 import '../../services/event_payment_service.dart';
 
 // ============================================================================
@@ -50,6 +51,7 @@ class EventTheme {
 const Duration _kPayThrottle = Duration(seconds: 1);
 const Duration _kStreamTimeout = Duration(minutes: 5);
 const Duration _kPaymentTimeout = Duration(seconds: 30);
+const Duration _kPollingInterval = Duration(seconds: 4);
 
 // ============================================================================
 // LOGGING
@@ -62,7 +64,9 @@ class _PaymentLogger {
 
   static void _log(String l, String m, Map<String, dynamic>? d) {
     if (!kDebugMode && l == 'INFO') return;
-    final data = d != null ? ' ${d.entries.map((e) => '${e.key}=${e.value}').join(', ')}' : '';
+    final data = d != null
+        ? ' ${d.entries.map((e) => '${e.key}=${e.value}').join(', ')}'
+        : '';
     debugPrint('[$_tag] [$l] $m$data');
   }
 }
@@ -72,16 +76,16 @@ class _PaymentLogger {
 // ============================================================================
 class _Validators {
   _Validators._();
-  
+
   static final _uuidRegex = RegExp(
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
   );
-  
+
   static final _phoneRegex = RegExp(r'^\+?[1-9]\d{6,14}$');
-  
+
   static bool isValidUuid(String? id) =>
       id != null && id.length == 36 && _uuidRegex.hasMatch(id);
-  
+
   static bool isValidPhone(String? phone) =>
       phone != null && _phoneRegex.hasMatch(phone.trim());
 }
@@ -92,7 +96,7 @@ class _Sanitizer {
     if (input == null) return '';
     var s = input
         .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll(RegExp(r'[^\d+\s-]'), '') // Only digits, +, spaces, dashes
+        .replaceAll(RegExp(r'[^\d+\s-]'), '')
         .trim();
     if (s.length > maxLength) s = s.substring(0, maxLength);
     return s;
@@ -100,14 +104,14 @@ class _Sanitizer {
 }
 
 // ============================================================================
-// PROVIDER (corrigé - autoDispose + factory)
+// PROVIDER (autoDispose)
 // ============================================================================
-final eventPaymentProvider = Provider.autoDispose<EventPaymentProvider>((ref) {
-  return EventPaymentProvider(EventPaymentService(Supabase.instance.client));
-});
+final eventPaymentServiceProvider = Provider.autoDispose<EventPaymentService>(
+  (ref) => EventPaymentService(Supabase.instance.client),
+);
 
 // ============================================================================
-// PAYMENT METHODS (avec i18n)
+// PAYMENT METHODS (SerdiPay : 4 opérateurs mobile money + carte)
 // ============================================================================
 class _PaymentMethod {
   final String id;
@@ -131,7 +135,7 @@ const List<_PaymentMethod> _kMethods = [
   _PaymentMethod(
     id: 'mpesa',
     nameKey: 'payment_mpesa',
-    brand: 'Vodacom',
+    brand: 'Vodacom M-Pesa',
     color: Color(0xFF00A651),
     icon: Icons.phone_android_rounded,
     requiresPhone: true,
@@ -139,7 +143,7 @@ const List<_PaymentMethod> _kMethods = [
   _PaymentMethod(
     id: 'airtel',
     nameKey: 'payment_airtel',
-    brand: 'Airtel',
+    brand: 'Airtel Money',
     color: Color(0xFFFF0000),
     icon: Icons.phone_android_rounded,
     requiresPhone: true,
@@ -147,15 +151,23 @@ const List<_PaymentMethod> _kMethods = [
   _PaymentMethod(
     id: 'orange',
     nameKey: 'payment_orange',
-    brand: 'Orange',
+    brand: 'Orange Money',
     color: Color(0xFFFF6600),
     icon: Icons.phone_android_rounded,
     requiresPhone: true,
   ),
   _PaymentMethod(
-    id: 'visa_master',
+    id: 'afrimoney',
+    nameKey: 'payment_afrimoney',
+    brand: 'Afrimoney',
+    color: Color(0xFF003DA5),
+    icon: Icons.phone_android_rounded,
+    requiresPhone: true,
+  ),
+  _PaymentMethod(
+    id: 'card',
     nameKey: 'payment_card',
-    brand: 'Card',
+    brand: 'Visa / Mastercard',
     color: Color(0xFF1A1F71),
     icon: Icons.credit_card_rounded,
     requiresPhone: false,
@@ -182,12 +194,25 @@ class EventPaymentPage extends ConsumerStatefulWidget {
 }
 
 class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
-  String _selectedId = 'airtel';
+  String _selectedId = 'mpesa';
   final _phoneCtrl = TextEditingController();
-  StreamSubscription? _sub;
+
+  // Streams
+  StreamSubscription<List<Map<String, dynamic>>>? _ordersSub;
+  StreamSubscription<List<Map<String, dynamic>>>? _serdiSub;
+
+  // Timers
   Timer? _streamTimer;
+  Timer? _pollingTimer;
+
   bool _processing = false;
+  bool _isResolved = false;
   DateTime? _lastPay;
+  int _pollingAttempts = 0;
+  int _pollingErrors = 0;
+
+  /// ID de la transaction SerdiPay retourné après initiation (pour écoute fallback)
+  String? _serdiTransactionId;
 
   _PaymentMethod get _selectedMethod =>
       _kMethods.firstWhere((m) => m.id == _selectedId);
@@ -195,8 +220,7 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
   @override
   void initState() {
     super.initState();
-    
-    // Validation UUID
+
     if (!_Validators.isValidUuid(widget.bookingId)) {
       _PaymentLogger.error('Invalid bookingId', {'id': widget.bookingId});
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -208,7 +232,7 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
       });
       return;
     }
-    
+
     _PaymentLogger.info('EventPaymentPage init', {
       'bookingId': widget.bookingId,
       'amount': widget.amount,
@@ -219,10 +243,20 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
   @override
   void dispose() {
     _phoneCtrl.dispose();
-    _sub?.cancel();
-    _streamTimer?.cancel();
+    _cleanup();
     _PaymentLogger.info('EventPaymentPage disposed');
     super.dispose();
+  }
+
+  void _cleanup() {
+    _ordersSub?.cancel();
+    _ordersSub = null;
+    _serdiSub?.cancel();
+    _serdiSub = null;
+    _streamTimer?.cancel();
+    _streamTimer = null;
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
   }
 
   bool _canPay() {
@@ -236,10 +270,10 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
   }
 
   Future<void> _pay() async {
-    if (!_canPay()) return;
-    
+    if (!_canPay() || _isResolved) return;
+
     final l10n = AppLocalizations.of(context);
-    
+
     // Validation phone si requise
     if (_selectedMethod.requiresPhone) {
       final phone = _Sanitizer.text(_phoneCtrl.text);
@@ -248,22 +282,21 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
         return;
       }
     }
-    
+
     HapticFeedback.mediumImpact();
     setState(() => _processing = true);
     _PaymentLogger.info('Payment started', {
       'method': _selectedId,
       'amount': widget.amount,
     });
-    
+
     try {
-      final svc = ref.read(eventPaymentProvider);
-      final phone = _selectedMethod.requiresPhone
-          ? _Sanitizer.text(_phoneCtrl.text)
-          : null;
-      
-      final ok = await svc
-          .makePayment(
+      final svc = ref.read(eventPaymentServiceProvider);
+      final phone =
+          _selectedMethod.requiresPhone ? _Sanitizer.text(_phoneCtrl.text) : null;
+
+      final result = await svc
+          .processPayment(
             bookingId: widget.bookingId,
             amount: widget.amount,
             currency: widget.currency,
@@ -271,17 +304,28 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
             phoneNumber: phone,
           )
           .timeout(_kPaymentTimeout);
-      
+
       if (!mounted) return;
-      
+
       setState(() => _processing = false);
-      
-      if (ok) {
-        _PaymentLogger.info('Payment initiated, waiting confirmation');
+
+      final success = result['success'] == true;
+      final needsWaiting = result['needs_waiting'] == true;
+      final serdiTxId = result['transaction_id']?.toString();
+
+      if (success && needsWaiting) {
+        _serdiTransactionId = serdiTxId;
+        _PaymentLogger.info('Payment initiated, waiting confirmation', {
+          'serdi_tx_id': serdiTxId,
+        });
         _showWaitingDialog(l10n);
+      } else if (success) {
+        // Paiement immédiat (ex: THIX Money)
+        _onPaymentSuccess();
       } else {
-        _PaymentLogger.warn('Payment initiation failed');
-        _showError(l10n.t('payment_failed'));
+        final errorMsg = result['error']?.toString() ?? l10n.t('payment_failed');
+        _PaymentLogger.warn('Payment initiation failed', {'error': errorMsg});
+        _showError(errorMsg);
       }
     } on TimeoutException {
       _PaymentLogger.error('Payment timeout');
@@ -312,7 +356,7 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
           backgroundColor: EventTheme.surface,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(ThixPolicy.r2Xl),
-            side: BorderSide(color: EventTheme.border),
+            side: const BorderSide(color: EventTheme.border),
           ),
           child: Padding(
             padding: const EdgeInsets.all(ThixPolicy.s24),
@@ -348,7 +392,7 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
                   ),
                 ),
                 const SizedBox(height: ThixPolicy.s20),
-                CircularProgressIndicator(color: EventTheme.primary),
+                const CircularProgressIndicator(color: EventTheme.primary),
                 const SizedBox(height: ThixPolicy.s16),
                 Text(
                   l10n.t('payment_validate_on_phone'),
@@ -362,68 +406,203 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
         ),
       ),
     );
-    
+
     _startStreamListening();
+    _startPolling();
   }
 
+  // ============================================================
+  // REALTIME STREAMS
+  // ============================================================
+
   void _startStreamListening() {
-    _sub?.cancel();
-    _streamTimer?.cancel();
-    
-    _sub = Supabase.instance.client
+    _cleanup();
+
+    // 1. Stream principal sur 'event_bookings' (source de vérité)
+    _ordersSub = Supabase.instance.client
         .from('event_bookings')
         .stream(primaryKey: ['id'])
         .eq('id', widget.bookingId)
         .listen(
       (data) {
-        if (!mounted || data.isEmpty) return;
-        
-        final status = data.first['payment_status']?.toString();
-        
-        if (status == 'paid') {
-          _PaymentLogger.info('Payment confirmed');
-          _onPaymentSuccess();
-        } else if (status == 'failed' || status == 'cancelled') {
-          _PaymentLogger.warn('Payment failed/cancelled', {'status': status});
-          _onPaymentFailure(status ?? 'failed');
-        }
+        if (!mounted || _isResolved || data.isEmpty) return;
+
+        // event_bookings peut avoir soit 'payment_status' soit 'status'
+        final status = (data.first['payment_status'] ?? data.first['status'])
+            ?.toString();
+        _PaymentLogger.info('Orders stream event', {'status': status});
+        _handleStatus(status);
       },
       onError: (error) {
-        _PaymentLogger.error('Stream error', {'error': '$error'});
-        _onPaymentFailure('stream_error');
+        _PaymentLogger.error('Orders stream error', {'error': '$error'});
       },
     );
-    
-    // Timeout de 5 minutes
+
+    // 2. Stream fallback sur 'serdipay_transactions' (si SerdiPay)
+    final serdiId = _serdiTransactionId;
+    if (serdiId != null && serdiId.isNotEmpty) {
+      _serdiSub = Supabase.instance.client
+          .from('serdipay_transactions')
+          .stream(primaryKey: ['id'])
+          .eq('id', serdiId)
+          .listen(
+        (data) {
+          if (!mounted || _isResolved || data.isEmpty) return;
+          final status = data.first['status']?.toString();
+          _PaymentLogger.info('Serdi stream event', {'status': status});
+          _handleStatus(_mapSerdiStatus(status));
+        },
+        onError: (error) {
+          _PaymentLogger.error('Serdi stream error', {'error': '$error'});
+        },
+      );
+    }
+
+    // Timeout global (5 min)
     _streamTimer = Timer(_kStreamTimeout, () {
-      if (mounted) {
-        _PaymentLogger.warn('Stream timeout');
+      if (mounted && !_isResolved) {
+        _PaymentLogger.warn('Stream timeout (5 min)');
         _onPaymentFailure('timeout');
       }
     });
   }
 
+  // ============================================================
+  // POLLING (fallback si Realtime ne fonctionne pas)
+  // ============================================================
+
+  void _startPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(_kPollingInterval, (_) => _pollStatus());
+  }
+
+  Future<void> _pollStatus() async {
+    if (!mounted || _isResolved) {
+      _pollingTimer?.cancel();
+      return;
+    }
+
+    _pollingAttempts++;
+    if (_pollingAttempts > 150) {
+      _PaymentLogger.warn('Polling limit reached');
+      _pollingTimer?.cancel();
+      return;
+    }
+
+    try {
+      // Poll event_bookings
+      final res = await Supabase.instance.client
+          .from('event_bookings')
+          .select('payment_status,status')
+          .eq('id', widget.bookingId)
+          .maybeSingle();
+
+      if (res != null && mounted && !_isResolved) {
+        final status = (res['payment_status'] ?? res['status'])?.toString();
+        _PaymentLogger.info(
+          'Poll #$_pollingAttempts (event_bookings): status=$status',
+        );
+        _handleStatus(status);
+      }
+
+      // Poll serdipay_transactions en parallèle
+      final serdiId = _serdiTransactionId;
+      if (serdiId != null && serdiId.isNotEmpty && mounted && !_isResolved) {
+        try {
+          final serdiRes = await Supabase.instance.client
+              .from('serdipay_transactions')
+              .select('status')
+              .eq('id', serdiId)
+              .maybeSingle();
+
+          if (serdiRes != null && mounted && !_isResolved) {
+            final status = serdiRes['status']?.toString();
+            _PaymentLogger.info(
+              'Poll #$_pollingAttempts (serdipay): status=$status',
+            );
+            _handleStatus(_mapSerdiStatus(status));
+          }
+        } catch (e) {
+          _PaymentLogger.warn('Serdi poll error (non-critical): $e');
+        }
+      }
+    } catch (e) {
+      _pollingErrors++;
+      _PaymentLogger.error('Poll error #$_pollingErrors: $e');
+      if (_pollingErrors >= 5) {
+        _pollingTimer?.cancel();
+      }
+    }
+  }
+
+  /// Mappe les statuts 'serdipay_transactions.status' vers le vocabulaire event_bookings
+  String? _mapSerdiStatus(String? serdiStatus) {
+    switch (serdiStatus) {
+      case 'paid':
+        return 'paid';
+      case 'failed':
+        return 'failed';
+      case 'processing':
+      case 'pending':
+        return 'pending';
+      default:
+        return serdiStatus;
+    }
+  }
+
+  // ============================================================
+  // HANDLERS D'ÉTAT
+  // ============================================================
+
+  void _handleStatus(String? status) {
+    if (_isResolved || status == null) return;
+
+    switch (status) {
+      case 'paid':
+      case 'confirmed':
+        _onPaymentSuccess();
+        break;
+      case 'failed':
+      case 'cancelled':
+        _onPaymentFailure(status);
+        break;
+      default:
+        // pending / awaiting_payment / processing → continuer à attendre
+        break;
+    }
+  }
+
   void _onPaymentSuccess() {
-    _sub?.cancel();
-    _streamTimer?.cancel();
-    
+    if (_isResolved) return;
+    _isResolved = true;
+
+    _PaymentLogger.info('Payment confirmed');
+    _cleanup();
+
     if (!mounted) return;
-    
+
+    HapticFeedback.mediumImpact();
+
+    // Fermer le dialog puis naviguer vers le ticket
     Navigator.of(context, rootNavigator: true).pop();
     context.pushReplacement('/thix-event/ticket/${widget.bookingId}');
   }
 
   void _onPaymentFailure(String reason) {
-    _sub?.cancel();
-    _streamTimer?.cancel();
-    
+    if (_isResolved) return;
+    _isResolved = true;
+
+    _PaymentLogger.warn('Payment failed/cancelled', {'reason': reason});
+    _cleanup();
+
     if (!mounted) return;
-    
+
+    HapticFeedback.heavyImpact();
     Navigator.of(context, rootNavigator: true).pop();
-    
+
     final l10n = AppLocalizations.of(context);
     String message;
-    
+
     switch (reason) {
       case 'timeout':
         message = l10n.t('payment_timeout');
@@ -438,7 +617,7 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
       default:
         message = l10n.t('payment_failed');
     }
-    
+
     _showError(message);
   }
 
@@ -446,17 +625,25 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Row(children: [
+          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(message)),
+        ]),
         backgroundColor: ThixPolicy.danger,
         behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
+  // ============================================================
+  // BUILD
+  // ============================================================
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    
+
     return Scaffold(
       backgroundColor: EventTheme.bg,
       appBar: PreferredSize(
@@ -506,11 +693,8 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── MONTANT ──
             _buildAmountCard(l10n),
             const SizedBox(height: ThixPolicy.s24),
-            
-            // ── MÉTHODES DE PAIEMENT ──
             Text(
               l10n.t('payment_choose_method'),
               style: ThixPolicy.titleStyle.copyWith(
@@ -520,14 +704,10 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
             ),
             const SizedBox(height: ThixPolicy.s12),
             ..._kMethods.map((m) => _buildMethodCard(l10n, m)),
-            
-            // ── CHAMP TÉLÉPHONE ──
             if (_selectedMethod.requiresPhone) ...[
               const SizedBox(height: ThixPolicy.s16),
               _buildPhoneField(l10n),
             ],
-            
-            // ── INFO SÉCURITÉ ──
             const SizedBox(height: ThixPolicy.s20),
             _buildSecurityInfo(l10n),
           ],
@@ -587,7 +767,7 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
 
   Widget _buildMethodCard(AppLocalizations l10n, _PaymentMethod method) {
     final isSelected = _selectedId == method.id;
-    
+
     return Padding(
       padding: const EdgeInsets.only(bottom: ThixPolicy.s10),
       child: Semantics(
@@ -675,7 +855,7 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
           hintStyle: ThixPolicy.bodyStyle.copyWith(
             color: EventTheme.textMuted,
           ),
-          prefixIcon: Icon(
+          prefixIcon: const Icon(
             Icons.phone_outlined,
             color: EventTheme.textSecondary,
           ),
@@ -709,7 +889,7 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.shield_outlined, color: EventTheme.primary, size: 18),
+          const Icon(Icons.shield_outlined, color: EventTheme.primary, size: 18),
           const SizedBox(width: ThixPolicy.s10),
           Expanded(
             child: Text(
@@ -730,7 +910,7 @@ class _EventPaymentPageState extends ConsumerState<EventPaymentPage> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       decoration: BoxDecoration(
         color: EventTheme.surface.withOpacity(0.96),
-        border: Border(top: BorderSide(color: EventTheme.border)),
+        border: const Border(top: BorderSide(color: EventTheme.border)),
       ),
       child: SafeArea(
         top: false,
