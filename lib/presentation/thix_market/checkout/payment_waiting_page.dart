@@ -1,6 +1,14 @@
 // lib/presentation/thix_market/checkout/payment_waiting_page.dart
+//
+// Page d'attente paiement pour Thix Market (Market uniquement)
+// Supporte :
+//   - Mobile Money (M-Pesa, Airtel, Orange, Afrimoney) via SerdiPay
+//   - Carte bancaire via SerdiPay
+// Écoute principale : table 'orders' (colonne 'payment_status')
+// Écoute secondaire (fallback) : table 'serdipay_transactions' si serdiTransactionId fourni
+// Timeout : 3 min (couvre les 2 min max SerdiPay selon documentation officielle)
+
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +21,7 @@ import 'checkout_provider.dart';
 // CONSTANTES
 // ============================================================================
 const Duration _kPollingInterval = Duration(seconds: 4);
+// 3 min couvre les 2 min max SerdiPay + marge réseau
 const Duration _kTimeoutDuration = Duration(minutes: 3);
 const Duration _kNetworkRetryDelay = Duration(seconds: 2);
 const int _kMaxPollingErrors = 5;
@@ -26,6 +35,14 @@ class _PaymentWaitingValidators {
   static bool isValidOrderId(String? id) {
     if (id == null || id.trim().isEmpty) return false;
     return RegExp(r'^[0-9a-fA-F-]{8,}$').hasMatch(id.trim());
+  }
+
+  /// Valide un ID de transaction SerdiPay (UUID v4)
+  static bool isValidSerdiId(String? id) {
+    if (id == null || id.trim().isEmpty) return false;
+    return RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
+    ).hasMatch(id.trim());
   }
 
   static String shortOrderId(String id) {
@@ -58,9 +75,20 @@ extension _PaymentWaitingL10n on BuildContext {
 // PAGE PRINCIPALE
 // ============================================================================
 class PaymentWaitingPage extends ConsumerStatefulWidget {
+  /// ID de la commande dans la table 'orders' (source de vérité finale)
   final String orderId;
 
-  const PaymentWaitingPage({super.key, required this.orderId});
+  /// ID de la transaction SerdiPay (UUID v4, optionnel).
+  /// Fourni lorsque le paiement a été initié via SerdiPay (Mobile Money ou Carte).
+  /// Permet d'écouter en parallèle la table 'serdipay_transactions' comme fallback
+  /// en cas de latence du webhook qui met à jour 'orders'.
+  final String? serdiTransactionId;
+
+  const PaymentWaitingPage({
+    super.key,
+    required this.orderId,
+    this.serdiTransactionId,
+  });
 
   @override
   ConsumerState<PaymentWaitingPage> createState() => _PaymentWaitingPageState();
@@ -68,17 +96,21 @@ class PaymentWaitingPage extends ConsumerStatefulWidget {
 
 class _PaymentWaitingPageState extends ConsumerState<PaymentWaitingPage>
     with SingleTickerProviderStateMixin {
-  StreamSubscription<List<Map<String, dynamic>>>? _subscription;
+  // Stream principal sur 'orders' (source de vérité)
+  StreamSubscription<List<Map<String, dynamic>>>? _ordersSubscription;
+
+  // Stream fallback sur 'serdipay_transactions' (uniquement si SerdiPay)
+  StreamSubscription<List<Map<String, dynamic>>>? _serdiSubscription;
+
   Timer? _timeoutTimer;
   Timer? _pollingTimer;
   Timer? _countdownTimer;
 
-  bool _isResolved = false; // Unified guard for success/failed/timeout
+  bool _isResolved = false;
   bool _timedOut = false;
   bool _orderNotFound = false;
   Duration _remainingTime = _kTimeoutDuration;
 
-  // Counters pour debug/monitoring
   int _pollingAttempts = 0;
   int _pollingErrors = 0;
 
@@ -93,11 +125,23 @@ class _PaymentWaitingPageState extends ConsumerState<PaymentWaitingPage>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
-    _pulseAnimation = CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut);
+    _pulseAnimation = CurvedAnimation(
+      parent: _pulseController,
+      curve: Curves.easeInOut,
+    );
     _pulseController.repeat(reverse: true);
 
     final isValid = _PaymentWaitingValidators.isValidOrderId(widget.orderId);
-    debugPrint('[PaymentWaiting] ⏳ Page opened for order ${_PaymentWaitingValidators.shortOrderId(widget.orderId)}${isValid ? "" : " (INVALID)"}');
+    final hasSerdi = _PaymentWaitingValidators.isValidSerdiId(
+      widget.serdiTransactionId,
+    );
+
+    debugPrint(
+      '[PaymentWaiting] ⏳ Page opened for order '
+      '${_PaymentWaitingValidators.shortOrderId(widget.orderId)}'
+      '${isValid ? "" : " (INVALID)"}'
+      '${hasSerdi ? " [SerdiPay]" : ""}',
+    );
 
     if (!isValid) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _handleInvalidOrderId());
@@ -113,7 +157,9 @@ class _PaymentWaitingPageState extends ConsumerState<PaymentWaitingPage>
   void dispose() {
     _cleanup();
     _pulseController.dispose();
-    debugPrint('[PaymentWaiting] 👋 Page disposed (polling=$_pollingAttempts, errors=$_pollingErrors)');
+    debugPrint(
+      '[PaymentWaiting] 👋 Page disposed (polling=$_pollingAttempts, errors=$_pollingErrors)',
+    );
     super.dispose();
   }
 
@@ -128,10 +174,12 @@ class _PaymentWaitingPageState extends ConsumerState<PaymentWaitingPage>
     _goToPayment();
   }
 
-  /// Cleanup centralisé : annule tous les timers + subscription
+  /// Cleanup centralisé : annule tous les timers + subscriptions
   void _cleanup() {
-    _subscription?.cancel();
-    _subscription = null;
+    _ordersSubscription?.cancel();
+    _ordersSubscription = null;
+    _serdiSubscription?.cancel();
+    _serdiSubscription = null;
     _pollingTimer?.cancel();
     _pollingTimer = null;
     _timeoutTimer?.cancel();
@@ -141,13 +189,14 @@ class _PaymentWaitingPageState extends ConsumerState<PaymentWaitingPage>
   }
 
   // ============================================================
-  // REALTIME STREAM
+  // REALTIME STREAMS
   // ============================================================
 
   void _startListening() {
     final sanitizedId = _PaymentWaitingValidators.sanitizeOrderId(widget.orderId);
 
-    _subscription = Supabase.instance.client
+    // 1. Stream principal sur 'orders' (source de vérité finale)
+    _ordersSubscription = Supabase.instance.client
         .from('orders')
         .stream(primaryKey: ['id'])
         .eq('id', sanitizedId)
@@ -156,23 +205,70 @@ class _PaymentWaitingPageState extends ConsumerState<PaymentWaitingPage>
         if (!mounted || _isResolved) return;
 
         if (data.isEmpty) {
-          debugPrint('[PaymentWaiting] ⚠️ Stream returned empty data');
+          debugPrint('[PaymentWaiting] ⚠️ Orders stream returned empty data');
           return;
         }
 
         final status = data.first['payment_status']?.toString();
-        debugPrint('[PaymentWaiting] 📡 Stream event: payment_status=$status');
+        debugPrint('[PaymentWaiting] 📡 Orders stream: payment_status=$status');
 
         _handlePaymentStatus(status);
       },
       onError: (error) {
-        debugPrint('[PaymentWaiting] ⚠️ Stream error: $error');
-        // Polling prendra le relais
+        debugPrint('[PaymentWaiting] ⚠️ Orders stream error: $error');
       },
       onDone: () {
-        debugPrint('[PaymentWaiting] ℹ️ Stream closed');
+        debugPrint('[PaymentWaiting] ℹ️ Orders stream closed');
       },
     );
+
+    // 2. Stream fallback sur 'serdipay_transactions' (uniquement si SerdiPay)
+    // Le webhook SerdiPay met à jour d'abord cette table, puis 'orders' via
+    // finalizeReference. Écouter les 2 permet une détection plus rapide.
+    final serdiId = widget.serdiTransactionId;
+    if (serdiId != null && serdiId.isNotEmpty) {
+      _serdiSubscription = Supabase.instance.client
+          .from('serdipay_transactions')
+          .stream(primaryKey: ['id'])
+          .eq('id', serdiId)
+          .listen(
+        (data) {
+          if (!mounted || _isResolved) return;
+          if (data.isEmpty) return;
+
+          final status = data.first['status']?.toString();
+          debugPrint('[PaymentWaiting] 📡 Serdi stream: status=$status');
+
+          // Mapper les statuts SerdiPay vers le vocabulaire orders
+          final mapped = _mapSerdiStatus(status);
+          _handlePaymentStatus(mapped);
+        },
+        onError: (error) {
+          debugPrint('[PaymentWaiting] ⚠️ Serdi stream error: $error');
+        },
+      );
+    }
+  }
+
+  /// Mappe les statuts 'serdipay_transactions.status' vers 'orders.payment_status'
+  ///
+  /// Statuts SerdiPay (table serdipay_transactions):
+  ///   - pending    → pending (en attente d'envoi)
+  ///   - processing → pending (en cours chez SerdiPay)
+  ///   - paid       → paid    (succès, webhook reçu)
+  ///   - failed     → failed  (échec ou timeout)
+  String? _mapSerdiStatus(String? serdiStatus) {
+    switch (serdiStatus) {
+      case 'paid':
+        return 'paid';
+      case 'failed':
+        return 'failed';
+      case 'processing':
+      case 'pending':
+        return 'pending';
+      default:
+        return serdiStatus;
+    }
   }
 
   // ============================================================
@@ -191,7 +287,6 @@ class _PaymentWaitingPageState extends ConsumerState<PaymentWaitingPage>
 
     _pollingAttempts++;
     if (_pollingAttempts > 100) {
-      // Sécurité : arrêter le polling après 100 tentatives (~7 min)
       debugPrint('[PaymentWaiting] ⚠️ Polling limit reached, stopping');
       _pollingTimer?.cancel();
       return;
@@ -199,6 +294,8 @@ class _PaymentWaitingPageState extends ConsumerState<PaymentWaitingPage>
 
     try {
       final sanitizedId = _PaymentWaitingValidators.sanitizeOrderId(widget.orderId);
+
+      // Poll 'orders' (source de vérité)
       final res = await Supabase.instance.client
           .from('orders')
           .select('payment_status')
@@ -208,7 +305,6 @@ class _PaymentWaitingPageState extends ConsumerState<PaymentWaitingPage>
       if (!mounted || _isResolved) return;
 
       if (res == null) {
-        // Commande introuvable (supprimée ou ID invalide)
         debugPrint('[PaymentWaiting] ⚠️ Order not found in DB');
         _pollingErrors++;
         if (_pollingErrors >= _kMaxPollingErrors) {
@@ -216,16 +312,40 @@ class _PaymentWaitingPageState extends ConsumerState<PaymentWaitingPage>
           return;
         }
       } else {
-        _pollingErrors = 0; // Reset error count on successful query
+        _pollingErrors = 0;
         final status = res['payment_status']?.toString();
-        debugPrint('[PaymentWaiting] 🔁 Poll #$_pollingAttempts: payment_status=$status');
+        debugPrint(
+          '[PaymentWaiting] 🔁 Poll #$_pollingAttempts (orders): payment_status=$status',
+        );
         _handlePaymentStatus(status);
+      }
+
+      // Poll 'serdipay_transactions' en parallèle si on a l'ID (fallback rapide)
+      final serdiId = widget.serdiTransactionId;
+      if (serdiId != null && serdiId.isNotEmpty && !_isResolved) {
+        try {
+          final serdiRes = await Supabase.instance.client
+              .from('serdipay_transactions')
+              .select('status')
+              .eq('id', serdiId)
+              .maybeSingle();
+
+          if (serdiRes != null && mounted && !_isResolved) {
+            final serdiStatus = serdiRes['status']?.toString();
+            debugPrint(
+              '[PaymentWaiting] 🔁 Poll #$_pollingAttempts (serdi): status=$serdiStatus',
+            );
+            _handlePaymentStatus(_mapSerdiStatus(serdiStatus));
+          }
+        } catch (e) {
+          debugPrint('[PaymentWaiting] ⚠️ Serdi poll error (non-critical): $e');
+          // Non-bloquant : on continue avec le polling orders
+        }
       }
     } catch (e) {
       _pollingErrors++;
       debugPrint('[PaymentWaiting] ❌ Polling error #$_pollingErrors: $e');
 
-      // Si trop d'erreurs réseau consécutives, stopper le polling
       if (_pollingErrors >= _kMaxPollingErrors) {
         debugPrint('[PaymentWaiting] ⚠️ Max polling errors reached, stopping');
         _pollingTimer?.cancel();
@@ -256,7 +376,9 @@ class _PaymentWaitingPageState extends ConsumerState<PaymentWaitingPage>
   void _startTimeout() {
     _timeoutTimer = Timer(_kTimeoutDuration, () {
       if (!mounted || _isResolved) return;
-      debugPrint('[PaymentWaiting] ⏰ Timeout reached after ${_kTimeoutDuration.inMinutes}min');
+      debugPrint(
+        '[PaymentWaiting] ⏰ Timeout reached after ${_kTimeoutDuration.inMinutes}min',
+      );
       _handleTimeout();
     });
   }
@@ -266,7 +388,7 @@ class _PaymentWaitingPageState extends ConsumerState<PaymentWaitingPage>
   // ============================================================
 
   void _handlePaymentStatus(String? status) {
-    if (_isResolved) return;
+    if (_isResolved || status == null) return;
 
     switch (status) {
       case 'paid':
@@ -277,7 +399,7 @@ class _PaymentWaitingPageState extends ConsumerState<PaymentWaitingPage>
         _onPaymentFailed();
         break;
       default:
-        // pending / awaiting_payment → continuer à attendre
+        // pending / awaiting_payment / processing → continuer à attendre
         break;
     }
   }
@@ -292,7 +414,7 @@ class _PaymentWaitingPageState extends ConsumerState<PaymentWaitingPage>
 
     if (!mounted) return;
 
-    // Small delay pour laisser l'animation se compléter
+    // Petit délai pour laisser l'animation se compléter
     Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) {
         ref.read(checkoutProvider.notifier).goToStep('bon_de_commande');
@@ -315,7 +437,11 @@ class _PaymentWaitingPageState extends ConsumerState<PaymentWaitingPage>
         content: Row(children: [
           const Icon(Icons.error_outline_rounded, color: Colors.white, size: 20),
           const SizedBox(width: 8),
-          Expanded(child: Text(context.waitT('Paiement échoué ou annulé', 'Payment failed or cancelled'))),
+          Expanded(
+            child: Text(
+              context.waitT('Paiement échoué ou annulé', 'Payment failed or cancelled'),
+            ),
+          ),
         ]),
         backgroundColor: ThixPolicy.danger,
         behavior: SnackBarBehavior.floating,
