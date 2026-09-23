@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/media_service.dart';
 import '../../models/media_content.dart';
-import 'camera_capture_page.dart';
 import 'video_preview_editor_page.dart';
 import 'create_post/utils/validators.dart';
 import 'create_post/utils/create_post_constants.dart';
@@ -62,29 +61,6 @@ class _CreatePostPageState extends State<CreatePostPage> {
   void _validateSubtitle(String value) {
     final error = CreatePostValidators.validateSubtitle(value);
     setState(() => _subtitleError = error);
-  }
-
-  // Utilisé par la caméra qui retourne pour l'instant un simple String (chemin)
-  Future<void> _setProcessedVideo(String path) async {
-    final file = File(path);
-    final bytes = await file.readAsBytes();
-
-    final platformFile = PlatformFile(
-      name: path.split('/').last,
-      size: file.lengthSync(),
-      path: path,
-      bytes: bytes,
-    );
-
-    final error = CreatePostValidators.validateVideoFile(platformFile);
-    if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error), backgroundColor: CreatePostColors.danger),
-      );
-      return;
-    }
-
-    setState(() => _selectedVideo = platformFile);
   }
 
   Future<void> _pickVideo() async {
@@ -172,16 +148,6 @@ class _CreatePostPageState extends State<CreatePostPage> {
 
   void _removeEpisode(int index) {
     setState(() => _episodeFiles.removeAt(index));
-  }
-
-  Future<void> _openCameraWithBeautyFilters() async {
-    final result = await Navigator.push<String>(
-      context,
-      MaterialPageRoute(builder: (_) => const CameraCapturePage()),
-    );
-    if (result != null) {
-      await _setProcessedVideo(result);
-    }
   }
 
   Future<void> _publishPost() async {
@@ -308,7 +274,6 @@ class _CreatePostPageState extends State<CreatePostPage> {
               selectedVideo: _selectedVideo,
               isSeries: _isSeries,
               onPickVideo: _pickVideo,
-              onOpenCamera: _openCameraWithBeautyFilters,
             ),
             const SizedBox(height: 24),
 
