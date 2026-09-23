@@ -38,104 +38,54 @@ class MarketPaymentService {
         };
       }
 
-      // ========== MOBILE MONEY (SerdiPay : M-Pesa, Airtel, Orange, Afrimoney) ==========
-      if (_isSerdipayMethod(paymentMethod)) {
-        try {
-          final serdipay = SerdiPayService(_supabase);
-          final telecom = SerdipayTelecom.fromPaymentMethod(paymentMethod);
-          final normalizedCurrency =
-              currency.toUpperCase() == 'FC' ? 'CDF' : currency.toUpperCase();
+      // ========== TOUS LES AUTRES (Mobile Money + Carte) → SerdiPay ==========
+      try {
+        final serdipay = SerdiPayService(_supabase);
+        final telecom = _toSerdiPayTelecom(paymentMethod);
+        final normalizedCurrency =
+            currency.toUpperCase() == 'FC' ? 'CDF' : currency.toUpperCase();
 
-          final result = await serdipay.initiate(
-            type: SerdipayPaymentType.market,
-            referenceId: orderId,
-            amount: amount,
-            currency: normalizedCurrency,
-            telecom: telecom,
-            phoneNumber: phoneNumber ?? '',
-          );
+        final result = await serdipay.initiate(
+          type: SerdipayPaymentType.market,
+          referenceId: orderId,
+          amount: amount,
+          currency: normalizedCurrency,
+          telecom: telecom,
+          phoneNumber: phoneNumber ?? '',
+        );
 
-          debugPrint('→ serdipay-pay result: success=${result.success}, status=${result.status}');
+        debugPrint(
+            '→ SerdiPay result: success=${result.success}, status=${result.status}');
 
-          if (result.success) {
-            return {
-              'success': true,
-              'payment_status': result.status, // 'awaiting_payment' | 'paid'
-              'needs_waiting': result.needsWaiting,
-              'transaction_id': result.transactionId,
-              'serdi_session_id': result.serdiSessionId,
-              'data': result.data,
-            };
-          } else {
-            return {
-              'success': false,
-              'payment_status': 'failed',
-              'needs_waiting': false,
-              'error': result.error ?? 'Échec de l\'initiation du paiement SerdiPay',
-            };
-          }
-        } catch (e) {
-          debugPrint('❌ SerdiPay market error: $e');
+        if (result.success) {
+          return {
+            'success': true,
+            'payment_status': result.status,
+            'needs_waiting': result.needsWaiting,
+            'transaction_id': result.transactionId,
+            'serdi_session_id': result.serdiSessionId,
+            'data': result.data,
+          };
+        } else {
           return {
             'success': false,
             'payment_status': 'failed',
             'needs_waiting': false,
-            'error': 'Erreur SerdiPay: $e',
+            'error': result.error ?? 'Échec de l\'initiation du paiement SerdiPay',
           };
         }
-      }
-
-      // ========== CARD (WonyaSoft existant) ==========
-      // Normalisation pour l'Edge Function WonyaSoft
-      final methodForGateway = _normalizePaymentMethod(paymentMethod);
-
-      final response = await _supabase.functions.invoke(
-        'process-payment',
-        body: {
-          'booking_id': orderId,
-          'order_id': orderId,
-          'amount': amount,
-          'currency': currency.toUpperCase() == 'FC' ? 'CDF' : currency.toUpperCase(),
-          'payment_method': methodForGateway,
-          if (phoneNumber != null && phoneNumber.isNotEmpty) 'phone_number': phoneNumber,
-          'type': 'market',
-        },
-      );
-
-      debugPrint('→ process-payment (WonyaSoft) response status: ${response.status}');
-      debugPrint('→ process-payment data: ${response.data}');
-
-      if (response.status == 200 &&
-          response.data != null &&
-          response.data['success'] == true) {
+      } catch (e) {
+        debugPrint('❌ SerdiPay market error: $e');
         return {
-          'success': true,
-          'payment_status': 'awaiting_payment',
-          'needs_waiting': true,
-          'data': response.data,
+          'success': false,
+          'payment_status': 'failed',
+          'needs_waiting': false,
+          'error': 'Erreur SerdiPay: $e',
         };
       }
-
-      // Meilleure extraction de l'erreur
-      final errorMsg = response.data?['error'] ??
-          response.data?['details']?['message'] ??
-          'Échec de l\'initiation du paiement';
-
-      throw Exception(errorMsg);
     } catch (e) {
       debugPrint('❌ MarketPaymentService.initiatePayment error: $e');
       rethrow;
-    }
-  }
-
-  /// Normalise la méthode de paiement pour WonyaSoft (cartes uniquement)
-  String _normalizePaymentMethod(String method) {
-    switch (method) {
-      case 'card':
-      case 'carte':
-        return 'card';
-      default:
-        return method;
     }
   }
 
@@ -157,23 +107,25 @@ class MarketPaymentService {
     }
   }
 
-  /// Vérifie si la méthode de paiement est supportée par SerdiPay (Mobile Money RDC)
-  /// Télécoms supportés selon la documentation SerdiPay :
-  /// - AM : Airtel Money
-  /// - OM : Orange Money
-  /// - MP : Vodacom M-Pesa
-  /// - AF : Afrimoney
-  bool _isSerdipayMethod(String method) {
-    const serdiMethods = {
-      'mpesa',
-      'airtel',
-      'airtel_money',
-      'orange_money',
-      'orange',
-      'afrimoney',
-      'afrimomo',
-      'mobile_money', // routé par défaut vers M-Pesa
-    };
-    return serdiMethods.contains(method.toLowerCase());
+  /// Convertit la méthode de paiement UI vers le code telecom SerdiPay
+  SerdipayTelecom _toSerdiPayTelecom(String method) {
+    switch (method.toLowerCase()) {
+      case 'airtel':
+      case 'airtel_money':
+        return SerdipayTelecom.airtel; // AM
+      case 'orange_money':
+      case 'orange':
+        return SerdipayTelecom.orange; // OM
+      case 'afrimoney':
+      case 'afrimomo':
+        return SerdipayTelecom.afrimoney; // AF
+      case 'card':
+      case 'carte':
+        // Carte bancaire → on utilise MP comme fallback (SerdiPay gérera)
+        return SerdipayTelecom.mpesa;
+      case 'mpesa':
+      default:
+        return SerdipayTelecom.mpesa; // MP
+    }
   }
 }
