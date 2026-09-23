@@ -2,7 +2,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/models/certification_tier.dart';
+import 'package:thix_id/models/serdipay_transaction.dart';
 import 'package:thix_id/services/bcc_exchange_rate_service.dart';
+import 'package:thix_id/services/serdipay_service.dart';
 
 class CertificationPaymentResult {
   final bool success;
@@ -90,19 +92,6 @@ class CertificationPaymentService {
     }
 
     // 2. THIX Money (interne, pas de gateway)
-    //
-    // ✅ FIX SÉCURITÉ CRITIQUE : l'ancienne version faisait la déduction
-    // wallet PUIS accordait la certification via un `_client.from('profiles')
-    // .update(...)` exécuté avec les droits du client authentifié. Comme
-    // cet update touchait `profiles` — la même table que RLS autorise
-    // souvent un utilisateur à modifier pour son propre id — RIEN
-    // n'empêchait un utilisateur d'appeler cet update directement depuis
-    // l'app, sans jamais passer par le paiement, pour s'auto-certifier
-    // gratuitement. Toute la logique (déduction + octroi certification)
-    // est désormais dans une seule RPC serveur transactionnelle
-    // (rpc_pay_certification_with_wallet), et une policy RLS + trigger
-    // empêchent maintenant toute écriture cliente directe sur les colonnes
-    // de certification de `profiles`.
     if (paymentMethod == 'thix_money') {
       try {
         final result = await _client.rpc(
@@ -128,7 +117,49 @@ class CertificationPaymentService {
       }
     }
 
-    // 3. Mobile Money / Carte → Edge Function WonyaSoft dédiée.
+    // 3. Mobile Money via SerdiPay (M-Pesa, Airtel, Orange, Afrimoney)
+    if (_isSerdipayMethod(paymentMethod)) {
+      try {
+        final serdipay = SerdiPayService(_client);
+        final telecom = SerdipayTelecom.fromPaymentMethod(paymentMethod);
+
+        final result = await serdipay.initiate(
+          type: SerdipayPaymentType.certification,
+          referenceId: paymentId,
+          amount: amountCdf,
+          currency: 'CDF',
+          telecom: telecom,
+          phoneNumber: phoneNumber ?? '',
+        );
+
+        if (result.success) {
+          return CertificationPaymentResult(
+            success: true,
+            status: result.status,
+            needsWaiting: result.needsWaiting,
+            paymentId: result.transactionId ?? paymentId,
+            data: result.data,
+          );
+        } else {
+          return CertificationPaymentResult(
+            success: false,
+            status: 'failed',
+            paymentId: paymentId,
+            error: result.error ?? 'Erreur SerdiPay',
+          );
+        }
+      } catch (e) {
+        debugPrint('❌ SerdiPay certification error: $e');
+        return CertificationPaymentResult(
+          success: false,
+          status: 'failed',
+          paymentId: paymentId,
+          error: 'Erreur SerdiPay: $e',
+        );
+      }
+    }
+
+    // 4. Carte bancaire → Edge Function WonyaSoft dédiée.
     // ✅ On n'envoie plus 'amount'/'amount_usd'/'tier' au corps de la
     // requête : l'Edge Function les relit désormais depuis la ligne
     // certification_payments en base (voir process-certification-payment),
@@ -174,7 +205,7 @@ class CertificationPaymentService {
         error: err,
       );
     } catch (e) {
-      debugPrint('❌ CertificationPaymentService: $e');
+      debugPrint('❌ CertificationPaymentService (WonyaSoft): $e');
       return CertificationPaymentResult(
         success: false,
         status: 'failed',
@@ -192,5 +223,20 @@ class CertificationPaymentService {
         .eq('id', paymentId)
         .maybeSingle();
     return row?['status']?.toString();
+  }
+
+  /// Vérifie si la méthode de paiement est supportée par SerdiPay (Mobile Money RDC)
+  bool _isSerdipayMethod(String method) {
+    const serdiMethods = {
+      'mpesa',
+      'airtel',
+      'airtel_money',
+      'orange_money',
+      'orange',
+      'afrimoney',
+      'afrimomo',
+      'mobile_money',
+    };
+    return serdiMethods.contains(method.toLowerCase());
   }
 }
