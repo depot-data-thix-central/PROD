@@ -36,7 +36,7 @@ class CertificationPaymentService {
   /// Démarre un paiement pour un tier (Standard / Premium / Entreprise)
   Future<CertificationPaymentResult> initiate({
     required CertificationTier tier,
-    required String paymentMethod, // mpesa | airtel | orange_money | card | thix_money
+    required String paymentMethod, // mpesa | airtel | orange_money | afrimoney | card | thix_money
     String? phoneNumber,
     String? requestId,
   }) async {
@@ -61,9 +61,7 @@ class CertificationPaymentService {
     final amountUsd = tier.priceUsd!;
     final amountCdf = quote.cdfForUsd(amountUsd).toDouble();
 
-    // 1. Enregistrer le paiement local — c'est CETTE ligne (amount_cdf,
-    // tier) qui fait foi côté serveur pour toute la suite du flux, jamais
-    // une valeur renvoyée plus tard par le client.
+    // 1. Enregistrer le paiement local
     final insert = await _client
         .from('certification_payments')
         .insert({
@@ -117,100 +115,43 @@ class CertificationPaymentService {
       }
     }
 
-    // 3. Mobile Money via SerdiPay (M-Pesa, Airtel, Orange, Afrimoney)
-    if (_isSerdipayMethod(paymentMethod)) {
-      try {
-        final serdipay = SerdiPayService(_client);
-        final telecom = SerdipayTelecom.fromPaymentMethod(paymentMethod);
+    // 3. TOUS les autres paiements → SerdiPay (Mobile Money + Carte)
+    try {
+      final serdipay = SerdiPayService(_client);
+      final telecom = _toSerdiPayTelecom(paymentMethod);
 
-        final result = await serdipay.initiate(
-          type: SerdipayPaymentType.certification,
-          referenceId: paymentId,
-          amount: amountCdf,
-          currency: 'CDF',
-          telecom: telecom,
-          phoneNumber: phoneNumber ?? '',
+      final result = await serdipay.initiate(
+        type: SerdipayPaymentType.certification,
+        referenceId: paymentId,
+        amount: amountCdf,
+        currency: 'CDF',
+        telecom: telecom,
+        phoneNumber: phoneNumber ?? '',
+      );
+
+      if (result.success) {
+        return CertificationPaymentResult(
+          success: true,
+          status: result.status,
+          needsWaiting: result.needsWaiting,
+          paymentId: result.transactionId ?? paymentId,
+          data: result.data,
         );
-
-        if (result.success) {
-          return CertificationPaymentResult(
-            success: true,
-            status: result.status,
-            needsWaiting: result.needsWaiting,
-            paymentId: result.transactionId ?? paymentId,
-            data: result.data,
-          );
-        } else {
-          return CertificationPaymentResult(
-            success: false,
-            status: 'failed',
-            paymentId: paymentId,
-            error: result.error ?? 'Erreur SerdiPay',
-          );
-        }
-      } catch (e) {
-        debugPrint('❌ SerdiPay certification error: $e');
+      } else {
         return CertificationPaymentResult(
           success: false,
           status: 'failed',
           paymentId: paymentId,
-          error: 'Erreur SerdiPay: $e',
+          error: result.error ?? 'Erreur SerdiPay',
         );
       }
-    }
-
-    // 4. Carte bancaire → Edge Function WonyaSoft dédiée.
-    // ✅ On n'envoie plus 'amount'/'amount_usd'/'tier' au corps de la
-    // requête : l'Edge Function les relit désormais depuis la ligne
-    // certification_payments en base (voir process-certification-payment),
-    // ce qui empêche toute tentative de payer un montant modifié.
-    try {
-      final response = await _client.functions.invoke(
-        'process-certification-payment',
-        body: {
-          'payment_id': paymentId,
-          if (phoneNumber != null && phoneNumber.isNotEmpty)
-            'phone_number': phoneNumber,
-        },
-      );
-
-      debugPrint('cert payment response: ${response.status} ${response.data}');
-
-      final data = response.data;
-      final ok = response.status == 200 &&
-          data != null &&
-          (data is Map) &&
-          data['success'] == true;
-
-      if (ok) {
-        final ref = data['transaction_id']?.toString() ??
-            data['ref_transa']?.toString();
-
-        return CertificationPaymentResult(
-          success: true,
-          status: 'awaiting_payment',
-          needsWaiting: true,
-          paymentId: paymentId,
-          data: Map<String, dynamic>.from(data as Map),
-        );
-      }
-
-      final err = (data is Map ? data['error']?.toString() : null) ??
-          'Échec initiation paiement certification';
-
-      return CertificationPaymentResult(
-        success: false,
-        status: 'failed',
-        paymentId: paymentId,
-        error: err,
-      );
     } catch (e) {
-      debugPrint('❌ CertificationPaymentService (WonyaSoft): $e');
+      debugPrint('❌ SerdiPay certification error: $e');
       return CertificationPaymentResult(
         success: false,
         status: 'failed',
         paymentId: paymentId,
-        error: e.toString(),
+        error: 'Erreur SerdiPay: $e',
       );
     }
   }
@@ -225,18 +166,25 @@ class CertificationPaymentService {
     return row?['status']?.toString();
   }
 
-  /// Vérifie si la méthode de paiement est supportée par SerdiPay (Mobile Money RDC)
-  bool _isSerdipayMethod(String method) {
-    const serdiMethods = {
-      'mpesa',
-      'airtel',
-      'airtel_money',
-      'orange_money',
-      'orange',
-      'afrimoney',
-      'afrimomo',
-      'mobile_money',
-    };
-    return serdiMethods.contains(method.toLowerCase());
+  /// Convertit la méthode de paiement UI vers le code telecom SerdiPay
+  SerdipayTelecom _toSerdiPayTelecom(String method) {
+    switch (method.toLowerCase()) {
+      case 'airtel':
+      case 'airtel_money':
+        return SerdipayTelecom.airtel; // AM
+      case 'orange_money':
+      case 'orange':
+        return SerdipayTelecom.orange; // OM
+      case 'afrimoney':
+      case 'afrimomo':
+        return SerdipayTelecom.afrimoney; // AF
+      case 'card':
+      case 'carte':
+        // Carte bancaire → on utilise MP comme fallback (SerdiPay gérera)
+        return SerdipayTelecom.mpesa;
+      case 'mpesa':
+      default:
+        return SerdipayTelecom.mpesa; // MP
+    }
   }
 }
