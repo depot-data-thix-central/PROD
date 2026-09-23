@@ -3,8 +3,8 @@
 /// Widget de preview vidéo pour la création de post.
 ///
 /// ThixPolicy + i18n 8 langues + Semantics + HapticFeedback
-///  Web-safe (bytes au lieu de path) + mounted checks + throttling
-///  Validation fichier + error state + logs structurés
+/// Web-safe (bytes au lieu de path) + mounted checks + throttling
+/// Validation fichier + error state + logs structurés
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -85,14 +85,12 @@ class VideoPreviewWidget extends StatefulWidget {
   final PlatformFile? selectedVideo;
   final bool isSeries;
   final VoidCallback onPickVideo;
-  final VoidCallback onOpenCamera;
 
   const VideoPreviewWidget({
     super.key,
     required this.selectedVideo,
     required this.isSeries,
     required this.onPickVideo,
-    required this.onOpenCamera,
   });
 
   @override
@@ -133,8 +131,6 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
       if (kIsWeb) {
         // Web : utiliser bytes directement (pas path)
         if (widget.selectedVideo!.bytes != null) {
-          // Sur Web, on ne peut pas utiliser bytes directement avec video_player
-          // On utilise une URL blob si disponible, sinon on skip
           final path = widget.selectedVideo!.path;
           if (path != null && path.isNotEmpty) {
             _controller = VideoPlayerController.networkUrl(Uri.parse(path));
@@ -300,7 +296,6 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
               top: 12,
               left: 12,
               child: Semantics(
-                // CORRECTION : args passe en liste
                 label: l10n.t('create_series_part_n', args: ['1']),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -310,7 +305,6 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    // CORRECTION : args passe en liste
                     l10n.t('create_series_part_n', args: ['1']),
                     style: TextStyle(
                       color: ThixPolicy.textMain,
@@ -396,7 +390,6 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
         const SizedBox(height: 16),
         Text(
           widget.isSeries
-              // CORRECTION : args passe en liste
               ? l10n.t('create_series_no_video', args: ['1'])
               : l10n.t('create_select_video'),
           style: TextStyle(
@@ -407,53 +400,26 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 20),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Semantics(
-              button: true,
-              label: l10n.t('create_import'),
-              child: ElevatedButton.icon(
-                onPressed: widget.onPickVideo,
-                icon: const Icon(Icons.folder_outlined, size: 18),
-                label: Text(
-                  l10n.t('create_import'),
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ThixPolicy.textMuted.withValues(alpha: 0.1),
-                  foregroundColor: ThixPolicy.textMain,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                ),
-              ),
+        Semantics(
+          button: true,
+          label: l10n.t('create_import'),
+          child: ElevatedButton.icon(
+            onPressed: widget.onPickVideo,
+            icon: const Icon(Icons.folder_outlined, size: 18),
+            label: Text(
+              l10n.t('create_import'),
+              style: const TextStyle(fontWeight: FontWeight.w700),
             ),
-            const SizedBox(width: 12),
-            Semantics(
-              button: true,
-              label: l10n.t('create_camera'),
-              child: ElevatedButton.icon(
-                onPressed: widget.onOpenCamera,
-                icon: const Icon(Icons.camera_alt_outlined, size: 18),
-                label: Text(
-                  l10n.t('create_camera'),
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ThixPolicy.primary,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                ),
-              ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ThixPolicy.primary,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
-          ],
+          ),
         ),
       ],
     );
