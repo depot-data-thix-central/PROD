@@ -9,9 +9,9 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-const double _kBarCollapsedWidth = 58.0;
-const double _kBarExpandedWidth = 150.0;
-const double _kHubRadius = 32.0;
+const double _kBarCollapsedWidth = 56.0;
+const double _kBarExpandedWidth = 145.0;
+const double _kHubRadius = 34.0;
 
 // ============================================================================
 // DATA MODEL
@@ -74,13 +74,15 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
 
   bool _isLeftExpanded = false;
   bool _isRightExpanded = false;
+  bool _isBottomExpanded = false;
 
   @override
   void initState() {
     super.initState();
-    debugPrint('[ServicesBar] 🌐 Initialized');
+    debugPrint('[ServicesLayout] 🌐 Initialized');
   }
 
+  // 1. GAUCHE: Finance & Commerce (4 items)
   List<_ServiceNodeData> _getLeftNodes(AppLocalizations l10n) {
     final c = widget.counts;
     return [
@@ -92,6 +94,13 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
         color: _colorMoney,
       ),
       _ServiceNodeData(
+        key: 'thixMarket',
+        icon: Icons.storefront_rounded,
+        title: 'Thix ${l10n.t('svc_market')}',
+        badge: c.market,
+        color: _colorMarket,
+      ),
+      _ServiceNodeData(
         key: 'thixMedia',
         icon: Icons.video_collection_rounded,
         title: 'Thix ${l10n.t('svc_media')}',
@@ -99,46 +108,19 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
         color: _colorNetwork,
       ),
       _ServiceNodeData(
-        key: 'monPays',
-        icon: Icons.flag_rounded,
-        title: 'Thix ${l10n.t('svc_country')}',
-        badge: c.monPays,
-        color: _colorCorporate,
-      ),
-      _ServiceNodeData(
-        key: 'thixInfo',
-        icon: Icons.newspaper_rounded,
-        title: 'Thix ${l10n.t('svc_news')}',
-        badge: c.info,
-        color: _colorPrimary,
-      ),
-      _ServiceNodeData(
-        key: 'evenements',
-        icon: Icons.event_rounded,
-        title: 'Thix ${l10n.t('svc_event')}',
-        badge: c.events,
-        color: _colorEvent,
-      ),
-      _ServiceNodeData(
-        key: 'thixMarket',
-        icon: Icons.storefront_rounded,
-        title: 'Thix ${l10n.t('svc_market')}',
-        badge: c.market,
-        color: _colorMarket,
-      ),
-    ];
-  }
-
-  List<_ServiceNodeData> _getRightNodes(AppLocalizations l10n) {
-    final c = widget.counts;
-    return [
-      _ServiceNodeData(
         key: 'reservation',
         icon: Icons.confirmation_number_rounded,
         title: 'Thix ${l10n.t('svc_booking')}',
         badge: c.reservation,
         color: _colorPrimary,
       ),
+    ];
+  }
+
+  // 2. DROITE: Carrière & Pro (4 items)
+  List<_ServiceNodeData> _getRightNodes(AppLocalizations l10n) {
+    final c = widget.counts;
+    return [
       _ServiceNodeData(
         key: 'emplois',
         icon: Icons.work_rounded,
@@ -167,6 +149,34 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
         badge: c.network,
         color: _colorNetwork,
       ),
+    ];
+  }
+
+  // 3. BAS: Citoyenneté & Services Utiles (4 items)
+  List<_ServiceNodeData> _getBottomNodes(AppLocalizations l10n) {
+    final c = widget.counts;
+    return [
+      _ServiceNodeData(
+        key: 'monPays',
+        icon: Icons.flag_rounded,
+        title: 'Thix ${l10n.t('svc_country')}',
+        badge: c.monPays,
+        color: _colorCorporate,
+      ),
+      _ServiceNodeData(
+        key: 'thixInfo',
+        icon: Icons.newspaper_rounded,
+        title: 'Thix ${l10n.t('svc_news')}',
+        badge: c.info,
+        color: _colorPrimary,
+      ),
+      _ServiceNodeData(
+        key: 'evenements',
+        icon: Icons.event_rounded,
+        title: 'Thix ${l10n.t('svc_event')}',
+        badge: c.events,
+        color: _colorEvent,
+      ),
       _ServiceNodeData(
         key: 'thixSante',
         icon: Icons.local_hospital_rounded,
@@ -180,14 +190,12 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
   void _handleProfileTap() {
     if (!mounted) return;
     HapticFeedback.lightImpact();
-    debugPrint('[ServicesBar] 👤 Profile tap');
     widget.onProfileTap();
   }
 
   void _handleServiceTap(String key) {
     if (!mounted) return;
     HapticFeedback.selectionClick();
-    debugPrint('[ServicesBar] 🔷 Service tap: $key');
     widget.onServiceTap(key);
   }
 
@@ -196,6 +204,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
     final l10n = AppLocalizations.of(context);
     final leftNodes = _getLeftNodes(l10n);
     final rightNodes = _getRightNodes(l10n);
+    final bottomNodes = _getBottomNodes(l10n);
 
     return RepaintBoundary(
       child: Padding(
@@ -203,16 +212,16 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
           horizontal: ThixPolicy.s16,
           vertical: ThixPolicy.s8,
         ),
-        child: Stack(
-          alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // BARRES LATÉRALES GAUCHE ET DROITE
+            // PARTIE HAUTE : BARRE GAUCHE + HUB CENTRAL + BARRE DROITE
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Barre Gauche
-                _SideServiceBar(
+                // Barre Gauche (4 items)
+                _VerticalServiceBar(
                   nodes: leftNodes,
                   isExpanded: _isLeftExpanded,
                   accentColor: ThixPolicy.gold,
@@ -223,8 +232,15 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
                   onServiceTap: _handleServiceTap,
                 ),
 
-                // Barre Droite
-                _SideServiceBar(
+                // Hub Profil Central
+                _HubButton(
+                  radius: _kHubRadius,
+                  avatarUrl: widget.avatarUrl,
+                  onTap: _handleProfileTap,
+                ),
+
+                // Barre Droite (4 items)
+                _VerticalServiceBar(
                   nodes: rightNodes,
                   isExpanded: _isRightExpanded,
                   accentColor: ThixPolicy.gold,
@@ -237,11 +253,18 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
               ],
             ),
 
-            // HUB CENTRAL (Profil)
-            _HubButton(
-              radius: _kHubRadius,
-              avatarUrl: widget.avatarUrl,
-              onTap: _handleProfileTap,
+            const SizedBox(height: 10),
+
+            // PARTIE BASSE : BARRE HORIZONTALE (4 items)
+            _HorizontalServiceBar(
+              nodes: bottomNodes,
+              isExpanded: _isBottomExpanded,
+              accentColor: ThixPolicy.gold,
+              onToggleExpand: () {
+                HapticFeedback.lightImpact();
+                setState(() => _isBottomExpanded = !_isBottomExpanded);
+              },
+              onServiceTap: _handleServiceTap,
             ),
           ],
         ),
@@ -251,16 +274,16 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
 }
 
 // ============================================================================
-// SIDE BAR WIDGET (Rétractable)
+// BARRE VERTICALE (Gauche / Droite - 4 items)
 // ============================================================================
-class _SideServiceBar extends StatelessWidget {
+class _VerticalServiceBar extends StatelessWidget {
   final List<_ServiceNodeData> nodes;
   final bool isExpanded;
   final Color accentColor;
   final VoidCallback onToggleExpand;
   final void Function(String key) onServiceTap;
 
-  const _SideServiceBar({
+  const _VerticalServiceBar({
     required this.nodes,
     required this.isExpanded,
     required this.accentColor,
@@ -271,7 +294,7 @@ class _SideServiceBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 280),
+      duration: const Duration(milliseconds: 260),
       curve: Curves.fastOutSlowIn,
       width: isExpanded ? _kBarExpandedWidth : _kBarCollapsedWidth,
       decoration: BoxDecoration(
@@ -283,8 +306,8 @@ class _SideServiceBar extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 16,
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 14,
             offset: const Offset(0, 4),
           ),
         ],
@@ -292,11 +315,11 @@ class _SideServiceBar extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // En-tête cliquable pour étendre / réduire la barre
+          // En-tête de contrôle
           GestureDetector(
             onTap: onToggleExpand,
             child: Container(
-              height: 32,
+              height: 28,
               decoration: BoxDecoration(
                 color: accentColor,
                 borderRadius: const BorderRadius.vertical(
@@ -309,15 +332,15 @@ class _SideServiceBar extends StatelessWidget {
                       ? Icons.unfold_less_rounded
                       : Icons.unfold_more_rounded,
                   color: Colors.white,
-                  size: 18,
+                  size: 16,
                 ),
               ),
             ),
           ),
 
-          // Liste des icônes de service
+          // Liste des 4 icônes
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6.0),
+            padding: const EdgeInsets.symmetric(vertical: 4.0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -326,12 +349,12 @@ class _SideServiceBar extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8.0),
                       child: Divider(
-                        height: 6,
+                        height: 4,
                         thickness: 0.8,
                         color: ThixPolicy.border.withOpacity(0.4),
                       ),
                     ),
-                  _BarItemTile(
+                  _VerticalTileItem(
                     node: nodes[i],
                     isExpanded: isExpanded,
                     onTap: () => onServiceTap(nodes[i].key),
@@ -347,14 +370,109 @@ class _SideServiceBar extends StatelessWidget {
 }
 
 // ============================================================================
-// TILE ITEM (Bouton individuel)
+// BARRE HORIZONTALE (Bas - 4 items)
 // ============================================================================
-class _BarItemTile extends StatelessWidget {
+class _HorizontalServiceBar extends StatelessWidget {
+  final List<_ServiceNodeData> nodes;
+  final bool isExpanded;
+  final Color accentColor;
+  final VoidCallback onToggleExpand;
+  final void Function(String key) onServiceTap;
+
+  const _HorizontalServiceBar({
+    required this.nodes,
+    required this.isExpanded,
+    required this.accentColor,
+    required this.onToggleExpand,
+    required this.onServiceTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.fastOutSlowIn,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: ThixPolicy.border.withOpacity(0.8),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // En-tête de contrôle horizontal
+          GestureDetector(
+            onTap: onToggleExpand,
+            child: Container(
+              height: 20,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: accentColor,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(18),
+                ),
+              ),
+              child: Center(
+                child: Icon(
+                  isExpanded
+                      ? Icons.keyboard_arrow_down_rounded
+                      : Icons.keyboard_arrow_up_rounded,
+                  color: Colors.white,
+                  size: 16,
+                ),
+              ),
+            ),
+          ),
+
+          // Ligne des 4 éléments horizontaux
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 6.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                for (int i = 0; i < nodes.length; i++) ...[
+                  if (i > 0)
+                    Container(
+                      height: 28,
+                      width: 0.8,
+                      color: ThixPolicy.border.withOpacity(0.4),
+                    ),
+                  Expanded(
+                    child: _HorizontalTileItem(
+                      node: nodes[i],
+                      isExpanded: isExpanded,
+                      onTap: () => onServiceTap(nodes[i].key),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// TILE ITEM VERTICAL
+// ============================================================================
+class _VerticalTileItem extends StatelessWidget {
   final _ServiceNodeData node;
   final bool isExpanded;
   final VoidCallback onTap;
 
-  const _BarItemTile({
+  const _VerticalTileItem({
     required this.node,
     required this.isExpanded,
     required this.onTap,
@@ -365,64 +483,13 @@ class _BarItemTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
         child: Row(
           mainAxisAlignment:
               isExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
           children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: ThixPolicy.border.withOpacity(0.6),
-                      width: 1.0,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(node.icon, color: node.color, size: 20),
-                ),
-                if (node.badge != null && node.badge! > 0)
-                  Positioned(
-                    top: -2,
-                    right: -2,
-                    child: Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: const BoxDecoration(
-                        color: ThixPolicy.danger,
-                        shape: BoxShape.circle,
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 14,
-                        minHeight: 14,
-                      ),
-                      child: Center(
-                        child: Text(
-                          '${node.badge}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 7.5,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+            _NodeIconWithBadge(node: node),
             if (isExpanded) ...[
               const SizedBox(width: 8),
               Expanded(
@@ -441,6 +508,118 @@ class _BarItemTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ============================================================================
+// TILE ITEM HORIZONTAL
+// ============================================================================
+class _HorizontalTileItem extends StatelessWidget {
+  final _ServiceNodeData node;
+  final bool isExpanded;
+  final VoidCallback onTap;
+
+  const _HorizontalTileItem({
+    required this.node,
+    required this.isExpanded,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _NodeIconWithBadge(node: node),
+            if (isExpanded) ...[
+              const SizedBox(height: 4),
+              Text(
+                node.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w700,
+                  color: ThixPolicy.textMain,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ICON + BADGE REUSABLE
+// ============================================================================
+class _NodeIconWithBadge extends StatelessWidget {
+  final _ServiceNodeData node;
+
+  const _NodeIconWithBadge({required this.node});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: ThixPolicy.border.withOpacity(0.6),
+              width: 1.0,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          alignment: Alignment.center,
+          child: Icon(node.icon, color: node.color, size: 20),
+        ),
+        if (node.badge != null && node.badge! > 0)
+          Positioned(
+            top: -2,
+            right: -2,
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: const BoxDecoration(
+                color: ThixPolicy.danger,
+                shape: BoxShape.circle,
+              ),
+              constraints: const BoxConstraints(
+                minWidth: 14,
+                minHeight: 14,
+              ),
+              child: Center(
+                child: Text(
+                  '${node.badge}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 7.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
