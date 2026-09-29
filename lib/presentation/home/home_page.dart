@@ -33,7 +33,6 @@ import 'widgets/home_headlines_carousel.dart';
 import 'widgets/home_quick_actions.dart';
 import 'widgets/home_services_constellation.dart';
 import 'widgets/home_premium_card.dart';
-import 'widgets/home_personalised.dart';
 import 'widgets/account_request_sheet.dart';
 
 // ============================================================================
@@ -863,13 +862,6 @@ class _HomeContent extends StatelessWidget {
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
             child: HomePremiumCard(),
-          ),
-        ),
-        const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
-        const SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
-            child: HomePersonalised(),
           ),
         ),
         const SliverToBoxAdapter(child: SizedBox(height: 100)),
