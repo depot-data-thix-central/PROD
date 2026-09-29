@@ -1,16 +1,3 @@
-// lib/auth/auth_controller.dart
-//
-// ============================================================================
-// WRAPPER : Export des providers Riverpod + Legacy ChangeNotifier
-// ============================================================================
-//
-// Ce fichier sert deux rôles :
-// 1. Ré-exporter currentUserProvider et authControllerProvider depuis
-//    le fichier features/auth/presentation/providers/auth_controller.dart
-// 2. Fournir AuthControllerLegacy (ChangeNotifier) pour main.dart et app_router.dart
-//
-// ============================================================================
-
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/auth/auth_manager.dart';
@@ -18,14 +5,8 @@ import 'package:thix_id/auth/supabase_auth_manager.dart';
 import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/models/account_type.dart';
 import 'package:thix_id/services/profile_service.dart';
-import 'package:thix_id/data/offline/home_offline_cache.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
 
-// ============================================================================
-// RE-EXPORTS depuis le fichier features (Riverpod StateNotifier)
-// ============================================================================
-
-// Export explicite des providers et types utilisés par les chat providers
 export 'package:thix_id/features/auth/presentation/providers/auth_controller.dart'
     show
         currentUserProvider,
@@ -33,18 +14,6 @@ export 'package:thix_id/features/auth/presentation/providers/auth_controller.dar
         isAuthenticatedProvider,
         AuthControllerState;
 
-// ============================================================================
-// LEGACY : ChangeNotifier pour main.dart et app_router.dart
-// ============================================================================
-
-/// Legacy AuthController (ChangeNotifier).
-///
-/// ⚠️ Utilisé UNIQUEMENT par :
-/// - `lib/main.dart` (ChangeNotifierProvider.value)
-/// - `lib/app_router.dart` (refreshListenable)
-///
-/// Pour tout le reste (Riverpod), utilisez `authControllerProvider`
-/// via `currentUserProvider`.
 class AuthController extends ChangeNotifier {
   static AuthController? _instance;
   static AuthController get instance => _instance ??= AuthController();
@@ -59,8 +28,6 @@ class AuthController extends ChangeNotifier {
 
   AppUser? get currentUser => _auth.currentUser;
   
-  // ✅ CORRECTIF 2 : Le user est considéré authentifié si une session locale 
-  // Supabase existe OU s'il y a un AppUser hydraté (permet de router vers Home hors-ligne)
   bool get isAuthenticated => 
       currentUser != null || 
       Supabase.instance.client.auth.currentSession != null;
@@ -140,7 +107,6 @@ class AuthController extends ChangeNotifier {
 
   Future<void> signOut() async {
     try {
-      await HomeOfflineCache.instance.clear();
       await ChatOfflineCache.instance.clear();
     } catch (e) {
       debugPrint('[Auth] offline cache clear: $e');
