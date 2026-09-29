@@ -11,7 +11,6 @@ import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/models/account_type.dart';
 import 'package:thix_id/services/profile_service.dart';
 
-import 'package:thix_id/data/offline/home_offline_cache.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
 
 // ============================================================================
@@ -112,7 +111,6 @@ class AuthController extends ChangeNotifier {
 
   Future<void> signOut() async {
     try {
-      await HomeOfflineCache.instance.clear();
       await ChatOfflineCache.instance.clear();
     } catch (e) {
       debugPrint('[Auth] offline cache clear: $e');
