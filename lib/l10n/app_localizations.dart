@@ -1911,21 +1911,7 @@ const Map<String, String> _fr = {
   'chatlist_search_hint': 'Rechercher une conversation',
   'chatlist_contact_thix': 'Contact THIX',
   'chatlist_yesterday': 'Hier',
-// ═══════════════════════════════════════════════════════════
-// CONTRÔLES COMMUNS
-// ═══════════════════════════════════════════════════════════
-'cancel': 'Annuler',
-'confirm': 'Confirmer',
-'back': 'Retour',
-'retry': 'Réessayer',
-'more': 'Plus',
-'avatar_user': 'Utilisateur',
-'common_back': 'Retour',
-'common_cancel': 'Annuler',
-'common_confirm': 'Confirmer',
-'common_clear': 'Effacer',
-'common_show_password': 'Afficher le mot de passe',
-'common_hide_password': 'Masquer le mot de passe',
+
 
 // ═══════════════════════════════════════════════════════════
 // ESCALADE (conversation)
@@ -4117,22 +4103,7 @@ const Map<String, String> _en = {
   'chatlist_search_hint': 'Search conversation',
   'chatlist_contact_thix': 'THIX Contact',
   'chatlist_yesterday': 'Yesterday',
-  // ═══════════════════════════════════════════════════════════
-// COMMON CONTROLS
-// ═══════════════════════════════════════════════════════════
-'cancel': 'Cancel',
-'confirm': 'Confirm',
-'back': 'Back',
-'retry': 'Retry',
-'more': 'More',
-'avatar_user': 'User',
-'common_back': 'Back',
-'common_cancel': 'Cancel',
-'common_confirm': 'Confirm',
-'common_clear': 'Clear',
-'common_show_password': 'Show password',
-'common_hide_password': 'Hide password',
-
+  
 // ═══════════════════════════════════════════════════════════
 // ESCALATION (conversation)
 // ═══════════════════════════════════════════════════════════
@@ -6221,10 +6192,7 @@ const Map<String, String> _sw = {
   'chatlist_search_hint': 'Tafuta mazungumzo',
   'chatlist_contact_thix': 'Mwasiliani THIX',
   'chatlist_yesterday': 'Jana',
-  // CONTRÔLES
-'cancel': 'Ghairi', 'confirm': 'Thibitisha', 'back': 'Rudi', 'retry': 'Jaribu tena', 'more': 'Zaidi', 'avatar_user': 'Mtumiaji',
-'common_back': 'Rudi', 'common_cancel': 'Ghairi', 'common_confirm': 'Thibitisha', 'common_clear': 'Futa', 'common_show_password': 'Onyesha nenosiri', 'common_hide_password': 'Ficha nenosiri',
-
+  
 // ESCALADE (conversation)
 'escalate_title': 'Kupeleka mazungumzo juu', 'escalate_conversation_label': 'Mazungumzo', 'escalate_recipient_label': 'Mpokeaji', 'escalate_recipient_hint': '@handle au THIX ID', 'escalate_identifier_required': 'Kitambulisho kinahitajika', 'escalate_verify_or_select': 'Thibitisha au chagua mpokeaji',
 'escalate_verify': 'Thibitisha', 'escalate_contacts': 'Anwani', 'escalate_invalid_handle': 'Handle batili', 'escalate_invalid_id': 'Kitambulisho batili', 'escalate_user_found': 'Mtumiaji amepatikana:', 'escalate_user_not_found': 'Mtumiaji hajapatikana:',
@@ -8138,9 +8106,6 @@ const Map<String, String> _pt = {
   'chatlist_contact_thix': 'Contato THIX',
   'chatlist_yesterday': 'Ontem',
 
-// CONTRÔLES
-'cancel': 'Cancelar', 'confirm': 'Confirmar', 'back': 'Voltar', 'retry': 'Tentar novamente', 'more': 'Mais', 'avatar_user': 'Utilizador',
-'common_back': 'Voltar', 'common_cancel': 'Cancelar', 'common_confirm': 'Confirmar', 'common_clear': 'Limpar', 'common_show_password': 'Mostrar palavra-passe', 'common_hide_password': 'Ocultar palavra-passe',
 
 // ESCALADE (conversation)
 'escalate_title': 'Escalar conversa', 'escalate_conversation_label': 'Conversa', 'escalate_recipient_label': 'Destinatário', 'escalate_recipient_hint': '@utilizador ou ID THIX', 'escalate_identifier_required': 'Identificador obrigatório', 'escalate_verify_or_select': 'Verifique ou selecione um destinatário',
@@ -10053,9 +10018,6 @@ const Map<String, String> _ar = {
   'chatlist_search_hint': 'البحث عن محادثة',
   'chatlist_contact_thix': 'جهة اتصال THIX',
   'chatlist_yesterday': 'أمس',
-  // CONTRÔLES COMMUNS
-'cancel': 'إلغاء', 'confirm': 'تأكيد', 'back': 'رجوع', 'retry': 'إعادة المحاولة', 'more': 'المزيد', 'avatar_user': 'المستخدم',
-'common_back': 'رجوع', 'common_cancel': 'إلغاء', 'common_confirm': 'تأكيد', 'common_clear': 'مسح', 'common_show_password': 'إظهار كلمة المرور', 'common_hide_password': 'إخفاء كلمة المرور',
 
 // ESCALADE (conversation)
 'escalate_title': 'تصعيد المحادثة', 'escalate_conversation_label': 'المحادثة', 'escalate_recipient_label': 'المستلم', 'escalate_recipient_hint': '@المعرف أو THIX ID', 'escalate_identifier_required': 'المعرف مطلوب', 'escalate_verify_or_select': 'تحقق من المستلم أو اختره',
@@ -11969,9 +11931,7 @@ const Map<String, String> _zh = {
   'chatlist_search_hint': '搜索对话',
   'chatlist_contact_thix': 'THIX 联系人',
   'chatlist_yesterday': '昨天',
-  // CONTRÔLES
-'cancel': '取消', 'confirm': '确认', 'back': '返回', 'retry': '重试', 'more': '更多', 'avatar_user': '用户',
-'common_back': '返回', 'common_cancel': '取消', 'common_confirm': '确认', 'common_clear': '清除', 'common_show_password': '显示密码', 'common_hide_password': '隐藏密码',
+  
 
 // ESCALADE (conversation)
 'escalate_title': '升级会话', 'escalate_conversation_label': '会话', 'escalate_recipient_label': '接收人', 'escalate_recipient_hint': '@用户名或 THIX ID', 'escalate_identifier_required': '需要标识符', 'escalate_verify_or_select': '请验证或选择接收人',
@@ -13101,22 +13061,7 @@ const Map<String, String> _es = {
   'chatlist_search_hint': 'Buscar conversación',
   'chatlist_contact_thix': 'Contacto THIX',
   'chatlist_yesterday': 'Ayer',
-  // ═══════════════════════════════════════════════════════════
-// CONTROLES COMUNES
-// ═══════════════════════════════════════════════════════════
-'cancel': 'Cancelar',
-'confirm': 'Confirmar',
-'back': 'Atrás',
-'retry': 'Reintentar',
-'more': 'Más',
-'avatar_user': 'Usuario',
-'common_back': 'Atrás',
-'common_cancel': 'Cancelar',
-'common_confirm': 'Confirmar',
-'common_clear': 'Borrar',
-'common_show_password': 'Mostrar contraseña',
-'common_hide_password': 'Ocultar contraseña',
-
+  
 // ═══════════════════════════════════════════════════════════
 // ESCALADA (conversación)
 // ═══════════════════════════════════════════════════════════
