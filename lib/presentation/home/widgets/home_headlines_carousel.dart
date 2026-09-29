@@ -10,7 +10,6 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/presentation/common/notifications_sheet.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-import 'package:thix_id/data/offline/home_offline_cache.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -131,7 +130,6 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel>
   int _cardCount = 0;
   bool _isAdmin = false;
   bool _isAppVisible = true;
-  List<Map<String, dynamic>> _cachedBanners = const [];
 
   @override
   void initState() {
@@ -142,7 +140,6 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel>
     _checkAdminRole();
     _initStreams();
     _startAutoScroll();
-    _restoreCachedBanners();
   }
 
   @override
@@ -189,39 +186,6 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel>
         _priorityNotifStream = null;
       }
     }
-  }
-  
-  void _restoreCachedBanners() {
-    final uid = widget.uid ?? Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null) return;
-    final snap = HomeOfflineCache.instance.read(uid: uid);
-    if (snap == null || snap.banners.isEmpty) return;
-    _cachedBanners = snap.banners
-        .map((b) => {
-              'id': b.imageUrl,
-              'title': b.title,
-              'tag': b.tag,
-              'image_url': b.imageUrl,
-            })
-        .toList();
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _persistBanners(List<Map<String, dynamic>> rows) async {
-    final uid = widget.uid ?? Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null) return;
-    final user = Supabase.instance.client.auth.currentUser;
-    await HomeOfflineCache.instance.save(
-      uid: uid,
-      displayName: user?.userMetadata?['full_name']?.toString(),
-      banners: rows
-          .map((r) => HomeBannerSnap(
-                imageUrl: r['image_url']?.toString() ?? '',
-                title: r['title']?.toString(),
-                tag: r['tag']?.toString(),
-              ))
-          .toList(),
-    );
   }
 
   void _startAutoScroll() {
@@ -403,16 +367,7 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel>
         return StreamBuilder<List<Map<String, dynamic>>>(
           stream: _bannersStream,
           builder: (context, bannerSnap) {
-            
-            if (bannerSnap.hasData && bannerSnap.data!.isNotEmpty) {
-              _cachedBanners = bannerSnap.data!;
-              unawaited(_persistBanners(bannerSnap.data!));
-            }
-
-            final banners = (bannerSnap.data != null && bannerSnap.data!.isNotEmpty)
-                ? bannerSnap.data!
-                : _cachedBanners;
-                
+            final banners = bannerSnap.data ?? const <Map<String, dynamic>>[];
             final cards = <Widget>[];
 
             // 1. Notification prioritaire
