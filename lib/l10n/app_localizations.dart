@@ -1911,7 +1911,401 @@ const Map<String, String> _fr = {
   'chatlist_search_hint': 'Rechercher une conversation',
   'chatlist_contact_thix': 'Contact THIX',
   'chatlist_yesterday': 'Hier',
+// ═══════════════════════════════════════════════════════════
+// CONTRÔLES COMMUNS
+// ═══════════════════════════════════════════════════════════
+'cancel': 'Annuler',
+'confirm': 'Confirmer',
+'back': 'Retour',
+'retry': 'Réessayer',
+'more': 'Plus',
+'avatar_user': 'Utilisateur',
+'common_back': 'Retour',
+'common_cancel': 'Annuler',
+'common_confirm': 'Confirmer',
+'common_clear': 'Effacer',
+'common_show_password': 'Afficher le mot de passe',
+'common_hide_password': 'Masquer le mot de passe',
 
+// ═══════════════════════════════════════════════════════════
+// ESCALADE (conversation)
+// ═══════════════════════════════════════════════════════════
+'escalate_title': 'Escalader la conversation',
+'escalate_conversation_label': 'Conversation',
+'escalate_recipient_label': 'Destinataire',
+'escalate_recipient_hint': '@identifiant ou ID THIX',
+'escalate_identifier_required': 'Identifiant requis',
+'escalate_verify_or_select': 'Vérifiez ou sélectionnez un destinataire',
+'escalate_verify': 'Vérifier',
+'escalate_contacts': 'Contacts',
+'escalate_invalid_handle': 'Identifiant invalide',
+'escalate_invalid_id': 'Identifiant invalide',
+'escalate_user_found': 'Utilisateur trouvé :',
+'escalate_user_not_found': 'Utilisateur introuvable :',
+'escalate_user_selected': 'Sélectionné :',
+'escalate_select_level': 'Sélectionnez un niveau',
+'escalate_select_valid_recipient': 'Sélectionnez un destinataire valide',
+'escalate_invalid_from_agent': 'Agent expéditeur invalide',
+'escalate_sent_success': 'Escalade envoyée',
+'escalate_send_error': "Échec de l'envoi de l'escalade",
+'escalate_send_button': 'Envoyer',
+'escalate_select_recipient': 'Sélectionner le destinataire',
+'escalate_search_contact_hint': 'Rechercher un contact…',
+'escalate_no_contacts': 'Aucun contact',
+'escalate_level_label': "Niveau d'escalade",
+'escalate_priority_label': 'Priorité',
+'escalate_reason_label': 'Motif',
+'escalate_reason_hint': "Décrivez le motif de l'escalade…",
+'escalate_comment_label': 'Commentaire (optionnel)',
+'escalate_comment_hint': 'Ajoutez un commentaire optionnel…',
+
+// ═══════════════════════════════════════════════════════════
+// ESCALADE (partagé)
+// ═══════════════════════════════════════════════════════════
+'escalation_cancel': 'Annuler',
+'escalation_not_authenticated': 'Non authentifié',
+'escalation_back': 'Retour',
+'escalation_timeout': 'Délai dépassé. Réessayez.',
+'escalation_generic_error': 'Une erreur est survenue. Réessayez.',
+'escalation_invalid_conversation': 'Conversation invalide',
+'escalation_conversation_not_found': 'Conversation introuvable',
+'escalation_open_error': "Échec de l'ouverture de la conversation",
+
+// ═══════════════════════════════════════════════════════════
+// ESCALADE (historique)
+// ═══════════════════════════════════════════════════════════
+'escalation_history_title': 'Historique des escalades',
+'escalation_history_empty': 'Aucune escalade',
+'escalation_history_empty_subtitle': 'Les escalades de cette conversation apparaîtront ici.',
+'escalation_from_level': 'De',
+'escalation_to_level': 'vers',
+'escalation_resolved_on': 'Résolu le',
+
+// ═══════════════════════════════════════════════════════════
+// ESCALADE (dashboard)
+// ═══════════════════════════════════════════════════════════
+'escalation_dashboard_title': 'Tableau des escalades',
+'escalation_stat_pending': 'En attente',
+'escalation_stat_accepted': 'Acceptées',
+'escalation_stat_resolved': 'Résolues',
+'escalation_dashboard_empty': 'Aucune escalade en attente',
+'escalation_from_label': 'De',
+'escalation_to_label': 'Vers',
+'escalation_tap_to_handle': 'Toucher pour traiter',
+'escalation_handle_button': 'Traiter',
+
+// ═══════════════════════════════════════════════════════════
+// ESCALADE (traitement)
+// ═══════════════════════════════════════════════════════════
+'escalation_handle_title': "Traiter l'escalade",
+'escalation_actions': 'Actions',
+'escalation_accept_button': 'Accepter',
+'escalation_reject_button': 'Rejeter',
+'escalation_reject_reason_hint': 'Motif du rejet…',
+'escalation_confirm_reject': 'Confirmer le rejet',
+'escalation_mark_resolved': 'Marquer comme résolue',
+'escalation_reason': 'Motif',
+'escalation_comment': 'Commentaire',
+'escalation_date': 'Date',
+'escalation_invalid_id': 'Identifiant invalide',
+'escalation_accepted': 'Acceptée',
+'escalation_rejected': 'Rejetée',
+'escalation_resolved': 'Résolue',
+'escalation_accept_error': "Échec de l'acceptation",
+'escalation_reject_error': 'Échec du rejet',
+'escalation_resolve_error': 'Échec de la résolution',
+'escalation_accepted_message': 'Escalade acceptée. Vous pouvez maintenant la résoudre.',
+'escalation_rejected_message': 'Escalade rejetée.',
+'escalation_resolved_message': 'Escalade résolue.',
+
+// ═══════════════════════════════════════════════════════════
+// SÉLECTEUR D'AGENT
+// ═══════════════════════════════════════════════════════════
+'agent_selector_loading': 'Chargement des agents…',
+'agent_selector_error': 'Échec du chargement des agents',
+'agent_selector_error_retry': 'Réessayer',
+'agent_selector_empty': 'Aucun agent disponible',
+'agent_selector_label': 'Agent',
+'agent_selector_required': 'Veuillez sélectionner un agent',
+
+// ═══════════════════════════════════════════════════════════
+// APPELS
+// ═══════════════════════════════════════════════════════════
+'call_history_title': 'Historique des appels',
+'call_search_hint': 'Rechercher par nom…',
+'call_search_button': 'Rechercher',
+'call_new_call': 'Nouvel appel',
+'call_type_audio': 'Appel audio',
+'call_type_video': 'Appel vidéo',
+'call_yesterday': 'Hier',
+'call_search_contact_hint': 'Rechercher un contact…',
+'call_no_connections': 'Aucune connexion',
+'call_unknown_contact': 'Contact inconnu',
+'call_error_invalid_peer': 'Contact invalide',
+'call_error_start_failed': "Échec du démarrage de l'appel",
+'call_history_error': "Échec du chargement de l'historique",
+'call_history_empty': 'Aucun appel',
+'call_video_call': 'Appel vidéo',
+'call_audio_call': 'Appel audio',
+'call_video': 'Appel vidéo',
+'call_audio': 'Appel audio',
+
+// ═══════════════════════════════════════════════════════════
+// CONNEXIONS
+// ═══════════════════════════════════════════════════════════
+'connections_page_title': 'Mon réseau',
+'connections_active': 'Connexions actives',
+'connections_received': 'Demandes reçues',
+'connections_sent': 'Demandes envoyées',
+'connections_empty_title': 'Aucune connexion',
+'connections_empty_message': "Connectez-vous avec d'autres membres pour développer votre réseau.",
+'connections_wants_connect': 'Souhaite se connecter avec vous',
+'connections_ignore': 'Ignorer',
+'connections_accept': 'Accepter',
+'connections_pending': 'En attente',
+'connections_cancel_request': 'Annuler',
+'connections_cancel_message': 'Annuler cette demande de connexion ?',
+'connections_cancelled': 'Demande annulée',
+'connections_cancel_error': "Échec de l'annulation",
+'connections_remove_title': 'Retirer la connexion',
+'connections_remove_message': 'Retirer de votre réseau :',
+'connections_removed': 'Connexion retirée',
+'connections_remove_error': 'Échec de la suppression',
+'connections_block_title': "Bloquer l'utilisateur",
+'connections_block_message': 'Bloquer cet utilisateur ? Il ne pourra plus vous contacter.',
+'connections_blocked': 'Utilisateur bloqué',
+'connections_block_error': 'Échec du blocage',
+'connections_network': 'Membre du réseau',
+'connections_network_member': 'Membre du réseau',
+'connections_message': 'Message',
+'connections_audio': 'Audio',
+'connections_video': 'Vidéo',
+'connections_view_profile': 'Voir le profil',
+'connections_remove_from_network': 'Retirer du réseau',
+'connections_block_user': "Bloquer l'utilisateur",
+'connections_accepted': 'Demande acceptée',
+'connections_accept_error': "Échec de l'acceptation",
+'connections_ignored': 'Demande ignorée',
+'connections_reject_error': 'Échec du rejet',
+
+// ═══════════════════════════════════════════════════════════
+// LOGIN / AUTH
+// ═══════════════════════════════════════════════════════════
+'login_title': 'Connexion',
+'login_subtitle': 'Accédez à votre identité numérique THIX',
+'login_identifier_label': 'Identifiant',
+'login_identifier_hint': 'Email, téléphone ou ID THIX',
+'login_password_label': 'Mot de passe',
+'login_password_hint': '••••••••',
+'login_remember_me': 'Se souvenir de moi',
+'login_forgot_password': 'Mot de passe oublié ?',
+'login_button': 'Se connecter',
+'login_verifying': 'Vérification…',
+'login_retry_in': 'Réessayez dans',
+'login_seconds_suffix': 's',
+'login_biometric': 'OU CONTINUER AVEC',
+'login_security_title': 'Connexion sécurisée',
+'login_security_subtitle': 'Vos données sont chiffrées de bout en bout',
+'login_new_user': 'Nouveau sur THIX ?',
+'login_create_account': 'Créer un compte',
+'login_email_hint': 'nom@exemple.com',
+'login_otp_label': 'Code OTP (8 chiffres)',
+'login_new_password_label': 'Nouveau mot de passe',
+'login_password_min_length': '8 caractères minimum',
+'login_reset_instructions': 'Saisissez votre email pour recevoir un code de réinitialisation.',
+'login_reset_new_password': 'Nouveau mot de passe',
+'login_confirm': 'Confirmer',
+'login_send': 'Envoyer',
+'login_please_wait': 'Patientez…',
+'login_password_updated': 'Mot de passe mis à jour',
+'login_error_empty_otp': 'Saisissez le code OTP',
+'login_error_suspended': 'Compte suspendu. Contactez le support.',
+'login_error_no_account': 'Aucun compte trouvé',
+'login_error_mfa_required': 'Validation en deux facteurs requise',
+'login_error_locked': 'Trop de tentatives. Compte temporairement verrouillé.',
+
+// ═══════════════════════════════════════════════════════════
+// AUTH — ERREURS TECHNIQUES
+// ═══════════════════════════════════════════════════════════
+'auth_error_identifier_required': 'Identifiant requis',
+'auth_error_password_required': 'Mot de passe requis',
+'auth_error_invalid_email': 'Email invalide',
+'auth_error_password_too_short': 'Mot de passe trop court (min.',
+'auth_error_sign_in_failed': 'Échec de la connexion',
+'auth_error_email_not_verified': 'Email non vérifié',
+'auth_error_network': 'Erreur réseau',
+'auth_error_rate_limit': 'Trop de tentatives. Réessayez plus tard.',
+'auth_error_technical': 'Erreur technique. Réessayez.',
+'auth_error_invalid_otp': 'Code OTP invalide',
+'auth_error_otp_expired': 'Code OTP expiré',
+'auth_info_otp_sent': 'Code OTP envoyé',
+'auth_accept_terms': "J'accepte les",
+'settings_terms': "Conditions d'utilisation",
+'settings_privacy_policy': 'Politique de confidentialité',
+
+// ═══════════════════════════════════════════════════════════
+// REGISTRATION (inscription personnelle)
+// ═══════════════════════════════════════════════════════════
+'reg_step1_title': 'Votre profil',
+'reg_step1_subtitle': 'Dites-nous qui vous êtes',
+'reg_full_name_label': 'Nom complet',
+'reg_full_name_hint': 'Ex : Jean Kabongo',
+'reg_dob_label': 'Date de naissance',
+'reg_country_label': 'Pays',
+'reg_occupation_label': 'Profession',
+'reg_occupation_hint': 'Ex : Enseignant',
+'reg_step2_title': 'Votre compte',
+'reg_step2_subtitle': 'Identifiants et vérification',
+'reg_email_label': 'Email',
+'reg_email_hint': 'nom@exemple.com',
+'reg_phone_label': 'Téléphone',
+'reg_phone_hint': '+243…',
+'reg_password_label': 'Mot de passe',
+'reg_password_hint': '8 caractères minimum',
+'reg_confirm_password_label': 'Confirmer le mot de passe',
+'reg_confirm_password_hint': 'Ressaisissez le mot de passe',
+'reg_strength_label': 'Robustesse',
+'reg_strength_very_weak': 'Très faible',
+'reg_strength_weak': 'Faible',
+'reg_strength_medium': 'Moyenne',
+'reg_strength_strong': 'Forte',
+'reg_strength_excellent': 'Excellente',
+'reg_identity_title': 'Identité THIX',
+'reg_thix_chat_label': 'THIX CHAT',
+'reg_thix_chat_hint': 'pseudo.unique',
+'reg_verification_title': 'Vérification',
+'reg_get_otp': 'Recevoir un code OTP',
+'reg_resend_in': 'Renvoyer dans',
+'reg_seconds_short': 's',
+'reg_code_sent_resend': 'Code envoyé — renvoyer',
+'reg_otp_label': 'Code OTP',
+'reg_next': 'Suivant',
+'reg_activating': 'Activation…',
+'reg_validate_activate': 'Valider et activer',
+'reg_go_to_dashboard': 'Accéder à mon espace',
+'reg_change_account': 'Changer de compte',
+'reg_previous_step': 'Étape précédente',
+'reg_congrats': 'Félicitations !',
+'reg_welcome_message': 'Bienvenue',
+'reg_id_card_title': "CARTE D'IDENTITÉ NUMÉRIQUE",
+'reg_official_thix_id': 'ID THIX OFFICIEL',
+'reg_generating': 'Génération…',
+'reg_copy_thix_id': "Copier l'ID THIX",
+'reg_thix_id_copied': 'ID THIX copié',
+'reg_summary': 'Résumé',
+'reg_mobile_label': 'Mobile',
+'reg_not_provided': 'Non renseigné',
+'reg_account_activated': 'Compte activé avec succès',
+
+// ═══════════════════════════════════════════════════════════
+// MEDIA — CATALOGUE & FEED
+// ═══════════════════════════════════════════════════════════
+'category_feed': 'Flux',
+'category_all': 'Tout',
+'media_catalog': 'Catalogue',
+'media_search_hint': 'Rechercher un titre, artiste…',
+'media_featured': 'À la une',
+'media_premium': 'Premium',
+'media_series': 'Séries',
+'media_load_error': 'Échec du chargement des médias',
+'media_no_results': 'Aucun résultat',
+'media_empty': 'Aucun contenu pour le moment',
+'media_loading': 'Chargement…',
+
+// ═══════════════════════════════════════════════════════════
+// MEDIA — ÉDITEUR VIDÉO
+// ═══════════════════════════════════════════════════════════
+'editor_title': 'Éditeur vidéo',
+'editor_trim': 'Découper',
+'editor_filter': 'Filtre',
+'editor_audio': 'Audio',
+'editor_mute_audio': 'Couper le son',
+'editor_pick_music': 'Ajouter une musique',
+'editor_save': 'Enregistrer',
+'editor_done': 'Terminé',
+'editor_not_ready': 'Vidéo en préparation…',
+'editor_error_short': 'Vidéo trop courte',
+'editor_error_too_short': 'Vidéo trop courte',
+'editor_error_trim_too_short': 'Découpage trop court',
+'editor_error_too_large': 'Fichier trop volumineux',
+'editor_error_audio_too_large': 'Audio trop volumineux',
+'editor_error_unsupported_format': 'Format vidéo non pris en charge',
+'editor_error_audio_unsupported': 'Format audio non pris en charge',
+'editor_error_file_missing': 'Fichier introuvable',
+'editor_error_file_unreadable': 'Fichier illisible',
+'editor_error_init_failed': "Échec d'initialisation de l'éditeur",
+'editor_error_pick_failed': 'Échec de la sélection du fichier',
+'filter_normal': 'Normal',
+'filter_cinematic': 'Cinématique',
+'filter_bright': 'Éclat',
+'filter_vintage': 'Vintage',
+'filter_cyberpunk': 'Cyberpunk',
+'filter_soft_beauty': 'Douceur',
+
+// ═══════════════════════════════════════════════════════════
+// MEDIA — LIVE
+// ═══════════════════════════════════════════════════════════
+'live_tab_title': 'En direct',
+'live_active_now': 'en direct maintenant',
+'live_go_live_btn': 'Lancer un direct',
+'live_start_btn': 'Démarrer le direct',
+'live_network_excellent': 'Réseau excellent',
+'live_category_label': 'Catégorie',
+'live_category_general': 'Général',
+'live_category_music': 'Musique',
+'live_audience_label': 'Audience',
+'live_audience_public': 'Public',
+'live_audience_followers': 'Abonnés',
+'live_audience_private': 'Privé',
+'live_description_label': 'Description',
+'live_tags_label': 'Tags (séparés par des virgules)',
+'live_flip': 'Retourner',
+'live_mic_on': 'Micro ON',
+'live_mic_off': 'Micro OFF',
+'live_flash': 'Flash',
+
+// ═══════════════════════════════════════════════════════════
+// THIX EVENT — PAIEMENT
+// ═══════════════════════════════════════════════════════════
+'payment_title': 'Paiement',
+'payment_choose_method': 'Choisissez un moyen de paiement',
+'payment_amount_due': 'Montant à payer',
+'payment_phone_label': 'Numéro de téléphone',
+'payment_security_info': 'Paiement sécurisé via SerdiPay. Validez sur votre téléphone.',
+'payment_pay_now': 'Payer',
+'payment_mpesa': 'M-Pesa',
+'payment_airtel': 'Airtel Money',
+'payment_orange': 'Orange Money',
+'payment_afrimoney': 'Afrimoney',
+'payment_card': 'Carte bancaire',
+'payment_processing_title': 'Paiement en cours',
+'payment_processing_msg': 'Votre transaction est en cours de traitement.',
+'payment_validate_on_phone': 'Validez le paiement sur votre téléphone',
+'payment_timeout': 'Délai de paiement dépassé',
+'payment_rejected': 'Paiement refusé',
+'payment_failed': 'Échec du paiement',
+'payment_invalid_phone': 'Numéro de téléphone invalide',
+'payment_mpesa': 'Vodacom M-Pesa',
+'error_validation': 'Données invalides',
+'error_timeout': 'Délai dépassé',
+'error_network': 'Erreur réseau',
+
+// ═══════════════════════════════════════════════════════════
+// SERDIPAY — Messages spécifiques mobile money
+// ═══════════════════════════════════════════════════════════
+'serdipay_processing': 'Paiement en cours…',
+'serdipay_success': 'Paiement confirmé',
+'serdipay_failed': 'Paiement échoué',
+'serdipay_pending': 'En attente de validation',
+'serdipay_conflict': 'Une transaction similaire est déjà en cours. Patientez 2 minutes.',
+'serdipay_rate_limited': 'Trop de transactions. Réessayez plus tard.',
+'serdipay_wrong_pin': 'Code PIN incorrect',
+'serdipay_insufficient_balance': 'Solde insuffisant sur le compte mobile',
+'serdipay_network_error': 'Erreur de connexion à SerdiPay',
+'serdipay_telecom_am': 'Airtel Money',
+'serdipay_telecom_om': 'Orange Money',
+'serdipay_telecom_mp': 'Vodacom M-Pesa',
+'serdipay_telecom_af': 'Afrimoney',
 
 };
 //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
@@ -3723,6 +4117,400 @@ const Map<String, String> _en = {
   'chatlist_search_hint': 'Search conversation',
   'chatlist_contact_thix': 'THIX Contact',
   'chatlist_yesterday': 'Yesterday',
+  // ═══════════════════════════════════════════════════════════
+// COMMON CONTROLS
+// ═══════════════════════════════════════════════════════════
+'cancel': 'Cancel',
+'confirm': 'Confirm',
+'back': 'Back',
+'retry': 'Retry',
+'more': 'More',
+'avatar_user': 'User',
+'common_back': 'Back',
+'common_cancel': 'Cancel',
+'common_confirm': 'Confirm',
+'common_clear': 'Clear',
+'common_show_password': 'Show password',
+'common_hide_password': 'Hide password',
+
+// ═══════════════════════════════════════════════════════════
+// ESCALATION (conversation)
+// ═══════════════════════════════════════════════════════════
+'escalate_title': 'Escalate conversation',
+'escalate_conversation_label': 'Conversation',
+'escalate_recipient_label': 'Recipient',
+'escalate_recipient_hint': '@handle or THIX ID',
+'escalate_identifier_required': 'Identifier required',
+'escalate_verify_or_select': 'Verify or select a recipient',
+'escalate_verify': 'Verify',
+'escalate_contacts': 'Contacts',
+'escalate_invalid_handle': 'Invalid handle',
+'escalate_invalid_id': 'Invalid identifier',
+'escalate_user_found': 'User found:',
+'escalate_user_not_found': 'User not found:',
+'escalate_user_selected': 'Selected:',
+'escalate_select_level': 'Select a level',
+'escalate_select_valid_recipient': 'Select a valid recipient',
+'escalate_invalid_from_agent': 'Invalid sender agent',
+'escalate_sent_success': 'Escalation sent',
+'escalate_send_error': 'Failed to send escalation',
+'escalate_send_button': 'Send',
+'escalate_select_recipient': 'Select recipient',
+'escalate_search_contact_hint': 'Search contact…',
+'escalate_no_contacts': 'No contacts',
+'escalate_level_label': 'Escalation level',
+'escalate_priority_label': 'Priority',
+'escalate_reason_label': 'Reason',
+'escalate_reason_hint': 'Describe the reason for the escalation…',
+'escalate_comment_label': 'Comment (optional)',
+'escalate_comment_hint': 'Add an optional comment…',
+
+// ═══════════════════════════════════════════════════════════
+// ESCALATION (shared)
+// ═══════════════════════════════════════════════════════════
+'escalation_cancel': 'Cancel',
+'escalation_not_authenticated': 'Not authenticated',
+'escalation_back': 'Back',
+'escalation_timeout': 'Timeout. Please retry.',
+'escalation_generic_error': 'An error occurred. Please retry.',
+'escalation_invalid_conversation': 'Invalid conversation',
+'escalation_conversation_not_found': 'Conversation not found',
+'escalation_open_error': 'Failed to open conversation',
+
+// ═══════════════════════════════════════════════════════════
+// ESCALATION (history)
+// ═══════════════════════════════════════════════════════════
+'escalation_history_title': 'Escalation history',
+'escalation_history_empty': 'No escalations',
+'escalation_history_empty_subtitle': 'Escalations for this conversation will appear here.',
+'escalation_from_level': 'From',
+'escalation_to_level': 'to',
+'escalation_resolved_on': 'Resolved on',
+
+// ═══════════════════════════════════════════════════════════
+// ESCALATION (dashboard)
+// ═══════════════════════════════════════════════════════════
+'escalation_dashboard_title': 'Escalation dashboard',
+'escalation_stat_pending': 'Pending',
+'escalation_stat_accepted': 'Accepted',
+'escalation_stat_resolved': 'Resolved',
+'escalation_dashboard_empty': 'No pending escalations',
+'escalation_from_label': 'From',
+'escalation_to_label': 'To',
+'escalation_tap_to_handle': 'Tap to handle',
+'escalation_handle_button': 'Handle',
+
+// ═══════════════════════════════════════════════════════════
+// ESCALATION (handling)
+// ═══════════════════════════════════════════════════════════
+'escalation_handle_title': 'Handle escalation',
+'escalation_actions': 'Actions',
+'escalation_accept_button': 'Accept',
+'escalation_reject_button': 'Reject',
+'escalation_reject_reason_hint': 'Rejection reason…',
+'escalation_confirm_reject': 'Confirm rejection',
+'escalation_mark_resolved': 'Mark as resolved',
+'escalation_reason': 'Reason',
+'escalation_comment': 'Comment',
+'escalation_date': 'Date',
+'escalation_invalid_id': 'Invalid identifier',
+'escalation_accepted': 'Accepted',
+'escalation_rejected': 'Rejected',
+'escalation_resolved': 'Resolved',
+'escalation_accept_error': 'Failed to accept',
+'escalation_reject_error': 'Failed to reject',
+'escalation_resolve_error': 'Failed to resolve',
+'escalation_accepted_message': 'Escalation accepted. You can now resolve it.',
+'escalation_rejected_message': 'Escalation rejected.',
+'escalation_resolved_message': 'Escalation resolved.',
+
+// ═══════════════════════════════════════════════════════════
+// AGENT SELECTOR
+// ═══════════════════════════════════════════════════════════
+'agent_selector_loading': 'Loading agents…',
+'agent_selector_error': 'Failed to load agents',
+'agent_selector_error_retry': 'Retry',
+'agent_selector_empty': 'No agents available',
+'agent_selector_label': 'Agent',
+'agent_selector_required': 'Please select an agent',
+
+// ═══════════════════════════════════════════════════════════
+// CALLS
+// ═══════════════════════════════════════════════════════════
+'call_history_title': 'Call history',
+'call_search_hint': 'Search by name…',
+'call_search_button': 'Search',
+'call_new_call': 'New call',
+'call_type_audio': 'Audio call',
+'call_type_video': 'Video call',
+'call_yesterday': 'Yesterday',
+'call_search_contact_hint': 'Search contact…',
+'call_no_connections': 'No connections',
+'call_unknown_contact': 'Unknown contact',
+'call_error_invalid_peer': 'Invalid contact',
+'call_error_start_failed': 'Failed to start call',
+'call_history_error': 'Failed to load history',
+'call_history_empty': 'No calls',
+'call_video_call': 'Video call',
+'call_audio_call': 'Audio call',
+'call_video': 'Video call',
+'call_audio': 'Audio call',
+
+// ═══════════════════════════════════════════════════════════
+// CONNECTIONS
+// ═══════════════════════════════════════════════════════════
+'connections_page_title': 'My network',
+'connections_active': 'Active connections',
+'connections_received': 'Received requests',
+'connections_sent': 'Sent requests',
+'connections_empty_title': 'No connections yet',
+'connections_empty_message': 'Connect with other members to grow your network.',
+'connections_wants_connect': 'Wants to connect with you',
+'connections_ignore': 'Ignore',
+'connections_accept': 'Accept',
+'connections_pending': 'Pending',
+'connections_cancel_request': 'Cancel',
+'connections_cancel_message': 'Cancel this connection request?',
+'connections_cancelled': 'Request cancelled',
+'connections_cancel_error': 'Failed to cancel',
+'connections_remove_title': 'Remove connection',
+'connections_remove_message': 'Remove from your network:',
+'connections_removed': 'Connection removed',
+'connections_remove_error': 'Failed to remove',
+'connections_block_title': 'Block user',
+'connections_block_message': 'Block this user? They will no longer be able to contact you.',
+'connections_blocked': 'User blocked',
+'connections_block_error': 'Failed to block',
+'connections_network': 'Network member',
+'connections_network_member': 'Network member',
+'connections_message': 'Message',
+'connections_audio': 'Audio',
+'connections_video': 'Video',
+'connections_view_profile': 'View profile',
+'connections_remove_from_network': 'Remove from network',
+'connections_block_user': 'Block user',
+'connections_accepted': 'Request accepted',
+'connections_accept_error': 'Failed to accept',
+'connections_ignored': 'Request ignored',
+'connections_reject_error': 'Failed to reject',
+
+// ═══════════════════════════════════════════════════════════
+// LOGIN / AUTH
+// ═══════════════════════════════════════════════════════════
+'login_title': 'Sign in',
+'login_subtitle': 'Access your THIX digital identity',
+'login_identifier_label': 'Identifier',
+'login_identifier_hint': 'Email, phone or THIX ID',
+'login_password_label': 'Password',
+'login_password_hint': '••••••••',
+'login_remember_me': 'Remember me',
+'login_forgot_password': 'Forgot password?',
+'login_button': 'Sign in',
+'login_verifying': 'Verifying…',
+'login_retry_in': 'Retry in',
+'login_seconds_suffix': 's',
+'login_biometric': 'OR CONTINUE WITH',
+'login_security_title': 'Secure sign-in',
+'login_security_subtitle': 'Your data is end-to-end encrypted',
+'login_new_user': 'New to THIX?',
+'login_create_account': 'Create account',
+'login_email_hint': 'name@example.com',
+'login_otp_label': 'OTP code (8 digits)',
+'login_new_password_label': 'New password',
+'login_password_min_length': 'Minimum 8 characters',
+'login_reset_instructions': 'Enter your email to receive a reset code.',
+'login_reset_new_password': 'New password',
+'login_confirm': 'Confirm',
+'login_send': 'Send',
+'login_please_wait': 'Please wait…',
+'login_password_updated': 'Password updated',
+'login_error_empty_otp': 'Enter the OTP code',
+'login_error_suspended': 'Account suspended. Contact support.',
+'login_error_no_account': 'No account found',
+'login_error_mfa_required': 'Two-factor verification required',
+'login_error_locked': 'Too many attempts. Account temporarily locked.',
+
+// ═══════════════════════════════════════════════════════════
+// AUTH — TECHNICAL ERRORS
+// ═══════════════════════════════════════════════════════════
+'auth_error_identifier_required': 'Identifier required',
+'auth_error_password_required': 'Password required',
+'auth_error_invalid_email': 'Invalid email',
+'auth_error_password_too_short': 'Password too short (min.',
+'auth_error_sign_in_failed': 'Sign-in failed',
+'auth_error_email_not_verified': 'Email not verified',
+'auth_error_network': 'Network error',
+'auth_error_rate_limit': 'Too many attempts. Try again later.',
+'auth_error_technical': 'Technical error. Try again.',
+'auth_error_invalid_otp': 'Invalid OTP code',
+'auth_error_otp_expired': 'OTP code expired',
+'auth_info_otp_sent': 'OTP code sent',
+'auth_accept_terms': 'I accept the',
+'settings_terms': 'Terms of service',
+'settings_privacy_policy': 'Privacy policy',
+
+// ═══════════════════════════════════════════════════════════
+// REGISTRATION (personal)
+// ═══════════════════════════════════════════════════════════
+'reg_step1_title': 'Your profile',
+'reg_step1_subtitle': 'Tell us who you are',
+'reg_full_name_label': 'Full name',
+'reg_full_name_hint': 'Ex: John Kabongo',
+'reg_dob_label': 'Date of birth',
+'reg_country_label': 'Country',
+'reg_occupation_label': 'Occupation',
+'reg_occupation_hint': 'Ex: Teacher',
+'reg_step2_title': 'Your account',
+'reg_step2_subtitle': 'Credentials and verification',
+'reg_email_label': 'Email',
+'reg_email_hint': 'name@example.com',
+'reg_phone_label': 'Phone',
+'reg_phone_hint': '+243…',
+'reg_password_label': 'Password',
+'reg_password_hint': 'Minimum 8 characters',
+'reg_confirm_password_label': 'Confirm password',
+'reg_confirm_password_hint': 'Re-enter password',
+'reg_strength_label': 'Strength',
+'reg_strength_very_weak': 'Very weak',
+'reg_strength_weak': 'Weak',
+'reg_strength_medium': 'Medium',
+'reg_strength_strong': 'Strong',
+'reg_strength_excellent': 'Excellent',
+'reg_identity_title': 'THIX identity',
+'reg_thix_chat_label': 'THIX CHAT',
+'reg_thix_chat_hint': 'unique.handle',
+'reg_verification_title': 'Verification',
+'reg_get_otp': 'Get OTP code',
+'reg_resend_in': 'Resend in',
+'reg_seconds_short': 's',
+'reg_code_sent_resend': 'Code sent — resend',
+'reg_otp_label': 'OTP code',
+'reg_next': 'Next',
+'reg_activating': 'Activating…',
+'reg_validate_activate': 'Validate and activate',
+'reg_go_to_dashboard': 'Go to my dashboard',
+'reg_change_account': 'Switch account',
+'reg_previous_step': 'Previous step',
+'reg_congrats': 'Congratulations!',
+'reg_welcome_message': 'Welcome',
+'reg_id_card_title': 'DIGITAL ID CARD',
+'reg_official_thix_id': 'OFFICIAL THIX ID',
+'reg_generating': 'Generating…',
+'reg_copy_thix_id': 'Copy THIX ID',
+'reg_thix_id_copied': 'THIX ID copied',
+'reg_summary': 'Summary',
+'reg_mobile_label': 'Mobile',
+'reg_not_provided': 'Not provided',
+'reg_account_activated': 'Account activated successfully',
+
+// ═══════════════════════════════════════════════════════════
+// MEDIA — CATALOG & FEED
+// ═══════════════════════════════════════════════════════════
+'category_feed': 'Feed',
+'category_all': 'All',
+'media_catalog': 'Catalog',
+'media_search_hint': 'Search title, artist…',
+'media_featured': 'Featured',
+'media_premium': 'Premium',
+'media_series': 'Series',
+'media_load_error': 'Failed to load media',
+'media_no_results': 'No results',
+'media_empty': 'No content yet',
+'media_loading': 'Loading…',
+
+// ═══════════════════════════════════════════════════════════
+// MEDIA — VIDEO EDITOR
+// ═══════════════════════════════════════════════════════════
+'editor_title': 'Video editor',
+'editor_trim': 'Trim',
+'editor_filter': 'Filter',
+'editor_audio': 'Audio',
+'editor_mute_audio': 'Mute audio',
+'editor_pick_music': 'Add music',
+'editor_save': 'Save',
+'editor_done': 'Done',
+'editor_not_ready': 'Preparing video…',
+'editor_error_short': 'Video too short',
+'editor_error_too_short': 'Video too short',
+'editor_error_trim_too_short': 'Trim too short',
+'editor_error_too_large': 'File too large',
+'editor_error_audio_too_large': 'Audio too large',
+'editor_error_unsupported_format': 'Unsupported video format',
+'editor_error_audio_unsupported': 'Unsupported audio format',
+'editor_error_file_missing': 'File not found',
+'editor_error_file_unreadable': 'Unreadable file',
+'editor_error_init_failed': 'Editor initialization failed',
+'editor_error_pick_failed': 'File selection failed',
+'filter_normal': 'Normal',
+'filter_cinematic': 'Cinematic',
+'filter_bright': 'Bright',
+'filter_vintage': 'Vintage',
+'filter_cyberpunk': 'Cyberpunk',
+'filter_soft_beauty': 'Soft beauty',
+
+// ═══════════════════════════════════════════════════════════
+// MEDIA — LIVE
+// ═══════════════════════════════════════════════════════════
+'live_tab_title': 'Live',
+'live_active_now': 'live now',
+'live_go_live_btn': 'Go live',
+'live_start_btn': 'Start live',
+'live_network_excellent': 'Excellent network',
+'live_category_label': 'Category',
+'live_category_general': 'General',
+'live_category_music': 'Music',
+'live_audience_label': 'Audience',
+'live_audience_public': 'Public',
+'live_audience_followers': 'Followers',
+'live_audience_private': 'Private',
+'live_description_label': 'Description',
+'live_tags_label': 'Tags (comma separated)',
+'live_flip': 'Flip',
+'live_mic_on': 'Mic ON',
+'live_mic_off': 'Mic OFF',
+'live_flash': 'Flash',
+
+// ═══════════════════════════════════════════════════════════
+// THIX EVENT — PAYMENT
+// ═══════════════════════════════════════════════════════════
+'payment_title': 'Payment',
+'payment_choose_method': 'Choose a payment method',
+'payment_amount_due': 'Amount due',
+'payment_phone_label': 'Phone number',
+'payment_security_info': 'Secure payment via SerdiPay. Confirm on your phone.',
+'payment_pay_now': 'Pay',
+'payment_mpesa': 'Vodacom M-Pesa',
+'payment_airtel': 'Airtel Money',
+'payment_orange': 'Orange Money',
+'payment_afrimoney': 'Afrimoney',
+'payment_card': 'Bank card',
+'payment_processing_title': 'Payment in progress',
+'payment_processing_msg': 'Your transaction is being processed.',
+'payment_validate_on_phone': 'Confirm the payment on your phone',
+'payment_timeout': 'Payment timeout',
+'payment_rejected': 'Payment rejected',
+'payment_failed': 'Payment failed',
+'payment_invalid_phone': 'Invalid phone number',
+'error_validation': 'Invalid data',
+'error_timeout': 'Timeout',
+'error_network': 'Network error',
+
+// ═══════════════════════════════════════════════════════════
+// SERDIPAY — Mobile money specific messages
+// ═══════════════════════════════════════════════════════════
+'serdipay_processing': 'Payment in progress…',
+'serdipay_success': 'Payment confirmed',
+'serdipay_failed': 'Payment failed',
+'serdipay_pending': 'Awaiting confirmation',
+'serdipay_conflict': 'A similar transaction is already in progress. Please wait 2 minutes.',
+'serdipay_rate_limited': 'Too many transactions. Please try again later.',
+'serdipay_wrong_pin': 'Wrong PIN code',
+'serdipay_insufficient_balance': 'Insufficient balance on mobile account',
+'serdipay_network_error': 'Connection error to SerdiPay',
+'serdipay_telecom_am': 'Airtel Money',
+'serdipay_telecom_om': 'Orange Money',
+'serdipay_telecom_mp': 'Vodacom M-Pesa',
+'serdipay_telecom_af': 'Afrimoney',
 
 
 };
@@ -5433,6 +6221,94 @@ const Map<String, String> _sw = {
   'chatlist_search_hint': 'Tafuta mazungumzo',
   'chatlist_contact_thix': 'Mwasiliani THIX',
   'chatlist_yesterday': 'Jana',
+  // CONTRÔLES
+'cancel': 'Ghairi', 'confirm': 'Thibitisha', 'back': 'Rudi', 'retry': 'Jaribu tena', 'more': 'Zaidi', 'avatar_user': 'Mtumiaji',
+'common_back': 'Rudi', 'common_cancel': 'Ghairi', 'common_confirm': 'Thibitisha', 'common_clear': 'Futa', 'common_show_password': 'Onyesha nenosiri', 'common_hide_password': 'Ficha nenosiri',
+
+// ESCALADE (conversation)
+'escalate_title': 'Kupeleka mazungumzo juu', 'escalate_conversation_label': 'Mazungumzo', 'escalate_recipient_label': 'Mpokeaji', 'escalate_recipient_hint': '@handle au THIX ID', 'escalate_identifier_required': 'Kitambulisho kinahitajika', 'escalate_verify_or_select': 'Thibitisha au chagua mpokeaji',
+'escalate_verify': 'Thibitisha', 'escalate_contacts': 'Anwani', 'escalate_invalid_handle': 'Handle batili', 'escalate_invalid_id': 'Kitambulisho batili', 'escalate_user_found': 'Mtumiaji amepatikana:', 'escalate_user_not_found': 'Mtumiaji hajapatikana:',
+'escalate_user_selected': 'Imechaguliwa:', 'escalate_select_level': 'Chagua kiwango', 'escalate_select_valid_recipient': 'Chagua mpokeaji sahihi', 'escalate_invalid_from_agent': 'Wakala mtumaji batili', 'escalate_sent_success': 'Mapeleko yametumwa', 'escalate_send_error': 'Imeshindwa kutuma mapeleko',
+'escalate_send_button': 'Tuma', 'escalate_select_recipient': 'Chagua mpokeaji', 'escalate_search_contact_hint': 'Tafuta anwani…', 'escalate_no_contacts': 'Hakuna anwani', 'escalate_level_label': 'Kiwango cha mapeleko', 'escalate_priority_label': 'Kipaumbele',
+'escalate_reason_label': 'Sababu', 'escalate_reason_hint': 'Eleza sababu ya mapeleko…', 'escalate_comment_label': 'Maoni (hiari)', 'escalate_comment_hint': 'Ongeza maoni ya hiari…',
+
+// ESCALADE (partagé)
+'escalation_cancel': 'Ghairi', 'escalation_not_authenticated': 'Hujathibitishwa', 'escalation_back': 'Rudi', 'escalation_timeout': 'Muda umeisha. Jaribu tena.', 'escalation_generic_error': 'Hitilafu imetokea. Jaribu tena.', 'escalation_invalid_conversation': 'Mazungumzo batili',
+'escalation_conversation_not_found': 'Mazungumzo hayajapatikana', 'escalation_open_error': 'Imeshindwa kufungua mazungumzo',
+
+// ESCALADE (historique)
+'escalation_history_title': 'Historia ya mapeleko', 'escalation_history_empty': 'Hakuna mapeleko', 'escalation_history_empty_subtitle': 'Mapeleko ya mazungumzo haya yataonekana hapa.', 'escalation_from_level': 'Kutoka', 'escalation_to_level': 'kwenda', 'escalation_resolved_on': 'Ilimalizwa tarehe',
+
+// ESCALADE (dashboard)
+'escalation_dashboard_title': 'Dashibodi ya mapeleko', 'escalation_stat_pending': 'Yasubiri', 'escalation_stat_accepted': 'Yamekubaliwa', 'escalation_stat_resolved': 'Yamemalizwa', 'escalation_dashboard_empty': 'Hakuna mapeleko yanayosubiri', 'escalation_from_label': 'Kutoka',
+'escalation_to_label': 'Kwa', 'escalation_tap_to_handle': 'Gusa kushughulikia', 'escalation_handle_button': 'Shughulikia',
+
+// ESCALADE (traitement)
+'escalation_handle_title': 'Shughulikia mapeleko', 'escalation_actions': 'Vitendo', 'escalation_accept_button': 'Kubali', 'escalation_reject_button': 'Kataa', 'escalation_reject_reason_hint': 'Sababu ya kukataa…', 'escalation_confirm_reject': 'Thibitisha kukataa',
+'escalation_mark_resolved': 'Weka kumalizika', 'escalation_reason': 'Sababu', 'escalation_comment': 'Maoni', 'escalation_date': 'Tarehe', 'escalation_invalid_id': 'Kitambulisho batili', 'escalation_accepted': 'Imekubaliwa',
+'escalation_rejected': 'Imekataliwa', 'escalation_resolved': 'Imemalizwa', 'escalation_accept_error': 'Imeshindwa kukubali', 'escalation_reject_error': 'Imeshindwa kukataa', 'escalation_resolve_error': 'Imeshindwa kumaliza',
+'escalation_accepted_message': 'Mapeleko yamekubaliwa. Unaweza kumaliza sasa.', 'escalation_rejected_message': 'Mapeleko yamekataliwa.', 'escalation_resolved_message': 'Mapeleko yamemalizwa.',
+
+// AGENT SELECTOR
+'agent_selector_loading': 'Inapakia mawakala…', 'agent_selector_error': 'Imeshindwa kupakia mawakala', 'agent_selector_error_retry': 'Jaribu tena', 'agent_selector_empty': 'Hakuna mawakala', 'agent_selector_label': 'Wakala', 'agent_selector_required': 'Tafadhali chagua wakala',
+
+// CALLS
+'call_history_title': 'Historia ya simu', 'call_search_hint': 'Tafuta kwa jina…', 'call_search_button': 'Tafuta', 'call_new_call': 'Simu mpya', 'call_type_audio': 'Simu ya sauti', 'call_type_video': 'Simu ya video',
+'call_yesterday': 'Jana', 'call_search_contact_hint': 'Tafuta anwani…', 'call_no_connections': 'Hakuna miunganisho', 'call_unknown_contact': 'Anwani isiyojulikana', 'call_error_invalid_peer': 'Anwani batili', 'call_error_start_failed': 'Imeshindwa kuanza simu',
+'call_history_error': 'Imeshindwa kupakia historia', 'call_history_empty': 'Hakuna simu', 'call_video_call': 'Simu ya video', 'call_audio_call': 'Simu ya sauti', 'call_video': 'Simu ya video', 'call_audio': 'Simu ya sauti',
+
+// CONNECTIONS
+'connections_page_title': 'Mtandao wangu', 'connections_active': 'Miunganisho hai', 'connections_received': 'Maombi yaliyopokelewa', 'connections_sent': 'Maombi yaliyotumwa', 'connections_empty_title': 'Hakuna miunganisho bado', 'connections_empty_message': 'Ungana na wanachama wengine kukua mtandao wako.',
+'connections_wants_connect': 'Anataka kuungana nawe', 'connections_ignore': 'Puuza', 'connections_accept': 'Kubali', 'connections_pending': 'Inasubiri', 'connections_cancel_request': 'Ghairi', 'connections_cancel_message': 'Unge ghairi ombi hili?',
+'connections_cancelled': 'Ombi limeghairiwa', 'connections_cancel_error': 'Imeshindwa kughairi', 'connections_remove_title': 'Ondoa munganisho', 'connections_remove_message': 'Ondoa kwenye mtandao wako:', 'connections_removed': 'Munganisho umeondolewa', 'connections_remove_error': 'Imeshindwa kuondoa',
+'connections_block_title': 'Zuia mtumiaji', 'connections_block_message': 'Unge zuia mtumiaji huyu? Hataweza kuwasiliana nawe.', 'connections_blocked': 'Mtumiaji amezuiwa', 'connections_block_error': 'Imeshindwa kuzuia', 'connections_network': 'Mwanachama wa mtandao', 'connections_network_member': 'Mwanachama wa mtandao',
+'connections_message': 'Ujumbe', 'connections_audio': 'Sauti', 'connections_video': 'Video', 'connections_view_profile': 'Tazama wasifu', 'connections_remove_from_network': 'Ondoa kwenye mtandao', 'connections_block_user': 'Zuia mtumiaji',
+'connections_accepted': 'Ombi limekubaliwa', 'connections_accept_error': 'Imeshindwa kukubali', 'connections_ignored': 'Ombi limepuzwa', 'connections_reject_error': 'Imeshindwa kukataa',
+
+// LOGIN
+'login_title': 'Ingia', 'login_subtitle': 'Fikia utambulisho wako wa kidijitali THIX', 'login_identifier_label': 'Kitambulisho', 'login_identifier_hint': 'Barua pepe, simu au THIX ID', 'login_password_label': 'Nenosiri', 'login_password_hint': '••••••••',
+'login_remember_me': 'Nikumbuke', 'login_forgot_password': 'Umesahau nenosiri?', 'login_button': 'Ingia', 'login_verifying': 'Inathibitisha…', 'login_retry_in': 'Jaribu baada ya', 'login_seconds_suffix': 's',
+'login_biometric': 'AU ENDELEA NA', 'login_security_title': 'Kuingia salama', 'login_security_subtitle': 'Data yako imesimbwa kwa njia fiche', 'login_new_user': 'Mpya kwenye THIX?', 'login_create_account': 'Fungua akaunti',
+'login_email_hint': 'jina@mfano.com', 'login_otp_label': 'Kodi ya OTP (tarakimu 8)', 'login_new_password_label': 'Nenosiri jipya', 'login_password_min_length': 'Herufi 8 kwa kiwango cha chini', 'login_reset_instructions': 'Weka barua pepe yako kupokea kodi ya kubadilisha.',
+'login_reset_new_password': 'Nenosiri jipya', 'login_confirm': 'Thibitisha', 'login_send': 'Tuma', 'login_please_wait': 'Subiri…', 'login_password_updated': 'Nenosiri limebadilishwa', 'login_error_empty_otp': 'Weka kodi ya OTP',
+'login_error_suspended': 'Akaunti imesimamishwa. Wasiliana na msaada.', 'login_error_no_account': 'Hakuna akaunti', 'login_error_mfa_required': 'Uthibitisho wa hatua mbili unahitajika', 'login_error_locked': 'Majaribio mengi. Akaunti imefungwa kwa muda.',
+
+// AUTH ERRORS
+'auth_error_identifier_required': 'Kitambulisho kinahitajika', 'auth_error_password_required': 'Nenosiri linahitajika', 'auth_error_invalid_email': 'Barua pepe batili', 'auth_error_password_too_short': 'Nenosiri fupi (kiwango', 'auth_error_sign_in_failed': 'Kuingia kumeshindikana', 'auth_error_email_not_verified': 'Barua pepe hajathibitishwa',
+'auth_error_network': 'Hitilafu ya mtandao', 'auth_error_rate_limit': 'Majaribio mengi. Jaribu baadaye.', 'auth_error_technical': 'Hitilafu ya kiufundi. Jaribu tena.', 'auth_error_invalid_otp': 'Kodi ya OTP batili', 'auth_error_otp_expired': 'Kodi ya OTP imeisha', 'auth_info_otp_sent': 'Kodi ya OTP imetumwa',
+'auth_accept_terms': 'Nakubali', 'settings_terms': 'Masharti ya matumizi', 'settings_privacy_policy': 'Sera ya faragha',
+
+// REGISTRATION
+'reg_step1_title': 'Wasifu wako', 'reg_step1_subtitle': 'Tuambie wewe ni nani', 'reg_full_name_label': 'Jina kamili', 'reg_full_name_hint': 'Mf: Juma Kabongo', 'reg_dob_label': 'Tarehe ya kuzaliwa', 'reg_country_label': 'Nchi',
+'reg_occupation_label': 'Kazi', 'reg_occupation_hint': 'Mf: Mwalimu', 'reg_step2_title': 'Akaunti yako', 'reg_step2_subtitle': 'Vitambulisho na uthibitisho', 'reg_email_label': 'Barua pepe', 'reg_email_hint': 'jina@mfano.com',
+'reg_phone_label': 'Simu', 'reg_phone_hint': '+243…', 'reg_password_label': 'Nenosiri', 'reg_password_hint': 'Herufi 8 kwa kiwango cha chini', 'reg_confirm_password_label': 'Thibitisha nenosiri', 'reg_confirm_password_hint': 'Weka nenosiri tena',
+'reg_strength_label': 'Nguvu', 'reg_strength_very_weak': 'Dhaifu sana', 'reg_strength_weak': 'Dhaifu', 'reg_strength_medium': 'Wastani', 'reg_strength_strong': 'Imara', 'reg_strength_excellent': 'Bora',
+'reg_identity_title': 'Utambulisho THIX', 'reg_thix_chat_label': 'THIX CHAT', 'reg_thix_chat_hint': 'jina.la-kipekee', 'reg_verification_title': 'Uthibitisho', 'reg_get_otp': 'Pokea kodi ya OTP', 'reg_resend_in': 'Tuma tena baada ya',
+'reg_seconds_short': 's', 'reg_code_sent_resend': 'Kodi imetumwa — tuma tena', 'reg_otp_label': 'Kodi ya OTP', 'reg_next': 'Ifuatayo', 'reg_activating': 'Inawasha…', 'reg_validate_activate': 'Thibitisha na kuwasha',
+'reg_go_to_dashboard': 'Nenda kwenye eneo langu', 'reg_change_account': 'Badilisha akaunti', 'reg_previous_step': 'Hatua iliyopita', 'reg_congrats': 'Hongera!', 'reg_welcome_message': 'Karibu', 'reg_id_card_title': 'KADI YA UTAMBULISHO WA KIDIJITALI',
+'reg_official_thix_id': 'THIX ID RASMII', 'reg_generating': 'Inatengeneza…', 'reg_copy_thix_id': 'Nakili THIX ID', 'reg_thix_id_copied': 'THIX imenakiliwa', 'reg_summary': 'Muhtasari', 'reg_mobile_label': 'Simu',
+'reg_not_provided': 'Haijawekwa', 'reg_account_activated': 'Akaunti imewashwa kwa mafanikio',
+
+// MEDIA
+'category_feed': 'Mlisho', 'category_all': 'Zote', 'media_catalog': 'Katalogu', 'media_search_hint': 'Tafuta kichwa, msanii…', 'media_featured': 'Maalum', 'media_premium': 'Premium',
+'media_series': 'Mfululizo', 'media_load_error': 'Imeshindwa kupakia media', 'media_no_results': 'Hakuna matokeo', 'media_empty': 'Hakuna maudhui bado', 'media_loading': 'Inapakia…',
+'editor_title': 'Kihariri cha video', 'editor_trim': 'Kata', 'editor_filter': 'Kichujio', 'editor_audio': 'Sauti', 'editor_mute_audio': 'Zima sauti', 'editor_pick_music': 'Ongeza muziki',
+'editor_save': 'Hifadhi', 'editor_done': 'Imekamilika', 'editor_not_ready': 'Inaandaa video…', 'editor_error_short': 'Video fupi mno', 'editor_error_too_short': 'Video fupi mno', 'editor_error_trim_too_short': 'Mkato mfupi mno',
+'editor_error_too_large': 'Faili kubwa mno', 'editor_error_audio_too_large': 'Sauti kubwa mno', 'editor_error_unsupported_format': 'Muundo wa video hautumiki', 'editor_error_audio_unsupported': 'Muundo wa sauti hautumiki', 'editor_error_file_missing': 'Faili halipatikani', 'editor_error_file_unreadable': 'Faili halisomiki',
+'editor_error_init_failed': 'Kihariri kimeshindwa kuanza', 'editor_error_pick_failed': 'Imeshindwa kuchagua faili', 'filter_normal': 'Kawaida', 'filter_cinematic': 'Filamu', 'filter_bright': 'Mngao', 'filter_vintage': 'Kizamani',
+'filter_cyberpunk': 'Cyberpunk', 'filter_soft_beauty': 'Ulaini',
+'live_tab_title': 'Moja kwa moja', 'live_active_now': 'moja kwa moja sasa', 'live_go_live_btn': 'Anza live', 'live_start_btn': 'Anza live', 'live_network_excellent': 'Mtandao bora', 'live_category_label': 'Kategoria',
+'live_category_general': 'Jumla', 'live_category_music': 'Muziki', 'live_audience_label': 'Wasikilizaji', 'live_audience_public': 'Umma', 'live_audience_followers': 'Wafuasi', 'live_audience_private': 'Binafsi',
+'live_description_label': 'Maelezo', 'live_tags_label': 'Tagi (tenga kwa koma)', 'live_flip': 'Geuza', 'live_mic_on': 'Mic ON', 'live_mic_off': 'Mic OFF', 'live_flash': 'Flash',
+
+// PAYMENT / SERDIPAY
+'payment_title': 'Malipo', 'payment_choose_method': 'Chagua njia ya malipo', 'payment_amount_due': 'Kiasi cha kulipa', 'payment_phone_label': 'Namba ya simu', 'payment_security_info': 'Malipo salama kupitia SerdiPay. Thibitisha kwenye simu yako.', 'payment_pay_now': 'Lipa',
+'payment_mpesa': 'Vodacom M-Pesa', 'payment_airtel': 'Airtel Money', 'payment_orange': 'Orange Money', 'payment_afrimoney': 'Afrimoney', 'payment_card': 'Kadi ya benki', 'payment_processing_title': 'Malipo yanaendelea',
+'payment_processing_msg': 'Muamala wako unashughulikiwa.', 'payment_validate_on_phone': 'Thibitisha malipo kwenye simu yako', 'payment_timeout': 'Muda wa malipo umeisha', 'payment_rejected': 'Malipo yamekataliwa', 'payment_failed': 'Malipo yameshindikana', 'payment_invalid_phone': 'Namba ya simu batili',
+'error_validation': 'Data batili', 'error_timeout': 'Muda umeisha', 'error_network': 'Hitilafu ya mtandao',
+'serdipay_processing': 'Malipo yanaendelea…', 'serdipay_success': 'Malipo yamethibitishwa', 'serdipay_failed': 'Malipo yameshindikana', 'serdipay_pending': 'Inasubiri uthibitisho', 'serdipay_conflict': 'Muamala sawa unaendelea. Subiri dakika 2.', 'serdipay_rate_limited': 'Miamala mingi. Jaribu baadaye.',
+'serdipay_wrong_pin': 'Kodi ya PIN si sahihi', 'serdipay_insufficient_balance': 'Salio halitoshi kwenye akaunti ya simu', 'serdipay_network_error': 'Hitilafu ya kuunganisha na SerdiPay', 'serdipay_telecom_am': 'Airtel Money', 'serdipay_telecom_om': 'Orange Money', 'serdipay_telecom_mp': 'Vodacom M-Pesa',
+'serdipay_telecom_af': 'Afrimoney',
 
 
 };
@@ -7262,7 +8138,94 @@ const Map<String, String> _pt = {
   'chatlist_contact_thix': 'Contato THIX',
   'chatlist_yesterday': 'Ontem',
 
+// CONTRÔLES
+'cancel': 'Cancelar', 'confirm': 'Confirmar', 'back': 'Voltar', 'retry': 'Tentar novamente', 'more': 'Mais', 'avatar_user': 'Utilizador',
+'common_back': 'Voltar', 'common_cancel': 'Cancelar', 'common_confirm': 'Confirmar', 'common_clear': 'Limpar', 'common_show_password': 'Mostrar palavra-passe', 'common_hide_password': 'Ocultar palavra-passe',
 
+// ESCALADE (conversation)
+'escalate_title': 'Escalar conversa', 'escalate_conversation_label': 'Conversa', 'escalate_recipient_label': 'Destinatário', 'escalate_recipient_hint': '@utilizador ou ID THIX', 'escalate_identifier_required': 'Identificador obrigatório', 'escalate_verify_or_select': 'Verifique ou selecione um destinatário',
+'escalate_verify': 'Verificar', 'escalate_contacts': 'Contactos', 'escalate_invalid_handle': 'Identificador inválido', 'escalate_invalid_id': 'Identificador inválido', 'escalate_user_found': 'Utilizador encontrado:', 'escalate_user_not_found': 'Utilizador não encontrado:',
+'escalate_user_selected': 'Selecionado:', 'escalate_select_level': 'Selecione um nível', 'escalate_select_valid_recipient': 'Selecione um destinatário válido', 'escalate_invalid_from_agent': 'Agente remetente inválido', 'escalate_sent_success': 'Escalamento enviado', 'escalate_send_error': 'Falha ao enviar o escalamento',
+'escalate_send_button': 'Enviar', 'escalate_select_recipient': 'Selecionar destinatário', 'escalate_search_contact_hint': 'Pesquisar contacto…', 'escalate_no_contacts': 'Sem contactos', 'escalate_level_label': 'Nível de escalamento', 'escalate_priority_label': 'Prioridade',
+'escalate_reason_label': 'Motivo', 'escalate_reason_hint': 'Descreva o motivo do escalamento…', 'escalate_comment_label': 'Comentário (opcional)', 'escalate_comment_hint': 'Adicione um comentário opcional…',
+
+// ESCALADE (partagé)
+'escalation_cancel': 'Cancelar', 'escalation_not_authenticated': 'Não autenticado', 'escalation_back': 'Voltar', 'escalation_timeout': 'Tempo esgotado. Tente novamente.', 'escalation_generic_error': 'Ocorreu um erro. Tente novamente.', 'escalation_invalid_conversation': 'Conversa inválida',
+'escalation_conversation_not_found': 'Conversa não encontrada', 'escalation_open_error': 'Falha ao abrir a conversa',
+
+// ESCALADE (historique)
+'escalation_history_title': 'Histórico de escalamentos', 'escalation_history_empty': 'Sem escalamentos', 'escalation_history_empty_subtitle': 'Os escalamentos desta conversa aparecerão aqui.', 'escalation_from_level': 'De', 'escalation_to_level': 'para', 'escalation_resolved_on': 'Resolvido em',
+
+// ESCALADE (dashboard)
+'escalation_dashboard_title': 'Painel de escalamentos', 'escalation_stat_pending': 'Pendentes', 'escalation_stat_accepted': 'Aceites', 'escalation_stat_resolved': 'Resolvidos', 'escalation_dashboard_empty': 'Sem escalamentos pendentes', 'escalation_from_label': 'De',
+'escalation_to_label': 'Para', 'escalation_tap_to_handle': 'Toque para tratar', 'escalation_handle_button': 'Tratar',
+
+// ESCALADE (traitement)
+'escalation_handle_title': 'Tratar escalamento', 'escalation_actions': 'Ações', 'escalation_accept_button': 'Aceitar', 'escalation_reject_button': 'Rejeitar', 'escalation_reject_reason_hint': 'Motivo da rejeição…', 'escalation_confirm_reject': 'Confirmar rejeição',
+'escalation_mark_resolved': 'Marcar como resolvido', 'escalation_reason': 'Motivo', 'escalation_comment': 'Comentário', 'escalation_date': 'Data', 'escalation_invalid_id': 'Identificador inválido', 'escalation_accepted': 'Aceite',
+'escalation_rejected': 'Rejeitado', 'escalation_resolved': 'Resolvido', 'escalation_accept_error': 'Falha ao aceitar', 'escalation_reject_error': 'Falha ao rejeitar', 'escalation_resolve_error': 'Falha ao resolver',
+'escalation_accepted_message': 'Escalamento aceite. Agora pode resolvê-lo.', 'escalation_rejected_message': 'Escalamento rejeitado.', 'escalation_resolved_message': 'Escalamento resolvido.',
+
+// AGENT SELECTOR
+'agent_selector_loading': 'A carregar agentes…', 'agent_selector_error': 'Falha ao carregar agentes', 'agent_selector_error_retry': 'Tentar novamente', 'agent_selector_empty': 'Sem agentes disponíveis', 'agent_selector_label': 'Agente', 'agent_selector_required': 'Selecione um agente',
+
+// CALLS
+'call_history_title': 'Histórico de chamadas', 'call_search_hint': 'Pesquisar por nome…', 'call_search_button': 'Pesquisar', 'call_new_call': 'Nova chamada', 'call_type_audio': 'Chamada de áudio', 'call_type_video': 'Chamada de vídeo',
+'call_yesterday': 'Ontem', 'call_search_contact_hint': 'Pesquisar contacto…', 'call_no_connections': 'Sem ligações', 'call_unknown_contact': 'Contacto desconhecido', 'call_error_invalid_peer': 'Contacto inválido', 'call_error_start_failed': 'Falha ao iniciar a chamada',
+'call_history_error': 'Falha ao carregar o histórico', 'call_history_empty': 'Sem chamadas', 'call_video_call': 'Chamada de vídeo', 'call_audio_call': 'Chamada de áudio', 'call_video': 'Chamada de vídeo', 'call_audio': 'Chamada de áudio',
+
+// CONNECTIONS
+'connections_page_title': 'A minha rede', 'connections_active': 'Ligações ativas', 'connections_received': 'Pedidos recebidos', 'connections_sent': 'Pedidos enviados', 'connections_empty_title': 'Ainda sem ligações', 'connections_empty_message': 'Ligue-se a outros membros para crescer a sua rede.',
+'connections_wants_connect': 'Quer ligar-se a si', 'connections_ignore': 'Ignorar', 'connections_accept': 'Aceitar', 'connections_pending': 'Pendente', 'connections_cancel_request': 'Cancelar', 'connections_cancel_message': 'Cancelar este pedido de ligação?',
+'connections_cancelled': 'Pedido cancelado', 'connections_cancel_error': 'Falha ao cancelar', 'connections_remove_title': 'Remover ligação', 'connections_remove_message': 'Remover da sua rede:', 'connections_removed': 'Ligação removida', 'connections_remove_error': 'Falha ao remover',
+'connections_block_title': 'Bloquear utilizador', 'connections_block_message': 'Bloquear este utilizador? Ele não poderá contactá-lo.', 'connections_blocked': 'Utilizador bloqueado', 'connections_block_error': 'Falha ao bloquear', 'connections_network': 'Membro da rede', 'connections_network_member': 'Membro da rede',
+'connections_message': 'Mensagem', 'connections_audio': 'Áudio', 'connections_video': 'Vídeo', 'connections_view_profile': 'Ver perfil', 'connections_remove_from_network': 'Remover da rede', 'connections_block_user': 'Bloquear utilizador',
+'connections_accepted': 'Pedido aceite', 'connections_accept_error': 'Falha ao aceitar', 'connections_ignored': 'Pedido ignorado', 'connections_reject_error': 'Falha ao rejeitar',
+
+// LOGIN
+'login_title': 'Entrar', 'login_subtitle': 'Aceda à sua identidade digital THIX', 'login_identifier_label': 'Identificador', 'login_identifier_hint': 'Email, telefone ou ID THIX', 'login_password_label': 'Palavra-passe', 'login_password_hint': '••••••••',
+'login_remember_me': 'Lembrar-me', 'login_forgot_password': 'Esqueceu a palavra-passe?', 'login_button': 'Entrar', 'login_verifying': 'A verificar…', 'login_retry_in': 'Tente em', 'login_seconds_suffix': 's',
+'login_biometric': 'OU CONTINUAR COM', 'login_security_title': 'Entrada segura', 'login_security_subtitle': 'Os seus dados estão encriptados de ponta a ponta', 'login_new_user': 'Novo no THIX?', 'login_create_account': 'Criar conta',
+'login_email_hint': 'nome@exemplo.com', 'login_otp_label': 'Código OTP (8 dígitos)', 'login_new_password_label': 'Nova palavra-passe', 'login_password_min_length': 'Mínimo de 8 caracteres', 'login_reset_instructions': 'Introduza o seu email para receber um código de redefinição.',
+'login_reset_new_password': 'Nova palavra-passe', 'login_confirm': 'Confirmar', 'login_send': 'Enviar', 'login_please_wait': 'Aguarde…', 'login_password_updated': 'Palavra-passe atualizada', 'login_error_empty_otp': 'Introduza o código OTP',
+'login_error_suspended': 'Conta suspensa. Contacte o suporte.', 'login_error_no_account': 'Nenhuma conta encontrada', 'login_error_mfa_required': 'Verificação em dois passos necessária', 'login_error_locked': 'Demasiadas tentativas. Conta bloqueada temporariamente.',
+
+// AUTH ERRORS
+'auth_error_identifier_required': 'Identificador obrigatório', 'auth_error_password_required': 'Palavra-passe obrigatória', 'auth_error_invalid_email': 'Email inválido', 'auth_error_password_too_short': 'Palavra-passe curta (mín.', 'auth_error_sign_in_failed': 'Falha ao entrar', 'auth_error_email_not_verified': 'Email não verificado',
+'auth_error_network': 'Erro de rede', 'auth_error_rate_limit': 'Demasiadas tentativas. Tente mais tarde.', 'auth_error_technical': 'Erro técnico. Tente novamente.', 'auth_error_invalid_otp': 'Código OTP inválido', 'auth_error_otp_expired': 'Código OTP expirado', 'auth_info_otp_sent': 'Código OTP enviado',
+'auth_accept_terms': 'Aceito os', 'settings_terms': 'Termos de utilização', 'settings_privacy_policy': 'Política de privacidade',
+
+// REGISTRATION
+'reg_step1_title': 'O seu perfil', 'reg_step1_subtitle': 'Diga-nos quem é', 'reg_full_name_label': 'Nome completo', 'reg_full_name_hint': 'Ex: João Kabongo', 'reg_dob_label': 'Data de nascimento', 'reg_country_label': 'País',
+'reg_occupation_label': 'Profissão', 'reg_occupation_hint': 'Ex: Professor', 'reg_step2_title': 'A sua conta', 'reg_step2_subtitle': 'Credenciais e verificação', 'reg_email_label': 'Email', 'reg_email_hint': 'nome@exemplo.com',
+'reg_phone_label': 'Telefone', 'reg_phone_hint': '+243…', 'reg_password_label': 'Palavra-passe', 'reg_password_hint': 'Mínimo de 8 caracteres', 'reg_confirm_password_label': 'Confirmar palavra-passe', 'reg_confirm_password_hint': 'Reintroduza a palavra-passe',
+'reg_strength_label': 'Força', 'reg_strength_very_weak': 'Muito fraca', 'reg_strength_weak': 'Fraca', 'reg_strength_medium': 'Média', 'reg_strength_strong': 'Forte', 'reg_strength_excellent': 'Excelente',
+'reg_identity_title': 'Identidade THIX', 'reg_thix_chat_label': 'THIX CHAT', 'reg_thix_chat_hint': 'alcunha.única', 'reg_verification_title': 'Verificação', 'reg_get_otp': 'Receber código OTP', 'reg_resend_in': 'Reenviar em',
+'reg_seconds_short': 's', 'reg_code_sent_resend': 'Código enviado — reenviar', 'reg_otp_label': 'Código OTP', 'reg_next': 'Seguinte', 'reg_activating': 'A ativar…', 'reg_validate_activate': 'Validar e ativar',
+'reg_go_to_dashboard': 'Ir para o meu espaço', 'reg_change_account': 'Mudar de conta', 'reg_previous_step': 'Passo anterior', 'reg_congrats': 'Parabéns!', 'reg_welcome_message': 'Bem-vindo', 'reg_id_card_title': 'CARTÃO DE IDENTIDADE DIGITAL',
+'reg_official_thix_id': 'ID THIX OFICIAL', 'reg_generating': 'A gerar…', 'reg_copy_thix_id': 'Copiar ID THIX', 'reg_thix_id_copied': 'ID THIX copiado', 'reg_summary': 'Resumo', 'reg_mobile_label': 'Móvel',
+'reg_not_provided': 'Não indicado', 'reg_account_activated': 'Conta ativada com sucesso',
+
+// MEDIA
+'category_feed': 'Feed', 'category_all': 'Tudo', 'media_catalog': 'Catálogo', 'media_search_hint': 'Pesquisar título, artista…', 'media_featured': 'Em destaque', 'media_premium': 'Premium',
+'media_series': 'Séries', 'media_load_error': 'Falha ao carregar os média', 'media_no_results': 'Sem resultados', 'media_empty': 'Ainda sem conteúdo', 'media_loading': 'A carregar…',
+'editor_title': 'Editor de vídeo', 'editor_trim': 'Cortar', 'editor_filter': 'Filtro', 'editor_audio': 'Áudio', 'editor_mute_audio': 'Silenciar áudio', 'editor_pick_music': 'Adicionar música',
+'editor_save': 'Guardar', 'editor_done': 'Concluído', 'editor_not_ready': 'A preparar o vídeo…', 'editor_error_short': 'Vídeo demasiado curto', 'editor_error_too_short': 'Vídeo demasiado curto', 'editor_error_trim_too_short': 'Corte demasiado curto',
+'editor_error_too_large': 'Ficheiro demasiado grande', 'editor_error_audio_too_large': 'Áudio demasiado grande', 'editor_error_unsupported_format': 'Formato de vídeo não suportado', 'editor_error_audio_unsupported': 'Formato de áudio não suportado', 'editor_error_file_missing': 'Ficheiro não encontrado', 'editor_error_file_unreadable': 'Ficheiro ilegível',
+'editor_error_init_failed': 'Falha ao iniciar o editor', 'editor_error_pick_failed': 'Falha ao selecionar o ficheiro', 'filter_normal': 'Normal', 'filter_cinematic': 'Cinemático', 'filter_bright': 'Brilho', 'filter_vintage': 'Vintage',
+'filter_cyberpunk': 'Cyberpunk', 'filter_soft_beauty': 'Suavidade',
+'live_tab_title': 'Em direto', 'live_active_now': 'em direto agora', 'live_go_live_btn': 'Iniciar direto', 'live_start_btn': 'Começar o direto', 'live_network_excellent': 'Rede excelente', 'live_category_label': 'Categoria',
+'live_category_general': 'Geral', 'live_category_music': 'Música', 'live_audience_label': 'Audiência', 'live_audience_public': 'Público', 'live_audience_followers': 'Seguidores', 'live_audience_private': 'Privado',
+'live_description_label': 'Descrição', 'live_tags_label': 'Tags (separadas por vírgulas)', 'live_flip': 'Virar', 'live_mic_on': 'Mic ON', 'live_mic_off': 'Mic OFF', 'live_flash': 'Flash',
+
+// PAYMENT / SERDIPAY
+'payment_title': 'Pagamento', 'payment_choose_method': 'Escolha um método de pagamento', 'payment_amount_due': 'Montante a pagar', 'payment_phone_label': 'Número de telefone', 'payment_security_info': 'Pagamento seguro via SerdiPay. Confirme no seu telefone.', 'payment_pay_now': 'Pagar',
+'payment_mpesa': 'Vodacom M-Pesa', 'payment_airtel': 'Airtel Money', 'payment_orange': 'Orange Money', 'payment_afrimoney': 'Afrimoney', 'payment_card': 'Cartão bancário', 'payment_processing_title': 'Pagamento em curso',
+'payment_processing_msg': 'A sua transação está a ser processada.', 'payment_validate_on_phone': 'Confirme o pagamento no seu telefone', 'payment_timeout': 'Tempo de pagamento esgotado', 'payment_rejected': 'Pagamento recusado', 'payment_failed': 'Falha no pagamento', 'payment_invalid_phone': 'Número de telefone inválido',
+'error_validation': 'Dados inválidos', 'error_timeout': 'Tempo esgotado', 'error_network': 'Erro de rede',
+'serdipay_processing': 'Pagamento em curso…', 'serdipay_success': 'Pagamento confirmado', 'serdipay_failed': 'Pagamento falhou', 'serdipay_pending': 'Aguardando confirmação', 'serdipay_conflict': 'Uma transação semelhante já está em curso. Aguarde 2 minutos.', 'serdipay_rate_limited': 'Demasiadas transações. Tente mais tarde.',
+'serdipay_wrong_pin': 'Código PIN incorreto', 'serdipay_insufficient_balance': 'Saldo insuficiente na conta móvel', 'serdipay_network_error': 'Erro de ligação ao SerdiPay', 'serdipay_telecom_am': 'Airtel Money', 'serdipay_telecom_om': 'Orange Money', 'serdipay_telecom_mp': 'Vodacom M-Pesa',
+'serdipay_telecom_af': 'Afrimoney',
 };
 
 //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
@@ -9090,6 +10053,94 @@ const Map<String, String> _ar = {
   'chatlist_search_hint': 'البحث عن محادثة',
   'chatlist_contact_thix': 'جهة اتصال THIX',
   'chatlist_yesterday': 'أمس',
+  // CONTRÔLES COMMUNS
+'cancel': 'إلغاء', 'confirm': 'تأكيد', 'back': 'رجوع', 'retry': 'إعادة المحاولة', 'more': 'المزيد', 'avatar_user': 'المستخدم',
+'common_back': 'رجوع', 'common_cancel': 'إلغاء', 'common_confirm': 'تأكيد', 'common_clear': 'مسح', 'common_show_password': 'إظهار كلمة المرور', 'common_hide_password': 'إخفاء كلمة المرور',
+
+// ESCALADE (conversation)
+'escalate_title': 'تصعيد المحادثة', 'escalate_conversation_label': 'المحادثة', 'escalate_recipient_label': 'المستلم', 'escalate_recipient_hint': '@المعرف أو THIX ID', 'escalate_identifier_required': 'المعرف مطلوب', 'escalate_verify_or_select': 'تحقق من المستلم أو اختره',
+'escalate_verify': 'تحقق', 'escalate_contacts': 'جهات الاتصال', 'escalate_invalid_handle': 'معرف غير صالح', 'escalate_invalid_id': 'معرّف غير صالح', 'escalate_user_found': 'تم العثور على المستخدم:', 'escalate_user_not_found': 'المستخدم غير موجود:',
+'escalate_user_selected': 'تم الاختيار:', 'escalate_select_level': 'اختر مستوى', 'escalate_select_valid_recipient': 'اختر مستلمًا صالحًا', 'escalate_invalid_from_agent': 'الوكيل المرسل غير صالح', 'escalate_sent_success': 'تم إرسال التصعيد', 'escalate_send_error': 'فشل إرسال التصعيد',
+'escalate_send_button': 'إرسال', 'escalate_select_recipient': 'اختر المستلم', 'escalate_search_contact_hint': 'ابحث عن جهة اتصال…', 'escalate_no_contacts': 'لا توجد جهات اتصال', 'escalate_level_label': 'مستوى التصعيد', 'escalate_priority_label': 'الأولوية',
+'escalate_reason_label': 'السبب', 'escalate_reason_hint': 'صف سبب التصعيد…', 'escalate_comment_label': 'تعليق (اختياري)', 'escalate_comment_hint': 'أضف تعليقًا اختياريًا…',
+
+// ESCALADE (partagé)
+'escalation_cancel': 'إلغاء', 'escalation_not_authenticated': 'غير مصادق', 'escalation_back': 'رجوع', 'escalation_timeout': 'انتهت المهلة. أعد المحاولة.', 'escalation_generic_error': 'حدث خطأ. أعد المحاولة.', 'escalation_invalid_conversation': 'محادثة غير صالحة',
+'escalation_conversation_not_found': 'المحادثة غير موجودة', 'escalation_open_error': 'فشل فتح المحادثة',
+
+// ESCALADE (historique)
+'escalation_history_title': 'سجل التصعيد', 'escalation_history_empty': 'لا توجد تصعيدات', 'escalation_history_empty_subtitle': 'ستظهر تصعيدات هذه المحادثة هنا.', 'escalation_from_level': 'من', 'escalation_to_level': 'إلى', 'escalation_resolved_on': 'تم الحل في',
+
+// ESCALADE (dashboard)
+'escalation_dashboard_title': 'لوحة التصعيد', 'escalation_stat_pending': 'قيد الانتظار', 'escalation_stat_accepted': 'مقبولة', 'escalation_stat_resolved': 'محلولة', 'escalation_dashboard_empty': 'لا تصعيدات معلقة', 'escalation_from_label': 'من',
+'escalation_to_label': 'إلى', 'escalation_tap_to_handle': 'اضغط للمعالجة', 'escalation_handle_button': 'معالجة',
+
+// ESCALADE (traitement)
+'escalation_handle_title': 'معالجة التصعيد', 'escalation_actions': 'إجراءات', 'escalation_accept_button': 'قبول', 'escalation_reject_button': 'رفض', 'escalation_reject_reason_hint': 'سبب الرفض…', 'escalation_confirm_reject': 'تأكيد الرفض',
+'escalation_mark_resolved': 'وضع كمحلولة', 'escalation_reason': 'السبب', 'escalation_comment': 'تعليق', 'escalation_date': 'التاريخ', 'escalation_invalid_id': 'معرّف غير صالح', 'escalation_accepted': 'مقبولة',
+'escalation_rejected': 'مرفوضة', 'escalation_resolved': 'محلولة', 'escalation_accept_error': 'فشل القبول', 'escalation_reject_error': 'فشل الرفض', 'escalation_resolve_error': 'فشل الحل',
+'escalation_accepted_message': 'تم قبول التصعيد. يمكنك الآن حله.', 'escalation_rejected_message': 'تم رفض التصعيد.', 'escalation_resolved_message': 'تم حل التصعيد.',
+
+// AGENT SELECTOR
+'agent_selector_loading': 'جارٍ تحميل الوكلاء…', 'agent_selector_error': 'فشل تحميل الوكلاء', 'agent_selector_error_retry': 'إعادة المحاولة', 'agent_selector_empty': 'لا يوجد وكلاء متاحون', 'agent_selector_label': 'الوكيل', 'agent_selector_required': 'يرجى اختيار وكيل',
+
+// CALLS
+'call_history_title': 'سجل المكالمات', 'call_search_hint': 'ابحث بالاسم…', 'call_search_button': 'بحث', 'call_new_call': 'مكالمة جديدة', 'call_type_audio': 'مكالمة صوتية', 'call_type_video': 'مكالمة فيديو',
+'call_yesterday': 'أمس', 'call_search_contact_hint': 'ابحث عن جهة اتصال…', 'call_no_connections': 'لا توجد اتصالات', 'call_unknown_contact': 'جهة اتصال غير معروفة', 'call_error_invalid_peer': 'جهة اتصال غير صالحة', 'call_error_start_failed': 'فشل بدء المكالمة',
+'call_history_error': 'فشل تحميل السجل', 'call_history_empty': 'لا توجد مكالمات', 'call_video_call': 'مكالمة فيديو', 'call_audio_call': 'مكالمة صوتية', 'call_video': 'مكالمة فيديو', 'call_audio': 'مكالمة صوتية',
+
+// CONNECTIONS
+'connections_page_title': 'شبكتي', 'connections_active': 'الاتصالات النشطة', 'connections_received': 'الطلبات المستلمة', 'connections_sent': 'الطلبات المرسلة', 'connections_empty_title': 'لا اتصالات بعد', 'connections_empty_message': 'تواصل مع أعضاء آخرين لتنمية شبكتك.',
+'connections_wants_connect': 'يرغب في التواصل معك', 'connections_ignore': 'تجاهل', 'connections_accept': 'قبول', 'connections_pending': 'معلق', 'connections_cancel_request': 'إلغاء', 'connections_cancel_message': 'هل تريد إلغاء هذا الطلب؟',
+'connections_cancelled': 'تم إلغاء الطلب', 'connections_cancel_error': 'فشل الإلغاء', 'connections_remove_title': 'إزالة الاتصال', 'connections_remove_message': 'إزالة من شبكتك:', 'connections_removed': 'تمت إزالة الاتصال', 'connections_remove_error': 'فشل الإزالة',
+'connections_block_title': 'حظر المستخدم', 'connections_block_message': 'حظر هذا المستخدم؟ لن يتمكن من التواصل معك.', 'connections_blocked': 'تم حظر المستخدم', 'connections_block_error': 'فشل الحظر', 'connections_network': 'عضو الشبكة', 'connections_network_member': 'عضو الشبكة',
+'connections_message': 'رسالة', 'connections_audio': 'صوتي', 'connections_video': 'فيديو', 'connections_view_profile': 'عرض الملف', 'connections_remove_from_network': 'إزالة من الشبكة', 'connections_block_user': 'حظر المستخدم',
+'connections_accepted': 'تم قبول الطلب', 'connections_accept_error': 'فشل القبول', 'connections_ignored': 'تم تجاهل الطلب', 'connections_reject_error': 'فشل الرفض',
+
+// LOGIN
+'login_title': 'تسجيل الدخول', 'login_subtitle': 'الوصول إلى هويتك الرقمية THIX', 'login_identifier_label': 'المعرف', 'login_identifier_hint': 'بريد أو هاتف أو THIX ID', 'login_password_label': 'كلمة المرور', 'login_password_hint': '••••••••',
+'login_remember_me': 'تذكرني', 'login_forgot_password': 'نسيت كلمة المرور؟', 'login_button': 'دخول', 'login_verifying': 'جارٍ التحقق…', 'login_retry_in': 'أعد المحاولة بعد', 'login_seconds_suffix': 'ث',
+'login_biometric': 'أو المتابعة عبر', 'login_security_title': 'دخول آمن', 'login_security_subtitle': 'بياناتك مشفرة من طرف إلى طرف', 'login_new_user': 'جديد على THIX؟', 'login_create_account': 'إنشاء حساب',
+'login_email_hint': 'name@example.com', 'login_otp_label': 'رمز OTP (8 أرقام)', 'login_new_password_label': 'كلمة مرور جديدة', 'login_password_min_length': '8 أحرف على الأقل', 'login_reset_instructions': 'أدخل بريدك لتلقي رمز إعادة التعيين.',
+'login_reset_new_password': 'كلمة مرور جديدة', 'login_confirm': 'تأكيد', 'login_send': 'إرسال', 'login_please_wait': 'انتظر…', 'login_password_updated': 'تم تحديث كلمة المرور', 'login_error_empty_otp': 'أدخل رمز OTP',
+'login_error_suspended': 'حساب موقوف. تواصل مع الدعم.', 'login_error_no_account': 'لا يوجد حساب', 'login_error_mfa_required': 'مطلوب تحقق بخطوتين', 'login_error_locked': 'محاولات كثيرة. الحساب مقفل مؤقتًا.',
+
+// AUTH ERRORS
+'auth_error_identifier_required': 'المعرف مطلوب', 'auth_error_password_required': 'كلمة المرور مطلوبة', 'auth_error_invalid_email': 'بريد غير صالح', 'auth_error_password_too_short': 'كلمة المرور قصيرة (الحد', 'auth_error_sign_in_failed': 'فشل تسجيل الدخول', 'auth_error_email_not_verified': 'البريد غير موثق',
+'auth_error_network': 'خطأ في الشبكة', 'auth_error_rate_limit': 'محاولات كثيرة. أعد لاحقًا.', 'auth_error_technical': 'خطأ تقني. أعد المحاولة.', 'auth_error_invalid_otp': 'رمز OTP غير صالح', 'auth_error_otp_expired': 'رمز OTP منتهٍ', 'auth_info_otp_sent': 'تم إرسال رمز OTP',
+'auth_accept_terms': 'أوافق على', 'settings_terms': 'شروط الاستخدام', 'settings_privacy_policy': 'سياسة الخصوصية',
+
+// REGISTRATION
+'reg_step1_title': 'ملفك الشخصي', 'reg_step1_subtitle': 'أخبرنا من أنت', 'reg_full_name_label': 'الاسم الكامل', 'reg_full_name_hint': 'مثال: جان كابونغو', 'reg_dob_label': 'تاريخ الميلاد', 'reg_country_label': 'البلد',
+'reg_occupation_label': 'المهنة', 'reg_occupation_hint': 'مثال: معلم', 'reg_step2_title': 'حسابك', 'reg_step2_subtitle': 'بيانات الدخول والتحقق', 'reg_email_label': 'البريد الإلكتروني', 'reg_email_hint': 'name@example.com',
+'reg_phone_label': 'الهاتف', 'reg_phone_hint': '+243…', 'reg_password_label': 'كلمة المرور', 'reg_password_hint': '8 أحرف على الأقل', 'reg_confirm_password_label': 'تأكيد كلمة المرور', 'reg_confirm_password_hint': 'أعد إدخال كلمة المرور',
+'reg_strength_label': 'القوة', 'reg_strength_very_weak': 'ضعيفة جدًا', 'reg_strength_weak': 'ضعيفة', 'reg_strength_medium': 'متوسطة', 'reg_strength_strong': 'قوية', 'reg_strength_excellent': 'ممتازة',
+'reg_identity_title': 'هوية THIX', 'reg_thix_chat_label': 'THIX CHAT', 'reg_thix_chat_hint': 'معرف.فريد', 'reg_verification_title': 'التحقق', 'reg_get_otp': 'استلام رمز OTP', 'reg_resend_in': 'إعادة الإرسال بعد',
+'reg_seconds_short': 'ث', 'reg_code_sent_resend': 'تم الإرسال — إعادة', 'reg_otp_label': 'رمز OTP', 'reg_next': 'التالي', 'reg_activating': 'جارٍ التفعيل…', 'reg_validate_activate': 'تأكيد وتفعيل',
+'reg_go_to_dashboard': 'الانتقال إلى مساحتي', 'reg_change_account': 'تغيير الحساب', 'reg_previous_step': 'الخطوة السابقة', 'reg_congrats': 'تهانينا!', 'reg_welcome_message': 'مرحبًا', 'reg_id_card_title': 'بطاقة الهوية الرقمية',
+'reg_official_thix_id': 'معرّف THIX الرسمي', 'reg_generating': 'جارٍ التوليد…', 'reg_copy_thix_id': 'نسخ المعرّف', 'reg_thix_id_copied': 'تم نسخ المعرّف', 'reg_summary': 'الملخص', 'reg_mobile_label': 'المحمول',
+'reg_not_provided': 'غير مُدخل', 'reg_account_activated': 'تم تفعيل الحساب بنجاح',
+
+// MEDIA
+'category_feed': 'الموجز', 'category_all': 'الكل', 'media_catalog': 'الكتالوج', 'media_search_hint': 'ابحث عن عنوان أو فنان…', 'media_featured': 'مميز', 'media_premium': 'بريميوم',
+'media_series': 'سلاسل', 'media_load_error': 'فشل تحميل الوسائط', 'media_no_results': 'لا نتائج', 'media_empty': 'لا محتوى بعد', 'media_loading': 'جارٍ التحميل…',
+'editor_title': 'محرر الفيديو', 'editor_trim': 'قص', 'editor_filter': 'فلتر', 'editor_audio': 'الصوت', 'editor_mute_audio': 'كتم الصوت', 'editor_pick_music': 'إضافة موسيقى',
+'editor_save': 'حفظ', 'editor_done': 'تم', 'editor_not_ready': 'جارٍ تحضير الفيديو…', 'editor_error_short': 'الفيديو قصير جدًا', 'editor_error_too_short': 'الفيديو قصير جدًا', 'editor_error_trim_too_short': 'القص قصير جدًا',
+'editor_error_too_large': 'الملف كبير جدًا', 'editor_error_audio_too_large': 'الصوت كبير جدًا', 'editor_error_unsupported_format': 'صيغة فيديو غير مدعومة', 'editor_error_audio_unsupported': 'صيغة صوت غير مدعومة', 'editor_error_file_missing': 'الملف غير موجود', 'editor_error_file_unreadable': 'ملف غير قابل للقراءة',
+'editor_error_init_failed': 'فشل تهيئة المحرر', 'editor_error_pick_failed': 'فشل اختيار الملف', 'filter_normal': 'عادي', 'filter_cinematic': 'سينمائي', 'filter_bright': 'ساطع', 'filter_vintage': 'كلاسيكي',
+'filter_cyberpunk': 'سايبربانك', 'filter_soft_beauty': 'نعومة',
+'live_tab_title': 'مباشر', 'live_active_now': 'مباشر الآن', 'live_go_live_btn': 'ابدأ البث', 'live_start_btn': 'بدء البث', 'live_network_excellent': 'شبكة ممتازة', 'live_category_label': 'الفئة',
+'live_category_general': 'عام', 'live_category_music': 'موسيقى', 'live_audience_label': 'الجمهور', 'live_audience_public': 'عام', 'live_audience_followers': 'المتابعون', 'live_audience_private': 'خاص',
+'live_description_label': 'الوصف', 'live_tags_label': 'وسوم (مفصولة بفواصل)', 'live_flip': 'قلب الكاميرا', 'live_mic_on': 'الميكروفون مفتوح', 'live_mic_off': 'الميكروفون مغلق', 'live_flash': 'فلاش',
+
+// PAYMENT / SERDIPAY
+'payment_title': 'الدفع', 'payment_choose_method': 'اختر وسيلة الدفع', 'payment_amount_due': 'المبلغ المستحق', 'payment_phone_label': 'رقم الهاتف', 'payment_security_info': 'دفع آمن عبر SerdiPay. أكد على هاتفك.', 'payment_pay_now': 'ادفع',
+'payment_mpesa': 'Vodacom M-Pesa', 'payment_airtel': 'Airtel Money', 'payment_orange': 'Orange Money', 'payment_afrimoney': 'Afrimoney', 'payment_card': 'بطاقة بنكية', 'payment_processing_title': 'جارٍ الدفع',
+'payment_processing_msg': 'تتم معالجة معاملتك.', 'payment_validate_on_phone': 'أكد الدفع على هاتفك', 'payment_timeout': 'انتهت مهلة الدفع', 'payment_rejected': 'تم رفض الدفع', 'payment_failed': 'فشل الدفع', 'payment_invalid_phone': 'رقم هاتف غير صالح',
+'error_validation': 'بيانات غير صالحة', 'error_timeout': 'انتهت المهلة', 'error_network': 'خطأ في الشبكة',
+'serdipay_processing': 'الدفع قيد المعالجة…', 'serdipay_success': 'تم تأكيد الدفع', 'serdipay_failed': 'فشل الدفع', 'serdipay_pending': 'في انتظار التأكيد', 'serdipay_conflict': 'معاملة مشابهة قيد التنفيذ. انتظر دقيقتين.', 'serdipay_rate_limited': 'معاملات كثيرة. حاول لاحقًا.',
+'serdipay_wrong_pin': 'رقم PIN خاطئ', 'serdipay_insufficient_balance': 'رصيد غير كافٍ في الحساب المحمول', 'serdipay_network_error': 'خطأ في الاتصال بـ SerdiPay', 'serdipay_telecom_am': 'Airtel Money', 'serdipay_telecom_om': 'Orange Money', 'serdipay_telecom_mp': 'Vodacom M-Pesa',
+'serdipay_telecom_af': 'Afrimoney',
 
 
 
@@ -10918,6 +11969,94 @@ const Map<String, String> _zh = {
   'chatlist_search_hint': '搜索对话',
   'chatlist_contact_thix': 'THIX 联系人',
   'chatlist_yesterday': '昨天',
+  // CONTRÔLES
+'cancel': '取消', 'confirm': '确认', 'back': '返回', 'retry': '重试', 'more': '更多', 'avatar_user': '用户',
+'common_back': '返回', 'common_cancel': '取消', 'common_confirm': '确认', 'common_clear': '清除', 'common_show_password': '显示密码', 'common_hide_password': '隐藏密码',
+
+// ESCALADE (conversation)
+'escalate_title': '升级会话', 'escalate_conversation_label': '会话', 'escalate_recipient_label': '接收人', 'escalate_recipient_hint': '@用户名或 THIX ID', 'escalate_identifier_required': '需要标识符', 'escalate_verify_or_select': '请验证或选择接收人',
+'escalate_verify': '验证', 'escalate_contacts': '联系人', 'escalate_invalid_handle': '无效的用户名', 'escalate_invalid_id': '无效的标识符', 'escalate_user_found': '已找到用户：', 'escalate_user_not_found': '未找到用户：',
+'escalate_user_selected': '已选择：', 'escalate_select_level': '请选择级别', 'escalate_select_valid_recipient': '请选择有效的接收人', 'escalate_invalid_from_agent': '发送代理无效', 'escalate_sent_success': '升级请求已发送', 'escalate_send_error': '升级请求发送失败',
+'escalate_send_button': '发送', 'escalate_select_recipient': '选择接收人', 'escalate_search_contact_hint': '搜索联系人…', 'escalate_no_contacts': '没有联系人', 'escalate_level_label': '升级级别', 'escalate_priority_label': '优先级',
+'escalate_reason_label': '原因', 'escalate_reason_hint': '请描述升级原因…', 'escalate_comment_label': '备注（可选）', 'escalate_comment_hint': '添加可选备注…',
+
+// ESCALADE (partagé)
+'escalation_cancel': '取消', 'escalation_not_authenticated': '未认证', 'escalation_back': '返回', 'escalation_timeout': '超时，请重试。', 'escalation_generic_error': '发生错误，请重试。', 'escalation_invalid_conversation': '无效会话',
+'escalation_conversation_not_found': '未找到会话', 'escalation_open_error': '打开会话失败',
+
+// ESCALADE (historique)
+'escalation_history_title': '升级历史', 'escalation_history_empty': '暂无升级记录', 'escalation_history_empty_subtitle': '此会话的升级记录将显示在这里。', 'escalation_from_level': '从', 'escalation_to_level': '到', 'escalation_resolved_on': '解决于',
+
+// ESCALADE (dashboard)
+'escalation_dashboard_title': '升级工作台', 'escalation_stat_pending': '待处理', 'escalation_stat_accepted': '已接受', 'escalation_stat_resolved': '已解决', 'escalation_dashboard_empty': '暂无待处理升级', 'escalation_from_label': '来自',
+'escalation_to_label': '至', 'escalation_tap_to_handle': '点击处理', 'escalation_handle_button': '处理',
+
+// ESCALADE (traitement)
+'escalation_handle_title': '处理升级', 'escalation_actions': '操作', 'escalation_accept_button': '接受', 'escalation_reject_button': '拒绝', 'escalation_reject_reason_hint': '拒绝原因…', 'escalation_confirm_reject': '确认拒绝',
+'escalation_mark_resolved': '标记为已解决', 'escalation_reason': '原因', 'escalation_comment': '备注', 'escalation_date': '日期', 'escalation_invalid_id': '无效的标识符', 'escalation_accepted': '已接受',
+'escalation_rejected': '已拒绝', 'escalation_resolved': '已解决', 'escalation_accept_error': '接受失败', 'escalation_reject_error': '拒绝失败', 'escalation_resolve_error': '解决失败',
+'escalation_accepted_message': '升级已接受，现在可以处理解决。', 'escalation_rejected_message': '升级已被拒绝。', 'escalation_resolved_message': '升级已解决。',
+
+// AGENT SELECTOR
+'agent_selector_loading': '正在加载客服…', 'agent_selector_error': '客服加载失败', 'agent_selector_error_retry': '重试', 'agent_selector_empty': '暂无可用客服', 'agent_selector_label': '客服', 'agent_selector_required': '请选择客服',
+
+// CALLS
+'call_history_title': '通话历史', 'call_search_hint': '按姓名搜索…', 'call_search_button': '搜索', 'call_new_call': '新通话', 'call_type_audio': '语音通话', 'call_type_video': '视频通话',
+'call_yesterday': '昨天', 'call_search_contact_hint': '搜索联系人…', 'call_no_connections': '暂无联系人', 'call_unknown_contact': '未知联系人', 'call_error_invalid_peer': '无效的联系人', 'call_error_start_failed': '通话启动失败',
+'call_history_error': '历史记录加载失败', 'call_history_empty': '暂无通话', 'call_video_call': '视频通话', 'call_audio_call': '语音通话', 'call_video': '视频通话', 'call_audio': '语音通话',
+
+// CONNECTIONS
+'connections_page_title': '我的网络', 'connections_active': '活跃联系人', 'connections_received': '收到的请求', 'connections_sent': '已发送的请求', 'connections_empty_title': '暂无联系人', 'connections_empty_message': '与其他成员建立联系以扩展您的网络。',
+'connections_wants_connect': '希望与您建立联系', 'connections_ignore': '忽略', 'connections_accept': '接受', 'connections_pending': '待处理', 'connections_cancel_request': '取消', 'connections_cancel_message': '是否取消此联系人请求？',
+'connections_cancelled': '请求已取消', 'connections_cancel_error': '取消失败', 'connections_remove_title': '移除联系人', 'connections_remove_message': '从您的网络中移除：', 'connections_removed': '已移除联系人', 'connections_remove_error': '移除失败',
+'connections_block_title': '屏蔽用户', 'connections_block_message': '是否屏蔽该用户？他将无法再联系您。', 'connections_blocked': '已屏蔽用户', 'connections_block_error': '屏蔽失败', 'connections_network': '网络成员', 'connections_network_member': '网络成员',
+'connections_message': '发消息', 'connections_audio': '语音', 'connections_video': '视频', 'connections_view_profile': '查看资料', 'connections_remove_from_network': '从网络中移除', 'connections_block_user': '屏蔽用户',
+'connections_accepted': '请求已接受', 'connections_accept_error': '接受失败', 'connections_ignored': '请求已忽略', 'connections_reject_error': '拒绝失败',
+
+// LOGIN
+'login_title': '登录', 'login_subtitle': '访问您的 THIX 数字身份', 'login_identifier_label': '标识', 'login_identifier_hint': '邮箱、手机或 THIX ID', 'login_password_label': '密码', 'login_password_hint': '••••••••',
+'login_remember_me': '记住我', 'login_forgot_password': '忘记密码？', 'login_button': '登录', 'login_verifying': '验证中…', 'login_retry_in': '重试倒计时', 'login_seconds_suffix': '秒',
+'login_biometric': '或使用以下方式', 'login_security_title': '安全登录', 'login_security_subtitle': '您的数据端到端加密', 'login_new_user': '新用户？', 'login_create_account': '创建账户',
+'login_email_hint': 'name@example.com', 'login_otp_label': 'OTP 验证码（8 位）', 'login_new_password_label': '新密码', 'login_password_min_length': '至少 8 个字符', 'login_reset_instructions': '输入邮箱以接收重置码。',
+'login_reset_new_password': '新密码', 'login_confirm': '确认', 'login_send': '发送', 'login_please_wait': '请稍候…', 'login_password_updated': '密码已更新', 'login_error_empty_otp': '请输入 OTP 验证码',
+'login_error_suspended': '账户已停用，请联系客服。', 'login_error_no_account': '未找到账户', 'login_error_mfa_required': '需要两步验证', 'login_error_locked': '尝试次数过多，账户已临时锁定。',
+
+// AUTH ERRORS
+'auth_error_identifier_required': '需要标识', 'auth_error_password_required': '需要密码', 'auth_error_invalid_email': '邮箱无效', 'auth_error_password_too_short': '密码过短（最少', 'auth_error_sign_in_failed': '登录失败', 'auth_error_email_not_verified': '邮箱未验证',
+'auth_error_network': '网络错误', 'auth_error_rate_limit': '尝试过多，请稍后再试。', 'auth_error_technical': '技术错误，请重试。', 'auth_error_invalid_otp': 'OTP 验证码无效', 'auth_error_otp_expired': 'OTP 验证码已过期', 'auth_info_otp_sent': 'OTP 验证码已发送',
+'auth_accept_terms': '我接受', 'settings_terms': '服务条款', 'settings_privacy_policy': '隐私政策',
+
+// REGISTRATION
+'reg_step1_title': '您的资料', 'reg_step1_subtitle': '告诉我们您是谁', 'reg_full_name_label': '全名', 'reg_full_name_hint': '例：Jean Kabongo', 'reg_dob_label': '出生日期', 'reg_country_label': '国家',
+'reg_occupation_label': '职业', 'reg_occupation_hint': '例：教师', 'reg_step2_title': '您的账户', 'reg_step2_subtitle': '凭据与验证', 'reg_email_label': '邮箱', 'reg_email_hint': 'name@example.com',
+'reg_phone_label': '电话', 'reg_phone_hint': '+243…', 'reg_password_label': '密码', 'reg_password_hint': '至少 8 个字符', 'reg_confirm_password_label': '确认密码', 'reg_confirm_password_hint': '再次输入密码',
+'reg_strength_label': '强度', 'reg_strength_very_weak': '很弱', 'reg_strength_weak': '弱', 'reg_strength_medium': '中等', 'reg_strength_strong': '强', 'reg_strength_excellent': '极佳',
+'reg_identity_title': 'THIX 身份', 'reg_thix_chat_label': 'THIX CHAT', 'reg_thix_chat_hint': '唯一昵称', 'reg_verification_title': '验证', 'reg_get_otp': '获取 OTP 验证码', 'reg_resend_in': '重发倒计时',
+'reg_seconds_short': '秒', 'reg_code_sent_resend': '已发送 — 重发', 'reg_otp_label': 'OTP 验证码', 'reg_next': '下一步', 'reg_activating': '激活中…', 'reg_validate_activate': '验证并激活',
+'reg_go_to_dashboard': '进入我的空间', 'reg_change_account': '切换账户', 'reg_previous_step': '上一步', 'reg_congrats': '恭喜！', 'reg_welcome_message': '欢迎', 'reg_id_card_title': '数字身份证',
+'reg_official_thix_id': '官方 THIX ID', 'reg_generating': '生成中…', 'reg_copy_thix_id': '复制 THIX ID', 'reg_thix_id_copied': 'THIX ID 已复制', 'reg_summary': '摘要', 'reg_mobile_label': '手机',
+'reg_not_provided': '未填写', 'reg_account_activated': '账户激活成功',
+
+// MEDIA
+'category_feed': '推荐流', 'category_all': '全部', 'media_catalog': '目录', 'media_search_hint': '搜索标题、艺术家…', 'media_featured': '精选', 'media_premium': '高级',
+'media_series': '系列', 'media_load_error': '媒体加载失败', 'media_no_results': '无结果', 'media_empty': '暂无内容', 'media_loading': '加载中…',
+'editor_title': '视频编辑器', 'editor_trim': '剪辑', 'editor_filter': '滤镜', 'editor_audio': '音频', 'editor_mute_audio': '静音', 'editor_pick_music': '添加音乐',
+'editor_save': '保存', 'editor_done': '完成', 'editor_not_ready': '视频准备中…', 'editor_error_short': '视频过短', 'editor_error_too_short': '视频过短', 'editor_error_trim_too_short': '剪辑片段过短',
+'editor_error_too_large': '文件过大', 'editor_error_audio_too_large': '音频过大', 'editor_error_unsupported_format': '不支持的视频格式', 'editor_error_audio_unsupported': '不支持的音频格式', 'editor_error_file_missing': '找不到文件', 'editor_error_file_unreadable': '文件无法读取',
+'editor_error_init_failed': '编辑器初始化失败', 'editor_error_pick_failed': '文件选择失败', 'filter_normal': '正常', 'filter_cinematic': '电影', 'filter_bright': '明亮', 'filter_vintage': '复古',
+'filter_cyberpunk': '赛博朋克', 'filter_soft_beauty': '柔美',
+'live_tab_title': '直播', 'live_active_now': '正在直播', 'live_go_live_btn': '开始直播', 'live_start_btn': '启动直播', 'live_network_excellent': '网络极佳', 'live_category_label': '分类',
+'live_category_general': '综合', 'live_category_music': '音乐', 'live_audience_label': '观众范围', 'live_audience_public': '公开', 'live_audience_followers': '粉丝', 'live_audience_private': '私密',
+'live_description_label': '描述', 'live_tags_label': '标签（逗号分隔）', 'live_flip': '翻转', 'live_mic_on': '麦克风开', 'live_mic_off': '麦克风关', 'live_flash': '闪光灯',
+
+// PAYMENT / SERDIPAY
+'payment_title': '支付', 'payment_choose_method': '选择支付方式', 'payment_amount_due': '应付金额', 'payment_phone_label': '手机号码', 'payment_security_info': '通过 SerdiPay 安全支付。请在手机上确认。', 'payment_pay_now': '支付',
+'payment_mpesa': 'Vodacom M-Pesa', 'payment_airtel': 'Airtel Money', 'payment_orange': 'Orange Money', 'payment_afrimoney': 'Afrimoney', 'payment_card': '银行卡', 'payment_processing_title': '支付处理中',
+'payment_processing_msg': '您的交易正在处理。', 'payment_validate_on_phone': '请在手机上确认支付', 'payment_timeout': '支付超时', 'payment_rejected': '支付被拒绝', 'payment_failed': '支付失败', 'payment_invalid_phone': '手机号码无效',
+'error_validation': '数据无效', 'error_timeout': '超时', 'error_network': '网络错误',
+'serdipay_processing': '支付处理中…', 'serdipay_success': '支付已确认', 'serdipay_failed': '支付失败', 'serdipay_pending': '等待确认', 'serdipay_conflict': '有相似交易正在处理，请等待 2 分钟。', 'serdipay_rate_limited': '交易过多，请稍后重试。',
+'serdipay_wrong_pin': 'PIN 码错误', 'serdipay_insufficient_balance': '手机账户余额不足', 'serdipay_network_error': '连接 SerdiPay 失败', 'serdipay_telecom_am': 'Airtel Money', 'serdipay_telecom_om': 'Orange Money', 'serdipay_telecom_mp': 'Vodacom M-Pesa',
+'serdipay_telecom_af': 'Afrimoney',
 
 };
 ///🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
@@ -11962,6 +13101,400 @@ const Map<String, String> _es = {
   'chatlist_search_hint': 'Buscar conversación',
   'chatlist_contact_thix': 'Contacto THIX',
   'chatlist_yesterday': 'Ayer',
+  // ═══════════════════════════════════════════════════════════
+// CONTROLES COMUNES
+// ═══════════════════════════════════════════════════════════
+'cancel': 'Cancelar',
+'confirm': 'Confirmar',
+'back': 'Atrás',
+'retry': 'Reintentar',
+'more': 'Más',
+'avatar_user': 'Usuario',
+'common_back': 'Atrás',
+'common_cancel': 'Cancelar',
+'common_confirm': 'Confirmar',
+'common_clear': 'Borrar',
+'common_show_password': 'Mostrar contraseña',
+'common_hide_password': 'Ocultar contraseña',
+
+// ═══════════════════════════════════════════════════════════
+// ESCALADA (conversación)
+// ═══════════════════════════════════════════════════════════
+'escalate_title': 'Escalar conversación',
+'escalate_conversation_label': 'Conversación',
+'escalate_recipient_label': 'Destinatario',
+'escalate_recipient_hint': '@identificador o ID THIX',
+'escalate_identifier_required': 'Identificador obligatorio',
+'escalate_verify_or_select': 'Verifique o seleccione un destinatario',
+'escalate_verify': 'Verificar',
+'escalate_contacts': 'Contactos',
+'escalate_invalid_handle': 'Identificador no válido',
+'escalate_invalid_id': 'Identificador no válido',
+'escalate_user_found': 'Usuario encontrado:',
+'escalate_user_not_found': 'Usuario no encontrado:',
+'escalate_user_selected': 'Seleccionado:',
+'escalate_select_level': 'Seleccione un nivel',
+'escalate_select_valid_recipient': 'Seleccione un destinatario válido',
+'escalate_invalid_from_agent': 'Agente remitente no válido',
+'escalate_sent_success': 'Escalada enviada',
+'escalate_send_error': 'Error al enviar la escalada',
+'escalate_send_button': 'Enviar',
+'escalate_select_recipient': 'Seleccionar destinatario',
+'escalate_search_contact_hint': 'Buscar contacto…',
+'escalate_no_contacts': 'Sin contactos',
+'escalate_level_label': 'Nivel de escalada',
+'escalate_priority_label': 'Prioridad',
+'escalate_reason_label': 'Motivo',
+'escalate_reason_hint': 'Describa el motivo de la escalada…',
+'escalate_comment_label': 'Comentario (opcional)',
+'escalate_comment_hint': 'Añada un comentario opcional…',
+
+// ═══════════════════════════════════════════════════════════
+// ESCALADA (compartido)
+// ═══════════════════════════════════════════════════════════
+'escalation_cancel': 'Cancelar',
+'escalation_not_authenticated': 'No autenticado',
+'escalation_back': 'Atrás',
+'escalation_timeout': 'Tiempo agotado. Reintente.',
+'escalation_generic_error': 'Ha ocurrido un error. Reintente.',
+'escalation_invalid_conversation': 'Conversación no válida',
+'escalation_conversation_not_found': 'Conversación no encontrada',
+'escalation_open_error': 'Error al abrir la conversación',
+
+// ═══════════════════════════════════════════════════════════
+// ESCALADA (historial)
+// ═══════════════════════════════════════════════════════════
+'escalation_history_title': 'Historial de escaladas',
+'escalation_history_empty': 'Sin escaladas',
+'escalation_history_empty_subtitle': 'Las escaladas de esta conversación aparecerán aquí.',
+'escalation_from_level': 'De',
+'escalation_to_level': 'a',
+'escalation_resolved_on': 'Resuelto el',
+
+// ═══════════════════════════════════════════════════════════
+// ESCALADA (panel)
+// ═══════════════════════════════════════════════════════════
+'escalation_dashboard_title': 'Panel de escaladas',
+'escalation_stat_pending': 'Pendientes',
+'escalation_stat_accepted': 'Aceptadas',
+'escalation_stat_resolved': 'Resueltas',
+'escalation_dashboard_empty': 'Sin escaladas pendientes',
+'escalation_from_label': 'De',
+'escalation_to_label': 'A',
+'escalation_tap_to_handle': 'Toque para gestionar',
+'escalation_handle_button': 'Gestionar',
+
+// ═══════════════════════════════════════════════════════════
+// ESCALADA (gestión)
+// ═══════════════════════════════════════════════════════════
+'escalation_handle_title': 'Gestionar escalada',
+'escalation_actions': 'Acciones',
+'escalation_accept_button': 'Aceptar',
+'escalation_reject_button': 'Rechazar',
+'escalation_reject_reason_hint': 'Motivo del rechazo…',
+'escalation_confirm_reject': 'Confirmar rechazo',
+'escalation_mark_resolved': 'Marcar como resuelta',
+'escalation_reason': 'Motivo',
+'escalation_comment': 'Comentario',
+'escalation_date': 'Fecha',
+'escalation_invalid_id': 'Identificador no válido',
+'escalation_accepted': 'Aceptada',
+'escalation_rejected': 'Rechazada',
+'escalation_resolved': 'Resuelta',
+'escalation_accept_error': 'Error al aceptar',
+'escalation_reject_error': 'Error al rechazar',
+'escalation_resolve_error': 'Error al resolver',
+'escalation_accepted_message': 'Escalada aceptada. Ahora puede resolverla.',
+'escalation_rejected_message': 'Escalada rechazada.',
+'escalation_resolved_message': 'Escalada resuelta.',
+
+// ═══════════════════════════════════════════════════════════
+// SELECTOR DE AGENTE
+// ═══════════════════════════════════════════════════════════
+'agent_selector_loading': 'Cargando agentes…',
+'agent_selector_error': 'Error al cargar agentes',
+'agent_selector_error_retry': 'Reintentar',
+'agent_selector_empty': 'Sin agentes disponibles',
+'agent_selector_label': 'Agente',
+'agent_selector_required': 'Seleccione un agente',
+
+// ═══════════════════════════════════════════════════════════
+// LLAMADAS
+// ═══════════════════════════════════════════════════════════
+'call_history_title': 'Historial de llamadas',
+'call_search_hint': 'Buscar por nombre…',
+'call_search_button': 'Buscar',
+'call_new_call': 'Nueva llamada',
+'call_type_audio': 'Llamada de audio',
+'call_type_video': 'Llamada de vídeo',
+'call_yesterday': 'Ayer',
+'call_search_contact_hint': 'Buscar contacto…',
+'call_no_connections': 'Sin conexiones',
+'call_unknown_contact': 'Contacto desconocido',
+'call_error_invalid_peer': 'Contacto no válido',
+'call_error_start_failed': 'Error al iniciar la llamada',
+'call_history_error': 'Error al cargar el historial',
+'call_history_empty': 'Sin llamadas',
+'call_video_call': 'Llamada de vídeo',
+'call_audio_call': 'Llamada de audio',
+'call_video': 'Llamada de vídeo',
+'call_audio': 'Llamada de audio',
+
+// ═══════════════════════════════════════════════════════════
+// CONEXIONES
+// ═══════════════════════════════════════════════════════════
+'connections_page_title': 'Mi red',
+'connections_active': 'Conexiones activas',
+'connections_received': 'Solicitudes recibidas',
+'connections_sent': 'Solicitudes enviadas',
+'connections_empty_title': 'Sin conexiones aún',
+'connections_empty_message': 'Conecte con otros miembros para ampliar su red.',
+'connections_wants_connect': 'Desea conectarse con usted',
+'connections_ignore': 'Ignorar',
+'connections_accept': 'Aceptar',
+'connections_pending': 'Pendiente',
+'connections_cancel_request': 'Cancelar',
+'connections_cancel_message': '¿Cancelar esta solicitud de conexión?',
+'connections_cancelled': 'Solicitud cancelada',
+'connections_cancel_error': 'Error al cancelar',
+'connections_remove_title': 'Eliminar conexión',
+'connections_remove_message': 'Eliminar de su red:',
+'connections_removed': 'Conexión eliminada',
+'connections_remove_error': 'Error al eliminar',
+'connections_block_title': 'Bloquear usuario',
+'connections_block_message': '¿Bloquear a este usuario? Ya no podrá contactarle.',
+'connections_blocked': 'Usuario bloqueado',
+'connections_block_error': 'Error al bloquear',
+'connections_network': 'Miembro de la red',
+'connections_network_member': 'Miembro de la red',
+'connections_message': 'Mensaje',
+'connections_audio': 'Audio',
+'connections_video': 'Vídeo',
+'connections_view_profile': 'Ver perfil',
+'connections_remove_from_network': 'Eliminar de la red',
+'connections_block_user': 'Bloquear usuario',
+'connections_accepted': 'Solicitud aceptada',
+'connections_accept_error': 'Error al aceptar',
+'connections_ignored': 'Solicitud ignorada',
+'connections_reject_error': 'Error al rechazar',
+
+// ═══════════════════════════════════════════════════════════
+// LOGIN / AUTH
+// ═══════════════════════════════════════════════════════════
+'login_title': 'Iniciar sesión',
+'login_subtitle': 'Acceda a su identidad digital THIX',
+'login_identifier_label': 'Identificador',
+'login_identifier_hint': 'Email, teléfono o ID THIX',
+'login_password_label': 'Contraseña',
+'login_password_hint': '••••••••',
+'login_remember_me': 'Recordarme',
+'login_forgot_password': '¿Olvidó su contraseña?',
+'login_button': 'Iniciar sesión',
+'login_verifying': 'Verificando…',
+'login_retry_in': 'Reintente en',
+'login_seconds_suffix': 's',
+'login_biometric': 'O CONTINUAR CON',
+'login_security_title': 'Inicio de sesión seguro',
+'login_security_subtitle': 'Sus datos están cifrados de extremo a extremo',
+'login_new_user': '¿Nuevo en THIX?',
+'login_create_account': 'Crear cuenta',
+'login_email_hint': 'nombre@ejemplo.com',
+'login_otp_label': 'Código OTP (8 dígitos)',
+'login_new_password_label': 'Nueva contraseña',
+'login_password_min_length': 'Mínimo 8 caracteres',
+'login_reset_instructions': 'Introduzca su email para recibir un código de restablecimiento.',
+'login_reset_new_password': 'Nueva contraseña',
+'login_confirm': 'Confirmar',
+'login_send': 'Enviar',
+'login_please_wait': 'Espere…',
+'login_password_updated': 'Contraseña actualizada',
+'login_error_empty_otp': 'Introduzca el código OTP',
+'login_error_suspended': 'Cuenta suspendida. Contacte con soporte.',
+'login_error_no_account': 'No se encontró ninguna cuenta',
+'login_error_mfa_required': 'Se requiere verificación en dos pasos',
+'login_error_locked': 'Demasiados intentos. Cuenta bloqueada temporalmente.',
+
+// ═══════════════════════════════════════════════════════════
+// AUTH — ERRORES TÉCNICOS
+// ═══════════════════════════════════════════════════════════
+'auth_error_identifier_required': 'Identificador obligatorio',
+'auth_error_password_required': 'Contraseña obligatoria',
+'auth_error_invalid_email': 'Email no válido',
+'auth_error_password_too_short': 'Contraseña demasiado corta (mín.',
+'auth_error_sign_in_failed': 'Error al iniciar sesión',
+'auth_error_email_not_verified': 'Email no verificado',
+'auth_error_network': 'Error de red',
+'auth_error_rate_limit': 'Demasiados intentos. Inténtelo más tarde.',
+'auth_error_technical': 'Error técnico. Inténtelo de nuevo.',
+'auth_error_invalid_otp': 'Código OTP no válido',
+'auth_error_otp_expired': 'Código OTP caducado',
+'auth_info_otp_sent': 'Código OTP enviado',
+'auth_accept_terms': 'Acepto los',
+'settings_terms': 'Términos de uso',
+'settings_privacy_policy': 'Política de privacidad',
+
+// ═══════════════════════════════════════════════════════════
+// REGISTRO (personal)
+// ═══════════════════════════════════════════════════════════
+'reg_step1_title': 'Su perfil',
+'reg_step1_subtitle': 'Cuéntenos quién es',
+'reg_full_name_label': 'Nombre completo',
+'reg_full_name_hint': 'Ej: Juan Kabongo',
+'reg_dob_label': 'Fecha de nacimiento',
+'reg_country_label': 'País',
+'reg_occupation_label': 'Profesión',
+'reg_occupation_hint': 'Ej: Profesor',
+'reg_step2_title': 'Su cuenta',
+'reg_step2_subtitle': 'Credenciales y verificación',
+'reg_email_label': 'Email',
+'reg_email_hint': 'nombre@ejemplo.com',
+'reg_phone_label': 'Teléfono',
+'reg_phone_hint': '+243…',
+'reg_password_label': 'Contraseña',
+'reg_password_hint': 'Mínimo 8 caracteres',
+'reg_confirm_password_label': 'Confirmar contraseña',
+'reg_confirm_password_hint': 'Vuelva a introducir la contraseña',
+'reg_strength_label': 'Seguridad',
+'reg_strength_very_weak': 'Muy débil',
+'reg_strength_weak': 'Débil',
+'reg_strength_medium': 'Media',
+'reg_strength_strong': 'Fuerte',
+'reg_strength_excellent': 'Excelente',
+'reg_identity_title': 'Identidad THIX',
+'reg_thix_chat_label': 'THIX CHAT',
+'reg_thix_chat_hint': 'usuario.unico',
+'reg_verification_title': 'Verificación',
+'reg_get_otp': 'Recibir código OTP',
+'reg_resend_in': 'Reenviar en',
+'reg_seconds_short': 's',
+'reg_code_sent_resend': 'Código enviado — reenviar',
+'reg_otp_label': 'Código OTP',
+'reg_next': 'Siguiente',
+'reg_activating': 'Activando…',
+'reg_validate_activate': 'Validar y activar',
+'reg_go_to_dashboard': 'Ir a mi espacio',
+'reg_change_account': 'Cambiar de cuenta',
+'reg_previous_step': 'Paso anterior',
+'reg_congrats': '¡Felicidades!',
+'reg_welcome_message': 'Bienvenido',
+'reg_id_card_title': 'TARJETA DE IDENTIDAD DIGITAL',
+'reg_official_thix_id': 'ID THIX OFICIAL',
+'reg_generating': 'Generando…',
+'reg_copy_thix_id': 'Copiar ID THIX',
+'reg_thix_id_copied': 'ID THIX copiado',
+'reg_summary': 'Resumen',
+'reg_mobile_label': 'Móvil',
+'reg_not_provided': 'No indicado',
+'reg_account_activated': 'Cuenta activada con éxito',
+
+// ═══════════════════════════════════════════════════════════
+// MEDIA — CATÁLOGO Y FEED
+// ═══════════════════════════════════════════════════════════
+'category_feed': 'Feed',
+'category_all': 'Todo',
+'media_catalog': 'Catálogo',
+'media_search_hint': 'Buscar título, artista…',
+'media_featured': 'Destacado',
+'media_premium': 'Premium',
+'media_series': 'Series',
+'media_load_error': 'Error al cargar los medios',
+'media_no_results': 'Sin resultados',
+'media_empty': 'Sin contenido todavía',
+'media_loading': 'Cargando…',
+
+// ═══════════════════════════════════════════════════════════
+// MEDIA — EDITOR DE VÍDEO
+// ═══════════════════════════════════════════════════════════
+'editor_title': 'Editor de vídeo',
+'editor_trim': 'Recortar',
+'editor_filter': 'Filtro',
+'editor_audio': 'Audio',
+'editor_mute_audio': 'Silenciar audio',
+'editor_pick_music': 'Añadir música',
+'editor_save': 'Guardar',
+'editor_done': 'Listo',
+'editor_not_ready': 'Preparando vídeo…',
+'editor_error_short': 'Vídeo demasiado corto',
+'editor_error_too_short': 'Vídeo demasiado corto',
+'editor_error_trim_too_short': 'Recorte demasiado corto',
+'editor_error_too_large': 'Archivo demasiado grande',
+'editor_error_audio_too_large': 'Audio demasiado grande',
+'editor_error_unsupported_format': 'Formato de vídeo no admitido',
+'editor_error_audio_unsupported': 'Formato de audio no admitido',
+'editor_error_file_missing': 'Archivo no encontrado',
+'editor_error_file_unreadable': 'Archivo ilegible',
+'editor_error_init_failed': 'Error al iniciar el editor',
+'editor_error_pick_failed': 'Error al seleccionar el archivo',
+'filter_normal': 'Normal',
+'filter_cinematic': 'Cinemático',
+'filter_bright': 'Brillante',
+'filter_vintage': 'Vintage',
+'filter_cyberpunk': 'Cyberpunk',
+'filter_soft_beauty': 'Suavidad',
+
+// ═══════════════════════════════════════════════════════════
+// MEDIA — EN DIRECTO
+// ═══════════════════════════════════════════════════════════
+'live_tab_title': 'En directo',
+'live_active_now': 'en directo ahora',
+'live_go_live_btn': 'Iniciar directo',
+'live_start_btn': 'Comenzar directo',
+'live_network_excellent': 'Red excelente',
+'live_category_label': 'Categoría',
+'live_category_general': 'General',
+'live_category_music': 'Música',
+'live_audience_label': 'Audiencia',
+'live_audience_public': 'Público',
+'live_audience_followers': 'Seguidores',
+'live_audience_private': 'Privado',
+'live_description_label': 'Descripción',
+'live_tags_label': 'Etiquetas (separadas por comas)',
+'live_flip': 'Voltear',
+'live_mic_on': 'Micrófono ON',
+'live_mic_off': 'Micrófono OFF',
+'live_flash': 'Flash',
+
+// ═══════════════════════════════════════════════════════════
+// THIX EVENT — PAGO
+// ═══════════════════════════════════════════════════════════
+'payment_title': 'Pago',
+'payment_choose_method': 'Elija un método de pago',
+'payment_amount_due': 'Importe a pagar',
+'payment_phone_label': 'Número de teléfono',
+'payment_security_info': 'Pago seguro vía SerdiPay. Confirme en su teléfono.',
+'payment_pay_now': 'Pagar',
+'payment_mpesa': 'Vodacom M-Pesa',
+'payment_airtel': 'Airtel Money',
+'payment_orange': 'Orange Money',
+'payment_afrimoney': 'Afrimoney',
+'payment_card': 'Tarjeta bancaria',
+'payment_processing_title': 'Pago en curso',
+'payment_processing_msg': 'Su transacción se está procesando.',
+'payment_validate_on_phone': 'Confirme el pago en su teléfono',
+'payment_timeout': 'Tiempo de pago agotado',
+'payment_rejected': 'Pago rechazado',
+'payment_failed': 'Error en el pago',
+'payment_invalid_phone': 'Número de teléfono no válido',
+'error_validation': 'Datos no válidos',
+'error_timeout': 'Tiempo agotado',
+'error_network': 'Error de red',
+
+// ═══════════════════════════════════════════════════════════
+// SERDIPAY — Mensajes específicos de dinero móvil
+// ═══════════════════════════════════════════════════════════
+'serdipay_processing': 'Pago en curso…',
+'serdipay_success': 'Pago confirmado',
+'serdipay_failed': 'Pago fallido',
+'serdipay_pending': 'Esperando confirmación',
+'serdipay_conflict': 'Una transacción similar ya está en curso. Espere 2 minutos.',
+'serdipay_rate_limited': 'Demasiadas transacciones. Inténtelo más tarde.',
+'serdipay_wrong_pin': 'Código PIN incorrecto',
+'serdipay_insufficient_balance': 'Saldo insuficiente en la cuenta móvil',
+'serdipay_network_error': 'Error de conexión con SerdiPay',
+'serdipay_telecom_am': 'Airtel Money',
+'serdipay_telecom_om': 'Orange Money',
+'serdipay_telecom_mp': 'Vodacom M-Pesa',
+'serdipay_telecom_af': 'Afrimoney',
 
 
 };
