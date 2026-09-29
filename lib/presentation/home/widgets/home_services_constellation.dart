@@ -1,5 +1,4 @@
 // lib/presentation/home/widgets/home_services_constellation.dart
-import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,14 +9,9 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-const int _kMaxTitleLength = 25;
-const double _kStageHeight = ThixPolicy.constellationStageHeight;
-const double _kHubRadius = ThixPolicy.constellationHubRadius;
-const double _kNodeContainerWidth = 52.0;
-const double _kNodeTextSize = 8.5;
-const double _kNodeCircleSize = 44.0;
-const double _kNodeIconSize = 19.0;
-const double _kHubShrink = 0.85;
+const double _kBarCollapsedWidth = 58.0;
+const double _kBarExpandedWidth = 150.0;
+const double _kHubRadius = 32.0;
 
 // ============================================================================
 // DATA MODEL
@@ -78,22 +72,18 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
   static const Color _colorLearning = ThixPolicy.domainLearning;
   static const Color _colorEvent = ThixPolicy.warning;
 
+  bool _isLeftExpanded = false;
+  bool _isRightExpanded = false;
+
   @override
   void initState() {
     super.initState();
-    debugPrint('[Constellation] 🌐 Initialized');
+    debugPrint('[ServicesBar] 🌐 Initialized');
   }
 
-  @override
-  void dispose() {
-    debugPrint('[Constellation] 👋 Disposed');
-    super.dispose();
-  }
-
-  List<_ServiceNodeData> _getGroupedNodes(AppLocalizations l10n) {
+  List<_ServiceNodeData> _getLeftNodes(AppLocalizations l10n) {
     final c = widget.counts;
     return [
-      // Orbite interne (4 nœuds)
       _ServiceNodeData(
         key: 'thixMoney',
         icon: Icons.account_balance_wallet_rounded,
@@ -122,8 +112,6 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
         badge: c.info,
         color: _colorPrimary,
       ),
-
-      // Orbite externe (8 nœuds)
       _ServiceNodeData(
         key: 'evenements',
         icon: Icons.event_rounded,
@@ -138,6 +126,12 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
         badge: c.market,
         color: _colorMarket,
       ),
+    ];
+  }
+
+  List<_ServiceNodeData> _getRightNodes(AppLocalizations l10n) {
+    final c = widget.counts;
+    return [
       _ServiceNodeData(
         key: 'reservation',
         icon: Icons.confirmation_number_rounded,
@@ -183,130 +177,73 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
     ];
   }
 
-  Offset _polar(Offset center, double angleDeg, double radius) {
-    final rad = angleDeg * math.pi / 180;
-    return center + Offset(radius * math.cos(rad), radius * math.sin(rad));
-  }
-
   void _handleProfileTap() {
     if (!mounted) return;
     HapticFeedback.lightImpact();
-    debugPrint('[Constellation] 👤 Profile tap');
+    debugPrint('[ServicesBar] 👤 Profile tap');
     widget.onProfileTap();
   }
 
   void _handleServiceTap(String key) {
     if (!mounted) return;
     HapticFeedback.selectionClick();
-    debugPrint('[Constellation] 🔷 Service tap: $key');
+    debugPrint('[ServicesBar] 🔷 Service tap: $key');
     widget.onServiceTap(key);
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final nodes = _getGroupedNodes(l10n);
+    final leftNodes = _getLeftNodes(l10n);
+    final rightNodes = _getRightNodes(l10n);
 
     return RepaintBoundary(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-        child: SizedBox(
-          height: _kStageHeight,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final w = constraints.maxWidth;
-              final center = Offset(w / 2, _kStageHeight / 2);
-              final maxR = math.min(
-                w / 2 - ThixPolicy.constellationOuterPadding,
-                ThixPolicy.constellationMaxRadius,
-              );
-              final innerR = maxR * 0.58;
+        padding: const EdgeInsets.symmetric(
+          horizontal: ThixPolicy.s16,
+          vertical: ThixPolicy.s8,
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // BARRES LATÉRALES GAUCHE ET DROITE
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Barre Gauche
+                _SideServiceBar(
+                  nodes: leftNodes,
+                  isExpanded: _isLeftExpanded,
+                  accentColor: ThixPolicy.gold,
+                  onToggleExpand: () {
+                    HapticFeedback.lightImpact();
+                    setState(() => _isLeftExpanded = !_isLeftExpanded);
+                  },
+                  onServiceTap: _handleServiceTap,
+                ),
 
-              final positions = <Offset>[];
+                // Barre Droite
+                _SideServiceBar(
+                  nodes: rightNodes,
+                  isExpanded: _isRightExpanded,
+                  accentColor: ThixPolicy.gold,
+                  onToggleExpand: () {
+                    HapticFeedback.lightImpact();
+                    setState(() => _isRightExpanded = !_isRightExpanded);
+                  },
+                  onServiceTap: _handleServiceTap,
+                ),
+              ],
+            ),
 
-              // 4 nœuds internes
-              for (var i = 0; i < 4; i++) {
-                final angle = -135.0 + (i * 90.0);
-                positions.add(_polar(center, angle, innerR));
-              }
-
-              // 8 nœuds externes
-              for (var i = 0; i < 8; i++) {
-                final angle = -90.0 + (i * 45.0);
-                positions.add(_polar(center, angle, maxR));
-              }
-
-              final hubVisualRadius = _kHubRadius * _kHubShrink;
-
-              return Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  // Arrière-plan lumineux central (subtil)
-                  Positioned(
-                    left: center.dx - 130,
-                    top: center.dy - 130,
-                    child: IgnorePointer(
-                      child: Container(
-                        width: 260,
-                        height: 260,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [
-                              ThixPolicy.primary.withOpacity(0.08),
-                              Colors.transparent,
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Lignes de connexion (statiques, pas d'animation)
-                  Positioned.fill(
-                    child: RepaintBoundary(
-                      child: CustomPaint(
-                        painter: _RadialBranchesPainter(
-                          center: center,
-                          nodeOffsets: positions,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Nœuds de services
-                  for (var i = 0; i < nodes.length; i++)
-                    Positioned(
-                      left: positions[i].dx - (_kNodeContainerWidth / 2),
-                      top: positions[i].dy - (_kNodeCircleSize / 2),
-                      child: RepaintBoundary(
-                        child: _ConstellationNode(
-                          data: nodes[i],
-                          width: _kNodeContainerWidth,
-                          circleSize: _kNodeCircleSize,
-                          iconSize: _kNodeIconSize,
-                          textSize: _kNodeTextSize,
-                          onTap: () => _handleServiceTap(nodes[i].key),
-                        ),
-                      ),
-                    ),
-
-                  // Hub central (profil)
-                  Positioned(
-                    left: center.dx - hubVisualRadius,
-                    top: center.dy - hubVisualRadius,
-                    child: RepaintBoundary(
-                      child: _HubButton(
-                        radius: hubVisualRadius,
-                        avatarUrl: widget.avatarUrl,
-                        onTap: _handleProfileTap,
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
+            // HUB CENTRAL (Profil)
+            _HubButton(
+              radius: _kHubRadius,
+              avatarUrl: widget.avatarUrl,
+              onTap: _handleProfileTap,
+            ),
+          ],
         ),
       ),
     );
@@ -314,54 +251,202 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
 }
 
 // ============================================================================
-// PAINTER (Lignes statiques, pas d'animation)
+// SIDE BAR WIDGET (Rétractable)
 // ============================================================================
-class _RadialBranchesPainter extends CustomPainter {
-  final Offset center;
-  final List<Offset> nodeOffsets;
+class _SideServiceBar extends StatelessWidget {
+  final List<_ServiceNodeData> nodes;
+  final bool isExpanded;
+  final Color accentColor;
+  final VoidCallback onToggleExpand;
+  final void Function(String key) onServiceTap;
 
-  _RadialBranchesPainter({
-    required this.center,
-    required this.nodeOffsets,
+  const _SideServiceBar({
+    required this.nodes,
+    required this.isExpanded,
+    required this.accentColor,
+    required this.onToggleExpand,
+    required this.onServiceTap,
   });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    // Octogone extérieur
-    if (nodeOffsets.length == 12) {
-      final perimeterPaint = Paint()
-        ..color = ThixPolicy.border.withOpacity(0.6)
-        ..strokeWidth = 1.0
-        ..style = PaintingStyle.stroke;
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.fastOutSlowIn,
+      width: isExpanded ? _kBarExpandedWidth : _kBarCollapsedWidth,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: ThixPolicy.border.withOpacity(0.8),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // En-tête cliquable pour étendre / réduire la barre
+          GestureDetector(
+            onTap: onToggleExpand,
+            child: Container(
+              height: 32,
+              decoration: BoxDecoration(
+                color: accentColor,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(18),
+                ),
+              ),
+              child: Center(
+                child: Icon(
+                  isExpanded
+                      ? Icons.unfold_less_rounded
+                      : Icons.unfold_more_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+              ),
+            ),
+          ),
 
-      for (var i = 4; i < 12; i++) {
-        final start = nodeOffsets[i];
-        final end = (i == 11) ? nodeOffsets[4] : nodeOffsets[i + 1];
-        canvas.drawLine(start, end, perimeterPaint);
-      }
-    }
-
-    // Branches radiales
-    final trackPaint = Paint()
-      ..color = ThixPolicy.border.withOpacity(0.5)
-      ..strokeWidth = 1.2
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-
-    for (final end in nodeOffsets) {
-      canvas.drawLine(center, end, trackPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _RadialBranchesPainter oldDelegate) {
-    return oldDelegate.center != center ||
-        oldDelegate.nodeOffsets != nodeOffsets;
+          // Liste des icônes de service
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (int i = 0; i < nodes.length; i++) ...[
+                  if (i > 0)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: Divider(
+                        height: 6,
+                        thickness: 0.8,
+                        color: ThixPolicy.border.withOpacity(0.4),
+                      ),
+                    ),
+                  _BarItemTile(
+                    node: nodes[i],
+                    isExpanded: isExpanded,
+                    onTap: () => onServiceTap(nodes[i].key),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
 // ============================================================================
-// HUB BUTTON (Profil)
+// TILE ITEM (Bouton individuel)
+// ============================================================================
+class _BarItemTile extends StatelessWidget {
+  final _ServiceNodeData node;
+  final bool isExpanded;
+  final VoidCallback onTap;
+
+  const _BarItemTile({
+    required this.node,
+    required this.isExpanded,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+        child: Row(
+          mainAxisAlignment:
+              isExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: ThixPolicy.border.withOpacity(0.6),
+                      width: 1.0,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(node.icon, color: node.color, size: 20),
+                ),
+                if (node.badge != null && node.badge! > 0)
+                  Positioned(
+                    top: -2,
+                    right: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: const BoxDecoration(
+                        color: ThixPolicy.danger,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 14,
+                        minHeight: 14,
+                      ),
+                      child: Center(
+                        child: Text(
+                          '${node.badge}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 7.5,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            if (isExpanded) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  node.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: ThixPolicy.textMain,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// HUB BUTTON (Profil Central)
 // ============================================================================
 class _HubButton extends StatelessWidget {
   final double radius;
@@ -386,190 +471,52 @@ class _HubButton extends StatelessWidget {
           height: radius * 2,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: Colors.white,
-            border: Border.all(color: ThixPolicy.border, width: 1.6),
+            color: ThixPolicy.gold,
+            border: Border.all(color: Colors.white, width: 2.5),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 12,
+                color: Colors.black.withOpacity(0.12),
+                blurRadius: 14,
                 offset: const Offset(0, 4),
               ),
             ],
           ),
-          padding: const EdgeInsets.all(3.5),
+          padding: const EdgeInsets.all(3),
           child: ClipOval(
             child: (avatarUrl != null && avatarUrl!.trim().isNotEmpty)
                 ? CachedNetworkImage(
                     imageUrl: avatarUrl!.trim(),
                     fit: BoxFit.cover,
                     placeholder: (context, url) => Container(
-                      color: ThixPolicy.primary.withOpacity(0.1),
+                      color: Colors.white24,
                       child: const Center(
                         child: SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
                     errorWidget: (context, url, error) => Container(
-                      color: ThixPolicy.primary.withOpacity(0.1),
+                      color: Colors.white24,
                       child: const Icon(
                         Icons.person_rounded,
-                        color: ThixPolicy.primaryDeep,
-                        size: 24,
+                        color: Colors.white,
+                        size: 26,
                       ),
                     ),
                   )
                 : Container(
-                    color: ThixPolicy.primary.withOpacity(0.1),
+                    color: Colors.white24,
                     child: const Icon(
                       Icons.person_rounded,
-                      color: ThixPolicy.primaryDeep,
-                      size: 24,
+                      color: Colors.white,
+                      size: 26,
                     ),
                   ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// SERVICE NODE
-// ============================================================================
-class _ConstellationNode extends StatefulWidget {
-  final _ServiceNodeData data;
-  final double width;
-  final double circleSize;
-  final double iconSize;
-  final double textSize;
-  final VoidCallback onTap;
-
-  const _ConstellationNode({
-    required this.data,
-    required this.width,
-    required this.circleSize,
-    required this.iconSize,
-    required this.textSize,
-    required this.onTap,
-  });
-
-  @override
-  State<_ConstellationNode> createState() => _ConstellationNodeState();
-}
-
-class _ConstellationNodeState extends State<_ConstellationNode> {
-  bool _isPressed = false;
-
-  void _handleTapDown(TapDownDetails details) {
-    if (!mounted) return;
-    setState(() => _isPressed = true);
-  }
-
-  void _handleTapUp(TapUpDetails details) {
-    if (!mounted) return;
-    setState(() => _isPressed = false);
-    widget.onTap();
-  }
-
-  void _handleTapCancel() {
-    if (!mounted) return;
-    setState(() => _isPressed = false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final d = widget.data;
-    final sanitizedTitle =
-        d.title.length > _kMaxTitleLength ? d.title.substring(0, _kMaxTitleLength) : d.title;
-
-    return Semantics(
-      button: true,
-      label: sanitizedTitle,
-      child: GestureDetector(
-        onTapDown: _handleTapDown,
-        onTapUp: _handleTapUp,
-        onTapCancel: _handleTapCancel,
-        child: AnimatedScale(
-          scale: _isPressed ? 0.92 : 1.0,
-          duration: const Duration(milliseconds: 120),
-          child: SizedBox(
-            width: widget.width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    // Cercle (pas de BackdropFilter, juste Container solide)
-                    Container(
-                      width: widget.circleSize,
-                      height: widget.circleSize,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: ThixPolicy.border, width: 1.3),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.08),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(d.icon, color: d.color, size: widget.iconSize),
-                    ),
-
-                    // Badge
-                    if (d.badge != null && d.badge! > 0)
-                      Positioned(
-                        top: -3,
-                        right: -5,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.2),
-                          decoration: BoxDecoration(
-                            color: ThixPolicy.danger,
-                            borderRadius: BorderRadius.circular(7),
-                            border: Border.all(color: Colors.white, width: 1.2),
-                            boxShadow: [
-                              BoxShadow(
-                                color: ThixPolicy.danger.withOpacity(0.3),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Text(
-                            '${d.badge}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 8,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  sanitizedTitle,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: widget.textSize,
-                    fontWeight: FontWeight.w700,
-                    color: ThixPolicy.textMain,
-                    height: 1.1,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ),
