@@ -36,7 +36,6 @@ class SerdipayPaymentResult {
 class SerdiPayService {
   final SupabaseClient _client;
 
-  // ✅ FIX : le nom du constructeur doit correspondre exactement au nom de la classe
   SerdiPayService(this._client);
 
   /// Lance un paiement SerdiPay (mobile money)
@@ -176,6 +175,10 @@ class SerdiPayService {
   }
 
   /// Historique des transactions d'un utilisateur
+  ///
+  /// ⚠️ IMPORTANT : Les filtres .eq() doivent être appliqués AVANT .order() et .limit()
+  /// car Postgrest transforme le builder en PostgrestTransformBuilder après ces appels,
+  /// et .eq() n'est plus disponible sur ce type.
   Future<List<SerdipayTransaction>> getHistory({
     SerdipayPaymentType? type,
     SerdipayStatus? status,
@@ -185,17 +188,25 @@ class SerdiPayService {
       final userId = _client.auth.currentUser?.id;
       if (userId == null) return [];
 
+      // Construction séquentielle : filtres d'abord, puis transformateurs
       var query = _client
           .from('serdipay_transactions')
           .select('*')
-          .eq('user_id', userId)
+          .eq('user_id', userId);
+
+      // Filtres conditionnels (tant qu'on est en PostgrestFilterBuilder)
+      if (type != null) {
+        query = query.eq('type', type.value);
+      }
+      if (status != null) {
+        query = query.eq('status', status.value);
+      }
+
+      // Transformateurs en dernier (convertit en PostgrestTransformBuilder)
+      final rows = await query
           .order('created_at', ascending: false)
           .limit(limit);
 
-      if (type != null) query = query.eq('type', type.value);
-      if (status != null) query = query.eq('status', status.value);
-
-      final rows = await query;
       return (rows as List).map((r) => SerdipayTransaction.fromJson(r)).toList();
     } catch (e) {
       debugPrint('❌ SerdiPayService.getHistory: $e');
