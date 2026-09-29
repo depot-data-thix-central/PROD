@@ -1,7 +1,9 @@
 /// THIX RETROUVE — Design maquette claire (Production)
 /// ✅ Reprend 100% de la logique du code de base (routes, providers,
 ///    sanitizer, semantics, throttle, modal, logs)
-/// ✅ Design photo : fond clair, cartes or/bleu, liste lignes, nav compacte
+/// ✅ FIX WEB : IntrinsicHeight autour du Row stretch (layout non borné
+///    = sous-arbre blanc en release Web)
+/// ✅ FIX CONTRASTE : cartes colorées bordées + textes foncés sur fond clair
 /// ✅ zéro clé l10n brute (fallback automatique) — aucun patch l10n requis
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
@@ -31,6 +33,7 @@ const Color _kTextMuted = Color(0xFF93A1B5);
 const Color _kBorder = Color(0xFFE5EAF1);
 const Color _kSkeleton = Color(0xFFE8EDF3);
 const Color _kGold = Color(0xFFE0A400);
+const Color _kGoldDeep = Color(0xFFB07F00);
 const Color _kRed = Color(0xFFE5484D);
 
 const double _kRadiusLg = 18.0;
@@ -179,38 +182,46 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── CARTES D'ACTION or / bleu (photo) ────────────────────────
+  // ── CARTES D'ACTION or / bleu ────────────────────────────────
+  // ✅ FIX WEB CRITIQUE : IntrinsicHeight borne la hauteur du Row.
+  //    Sans cela, CrossAxisAlignment.stretch dans une ListView (hauteur
+  //    infinie) provoque un échec de layout → sous-arbre BLANC en release.
   Widget _buildActionCards(BuildContext context, AppLocalizations l10n) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: _actionCard(
-            color: _kGold,
-            icon: Icons.search_off_rounded,
-            title: _tr(l10n, 'retrouve_lost_title', "J'ai perdu un objet"),
-            subtitle: _tr(l10n, 'retrouve_lost_subtitle',
-                'Déclarez un objet que vous avez perdu'),
-            onTap: () => _navigateToDeclare(context, StatutObjet.perdu),
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _actionCard(
+              color: _kGold,
+              deepColor: _kGoldDeep,
+              icon: Icons.search_off_rounded,
+              title: _tr(l10n, 'retrouve_lost_title', "J'ai perdu un objet"),
+              subtitle: _tr(l10n, 'retrouve_lost_subtitle',
+                  'Déclarez un objet que vous avez perdu'),
+              onTap: () => _navigateToDeclare(context, StatutObjet.perdu),
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _actionCard(
-            color: ThixPolicy.primary,
-            icon: Icons.inventory_2_rounded,
-            title: _tr(l10n, 'retrouve_found_title', "J'ai trouvé un objet"),
-            subtitle: _tr(l10n, 'retrouve_found_subtitle',
-                'Déclarez un objet que vous avez trouvé'),
-            onTap: () => _navigateToDeclare(context, StatutObjet.trouve),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _actionCard(
+              color: ThixPolicy.primary,
+              deepColor: ThixPolicy.primaryDeep,
+              icon: Icons.inventory_2_rounded,
+              title: _tr(l10n, 'retrouve_found_title', "J'ai trouvé un objet"),
+              subtitle: _tr(l10n, 'retrouve_found_subtitle',
+                  'Déclarez un objet que vous avez trouvé'),
+              onTap: () => _navigateToDeclare(context, StatutObjet.trouve),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _actionCard({
     required Color color,
+    required Color deepColor,
     required IconData icon,
     required String title,
     required String subtitle,
@@ -222,19 +233,29 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
+          // ✅ Hauteur minimale garantie : la carte reste visible même si
+          //    le contenu est court (aucun effondrement possible).
+          constraints: const BoxConstraints(minHeight: 148),
           padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
           decoration: BoxDecoration(
-            color: color,
+            // ✅ Dégradé solide : impossible à confondre avec le fond blanc
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [color, deepColor],
+            ),
             borderRadius: BorderRadius.circular(_kRadiusLg),
+            border: Border.all(color: deepColor.withValues(alpha: 0.6)),
             boxShadow: [
               BoxShadow(
-                color: color.withValues(alpha: 0.25),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+                color: color.withValues(alpha: 0.30),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
               ),
             ],
           ),
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon, color: Colors.white, size: 34),
               const SizedBox(height: 10),
@@ -255,7 +276,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.9),
+                  color: Colors.white.withValues(alpha: 0.95),
                   fontSize: 11,
                   height: 1.3,
                 ),
@@ -267,7 +288,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── CARTE MAP (photo) ────────────────────────────────────────
+  // ── CARTE MAP ────────────────────────────────────────────────
   Widget _buildMapShortcut(BuildContext context, AppLocalizations l10n) {
     return Semantics(
       button: true,
@@ -280,10 +301,10 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
           decoration: BoxDecoration(
             color: _kSurface,
             borderRadius: BorderRadius.circular(_kRadiusMd),
-            border: Border.all(color: _kBorder),
+            border: Border.all(color: _kBorder, width: 1.2),
             boxShadow: [
               BoxShadow(
-                color: _kTextMain.withValues(alpha: 0.04),
+                color: _kTextMain.withValues(alpha: 0.05),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -317,7 +338,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: ThixPolicy.primary.withValues(alpha: 0.10),
+                  color: ThixPolicy.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(Icons.location_on_rounded,
@@ -364,7 +385,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── LISTE OBJETS (lignes, photo) ────────────────────────────
+  // ── LISTE OBJETS (lignes) ───────────────────────────────────
   Widget _buildObjetsList(
     BuildContext context,
     AppLocalizations l10n,
@@ -427,10 +448,10 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
           decoration: BoxDecoration(
             color: _kSurface,
             borderRadius: BorderRadius.circular(_kRadiusMd),
-            border: Border.all(color: _kBorder),
+            border: Border.all(color: _kBorder, width: 1.2),
             boxShadow: [
               BoxShadow(
-                color: _kTextMain.withValues(alpha: 0.04),
+                color: _kTextMain.withValues(alpha: 0.05),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -438,7 +459,6 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
           ),
           child: Row(
             children: [
-              // Vignette photo
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: SizedBox(
@@ -461,7 +481,6 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                 ),
               ),
               const SizedBox(width: 10),
-              // Infos
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -508,13 +527,12 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              // Badge droit : RÉCOMPENSE ou statut
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: (obj.hasRecompense ? _kGold : statusColor)
-                      .withValues(alpha: 0.12),
+                      .withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -522,7 +540,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
                       ? _tr(l10n, 'retrouve_badge_reward', 'RÉCOMPENSE')
                       : obj.statutLabel.toUpperCase(),
                   style: TextStyle(
-                    color: obj.hasRecompense ? _kGold : statusColor,
+                    color: obj.hasRecompense ? _kGoldDeep : statusColor,
                     fontSize: 9,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.4,
@@ -550,7 +568,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
       decoration: BoxDecoration(
         color: _kSurface,
         borderRadius: BorderRadius.circular(_kRadiusLg),
-        border: Border.all(color: _kBorder),
+        border: Border.all(color: _kBorder, width: 1.2),
       ),
       child: Column(
         children: [
@@ -581,7 +599,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
       decoration: BoxDecoration(
         color: _kSurface,
         borderRadius: BorderRadius.circular(_kRadiusLg),
-        border: Border.all(color: _kBorder),
+        border: Border.all(color: _kBorder, width: 1.2),
       ),
       child: Column(
         children: [
@@ -609,7 +627,7 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
     );
   }
 
-  // ── BOTTOM NAV COMPACTE (photo) ─────────────────────────────
+  // ── BOTTOM NAV COMPACTE ─────────────────────────────────────
   Widget _buildBottomNav(BuildContext context, AppLocalizations l10n) {
     return Container(
       color: _kSurface,
@@ -623,7 +641,6 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
               _tr(l10n, 'nav_searches', 'Services'), false,
               onTap: () => _throttledTap(
                   () => context.pushNamed('thixRetrouveMesRecherches'))),
-          // Bouton central or
           Semantics(
             button: true,
             label: l10n.t('retrouve_add_action'),
@@ -775,14 +792,14 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
           decoration: BoxDecoration(
             color: _kBg,
             borderRadius: BorderRadius.circular(_kRadiusMd),
-            border: Border.all(color: _kBorder),
+            border: Border.all(color: _kBorder, width: 1.2),
           ),
           child: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(9),
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.14),
+                  color: color.withValues(alpha: 0.16),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(icon, color: color, size: 20),
@@ -875,6 +892,7 @@ class _SkeletonListState extends State<_SkeletonList>
                 decoration: BoxDecoration(
                   color: _kSkeleton,
                   borderRadius: BorderRadius.circular(_kRadiusMd),
+                  border: Border.all(color: _kBorder),
                 ),
               ),
             ),
