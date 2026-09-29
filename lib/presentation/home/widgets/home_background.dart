@@ -121,8 +121,10 @@ class _HomeSoftBackgroundState extends State<HomeSoftBackground>
                 ),
 
                 // 3. Voile blanc (simule glassmorphism sans blur GPU)
+                //    0.92 → page perçue BLANCHE ; les orbes deviennent un
+                //    accent de marque quasi imperceptible sous la surface.
                 Positioned.fill(
-                  child: Container(color: Colors.white.withOpacity(0.75)),
+                  child: Container(color: Colors.white.withOpacity(0.92)),
                 ),
 
                 // 4. Texture visuelle (grille + ondes)
