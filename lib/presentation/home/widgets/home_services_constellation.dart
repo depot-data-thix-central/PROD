@@ -1,21 +1,41 @@
 // lib/presentation/home/widgets/home_services_constellation.dart
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// THIX ID CENTRAL — "THIX ORBIT" · Roue orbitale radiale
+// Rupture totale : ni colonnes, ni grilles, ni barres.
+// Les 12 services gravitent sur un anneau rotatif (drag + snap + haptiques).
+// API publique IDENTIQUE à l'ancien widget → drop-in.
+// ═══════════════════════════════════════════════════════════════════════════
+
+import 'dart:math';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/services/notification_counters_service.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
-// ============================================================================
-// CONSTANTS (TAILLES ET DIMENSIONS COMPACTES)
-// ============================================================================
-const double _kBarCollapsedWidth = 52.0;
-const double _kBarExpandedWidth = 138.0;
-const double _kHubRadius = 30.0;
+// ── CONSTANTES ──────────────────────────────────────────────────────────────
+const int _kCount = 12;
+const double _kStep = pi * 2 / _kCount;
+const double _kNodeSize = 46.0;
+const double _kHubSize = 122.0;
 
-// ============================================================================
-// DATA MODEL
-// ============================================================================
+String _tr(AppLocalizations l10n, String key, String fallback) {
+  final v = l10n.t(key);
+  return (v.trim().isEmpty || v == key) ? fallback : v;
+}
+
+double _angDist(double a, double b) {
+  var d = (a - b) % (2 * pi);
+  if (d > pi) d -= 2 * pi;
+  if (d < -pi) d += 2 * pi;
+  return d.abs();
+}
+
+// ── DATA MODEL ──────────────────────────────────────────────────────────────
 class _ServiceNodeData {
   final String key;
   final IconData icon;
@@ -32,9 +52,7 @@ class _ServiceNodeData {
   });
 }
 
-// ============================================================================
-// MAIN WIDGET
-// ============================================================================
+// ── WIDGET PUBLIC (API inchangée) ───────────────────────────────────────────
 class HomeServicesConstellation extends StatefulWidget {
   final SectionBadgeCounts counts;
   final void Function(String key) onServiceTap;
@@ -62,7 +80,8 @@ class HomeServicesConstellation extends StatefulWidget {
       _HomeServicesConstellationState();
 }
 
-class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
+class _HomeServicesConstellationState extends State<HomeServicesConstellation>
+    with SingleTickerProviderStateMixin {
   static const Color _colorCorporate = ThixPolicy.primaryDeep;
   static const Color _colorPrimary = ThixPolicy.primary;
   static const Color _colorMoney = ThixPolicy.gold;
@@ -72,119 +91,104 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
   static const Color _colorLearning = ThixPolicy.domainLearning;
   static const Color _colorEvent = ThixPolicy.warning;
 
-  bool _isLeftExpanded = false;
-  bool _isRightExpanded = false;
-  bool _isBottomExpanded = false;
+  double _angle = -pi / 2; // nœud 0 en focale au démarrage
+  double _radius = 140;
+  int _focus = 0;
+  bool _interacted = false;
+
+  late final AnimationController _ctrl;
+  Animation<double>? _anim;
 
   @override
   void initState() {
     super.initState();
-    debugPrint('[ServicesLayout] 🌐 Initialized');
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
+    _ctrl.addListener(_onTick);
   }
 
-  // 1. GAUCHE: Finance & Commerce (4 items)
-  List<_ServiceNodeData> _getLeftNodes(AppLocalizations l10n) {
-    final c = widget.counts;
-    return [
-      _ServiceNodeData(
-        key: 'thixMoney',
-        icon: Icons.account_balance_wallet_rounded,
-        title: 'Thix ${l10n.t('svc_money')}',
-        badge: c.money,
-        color: _colorMoney,
-      ),
-      _ServiceNodeData(
-        key: 'thixMarket',
-        icon: Icons.storefront_rounded,
-        title: 'Thix ${l10n.t('svc_market')}',
-        badge: c.market,
-        color: _colorMarket,
-      ),
-      _ServiceNodeData(
-        key: 'thixMedia',
-        icon: Icons.video_collection_rounded,
-        title: 'Thix ${l10n.t('svc_media')}',
-        badge: c.media,
-        color: _colorNetwork,
-      ),
-      _ServiceNodeData(
-        key: 'reservation',
-        icon: Icons.confirmation_number_rounded,
-        title: 'Thix ${l10n.t('svc_booking')}',
-        badge: c.reservation,
-        color: _colorPrimary,
-      ),
-    ];
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
   }
 
-  // 2. DROITE: Carrière & Pro (4 items)
-  List<_ServiceNodeData> _getRightNodes(AppLocalizations l10n) {
-    final c = widget.counts;
-    return [
-      _ServiceNodeData(
-        key: 'emplois',
-        icon: Icons.work_rounded,
-        title: 'Thix ${l10n.t('svc_jobs')}',
-        badge: c.jobs,
-        color: _colorCorporate,
-      ),
-      _ServiceNodeData(
-        key: 'formations',
-        icon: Icons.school_rounded,
-        title: 'Thix ${l10n.t('svc_learning')}',
-        badge: c.formations,
-        color: _colorLearning,
-      ),
-      _ServiceNodeData(
-        key: 'opportunites',
-        icon: Icons.lightbulb_rounded,
-        title: 'Thix ${l10n.t('svc_opps')}',
-        badge: c.opportunities,
-        color: _colorMoney,
-      ),
-      _ServiceNodeData(
-        key: 'reseauPro',
-        icon: Icons.groups_rounded,
-        title: 'Thix ${l10n.t('svc_pro')}',
-        badge: c.network,
-        color: _colorNetwork,
-      ),
-    ];
+  void _onTick() {
+    final a = _anim;
+    if (a == null) return;
+    setState(() => _angle = a.value);
+    _syncFocus();
   }
 
-  // 3. BAS: Citoyenneté & Services Utiles (4 items)
-  List<_ServiceNodeData> _getBottomNodes(AppLocalizations l10n) {
-    final c = widget.counts;
-    return [
-      _ServiceNodeData(
-        key: 'monPays',
-        icon: Icons.flag_rounded,
-        title: 'Thix ${l10n.t('svc_country')}',
-        badge: c.monPays,
-        color: _colorCorporate,
-      ),
-      _ServiceNodeData(
-        key: 'thixInfo',
-        icon: Icons.newspaper_rounded,
-        title: 'Thix ${l10n.t('svc_news')}',
-        badge: c.info,
-        color: _colorPrimary,
-      ),
-      _ServiceNodeData(
-        key: 'evenements',
-        icon: Icons.event_rounded,
-        title: 'Thix ${l10n.t('svc_event')}',
-        badge: c.events,
-        color: _colorEvent,
-      ),
-      _ServiceNodeData(
-        key: 'thixSante',
-        icon: Icons.local_hospital_rounded,
-        title: 'Thix ${l10n.t('svc_health')}',
-        badge: c.health,
-        color: _colorHealth,
-      ),
-    ];
+  void _syncFocus() {
+    final f = _computeFocus();
+    if (f != _focus) {
+      setState(() => _focus = f);
+      HapticFeedback.selectionClick(); // tick magnétique à chaque cran
+    }
+  }
+
+  int _computeFocus() {
+    int best = 0;
+    double bestD = double.infinity;
+    for (int i = 0; i < _kCount; i++) {
+      final d = _angDist(_base(i) + _angle, -pi / 2);
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  double _base(int i) => i * _kStep;
+
+  void _animateTo(double target) {
+    _ctrl.stop();
+    double t = target;
+    while (t - _angle > pi) t -= 2 * pi;
+    while (t - _angle < -pi) t += 2 * pi;
+    _anim = Tween<double>(begin: _angle, end: t).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic),
+    );
+    _ctrl.forward(from: 0);
+  }
+
+  void _markInteracted() {
+    if (!_interacted) setState(() => _interacted = true);
+  }
+
+  // ── GESTES ──
+  void _onDragStart(DragStartDetails _) {
+    _ctrl.stop();
+    _markInteracted();
+  }
+
+  void _onDragUpdate(DragUpdateDetails d) {
+    setState(() => _angle += d.delta.dx / _radius);
+    _syncFocus();
+  }
+
+  void _onDragEnd(DragEndDetails d) {
+    final vel = (d.velocity.pixelsPerSecond.dx / 1400).clamp(-1.2, 1.2);
+    final projected = _angle + vel * _kStep;
+    _animateTo((projected / _kStep).round() * _kStep);
+  }
+
+  void _focusOn(int i) {
+    _markInteracted();
+    _animateTo(-pi / 2 - _base(i));
+  }
+
+  void _step(int dir) {
+    _animateTo((( _angle / _kStep).round() + dir) * _kStep);
+  }
+
+  void _open(String key) {
+    HapticFeedback.lightImpact();
+    widget.onServiceTap(key);
   }
 
   void _handleProfileTap() {
@@ -193,379 +197,157 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
     widget.onProfileTap();
   }
 
-  void _handleServiceTap(String key) {
-    if (!mounted) return;
-    HapticFeedback.selectionClick();
-    widget.onServiceTap(key);
+  List<_ServiceNodeData> _nodes(AppLocalizations l10n) {
+    final c = widget.counts;
+    return [
+      _ServiceNodeData(key: 'thixMoney', icon: Icons.account_balance_wallet_rounded, title: l10n.t('svc_money'), badge: c.money, color: _colorMoney),
+      _ServiceNodeData(key: 'thixMarket', icon: Icons.storefront_rounded, title: l10n.t('svc_market'), badge: c.market, color: _colorMarket),
+      _ServiceNodeData(key: 'thixMedia', icon: Icons.video_collection_rounded, title: l10n.t('svc_media'), badge: c.media, color: _colorNetwork),
+      _ServiceNodeData(key: 'reservation', icon: Icons.confirmation_number_rounded, title: l10n.t('svc_booking'), badge: c.reservation, color: _colorPrimary),
+      _ServiceNodeData(key: 'emplois', icon: Icons.work_rounded, title: l10n.t('svc_jobs'), badge: c.jobs, color: _colorCorporate),
+      _ServiceNodeData(key: 'formations', icon: Icons.school_rounded, title: l10n.t('svc_learning'), badge: c.formations, color: _colorLearning),
+      _ServiceNodeData(key: 'opportunites', icon: Icons.lightbulb_rounded, title: l10n.t('svc_opps'), badge: c.opportunities, color: _colorMoney),
+      _ServiceNodeData(key: 'reseauPro', icon: Icons.groups_rounded, title: l10n.t('svc_pro'), badge: c.network, color: _colorNetwork),
+      _ServiceNodeData(key: 'monPays', icon: Icons.flag_rounded, title: l10n.t('svc_country'), badge: c.monPays, color: _colorCorporate),
+      _ServiceNodeData(key: 'thixInfo', icon: Icons.newspaper_rounded, title: l10n.t('svc_news'), badge: c.info, color: _colorPrimary),
+      _ServiceNodeData(key: 'evenements', icon: Icons.event_rounded, title: l10n.t('svc_event'), badge: c.events, color: _colorEvent),
+      _ServiceNodeData(key: 'thixSante', icon: Icons.local_hospital_rounded, title: l10n.t('svc_health'), badge: c.health, color: _colorHealth),
+    ];
   }
 
+  // ── BUILD ──
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final leftNodes = _getLeftNodes(l10n);
-    final rightNodes = _getRightNodes(l10n);
-    final bottomNodes = _getBottomNodes(l10n);
+    final nodes = _nodes(l10n);
+    final focused = nodes[_focus];
 
     return RepaintBoundary(
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: ThixPolicy.s16,
-          vertical: 4.0,
+          vertical: ThixPolicy.s8,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // BARRES LATÉRALES (GAUCHE / DROITE) + HUB CENTRAL
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // Barre Gauche (4 items)
-                _VerticalServiceBar(
-                  nodes: leftNodes,
-                  isExpanded: _isLeftExpanded,
-                  accentColor: ThixPolicy.gold,
-                  onToggleExpand: () {
-                    HapticFeedback.lightImpact();
-                    setState(() => _isLeftExpanded = !_isLeftExpanded);
-                  },
-                  onServiceTap: _handleServiceTap,
-                ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final size = constraints.maxWidth.clamp(260.0, 372.0);
+            final center = size / 2;
+            _radius = center - 30;
 
-                // Hub Profil Central
-                _HubButton(
-                  radius: _kHubRadius,
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _OrbitHeader(
+                  title: _tr(l10n, 'home_services', 'Services'),
                   avatarUrl: widget.avatarUrl,
                   onTap: _handleProfileTap,
                 ),
+                const SizedBox(height: 6),
 
-                // Barre Droite (4 items)
-                _VerticalServiceBar(
-                  nodes: rightNodes,
-                  isExpanded: _isRightExpanded,
-                  accentColor: ThixPolicy.gold,
-                  onToggleExpand: () {
-                    HapticFeedback.lightImpact();
-                    setState(() => _isRightExpanded = !_isRightExpanded);
+                // ── ROUE ORBITALE ──
+                Semantics(
+                  container: true,
+                  label: '${focused.title}, ${_focus + 1} sur $_kCount',
+                  customSemanticsActions: {
+                    CustomSemanticsAction(label: 'Service suivant'):
+                        () => _step(1),
+                    CustomSemanticsAction(label: 'Service précédent'):
+                        () => _step(-1),
                   },
-                  onServiceTap: _handleServiceTap,
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 8),
-
-            // BARRE HORIZONTALE DU BAS (4 items)
-            _HorizontalServiceBar(
-              nodes: bottomNodes,
-              isExpanded: _isBottomExpanded,
-              accentColor: ThixPolicy.gold,
-              onToggleExpand: () {
-                HapticFeedback.lightImpact();
-                setState(() => _isBottomExpanded = !_isBottomExpanded);
-              },
-              onServiceTap: _handleServiceTap,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// BARRE VERTICALE COMPACTE (Gauche / Droite)
-// ============================================================================
-class _VerticalServiceBar extends StatelessWidget {
-  final List<_ServiceNodeData> nodes;
-  final bool isExpanded;
-  final Color accentColor;
-  final VoidCallback onToggleExpand;
-  final void Function(String key) onServiceTap;
-
-  const _VerticalServiceBar({
-    required this.nodes,
-    required this.isExpanded,
-    required this.accentColor,
-    required this.onToggleExpand,
-    required this.onServiceTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.fastOutSlowIn,
-      width: isExpanded ? _kBarExpandedWidth : _kBarCollapsedWidth,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18.0),
-        border: Border.all(
-          color: ThixPolicy.border.withOpacity(0.7),
-          width: 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Chapeau Doré Cliquable
-          GestureDetector(
-            onTap: onToggleExpand,
-            child: Container(
-              height: 24,
-              decoration: BoxDecoration(
-                color: accentColor,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(17.0),
-                ),
-              ),
-              child: Center(
-                child: Icon(
-                  isExpanded
-                      ? Icons.unfold_less_rounded
-                      : Icons.unfold_more_rounded,
-                  color: Colors.white,
-                  size: 15,
-                ),
-              ),
-            ),
-          ),
-
-          // Liste des 4 Icônes
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (int i = 0; i < nodes.length; i++) ...[
-                  if (i > 0)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6.0),
-                      child: Divider(
-                        height: 2,
-                        thickness: 0.6,
-                        color: ThixPolicy.border.withOpacity(0.3),
+                  child: GestureDetector(
+                    onHorizontalDragStart: _onDragStart,
+                    onHorizontalDragUpdate: _onDragUpdate,
+                    onHorizontalDragEnd: _onDragEnd,
+                    child: SizedBox(
+                      width: size,
+                      height: size,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          CustomPaint(
+                            size: Size(size, size),
+                            painter: _OrbitPainter(
+                              radius: _radius,
+                              hubRadius: _kHubSize / 2,
+                              accent: focused.color,
+                            ),
+                          ),
+                          for (int i = 0; i < nodes.length; i++)
+                            _buildNode(nodes[i], i, center),
+                          Positioned(
+                            left: center - _kHubSize / 2,
+                            top: center - _kHubSize / 2,
+                            child: _OrbitHub(
+                              node: focused,
+                              size: _kHubSize,
+                              onTap: () => _open(focused.key),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  _VerticalTileItem(
-                    node: nodes[i],
-                    isExpanded: isExpanded,
-                    onTap: () => onServiceTap(nodes[i].key),
                   ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// BARRE HORIZONTALE COMPACTE (Bas)
-// ============================================================================
-class _HorizontalServiceBar extends StatelessWidget {
-  final List<_ServiceNodeData> nodes;
-  final bool isExpanded;
-  final Color accentColor;
-  final VoidCallback onToggleExpand;
-  final void Function(String key) onServiceTap;
-
-  const _HorizontalServiceBar({
-    required this.nodes,
-    required this.isExpanded,
-    required this.accentColor,
-    required this.onToggleExpand,
-    required this.onServiceTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.fastOutSlowIn,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18.0),
-        border: Border.all(
-          color: ThixPolicy.border.withOpacity(0.7),
-          width: 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Chapeau Doré Cliquable
-          GestureDetector(
-            onTap: onToggleExpand,
-            child: Container(
-              height: 18,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: accentColor,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(17.0),
                 ),
-              ),
-              child: Center(
-                child: Icon(
-                  isExpanded
-                      ? Icons.keyboard_arrow_down_rounded
-                      : Icons.keyboard_arrow_up_rounded,
-                  color: Colors.white,
-                  size: 15,
-                ),
-              ),
-            ),
-          ),
+                const SizedBox(height: 8),
 
-          // Ligne des 4 Éléments Horizontaux
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 4.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                for (int i = 0; i < nodes.length; i++) ...[
-                  if (i > 0)
-                    Container(
-                      height: 24,
-                      width: 0.6,
-                      color: ThixPolicy.border.withOpacity(0.3),
-                    ),
-                  Expanded(
-                    child: _HorizontalTileItem(
-                      node: nodes[i],
-                      isExpanded: isExpanded,
-                      onTap: () => onServiceTap(nodes[i].key),
+                // ── INDICATEUR DE FOCale ──
+                _OrbitDots(index: _focus, color: focused.color),
+
+                // ── HINT (disparaît après 1ère interaction) ──
+                AnimatedOpacity(
+                  opacity: _interacted ? 0 : 1,
+                  duration: const Duration(milliseconds: 400),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      _tr(l10n, 'orbit_hint', 'Faites glisser pour explorer'),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: ThixPolicy.textMain.withOpacity(0.45),
+                      ),
                     ),
                   ),
-                ],
+                ),
               ],
-            ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNode(_ServiceNodeData node, int i, double center) {
+    final a = _base(i) + _angle;
+    final dx = center + cos(a) * _radius;
+    final dy = center + sin(a) * _radius;
+    final t = 1 - (_angDist(a, -pi / 2) / pi); // 1 = focale, 0 = opposé
+    final scale = 0.78 + 0.34 * t;
+    final opacity = 0.45 + 0.55 * t;
+    final active = i == _focus;
+
+    return Positioned(
+      left: dx - _kNodeSize / 2,
+      top: dy - _kNodeSize / 2,
+      child: Opacity(
+        opacity: opacity,
+        child: Transform.scale(
+          scale: scale,
+          child: GestureDetector(
+            onTap: () => active ? _open(node.key) : _focusOn(i),
+            child: _OrbitNode(node: node, active: active),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// TILE ITEM VERTICAL
-// ============================================================================
-class _VerticalTileItem extends StatelessWidget {
-  final _ServiceNodeData node;
-  final bool isExpanded;
-  final VoidCallback onTap;
-
-  const _VerticalTileItem({
-    required this.node,
-    required this.isExpanded,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10.0),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-        child: Row(
-          mainAxisAlignment:
-              isExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
-          children: [
-            _NodeIconWithBadge(node: node),
-            if (isExpanded) ...[
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  node.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    color: ThixPolicy.textMain,
-                  ),
-                ),
-              ),
-            ],
-          ],
         ),
       ),
     );
   }
 }
 
-// ============================================================================
-// TILE ITEM HORIZONTAL
-// ============================================================================
-class _HorizontalTileItem extends StatelessWidget {
+// ── NŒUD ORBITAL ────────────────────────────────────────────────────────────
+class _OrbitNode extends StatelessWidget {
   final _ServiceNodeData node;
-  final bool isExpanded;
-  final VoidCallback onTap;
-
-  const _HorizontalTileItem({
-    required this.node,
-    required this.isExpanded,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10.0),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _NodeIconWithBadge(node: node),
-            if (isExpanded) ...[
-              const SizedBox(height: 2),
-              Text(
-                node.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 9.0,
-                  fontWeight: FontWeight.w700,
-                  color: ThixPolicy.textMain,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// ICON + BADGE REUSABLE
-// ============================================================================
-class _NodeIconWithBadge extends StatelessWidget {
-  final _ServiceNodeData node;
-
-  const _NodeIconWithBadge({required this.node});
+  final bool active;
+  const _OrbitNode({required this.node, required this.active});
 
   @override
   Widget build(BuildContext context) {
@@ -573,68 +355,47 @@ class _NodeIconWithBadge extends StatelessWidget {
       clipBehavior: Clip.none,
       children: [
         Container(
-          width: 34,
-          height: 34,
+          width: _kNodeSize,
+          height: _kNodeSize,
           decoration: BoxDecoration(
             color: Colors.white,
             shape: BoxShape.circle,
             border: Border.all(
-              color: ThixPolicy.border.withOpacity(0.5),
-              width: 0.9,
+              color: active ? node.color : ThixPolicy.border.withOpacity(0.8),
+              width: active ? 2 : 1.2,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 3,
-                offset: const Offset(0, 1),
+                color: active
+                    ? node.color.withOpacity(0.25)
+                    : Colors.black.withOpacity(0.06),
+                blurRadius: active ? 12 : 6,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
-          alignment: Alignment.center,
-          child: Icon(node.icon, color: node.color, size: 18),
+          child: Icon(node.icon, color: node.color, size: 20),
         ),
         if (node.badge != null && node.badge! > 0)
           Positioned(
-            top: -2,
-            right: -2,
-            child: Container(
-              padding: const EdgeInsets.all(2.5),
-              decoration: const BoxDecoration(
-                color: ThixPolicy.danger,
-                shape: BoxShape.circle,
-              ),
-              constraints: const BoxConstraints(
-                minWidth: 13,
-                minHeight: 13,
-              ),
-              child: Center(
-                child: Text(
-                  '${node.badge}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 7.0,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ),
+            top: -3,
+            right: -3,
+            child: _Badge(count: node.badge!),
           ),
       ],
     );
   }
 }
 
-// ============================================================================
-// HUB BUTTON (Profil Central Compact)
-// ============================================================================
-class _HubButton extends StatelessWidget {
-  final double radius;
-  final String? avatarUrl;
+// ── HUB CENTRAL CONTEXTUEL ──────────────────────────────────────────────────
+class _OrbitHub extends StatelessWidget {
+  final _ServiceNodeData node;
+  final double size;
   final VoidCallback onTap;
 
-  const _HubButton({
-    required this.radius,
-    required this.avatarUrl,
+  const _OrbitHub({
+    required this.node,
+    required this.size,
     required this.onTap,
   });
 
@@ -642,63 +403,258 @@ class _HubButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: 'Profil utilisateur',
+      label: 'Ouvrir ${node.title}',
       child: GestureDetector(
         onTap: onTap,
-        child: Container(
-          width: radius * 2,
-          height: radius * 2,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+          width: size,
+          height: size,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: ThixPolicy.gold,
-            border: Border.all(color: Colors.white, width: 2.0),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [node.color, ThixPolicy.primaryDeep],
+            ),
+            border: Border.all(color: Colors.white, width: 3),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.10),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
+                color: node.color.withOpacity(0.35),
+                blurRadius: 22,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
-          padding: const EdgeInsets.all(2.5),
-          child: ClipOval(
-            child: (avatarUrl != null && avatarUrl!.trim().isNotEmpty)
-                ? CachedNetworkImage(
-                    imageUrl: avatarUrl!.trim(),
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) => Container(
-                      color: Colors.white24,
-                      child: const Center(
-                        child: SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 1.8,
-                            color: Colors.white,
-                          ),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(node.icon, color: Colors.white, size: 27),
+                    const SizedBox(height: 5),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Text(
+                        'Thix ${node.title}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                     ),
-                    errorWidget: (context, url, error) => Container(
-                      color: Colors.white24,
-                      child: const Icon(
-                        Icons.person_rounded,
-                        color: Colors.white,
-                        size: 22,
-                      ),
-                    ),
-                  )
-                : Container(
-                    color: Colors.white24,
-                    child: const Icon(
-                      Icons.person_rounded,
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                  ),
+                  ],
+                ),
+              ),
+              if (node.badge != null && node.badge! > 0)
+                Positioned(top: 4, right: 4, child: _Badge(count: node.badge!)),
+            ],
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── PEINTRE DÉCORATIF (orbite pointillée + arc de focale) ───────────────────
+class _OrbitPainter extends CustomPainter {
+  final double radius;
+  final double hubRadius;
+  final Color accent;
+
+  _OrbitPainter({
+    required this.radius,
+    required this.hubRadius,
+    required this.accent,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+
+    final dash = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2
+      ..color = ThixPolicy.border.withOpacity(0.9);
+
+    final orbit = Rect.fromCircle(center: c, radius: radius);
+    for (double a = 0; a < 2 * pi; a += 0.09) {
+      canvas.drawArc(orbit, a, 0.045, false, dash);
+    }
+
+    // Arc lumineux au sommet (zone focale)
+    final hl = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round
+      ..color = accent.withOpacity(0.45);
+    canvas.drawArc(orbit, -pi / 2 - 0.42, 0.84, false, hl);
+
+    // Anneau interne discret autour du hub
+    final inner = Rect.fromCircle(center: c, radius: hubRadius + 14);
+    final dashLight = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8
+      ..color = ThixPolicy.border.withOpacity(0.45);
+    for (double a = 0; a < 2 * pi; a += 0.14) {
+      canvas.drawArc(inner, a, 0.05, false, dashLight);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_OrbitPainter old) =>
+      old.radius != radius || old.accent != accent;
+}
+
+// ── POINTS DE FOCale ────────────────────────────────────────────────────────
+class _OrbitDots extends StatelessWidget {
+  final int index;
+  final Color color;
+  const _OrbitDots({required this.index, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (int i = 0; i < _kCount; i++) ...[
+          if (i > 0) const SizedBox(width: 4),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            width: i == index ? 16 : 5,
+            height: 5,
+            decoration: BoxDecoration(
+              color: i == index ? color : ThixPolicy.border,
+              borderRadius: BorderRadius.circular(2.5),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ── BADGE ───────────────────────────────────────────────────────────────────
+class _Badge extends StatelessWidget {
+  final int count;
+  const _Badge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: ThixPolicy.danger,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 1.5),
+      ),
+      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+      child: Center(
+        child: Text(
+          '$count',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 8,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── HEADER COMPACT (marque + profil) ────────────────────────────────────────
+class _OrbitHeader extends StatelessWidget {
+  final String title;
+  final String? avatarUrl;
+  final VoidCallback onTap;
+
+  const _OrbitHeader({
+    required this.title,
+    required this.onTap,
+    this.avatarUrl,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final url = avatarUrl?.trim() ?? '';
+    return Row(
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'THIX ORBIT',
+              style: TextStyle(
+                fontSize: 9,
+                letterSpacing: 2.4,
+                fontWeight: FontWeight.w800,
+                color: ThixPolicy.primary.withOpacity(0.5),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: ThixPolicy.textMain,
+              ),
+            ),
+          ],
+        ),
+        const Spacer(),
+        Semantics(
+          button: true,
+          label: 'Profil utilisateur',
+          child: GestureDetector(
+            onTap: onTap,
+            child: Container(
+              width: 40,
+              height: 40,
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: ThixPolicy.gold,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: ClipOval(
+                child: url.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: url,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => const Icon(
+                          Icons.person_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.person_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
