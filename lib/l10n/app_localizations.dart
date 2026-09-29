@@ -96,7 +96,7 @@ class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> 
 // ════════════════════════════════════════════════════════════════════════════
 const Map<String, String> _fr = {
   // COMMON & UI
-  'common_back': 'Retour',
+
   'common_close': 'Fermer',
   'common_cancel': 'Annuler',
   'common_confirm': 'Confirmer',
@@ -2073,7 +2073,7 @@ const Map<String, String> _fr = {
 // 🇬🇧 ENGLISH
 // ════════════════════════════════════════════════════════════════════════════
 const Map<String, String> _en = {
-  'common_back': 'Back',
+
   'common_close': 'Close',
   'common_cancel': 'Cancel',
   'common_confirm': 'Confirm',
@@ -4032,7 +4032,7 @@ const Map<String, String> _en = {
 // ════════════════════════════════════════════════════════════════════════════
 const Map<String, String> _sw = {
   // COMMON & UI
-  'common_back': 'Rudi',
+
   'common_close': 'Funga',
   'common_cancel': 'Ghairi',
   'common_confirm': 'Thibitisha',
@@ -5897,7 +5897,7 @@ const Map<String, String> _sw = {
 // ════════════════════════════════════════════════════════════════════════════
 const Map<String, String> _pt = {
   // COMMON & UI
-  'common_back': 'Voltar',
+
   'common_close': 'Fechar',
   'common_cancel': 'Cancelar',
   'common_confirm': 'Confirmar',
@@ -7878,7 +7878,7 @@ const Map<String, String> _pt = {
 // ════════════════════════════════════════════════════════════════════════════
 const Map<String, String> _ar = {
   // COMMON & UI
-  'common_back': 'رجوع',
+
   'common_close': 'إغلاق',
   'common_cancel': 'إلغاء',
   'common_confirm': 'تأكيد',
@@ -9861,7 +9861,7 @@ const Map<String, String> _ar = {
 // ════════════════════════════════════════════════════════════════════════════
 const Map<String, String> _zh = {
   // COMMON & UI
-  'common_back': '返回',
+
   'common_close': '关闭',
   'common_cancel': '取消',
   'common_confirm': '确认',
@@ -11838,7 +11838,7 @@ const Map<String, String> _zh = {
 // ════════════════════════════════════════════════════════════════════════════
 const Map<String, String> _es = {
   // COMMON & UI
-  'common_back': 'Atrás',
+
   'common_close': 'Cerrar',
   'common_cancel': 'Cancelar',
   'common_confirm': 'Confirmar',
