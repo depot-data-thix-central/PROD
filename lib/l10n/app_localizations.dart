@@ -1911,8 +1911,6 @@ const Map<String, String> _fr = {
   'chatlist_search_hint': 'Rechercher une conversation',
   'chatlist_contact_thix': 'Contact THIX',
   'chatlist_yesterday': 'Hier',
-
-/
 };
 //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
 //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
