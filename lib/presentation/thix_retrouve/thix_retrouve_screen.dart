@@ -440,6 +440,8 @@ class _ThixRetrouveScreenState extends ConsumerState<ThixRetrouveScreen> {
               'description': _RetrouveSanitizer.sanitizeText(obj.description,
                   maxLength: 500),
               'imageUrl': safeImageUrl,
+              'reward': obj.recompense ?? '',     
+              'contact': obj.contactInfo ?? '',
             },
           );
         }),
