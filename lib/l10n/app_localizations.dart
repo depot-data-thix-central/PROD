@@ -7821,8 +7821,6 @@ const Map<String, String> _pt = {
 'status_inactive': 'Inativo',
 // ═══════════ COMUNS ═══════════
 'common_back': 'Voltar',
-'common_yes': 'Sim',
-'common_no': 'Não',
 'common_show_more': 'Ver mais',
 'common_show_less': 'Ver menos',
 'common_close': 'Fechar',
@@ -9748,8 +9746,6 @@ const Map<String, String> _ar = {
 'status_inactive': 'غير نشط',
 // ═══════════ مشتركة ═══════════
 'common_back': 'رجوع',
-'common_yes': 'نعم',
-'common_no': 'لا',
 'common_show_more': 'عرض المزيد',
 'common_show_less': 'عرض أقل',
 'common_close': 'إغلاق',
@@ -12834,12 +12830,7 @@ const Map<String, String> _es = {
 'status_inactive': 'Inactivo',
 // ═══════════ COMUNES ═══════════
 'common_back': 'Volver',
-'common_yes': 'Sí',
-'common_no': 'No',
-'common_show_more': 'Ver más',
-'common_show_less': 'Ver menos',
-'common_close': 'Cerrar',
-'common_retry': 'Reintentar',
+
 // ═══════════ NOTIFICACIONES ═══════════
 'notif_title': 'Notificaciones',
 'notif_unread_count': '{0} no leída(s)',
