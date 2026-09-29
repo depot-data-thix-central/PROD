@@ -7,30 +7,33 @@ import 'package:thix_id/services/notification_counters_service.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
 // ============================================================================
-// DATA MODELS & ENUMS
+// CONSTANTS (TAILLES ET DIMENSIONS COMPACTES)
 // ============================================================================
-enum ServiceCategory { all, finance, career, civic }
+const double _kBarCollapsedWidth = 52.0;
+const double _kBarExpandedWidth = 138.0;
+const double _kHubRadius = 30.0;
 
-class _ServiceItem {
+// ============================================================================
+// DATA MODEL
+// ============================================================================
+class _ServiceNodeData {
   final String key;
   final IconData icon;
   final String title;
   final int? badge;
   final Color color;
-  final ServiceCategory category;
 
-  const _ServiceItem({
+  const _ServiceNodeData({
     required this.key,
     required this.icon,
     required this.title,
     required this.color,
-    required this.category,
     this.badge,
   });
 }
 
 // ============================================================================
-// MAIN WIDGET: DASHBOARD MODULAIRE
+// MAIN WIDGET
 // ============================================================================
 class HomeServicesConstellation extends StatefulWidget {
   final SectionBadgeCounts counts;
@@ -59,417 +62,640 @@ class HomeServicesConstellation extends StatefulWidget {
       _HomeServicesConstellationState();
 }
 
-class _HomeServicesConstellationState
-    extends State<HomeServicesConstellation> {
-  ServiceCategory _selectedCategory = ServiceCategory.all;
+class _HomeServicesConstellationState extends State<HomeServicesConstellation> {
+  static const Color _colorCorporate = ThixPolicy.primaryDeep;
+  static const Color _colorPrimary = ThixPolicy.primary;
+  static const Color _colorMoney = ThixPolicy.gold;
+  static const Color _colorHealth = ThixPolicy.danger;
+  static const Color _colorMarket = ThixPolicy.domainMarket;
+  static const Color _colorNetwork = ThixPolicy.domainNetwork;
+  static const Color _colorLearning = ThixPolicy.domainLearning;
+  static const Color _colorEvent = ThixPolicy.warning;
 
-  List<_ServiceItem> _getAllServices(AppLocalizations l10n) {
+  bool _isLeftExpanded = false;
+  bool _isRightExpanded = false;
+  bool _isBottomExpanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    debugPrint('[ServicesLayout] 🌐 Initialized');
+  }
+
+  // 1. GAUCHE: Finance & Commerce (4 items)
+  List<_ServiceNodeData> _getLeftNodes(AppLocalizations l10n) {
     final c = widget.counts;
     return [
-      // Finance & Commerce
-      _ServiceItem(
+      _ServiceNodeData(
         key: 'thixMoney',
         icon: Icons.account_balance_wallet_rounded,
         title: 'Thix ${l10n.t('svc_money')}',
         badge: c.money,
-        color: ThixPolicy.gold,
-        category: ServiceCategory.finance,
+        color: _colorMoney,
       ),
-      _ServiceItem(
+      _ServiceNodeData(
         key: 'thixMarket',
         icon: Icons.storefront_rounded,
         title: 'Thix ${l10n.t('svc_market')}',
         badge: c.market,
-        color: ThixPolicy.domainMarket,
-        category: ServiceCategory.finance,
+        color: _colorMarket,
       ),
-      _ServiceItem(
+      _ServiceNodeData(
         key: 'thixMedia',
         icon: Icons.video_collection_rounded,
         title: 'Thix ${l10n.t('svc_media')}',
         badge: c.media,
-        color: ThixPolicy.domainNetwork,
-        category: ServiceCategory.finance,
+        color: _colorNetwork,
       ),
-      _ServiceItem(
+      _ServiceNodeData(
         key: 'reservation',
         icon: Icons.confirmation_number_rounded,
         title: 'Thix ${l10n.t('svc_booking')}',
         badge: c.reservation,
-        color: ThixPolicy.primary,
-        category: ServiceCategory.finance,
+        color: _colorPrimary,
       ),
+    ];
+  }
 
-      // Carrière & Pro
-      _ServiceItem(
+  // 2. DROITE: Carrière & Pro (4 items)
+  List<_ServiceNodeData> _getRightNodes(AppLocalizations l10n) {
+    final c = widget.counts;
+    return [
+      _ServiceNodeData(
         key: 'emplois',
         icon: Icons.work_rounded,
         title: 'Thix ${l10n.t('svc_jobs')}',
         badge: c.jobs,
-        color: ThixPolicy.primaryDeep,
-        category: ServiceCategory.career,
+        color: _colorCorporate,
       ),
-      _ServiceItem(
+      _ServiceNodeData(
         key: 'formations',
         icon: Icons.school_rounded,
         title: 'Thix ${l10n.t('svc_learning')}',
         badge: c.formations,
-        color: ThixPolicy.domainLearning,
-        category: ServiceCategory.career,
+        color: _colorLearning,
       ),
-      _ServiceItem(
+      _ServiceNodeData(
         key: 'opportunites',
         icon: Icons.lightbulb_rounded,
         title: 'Thix ${l10n.t('svc_opps')}',
         badge: c.opportunities,
-        color: ThixPolicy.gold,
-        category: ServiceCategory.career,
+        color: _colorMoney,
       ),
-      _ServiceItem(
+      _ServiceNodeData(
         key: 'reseauPro',
         icon: Icons.groups_rounded,
         title: 'Thix ${l10n.t('svc_pro')}',
         badge: c.network,
-        color: ThixPolicy.domainNetwork,
-        category: ServiceCategory.career,
+        color: _colorNetwork,
       ),
+    ];
+  }
 
-      // Citoyen & Santé
-      _ServiceItem(
+  // 3. BAS: Citoyenneté & Services Utiles (4 items)
+  List<_ServiceNodeData> _getBottomNodes(AppLocalizations l10n) {
+    final c = widget.counts;
+    return [
+      _ServiceNodeData(
         key: 'monPays',
         icon: Icons.flag_rounded,
         title: 'Thix ${l10n.t('svc_country')}',
         badge: c.monPays,
-        color: ThixPolicy.primaryDeep,
-        category: ServiceCategory.civic,
+        color: _colorCorporate,
       ),
-      _ServiceItem(
+      _ServiceNodeData(
         key: 'thixInfo',
         icon: Icons.newspaper_rounded,
         title: 'Thix ${l10n.t('svc_news')}',
         badge: c.info,
-        color: ThixPolicy.primary,
-        category: ServiceCategory.civic,
+        color: _colorPrimary,
       ),
-      _ServiceItem(
+      _ServiceNodeData(
         key: 'evenements',
         icon: Icons.event_rounded,
         title: 'Thix ${l10n.t('svc_event')}',
         badge: c.events,
-        color: ThixPolicy.warning,
-        category: ServiceCategory.civic,
+        color: _colorEvent,
       ),
-      _ServiceItem(
+      _ServiceNodeData(
         key: 'thixSante',
         icon: Icons.local_hospital_rounded,
         title: 'Thix ${l10n.t('svc_health')}',
         badge: c.health,
-        color: ThixPolicy.danger,
-        category: ServiceCategory.civic,
+        color: _colorHealth,
       ),
     ];
+  }
+
+  void _handleProfileTap() {
+    if (!mounted) return;
+    HapticFeedback.lightImpact();
+    widget.onProfileTap();
+  }
+
+  void _handleServiceTap(String key) {
+    if (!mounted) return;
+    HapticFeedback.selectionClick();
+    widget.onServiceTap(key);
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final allServices = _getAllServices(l10n);
-
-    final filteredServices = _selectedCategory == ServiceCategory.all
-        ? allServices
-        : allServices.where((s) => s.category == _selectedCategory).toList();
+    final leftNodes = _getLeftNodes(l10n);
+    final rightNodes = _getRightNodes(l10n);
+    final bottomNodes = _getBottomNodes(l10n);
 
     return RepaintBoundary(
-      child: Container(
-        margin: const EdgeInsets.symmetric(
-          horizontal: 16.0,
-          vertical: 8.0,
-        ),
-        padding: const EdgeInsets.all(16.0),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24.0),
-          border: Border.all(
-            color: ThixPolicy.border.withOpacity(0.7),
-            width: 1.0,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
-            ),
-          ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: ThixPolicy.s16,
+          vertical: 4.0,
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 1. HEADER ENTREPRISE (Titre + Profil Hub)
-            _buildEnterpriseHeader(),
-
-            const SizedBox(height: 16),
-
-            // 2. BARRE DE CATEGORIES / CHIPS
-            _buildCategorySelector(),
-
-            const SizedBox(height: 16),
-
-            // 3. GRILLE DE SERVICES BENTO (4 Colonnes)
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              child: GridView.builder(
-                key: ValueKey(_selectedCategory),
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: filteredServices.length,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 4,
-                  mainAxisSpacing: 12,
-                  crossAxisSpacing: 8,
-                  childAspectRatio: 0.82,
+            // BARRES LATÉRALES (GAUCHE / DROITE) + HUB CENTRAL
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Barre Gauche (4 items)
+                _VerticalServiceBar(
+                  nodes: leftNodes,
+                  isExpanded: _isLeftExpanded,
+                  accentColor: ThixPolicy.gold,
+                  onToggleExpand: () {
+                    HapticFeedback.lightImpact();
+                    setState(() => _isLeftExpanded = !_isLeftExpanded);
+                  },
+                  onServiceTap: _handleServiceTap,
                 ),
-                itemBuilder: (context, index) {
-                  final item = filteredServices[index];
-                  return _ServiceCardTile(
-                    item: item,
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      widget.onServiceTap(item.key);
-                    },
-                  );
-                },
-              ),
+
+                // Hub Profil Central
+                _HubButton(
+                  radius: _kHubRadius,
+                  avatarUrl: widget.avatarUrl,
+                  onTap: _handleProfileTap,
+                ),
+
+                // Barre Droite (4 items)
+                _VerticalServiceBar(
+                  nodes: rightNodes,
+                  isExpanded: _isRightExpanded,
+                  accentColor: ThixPolicy.gold,
+                  onToggleExpand: () {
+                    HapticFeedback.lightImpact();
+                    setState(() => _isRightExpanded = !_isRightExpanded);
+                  },
+                  onServiceTap: _handleServiceTap,
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 8),
+
+            // BARRE HORIZONTALE DU BAS (4 items)
+            _HorizontalServiceBar(
+              nodes: bottomNodes,
+              isExpanded: _isBottomExpanded,
+              accentColor: ThixPolicy.gold,
+              onToggleExpand: () {
+                HapticFeedback.lightImpact();
+                setState(() => _isBottomExpanded = !_isBottomExpanded);
+              },
+              onServiceTap: _handleServiceTap,
             ),
           ],
         ),
       ),
-    );
-  }
-
-  // Header Enterprise avec raccourci Profil
-  Widget _buildEnterpriseHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text(
-              'Services & Écosystème',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: ThixPolicy.textMain,
-                letterSpacing: -0.2,
-              ),
-            ),
-            SizedBox(height: 2),
-            Text(
-              'Accès rapide à vos applications',
-              style: TextStyle(
-                fontSize: 11,
-                color: ThixPolicy.textMuted,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-
-        // Hub Profil Élégant
-        GestureDetector(
-          onTap: () {
-            HapticFeedback.lightImpact();
-            widget.onProfileTap();
-          },
-          child: Container(
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: ThixPolicy.gold, width: 2),
-            ),
-            child: CircleAvatar(
-              radius: 18,
-              backgroundColor: ThixPolicy.primaryDeep.withOpacity(0.1),
-              child: (widget.avatarUrl != null &&
-                      widget.avatarUrl!.trim().isNotEmpty)
-                  ? ClipOval(
-                      child: CachedNetworkImage(
-                        imageUrl: widget.avatarUrl!.trim(),
-                        fit: BoxFit.cover,
-                        width: 36,
-                        height: 36,
-                        errorWidget: (_, __, ___) => const Icon(
-                          Icons.person_rounded,
-                          color: ThixPolicy.primaryDeep,
-                          size: 20,
-                        ),
-                      ),
-                    )
-                  : const Icon(
-                      Icons.person_rounded,
-                      color: ThixPolicy.primaryDeep,
-                      size: 20,
-                    ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // Selecteur de catégories
-  Widget _buildCategorySelector() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      physics: const BouncingScrollPhysics(),
-      child: Row(
-        children: [
-          _buildChip('Tous', ServiceCategory.all),
-          const SizedBox(width: 8),
-          _buildChip('Finance & Market', ServiceCategory.finance),
-          const SizedBox(width: 8),
-          _buildChip('Carrière & Pro', ServiceCategory.career),
-          const SizedBox(width: 8),
-          _buildChip('Citoyen & Santé', ServiceCategory.civic),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildChip(String label, ServiceCategory category) {
-    final isSelected = _selectedCategory == category;
-    return ChoiceChip(
-      label: Text(label),
-      selected: isSelected,
-      onSelected: (selected) {
-        if (selected) {
-          HapticFeedback.selectionClick();
-          setState(() => _selectedCategory = category);
-        }
-      },
-      selectedColor: ThixPolicy.primaryDeep,
-      backgroundColor: Colors.grey.shade100,
-      labelStyle: TextStyle(
-        fontSize: 11.5,
-        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-        color: isSelected ? Colors.white : ThixPolicy.textMain,
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12.0),
-        side: BorderSide(
-          color: isSelected ? ThixPolicy.primaryDeep : Colors.transparent,
-        ),
-      ),
-      showCheckmark: false,
     );
   }
 }
 
 // ============================================================================
-// CARTE SERVICE BENTO INDIVIDUELLE
+// BARRE VERTICALE COMPACTE (Gauche / Droite)
 // ============================================================================
-class _ServiceCardTile extends StatelessWidget {
-  final _ServiceItem item;
+class _VerticalServiceBar extends StatelessWidget {
+  final List<_ServiceNodeData> nodes;
+  final bool isExpanded;
+  final Color accentColor;
+  final VoidCallback onToggleExpand;
+  final void Function(String key) onServiceTap;
+
+  const _VerticalServiceBar({
+    required this.nodes,
+    required this.isExpanded,
+    required this.accentColor,
+    required this.onToggleExpand,
+    required this.onServiceTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.fastOutSlowIn,
+      width: isExpanded ? _kBarExpandedWidth : _kBarCollapsedWidth,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18.0),
+        border: Border.all(
+          color: ThixPolicy.border.withOpacity(0.7),
+          width: 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Chapeau Doré Cliquable
+          GestureDetector(
+            onTap: onToggleExpand,
+            child: Container(
+              height: 24,
+              decoration: BoxDecoration(
+                color: accentColor,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(17.0),
+                ),
+              ),
+              child: Center(
+                child: Icon(
+                  isExpanded
+                      ? Icons.unfold_less_rounded
+                      : Icons.unfold_more_rounded,
+                  color: Colors.white,
+                  size: 15,
+                ),
+              ),
+            ),
+          ),
+
+          // Liste des 4 Icônes
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (int i = 0; i < nodes.length; i++) ...[
+                  if (i > 0)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6.0),
+                      child: Divider(
+                        height: 2,
+                        thickness: 0.6,
+                        color: ThixPolicy.border.withOpacity(0.3),
+                      ),
+                    ),
+                  _VerticalTileItem(
+                    node: nodes[i],
+                    isExpanded: isExpanded,
+                    onTap: () => onServiceTap(nodes[i].key),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// BARRE HORIZONTALE COMPACTE (Bas)
+// ============================================================================
+class _HorizontalServiceBar extends StatelessWidget {
+  final List<_ServiceNodeData> nodes;
+  final bool isExpanded;
+  final Color accentColor;
+  final VoidCallback onToggleExpand;
+  final void Function(String key) onServiceTap;
+
+  const _HorizontalServiceBar({
+    required this.nodes,
+    required this.isExpanded,
+    required this.accentColor,
+    required this.onToggleExpand,
+    required this.onServiceTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.fastOutSlowIn,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18.0),
+        border: Border.all(
+          color: ThixPolicy.border.withOpacity(0.7),
+          width: 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Chapeau Doré Cliquable
+          GestureDetector(
+            onTap: onToggleExpand,
+            child: Container(
+              height: 18,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: accentColor,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(17.0),
+                ),
+              ),
+              child: Center(
+                child: Icon(
+                  isExpanded
+                      ? Icons.keyboard_arrow_down_rounded
+                      : Icons.keyboard_arrow_up_rounded,
+                  color: Colors.white,
+                  size: 15,
+                ),
+              ),
+            ),
+          ),
+
+          // Ligne des 4 Éléments Horizontaux
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 4.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                for (int i = 0; i < nodes.length; i++) ...[
+                  if (i > 0)
+                    Container(
+                      height: 24,
+                      width: 0.6,
+                      color: ThixPolicy.border.withOpacity(0.3),
+                    ),
+                  Expanded(
+                    child: _HorizontalTileItem(
+                      node: nodes[i],
+                      isExpanded: isExpanded,
+                      onTap: () => onServiceTap(nodes[i].key),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// TILE ITEM VERTICAL
+// ============================================================================
+class _VerticalTileItem extends StatelessWidget {
+  final _ServiceNodeData node;
+  final bool isExpanded;
   final VoidCallback onTap;
 
-  const _ServiceCardTile({
-    required this.item,
+  const _VerticalTileItem({
+    required this.node,
+    required this.isExpanded,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16.0),
-        splashColor: item.color.withOpacity(0.12),
-        highlightColor: item.color.withOpacity(0.06),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFAFAFA).withOpacity(0.3),
-            borderRadius: BorderRadius.circular(16.0),
-            border: Border.all(
-              color: ThixPolicy.border.withOpacity(0.3),
-              width: 0.8,
-            ),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Icône avec fond doux + Badge
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: item.color.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: item.color.withOpacity(0.2),
-                        width: 1.0,
-                      ),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      item.icon,
-                      color: item.color,
-                      size: 22,
-                    ),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10.0),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+        child: Row(
+          mainAxisAlignment:
+              isExpanded ? MainAxisAlignment.start : MainAxisAlignment.center,
+          children: [
+            _NodeIconWithBadge(node: node),
+            if (isExpanded) ...[
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  node.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: ThixPolicy.textMain,
                   ),
-
-                  // Notification Badge
-                  if (item.badge != null && item.badge! > 0)
-                    Positioned(
-                      top: -2,
-                      right: -2,
-                      child: Container(
-                        padding: const EdgeInsets.all(3.5),
-                        decoration: const BoxDecoration(
-                          color: ThixPolicy.danger,
-                          shape: BoxShape.circle,
-                        ),
-                        constraints: const BoxConstraints(
-                          minWidth: 16,
-                          minHeight: 16,
-                        ),
-                        child: Center(
-                          child: Text(
-                            '${item.badge}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 8,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
+                ),
               ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-              const SizedBox(height: 6),
+// ============================================================================
+// TILE ITEM HORIZONTAL
+// ============================================================================
+class _HorizontalTileItem extends StatelessWidget {
+  final _ServiceNodeData node;
+  final bool isExpanded;
+  final VoidCallback onTap;
 
-              // Libellé du service
+  const _HorizontalTileItem({
+    required this.node,
+    required this.isExpanded,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10.0),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _NodeIconWithBadge(node: node),
+            if (isExpanded) ...[
+              const SizedBox(height: 2),
               Text(
-                item.title,
+                node.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 10.5,
+                  fontSize: 9.0,
                   fontWeight: FontWeight.w700,
                   color: ThixPolicy.textMain,
-                  letterSpacing: -0.1,
                 ),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ICON + BADGE REUSABLE
+// ============================================================================
+class _NodeIconWithBadge extends StatelessWidget {
+  final _ServiceNodeData node;
+
+  const _NodeIconWithBadge({required this.node});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: ThixPolicy.border.withOpacity(0.5),
+              width: 0.9,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 3,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          alignment: Alignment.center,
+          child: Icon(node.icon, color: node.color, size: 18),
+        ),
+        if (node.badge != null && node.badge! > 0)
+          Positioned(
+            top: -2,
+            right: -2,
+            child: Container(
+              padding: const EdgeInsets.all(2.5),
+              decoration: const BoxDecoration(
+                color: ThixPolicy.danger,
+                shape: BoxShape.circle,
+              ),
+              constraints: const BoxConstraints(
+                minWidth: 13,
+                minHeight: 13,
+              ),
+              child: Center(
+                child: Text(
+                  '${node.badge}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 7.0,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ============================================================================
+// HUB BUTTON (Profil Central Compact)
+// ============================================================================
+class _HubButton extends StatelessWidget {
+  final double radius;
+  final String? avatarUrl;
+  final VoidCallback onTap;
+
+  const _HubButton({
+    required this.radius,
+    required this.avatarUrl,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Profil utilisateur',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: radius * 2,
+          height: radius * 2,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: ThixPolicy.gold,
+            border: Border.all(color: Colors.white, width: 2.0),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.10),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(2.5),
+          child: ClipOval(
+            child: (avatarUrl != null && avatarUrl!.trim().isNotEmpty)
+                ? CachedNetworkImage(
+                    imageUrl: avatarUrl!.trim(),
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => Container(
+                      color: Colors.white24,
+                      child: const Center(
+                        child: SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.8,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                    errorWidget: (context, url, error) => Container(
+                      color: Colors.white24,
+                      child: const Icon(
+                        Icons.person_rounded,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                    ),
+                  )
+                : Container(
+                    color: Colors.white24,
+                    child: const Icon(
+                      Icons.person_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                  ),
           ),
         ),
       ),
