@@ -1,6 +1,8 @@
 /// THIX SOS — Homepage production (Design System Intégré)
 /// ✅ AUDITÉ : Sécurité, Performance (RepaintBoundary), Accessibilité, UX
 /// ✅ Riverpod Listeners corrigés
+/// ✅ UI épurée : bottom nav flottante, menu hamburger, notifications et
+///    profil supprimés — recentrage total sur l'urgence.
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -100,17 +102,16 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
     ref.listen<AsyncValue<SosIncident?>>(activeSosProvider, (prev, next) {
       final incident = next.valueOrNull;
       if (incident != null && incident.isActive && mounted) {
-   
         Future.microtask(() {
           if (mounted) {
             Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => ChambreCrisePage(
-              incidentId: incident.id,
-              conversationId: incident.chatConversationId,
-            ),
-          ),
-        );
+              MaterialPageRoute(
+                builder: (_) => ChambreCrisePage(
+                  incidentId: incident.id,
+                  conversationId: incident.chatConversationId,
+                ),
+              ),
+            );
           }
         });
       }
@@ -119,7 +120,7 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
     ref.listen<RescueAlert?>(sosRescueAlertProvider, (prev, next) {
       if (next == null || !mounted) return;
       if (prev != null && prev.incidentId == next.incidentId) return;
-      
+
       Future.microtask(() {
         if (mounted) {
           HapticFeedback.heavyImpact();
@@ -177,11 +178,12 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
                     child: SingleChildScrollView(
                       physics: const AlwaysScrollableScrollPhysics(
                           parent: BouncingScrollPhysics()),
+                      // ✅ Padding bas réduit : la bottom nav flottante n'existe plus
                       padding: const EdgeInsets.fromLTRB(
                         ThixPolicy.s16,
                         ThixPolicy.s24,
                         ThixPolicy.s16,
-                        140,
+                        32,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -223,8 +225,8 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
                               );
                             },
                             loading: () => const Center(
-                                child:
-                                    CircularProgressIndicator(color: ThixPolicy.danger)),
+                                child: CircularProgressIndicator(
+                                    color: ThixPolicy.danger)),
                             error: (e, _) => _ErrorRetryWidget(
                               message: l10n.t('sos_load_error'),
                               onRetry: () => ref.invalidate(sosContactsProvider),
@@ -247,22 +249,26 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
                                 _QuickActionChip(
                                     icon: Icons.location_on_rounded,
                                     label: l10n.t('sos_share_location'),
-                                    onTap: () => _soon(context, l10n.t('sos_share_location'))),
+                                    onTap: () =>
+                                        _soon(context, l10n.t('sos_share_location'))),
                                 const SizedBox(width: ThixPolicy.s12),
                                 _QuickActionChip(
                                     icon: Icons.timer_rounded,
                                     label: l10n.t('sos_safe_check'),
-                                    onTap: () => _soon(context, l10n.t('sos_safe_check'))),
+                                    onTap: () =>
+                                        _soon(context, l10n.t('sos_safe_check'))),
                                 const SizedBox(width: ThixPolicy.s12),
                                 _QuickActionChip(
                                     icon: Icons.route_rounded,
                                     label: l10n.t('sos_my_routes'),
-                                    onTap: () => _soon(context, l10n.t('sos_my_routes'))),
+                                    onTap: () =>
+                                        _soon(context, l10n.t('sos_my_routes'))),
                                 const SizedBox(width: ThixPolicy.s12),
                                 _QuickActionChip(
                                     icon: Icons.campaign_rounded,
                                     label: l10n.t('sos_report'),
-                                    onTap: () => _soon(context, l10n.t('sos_report'))),
+                                    onTap: () =>
+                                        _soon(context, l10n.t('sos_report'))),
                               ],
                             ),
                           ),
@@ -278,7 +284,8 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
                                   icon: Icons.search_rounded,
                                   title: l10n.t('sos_thix_search'),
                                   subtitle: l10n.t('sos_search_subtitle'),
-                                  onTap: () => _soon(context, l10n.t('sos_thix_search')),
+                                  onTap: () =>
+                                      _soon(context, l10n.t('sos_thix_search')),
                                 ),
                               ),
                               const SizedBox(width: ThixPolicy.s12),
@@ -301,12 +308,8 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
             ),
           ),
 
-          // 🌟 BOTTOM NAV FLOTTANTE
-          const Positioned(
-              bottom: 24,
-              left: 16,
-              right: 16,
-              child: _BottomNavGlass(currentIndex: 2)),
+          // ✅ BOTTOM NAV FLOTTANTE SUPPRIMÉE — l'écran SOS est un mode
+          //    d'urgence immersif : aucune navigation parasite.
         ],
       ),
     );
@@ -314,13 +317,13 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
 
   Future<void> _handleSosTrigger(BuildContext context, WidgetRef ref) async {
     if (_isProcessing || !mounted) return;
-    
+
     setState(() => _isProcessing = true);
     HapticFeedback.heavyImpact();
-    
+
     try {
       final incident = await ref.read(triggerSosProvider.notifier).trigger();
-      
+
       if (incident != null && mounted) {
         ref.read(sosHeartbeatControllerProvider.notifier).start(incident.id);
         Navigator.of(context).pushReplacement(
@@ -332,7 +335,6 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
           ),
         );
       } else if (mounted) {
-        
         final err = ref.read(triggerSosProvider).error;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -351,7 +353,7 @@ class _ThixSosScreenState extends ConsumerState<ThixSosScreen> {
 
   void _handleCircleTap(BuildContext context, WidgetRef ref, int circle) {
     if (!mounted) return;
-    
+
     HapticFeedback.lightImpact();
     Navigator.push(
       context,
@@ -518,8 +520,8 @@ class _CrisisRoomCardState extends ConsumerState<_CrisisRoomCard>
                             decoration: BoxDecoration(
                               color: Colors.white,
                               shape: BoxShape.circle,
-                              border:
-                                  Border.all(color: const Color(0xFF7F1D1D), width: 2),
+                              border: Border.all(
+                                  color: const Color(0xFF7F1D1D), width: 2),
                             ),
                           ),
                         ),
@@ -592,7 +594,8 @@ class _CrisisRoomCardState extends ConsumerState<_CrisisRoomCard>
         onTap: () => _handleCrisisRoomTap(context),
         child: GlassBox(
           color: ThixPolicy.danger.withOpacity(0.15),
-          border: Border.all(color: ThixPolicy.danger.withOpacity(0.3), width: 1),
+          border:
+              Border.all(color: ThixPolicy.danger.withOpacity(0.3), width: 1),
           padding: ThixPolicy.cardPaddingLarge,
           child: Row(
             children: [
@@ -631,7 +634,7 @@ class _CrisisRoomCardState extends ConsumerState<_CrisisRoomCard>
   void _handleCrisisRoomTap(BuildContext context) {
     if (!mounted) return;
     HapticFeedback.lightImpact();
-    
+
     final incident = widget.activeAsync.valueOrNull;
     if (incident != null && incident.isActive) {
       Navigator.push(
@@ -662,7 +665,9 @@ class _CrisisRoomCardState extends ConsumerState<_CrisisRoomCard>
   }
 }
 
-// ───────────────────────── Header Officiel ─────────────────────────
+// ───────────────────────── Header Officiel (épuré) ─────────────────────────
+// ✅ Menu hamburger, cloche notifications et avatar profil SUPPRIMÉS :
+//    l'écran SOS est un mode immersif, seul le branding reste visible.
 class _HeaderOfficiel extends StatelessWidget {
   const _HeaderOfficiel();
 
@@ -671,83 +676,28 @@ class _HeaderOfficiel extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(
           horizontal: ThixPolicy.s16, vertical: ThixPolicy.s12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Semantics(
-            button: true,
-            label: AppLocalizations.of(context).t('common_menu'),
-            child: const Icon(Icons.menu_rounded, color: Colors.white, size: 28),
-          ),
-          Column(
-            children: [
-              Text(
-                'X THIX',
-                style: ThixPolicy.h1Style.copyWith(
-                  fontWeight: ThixPolicy.bold,
-                  letterSpacing: 1.2,
-                  color: Colors.white,
-                ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'X THIX',
+              style: ThixPolicy.h1Style.copyWith(
+                fontWeight: ThixPolicy.bold,
+                letterSpacing: 1.2,
+                color: Colors.white,
               ),
-              Text(
-                'CONNECTER • PROTÉGER • AGIR',
-                style: ThixPolicy.microStyle.copyWith(
-                  fontWeight: ThixPolicy.bold,
-                  letterSpacing: 1.5,
-                  color: ThixPolicy.danger,
-                ),
+            ),
+            Text(
+              'CONNECTER • PROTÉGER • AGIR',
+              style: ThixPolicy.microStyle.copyWith(
+                fontWeight: ThixPolicy.bold,
+                letterSpacing: 1.5,
+                color: ThixPolicy.danger,
               ),
-            ],
-          ),
-          Row(
-            children: [
-              Semantics(
-                button: true,
-                label: AppLocalizations.of(context).t('common_notifications'),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    const Icon(Icons.notifications_none_rounded,
-                        color: Colors.white, size: 28),
-                    Positioned(
-                      right: -2,
-                      top: -2,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                            color: ThixPolicy.danger,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                                color: ThixPolicy.inkDeep, width: 1.5)),
-                        child: Text('3',
-                            style: ThixPolicy.microStyle.copyWith(
-                                color: Colors.white,
-                                fontWeight: ThixPolicy.bold,
-                                fontSize: 8)),
-                      ),
-                    )
-                  ],
-                ),
-              ),
-              const SizedBox(width: ThixPolicy.s16),
-              Semantics(
-                button: true,
-                label: AppLocalizations.of(context).t('common_profile'),
-                child: Container(
-                  decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                          color: Colors.white.withOpacity(0.3), width: 2)),
-                  child: const CircleAvatar(
-                    radius: 16,
-                    backgroundColor: ThixPolicy.primaryDeep,
-                    child: Icon(Icons.person, color: Colors.white, size: 20),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -827,7 +777,8 @@ class _UnifiedSecoursCard extends HookConsumerWidget {
     );
   }
 
-  Widget _buildRow(BuildContext context, int level, String title, List<dynamic> circleContacts) {
+  Widget _buildRow(
+      BuildContext context, int level, String title, List<dynamic> circleContacts) {
     final count = circleContacts.length;
     final l10n = AppLocalizations.of(context);
 
@@ -874,11 +825,12 @@ class _UnifiedSecoursCard extends HookConsumerWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        count == 0 ? l10n.t('sos_no_rescuers') : '$count ${l10n.t('sos_rescuers')}',
+                        count == 0
+                            ? l10n.t('sos_no_rescuers')
+                            : '$count ${l10n.t('sos_rescuers')}',
                         style: ThixPolicy.captionStyle.copyWith(
-                          color: count == 0
-                              ? ThixPolicy.danger
-                              : Colors.white54,
+                          color:
+                              count == 0 ? ThixPolicy.danger : Colors.white54,
                         ),
                       ),
                     ],
@@ -1009,7 +961,8 @@ class _NavCardCompact extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1), shape: BoxShape.circle),
+                    color: Colors.white.withOpacity(0.1),
+                    shape: BoxShape.circle),
                 child: Icon(icon, color: Colors.white, size: 24),
               ),
               const SizedBox(height: ThixPolicy.s16),
@@ -1032,87 +985,6 @@ class _NavCardCompact extends StatelessWidget {
   }
 }
 
-// ───────────────────────── Bottom Nav Flottante (Glass) ─────────────────────────
-class _BottomNavGlass extends StatelessWidget {
-  const _BottomNavGlass({required this.currentIndex});
-  final int currentIndex;
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassBox(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-      borderRadius: 30,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _navItem(context, Icons.home_rounded, AppLocalizations.of(context).t('common_home'), 0),
-          _navItem(context, Icons.chat_bubble_rounded, AppLocalizations.of(context).t('common_chat'), 1),
-          Semantics(
-            button: true,
-            label: AppLocalizations.of(context).t('sos_button'),
-            child: GestureDetector(
-              onTap: () {},
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-                decoration: BoxDecoration(
-                    color: ThixPolicy.danger,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                          color: ThixPolicy.danger.withOpacity(0.4),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4))
-                    ]),
-                child: Row(
-                  children: [
-                    const Icon(Icons.sos_rounded, color: Colors.white, size: 20),
-                    const SizedBox(width: 6),
-                    Text(AppLocalizations.of(context).t('sos_button'),
-                        style: ThixPolicy.labelStyle.copyWith(
-                            fontWeight: ThixPolicy.bold, color: Colors.white)),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          _navItem(context, Icons.map_rounded, AppLocalizations.of(context).t('common_map'), 3),
-          _navItem(context, Icons.person_rounded, AppLocalizations.of(context).t('common_profile'), 4),
-        ],
-      ),
-    );
-  }
-
-  Widget _navItem(BuildContext context, IconData icon, String label, int idx) {
-    final sel = currentIndex == idx;
-    return Semantics(
-      button: true,
-      label: label,
-      selected: sel,
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.selectionClick();
-          if (idx == 0) Navigator.of(context).popUntil((r) => r.isFirst);
-        },
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-                color: sel ? Colors.white : Colors.white54, size: 24),
-            const SizedBox(height: 4),
-            Text(label,
-                style: ThixPolicy.microStyle.copyWith(
-                    fontWeight: sel ? ThixPolicy.bold : ThixPolicy.semiBold,
-                    color: sel ? Colors.white : Colors.white54,
-                    fontSize: 9)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // ───────────────────────── Widget Erreur avec Retry ─────────────────────────
 class _ErrorRetryWidget extends StatelessWidget {
   final String message;
@@ -1126,7 +998,7 @@ class _ErrorRetryWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    
+
     return GlassBox(
       color: ThixPolicy.danger.withOpacity(0.1),
       child: Column(
@@ -1148,7 +1020,8 @@ class _ErrorRetryWidget extends StatelessWidget {
               },
               icon: const Icon(Icons.refresh, size: 18),
               label: Text(l10n.t('common_retry')),
-              style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.danger),
+              style:
+                  ElevatedButton.styleFrom(backgroundColor: ThixPolicy.danger),
             ),
           ),
         ],
