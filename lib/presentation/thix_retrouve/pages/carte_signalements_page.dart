@@ -1,7 +1,10 @@
 /// Carte Signalements Page (Production Enterprise)
-/// ✅ ThixPolicy + i18n 8 langues + sanitization + go_router
-/// ✅ Skeleton loader + Semantics + HapticFeedback + GPS validation
-/// ✅ Logs structurés + I18nService.relativeTime() + RepaintBoundary
+/// ✅ FIX 1 : Web-safe — GoogleMap monté seulement si clé API dispo,
+///    sinon panneau de repli (plus de crash "Null check operator")
+/// ✅ FIX 2 : _tr() fallbacks → plus jamais de clé l10n brute
+/// ✅ FIX 3 : navigation corrigée → pushNamed('thixRetrouveDetail', extra: …)
+/// ✅ FIX 4 : thème clair unifié (fond #F7F9FC)
+/// ✅ Skeleton loader + Semantics + HapticFeedback + GPS validation + throttle
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,6 +21,18 @@ import '../models/objet_model.dart';
 import '../providers/objet_providers.dart';
 
 // ============================================================================
+// DESIGN TOKENS (Light Premium — cohérent RETROUVE / Detail / Recherches)
+// ============================================================================
+
+const Color _kBg = Color(0xFFF7F9FC);
+const Color _kSurface = Color(0xFFFFFFFF);
+const Color _kTextMain = Color(0xFF12233D);
+const Color _kTextSec = Color(0xFF5A6B84);
+const Color _kTextMuted = Color(0xFF93A1B5);
+const Color _kBorder = Color(0xFFE5EAF1);
+const Color _kSkeleton = Color(0xFFE8EDF3);
+
+// ============================================================================
 // CONSTANTS
 // ============================================================================
 
@@ -26,6 +41,16 @@ const int _kMaxLocationLength = 60;
 const Duration _kTapThrottle = Duration(milliseconds: 400);
 const double _kDefaultZoom = 13.0;
 const double _kSelectedZoom = 15.0;
+
+/// 🔑 Clé Google Maps injectée au build :
+///    flutter build web --release --dart-define=GOOGLE_MAPS_API_KEY=xxx
+///    (+ script <script src="https://maps.googleapis.com/maps/api/js?key=…">
+///     dans web/index.html)
+const String _kMapsApiKey = String.fromEnvironment('GOOGLE_MAPS_API_KEY');
+
+/// Sur Web, google_maps_flutter CRASHE ("Null check operator…") sans clé.
+/// On ne monte la carte que si la clé est présente.
+bool get _canUseGoogleMap => !kIsWeb || _kMapsApiKey.isNotEmpty;
 
 // Position par défaut (Kinshasa)
 const LatLng _kDefaultCenter = LatLng(-4.325, 15.322);
@@ -90,6 +115,21 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
   DateTime? _lastTap;
   bool _locationPermissionGranted = false;
 
+  /// 🛡️ Traduction sûre : fallback FR si clé absente (jamais de clé brute)
+  String _tr(AppLocalizations l10n, String key, String fallback) {
+    final v = l10n.t(key);
+    return (v == key || v.trim().isEmpty) ? fallback : v;
+  }
+
+  /// Libellé "X objets autour de vous" avec fallback sûr (gère args)
+  String _objectsAroundLabel(AppLocalizations l10n, int n) {
+    final v = l10n.t('map_objects_around', args: [n.toString()]);
+    if (v == 'map_objects_around' || v.trim().isEmpty || v.contains('{')) {
+      return '$n objets autour de vous';
+    }
+    return v;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -108,6 +148,7 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
       final permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.always ||
           permission == LocationPermission.whileInUse) {
+        if (!mounted) return;
         setState(() => _locationPermissionGranted = true);
         debugPrint('[CarteSignalements] ✓ Location permission granted');
       } else {
@@ -124,16 +165,17 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
     final objetsAsync = ref.watch(objetsRecentsProvider);
 
     return Scaffold(
-      backgroundColor: ThixPolicy.inkDeep,
+      backgroundColor: _kBg,
       appBar: AppBar(
-        backgroundColor: ThixPolicy.card,
+        backgroundColor: _kSurface,
         elevation: 0,
+        scrolledUnderElevation: 0,
         leading: Semantics(
           button: true,
-          label: l10n.t('common_back'),
+          label: _tr(l10n, 'common_back', 'Retour'),
           child: IconButton(
-            icon: Icon(Icons.arrow_back_ios_new_rounded,
-                size: 20, color: ThixPolicy.textMain),
+            icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                size: 20, color: _kTextMain),
             onPressed: () {
               HapticFeedback.lightImpact();
               context.pop();
@@ -141,9 +183,9 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
           ),
         ),
         title: Text(
-          l10n.t('map_title'),
+          _tr(l10n, 'map_title', 'Carte des signalements'),
           style: ThixPolicy.h3Style.copyWith(
-            color: ThixPolicy.textMain,
+            color: _kTextMain,
             fontWeight: ThixPolicy.bold,
           ),
         ),
@@ -151,9 +193,10 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
         actions: [
           Semantics(
             button: true,
-            label: l10n.t('common_refresh'),
+            label: _tr(l10n, 'common_refresh', 'Actualiser'),
             child: IconButton(
-              icon: Icon(Icons.refresh_rounded, color: ThixPolicy.primary),
+              icon: const Icon(Icons.refresh_rounded,
+                  color: ThixPolicy.primary),
               onPressed: () {
                 HapticFeedback.mediumImpact();
                 debugPrint('[CarteSignalements] 🔄 Refresh triggered');
@@ -168,7 +211,7 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
           // ── Légende ──
           _buildLegend(context, l10n),
 
-          // ── Carte ──
+          // ── Carte / repli ──
           Expanded(
             child: objetsAsync.when(
               data: (objets) => _buildMapContent(context, l10n, objets),
@@ -182,19 +225,22 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
   }
 
   // ========================================================================
-  // LEGEND
+  // LEGEND (clair)
   // ========================================================================
 
   Widget _buildLegend(BuildContext context, AppLocalizations l10n) {
     return RepaintBoundary(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        color: ThixPolicy.card,
+        decoration: const BoxDecoration(
+          color: _kSurface,
+          border: Border(bottom: BorderSide(color: _kBorder)),
+        ),
         child: Row(
           children: [
             _legendItem(
               ThixPolicy.danger,
-              l10n.t('map_legend_lost'),
+              _tr(l10n, 'map_legend_lost', 'Perdus'),
               _showPerdus,
               () {
                 HapticFeedback.selectionClick();
@@ -205,7 +251,7 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
             const SizedBox(width: 16),
             _legendItem(
               ThixPolicy.success,
-              l10n.t('map_legend_found'),
+              _tr(l10n, 'map_legend_found', 'Trouvés'),
               _showTrouves,
               () {
                 HapticFeedback.selectionClick();
@@ -216,7 +262,7 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
             const Spacer(),
             _legendItem(
               ThixPolicy.primary,
-              l10n.t('map_legend_you'),
+              _tr(l10n, 'map_legend_you', 'Vous'),
               true,
               null,
             ),
@@ -244,7 +290,7 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
               width: 12,
               height: 12,
               decoration: BoxDecoration(
-                color: active ? color : ThixPolicy.textMuted.withValues(alpha: 0.3),
+                color: active ? color : _kTextMuted.withValues(alpha: 0.3),
                 shape: BoxShape.circle,
               ),
             ),
@@ -252,7 +298,7 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
             Text(
               label,
               style: ThixPolicy.captionStyle.copyWith(
-                color: active ? ThixPolicy.textMain : ThixPolicy.textMuted,
+                color: active ? _kTextMain : _kTextMuted,
                 fontWeight: active ? ThixPolicy.bold : FontWeight.normal,
               ),
             ),
@@ -286,24 +332,28 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
 
     return Stack(
       children: [
-        GoogleMap(
-          initialCameraPosition: const CameraPosition(
-            target: _kDefaultCenter,
-            zoom: _kDefaultZoom,
-          ),
-          onMapCreated: (controller) {
-            _mapController = controller;
-            debugPrint('[CarteSignalements] ✓ Map created');
-          },
-          markers: markers,
-          myLocationEnabled: _locationPermissionGranted,
-          myLocationButtonEnabled: false,
-          zoomControlsEnabled: false,
-          mapToolbarEnabled: false,
-          onTap: (_) {
-            setState(() => _selected = null);
-          },
-        ),
+        // ✅ GARDE WEB : pas de GoogleMap sans clé → plus de crash null-check
+        if (_canUseGoogleMap)
+          GoogleMap(
+            initialCameraPosition: const CameraPosition(
+              target: _kDefaultCenter,
+              zoom: _kDefaultZoom,
+            ),
+            onMapCreated: (controller) {
+              _mapController = controller;
+              debugPrint('[CarteSignalements] ✓ Map created');
+            },
+            markers: markers,
+            myLocationEnabled: _locationPermissionGranted,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
+            mapToolbarEnabled: false,
+            onTap: (_) {
+              setState(() => _selected = null);
+            },
+          )
+        else
+          _buildMapUnavailable(l10n),
 
         // ── Carte flottante objet sélectionné ──
         if (_selected != null)
@@ -323,15 +373,15 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
         ),
 
         // ── Bouton ma position ──
-        if (_locationPermissionGranted)
+        if (_locationPermissionGranted && _canUseGoogleMap)
           Positioned(
             bottom: 190,
             right: 16,
             child: Semantics(
               button: true,
-              label: l10n.t('map_my_location'),
+              label: _tr(l10n, 'map_my_location', 'Ma position'),
               child: FloatingActionButton.small(
-                backgroundColor: ThixPolicy.card,
+                backgroundColor: _kSurface,
                 onPressed: () {
                   HapticFeedback.mediumImpact();
                   _mapController?.animateCamera(
@@ -339,11 +389,57 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
                   );
                   debugPrint('[CarteSignalements] 📍 Centered on my location');
                 },
-                child: Icon(Icons.my_location_rounded, color: ThixPolicy.primary),
+                child: const Icon(Icons.my_location_rounded,
+                    color: ThixPolicy.primary),
               ),
             ),
           ),
       ],
+    );
+  }
+
+  // ========================================================================
+  // REPLI SANS GOOGLE MAPS (Web sans clé)
+  // ========================================================================
+
+  Widget _buildMapUnavailable(AppLocalizations l10n) {
+    return Container(
+      color: _kBg,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.map_outlined,
+                size: 64,
+                color: _kTextMuted.withValues(alpha: 0.5),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _tr(l10n, 'map_unavailable_title', 'Carte indisponible'),
+                style: ThixPolicy.bodyStyle.copyWith(
+                  color: _kTextMain,
+                  fontWeight: ThixPolicy.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _tr(
+                  l10n,
+                  'map_unavailable_msg',
+                  'La carte nécessite une clé Google Maps. '
+                      'Utilisez la liste des objets ci-dessous.',
+                ),
+                style: ThixPolicy.captionStyle.copyWith(color: _kTextSec),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -368,8 +464,10 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
       }
 
       // Sanitization pour InfoWindow
-      final safeTitle = _MapSanitizer.sanitize(obj.titre, maxLength: _kMaxTitleLength);
-      final safeLocation = _MapSanitizer.sanitize(obj.lieu, maxLength: _kMaxLocationLength);
+      final safeTitle =
+          _MapSanitizer.sanitize(obj.titre, maxLength: _kMaxTitleLength);
+      final safeLocation =
+          _MapSanitizer.sanitize(obj.lieu, maxLength: _kMaxLocationLength);
 
       markers.add(
         Marker(
@@ -412,8 +510,15 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
     final statusColor = isLost ? ThixPolicy.danger : ThixPolicy.success;
 
     // Sanitization
-    final safeTitle = _MapSanitizer.sanitize(obj.titre, maxLength: _kMaxTitleLength);
-    final safeLocation = _MapSanitizer.sanitize(obj.lieu, maxLength: _kMaxLocationLength);
+    final safeTitle =
+        _MapSanitizer.sanitize(obj.titre, maxLength: _kMaxTitleLength);
+    final safeLocation =
+        _MapSanitizer.sanitize(obj.lieu, maxLength: _kMaxLocationLength);
+    final safeDescription =
+        _MapSanitizer.sanitize(obj.description, maxLength: 500);
+    final safeReward =
+        _MapSanitizer.sanitize(obj.recompense ?? '', maxLength: 50);
+    final safeImageUrl = _MapSanitizer.sanitizeImageUrl(obj.imageUrl);
 
     return RepaintBoundary(
       child: Semantics(
@@ -422,20 +527,34 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
         child: Material(
           elevation: 8,
           borderRadius: BorderRadius.circular(ThixPolicy.rLg),
-          color: ThixPolicy.card,
+          color: _kSurface,
           child: InkWell(
             borderRadius: BorderRadius.circular(ThixPolicy.rLg),
             onTap: () => _throttledTap(() {
               HapticFeedback.mediumImpact();
               debugPrint('[CarteSignalements] 📦 Selected card tapped: '
                   '${safeTitle.substring(0, safeTitle.length.clamp(0, 20))}');
-              context.push('/retrouve/object/${obj.id}');
+              // ✅ FIX ROUTE : route nommée + extra complet (plus de 404)
+              context.pushNamed(
+                'thixRetrouveDetail',
+                extra: {
+                  'title': safeTitle,
+                  'status': obj.statutLabel,
+                  'location': safeLocation,
+                  'time': i18n.relativeTime(obj.date),
+                  'description': safeDescription,
+                  'reward': safeReward,
+                  'contact': obj.contactInfo ?? '',
+                  'imageUrl': safeImageUrl,
+                },
+              );
             }),
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: ThixPolicy.card,
+                color: _kSurface,
                 borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+                border: Border.all(color: _kBorder),
               ),
               child: Row(
                 children: [
@@ -455,7 +574,7 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
                         Text(
                           safeTitle,
                           style: ThixPolicy.bodyStyle.copyWith(
-                            color: ThixPolicy.textMain,
+                            color: _kTextMain,
                             fontWeight: ThixPolicy.bold,
                           ),
                           maxLines: 1,
@@ -464,14 +583,14 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
                         Text(
                           '${obj.statutLabel} • ${i18n.relativeTime(obj.date)} • $safeLocation',
                           style: ThixPolicy.captionStyle
-                              .copyWith(color: ThixPolicy.textMuted),
+                              .copyWith(color: _kTextSec),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right_rounded, color: ThixPolicy.textMuted),
+                  const Icon(Icons.chevron_right_rounded, color: _kTextMuted),
                 ],
               ),
             ),
@@ -482,7 +601,7 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
   }
 
   // ========================================================================
-  // BOTTOM LIST
+  // BOTTOM LIST (clair)
   // ========================================================================
 
   Widget _buildBottomList(
@@ -494,14 +613,15 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
     return RepaintBoundary(
       child: Container(
         height: 170,
-        decoration: BoxDecoration(
-          color: ThixPolicy.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        decoration: const BoxDecoration(
+          color: _kSurface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          border: Border(top: BorderSide(color: _kBorder)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08),
+              color: Color(0x0A0F172A),
               blurRadius: 12,
-              offset: const Offset(0, -4),
+              offset: Offset(0, -4),
             ),
           ],
         ),
@@ -511,9 +631,9 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
               child: Text(
-                l10n.t('map_objects_around', args: [objets.length.toString()]),
+                _objectsAroundLabel(l10n, objets.length),
                 style: ThixPolicy.titleStyle.copyWith(
-                  color: ThixPolicy.textMain,
+                  color: _kTextMain,
                   fontWeight: ThixPolicy.bold,
                 ),
               ),
@@ -522,9 +642,9 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
               child: objets.isEmpty
                   ? Center(
                       child: Text(
-                        l10n.t('map_no_objects'),
+                        _tr(l10n, 'map_no_objects', 'Aucun objet à proximité'),
                         style: ThixPolicy.bodyStyle
-                            .copyWith(color: ThixPolicy.textMuted),
+                            .copyWith(color: _kTextMuted),
                       ),
                     )
                   : ListView.builder(
@@ -554,8 +674,10 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
     final statusColor = isLost ? ThixPolicy.danger : ThixPolicy.success;
 
     // Sanitization
-    final safeTitle = _MapSanitizer.sanitize(obj.titre, maxLength: _kMaxTitleLength);
-    final safeLocation = _MapSanitizer.sanitize(obj.lieu, maxLength: _kMaxLocationLength);
+    final safeTitle =
+        _MapSanitizer.sanitize(obj.titre, maxLength: _kMaxTitleLength);
+    final safeLocation =
+        _MapSanitizer.sanitize(obj.lieu, maxLength: _kMaxLocationLength);
 
     return Semantics(
       button: true,
@@ -582,12 +704,12 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: isSelected
-                ? ThixPolicy.primary.withValues(alpha: 0.1)
-                : ThixPolicy.surfaceSoft,
+                ? ThixPolicy.primary.withValues(alpha: 0.10)
+                : _kBg,
             borderRadius: BorderRadius.circular(ThixPolicy.rMd),
             border: Border.all(
-              color: isSelected ? ThixPolicy.primary : ThixPolicy.border,
-              width: isSelected ? 1.5 : 1,
+              color: isSelected ? ThixPolicy.primary : _kBorder,
+              width: isSelected ? 1.5 : 1.2,
             ),
           ),
           child: Column(
@@ -617,7 +739,7 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
               Text(
                 safeTitle,
                 style: ThixPolicy.bodySmallStyle.copyWith(
-                  color: ThixPolicy.textMain,
+                  color: _kTextMain,
                   fontWeight: ThixPolicy.bold,
                 ),
                 maxLines: 2,
@@ -626,8 +748,7 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
               const Spacer(),
               Text(
                 safeLocation,
-                style: ThixPolicy.captionStyle
-                    .copyWith(color: ThixPolicy.textMuted),
+                style: ThixPolicy.captionStyle.copyWith(color: _kTextMuted),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -639,7 +760,7 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
   }
 
   // ========================================================================
-  // ERROR STATE
+  // ERROR STATE (clair)
   // ========================================================================
 
   Widget _buildErrorState(
@@ -649,37 +770,42 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
   ) {
     debugPrint('[CarteSignalements] ❌ Error: $error');
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            color: ThixPolicy.danger,
-            size: 40,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            l10n.t('map_error'),
-            style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.danger),
-          ),
-          const SizedBox(height: 16),
-          Semantics(
-            button: true,
-            label: l10n.t('common_retry'),
-            child: ElevatedButton.icon(
-              onPressed: () {
-                HapticFeedback.mediumImpact();
-                ref.invalidate(objetsRecentsProvider);
-              },
-              icon: const Icon(Icons.refresh_rounded),
-              label: Text(l10n.t('common_retry')),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ThixPolicy.primary,
-                foregroundColor: ThixPolicy.textMain,
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              color: ThixPolicy.danger,
+              size: 40,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _tr(l10n, 'map_error', 'Chargement de la carte impossible'),
+              style: ThixPolicy.bodyStyle.copyWith(color: _kTextSec),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Semantics(
+              button: true,
+              label: _tr(l10n, 'common_retry', 'Réessayer'),
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  HapticFeedback.mediumImpact();
+                  ref.invalidate(objetsRecentsProvider);
+                },
+                icon: const Icon(Icons.refresh_rounded),
+                label: Text(_tr(l10n, 'common_retry', 'Réessayer')),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ThixPolicy.primary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -700,7 +826,7 @@ class _CarteSignalementsPageState extends ConsumerState<CarteSignalementsPage> {
 }
 
 // ============================================================================
-// SKELETON LOADER
+// SKELETON LOADER (clair)
 // ============================================================================
 
 class _MapSkeletonLoader extends StatefulWidget {
@@ -734,12 +860,12 @@ class _MapSkeletonLoaderState extends State<_MapSkeletonLoader>
     return Stack(
       children: [
         Container(
-          color: ThixPolicy.surfaceSoft,
+          color: _kBg,
           child: Center(
             child: Icon(
               Icons.map_outlined,
               size: 80,
-              color: ThixPolicy.textMuted.withValues(alpha: 0.3),
+              color: _kTextMuted.withValues(alpha: 0.4),
             ),
           ),
         ),
@@ -749,9 +875,10 @@ class _MapSkeletonLoaderState extends State<_MapSkeletonLoader>
           bottom: 0,
           child: Container(
             height: 170,
-            decoration: BoxDecoration(
-              color: ThixPolicy.card,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            decoration: const BoxDecoration(
+              color: _kSurface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              border: Border(top: BorderSide(color: _kBorder)),
             ),
             child: ListView.builder(
               scrollDirection: Axis.horizontal,
@@ -760,13 +887,14 @@ class _MapSkeletonLoaderState extends State<_MapSkeletonLoader>
               itemBuilder: (context, index) => AnimatedBuilder(
                 animation: _ctrl,
                 builder: (_, __) => Opacity(
-                  opacity: 0.35 + 0.3 * _ctrl.value,
+                  opacity: 0.5 + 0.3 * _ctrl.value,
                   child: Container(
                     width: 150,
                     margin: const EdgeInsets.only(right: 10),
                     decoration: BoxDecoration(
-                      color: ThixPolicy.border.withValues(alpha: 0.3),
+                      color: _kSkeleton,
                       borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                      border: Border.all(color: _kBorder),
                     ),
                   ),
                 ),
