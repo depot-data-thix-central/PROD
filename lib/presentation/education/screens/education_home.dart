@@ -47,18 +47,42 @@ final _unreadNotificationsProvider =
   }
 });
 
+/// ✅ NOUVEAU : Provider de rôle formateur/admin/moderateur
+/// Retourne true si l'utilisateur peut accéder à l'espace formateur.
+/// Les rôles autorisés : formateur, admin, moderateur, entreprise, support
+final _instructorRoleProvider = FutureProvider.autoDispose<bool>((ref) async {
+  final user = Supabase.instance.client.auth.currentUser;
+  if (user == null) return false;
+  try {
+    final res = await Supabase.instance.client
+        .from('profiles')
+        .select('role, account_type')
+        .eq('id', user.id)
+        .maybeSingle();
+    if (res == null) return false;
+    final role = (res['role'] ?? res['account_type'] ?? '')
+        .toString()
+        .toLowerCase()
+        .trim();
+    const allowed = {'formateur', 'admin', 'moderateur', 'entreprise', 'support', 'instructor', 'teacher'};
+    return allowed.contains(role);
+  } catch (_) {
+    return false;
+  }
+});
+
 // ============================================================================
 // PAGE PRINCIPALE (HUB E-LEARNING)
 // ============================================================================
 class EducationHome extends ConsumerWidget {
   const EducationHome({super.key});
 
+  // ✅ Profil RETIRÉ de la liste des pages
   static const _pages = [
     _HomePage(),
     _MyLearningPage(),
     _LibraryPage(),
     _CertificatesPage(),
-    _ProfilePage(),
   ];
 
   @override
@@ -70,7 +94,7 @@ class EducationHome extends ConsumerWidget {
       body: Stack(
         children: [
           IndexedStack(
-            index: selectedIndex,
+            index: selectedIndex.clamp(0, _pages.length - 1),
             children: _pages,
           ),
           Positioned(
@@ -86,18 +110,18 @@ class EducationHome extends ConsumerWidget {
 }
 
 // ============================================================================
-// BOTTOM NAVIGATION
+// BOTTOM NAVIGATION (sans Profil)
 // ============================================================================
 class _FloatingBottomNav extends ConsumerWidget {
   final int selectedIndex;
   const _FloatingBottomNav({required this.selectedIndex});
 
+  // ✅ Profil RETIRÉ — seulement 4 items
   static const _items = [
     (Icons.home_rounded, 'Accueil'),
     (Icons.play_circle_outline_rounded, 'My Learning'),
     (Icons.local_library_rounded, 'Bibliothèque'),
     (Icons.workspace_premium_rounded, 'Certificats'),
-    (Icons.person_rounded, 'Profil'),
   ];
 
   @override
@@ -362,6 +386,8 @@ class _HomePageState extends ConsumerState<_HomePage>
     final unreadAsync = ref.watch(_unreadNotificationsProvider);
     final formationsAsync = ref.watch(formationsProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
+    // ✅ NOUVEAU : récupération du rôle formateur
+    final isInstructorAsync = ref.watch(_instructorRoleProvider);
 
     return RefreshIndicator(
       color: _eduAccentBlue,
@@ -369,6 +395,7 @@ class _HomePageState extends ConsumerState<_HomePage>
       onRefresh: () async {
         ref.invalidate(formationsProvider);
         ref.invalidate(categoriesProvider);
+        ref.invalidate(_instructorRoleProvider);
         if (user != null) ref.invalidate(myEnrollmentsProvider(user.id));
       },
       child: CustomScrollView(
@@ -499,39 +526,16 @@ class _HomePageState extends ConsumerState<_HomePage>
                     ),
                   ),
                   const SizedBox(height: ThixPolicy.s16),
+                  // ✅ QUICK ICONS : layout dynamique selon le rôle
                   Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: ThixPolicy.s16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                            child: _QuickIcon(
-                                icon: Icons.grid_view_rounded,
-                                label: 'Parcourir',
-                                onTap: () => ref
-                                    .read(_eduTabIndexProvider.notifier)
-                                    .state = 1)),
-                        Expanded(
-                            child: _QuickIcon(
-                                icon: Icons.local_library_rounded,
-                                label: 'Bibliothèque',
-                                onTap: () => ref
-                                    .read(_eduTabIndexProvider.notifier)
-                                    .state = 2)),
-                        Expanded(
-                            child: _QuickIcon(
-                                icon: Icons.workspace_premium_rounded,
-                                label: 'Certificats',
-                                onTap: () => ref
-                                    .read(_eduTabIndexProvider.notifier)
-                                    .state = 3)),
-                        Expanded(
-                            child: _QuickIcon(
-                                icon: Icons.co_present_rounded,
-                                label: 'Formateur',
-                                onTap: () =>
-                                    context.push('/instructor/dashboard'))),
-                      ],
+                    child: isInstructorAsync.when(
+                      loading: () => const _QuickIconsSkeleton(),
+                      error: (_, __) => _QuickIconsRow(showInstructor: false),
+                      data: (isInstructor) => _QuickIconsRow(
+                        showInstructor: isInstructor,
+                      ),
                     ),
                   ),
                 ],
@@ -552,7 +556,6 @@ class _HomePageState extends ConsumerState<_HomePage>
               final formations = paginated.items;
               final recentFormations = formations.take(5).toList();
               
-              // Top & Awaited
               final topFormations = [...formations]
                 ..sort((a, b) => b.rating.compareTo(a.rating));
               final awaitedFormations = formations.reversed.take(4).toList();
@@ -571,7 +574,6 @@ class _HomePageState extends ConsumerState<_HomePage>
                       child: _HeroCarousel(recentFormations: recentFormations)),
                   const SizedBox(height: ThixPolicy.s24),
 
-                  // 1. MIX INTELLIGENT (Top des formations)
                   if (topFormations.isNotEmpty) ...[
                     _SectionHeader(
                         title: 'Top des formations',
@@ -602,7 +604,6 @@ class _HomePageState extends ConsumerState<_HomePage>
                     const SizedBox(height: ThixPolicy.s24),
                   ],
 
-                  // 2. LES PLUS ATTENDUS (VERROUILLÉS JUSQU'À L'OUVERTURE)
                   if (awaitedFormations.isNotEmpty) ...[
                     _SectionHeader(
                         title: 'Les plus attendus',
@@ -630,10 +631,8 @@ class _HomePageState extends ConsumerState<_HomePage>
                     const SizedBox(height: ThixPolicy.s24),
                   ],
 
-                  // 3. CHAQUE CATÉGORIE A SA LIGNE DISTINCTE (Injection des catégories demandées)
                   categoriesAsync.when(
                     data: (dbCats) {
-                      // 👇 AJOUT DES CATÉGORIES EN DUR ICI 👇
                       final customCats = [
                         Category(id: 'cat-langues', name: 'Langues'),
                         Category(id: 'cat-entrepreneuriat', name: 'Entrepreneuriat'),
@@ -650,14 +649,11 @@ class _HomePageState extends ConsumerState<_HomePage>
 
                       return Column(
                         children: allCats.map((cat) {
-                          // Filtrage robuste pour placer les cours dans la bonne catégorie
                           final catFormations = formations.where((f) {
                             try {
                               final fCatId = (f as dynamic).categoryId;
-                              // Correspondance par ID
                               if (fCatId == cat.id) return true;
                               
-                              // Correspondance par nom (au cas où la catégorie est liée différemment)
                               final fCatName = (f as dynamic).category?.name;
                               if (fCatName != null && fCatName.toLowerCase() == cat.name.toLowerCase()) return true;
                             } catch (_) {}
@@ -735,6 +731,98 @@ class _HomePageState extends ConsumerState<_HomePage>
   }
 }
 
+// ============================================================================
+// ✅ NOUVEAU : WIDGET QuickIconsRow avec Formateur conditionnel
+// ============================================================================
+class _QuickIconsRow extends StatelessWidget {
+  final bool showInstructor;
+  const _QuickIconsRow({required this.showInstructor});
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <Widget>[
+      Expanded(
+          child: _QuickIcon(
+              icon: Icons.grid_view_rounded,
+              label: 'Parcourir',
+              onTap: () =>
+                  ProviderScope.containerOf(context)
+                      .read(_eduTabIndexProvider.notifier)
+                      .state = 1)),
+      Expanded(
+          child: _QuickIcon(
+              icon: Icons.local_library_rounded,
+              label: 'Bibliothèque',
+              onTap: () =>
+                  ProviderScope.containerOf(context)
+                      .read(_eduTabIndexProvider.notifier)
+                      .state = 2)),
+      Expanded(
+          child: _QuickIcon(
+              icon: Icons.workspace_premium_rounded,
+              label: 'Certificats',
+              onTap: () =>
+                  ProviderScope.containerOf(context)
+                      .read(_eduTabIndexProvider.notifier)
+                      .state = 3)),
+    ];
+
+    // ✅ Formateur ajouté UNIQUEMENT si rôle autorisé
+    if (showInstructor) {
+      items.add(
+        Expanded(
+            child: _QuickIcon(
+                icon: Icons.co_present_rounded,
+                label: 'Formateur',
+                onTap: () => context.push('/instructor/dashboard'))),
+      );
+    }
+
+    return Row(
+      children: items,
+    );
+  }
+}
+
+/// Skeleton pendant le chargement du rôle (évite le flash visuel)
+class _QuickIconsSkeleton extends StatelessWidget {
+  const _QuickIconsSkeleton();
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: List.generate(
+        4,
+        (_) => Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            child: Column(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: ThixPolicy.surface,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  width: 40,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: ThixPolicy.surface,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ----------------------------------------------------------------------------
 // WIDGET : CARTE SPÉCIALE "LES PLUS ATTENDUS" (VERROUILLÉE)
 // ----------------------------------------------------------------------------
@@ -745,7 +833,6 @@ class _AwaitedFormationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      // 👇 BLOQUE L'OUVERTURE ET AFFICHE UN MESSAGE 👇
       onTap: () {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -828,7 +915,6 @@ class _AwaitedFormationCard extends StatelessWidget {
                         color: _eduNavyBlue),
                   ),
                   const SizedBox(height: 4),
-                  // 👇 AFFICHAGE DE L'ACADÉMIE 👇
                   Text(
                     formation.instructorName ?? 'THIX Academy',
                     style: const TextStyle(
@@ -1147,7 +1233,6 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                               height: 1.2,
                               letterSpacing: -0.5)),
                       const SizedBox(height: 8),
-                      // 👇 AFFICHAGE DE L'ACADÉMIE 👇
                       Text(f.instructorName ?? 'THIX Academy',
                           style: const TextStyle(
                               color: Colors.white70,
@@ -1183,7 +1268,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 }
 
 // ============================================================================
-// ONGLET CACHÉ : DÉCOUVRIR (Accessible via "Voir le catalogue" de l'Accueil)
+// ONGLET CACHÉ : DÉCOUVRIR
 // ============================================================================
 class _ExplorePage extends ConsumerWidget {
   const _ExplorePage();
@@ -1305,7 +1390,7 @@ class _ExplorePage extends ConsumerWidget {
 }
 
 // ============================================================================
-// ONGLET 3 : BIBLIOTHÈQUE (étagères par auteur + alerte)
+// ONGLET 3 : BIBLIOTHÈQUE
 // ============================================================================
 class _LibraryPage extends ConsumerStatefulWidget {
   const _LibraryPage();
@@ -1316,7 +1401,7 @@ class _LibraryPage extends ConsumerStatefulWidget {
 
 class _LibraryPageState extends ConsumerState<_LibraryPage> {
   String _searchQuery = '';
-  String? _selectedCategory; // null = toutes
+  String? _selectedCategory;
 
   @override
   Widget build(BuildContext context) {
@@ -1342,7 +1427,6 @@ class _LibraryPageState extends ConsumerState<_LibraryPage> {
       ),
       body: Column(
         children: [
-          // Recherche
           Container(
             color: _eduNavyBlue,
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -1371,14 +1455,12 @@ class _LibraryPageState extends ConsumerState<_LibraryPage> {
                   child: CircularProgressIndicator(color: _eduAccentBlue)),
               error: (e, _) => Center(child: Text('Erreur: $e')),
               data: (List<Book> allBooks) {
-                // Filtre recherche
                 var books = allBooks.where((b) {
                   final q = _searchQuery.toLowerCase();
                   return b.title.toLowerCase().contains(q) ||
                       b.author.toLowerCase().contains(q);
                 }).toList();
 
-                // Filtre catégorie
                 if (_selectedCategory != null) {
                   books = books
                       .where((b) => (b.category ?? '') == _selectedCategory)
@@ -1407,13 +1489,11 @@ class _LibraryPageState extends ConsumerState<_LibraryPage> {
                   );
                 }
 
-                // Grouper par auteur → une étagère par auteur
                 final Map<String, List<Book>> byAuthor = {};
                 for (final b in books) {
                   byAuthor.putIfAbsent(b.author, () => []).add(b);
                 }
 
-                // Catégories disponibles
                 final categories = allBooks
                     .map((b) => b.category)
                     .whereType<String>()
@@ -1424,7 +1504,6 @@ class _LibraryPageState extends ConsumerState<_LibraryPage> {
 
                 return Column(
                   children: [
-                    // Chips catégories
                     if (categories.isNotEmpty)
                       Container(
                         height: 48,
@@ -1524,7 +1603,6 @@ class _AuthorShelf extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Max 3 livres visibles sur l’étagère, le reste via « Voir tout »
     final visible = books.take(3).toList();
 
     return Container(
@@ -1532,7 +1610,6 @@ class _AuthorShelf extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // En-tête étagère
           Row(
             children: [
               Expanded(
@@ -1563,7 +1640,6 @@ class _AuthorShelf extends StatelessWidget {
               ),
               TextButton(
                 onPressed: () {
-                  // Page « tous les livres de cet auteur »
                   context.push(
                     '/education/library/author',
                     extra: {
@@ -1586,7 +1662,6 @@ class _AuthorShelf extends StatelessWidget {
           ),
           const SizedBox(height: 8),
 
-          // Livres (max 3)
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: List.generate(3, (i) {
@@ -1602,7 +1677,6 @@ class _AuthorShelf extends StatelessWidget {
             }),
           ),
 
-          // Planche bois
           Container(
             height: 16,
             decoration: BoxDecoration(
@@ -1687,7 +1761,6 @@ class _BookSpineCard extends StatelessWidget {
                           ),
                   ),
 
-                  // Prix
                   Positioned(
                     top: 6,
                     right: 6,
@@ -1711,7 +1784,6 @@ class _BookSpineCard extends StatelessWidget {
                     ),
                   ),
 
-                  // ✅ ALERTE ROUGE suppression
                   if (isDeleting)
                     Positioned(
                       left: 4,
@@ -1894,196 +1966,6 @@ class _CertificatesPage extends ConsumerWidget {
           );
         },
       ),
-    );
-  }
-}
-
-// ============================================================================
-// ONGLET 5 : PROFIL
-// ============================================================================
-class _ProfilePage extends ConsumerWidget {
-  const _ProfilePage();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final user = Supabase.instance.client.auth.currentUser;
-
-    return Scaffold(
-      backgroundColor: ThixPolicy.surfaceSoft,
-      appBar: AppBar(
-        backgroundColor: ThixPolicy.card,
-        elevation: 0,
-        title: const Text('Compte Professionnel',
-            style: TextStyle(
-                color: _eduNavyBlue,
-                fontWeight: FontWeight.w900,
-                fontSize: 20,
-                letterSpacing: -0.5)),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(
-            ThixPolicy.s16, ThixPolicy.s16, ThixPolicy.s16, 120),
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(ThixPolicy.s20),
-              decoration: BoxDecoration(
-                  color: _eduNavyBlue,
-                  borderRadius: BorderRadius.circular(ThixPolicy.rLg),
-                  boxShadow: [
-                    BoxShadow(
-                        color: _eduNavyBlue.withOpacity(0.2),
-                        blurRadius: 15,
-                        offset: const Offset(0, 8))
-                  ]),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 36,
-                    backgroundColor: Colors.white24,
-                    backgroundImage: user?.userMetadata?['avatar_url'] != null
-                        ? NetworkImage(user!.userMetadata!['avatar_url'])
-                        : null,
-                    child: user?.userMetadata?['avatar_url'] == null
-                        ? const Icon(Icons.person,
-                            size: 36, color: Colors.white)
-                        : null,
-                  ),
-                  const SizedBox(width: ThixPolicy.s16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(user?.userMetadata?['full_name'] ?? 'Apprenant',
-                            style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white)),
-                        const SizedBox(height: 4),
-                        Text(user?.email ?? '',
-                            style: const TextStyle(
-                                fontSize: 13, color: Colors.white70)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: ThixPolicy.s24),
-            SizedBox(
-              width: double.infinity,
-              height: 54,
-              child: ElevatedButton.icon(
-                onPressed: () => context.push('/instructor/dashboard'),
-                icon: const Icon(Icons.business_center_rounded, size: 22),
-                label: const Text('Espace Formateur',
-                    style:
-                        TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _eduAccentBlue,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
-                  elevation: 0,
-                ),
-              ),
-            ),
-            const SizedBox(height: ThixPolicy.s32),
-            Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Outils Institutionnels',
-                    style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        color: _eduNavyBlue.withOpacity(0.7)))),
-            const SizedBox(height: ThixPolicy.s12),
-            Container(
-              decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                  border: Border.all(color: const Color(0xFFE2E8F0))),
-              child: Column(
-                children: [
-                  _ProfileMenuTile(
-                      icon: Icons.auto_stories_rounded,
-                      label: 'Ressources ouvertes',
-                      color: Colors.green[600]!,
-                      onTap: () => context.push('/education/free-courses')),
-                  const Divider(
-                      height: 1, color: Color(0xFFE2E8F0), indent: 64),
-                  _ProfileMenuTile(
-                      icon: Icons.ondemand_video_rounded,
-                      label: 'Masterclasses',
-                      color: Colors.purple[600]!,
-                      onTap: () => context.push('/education/webinars')),
-                  const Divider(
-                      height: 1, color: Color(0xFFE2E8F0), indent: 64),
-                  _ProfileMenuTile(
-                      icon: Icons.handshake_rounded,
-                      label: 'Réseau & Mentorat',
-                      color: Colors.orange[600]!,
-                      onTap: () => context.push('/education/mentorat')),
-                  const Divider(
-                      height: 1, color: Color(0xFFE2E8F0), indent: 64),
-                  _ProfileMenuTile(
-                      icon: Icons.event_available_rounded,
-                      label: 'Agenda des événements',
-                      color: _eduAccentBlue,
-                      onTap: () => context.push('/education/events')),
-                ],
-              ),
-            ),
-            const SizedBox(height: ThixPolicy.s24),
-            Container(
-              decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                  border: Border.all(color: const Color(0xFFE2E8F0))),
-              child: _ProfileMenuTile(
-                  icon: Icons.help_center_rounded,
-                  label: 'Support Technique',
-                  color: Colors.grey[700]!,
-                  onTap: () => context.push('/education/help')),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ProfileMenuTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-  const _ProfileMenuTile(
-      {required this.icon,
-      required this.label,
-      required this.color,
-      required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      onTap: onTap,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: ThixPolicy.s20, vertical: 6),
-      leading: Container(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12)),
-        child: Icon(icon, color: color, size: 22),
-      ),
-      title: Text(label,
-          style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 15,
-              color: _eduNavyBlue)),
-      trailing: const Icon(Icons.chevron_right_rounded,
-          color: Colors.grey, size: 24),
     );
   }
 }
