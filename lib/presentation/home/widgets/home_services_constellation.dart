@@ -182,13 +182,13 @@ class _HomeServicesConstellationState
     return RepaintBoundary(
       child: Container(
         margin: const EdgeInsets.symmetric(
-          horizontal: ThixPolicy.s16,
-          vertical: ThixPolicy.s8,
+          horizontal: 16.0,
+          vertical: 8.0,
         ),
-        padding: const EdgeInsets.all(ThixPolicy.s16),
+        padding: const EdgeInsets.all(16.0),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(ThixPolicy.r24),
+          borderRadius: BorderRadius.circular(24.0),
           border: Border.all(
             color: ThixPolicy.border.withOpacity(0.7),
             width: 1.0,
@@ -357,7 +357,7 @@ class _HomeServicesConstellationState
       ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(ThixPolicy.r12),
+        borderRadius: BorderRadius.circular(12.0),
         side: BorderSide(
           color: isSelected ? ThixPolicy.primaryDeep : Colors.transparent,
         ),
@@ -385,14 +385,14 @@ class _ServiceCardTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(ThixPolicy.r16),
+        borderRadius: BorderRadius.circular(16.0),
         splashColor: item.color.withOpacity(0.12),
         highlightColor: item.color.withOpacity(0.06),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
           decoration: BoxDecoration(
-            color: const Color(0xFFAFAFA).withOpacity(0.3),
-            borderRadius: BorderRadius.circular(ThixPolicy.r16),
+            color: const Color(0xFFFAFAFA).withOpacity(0.3),
+            borderRadius: BorderRadius.circular(16.0),
             border: Border.all(
               color: ThixPolicy.border.withOpacity(0.3),
               width: 0.8,
