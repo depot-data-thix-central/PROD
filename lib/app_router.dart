@@ -616,7 +616,24 @@ class AppRouter {
           GoRoute(path: 'carte', name: 'thixRetrouveCarte', pageBuilder: (_, __) => const NoTransitionPage(child: CarteSignalementsPage())),
         ]),
         GoRoute(path: '/thix-recherche', name: 'thixRecherche', builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 1), routes: [
-          GoRoute(path: 'detail/:id', name: 'thixRechercheDetail', builder: (context, state) => DetailPersonnePage(personneId: state.pathParameters['id']!)),
+          GoRoute(
+  name: 'thixRetrouveDetail',
+  path: '/thix-retrouve/detail',
+  builder: (context, state) {
+    final e = (state.extra is Map<String, dynamic>)
+        ? state.extra as Map<String, dynamic>
+        : (state.extra is Map ? Map<String, dynamic>.from(state.extra as Map) : <String, dynamic>{});
+    return ObjectDetailPage(
+      title: (e['title'] ?? '') as String,
+      status: (e['status'] ?? '') as String,
+      location: (e['location'] ?? '') as String,
+      time: (e['time'] ?? '') as String,
+      description: (e['description'] ?? '') as String,
+      reward: (e['reward'] ?? '') as String,
+      imageUrl: e['imageUrl'] as String?,
+    );
+  },
+),
           GoRoute(path: 'signaler/:id', name: 'thixRechercheSignaler', builder: (context, state) => SignalerPage(personneId: state.pathParameters['id']!)),
           GoRoute(path: 'creer', name: 'thixRechercheCreer', builder: (context, state) => const CreerAlertePage()),
           GoRoute(path: 'mes-alertes', name: 'thixRechercheMesAlertes', builder: (context, state) => const MesAlertesPage()),
