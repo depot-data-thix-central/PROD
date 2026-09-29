@@ -1,10 +1,15 @@
 // lib/presentation/home/widgets/home_services_constellation.dart
 //
 // ═══════════════════════════════════════════════════════════════════════════
-// THIX ID CENTRAL — "THIX ORBIT" · Roue orbitale radiale
+// THIX ID CENTRAL — "THIX HUB" · Roue orbitale radiale
 // Rupture totale : ni colonnes, ni grilles, ni barres.
 // Les 12 services gravitent sur un anneau rotatif (drag + snap + haptiques).
 // API publique IDENTIQUE à l'ancien widget → drop-in.
+//
+// ÉVOLutions :
+//  • Header : overline "THIX HUB" (titre "Services" supprimé).
+//  • Services suspendus (reservation / sante / wallet) → "Bientôt à disposition".
+//  • Thix Media devient "Thidia" (icône smart_display).
 // ═══════════════════════════════════════════════════════════════════════════
 
 import 'dart:math';
@@ -23,6 +28,9 @@ const double _kStep = pi * 2 / _kCount;
 const double _kNodeSize = 46.0;
 const double _kHubSize = 122.0;
 
+/// 🔒 Services temporairement suspendus → message "Bientôt à disposition".
+const Set<String> _kSuspended = {'reservation', 'thixSante', 'thixMoney'};
+
 String _tr(AppLocalizations l10n, String key, String fallback) {
   final v = l10n.t(key);
   return (v.trim().isEmpty || v == key) ? fallback : v;
@@ -39,14 +47,14 @@ double _angDist(double a, double b) {
 class _ServiceNodeData {
   final String key;
   final IconData icon;
-  final String title;
+  final String label; // Libellé complet affiché (ex: "Thix Wallet", "Thidia")
   final int? badge;
   final Color color;
 
   const _ServiceNodeData({
     required this.key,
     required this.icon,
-    required this.title,
+    required this.label,
     required this.color,
     this.badge,
   });
@@ -183,12 +191,47 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
   }
 
   void _step(int dir) {
-    _animateTo((( _angle / _kStep).round() + dir) * _kStep);
+    _animateTo(((_angle / _kStep).round() + dir) * _kStep);
   }
 
+  // ── OUVERTURE / SUSPENSION ──
   void _open(String key) {
     HapticFeedback.lightImpact();
+    if (_kSuspended.contains(key)) {
+      _showSoon();
+      return;
+    }
     widget.onServiceTap(key);
+  }
+
+  void _showSoon() {
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+          backgroundColor: ThixPolicy.primaryDeep,
+          content: Row(
+            children: [
+              const Icon(Icons.lock_rounded, color: Colors.white, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _tr(l10n, 'soon_available', 'Bientôt à disposition'),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
   }
 
   void _handleProfileTap() {
@@ -200,18 +243,19 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
   List<_ServiceNodeData> _nodes(AppLocalizations l10n) {
     final c = widget.counts;
     return [
-      _ServiceNodeData(key: 'thixMoney', icon: Icons.account_balance_wallet_rounded, title: l10n.t('svc_money'), badge: c.money, color: _colorMoney),
-      _ServiceNodeData(key: 'thixMarket', icon: Icons.storefront_rounded, title: l10n.t('svc_market'), badge: c.market, color: _colorMarket),
-      _ServiceNodeData(key: 'thixMedia', icon: Icons.video_collection_rounded, title: l10n.t('svc_media'), badge: c.media, color: _colorNetwork),
-      _ServiceNodeData(key: 'reservation', icon: Icons.confirmation_number_rounded, title: l10n.t('svc_booking'), badge: c.reservation, color: _colorPrimary),
-      _ServiceNodeData(key: 'emplois', icon: Icons.work_rounded, title: l10n.t('svc_jobs'), badge: c.jobs, color: _colorCorporate),
-      _ServiceNodeData(key: 'formations', icon: Icons.school_rounded, title: l10n.t('svc_learning'), badge: c.formations, color: _colorLearning),
-      _ServiceNodeData(key: 'opportunites', icon: Icons.lightbulb_rounded, title: l10n.t('svc_opps'), badge: c.opportunities, color: _colorMoney),
-      _ServiceNodeData(key: 'reseauPro', icon: Icons.groups_rounded, title: l10n.t('svc_pro'), badge: c.network, color: _colorNetwork),
-      _ServiceNodeData(key: 'monPays', icon: Icons.flag_rounded, title: l10n.t('svc_country'), badge: c.monPays, color: _colorCorporate),
-      _ServiceNodeData(key: 'thixInfo', icon: Icons.newspaper_rounded, title: l10n.t('svc_news'), badge: c.info, color: _colorPrimary),
-      _ServiceNodeData(key: 'evenements', icon: Icons.event_rounded, title: l10n.t('svc_event'), badge: c.events, color: _colorEvent),
-      _ServiceNodeData(key: 'thixSante', icon: Icons.local_hospital_rounded, title: l10n.t('svc_health'), badge: c.health, color: _colorHealth),
+      _ServiceNodeData(key: 'thixMoney', icon: Icons.account_balance_wallet_rounded, label: 'Thix ${l10n.t('svc_money')}', badge: c.money, color: _colorMoney),
+      _ServiceNodeData(key: 'thixMarket', icon: Icons.storefront_rounded, label: 'Thix ${l10n.t('svc_market')}', badge: c.market, color: _colorMarket),
+      // ⭐ Thix Media devient THIDIA
+      _ServiceNodeData(key: 'thixMedia', icon: Icons.smart_display_rounded, label: 'Thidia', badge: c.media, color: _colorNetwork),
+      _ServiceNodeData(key: 'reservation', icon: Icons.confirmation_number_rounded, label: 'Thix ${l10n.t('svc_booking')}', badge: c.reservation, color: _colorPrimary),
+      _ServiceNodeData(key: 'emplois', icon: Icons.work_rounded, label: 'Thix ${l10n.t('svc_jobs')}', badge: c.jobs, color: _colorCorporate),
+      _ServiceNodeData(key: 'formations', icon: Icons.school_rounded, label: 'Thix ${l10n.t('svc_learning')}', badge: c.formations, color: _colorLearning),
+      _ServiceNodeData(key: 'opportunites', icon: Icons.lightbulb_rounded, label: 'Thix ${l10n.t('svc_opps')}', badge: c.opportunities, color: _colorMoney),
+      _ServiceNodeData(key: 'reseauPro', icon: Icons.groups_rounded, label: 'Thix ${l10n.t('svc_pro')}', badge: c.network, color: _colorNetwork),
+      _ServiceNodeData(key: 'monPays', icon: Icons.flag_rounded, label: 'Thix ${l10n.t('svc_country')}', badge: c.monPays, color: _colorCorporate),
+      _ServiceNodeData(key: 'thixInfo', icon: Icons.newspaper_rounded, label: 'Thix ${l10n.t('svc_news')}', badge: c.info, color: _colorPrimary),
+      _ServiceNodeData(key: 'evenements', icon: Icons.event_rounded, label: 'Thix ${l10n.t('svc_event')}', badge: c.events, color: _colorEvent),
+      _ServiceNodeData(key: 'thixSante', icon: Icons.local_hospital_rounded, label: 'Thix ${l10n.t('svc_health')}', badge: c.health, color: _colorHealth),
     ];
   }
 
@@ -238,7 +282,6 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
               mainAxisSize: MainAxisSize.min,
               children: [
                 _OrbitHeader(
-                  title: _tr(l10n, 'home_services', 'Services'),
                   avatarUrl: widget.avatarUrl,
                   onTap: _handleProfileTap,
                 ),
@@ -247,7 +290,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
                 // ── ROUE ORBITALE ──
                 Semantics(
                   container: true,
-                  label: '${focused.title}, ${_focus + 1} sur $_kCount',
+                  label: '${focused.label}, ${_focus + 1} sur $_kCount',
                   customSemanticsActions: {
                     CustomSemanticsAction(label: 'Service suivant'):
                         () => _step(1),
@@ -343,7 +386,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
   }
 }
 
-// ── NŒUD ORBITAL ────────────────────────────────────────────────────────────
+// ── NUD ORBITAL ────────────────────────────────────────────────────────────
 class _OrbitNode extends StatelessWidget {
   final _ServiceNodeData node;
   final bool active;
@@ -377,11 +420,7 @@ class _OrbitNode extends StatelessWidget {
           child: Icon(node.icon, color: node.color, size: 20),
         ),
         if (node.badge != null && node.badge! > 0)
-          Positioned(
-            top: -3,
-            right: -3,
-            child: _Badge(count: node.badge!),
-          ),
+          Positioned(top: -3, right: -3, child: _Badge(count: node.badge!)),
       ],
     );
   }
@@ -403,7 +442,7 @@ class _OrbitHub extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: 'Ouvrir ${node.title}',
+      label: 'Ouvrir ${node.label}',
       child: GestureDetector(
         onTap: onTap,
         child: AnimatedContainer(
@@ -439,7 +478,7 @@ class _OrbitHub extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 10),
                       child: Text(
-                        'Thix ${node.title}',
+                        node.label,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
@@ -571,46 +610,26 @@ class _Badge extends StatelessWidget {
   }
 }
 
-// ── HEADER COMPACT (marque + profil) ────────────────────────────────────────
+// ── HEADER COMPACT : "THIX HUB" + profil (titre supprimé) ───────────────────
 class _OrbitHeader extends StatelessWidget {
-  final String title;
   final String? avatarUrl;
   final VoidCallback onTap;
 
-  const _OrbitHeader({
-    required this.title,
-    required this.onTap,
-    this.avatarUrl,
-  });
+  const _OrbitHeader({required this.onTap, this.avatarUrl});
 
   @override
   Widget build(BuildContext context) {
     final url = avatarUrl?.trim() ?? '';
     return Row(
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'THIX ORBIT',
-              style: TextStyle(
-                fontSize: 9,
-                letterSpacing: 2.4,
-                fontWeight: FontWeight.w800,
-                color: ThixPolicy.primary.withOpacity(0.5),
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: ThixPolicy.textMain,
-              ),
-            ),
-          ],
+        const Text(
+          'THIX HUB',
+          style: TextStyle(
+            fontSize: 12,
+            letterSpacing: 3.2,
+            fontWeight: FontWeight.w800,
+            color: ThixPolicy.primary,
+          ),
         ),
         const Spacer(),
         Semantics(
