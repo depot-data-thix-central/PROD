@@ -1,11 +1,15 @@
 /// Object Detail Page — Light Premium Design (Production)
-/// ✅ Cohérent avec THIX RETROUVE : fond blanc, cartes propres, texte sombre
-/// ✅ Pastilles de statut colorées sur fond clair
-/// ✅ i18n complet + sanitization + Semantics + HapticFeedback
+/// ✅ FIX 1 : auto-hydratation depuis GoRouterState.extra (plus de page vide
+///    si la route ne transfère pas les arguments)
+/// ✅ FIX 2 : _tr() avec fallbacks → plus jamais de clé l10n brute affichée
+/// ✅ Affiche TOUTES les infos : titre, statut, heure, lieu, description,
+///    récompense, contact, image
+/// ✅ Cohérent avec THIX RETROUVE : fond clair, cartes propres, texte sombre
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
@@ -22,6 +26,7 @@ const Color _kTextSec = Color(0xFF5A6B84);
 const Color _kTextMuted = Color(0xFF93A1B5);
 const Color _kBorder = Color(0xFFE5EAF1);
 const Color _kGold = Color(0xFFE0A400);
+const Color _kGoldDeep = Color(0xFFB07F00);
 const Color _kRed = Color(0xFFE5484D);
 
 const double _kRadiusLg = 18.0;
@@ -32,7 +37,7 @@ const int _kMaxDescriptionLength = 2000;
 const int _kMaxLocationLength = 150;
 
 // ============================================================================
-// SANITIZER (inchangé)
+// SANITIZER
 // ============================================================================
 
 class _DetailSanitizer {
@@ -55,7 +60,7 @@ class _DetailSanitizer {
 }
 
 // ============================================================================
-// SURFACE CARD (carte blanche avec ombre douce)
+// SURFACE CARD
 // ============================================================================
 
 class _SurfaceCard extends StatelessWidget {
@@ -76,7 +81,7 @@ class _SurfaceCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: _kSurface,
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: _kBorder, width: 1),
+        border: Border.all(color: _kBorder, width: 1.2),
         boxShadow: const [
           BoxShadow(
             color: Color(0x0A0F172A),
@@ -101,6 +106,7 @@ class ObjectDetailPage extends StatelessWidget {
   final String time;
   final String description;
   final String reward;
+  final String contact;
   final String? imageUrl;
 
   const ObjectDetailPage({
@@ -111,8 +117,25 @@ class ObjectDetailPage extends StatelessWidget {
     this.time = '',
     this.description = '',
     this.reward = '',
+    this.contact = '',
     this.imageUrl,
   });
+
+  // ── 🛡️ Traduction sûre : fallback FR si clé absente (jamais de clé brute) ──
+  String _tr(AppLocalizations l10n, String key, String fallback) {
+    final v = l10n.t(key);
+    return (v == key || v.trim().isEmpty) ? fallback : v;
+  }
+
+  // ── 🔄 Auto-hydratation : extra de la route si le constructeur est vide ──
+  Map<String, dynamic> _routeExtra(BuildContext context) {
+    try {
+      final e = GoRouterState.of(context).extra;
+      if (e is Map<String, dynamic>) return e;
+      if (e is Map) return Map<String, dynamic>.from(e);
+    } catch (_) {}
+    return const {};
+  }
 
   Color _statusColor(String status) {
     final s = status.toUpperCase();
@@ -128,16 +151,34 @@ class ObjectDetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final statusColor = _statusColor(status);
+
+    // ✅ Fusion constructeur + extra de route (le non-vide gagne)
+    final args = _routeExtra(context);
+    String pick(String ctor, String key) =>
+        ctor.trim().isNotEmpty ? ctor : (args[key]?.toString() ?? '').trim();
+
+    final rawTitle = pick(title, 'title');
+    final rawStatus = pick(status, 'status');
+    final rawLocation = pick(location, 'location');
+    final rawTime = pick(time, 'time');
+    final rawDescription = pick(description, 'description');
+    final rawReward = pick(reward, 'reward');
+    final rawContact = pick(contact, 'contact');
+    final rawImageUrl = (imageUrl?.trim().isNotEmpty ?? false)
+        ? imageUrl
+        : (args['imageUrl'] as String?);
 
     final safeTitle =
-        _DetailSanitizer.sanitize(title, maxLength: _kMaxTitleLength);
-    final safeDescription = _DetailSanitizer.sanitize(description,
+        _DetailSanitizer.sanitize(rawTitle, maxLength: _kMaxTitleLength);
+    final safeDescription = _DetailSanitizer.sanitize(rawDescription,
         maxLength: _kMaxDescriptionLength);
     final safeLocation =
-        _DetailSanitizer.sanitize(location, maxLength: _kMaxLocationLength);
-    final safeReward = _DetailSanitizer.sanitize(reward, maxLength: 50);
-    final safeImageUrl = _DetailSanitizer.sanitizeImageUrl(imageUrl);
+        _DetailSanitizer.sanitize(rawLocation, maxLength: _kMaxLocationLength);
+    final safeReward = _DetailSanitizer.sanitize(rawReward, maxLength: 50);
+    final safeContact =
+        _DetailSanitizer.sanitize(rawContact, maxLength: 100);
+    final safeImageUrl = _DetailSanitizer.sanitizeImageUrl(rawImageUrl);
+    final statusColor = _statusColor(rawStatus);
 
     debugPrint('[ObjectDetail] 🚀 Page built: '
         '${safeTitle.substring(0, safeTitle.length.clamp(0, 30))}');
@@ -150,7 +191,7 @@ class ObjectDetailPage extends StatelessWidget {
         scrolledUnderElevation: 1,
         leading: Semantics(
           button: true,
-          label: l10n.t('common_back'),
+          label: _tr(l10n, 'common_back', 'Retour'),
           child: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded,
                 color: _kTextMain, size: 20),
@@ -161,7 +202,7 @@ class ObjectDetailPage extends StatelessWidget {
           ),
         ),
         title: Text(
-          l10n.t('object_detail_title'),
+          _tr(l10n, 'object_detail_title', 'Détail de l\'objet'),
           style: const TextStyle(
             color: _kTextMain,
             fontSize: 15,
@@ -172,7 +213,7 @@ class ObjectDetailPage extends StatelessWidget {
         actions: [
           Semantics(
             button: true,
-            label: l10n.t('common_more_options'),
+            label: _tr(l10n, 'common_more_options', 'Plus d\'options'),
             child: IconButton(
               icon: const Icon(Icons.more_vert_rounded,
                   color: _kTextMain, size: 20),
@@ -190,15 +231,17 @@ class ObjectDetailPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Image ──
-            _buildImageSection(l10n, safeImageUrl, statusColor),
+            // ── Image ─
+            _buildImageSection(safeImageUrl, rawStatus, statusColor),
             const SizedBox(height: 18),
 
-            // ── Title + status pill ──
+            // ── Titre ──
             Semantics(
               header: true,
               child: Text(
-                safeTitle.isEmpty ? l10n.t('object_no_title') : safeTitle,
+                safeTitle.isEmpty
+                    ? _tr(l10n, 'object_no_title', 'Objet sans titre')
+                    : safeTitle,
                 style: const TextStyle(
                   color: _kTextMain,
                   fontSize: 21,
@@ -208,32 +251,36 @@ class ObjectDetailPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                _statusPill(statusColor, status),
-                if (time.isNotEmpty)
-                  Text(
-                    time,
-                    style: const TextStyle(
-                      color: _kTextSec,
-                      fontSize: 12,
+
+            // ── Statut + heure (affichés seulement si présents) ──
+            if (rawStatus.isNotEmpty || rawTime.isNotEmpty)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (rawStatus.isNotEmpty)
+                    _statusPill(statusColor, rawStatus),
+                  if (rawTime.isNotEmpty)
+                    Text(
+                      rawTime,
+                      style: const TextStyle(
+                        color: _kTextSec,
+                        fontSize: 12,
+                      ),
                     ),
-                  ),
-              ],
-            ),
+                ],
+              ),
             const SizedBox(height: 14),
 
-            // ── Location ──
-            if (safeLocation.isNotEmpty)
+            // ── Lieu ──
+            if (safeLocation.isNotEmpty) ...[
               _SurfaceCard(
                 padding:
-                    const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                    const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
                 child: Row(
                   children: [
-                    Icon(Icons.location_on_outlined,
+                    const Icon(Icons.location_on_outlined,
                         size: 16, color: _kTextSec),
                     const SizedBox(width: 6),
                     Expanded(
@@ -248,12 +295,13 @@ class ObjectDetailPage extends StatelessWidget {
                   ],
                 ),
               ),
-            const SizedBox(height: 14),
+              const SizedBox(height: 14),
+            ],
 
             // ── Description ──
             if (safeDescription.isNotEmpty) ...[
               Text(
-                l10n.t('object_description_label'),
+                _tr(l10n, 'object_description_label', 'DESCRIPTION'),
                 style: const TextStyle(
                   color: _kTextSec,
                   fontSize: 11,
@@ -275,23 +323,23 @@ class ObjectDetailPage extends StatelessWidget {
               const SizedBox(height: 14),
             ],
 
-            // ── Reward ──
+            // ── Récompense ──
             if (safeReward.isNotEmpty) ...[
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: _kGold.withOpacity(0.08),
+                  color: _kGold.withOpacity(0.10),
                   borderRadius: BorderRadius.circular(_kRadiusMd),
-                  border: Border.all(color: _kGold.withOpacity(0.25)),
+                  border: Border.all(color: _kGold.withOpacity(0.30)),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.card_giftcard_rounded,
-                        color: _kGold, size: 20),
+                    const Icon(Icons.card_giftcard_rounded,
+                        color: _kGoldDeep, size: 20),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        l10n.t('object_reward'),
+                        _tr(l10n, 'object_reward', 'Récompense proposée'),
                         style: const TextStyle(
                           color: _kTextSec,
                           fontSize: 12.5,
@@ -301,7 +349,7 @@ class ObjectDetailPage extends StatelessWidget {
                     Text(
                       safeReward,
                       style: const TextStyle(
-                        color: _kTextMain,
+                        color: _kGoldDeep,
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
                       ),
@@ -309,7 +357,32 @@ class ObjectDetailPage extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 14),
+            ],
+
+            // ── Contact alternatif ──
+            if (safeContact.isNotEmpty) ...[
+              _SurfaceCard(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                child: Row(
+                  children: [
+                    const Icon(Icons.alternate_email_rounded,
+                        size: 16, color: _kTextSec),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        safeContact,
+                        style: const TextStyle(
+                          color: _kTextSec,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
             ],
 
             // ── Actions ──
@@ -326,8 +399,8 @@ class ObjectDetailPage extends StatelessWidget {
   // ========================================================================
 
   Widget _buildImageSection(
-    AppLocalizations l10n,
     String? imageUrl,
+    String status,
     Color statusColor,
   ) {
     return ClipRRect(
@@ -338,7 +411,7 @@ class ObjectDetailPage extends StatelessWidget {
         decoration: BoxDecoration(
           color: _kSurface,
           borderRadius: BorderRadius.circular(_kRadiusLg),
-          border: Border.all(color: _kBorder),
+          border: Border.all(color: _kBorder, width: 1.2),
           boxShadow: const [
             BoxShadow(
               color: Color(0x0A0F172A),
@@ -372,7 +445,7 @@ class ObjectDetailPage extends StatelessWidget {
                     child: Icon(Icons.inventory_2_outlined,
                         size: 56, color: _kTextMuted),
                   ),
-            // Pastille statut
+            // Pastille statut (seulement si statut présent)
             if (status.isNotEmpty)
               Positioned(
                 top: 12,
@@ -468,10 +541,9 @@ class ObjectDetailPage extends StatelessWidget {
   ) {
     return Column(
       children: [
-        // ── Contact (plein, bleu) ──
         Semantics(
           button: true,
-          label: l10n.t('object_contact_button'),
+          label: _tr(l10n, 'object_contact_button', 'Contacter le déclarant'),
           child: SizedBox(
             width: double.infinity,
             height: 52,
@@ -489,7 +561,7 @@ class ObjectDetailPage extends StatelessWidget {
                 _handleContact(context, l10n, title);
               },
               child: Text(
-                l10n.t('object_contact_button'),
+                _tr(l10n, 'object_contact_button', 'Contacter le déclarant'),
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 14.5,
@@ -501,10 +573,9 @@ class ObjectDetailPage extends StatelessWidget {
         ),
         const SizedBox(height: 12),
 
-        // ── Share (outline) ──
         Semantics(
           button: true,
-          label: l10n.t('object_share_button'),
+          label: _tr(l10n, 'object_share_button', 'Partager l\'annonce'),
           child: Material(
             color: Colors.transparent,
             child: InkWell(
@@ -520,7 +591,7 @@ class ObjectDetailPage extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: _kSurface,
                   borderRadius: BorderRadius.circular(_kRadiusMd),
-                  border: Border.all(color: _kBorder),
+                  border: Border.all(color: _kBorder, width: 1.2),
                   boxShadow: const [
                     BoxShadow(
                       color: Color(0x0A0F172A),
@@ -533,10 +604,10 @@ class ObjectDetailPage extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.share_rounded, color: _kTextMain, size: 17),
+                    const Icon(Icons.share_rounded, color: _kTextMain, size: 17),
                     const SizedBox(width: 8),
                     Text(
-                      l10n.t('object_share_button'),
+                      _tr(l10n, 'object_share_button', 'Partager l\'annonce'),
                       style: const TextStyle(
                         color: _kTextMain,
                         fontSize: 14.5,
@@ -554,7 +625,7 @@ class ObjectDetailPage extends StatelessWidget {
   }
 
   // ========================================================================
-  // HANDLERS (inchangés)
+  // HANDLERS
   // ========================================================================
 
   void _handleContact(
@@ -566,7 +637,8 @@ class ObjectDetailPage extends StatelessWidget {
         '${title.substring(0, title.length.clamp(0, 30))}');
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(l10n.t('object_contact_coming_soon'),
+        content: Text(
+            _tr(l10n, 'object_contact_coming_soon', 'Contact bientôt disponible'),
             style: const TextStyle(fontSize: 13)),
         backgroundColor: ThixPolicy.primary,
         behavior: SnackBarBehavior.floating,
@@ -586,14 +658,14 @@ class ObjectDetailPage extends StatelessWidget {
     debugPrint('[ObjectDetail] 📤 Share tapped');
     try {
       final shareText = '''
-${l10n.t('object_share_text')}
+${_tr(l10n, 'object_share_text', 'Annonce THIX RETROUVE :')}
 
 📦 $title
 📍 $location
 📝 $description
 ${imageUrl != null ? '🖼️ $imageUrl' : ''}
 
-${l10n.t('object_share_via_thix')}
+${_tr(l10n, 'object_share_via_thix', 'Via THIX ID CENTRAL')}
 ''';
       await Share.share(shareText, subject: title);
       HapticFeedback.mediumImpact();
@@ -603,7 +675,7 @@ ${l10n.t('object_share_via_thix')}
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(l10n.t('object_share_error'),
+            content: Text(_tr(l10n, 'object_share_error', 'Partage impossible'),
                 style: const TextStyle(fontSize: 13)),
             backgroundColor: ThixPolicy.danger,
             behavior: SnackBarBehavior.floating,
@@ -648,7 +720,7 @@ ${l10n.t('object_share_via_thix')}
                 sheetCtx,
                 icon: Icons.flag_rounded,
                 tint: _kRed,
-                label: l10n.t('object_report'),
+                label: _tr(l10n, 'object_report', 'Signaler cette annonce'),
                 onTap: () {
                   HapticFeedback.mediumImpact();
                   debugPrint('[ObjectDetail] 🚩 Report tapped');
@@ -659,7 +731,7 @@ ${l10n.t('object_share_via_thix')}
                 sheetCtx,
                 icon: Icons.share_rounded,
                 tint: ThixPolicy.primary,
-                label: l10n.t('object_share_button'),
+                label: _tr(l10n, 'object_share_button', 'Partager l\'annonce'),
                 onTap: () => _handleShare(
                     context, l10n, title, description, location, imageUrl),
               ),
@@ -693,7 +765,7 @@ ${l10n.t('object_share_via_thix')}
             decoration: BoxDecoration(
               color: _kBg,
               borderRadius: BorderRadius.circular(_kRadiusMd),
-              border: Border.all(color: _kBorder),
+              border: Border.all(color: _kBorder, width: 1.2),
             ),
             child: Row(
               children: [
