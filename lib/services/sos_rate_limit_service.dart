@@ -158,10 +158,13 @@ class RateLimitResult {
     required this.source,
   });
 
-  Duration get remaining => retryAt == null
-      ? Duration.zero
-      : retryAt!.difference(DateTime.now()).clamp(Duration.zero, const Duration(days: 1));
-
+  Duration get remaining {
+  if (retryAt == null) return Duration.zero;
+  final diff = retryAt!.difference(DateTime.now());
+  if (diff.isNegative) return Duration.zero;
+  const maxDur = Duration(days: 1);
+  return diff > maxDur ? maxDur : diff;
+}
   String formattedRemaining() {
     final r = remaining;
     if (r == Duration.zero) return '';
