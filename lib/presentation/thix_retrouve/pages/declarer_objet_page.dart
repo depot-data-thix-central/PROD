@@ -1,4 +1,6 @@
 /// Declarer Objet Page (Production Enterprise)
+/// ✅ FIX CONTRASTE : thème clair unifié (fond #F7F9FC) — plus jamais de
+///    texte foncé sur fond foncé (labels invisibles en release Web).
 /// ThixPolicy + i18n 8 langues + sanitization + mounted checks
 /// Semantics + HapticFeedback + logs structurés
 import 'dart:typed_data';
@@ -15,8 +17,17 @@ import '../models/objet_model.dart';
 import '../providers/objet_providers.dart';
 
 // ============================================================================
-// CONSTANTS
+// DESIGN TOKENS (clair — cohérent avec RETROUVE)
 // ============================================================================
+
+const Color _kBg = Color(0xFFF7F9FC);
+const Color _kSurface = Color(0xFFFFFFFF);
+const Color _kTextMain = Color(0xFF12233D);
+const Color _kTextSec = Color(0xFF5A6B84);
+const Color _kTextMuted = Color(0xFF93A1B5);
+const Color _kBorder = Color(0xFFE5EAF1);
+const Color _kGold = Color(0xFFE0A400);
+const Color _kGoldDeep = Color(0xFFB07F00);
 
 const int _kMaxTitleLength = 100;
 const int _kMaxDescriptionLength = 1000;
@@ -119,10 +130,16 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
 
   bool get _isPerdu => widget.type == StatutObjet.perdu;
 
-  Color get _accentColor => _isPerdu ? ThixPolicy.domainOpportunity : ThixPolicy.primary;
+  // ✅ Accents + couleurs de texte garanties contrastées
+  Color get _accentColor => _isPerdu ? _kGold : ThixPolicy.primary;
+  Color get _accentDeep => _isPerdu ? _kGoldDeep : ThixPolicy.primaryDeep;
   Color get _accentSoft => _isPerdu
-      ? ThixPolicy.domainOpportunity.withValues(alpha: 0.12)
+      ? _kGold.withValues(alpha: 0.12)
       : ThixPolicy.primary.withValues(alpha: 0.12);
+
+  /// Couleur du texte POSÉ SUR l'accent solide (bouton) :
+  /// ambre → texte foncé (contraste AA) · bleu → texte blanc.
+  Color get _onAccent => _isPerdu ? _kTextMain : Colors.white;
 
   @override
   void dispose() {
@@ -147,7 +164,7 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
     final l10n = AppLocalizations.of(context);
     showModalBottomSheet(
       context: context,
-      backgroundColor: ThixPolicy.card,
+      backgroundColor: _kSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(ThixPolicy.rLg)),
       ),
@@ -161,7 +178,7 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: ThixPolicy.border,
+                  color: _kBorder,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -173,7 +190,7 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
                 leading: Icon(Icons.camera_alt_rounded, color: ThixPolicy.primary),
                 title: Text(
                   l10n.t('declare_take_photo'),
-                  style: TextStyle(color: ThixPolicy.textMain),
+                  style: const TextStyle(color: _kTextMain),
                 ),
                 onTap: () {
                   Navigator.pop(sheetCtx);
@@ -188,7 +205,7 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
                 leading: Icon(Icons.photo_library_rounded, color: ThixPolicy.primary),
                 title: Text(
                   l10n.t('declare_pick_gallery'),
-                  style: TextStyle(color: ThixPolicy.textMain),
+                  style: const TextStyle(color: _kTextMain),
                 ),
                 onTap: () {
                   Navigator.pop(sheetCtx);
@@ -400,16 +417,19 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
     final l10n = AppLocalizations.of(context);
 
     return Scaffold(
-      backgroundColor: ThixPolicy.inkDeep,
+      // ✅ Fond CLAIR : les labels foncés redeviennent lisibles
+      backgroundColor: _kBg,
       appBar: AppBar(
-        backgroundColor: ThixPolicy.card,
+        backgroundColor: _kSurface,
         elevation: 0,
+        scrolledUnderElevation: 0,
+        shape: const Border(bottom: BorderSide(color: _kBorder)),
         leading: Semantics(
           button: true,
           label: l10n.t('common_back'),
           child: IconButton(
-            icon: Icon(Icons.arrow_back_ios_new_rounded,
-                size: 20, color: ThixPolicy.textMain),
+            icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                size: 20, color: _kTextMain),
             onPressed: () => Navigator.pop(context),
           ),
         ),
@@ -418,7 +438,7 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
               ? l10n.t('declare_title_lost')
               : l10n.t('declare_title_found'),
           style: ThixPolicy.h3Style.copyWith(
-            color: ThixPolicy.textMain,
+            color: _kTextMain,
             fontWeight: ThixPolicy.bold,
           ),
         ),
@@ -455,20 +475,29 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
     );
   }
 
+  // ✅ Header : carte teintée (lisible sur fond clair), texte foncé
   Widget _buildHeader(AppLocalizations l10n) {
     return RepaintBoundary(
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: _accentColor,
+          color: _accentSoft,
           borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+          border: Border.all(color: _accentColor.withValues(alpha: 0.35)),
         ),
         child: Row(
           children: [
-            Icon(
-              _isPerdu ? Icons.search_rounded : Icons.inventory_2_rounded,
-              color: ThixPolicy.textMain,
-              size: 32,
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _accentColor.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                _isPerdu ? Icons.search_rounded : Icons.inventory_2_rounded,
+                color: _accentDeep,
+                size: 26,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -477,8 +506,9 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
                     ? l10n.t('declare_header_lost')
                     : l10n.t('declare_header_found'),
                 style: ThixPolicy.bodySmallStyle.copyWith(
-                  color: ThixPolicy.textMain,
+                  color: _kTextMain,
                   height: 1.4,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -500,9 +530,16 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
           height: 180,
           width: double.infinity,
           decoration: BoxDecoration(
-            color: ThixPolicy.card,
+            color: _kSurface,
             borderRadius: BorderRadius.circular(ThixPolicy.rLg),
-            border: Border.all(color: ThixPolicy.border),
+            border: Border.all(color: _kBorder, width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: _kTextMain.withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
           clipBehavior: Clip.antiAlias,
           child: _photoBytes != null
@@ -523,7 +560,7 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
                           },
                           child: Container(
                             padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
+                            decoration: const BoxDecoration(
                               color: Colors.black54,
                               shape: BoxShape.circle,
                             ),
@@ -558,12 +595,12 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.add_a_photo_rounded,
-                        size: 40, color: ThixPolicy.textMuted),
+                        size: 40, color: _kTextMuted),
                     const SizedBox(height: 10),
                     Text(
                       l10n.t('declare_add_photo'),
                       style: ThixPolicy.bodyStyle.copyWith(
-                        color: ThixPolicy.textMain,
+                        color: _kTextMain,
                         fontWeight: ThixPolicy.bold,
                       ),
                     ),
@@ -571,7 +608,7 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
                     Text(
                       l10n.t('declare_photo_hint'),
                       style: ThixPolicy.captionStyle
-                          .copyWith(color: ThixPolicy.textMuted),
+                          .copyWith(color: _kTextSec),
                     ),
                   ],
                 ),
@@ -591,7 +628,7 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
           controller: _titreCtrl,
           maxLength: _kMaxTitleLength,
           textInputAction: TextInputAction.next,
-          style: TextStyle(color: ThixPolicy.textMain),
+          style: const TextStyle(color: _kTextMain),
           decoration: _inputDecoration(l10n.t('declare_title_hint')),
           validator: (v) => (v == null || v.trim().isEmpty)
               ? l10n.t('declare_title_required')
@@ -609,18 +646,18 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
         child: DropdownButtonFormField<_ObjetCategory>(
           value: _categorie,
           isExpanded: true,
-          dropdownColor: ThixPolicy.card,
-          style: TextStyle(color: ThixPolicy.textMain, fontSize: 14),
+          dropdownColor: _kSurface,
+          style: const TextStyle(color: _kTextMain, fontSize: 14),
           decoration: _inputDecoration(l10n.t('declare_category_hint')),
           items: _kCategories
               .map((c) => DropdownMenuItem<_ObjetCategory>(
                     value: c,
                     child: Row(
                       children: [
-                        Icon(c.icon, size: 18, color: ThixPolicy.primary),
+                        Icon(c.icon, size: 18, color: _accentDeep),
                         const SizedBox(width: 10),
                         Text(l10n.t(c.i18nKey),
-                            style: TextStyle(color: ThixPolicy.textMain)),
+                            style: const TextStyle(color: _kTextMain)),
                       ],
                     ),
                   ))
@@ -646,7 +683,7 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
           maxLines: 4,
           maxLength: _kMaxDescriptionLength,
           textInputAction: TextInputAction.next,
-          style: TextStyle(color: ThixPolicy.textMain),
+          style: const TextStyle(color: _kTextMain),
           decoration: _inputDecoration(
             _isPerdu
                 ? l10n.t('declare_desc_hint_lost')
@@ -673,7 +710,7 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
           controller: _lieuCtrl,
           maxLength: _kMaxLocationLength,
           textInputAction: TextInputAction.next,
-          style: TextStyle(color: ThixPolicy.textMain),
+          style: const TextStyle(color: _kTextMain),
           decoration: _inputDecoration(l10n.t('declare_location_hint')),
           validator: (v) => (v == null || v.trim().isEmpty)
               ? l10n.t('declare_location_required')
@@ -694,7 +731,7 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
           maxLength: _kMaxRewardLength,
           keyboardType: TextInputType.number,
           textInputAction: TextInputAction.next,
-          style: TextStyle(color: ThixPolicy.textMain),
+          style: const TextStyle(color: _kTextMain),
           decoration: _inputDecoration(l10n.t('declare_reward_hint')),
         ),
       ),
@@ -712,7 +749,7 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
           maxLength: _kMaxContactLength,
           keyboardType: TextInputType.emailAddress,
           textInputAction: TextInputAction.done,
-          style: TextStyle(color: ThixPolicy.textMain),
+          style: const TextStyle(color: _kTextMain),
           decoration: _inputDecoration(l10n.t('declare_contact_hint')),
         ),
       ),
@@ -733,20 +770,22 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
           child: ElevatedButton(
             onPressed: _isLoading ? null : _submit,
             style: ElevatedButton.styleFrom(
+              // ✅ Ambre + texte foncé (perdu) · Bleu + texte blanc (trouvé)
               backgroundColor: _accentColor,
-              foregroundColor: ThixPolicy.textMain,
+              foregroundColor: _onAccent,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(ThixPolicy.rLg),
               ),
               elevation: 0,
-              disabledBackgroundColor: _accentSoft,
+              disabledBackgroundColor: _accentColor.withValues(alpha: 0.4),
+              disabledForegroundColor: _onAccent.withValues(alpha: 0.7),
             ),
             child: _isLoading
-                ? const SizedBox(
+                ? SizedBox(
                     width: 24,
                     height: 24,
                     child: CircularProgressIndicator(
-                      color: Colors.white,
+                      color: _onAccent,
                       strokeWidth: 2.5,
                     ),
                   )
@@ -755,7 +794,7 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
                         ? l10n.t('declare_button_lost')
                         : l10n.t('declare_button_found'),
                     style: ThixPolicy.titleStyle.copyWith(
-                      color: ThixPolicy.textMain,
+                      color: _onAccent,
                       fontWeight: ThixPolicy.bold,
                     ),
                   ),
@@ -779,10 +818,11 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
           padding: const EdgeInsets.only(bottom: 8, left: 4),
           child: Row(
             children: [
+              // ✅ Label foncé sur fond CLAIR → toujours lisible
               Text(
                 label,
                 style: ThixPolicy.labelStyle.copyWith(
-                  color: ThixPolicy.textMain,
+                  color: _kTextMain,
                   fontWeight: ThixPolicy.bold,
                 ),
               ),
@@ -806,18 +846,18 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
       hintText: hint,
       counterText: '',
       hintStyle: ThixPolicy.bodySmallStyle.copyWith(
-        color: ThixPolicy.textMuted,
+        color: _kTextMuted,
       ),
       filled: true,
-      fillColor: ThixPolicy.card,
+      fillColor: _kSurface,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-        borderSide: BorderSide(color: ThixPolicy.border),
+        borderSide: const BorderSide(color: _kBorder, width: 1.2),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-        borderSide: BorderSide(color: ThixPolicy.border),
+        borderSide: const BorderSide(color: _kBorder, width: 1.2),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(ThixPolicy.rMd),
@@ -827,7 +867,11 @@ class _DeclarerObjetPageState extends ConsumerState<DeclarerObjetPage> {
         borderRadius: BorderRadius.circular(ThixPolicy.rMd),
         borderSide: const BorderSide(color: ThixPolicy.danger, width: 1.5),
       ),
-      errorStyle: TextStyle(color: ThixPolicy.danger, fontSize: 12),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+        borderSide: const BorderSide(color: ThixPolicy.danger, width: 1.5),
+      ),
+      errorStyle: const TextStyle(color: ThixPolicy.danger, fontSize: 12),
     );
   }
 }
