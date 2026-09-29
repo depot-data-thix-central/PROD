@@ -36,12 +36,13 @@ class SerdipayPaymentResult {
 class SerdiPayService {
   final SupabaseClient _client;
 
-  SerDiPayService(this._client);
+  // ✅ FIX : le nom du constructeur doit correspondre exactement au nom de la classe
+  SerdiPayService(this._client);
 
   /// Lance un paiement SerdiPay (mobile money)
   ///
   /// [type] : certification, market, ou event
-  /// [referenceId] : ID de la ligne métier (certification_payments, market_orders, event_bookings)
+  /// [referenceId] : ID de la ligne métier (certification_payments, orders, event_bookings)
   /// [amount] : montant à payer
   /// [currency] : CDF ou USD
   /// [telecom] : opérateur (AM, OM, MP, AF)
@@ -79,7 +80,9 @@ class SerdiPayService {
       }
 
       debugPrint(
-          '[SerdiPay] Initiating: type=${type.value}, ref=$referenceId, amount=$amount $currency, telecom=${telecom.value}');
+        '[SerdiPay] Initiating: type=${type.value}, ref=$referenceId, '
+        'amount=$amount $currency, telecom=${telecom.value}',
+      );
 
       final response = await _client.functions.invoke(
         'serdipay-pay',
