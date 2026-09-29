@@ -1,42 +1,28 @@
-/// THIX SOS — Bouton SOS long-press 2 secondes (Production Enterprise)
-/// ✅ SÉCURISÉ : throttling, mounted checks, lifecycle, timeout, validation
-/// ✅ ACCESSIBLE : Semantics, haptic différencié, i18n, ThixPolicy
-/// ✅ PERFORMANCE : RepaintBoundary, animation pause en background
+/// THIX SOS — Bouton SOS long-press 2 secondes + RATE LIMIT 30 min
+/// ✅ Rate limit backend + frontend (double couche)
+/// ✅ UI bloquée avec countdown visible
+/// ✅ Throttling + mounted + lifecycle + validation
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:async';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
+import 'package:thix_id/services/sos_rate_limit_service.dart';
 
-// ============================================================================
-// CONSTANTS
-// ============================================================================
 const Duration _kHoldDuration = Duration(milliseconds: 2000);
 const Duration _kCallbackTimeout = Duration(seconds: 30);
 const Duration _kThrottleDelay = Duration(seconds: 2);
 const double _kMinSize = 80.0;
 const double _kMaxSize = 240.0;
 
-// ============================================================================
-// TYPES
-// ============================================================================
 typedef SosTriggerCallback = Future<void> Function();
 
-// ============================================================================
-// VALIDATORS
-// ============================================================================
 class _ButtonValidators {
   _ButtonValidators._();
-
-  static double clampSize(double size) {
-    return size.clamp(_kMinSize, _kMaxSize);
-  }
+  static double clampSize(double size) => size.clamp(_kMinSize, _kMaxSize);
 }
 
-// ============================================================================
-// WIDGET
-// ============================================================================
 class SosButton extends StatefulWidget {
   const SosButton({
     super.key,
@@ -59,11 +45,19 @@ class _SosButtonState extends State<SosButton>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _pulseController;
   late final AnimationController _holdController;
+  Timer? _cooldownTimer;
 
   bool _holding = false;
   bool _triggered = false;
   DateTime? _lastTrigger;
   bool _isAppActive = true;
+
+  // ── Rate limit state ──
+  bool _rateLimited = false;
+  String _cooldownLabel = '';
+  DateTime? _retryAt;
+
+  final _rateLimit = SosRateLimitService.instance;
 
   @override
   void initState() {
@@ -74,7 +68,6 @@ class _SosButtonState extends State<SosButton>
       vsync: this,
       duration: const Duration(milliseconds: 1600),
     );
-
     _holdController = AnimationController(
       vsync: this,
       duration: _kHoldDuration,
@@ -84,16 +77,26 @@ class _SosButtonState extends State<SosButton>
         }
       });
 
-    // ✅ FIX P0 : animation pulse démarre seulement si enabled + app active
+    _checkInitialCooldown();
     _updatePulseAnimation();
-    debugPrint('[SosButton] 🚀 Initialized — size: ${widget.size}');
+    debugPrint('[SosButton] 🚀 Initialized');
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _cooldownTimer?.cancel();
+    _pulseController.dispose();
+    _holdController.dispose();
+    super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _isAppActive = state == AppLifecycleState.resumed;
     _updatePulseAnimation();
-    debugPrint('[SosButton] 🔄 lifecycle: ${state.name}');
+    // Recheck cooldown au retour (pour attraper l'expiration pendant background)
+    if (_isAppActive) _checkInitialCooldown();
   }
 
   @override
@@ -105,46 +108,118 @@ class _SosButtonState extends State<SosButton>
     }
   }
 
-  // ✅ FIX P0 : pause animation quand disabled/loading/background
-  void _updatePulseAnimation() {
-    if (widget.enabled && !widget.isLoading && _isAppActive && !_holding) {
-      if (!_pulseController.isAnimating) {
-        _pulseController.repeat(reverse: true);
+  // ── Rate limit : vérification initiale + timer countdown ──
+  Future<void> _checkInitialCooldown() async {
+    final remaining = await _rateLimit.remainingCooldown();
+    if (!mounted) return;
+
+    if (remaining == Duration.zero) {
+      if (_rateLimited) {
+        setState(() {
+          _rateLimited = false;
+          _cooldownLabel = '';
+          _retryAt = null;
+        });
+        _cooldownTimer?.cancel();
+        _cooldownTimer = null;
       }
+      return;
+    }
+
+    setState(() {
+      _rateLimited = true;
+      _retryAt = DateTime.now().add(remaining);
+      _cooldownLabel = _formatDuration(remaining);
+    });
+
+    // Tick toutes les secondes pour le countdown
+    _cooldownTimer?.cancel();
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final now = DateTime.now();
+      if (_retryAt == null || now.isAfter(_retryAt!)) {
+        _cooldownTimer?.cancel();
+        _cooldownTimer = null;
+        setState(() {
+          _rateLimited = false;
+          _cooldownLabel = '';
+          _retryAt = null;
+        });
+        HapticFeedback.mediumImpact();
+        debugPrint('[SosButton] ✓ Cooldown expired');
+      } else {
+        setState(() {
+          _cooldownLabel = _formatDuration(_retryAt!.difference(now));
+        });
+      }
+    });
+  }
+
+  String _formatDuration(Duration d) {
+    final m = d.inMinutes;
+    final s = d.inSeconds % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  void _updatePulseAnimation() {
+    final canPulse = widget.enabled &&
+        !widget.isLoading &&
+        _isAppActive &&
+        !_holding &&
+        !_rateLimited;
+    if (canPulse) {
+      if (!_pulseController.isAnimating) _pulseController.repeat(reverse: true);
     } else {
       _pulseController.stop();
     }
   }
 
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _pulseController.dispose();
-    _holdController.dispose();
-    debugPrint('[SosButton] 👋 Disposed');
-    super.dispose();
-  }
-
   void _onPointerDown(PointerDownEvent _) {
+    // ✅ BLOCAGE RATE LIMIT : feedback immédiat si cooldown actif
+    if (_rateLimited) {
+      HapticFeedback.heavyImpact();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.timer_rounded, color: Colors.white, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'SOS bloqué. Réessayez dans $_cooldownLabel',
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: ThixPolicy.warning,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
     if (!widget.enabled || widget.isLoading || _triggered) {
       HapticFeedback.lightImpact();
       return;
     }
     HapticFeedback.lightImpact();
     setState(() => _holding = true);
-    _pulseController.stop(); // ✅ Pause pulse pendant hold
+    _pulseController.stop();
     _holdController.forward(from: 0);
-    debugPrint('[SosButton] 👆 Hold started');
   }
 
   void _onPointerUp(PointerUpEvent _) {
     if (!_holding) return;
     if (!_triggered) {
       _holdController.reverse();
-      _updatePulseAnimation(); // ✅ Resume pulse si annulé
+      _updatePulseAnimation();
     }
     setState(() => _holding = false);
-    debugPrint('[SosButton] 👆 Hold released (not triggered)');
   }
 
   void _onPointerCancel(PointerCancelEvent _) {
@@ -152,36 +227,83 @@ class _SosButtonState extends State<SosButton>
     _holdController.reverse();
     _updatePulseAnimation();
     setState(() => _holding = false);
-    debugPrint('[SosButton] ⚠️ Hold cancelled');
   }
 
-  // ✅ FIX P0 : throttling + mounted check + timeout + logs
   Future<void> _onHoldComplete() async {
-    if (_triggered) return;
+    if (_triggered || _rateLimited) return;
 
-    // Throttling : empêche double-trigger si callback lent
+    // 1) Throttling local (2s)
     final now = DateTime.now();
     if (_lastTrigger != null &&
         now.difference(_lastTrigger!) < _kThrottleDelay) {
-      debugPrint('[SosButton] ⚠️ Trigger throttled');
       _holdController.reset();
       _updatePulseAnimation();
       return;
     }
-    _lastTrigger = now;
 
+    // 2) ✅ VÉRIFICATION BACKEND (source de vérité)
+    final rateCheck = await _rateLimit.checkWithBackend();
+    if (!mounted) return;
+
+    if (!rateCheck.allowed) {
+      // Backend refuse → on met à jour l'UI avec l'heure serveur
+      _holdController.reset();
+      setState(() {
+        _rateLimited = true;
+        _retryAt = rateCheck.retryAt;
+        _cooldownLabel = rateCheck.formattedRemaining();
+      });
+      _startCooldownTimer();
+      HapticFeedback.heavyImpact();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.shield_rounded, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Un SOS a été lancé récemment. Prochain possible dans ${rateCheck.formattedRemaining()}',
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: ThixPolicy.warning,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      _updatePulseAnimation();
+      return;
+    }
+
+    // 3) Rate limit OK → on déclenche
+    _lastTrigger = now;
     setState(() {
       _triggered = true;
       _holding = false;
     });
     HapticFeedback.heavyImpact();
-    debugPrint('[SosButton] 🚨 Triggering SOS...');
 
     try {
       await widget.onTriggered().timeout(_kCallbackTimeout);
-      debugPrint('[SosButton] ✓ Trigger completed');
+
+      // 4) ✅ SUCCESS : on enregistre côté cache local + backend
+      await _rateLimit.recordLocalTrigger();
+      await _rateLimit.recordBackendTrigger();
+
+      // 5) On active le cooldown UI
+      if (mounted) {
+        setState(() {
+          _rateLimited = true;
+          _retryAt = DateTime.now().add(const Duration(minutes: 30));
+          _cooldownLabel = '30:00';
+        });
+        _startCooldownTimer();
+      }
     } on TimeoutException {
-      debugPrint('[SosButton] ❌ Callback timeout after ${_kCallbackTimeout.inSeconds}s');
       if (mounted) {
         final l10n = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -195,7 +317,6 @@ class _SosButtonState extends State<SosButton>
     } catch (e) {
       debugPrint('[SosButton] ❌ Trigger error: $e');
     } finally {
-      // ✅ FIX P0 : mounted check robuste
       if (mounted) {
         setState(() {
           _triggered = false;
@@ -206,18 +327,47 @@ class _SosButtonState extends State<SosButton>
     }
   }
 
+  void _startCooldownTimer() {
+    _cooldownTimer?.cancel();
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final now = DateTime.now();
+      if (_retryAt == null || now.isAfter(_retryAt!)) {
+        _cooldownTimer?.cancel();
+        _cooldownTimer = null;
+        setState(() {
+          _rateLimited = false;
+          _cooldownLabel = '';
+          _retryAt = null;
+        });
+        HapticFeedback.mediumImpact();
+        _updatePulseAnimation();
+      } else {
+        setState(() {
+          _cooldownLabel = _formatDuration(_retryAt!.difference(now));
+        });
+      }
+    });
+    _updatePulseAnimation();
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final size = _ButtonValidators.clampSize(widget.size);
+    final blocked = _rateLimited || !widget.enabled || widget.isLoading;
 
     return Semantics(
       button: true,
-      enabled: widget.enabled && !widget.isLoading,
-      label: l10n.t('sos_button_label'),
+      enabled: !blocked,
+      label: _rateLimited
+          ? 'SOS bloqué, réessayez dans $_cooldownLabel'
+          : l10n.t('sos_button_label'),
       hint: l10n.t('sos_button_hint'),
       child: Tooltip(
-        message: l10n.t('sos_button_tooltip'),
+        message: _rateLimited
+            ? 'Cooldown: $_cooldownLabel'
+            : l10n.t('sos_button_tooltip'),
         child: RepaintBoundary(
           child: Listener(
             onPointerDown: _onPointerDown,
@@ -238,8 +388,8 @@ class _SosButtonState extends State<SosButton>
                     child: Stack(
                       alignment: Alignment.center,
                       children: [
-                        // ✅ FIX : ExcludeSemantics sur éléments décoratifs
-                        if (!_holding && !widget.isLoading)
+                        // Anneaux décoratifs (désactivés en cooldown)
+                        if (!_holding && !widget.isLoading && !_rateLimited) ...[
                           ExcludeSemantics(
                             child: Container(
                               width: size + 36,
@@ -255,7 +405,6 @@ class _SosButtonState extends State<SosButton>
                               ),
                             ),
                           ),
-                        if (!_holding && !widget.isLoading)
                           ExcludeSemantics(
                             child: Container(
                               width: size + 18,
@@ -271,6 +420,7 @@ class _SosButtonState extends State<SosButton>
                               ),
                             ),
                           ),
+                        ],
 
                         // Progress hold
                         if (_holding || hold > 0)
@@ -289,6 +439,55 @@ class _SosButtonState extends State<SosButton>
                             ),
                           ),
 
+                        // ✅ COOLDOWN RING : anneau orange + countdown
+                        if (_rateLimited)
+                          ExcludeSemantics(
+                            child: SizedBox(
+                              width: size + 12,
+                              height: size + 12,
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  SizedBox(
+                                    width: size + 12,
+                                    height: size + 12,
+                                    child: CircularProgressIndicator(
+                                      value: _retryAt == null
+                                          ? 0
+                                          : 1 - (_retryAt!.difference(DateTime.now()).inSeconds /
+                                                  const Duration(minutes: 30).inSeconds)
+                                              .clamp(0.0, 1.0),
+                                      strokeWidth: 4,
+                                      backgroundColor: Colors.white12,
+                                      valueColor: const AlwaysStoppedAnimation(
+                                        ThixPolicy.warning,
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: 4,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: ThixPolicy.warning,
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Text(
+                                        _cooldownLabel,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+
                         // Bouton central
                         Container(
                           width: size,
@@ -296,15 +495,20 @@ class _SosButtonState extends State<SosButton>
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             gradient: RadialGradient(
-                              colors: widget.enabled
-                                  ? [ThixPolicy.danger, ThixPolicy.danger]
-                                  : [ThixPolicy.textMuted, ThixPolicy.border],
+                              colors: blocked
+                                  ? [
+                                      ThixPolicy.textMuted.withValues(alpha: 0.6),
+                                      ThixPolicy.border,
+                                    ]
+                                  : [ThixPolicy.danger, ThixPolicy.danger],
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: ThixPolicy.danger.withValues(
-                                  alpha: widget.enabled ? 0.45 : 0.15,
-                                ),
+                                color: _rateLimited
+                                    ? ThixPolicy.warning.withValues(alpha: 0.3)
+                                    : ThixPolicy.danger.withValues(
+                                        alpha: blocked ? 0.15 : 0.45,
+                                      ),
                                 blurRadius: 28,
                                 spreadRadius: 2,
                               ),
@@ -321,32 +525,63 @@ class _SosButtonState extends State<SosButton>
                                     ),
                                   ),
                                 )
-                              : Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      l10n.t('sos_button_text'),
-                                      style: GoogleFonts.inter(
-                                        fontSize: size * 0.22,
-                                        fontWeight: FontWeight.w900,
-                                        color: Colors.white,
-                                        letterSpacing: 2,
-                                        height: 1,
+                              : _rateLimited
+                                  ? Center(
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(Icons.timer_rounded,
+                                              color: Colors.white, size: 32),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            _cooldownLabel,
+                                            style: GoogleFonts.inter(
+                                              fontSize: size * 0.14,
+                                              fontWeight: FontWeight.w900,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            'COOLDOWN',
+                                            style: GoogleFonts.inter(
+                                              fontSize: size * 0.055,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.white70,
+                                              letterSpacing: 1.5,
+                                            ),
+                                          ),
+                                        ],
                                       ),
+                                    )
+                                  : Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          l10n.t('sos_button_text'),
+                                          style: GoogleFonts.inter(
+                                            fontSize: size * 0.22,
+                                            fontWeight: FontWeight.w900,
+                                            color: Colors.white,
+                                            letterSpacing: 2,
+                                            height: 1,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          l10n.t('sos_button_instruction'),
+                                          textAlign: TextAlign.center,
+                                          style: GoogleFonts.inter(
+                                            fontSize: size * 0.055,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white70,
+                                            height: 1.25,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      l10n.t('sos_button_instruction'),
-                                      textAlign: TextAlign.center,
-                                      style: GoogleFonts.inter(
-                                        fontSize: size * 0.055,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.white70,
-                                        height: 1.25,
-                                      ),
-                                    ),
-                                  ],
-                                ),
                         ),
                       ],
                     ),
