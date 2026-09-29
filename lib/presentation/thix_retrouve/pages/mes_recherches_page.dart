@@ -1,7 +1,12 @@
 /// Mes Recherches Page (Production Enterprise)
-/// ✅ ThixPolicy + i18n 8 langues + sanitization + go_router
-/// ✅ Skeleton loader + PullToRefresh + Semantics + HapticFeedback
-/// ✅ Logs structurés + I18nService.relativeTime() + RepaintBoundary
+/// ✅ FIX 1 : thème clair unifié (fond #F7F9FC) — cohérent RETROUVE/Detail
+/// ✅ FIX 2 : _tr() fallbacks → plus jamais de clé l10n brute
+/// ✅ FIX 3 : navigation corrigée → pushNamed('thixRetrouveDetail', extra: …)
+///    (l'ancienne route '/retrouve/object/{id}' n'existe pas = écran 404)
+/// ✅ FIX 4 : vignettes PHOTOS réelles (CachedNetworkImage) + transfert
+///    imageUrl/reward/contact vers la page de détail
+/// ✅ Skeleton loader + PullToRefresh + Semantics + HapticFeedback + throttle
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,8 +21,18 @@ import '../models/objet_model.dart';
 import '../providers/objet_providers.dart';
 
 // ============================================================================
-// CONSTANTS
+// DESIGN TOKENS (Light Premium — identiques RETROUVE / Detail)
 // ============================================================================
+
+const Color _kBg = Color(0xFFF7F9FC);
+const Color _kSurface = Color(0xFFFFFFFF);
+const Color _kTextMain = Color(0xFF12233D);
+const Color _kTextSec = Color(0xFF5A6B84);
+const Color _kTextMuted = Color(0xFF93A1B5);
+const Color _kBorder = Color(0xFFE5EAF1);
+const Color _kSkeleton = Color(0xFFE8EDF3);
+const Color _kGold = Color(0xFFE0A400);
+const Color _kGoldDeep = Color(0xFFB07F00);
 
 const int _kMaxTitleLength = 80;
 const int _kMaxLocationLength = 60;
@@ -93,6 +108,12 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
   late TabController _tabController;
   DateTime? _lastTap;
 
+  /// 🛡️ Traduction sûre : fallback FR si clé absente (jamais de clé brute)
+  String _tr(AppLocalizations l10n, String key, String fallback) {
+    final v = l10n.t(key);
+    return (v == key || v.trim().isEmpty) ? fallback : v;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -118,16 +139,18 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
     final mesObjetsAsync = ref.watch(mesObjetsProvider);
 
     return Scaffold(
-      backgroundColor: ThixPolicy.inkDeep,
+      // ✅ Fond CLAIR unifié
+      backgroundColor: _kBg,
       appBar: AppBar(
-        backgroundColor: ThixPolicy.card,
+        backgroundColor: _kSurface,
         elevation: 0,
+        scrolledUnderElevation: 0,
         leading: Semantics(
           button: true,
-          label: l10n.t('common_back'),
+          label: _tr(l10n, 'common_back', 'Retour'),
           child: IconButton(
-            icon: Icon(Icons.arrow_back_ios_new_rounded,
-                color: ThixPolicy.textMain, size: 20),
+            icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                color: _kTextMain, size: 20),
             onPressed: () {
               HapticFeedback.lightImpact();
               context.pop();
@@ -135,9 +158,9 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
           ),
         ),
         title: Text(
-          l10n.t('searches_title'),
+          _tr(l10n, 'searches_title', 'Mes recherches'),
           style: ThixPolicy.h3Style.copyWith(
-            color: ThixPolicy.textMain,
+            color: _kTextMain,
             fontWeight: ThixPolicy.bold,
           ),
         ),
@@ -145,23 +168,27 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
         bottom: TabBar(
           controller: _tabController,
           labelColor: ThixPolicy.primary,
-          unselectedLabelColor: ThixPolicy.textMuted,
+          unselectedLabelColor: _kTextMuted,
           indicatorColor: ThixPolicy.primary,
+          dividerColor: _kBorder,
           labelStyle: ThixPolicy.labelStyle.copyWith(
             fontWeight: ThixPolicy.bold,
           ),
           tabs: [
-            Tab(text: l10n.t('searches_tab_lost')),
-            Tab(text: l10n.t('searches_tab_found')),
-            Tab(text: l10n.t('searches_tab_recovered')),
+            Tab(text: _tr(l10n, 'searches_tab_lost', 'Perdus')),
+            Tab(text: _tr(l10n, 'searches_tab_found', 'Trouvés')),
+            Tab(text: _tr(l10n, 'searches_tab_recovered', 'Récupérés')),
           ],
         ),
       ),
       body: mesObjetsAsync.when(
         data: (objets) {
-          final perdus = objets.where((o) => o.statut == StatutObjet.perdu).toList();
-          final trouves = objets.where((o) => o.statut == StatutObjet.trouve).toList();
-          final recuperes = objets.where((o) => o.statut == StatutObjet.recupere).toList();
+          final perdus =
+              objets.where((o) => o.statut == StatutObjet.perdu).toList();
+          final trouves =
+              objets.where((o) => o.statut == StatutObjet.trouve).toList();
+          final recuperes =
+              objets.where((o) => o.statut == StatutObjet.recupere).toList();
 
           debugPrint('[MesRecherches] ✓ Loaded: ${perdus.length} perdus, '
               '${trouves.length} trouvés, ${recuperes.length} récupérés');
@@ -173,19 +200,22 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
                 context,
                 l10n,
                 perdus,
-                emptyMessage: l10n.t('searches_empty_lost'),
+                emptyMessage: _tr(l10n, 'searches_empty_lost',
+                    'Aucun objet perdu déclaré'),
               ),
               _buildList(
                 context,
                 l10n,
                 trouves,
-                emptyMessage: l10n.t('searches_empty_found'),
+                emptyMessage: _tr(l10n, 'searches_empty_found',
+                    'Aucun objet trouvé déclaré'),
               ),
               _buildList(
                 context,
                 l10n,
                 recuperes,
-                emptyMessage: l10n.t('searches_empty_recovered'),
+                emptyMessage: _tr(l10n, 'searches_empty_recovered',
+                    'Aucun objet récupéré pour le moment'),
               ),
             ],
           );
@@ -212,7 +242,7 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
 
     return RefreshIndicator(
       color: ThixPolicy.primary,
-      backgroundColor: ThixPolicy.card,
+      backgroundColor: _kSurface,
       onRefresh: () async {
         HapticFeedback.lightImpact();
         debugPrint('[MesRecherches] 🔄 Refresh triggered');
@@ -232,7 +262,7 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
   }
 
   // ========================================================================
-  // OBJECT CARD
+  // OBJECT CARD (avec PHOTO réelle)
   // ========================================================================
 
   Widget _buildObjectCard(
@@ -241,14 +271,21 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
     ObjetModel obj,
   ) {
     final isRecovered = obj.statut == StatutObjet.recupere;
-    final statusColor = isRecovered ? ThixPolicy.success : ThixPolicy.warning;
+    final statusColor = isRecovered ? ThixPolicy.success : _kGoldDeep;
+    final statusBg = isRecovered
+        ? ThixPolicy.success.withValues(alpha: 0.12)
+        : _kGold.withValues(alpha: 0.14);
     final i18n = I18nService.of(context);
 
     // ✅ Sanitization
-    final safeTitle = _SearchSanitizer.sanitize(obj.titre, maxLength: _kMaxTitleLength);
-    final safeLocation = _SearchSanitizer.sanitize(obj.lieu, maxLength: _kMaxLocationLength);
-    final safeDescription = _SearchSanitizer.sanitize(obj.description, maxLength: 500);
-    final safeReward = _SearchSanitizer.sanitize(obj.recompense ?? '', maxLength: 50);
+    final safeTitle =
+        _SearchSanitizer.sanitize(obj.titre, maxLength: _kMaxTitleLength);
+    final safeLocation =
+        _SearchSanitizer.sanitize(obj.lieu, maxLength: _kMaxLocationLength);
+    final safeDescription =
+        _SearchSanitizer.sanitize(obj.description, maxLength: 500);
+    final safeReward =
+        _SearchSanitizer.sanitize(obj.recompense ?? '', maxLength: 50);
     final safeImageUrl = _SearchSanitizer.sanitizeImageUrl(obj.imageUrl);
 
     return Padding(
@@ -261,17 +298,31 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
             HapticFeedback.selectionClick();
             debugPrint('[MesRecherches] 📦 Object tapped: '
                 '${safeTitle.substring(0, safeTitle.length.clamp(0, 20))}');
-            context.push('/retrouve/object/${obj.id}');
+            // ✅ FIX ROUTE : route nommée existante + extra complet
+            //    (l'ancien '/retrouve/object/{id}' n'existe pas → 404)
+            context.pushNamed(
+              'thixRetrouveDetail',
+              extra: {
+                'title': safeTitle,
+                'status': obj.statutLabel,
+                'location': safeLocation,
+                'time': i18n.relativeTime(obj.date),
+                'description': safeDescription,
+                'reward': safeReward,
+                'contact': obj.contactInfo ?? '',
+                'imageUrl': safeImageUrl,
+              },
+            );
           }),
           child: Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: ThixPolicy.card,
+              color: _kSurface,
               borderRadius: BorderRadius.circular(ThixPolicy.rLg),
-              border: Border.all(color: ThixPolicy.border),
+              border: Border.all(color: _kBorder, width: 1.2),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
+                  color: _kTextMain.withValues(alpha: 0.04),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -279,23 +330,11 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
             ),
             child: Row(
               children: [
-                // ── Icon/Thumbnail ──
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: ThixPolicy.surfaceSoft,
-                    borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                  ),
-                  child: Icon(
-                    _iconForCategory(obj.categorie),
-                    size: 26,
-                    color: ThixPolicy.textMuted,
-                  ),
-                ),
+                // ── ✅ Vignette PHOTO réelle (fallback icône catégorie) ──
+                _Thumb(url: safeImageUrl, categorie: obj.categorie),
                 const SizedBox(width: 12),
 
-                // ── Content ──
+                // ── Content ─
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -303,7 +342,7 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
                       Text(
                         safeTitle,
                         style: ThixPolicy.bodyStyle.copyWith(
-                          color: ThixPolicy.textMain,
+                          color: _kTextMain,
                           fontWeight: ThixPolicy.bold,
                         ),
                         maxLines: 1,
@@ -313,26 +352,39 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
                       Text(
                         '${obj.statutLabel} • ${i18n.relativeTime(obj.date)}',
                         style: ThixPolicy.captionStyle
-                            .copyWith(color: ThixPolicy.textMuted),
+                            .copyWith(color: _kTextSec),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
+                      if (safeLocation.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          safeLocation,
+                          style: ThixPolicy.captionStyle
+                              .copyWith(color: _kTextMuted),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
 
-                // ── Status Badge ──
+                // ── Status Badge (texte contrasté) ──
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
                     vertical: 5,
                   ),
                   decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.15),
+                    color: statusBg,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
                     isRecovered
-                        ? l10n.t('searches_status_recovered')
-                        : l10n.t('searches_status_searching'),
+                        ? _tr(l10n, 'searches_status_recovered', 'RÉCUPÉRÉ')
+                        : _tr(l10n, 'searches_status_searching', 'EN RECHERCHE'),
                     style: ThixPolicy.captionStyle.copyWith(
                       color: statusColor,
                       fontWeight: ThixPolicy.bold,
@@ -353,31 +405,36 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
 
   Widget _buildEmptyState(AppLocalizations l10n, String message) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.inventory_2_outlined,
-            size: 64,
-            color: ThixPolicy.textMuted.withValues(alpha: 0.4),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            style: ThixPolicy.bodyStyle.copyWith(
-              color: ThixPolicy.textMuted,
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.inventory_2_outlined,
+              size: 64,
+              color: _kTextMuted.withValues(alpha: 0.5),
             ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            l10n.t('searches_empty_hint'),
-            style: ThixPolicy.captionStyle.copyWith(
-              color: ThixPolicy.textMuted.withValues(alpha: 0.6),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              style: ThixPolicy.bodyStyle.copyWith(
+                color: _kTextSec,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              _tr(l10n, 'searches_empty_hint',
+                  'Vos déclarations apparaîtront ici.'),
+              style: ThixPolicy.captionStyle.copyWith(
+                color: _kTextMuted,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -393,37 +450,42 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
   ) {
     debugPrint('[MesRecherches] ❌ Error: $error');
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.error_outline_rounded,
-            color: ThixPolicy.danger,
-            size: 40,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            l10n.t('searches_load_error'),
-            style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.danger),
-          ),
-          const SizedBox(height: 16),
-          Semantics(
-            button: true,
-            label: l10n.t('common_retry'),
-            child: ElevatedButton.icon(
-              onPressed: () {
-                HapticFeedback.mediumImpact();
-                ref.invalidate(mesObjetsProvider);
-              },
-              icon: const Icon(Icons.refresh_rounded),
-              label: Text(l10n.t('common_retry')),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ThixPolicy.primary,
-                foregroundColor: ThixPolicy.textMain,
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              color: ThixPolicy.danger,
+              size: 40,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _tr(l10n, 'searches_load_error', 'Chargement impossible'),
+              style: ThixPolicy.bodyStyle.copyWith(color: _kTextSec),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Semantics(
+              button: true,
+              label: _tr(l10n, 'common_retry', 'Réessayer'),
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  HapticFeedback.mediumImpact();
+                  ref.invalidate(mesObjetsProvider);
+                },
+                icon: const Icon(Icons.refresh_rounded),
+                label: Text(_tr(l10n, 'common_retry', 'Réessayer')),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ThixPolicy.primary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -444,7 +506,49 @@ class _MesRecherchesPageState extends ConsumerState<MesRecherchesPage>
 }
 
 // ============================================================================
-// SKELETON LOADER
+// VIGNETTE PHOTO (CachedNetworkImage + fallback icône)
+// ============================================================================
+
+class _Thumb extends StatelessWidget {
+  final String? url;
+  final String? categorie;
+
+  const _Thumb({required this.url, required this.categorie});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 52,
+      height: 52,
+      decoration: BoxDecoration(
+        color: _kBg,
+        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+        border: Border.all(color: _kBorder),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: url != null
+          ? CachedNetworkImage(
+              imageUrl: url!,
+              fit: BoxFit.cover,
+              width: 52,
+              height: 52,
+              placeholder: (_, __) => const Center(
+                child: SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+              errorWidget: (_, __, ___) =>
+                  Icon(_iconForCategory(categorie), size: 24, color: _kTextMuted),
+            )
+          : Icon(_iconForCategory(categorie), size: 24, color: _kTextMuted),
+    );
+  }
+}
+
+// ============================================================================
+// SKELETON LOADER (clair)
 // ============================================================================
 
 class _SkeletonLoader extends StatefulWidget {
@@ -488,12 +592,13 @@ class _SkeletonLoaderState extends State<_SkeletonLoader>
       child: AnimatedBuilder(
         animation: _ctrl,
         builder: (_, __) => Opacity(
-          opacity: 0.35 + 0.3 * _ctrl.value,
+          opacity: 0.5 + 0.3 * _ctrl.value,
           child: Container(
             height: 76,
             decoration: BoxDecoration(
-              color: ThixPolicy.border.withValues(alpha: 0.3),
+              color: _kSkeleton,
               borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+              border: Border.all(color: _kBorder),
             ),
           ),
         ),
