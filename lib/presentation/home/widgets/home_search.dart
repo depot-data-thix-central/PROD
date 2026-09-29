@@ -1,7 +1,6 @@
 // lib/presentation/home/widgets/home_search.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 
@@ -56,13 +55,6 @@ class _HomeSearchState extends State<HomeSearch> {
     }
   }
 
-  void _handleScanner() {
-    if (!mounted) return;
-    HapticFeedback.selectionClick();
-    debugPrint('[HomeSearch] 📷 Scanner tap');
-    context.push('/scanner_activation');
-  }
-
   void _handleVerify() {
     if (!mounted || widget.isSearching) return;
     HapticFeedback.lightImpact();
@@ -90,7 +82,7 @@ class _HomeSearchState extends State<HomeSearch> {
           color: ThixPolicy.card,
           borderRadius: BorderRadius.circular(_kSearchBorderRadius),
           border: Border.all(
-            color: _focusNode.hasFocus 
+            color: _focusNode.hasFocus
                 ? ThixPolicy.primary.withOpacity(0.3)
                 : ThixPolicy.border,
             width: 1.2,
@@ -123,20 +115,7 @@ class _HomeSearchState extends State<HomeSearch> {
               ),
             ),
 
-            // Bouton Scanner
-            _ActionButton(
-              icon: Icons.qr_code_scanner_rounded,
-              color: ThixPolicy.textMain,
-              backgroundColor: ThixPolicy.surfaceSoft,
-              borderColor: ThixPolicy.border,
-              semanticsLabel: l10n.t('home_scan_qr'),
-              onTap: _handleScanner,
-              isDisabled: widget.isSearching,
-            ),
-
-            const SizedBox(width: 6),
-
-            // Bouton Vérifier
+            // ✅ Bouton Vérifier (QR scan retiré)
             _ActionButton(
               icon: Icons.person_search_rounded,
               color: ThixPolicy.primary,
@@ -203,7 +182,7 @@ class _SearchField extends StatelessWidget {
           fontWeight: ThixPolicy.regular,
         ),
         contentPadding: EdgeInsets.zero,
-        counterText: '', // Masque le compteur maxLength
+        counterText: '',
       ),
     );
   }
