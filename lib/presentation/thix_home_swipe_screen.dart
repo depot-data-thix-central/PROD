@@ -1,6 +1,7 @@
 /// Conteneur principal — swipe SOS ↔ RECHERCHE ↔ RETROUVE (Production Enterprise)
 /// ✅ Gate permissions intégré : affiche l'intro permissions au 1er lancement
 /// ✅ Langue auto-détectée depuis AppLocalizations (fr, en, es, pt, sw, ar, zh)
+/// ✅ NOUVEAU : permissions MICROPHONE + CAMÉRA & VIDÉO EN DIRECT pour preuves
 /// ✅ IndexedStack paresseux (pages montées au premier accès seulement)
 /// ✅ RepaintBoundary + ErrorBoundary par onglet
 /// ✅ Montage différé Google Maps sur Web
@@ -77,6 +78,7 @@ class _ThixHomeSwipeScreenState extends State<ThixHomeSwipeScreen> {
       Permission.location,
       Permission.locationAlways,
       Permission.camera,
+      Permission.microphone, // ✅ NOUVEAU : pour preuves audio en direct
       Permission.notification,
       Permission.contacts,
     ].request();
@@ -418,7 +420,7 @@ class _ErrorCatcherState extends State<_ErrorCatcher> {
 }
 
 // ============================================================================
-// ÉCRAN INTRO PERMISSIONS (explications enrichies)
+// ÉCRAN INTRO PERMISSIONS (5 permissions — inclut MICRO + CAMÉRA LIVE)
 // ============================================================================
 
 class _PermissionItem {
@@ -443,9 +445,12 @@ class _PermIntroStrings {
   final String locationTitle;
   final String locationDesc;
   final String locationDetail;
-  final String cameraTitle;
+  final String cameraTitle;      // ✅ Caméra & Vidéo en direct
   final String cameraDesc;
   final String cameraDetail;
+  final String microphoneTitle;  // ✅ NOUVEAU
+  final String microphoneDesc;
+  final String microphoneDetail;
   final String notifTitle;
   final String notifDesc;
   final String notifDetail;
@@ -456,6 +461,7 @@ class _PermIntroStrings {
   final String laterLabel;
   final String footNote;
   final String backgroundLocationNote;
+  final String privacyNote;      // ✅ NOUVEAU : confidentialité des preuves
 
   const _PermIntroStrings({
     required this.header,
@@ -466,6 +472,9 @@ class _PermIntroStrings {
     required this.cameraTitle,
     required this.cameraDesc,
     required this.cameraDetail,
+    required this.microphoneTitle,
+    required this.microphoneDesc,
+    required this.microphoneDetail,
     required this.notifTitle,
     required this.notifDesc,
     required this.notifDetail,
@@ -476,6 +485,7 @@ class _PermIntroStrings {
     required this.laterLabel,
     required this.footNote,
     required this.backgroundLocationNote,
+    required this.privacyNote,
   });
 }
 
@@ -486,9 +496,12 @@ const Map<String, _PermIntroStrings> _kPermIntroL10n = {
     locationTitle: 'Localisation (toujours active)',
     locationDesc: 'Position GPS précise en temps réel, même en arrière-plan.',
     locationDetail: 'Lors d\'un SOS, votre position est transmise automatiquement à vos secours toutes les 10 secondes, même si vous fermez l\'application. En mode RETROUVE, cela permet de géolocaliser les objets perdus à proximité. Les données sont chiffrées et ne sont partagées qu\'avec vos cercles de sécurité.',
-    cameraTitle: 'Caméra',
-    cameraDesc: 'Accès à l\'appareil photo de votre téléphone.',
-    cameraDetail: 'Utilisé dans THIX RETROUVE pour photographier un objet perdu ou trouvé. Les photos sont stockées localement puis synchronisées de manière sécurisée avec le serveur THIX pour aider à l\'identification.',
+    cameraTitle: 'Caméra & Vidéo en direct',
+    cameraDesc: 'Photos et vidéos pour constituer des preuves.',
+    cameraDetail: 'Pendant un SOS, l\'application peut capturer automatiquement des photos et des vidéos en direct qui servent de preuves pour vos secours. Ces médias sont envoyés en temps réel au groupe de crise sécurisé, permettant à vos proches d\'évaluer visuellement la situation.',
+    microphoneTitle: 'Microphone',
+    microphoneDesc: 'Enregistrement audio en direct pour preuves sonores.',
+    microphoneDetail: 'Permet d\'enregistrer votre voix ou les sons environnants pendant un SOS comme preuve audio. L\'audio est transmis automatiquement au groupe de secours pour les aider à évaluer la situation, même si vous ne pouvez pas parler.',
     notifTitle: 'Notifications',
     notifDesc: 'Alertes en temps réel, même écran éteint.',
     notifDetail: 'Essentiel pour recevoir instantanément : les alertes SOS de vos proches, les réponses à vos déclarations RETROUVE, les notifications de messages importants dans vos conversations de crise. Sans notifications, vous pourriez manquer une alerte vitale.',
@@ -499,6 +512,7 @@ const Map<String, _PermIntroStrings> _kPermIntroL10n = {
     laterLabel: 'Plus tard',
     footNote: 'Vous pourrez modifier ces accès à tout moment dans les réglages de votre téléphone.',
     backgroundLocationNote: '⚠️ Localisation en arrière-plan : THIX ID continuera à recevoir votre position même lorsque l\'application n\'est pas ouverte. Cela est essentiel pour que vos secours puissent vous localiser si vous ne pouvez plus utiliser votre téléphone.',
+    privacyNote: '🔒 Confidentialité des preuves : toutes les photos, vidéos et enregistrements audio capturés sont chiffrés de bout en bout, partagés uniquement avec vos secours déclarés, et automatiquement supprimés après la résolution de l\'incident.',
   ),
   'en': _PermIntroStrings(
     header: 'Before you start',
@@ -506,9 +520,12 @@ const Map<String, _PermIntroStrings> _kPermIntroL10n = {
     locationTitle: 'Location (always active)',
     locationDesc: 'Precise GPS position in real time, even in the background.',
     locationDetail: 'During an SOS, your location is automatically transmitted to your rescuers every 10 seconds, even if you close the app. In RETROUVE mode, this helps geolocate lost items nearby. Data is encrypted and only shared with your safety circles.',
-    cameraTitle: 'Camera',
-    cameraDesc: 'Access to your phone\'s camera.',
-    cameraDetail: 'Used in THIX RETROUVE to photograph a lost or found item. Photos are stored locally then securely synced with the THIX server to help with identification.',
+    cameraTitle: 'Camera & Live Video',
+    cameraDesc: 'Photos and videos to serve as evidence.',
+    cameraDetail: 'During an SOS, the app can automatically capture photos and live videos to serve as evidence for your rescuers. These media are sent in real time to the secure crisis room, allowing your loved ones to visually assess the situation.',
+    microphoneTitle: 'Microphone',
+    microphoneDesc: 'Live audio recording for audio evidence.',
+    microphoneDetail: 'Allows recording your voice or surrounding sounds during an SOS as audio evidence. Audio is automatically transmitted to the rescue group to help them assess the situation, even if you cannot speak.',
     notifTitle: 'Notifications',
     notifDesc: 'Real-time alerts, even with screen off.',
     notifDetail: 'Essential to instantly receive: SOS alerts from your loved ones, responses to your RETROUVE reports, important message notifications in your crisis conversations. Without notifications, you might miss a vital alert.',
@@ -519,6 +536,7 @@ const Map<String, _PermIntroStrings> _kPermIntroL10n = {
     laterLabel: 'Later',
     footNote: 'You can change these permissions anytime in your phone settings.',
     backgroundLocationNote: '⚠️ Background location: THIX ID will continue to receive your location even when the app is not open. This is essential so your rescuers can locate you if you can no longer use your phone.',
+    privacyNote: '🔒 Evidence privacy: all photos, videos and audio recordings captured are end-to-end encrypted, shared only with your declared rescuers, and automatically deleted after the incident is resolved.',
   ),
   'es': _PermIntroStrings(
     header: 'Antes de comenzar',
@@ -526,9 +544,12 @@ const Map<String, _PermIntroStrings> _kPermIntroL10n = {
     locationTitle: 'Ubicación (siempre activa)',
     locationDesc: 'Posición GPS precisa en tiempo real, incluso en segundo plano.',
     locationDetail: 'Durante un SOS, tu ubicación se transmite automáticamente a tus rescatistas cada 10 segundos, incluso si cierras la app. En modo RETROUVE, esto ayuda a geolocalizar objetos perdidos cercanos. Los datos están cifrados y solo se comparten con tus círculos de seguridad.',
-    cameraTitle: 'Cámara',
-    cameraDesc: 'Acceso a la cámara de tu teléfono.',
-    cameraDetail: 'Se usa en THIX RETROUVE para fotografiar un objeto perdido o encontrado. Las fotos se almacenan localmente y luego se sincronizan de forma segura con el servidor THIX para ayudar con la identificación.',
+    cameraTitle: 'Cámara y video en vivo',
+    cameraDesc: 'Fotos y videos para servir como evidencia.',
+    cameraDetail: 'Durante un SOS, la aplicación puede capturar automáticamente fotos y videos en vivo como evidencia para tus rescatistas. Estos medios se envían en tiempo real a la sala de crisis segura, permitiendo a tus seres queridos evaluar visualmente la situación.',
+    microphoneTitle: 'Micrófono',
+    microphoneDesc: 'Grabación de audio en vivo para evidencia sonora.',
+    microphoneDetail: 'Permite grabar tu voz o los sonidos del entorno durante un SOS como evidencia de audio. El audio se transmite automáticamente al grupo de rescate para ayudarlos a evaluar la situación, incluso si no puedes hablar.',
     notifTitle: 'Notificaciones',
     notifDesc: 'Alertas en tiempo real, incluso con la pantalla apagada.',
     notifDetail: 'Esencial para recibir instantáneamente: alertas SOS de tus seres queridos, respuestas a tus declaraciones RETROUVE, notificaciones de mensajes importantes en tus conversaciones de crisis. Sin notificaciones, podrías perder una alerta vital.',
@@ -539,6 +560,7 @@ const Map<String, _PermIntroStrings> _kPermIntroL10n = {
     laterLabel: 'Más tarde',
     footNote: 'Podrás cambiar estos permisos en cualquier momento en los ajustes de tu teléfono.',
     backgroundLocationNote: '⚠️ Ubicación en segundo plano: THIX ID continuará recibiendo tu ubicación incluso cuando la app no esté abierta. Esto es esencial para que tus rescatistas puedan localizarte si ya no puedes usar tu teléfono.',
+    privacyNote: '🔒 Privacidad de las pruebas: todas las fotos, videos y grabaciones de audio capturados están cifrados de extremo a extremo, se comparten solo con tus rescatistas declarados y se eliminan automáticamente después de resolver el incidente.',
   ),
   'pt': _PermIntroStrings(
     header: 'Antes de começar',
@@ -546,9 +568,12 @@ const Map<String, _PermIntroStrings> _kPermIntroL10n = {
     locationTitle: 'Localização (sempre ativa)',
     locationDesc: 'Posição GPS precisa em tempo real, mesmo em segundo plano.',
     locationDetail: 'Durante um SOS, sua localização é transmitida automaticamente aos socorristas a cada 10 segundos, mesmo se você fechar o app. No modo RETROUVE, isso ajuda a geolocalizar objetos perdidos próximos. Os dados são criptografados e compartilhados apenas com seus círculos de segurança.',
-    cameraTitle: 'Câmera',
-    cameraDesc: 'Acesso à câmera do seu telefone.',
-    cameraDetail: 'Usado no THIX RETROUVE para fotografar um objeto perdido ou encontrado. As fotos são armazenadas localmente e depois sincronizadas de forma segura com o servidor THIX para ajudar na identificação.',
+    cameraTitle: 'Câmera e vídeo ao vivo',
+    cameraDesc: 'Fotos e vídeos para servir como prova.',
+    cameraDetail: 'Durante um SOS, o aplicativo pode capturar automaticamente fotos e vídeos ao vivo como prova para seus socorristas. Essas mídias são enviadas em tempo real para a sala de crise segura, permitindo que seus entes queridos avaliem visualmente a situação.',
+    microphoneTitle: 'Microfone',
+    microphoneDesc: 'Gravação de áudio ao vivo para prova sonora.',
+    microphoneDetail: 'Permite gravar sua voz ou sons do ambiente durante um SOS como prova de áudio. O áudio é transmitido automaticamente ao grupo de resgate para ajudá-los a avaliar a situação, mesmo se você não puder falar.',
     notifTitle: 'Notificações',
     notifDesc: 'Alertas em tempo real, mesmo com a tela desligada.',
     notifDetail: 'Essencial para receber instantaneamente: alertas SOS de seus entes queridos, respostas às suas declarações RETROUVE, notificações de mensagens importantes em suas conversas de crise. Sem notificações, você pode perder um alerta vital.',
@@ -559,6 +584,7 @@ const Map<String, _PermIntroStrings> _kPermIntroL10n = {
     laterLabel: 'Mais tarde',
     footNote: 'Você pode alterar essas permissões a qualquer momento nas configurações do seu telefone.',
     backgroundLocationNote: '⚠️ Localização em segundo plano: O THIX ID continuará recebendo sua localização mesmo quando o app não estiver aberto. Isso é essencial para que seus socorristas possam localizá-lo se você não puder mais usar seu telefone.',
+    privacyNote: '🔒 Privacidade das provas: todas as fotos, vídeos e gravações de áudio capturados são criptografados de ponta a ponta, compartilhados apenas com seus socorristas declarados e excluídos automaticamente após a resolução do incidente.',
   ),
   'sw': _PermIntroStrings(
     header: 'Kabla ya kuanza',
@@ -566,9 +592,12 @@ const Map<String, _PermIntroStrings> _kPermIntroL10n = {
     locationTitle: 'Mahali (daima amilifu)',
     locationDesc: 'Nafasi sahihi ya GPS kwa wakati halisi, hata katika usuli.',
     locationDetail: 'Wakati wa SOS, eneo lako linatumwa kiotomatiki kwa waokoaji wako kila sekunde 10, hata ukifunga programu. Katika hali ya RETROUVE, hii husaidia kupata vitu vilivyopotea vilivyo karibu. Data imefichwa na kushirikiwa tu na miduara yako ya usalama.',
-    cameraTitle: 'Kamera',
-    cameraDesc: 'Ufikiaji wa kamera ya simu yako.',
-    cameraDetail: 'Inatumika katika THIX RETROUVE kupiga picha ya kitu kilichopotea au kupatikana. Picha zinahifadhiwa ndani kisha kusawazishwa kwa usalama na seva ya THIX ili kusaidia utambuzi.',
+    cameraTitle: 'Kamera na video ya moja kwa moja',
+    cameraDesc: 'Picha na video kama ushahidi.',
+    cameraDetail: 'Wakati wa SOS, programu inaweza kukamata picha na video za moja kwa moja kiotomatiki kama ushahidi kwa waokoaji wako. Vyombo hivi vinatumwa kwa wakati halisi kwenye chumba salama cha dharura, kuwaruhusu wapendwa wako kutathmini hali kwa macho.',
+    microphoneTitle: 'Maikrofoni',
+    microphoneDesc: 'Kurekodi sauti moja kwa moja kama ushahidi wa sauti.',
+    microphoneDetail: 'Inaruhusu kurekodi sauti yako au sauti za mazingira wakati wa SOS kama ushahidi wa sauti. Sauti inatumwa kiotomatiki kwa kikundi cha uokoaji kuwasaidia kutathmini hali, hata kama huwezi kuzungumza.',
     notifTitle: 'Arifa',
     notifDesc: 'Tahadhari za wakati halisi, hata skrini ikiwa imezimwa.',
     notifDetail: 'Muhimu kupokea mara moja: tahadhari za SOS kutoka kwa wapendwa wako, majibu ya taarifa zako za RETROUVE, arifa za ujumbe muhimu katika mazungumzo yako ya dharura. Bila arifa, unaweza kukosa tahadhari muhimu.',
@@ -579,6 +608,7 @@ const Map<String, _PermIntroStrings> _kPermIntroL10n = {
     laterLabel: 'Baadaye',
     footNote: 'Unaweza kubadilisha ruhusa hizi wakati wowote kwenye mipangilio ya simu yako.',
     backgroundLocationNote: '⚠️ Eneo la usuli: THIX ID itaendelea kupokea eneo lako hata programu ikiwa haijafunguliwa. Hii ni muhimu ili waokoaji wako waweze kukupata ikiwa huwezi tena kutumia simu yako.',
+    privacyNote: '🔒 Faragha ya ushahidi: picha, video, na rekodi zote za sauti zilizonaswa zimefichwa kutoka mwisho hadi mwisho, zinashirikiwa tu na waokoaji wako waliotangazwa, na hufutwa kiotomatiki baada ya tatua tukio.',
   ),
   'ar': _PermIntroStrings(
     header: 'قبل أن تبدأ',
@@ -586,9 +616,12 @@ const Map<String, _PermIntroStrings> _kPermIntroL10n = {
     locationTitle: 'الموقع (نشط دائمًا)',
     locationDesc: 'موقع GPS دقيق في الوقت الفعلي، حتى في الخلفية.',
     locationDetail: 'أثناء تنبيه SOS، يتم نقل موقعك تلقائيًا إلى المنقذين كل 10 ثوانٍ، حتى إذا أغلقت التطبيق. في وضع RETROUVE، يساعد ذلك في تحديد الموقع الجغرافي للأشياء المفقودة القريبة. البيانات مشفرة وتُشارك فقط مع دوائر أمانك.',
-    cameraTitle: 'الكاميرا',
-    cameraDesc: 'الوصول إلى كاميرا هاتفك.',
-    cameraDetail: 'يُستخدم في THIX RETROUVE لتصوير غرض مفقود أو تم العثور عليه. يتم تخزين الصور محليًا ثم مزامنتها بشكل آمن مع خادم THIX للمساعدة في التعريف.',
+    cameraTitle: 'الكاميرا والفيديو المباشر',
+    cameraDesc: 'صور وفيديوهات كدليل.',
+    cameraDetail: 'أثناء تنبيه SOS، يمكن للتطبيق التقاط الصور ومقاطع الفيديو المباشرة تلقائيًا كدليل للمنقذين. يتم إرسال هذه الوسائط في الوقت الفعلي إلى غرفة الأزمات الآمنة، مما يسمح لأحبائك بتقييم الوضع بصريًا.',
+    microphoneTitle: 'الميكروفون',
+    microphoneDesc: 'تسجيل صوتي مباشر كدليل صوتي.',
+    microphoneDetail: 'يسمح بتسجيل صوتك أو الأصوات المحيطة أثناء تنبيه SOS كدليل صوتي. يتم نقل الصوت تلقائيًا إلى مجموعة الإنقاذ لمساعدتهم على تقييم الوضع، حتى لو لم تكن قادرًا على التحدث.',
     notifTitle: 'الإشعارات',
     notifDesc: 'تنبيهات في الوقت الفعلي، حتى مع إيقاف الشاشة.',
     notifDetail: 'ضروري للاستلام الفوري: تنبيهات SOS من أحبائك، الردود على إعلاناتك في RETROUVE، إشعارات الرسائل المهمة في محادثات الأزمات. بدون إشعارات، قد تفوتك تنبيه حيوي.',
@@ -599,6 +632,7 @@ const Map<String, _PermIntroStrings> _kPermIntroL10n = {
     laterLabel: 'لاحقًا',
     footNote: 'يمكنك تغيير هذه الأذونات في أي وقت من إعدادات هاتفك.',
     backgroundLocationNote: '⚠️ الموقع في الخلفية: سيستمر THIX ID في تلقي موقعك حتى عندما لا يكون التطبيق مفتوحًا. هذا ضروري حتى يتمكن المنقذون من تحديد موقعك إذا لم تعد قادرًا على استخدام هاتفك.',
+    privacyNote: '🔒 خصوصية الأدلة: جميع الصور ومقاطع الفيديو والتسجيلات الصوتية الملتقطة مشفرة من طرف إلى طرف، وتُشارك فقط مع المنقذين المصرح لهم، وتُحذف تلقائيًا بعد حل الحادث.',
   ),
   'zh': _PermIntroStrings(
     header: '开始之前',
@@ -606,9 +640,12 @@ const Map<String, _PermIntroStrings> _kPermIntroL10n = {
     locationTitle: '位置（始终活动）',
     locationDesc: '实时精确 GPS 位置，即使在后台。',
     locationDetail: '在 SOS 期间，您的位置每 10 秒自动传输给救援人员，即使您关闭应用程序。在 RETROUVE 模式下，这有助于对附近丢失的物品进行地理定位。数据经过加密，仅与您的安全圈共享。',
-    cameraTitle: '相机',
-    cameraDesc: '访问您手机的相机。',
-    cameraDetail: '在 THIX RETROUVE 中用于拍摄丢失或找到的物品。照片存储在本地，然后安全地与 THIX 服务器同步，以帮助识别。',
+    cameraTitle: '相机和实时视频',
+    cameraDesc: '照片和视频作为证据。',
+    cameraDetail: '在 SOS 期间，应用程序可以自动捕获照片和实时视频，作为您救援人员的证据。这些媒体实时发送到安全的危机室，让您的亲人能够直观地评估情况。',
+    microphoneTitle: '麦克风',
+    microphoneDesc: '实时音频录制作为音频证据。',
+    microphoneDetail: '允许在 SOS 期间录制您的声音或周围环境声音作为音频证据。音频自动传输到救援小组，帮助他们评估情况，即使您无法说话。',
     notifTitle: '通知',
     notifDesc: '实时警报，即使屏幕关闭。',
     notifDetail: '对于即时接收至关重要：来自亲人的 SOS 警报、对您 RETROUVE 报告的回复、危机对话中的重要消息通知。没有通知，您可能会错过重要警报。',
@@ -619,6 +656,7 @@ const Map<String, _PermIntroStrings> _kPermIntroL10n = {
     laterLabel: '稍后',
     footNote: '您可以随时在手机设置中更改这些权限。',
     backgroundLocationNote: '⚠️ 后台位置：即使应用程序未打开，THIX ID 也会继续接收您的位置。这对于救援人员在您无法使用手机时能够定位您至关重要。',
+    privacyNote: '🔒 证据隐私：所有捕获的照片、视频和音频录音都经过端到端加密，仅与您声明的救援人员共享，并在事件解决后自动删除。',
   ),
 };
 
@@ -649,6 +687,7 @@ class _ThixPermissionsIntroScreen extends StatelessWidget {
     final code = _languageCode(context);
     final s = _strings(code);
 
+    // ✅ 5 permissions : Localisation, Caméra Live, Microphone, Notifications, Contacts
     final items = <_PermissionItem>[
       _PermissionItem(
         icon: Icons.location_on_rounded,
@@ -658,15 +697,22 @@ class _ThixPermissionsIntroScreen extends StatelessWidget {
         detail: s.locationDetail,
       ),
       _PermissionItem(
-        icon: Icons.camera_alt_rounded,
+        icon: Icons.videocam_rounded,
         color: ThixPolicy.primary,
         title: s.cameraTitle,
         description: s.cameraDesc,
         detail: s.cameraDetail,
       ),
       _PermissionItem(
-        icon: Icons.notifications_active_rounded,
+        icon: Icons.mic_rounded,
         color: ThixPolicy.warning,
+        title: s.microphoneTitle,
+        description: s.microphoneDesc,
+        detail: s.microphoneDetail,
+      ),
+      _PermissionItem(
+        icon: Icons.notifications_active_rounded,
+        color: ThixPolicy.gold,
         title: s.notifTitle,
         description: s.notifDesc,
         detail: s.notifDetail,
@@ -715,21 +761,21 @@ class _ThixPermissionsIntroScreen extends StatelessWidget {
                     color: Colors.white70,
                   ),
                 ),
-                const SizedBox(height: 28),
+                const SizedBox(height: 20),
                 Expanded(
                   child: ListView.separated(
                     itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 14),
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
                     itemBuilder: (_, i) => _PermissionRow(item: items[i]),
                   ),
                 ),
-                const SizedBox(height: 16),
-                // ✅ Note spécifique sur la localisation en arrière-plan
+                const SizedBox(height: 12),
+                // ✅ Note localisation en arrière-plan
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: ThixPolicy.warning.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                     border: Border.all(
                       color: ThixPolicy.warning.withValues(alpha: 0.3),
                       width: 1,
@@ -741,15 +787,49 @@ class _ThixPermissionsIntroScreen extends StatelessWidget {
                       const Icon(
                         Icons.info_outline_rounded,
                         color: ThixPolicy.warning,
-                        size: 18,
+                        size: 16,
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           s.backgroundLocationNote,
                           style: const TextStyle(
                             color: Colors.white70,
-                            fontSize: 11,
+                            fontSize: 10.5,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // ✅ NOUVEAU : Note confidentialité des preuves (chiffrement + suppression)
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: ThixPolicy.success.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: ThixPolicy.success.withValues(alpha: 0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.lock_rounded,
+                        color: ThixPolicy.success,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          s.privacyNote,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 10.5,
                             height: 1.4,
                           ),
                         ),
@@ -765,7 +845,7 @@ class _ThixPermissionsIntroScreen extends StatelessWidget {
                     color: Colors.white38,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -776,7 +856,7 @@ class _ThixPermissionsIntroScreen extends StatelessWidget {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: ThixPolicy.primary,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
@@ -792,7 +872,7 @@ class _ThixPermissionsIntroScreen extends StatelessWidget {
                   ),
                 ),
                 if (onLater != null) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   TextButton(
                     onPressed: () {
                       HapticFeedback.selectionClick();
@@ -820,10 +900,10 @@ class _PermissionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: ThixPolicy.surfaceSoft.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: ThixPolicy.border.withValues(alpha: 0.2),
           width: 1,
@@ -836,14 +916,14 @@ class _PermissionRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   color: item.color.withValues(alpha: 0.15),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(item.icon, color: item.color, size: 22),
+                child: Icon(item.icon, color: item.color, size: 20),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -852,17 +932,17 @@ class _PermissionRow extends StatelessWidget {
                       item.title,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 14,
+                        fontSize: 13.5,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 2),
                     Text(
                       item.description,
                       style: const TextStyle(
                         color: Colors.white70,
-                        fontSize: 12,
-                        height: 1.35,
+                        fontSize: 11.5,
+                        height: 1.3,
                       ),
                     ),
                   ],
@@ -870,15 +950,15 @@ class _PermissionRow extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Padding(
-            padding: const EdgeInsets.only(left: 46),
+            padding: const EdgeInsets.only(left: 44),
             child: Text(
               item.detail,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.6),
-                fontSize: 11,
-                height: 1.5,
+                fontSize: 10.5,
+                height: 1.45,
                 fontStyle: FontStyle.italic,
               ),
             ),
