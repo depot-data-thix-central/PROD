@@ -3,6 +3,12 @@
 # ============================================================
 
 # ==========================================
+# APPLICATION ENTRY POINT & ACTIVITIES
+# ==========================================
+-keep class com.thixhub.MainActivity { *; }
+-keep public class * extends android.app.Activity
+
+# ==========================================
 # FLUTTER CORE
 # ==========================================
 -keep class io.flutter.app.** { *; }
