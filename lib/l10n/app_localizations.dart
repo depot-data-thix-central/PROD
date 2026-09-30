@@ -2166,8 +2166,7 @@ const Map<String, String> _fr = {
 'live_link_copied': 'Lien du live copié',
 'live_empty_title': 'Aucun live en direct',
 'live_empty_subtitle': 'Soyez le premier à lancer un live !',
-'live_viewers': 'spectateurs',
-'live_share': 'Partager ce live',
+
 'live_badge_self': 'Toi',
 // ─── GO LIVE (go_live_page.dart) ───
 'live_audience_public': 'Public',
@@ -2212,7 +2211,7 @@ const Map<String, String> _fr = {
 'live_end_title': 'Terminer le live ?',
 'live_end_confirm': 'Voulez-vous vraiment mettre fin à ce live ?',
 'live_end_btn': 'Terminer',
-'live_likes': 'likes',
+
 'live_chat_empty': 'Le chat est vide — lancez la conversation !',
 'live_chat_hint': 'Écrivez un message…',
 'live_unmute': 'Activer le micro',
@@ -4309,8 +4308,7 @@ const Map<String, String> _en = {
 'live_link_copied': 'Live link copied',
 'live_empty_title': 'No live streams',
 'live_empty_subtitle': 'Be the first to go live!',
-'live_viewers': 'viewers',
-'live_share': 'Share this live',
+
 'live_badge_self': 'You',
 // ─── GO LIVE ───
 'live_audience_public': 'Public',
@@ -4355,7 +4353,6 @@ const Map<String, String> _en = {
 'live_end_title': 'End live?',
 'live_end_confirm': 'Do you really want to end this live?',
 'live_end_btn': 'End',
-'live_likes': 'likes',
 'live_chat_empty': 'Chat is empty — start the conversation!',
 'live_chat_hint': 'Write a message…',
 'live_unmute': 'Unmute',
@@ -6454,8 +6451,6 @@ const Map<String, String> _sw = {
 'live_link_copied': 'Kiungo cha live kimekopiwia',
 'live_empty_title': 'Hakuna matangazo ya moja kwa moja',
 'live_empty_subtitle': 'Kuwa wa kwanza kuanza live!',
-'live_viewers': 'watazamaji',
-'live_share': 'Shiriki live hii',
 'live_badge_self': 'Wewe',
 // ─── GO LIVE ───
 'live_audience_public': 'Hadharani',
@@ -6500,7 +6495,7 @@ const Map<String, String> _sw = {
 'live_end_title': 'Maliza live?',
 'live_end_confirm': 'Je, una uhakika unataka kumaliza live hii?',
 'live_end_btn': 'Maliza',
-'live_likes': 'vipendwa',
+
 'live_chat_empty': 'Mazungumzo ni tupu — anza mazungumzo!',
 'live_chat_hint': 'Andika ujumbe…',
 'live_unmute': 'Washa sauti',
@@ -8560,8 +8555,7 @@ const Map<String, String> _pt = {
 'live_link_copied': 'Link do live copiado',
 'live_empty_title': 'Sem transmissões ao vivo',
 'live_empty_subtitle': 'Seja o primeiro a transmitir!',
-'live_viewers': 'espetadores',
-'live_share': 'Partilhar este live',
+
 'live_badge_self': 'Tu',
 // ─── GO LIVE ───
 'live_audience_public': 'Público',
@@ -8606,7 +8600,7 @@ const Map<String, String> _pt = {
 'live_end_title': 'Terminar o live?',
 'live_end_confirm': 'Quer mesmo terminar este live?',
 'live_end_btn': 'Terminar',
-'live_likes': 'gostos',
+
 'live_chat_empty': 'O chat está vazio — inicie a conversa!',
 'live_chat_hint': 'Escreva uma mensagem…',
 'live_unmute': 'Ativar microfone',
@@ -10667,8 +10661,7 @@ const Map<String, String> _ar = {
 'live_link_copied': 'تم نسخ رابط البث',
 'live_empty_title': 'لا توجد بثوث مباشرة',
 'live_empty_subtitle': 'كن أول من يبدأ البث المباشر!',
-'live_viewers': 'مشاهد',
-'live_share': 'مشاركة هذا البث',
+
 'live_badge_self': 'أنت',
 // ─── GO LIVE ───
 'live_audience_public': 'عام',
@@ -10713,7 +10706,6 @@ const Map<String, String> _ar = {
 'live_end_title': 'إنهاء البث المباشر؟',
 'live_end_confirm': 'هل تريد حقًا إنهاء هذا البث المباشر؟',
 'live_end_btn': 'إنهاء',
-'live_likes': 'إعجابات',
 'live_chat_empty': 'الدردشة فارغة — ابدأ المحادثة!',
 'live_chat_hint': 'اكتب رسالة…',
 'live_unmute': 'تشغيل الميكروفون',
@@ -12773,8 +12765,7 @@ const Map<String, String> _zh = {
 'live_link_copied': '直播链接已复制',
 'live_empty_title': '暂无直播',
 'live_empty_subtitle': '成为第一个开播的人！',
-'live_viewers': '观众',
-'live_share': '分享此直播',
+
 'live_badge_self': '你',
 // ─── GO LIVE ───
 'live_audience_public': '公开',
@@ -12835,7 +12826,7 @@ const Map<String, String> _zh = {
 'live_leave_confirm': '确定要离开此直播吗？',
 'live_leave_btn': '离开',
 'live_waiting_host': '等待主播…',
-'live_like': '点赞',
+
 'live_leaving': '正在断开连接…',
 'live_unknown': '未知直播',
 };
@@ -14122,8 +14113,7 @@ const Map<String, String> _es = {
 'live_link_copied': 'Enlace del live copiado',
 'live_empty_title': 'No hay transmisiones en vivo',
 'live_empty_subtitle': '¡Sé el primero en transmitir!',
-'live_viewers': 'espectadores',
-'live_share': 'Compartir este live',
+
 'live_badge_self': 'Tú',
 // ─── GO LIVE ───
 'live_audience_public': 'Público',
@@ -14184,7 +14174,7 @@ const Map<String, String> _es = {
 'live_leave_confirm': '¿Seguro que quieres salir de este live?',
 'live_leave_btn': 'Salir',
 'live_waiting_host': 'Esperando al anfitrión…',
-'live_like': 'Me gusta',
+
 'live_leaving': 'Desconectando…',
 'live_unknown': 'Live desconocido',
 };
