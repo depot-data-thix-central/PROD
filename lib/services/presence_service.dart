@@ -24,12 +24,29 @@ class ThixPresence {
       );
 }
 
+class _Watch {
+  final StreamController<ThixPresence?> controller =
+      StreamController<ThixPresence?>.broadcast();
+  Timer? timer;
+  ThixPresence? last;
+  bool hasValue = false;
+  bool busy = false;
+}
+
 class PresenceService {
   static const String table = 'thix_presence';
+  static const Duration pollInterval = Duration(seconds: 10);
+
   final SupabaseClient _client;
   PresenceService({SupabaseClient? client}) : _client = client ?? SupabaseConfig.client;
 
   Timer? _heartbeat;
+  bool? _lastOnlineSent;
+  DateTime? _lastSentAt;
+
+  // Partagé entre toutes les instances : un seul polling par utilisateur.
+  static final Map<String, _Watch> _watches = {};
+  static DateTime? _lastSchemaReload;
 
   bool _isTableMissing(Object e) {
     if (e is PostgrestException) {
@@ -43,6 +60,13 @@ class PresenceService {
   }
 
   Future<void> _trySchemaReload() async {
+    // Au plus une tentative toutes les 5 minutes.
+    final now = DateTime.now();
+    if (_lastSchemaReload != null &&
+        now.difference(_lastSchemaReload!) < const Duration(minutes: 5)) {
+      return;
+    }
+    _lastSchemaReload = now;
     try {
       await _client.rpc('pgrst_schema_reload');
     } catch (e) {
@@ -55,7 +79,16 @@ class PresenceService {
   Future<void> setOnline(bool online) async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) return;
-    final now = DateTime.now().toUtc().toIso8601String();
+
+    // Évite les écritures inutiles : même statut envoyé il y a moins de 25 s.
+    final nowLocal = DateTime.now();
+    if (_lastOnlineSent == online &&
+        _lastSentAt != null &&
+        nowLocal.difference(_lastSentAt!) < const Duration(seconds: 25)) {
+      return;
+    }
+
+    final now = nowLocal.toUtc().toIso8601String();
     try {
       await _client.from(table).upsert({
         'user_id': uid,
@@ -63,9 +96,11 @@ class PresenceService {
         'last_seen_at': now,
         'updated_at': now,
       });
+      _lastOnlineSent = online;
+      _lastSentAt = nowLocal;
     } catch (e) {
       if (_isTableMissing(e)) {
-        debugPrint('PresenceService: table missing/cache stale. Attempt schema reload. err=$e');
+        debugPrint('PresenceService: table missing/cache stale. err=$e');
         await _trySchemaReload();
         return;
       }
@@ -83,44 +118,65 @@ class PresenceService {
     _heartbeat = null;
   }
 
-  /// Stream de présence par polling (sans Realtime)
-  Stream<ThixPresence?> streamPresence(String userId) {
-    final controller = StreamController<ThixPresence?>.broadcast();
-    Timer? pollTimer;
-    bool isActive = true;
-
-    Future<void> emitLatest() async {
-      if (!isActive) return;
-      try {
-        final row = await _client.from(table).select('*').eq('user_id', userId).maybeSingle();
-        if (row == null) {
-          if (!controller.isClosed) controller.add(null);
-          return;
-        }
-        if (!controller.isClosed) controller.add(ThixPresence.fromRow((row as Map).cast<String, dynamic>()));
-      } catch (e) {
-        if (_isTableMissing(e)) {
-          debugPrint('PresenceService: table missing/cache stale. Disabling presence stream until DB is ready. err=$e');
-          if (!controller.isClosed) controller.add(null);
-          return;
-        }
-        debugPrint('PresenceService: emitLatest failed userId=$userId err=$e');
-        if (!controller.isClosed) controller.add(null);
+  Future<void> _poll(String userId, _Watch w) async {
+    if (w.busy || w.controller.isClosed) return;
+    w.busy = true;
+    ThixPresence? value;
+    try {
+      final row = await _client.from(table).select('*').eq('user_id', userId).maybeSingle();
+      value = row == null ? null : ThixPresence.fromRow(Map<String, dynamic>.from(row));
+    } catch (e) {
+      if (_isTableMissing(e)) {
+        debugPrint('PresenceService: table missing/cache stale. err=$e');
+        unawaited(_trySchemaReload());
+      } else {
+        debugPrint('PresenceService: poll failed userId=$userId err=$e');
       }
+      value = null;
+    } finally {
+      w.busy = false;
     }
 
-    controller.onListen = () {
-      isActive = true;
-      unawaited(emitLatest());
-      pollTimer = Timer.periodic(const Duration(seconds: 3), (_) => unawaited(emitLatest()));
+    if (w.controller.isClosed) return;
+    final changed = !w.hasValue ||
+        (value?.isOnline != w.last?.isOnline) ||
+        (value?.lastSeenAt != w.last?.lastSeenAt) ||
+        ((value == null) != (w.last == null));
+    if (changed) {
+      w.hasValue = true;
+      w.last = value;
+      w.controller.add(value);
+    }
+  }
+
+  /// Stream de présence par polling (sans Realtime), partagé par utilisateur.
+  Stream<ThixPresence?> streamPresence(String userId) {
+    final existing = _watches[userId];
+    if (existing != null) return existing.controller.stream;
+
+    final w = _Watch();
+    _watches[userId] = w;
+
+    w.controller.onListen = () {
+      if (w.hasValue) {
+        final cached = w.last;
+        Future.microtask(() {
+          if (!w.controller.isClosed) w.controller.add(cached);
+        });
+      }
+      unawaited(_poll(userId, w));
+      w.timer?.cancel();
+      w.timer = Timer.periodic(pollInterval, (_) => unawaited(_poll(userId, w)));
     };
 
-    controller.onCancel = () {
-      isActive = false;
-      pollTimer?.cancel();
-      controller.close();
+    // Appelé uniquement quand le dernier écouteur se désabonne.
+    w.controller.onCancel = () {
+      w.timer?.cancel();
+      w.timer = null;
+      _watches.remove(userId);
+      w.controller.close();
     };
 
-    return controller.stream;
+    return w.controller.stream;
   }
 }
