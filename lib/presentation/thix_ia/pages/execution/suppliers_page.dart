@@ -285,7 +285,7 @@ class _SuppliersPageState extends ConsumerState<SuppliersPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Supprimer ?'),
-        content: Text('Supprimer « ${s.name} » de Supabase ?'),
+        content: Text('Supprimer « ${s.name} » de storage ?'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -603,7 +603,7 @@ class _SuppliersPageState extends ConsumerState<SuppliersPage> {
                                     SnackBar(
                                       content: Text(isEdit
                                           ? 'Fournisseur mis à jour'
-                                          : 'Fournisseur ajouté dans Supabase'),
+                                          : 'Fournisseur'),
                                     ),
                                   );
                                 }
