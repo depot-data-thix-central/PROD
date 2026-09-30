@@ -29,7 +29,7 @@ const double _kNodeSize = 46.0;
 const double _kHubSize = 122.0;
 
 /// 🔒 Services temporairement suspendus → message "Bientôt à disposition".
-const Set<String> _kSuspended = {'reservation', 'thixSante', 'thixMoney'};
+const Set<String> _kSuspended = {'thixSante', 'thixMoney'};
 
 String _tr(AppLocalizations l10n, String key, String fallback) {
   final v = l10n.t(key);
@@ -677,3 +677,4 @@ class _OrbitHeader extends StatelessWidget {
     );
   }
 }
+ 
