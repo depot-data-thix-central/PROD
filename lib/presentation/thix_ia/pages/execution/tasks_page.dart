@@ -288,7 +288,7 @@ class _TasksPageState extends ConsumerState<TasksPage>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${created.length} tâches créées et enregistrées dans Supabase'),
+            content: Text('${created.length} tâches créées et enregistrées'),
             backgroundColor: Colors.green.shade700,
           ),
         );
