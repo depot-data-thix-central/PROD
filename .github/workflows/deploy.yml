@@ -65,10 +65,13 @@ jobs:
           fi
 
       # ⚠️ base-href = nom exact du repo GitHub
-      # Repo = PROD  →  /PROD/
-      # Si tu renommes le repo, change aussi cette valeur
       - name: Build Web
-        run: flutter build web --release --base-href /PROD/ --no-wasm-dry-run
+        run: |
+          flutter build web --release \
+            --base-href /PROD/ \
+            --no-wasm-dry-run \
+            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
