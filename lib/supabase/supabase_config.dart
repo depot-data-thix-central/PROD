@@ -4,22 +4,16 @@ import 'package:flutter/foundation.dart';
 
 class SupabaseConfig {
   /// Supabase credentials.
-  ///
-  /// Utilise `--dart-define` pour les passer en production (recommandé).
-  ///
-  /// Les valeurs par défaut correspondent à votre nouveau projet Supabase.
+  /// Récupérées depuis l'environnement au moment du build ou de l'exécution.
   static const String supabaseUrl = String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: 'https://lldgnysfiabakhaibgzq.supabase.co',
+    defaultValue: '',
   );
 
-  /// Clé publique (anciennement "anon key"). Le nom de variable est conservé
-  /// pour compatibilité avec le reste du code, mais elle est désormais passée
-  /// au paramètre `publishableKey` de `Supabase.initialize`.
+  /// Clé publique (publishable/anon key).
   static const String anonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZGdueXNmaWFiYWtoYWliZ3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NzgxNjcsImV4cCI6MjA5ODE1NDE2N30.AmrEd5RECLsamIjYiUBk_F4azYtBeMV3drL5RPzFhjo',
+    defaultValue: '',
   );
 
   static bool _initialized = false;
@@ -29,7 +23,7 @@ class SupabaseConfig {
 
     try {
       if (supabaseUrl.trim().isEmpty || anonKey.trim().isEmpty) {
-        throw Exception('Supabase URL ou Anon Key manquant !');
+        throw Exception('Supabase URL ou Anon Key manquant ! Assurez-vous de passer les variables d\'environnement.');
       }
 
       debugPrint('🔄 SupabaseConfig: Initialisation...');
