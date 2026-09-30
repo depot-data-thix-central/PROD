@@ -588,7 +588,7 @@ class _FinancePageState extends ConsumerState<FinancePage>
                       }
                     }
                   },
-                  child: const Text('Enregistrer dans Supabase',
+                  child: const Text('Enregistrer',
                       style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ),
