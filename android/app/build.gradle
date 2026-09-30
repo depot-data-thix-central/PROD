@@ -16,7 +16,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.thixid.app"
+    namespace = "com.thixhub"
 
     // Android 16
     compileSdk = 36
