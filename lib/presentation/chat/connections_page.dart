@@ -15,7 +15,7 @@ import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/models/chat/call_status.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
 import 'package:thix_id/services/chat/connection_service.dart';
-
+import 'package:thix_id/services/chat/chat_service.dart';
 import 'call/call_page.dart';
 import 'call/providers/call_provider.dart';
 
@@ -460,57 +460,51 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   // ══════════════════════════════════════════════════════════════════════════
 
   Future<void> _startChat(ConnectionView connection) async {
-    if (_isStartingChat) {
-      debugPrint('[Connections] ⚠️ Chat creation already in progress');
-      return;
-    }
-
-    final l10n = AppLocalizations.of(context);
-    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-    if (currentUserId == null) {
-      _showError(l10n.t('escalation_not_authenticated'));
-      return;
-    }
-
-    final otherUserId = connection.otherUserId;
-    if (otherUserId.isEmpty) {
-      _showError(l10n.t('escalation_invalid_conversation'));
-      return;
-    }
-
-    setState(() => _isStartingChat = true);
-    _showInfo(l10n.t('chat_new_message'));
-
-    try {
-      final res = await _connRetry(
-        () => Supabase.instance.client
-            .from('conversations')
-            .select('id')
-            .contains('participant_ids', [currentUserId, otherUserId])
-            .eq('is_group', false)
-            .maybeSingle(),
-        label: 'findConversation',
-      );
-
-      if (!mounted) return;
-
-      if (res != null) {
-        final convId = res['id'] as String?;
-        if (convId != null) {
-          debugPrint('[Connections] ✓ Found conversation: $convId');
-          context.push('/chat/$convId');
-          return;
-        }
-      }
-
-      _showError(l10n.t('escalation_conversation_not_found'));
-    } catch (e) {
-      debugPrint('[Connections] ❌ Start chat error: $e');
-      if (mounted) _showError(_ConnValidators.friendlyError(e));
-    } finally {
-      if (mounted) setState(() => _isStartingChat = false);
-    }
+  if (_isStartingChat) {
+    debugPrint('[Connections] ⚠️ Chat creation already in progress');
+    return;
   }
+
+  final l10n = AppLocalizations.of(context);
+  final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+  if (currentUserId == null) {
+    _showError(l10n.t('escalation_not_authenticated'));
+    return;
+  }
+
+  final otherUserId = connection.otherUserId;
+  if (otherUserId.isEmpty) {
+    _showError(l10n.t('escalation_invalid_conversation'));
+    return;
+  }
+
+  setState(() => _isStartingChat = true);
+  _showInfo(l10n.t('chat_new_message'));
+
+  try {
+    // ✅ "Get or create" : renvoie la conv existante sinon la crée
+    //    (RPC create_direct_conversation, idempotent)
+    final conv = await _connRetry(
+      () => ChatService(Supabase.instance.client)
+          .createDirectConversation(otherUserId),
+      label: 'openOrCreateDM',
+    );
+
+    if (!mounted) return;
+
+    if (conv.id.isNotEmpty) {
+      debugPrint('[Connections] 💬 Opening conversation: ${conv.id}');
+      context.push('/chat/${conv.id}');
+    } else {
+      _showError(l10n.t('escalation_conversation_not_found'));
+    }
+  } catch (e) {
+    debugPrint('[Connections] ❌ Start chat error: $e');
+    if (mounted) _showError(_ConnValidators.friendlyError(e));
+  } finally {
+    if (mounted) setState(() => _isStartingChat = false);
+  }
+}
 
   void _startAudioCall(ConnectionView connection) {
     final l10n = AppLocalizations.of(context);
