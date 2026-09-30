@@ -35,26 +35,12 @@ jobs:
         run: flutter pub get
 
       # --- CRÉATION DU FICHIER .ENV ---
-      - name: Create .env file from Secrets
+      - name: Create .env file
         run: |
           echo "Creating .env file..."
-          
-          if [ -z "${{ secrets.SUPABASE_URL }}" ]; then
-            echo "❌ Error: Secret SUPABASE_URL is missing in GitHub Settings."
-            exit 1
-          fi
-          if [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
-            echo "❌ Error: Secret SUPABASE_ANON_KEY is missing in GitHub Settings."
-            exit 1
-          fi
-
-          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
-          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
-          
+          echo "SUPABASE_URL=https://lldgnysfiabakhaibgzq.supabase.co" >> .env
+          echo "SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZGdueXNmaWFiYWtoYWliZ3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NzgxNjcsImV4cCI6MjA5ODE1NDE2N30.AmrEd5RECLsamIjYiUBk_F4azYtBeMV3drL5RPzFhjo" >> .env
           echo "✅ .env file created successfully for Web deployment."
-        env:
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-      # --------------------------------
 
       - name: Generate code (build_runner)
         run: |
@@ -64,14 +50,14 @@ jobs:
             echo "No build_runner — skip"
           fi
 
-      # ⚠️ base-href = nom exact du repo GitHub
+      # --- BUILD WEB ---
       - name: Build Web
         run: |
           flutter build web --release \
             --base-href /PROD/ \
             --no-wasm-dry-run \
-            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
-            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+            --dart-define=SUPABASE_URL="https://lldgnysfiabakhaibgzq.supabase.co" \
+            --dart-define=SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZGdueXNmaWFiYWtoYWliZ3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NzgxNjcsImV4cCI6MjA5ODE1NDE2N30.AmrEd5RECLsamIjYiUBk_F4azYtBeMV3drL5RPzFhjo"
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
