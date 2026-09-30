@@ -1,5 +1,4 @@
-
-name: Build Flutter APK
+name: Build Flutter APK (Obfuscated)
 
 on:
   workflow_dispatch:
@@ -19,6 +18,8 @@ concurrency:
 
 env:
   JAVA_VERSION: "17"
+  # Dossier où seront stockés les fichiers de symboles pour le débogage
+  SYMBOLS_DIR: "build/app/outputs/symbols"
 
 jobs:
   test-and-analyze:
@@ -72,10 +73,10 @@ jobs:
         continue-on-error: true
 
   build:
-    name: Build Release
+    name: Build Release (Obfuscated)
     runs-on: ubuntu-latest
     needs: test-and-analyze
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -98,6 +99,33 @@ jobs:
 
       - name: Flutter pub get
         run: flutter pub get
+
+      # --- NOUVELLE ÉTAPE : CRÉATION DU FICHIER .ENV ---
+      - name: Create .env file from Secrets
+        run: |
+          echo "Creating .env file..."
+          
+          # Vérifier que les secrets existent
+          if [ -z "${{ secrets.SUPABASE_URL }}" ]; then
+            echo " Error: Secret SUPABASE_URL is missing in GitHub Settings."
+            exit 1
+          fi
+          if [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
+            echo "❌ Error: Secret SUPABASE_ANON_KEY is missing in GitHub Settings."
+            exit 1
+          fi
+
+          # Création du fichier .env
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
+          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
+          
+          # Affichage (masqué partiellement pour la sécurité dans les logs, mais visible ici car contrôlé)
+          echo "✅ .env file created successfully."
+          echo "SUPABASE_URL is set."
+          echo "SUPABASE_ANON_KEY starts with: ${SUPABASE_ANON_KEY:0:10}..." 
+        env:
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      # --------------------------------------------------
 
       - name: Generate code (build_runner)
         run: |
@@ -129,7 +157,6 @@ jobs:
 
           mkdir -p android/app
 
-          # Strip whitespace/newlines then decode (avoids "base64: invalid input")
           printf '%s' "${KEYSTORE_B64}" | tr -d '\n\r\t ' | base64 --decode > android/app/keystore.jks
 
           if [ ! -s android/app/keystore.jks ]; then
@@ -137,7 +164,6 @@ jobs:
             exit 1
           fi
 
-          # No leading spaces in key.properties (they break signing)
           cat > android/key.properties <<EOF
           storePassword=${STORE_PASSWORD}
           keyPassword=${KEY_PASSWORD}
@@ -145,9 +171,7 @@ jobs:
           storeFile=keystore.jks
           EOF
 
-          # Remove accidental leading spaces from the heredoc above
           sed -i 's/^[[:space:]]*//' android/key.properties
-
           echo "Keystore configured ($(wc -c < android/app/keystore.jks) bytes)"
 
       - name: Extract version from pubspec
@@ -165,17 +189,21 @@ jobs:
           echo "full_version=$VERSION+$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION (build $BUILD_NUMBER)"
 
-      - name: Build release App Bundle
+      - name: Build release App Bundle (Obfuscated)
         run: |
           flutter build appbundle --release \
             --build-name=${{ steps.version.outputs.version }} \
-            --build-number=${{ steps.version.outputs.build_number }}
+            --build-number=${{ steps.version.outputs.build_number }} \
+            --obfuscate \
+            --split-debug-info=${{ env.SYMBOLS_DIR }}
 
-      - name: Build release APKs (split by ABI)
+      - name: Build release APKs (Obfuscated & Split by ABI)
         run: |
           flutter build apk --release --split-per-abi \
             --build-name=${{ steps.version.outputs.version }} \
-            --build-number=${{ steps.version.outputs.build_number }}
+            --build-number=${{ steps.version.outputs.build_number }} \
+            --obfuscate \
+            --split-debug-info=${{ env.SYMBOLS_DIR }}
 
       - name: Verify artifacts
         run: |
@@ -183,6 +211,14 @@ jobs:
           APK_COUNT=$(ls -1 build/app/outputs/flutter-apk/*.apk 2>/dev/null | wc -l)
           test "$APK_COUNT" -gt 0
           echo "Found 1 AAB and $APK_COUNT APKs"
+          
+          # Vérifier que les symboles ont bien été générés
+          if [ -d "${{ env.SYMBOLS_DIR }}" ]; then
+            echo "Symbols directory found."
+            ls -la ${{ env.SYMBOLS_DIR }}
+          else
+            echo "WARNING: Symbols directory not found!"
+          fi
 
       - name: Generate checksums
         run: |
@@ -190,6 +226,12 @@ jobs:
           sha256sum bundle/release/app-release.aab > bundle/release/app-release.aab.sha256
           cd flutter-apk
           sha256sum *.apk > checksums.sha256
+          # Générer checksum pour les symboles si le dossier existe
+          if [ -d "../${{ env.SYMBOLS_DIR }}" ]; then
+            cd ..
+            tar -czf symbols.tar.gz ${{ env.SYMBOLS_DIR }}
+            sha256sum symbols.tar.gz > symbols.tar.gz.sha256
+          fi
 
       - name: Upload App Bundle
         uses: actions/upload-artifact@v4
@@ -211,24 +253,40 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Upload Debug Symbols (Crucial for Crashlytics/Sentry)
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-symbols
+          path: |
+            build/app/outputs/symbols.tar.gz
+            build/app/outputs/symbols.tar.gz.sha256
+          if-no-files-found: warn
+          retention-days: 90
+
       - name: Build summary
         run: |
           {
-            echo "## Build Summary"
+            echo "## Build Summary (Obfuscated)"
             echo ""
             echo "**Version:** ${{ steps.version.outputs.full_version }}"
             echo "**Commit:** ${{ github.sha }}"
             echo "**Branch:** ${{ github.ref_name }}"
+            echo "**Obfuscation:** Enabled ✅"
+            echo "**Environment:** Configured with Supabase Secrets ✅"
             echo ""
             echo "### Artifacts"
             echo "- App Bundle (AAB)"
             APK_COUNT=$(ls -1 build/app/outputs/flutter-apk/*.apk 2>/dev/null | wc -l)
             echo "- APKs (split by ABI): $APK_COUNT files"
+            echo "- Debug Symbols: Generated in \`symbols.tar.gz\`"
             echo ""
             echo "### Checksums"
             echo '```'
             cat build/app/outputs/bundle/release/app-release.aab.sha256
             cat build/app/outputs/flutter-apk/checksums.sha256
+            if [ -f build/app/outputs/symbols.tar.gz.sha256 ]; then
+              cat build/app/outputs/symbols.tar.gz.sha256
+            fi
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -272,6 +330,8 @@ jobs:
             artifacts/app-release-aab/app-release.aab.sha256
             artifacts/app-release-apks-split/*.apk
             artifacts/app-release-apks-split/checksums.sha256
+            artifacts/debug-symbols/symbols.tar.gz
+            artifacts/debug-symbols/symbols.tar.gz.sha256
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
