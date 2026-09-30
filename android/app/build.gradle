@@ -44,7 +44,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.thixid.app"
+        applicationId = "com.thixhub"
 
         minSdk = 26
         targetSdk = 36
