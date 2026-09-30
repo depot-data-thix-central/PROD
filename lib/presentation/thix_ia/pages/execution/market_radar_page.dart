@@ -661,7 +661,7 @@ class _MarketRadarPageState extends ConsumerState<MarketRadarPage> {
                         }
                       }
                     },
-                    child: const Text('Enregistrer dans Supabase',
+                    child: const Text('Enregistrer',
                         style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
