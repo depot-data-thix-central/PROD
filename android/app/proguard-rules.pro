@@ -4,6 +4,7 @@
 
 # ==========================================
 # APPLICATION ENTRY POINT & ACTIVITIES
+# (Empêche la suppression/renommage de la MainActivity)
 # ==========================================
 -keep class com.thixhub.MainActivity { *; }
 -keep public class * extends android.app.Activity
@@ -20,8 +21,7 @@
 -dontwarn io.flutter.embedding.**
 
 # ==========================================
-# ML Kit Text Recognition — options de langue (chargées dynamiquement,
-# non détectées automatiquement par R8)
+# ML Kit Text Recognition — options de langue
 # ==========================================
 -dontwarn com.google.mlkit.vision.text.chinese.**
 -dontwarn com.google.mlkit.vision.text.devanagari.**
@@ -33,13 +33,12 @@
 -keep class com.google.mlkit.vision.text.japanese.** { *; }
 -keep class com.google.mlkit.vision.text.korean.** { *; }
 
-# ML Kit — classes génériques (précaution pour d'autres modules ML Kit
-# comme genai_image_description, barcode, face, etc.)
+# ML Kit — classes génériques
 -keep class com.google.mlkit.** { *; }
 -dontwarn com.google.mlkit.**
 
 # ==========================================
-# Google Play Core (requis par certains plugins Flutter en mode release)
+# Google Play Core
 # ==========================================
 -dontwarn com.google.android.play.core.**
 
@@ -67,7 +66,7 @@
 -dontwarn com.google.android.gms.**
 
 # ==========================================
-# GSON / JSON (sérialisation utilisée en interne par plusieurs SDKs)
+# GSON / JSON
 # ==========================================
 -keepattributes Signature
 -keepattributes *Annotation*
@@ -80,8 +79,7 @@
 -keep class com.baseflow.permissionhandler.** { *; }
 
 # ==========================================
-# ENUM (protège tous les enums utilisés par réflexion — Dart platform
-# channels, Supabase, Agora)
+# ENUM
 # ==========================================
 -keepclassmembers enum * {
     public static **[] values();
@@ -89,22 +87,20 @@
 }
 
 # ==========================================
-# PARCELABLE (nécessaire pour les plugins natifs utilisant Android IPC)
+# PARCELABLE
 # ==========================================
 -keepclassmembers class * implements android.os.Parcelable {
     static ** CREATOR;
 }
 
 # ==========================================
-# KOTLIN METADATA (évite les erreurs de réflexion Kotlin, notamment
-# avec Riverpod codegen et les plugins Kotlin natifs)
+# KOTLIN METADATA
 # ==========================================
 -keep class kotlin.Metadata { *; }
 -keepattributes RuntimeVisibleAnnotations, AnnotationDefault
 
 # ==========================================
-# CACHED_NETWORK_IMAGE / OkHttp (utilisé en interne par plusieurs plugins
-# réseau Flutter)
+# CACHED_NETWORK_IMAGE / OkHttp
 # ==========================================
 -dontwarn okhttp3.**
 -dontwarn okio.**
