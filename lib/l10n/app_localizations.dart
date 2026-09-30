@@ -2158,7 +2158,7 @@ const Map<String, String> _fr = {
 'escalation_unknown_agent': 'Agent inconnu',
 'escalation_reject_button': 'Rejeter',
 'escalation_accept_button': 'Accepter',
-  // ─── LIVE TAB (live_tab_page.dart) ───
+// ─── LIVE MANQUANT ───
 'live_tab_title': 'Lives',
 'live_active_now': 'actifs maintenant',
 'live_go_live_btn': 'Lancer un live',
@@ -2166,9 +2166,7 @@ const Map<String, String> _fr = {
 'live_link_copied': 'Lien du live copié',
 'live_empty_title': 'Aucun live en direct',
 'live_empty_subtitle': 'Soyez le premier à lancer un live !',
-
 'live_badge_self': 'Toi',
-// ─── GO LIVE (go_live_page.dart) ───
 'live_audience_public': 'Public',
 'live_audience_followers': 'Abonnés',
 'live_audience_private': 'Privé',
@@ -2177,7 +2175,6 @@ const Map<String, String> _fr = {
 'live_network_good': 'Bonne',
 'live_network_poor': 'Faible',
 'live_network_offline': 'Hors ligne',
-'live_network_quality': 'Qualité du réseau',
 'live_error_title_required': 'Le titre du live est requis',
 'live_error_offline': 'Vous êtes hors ligne. Vérifiez votre connexion.',
 'live_error_generic': 'Une erreur est survenue. Réessayez.',
@@ -2206,30 +2203,21 @@ const Map<String, String> _fr = {
 'live_exit_discard': 'Quitter',
 'live_camera_loading': 'Initialisation de la caméra…',
 'live_camera_error': 'Impossible d\'accéder à la caméra',
-// ─── LIVE HOST (live_host_page.dart) ───
 'live_chat_send_error': 'Impossible d\'envoyer le message',
 'live_end_title': 'Terminer le live ?',
 'live_end_confirm': 'Voulez-vous vraiment mettre fin à ce live ?',
 'live_end_btn': 'Terminer',
-
-'live_chat_empty': 'Le chat est vide — lancez la conversation !',
-'live_chat_hint': 'Écrivez un message…',
 'live_unmute': 'Activer le micro',
 'live_mute': 'Couper le micro',
 'live_video_on': 'Activer la vidéo',
 'live_video_off': 'Couper la vidéo',
 'live_flip_camera': 'Retourner la caméra',
-'live_send': 'Envoyer',
-'live_ending': 'Fin du live en cours…',
-// ─── LIVE VIEWER (live_viewer_page.dart) ───
 'live_ended_by_host': 'L\'hôte a terminé le live',
 'live_leave_title': 'Quitter le live ?',
 'live_leave_confirm': 'Voulez-vous vraiment quitter ce live ?',
-'live_leave_btn': 'Quitter',
 'live_waiting_host': 'En attente de l\'hôte…',
-'live_like': 'J\'aime',
-'live_leaving': 'Déconnexion en cours…',
 'live_unknown': 'Live inconnu',
+
 };
   
 //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
@@ -4300,7 +4288,8 @@ const Map<String, String> _en = {
 'escalation_unknown_agent': 'Unknown agent',
 'escalation_reject_button': 'Reject',
 'escalation_accept_button': 'Accept',
-  // ─── LIVE TAB ───
+
+// ─── LIVE MISSING ───
 'live_tab_title': 'Live',
 'live_active_now': 'active now',
 'live_go_live_btn': 'Go Live',
@@ -4308,9 +4297,7 @@ const Map<String, String> _en = {
 'live_link_copied': 'Live link copied',
 'live_empty_title': 'No live streams',
 'live_empty_subtitle': 'Be the first to go live!',
-
 'live_badge_self': 'You',
-// ─── GO LIVE ───
 'live_audience_public': 'Public',
 'live_audience_followers': 'Followers',
 'live_audience_private': 'Private',
@@ -4319,7 +4306,6 @@ const Map<String, String> _en = {
 'live_network_good': 'Good',
 'live_network_poor': 'Poor',
 'live_network_offline': 'Offline',
-'live_network_quality': 'Network quality',
 'live_error_title_required': 'Live title is required',
 'live_error_offline': 'You are offline. Check your connection.',
 'live_error_generic': 'An error occurred. Please try again.',
@@ -4348,29 +4334,21 @@ const Map<String, String> _en = {
 'live_exit_discard': 'Discard',
 'live_camera_loading': 'Initializing camera…',
 'live_camera_error': 'Unable to access camera',
-// ─── LIVE HOST ───
 'live_chat_send_error': 'Unable to send message',
 'live_end_title': 'End live?',
 'live_end_confirm': 'Do you really want to end this live?',
 'live_end_btn': 'End',
-'live_chat_empty': 'Chat is empty — start the conversation!',
-'live_chat_hint': 'Write a message…',
 'live_unmute': 'Unmute',
 'live_mute': 'Mute',
 'live_video_on': 'Turn on video',
 'live_video_off': 'Turn off video',
 'live_flip_camera': 'Flip camera',
-'live_send': 'Send',
-'live_ending': 'Ending live…',
-// ─── LIVE VIEWER ───
 'live_ended_by_host': 'The host ended the live',
 'live_leave_title': 'Leave live?',
 'live_leave_confirm': 'Do you really want to leave this live?',
-'live_leave_btn': 'Leave',
 'live_waiting_host': 'Waiting for host…',
-'live_like': 'Like',
-'live_leaving': 'Disconnecting…',
 'live_unknown': 'Unknown live',
+  
 };
 
 
@@ -6443,7 +6421,8 @@ const Map<String, String> _sw = {
 'escalation_unknown_agent': 'Wakala asiyejulikana',
 'escalation_reject_button': 'Kataa',
 'escalation_accept_button': 'Kubali',
-  // ─── KICHUNJO CHA LIVE ───
+
+// ─── LIVE KUKOSEKANA ───
 'live_tab_title': 'Live',
 'live_active_now': 'hai sasa',
 'live_go_live_btn': 'Anza Live',
@@ -6452,7 +6431,6 @@ const Map<String, String> _sw = {
 'live_empty_title': 'Hakuna matangazo ya moja kwa moja',
 'live_empty_subtitle': 'Kuwa wa kwanza kuanza live!',
 'live_badge_self': 'Wewe',
-// ─── GO LIVE ───
 'live_audience_public': 'Hadharani',
 'live_audience_followers': 'Wafuasi',
 'live_audience_private': 'Faragha',
@@ -6461,7 +6439,6 @@ const Map<String, String> _sw = {
 'live_network_good': 'Nzuri',
 'live_network_poor': 'Dhaifu',
 'live_network_offline': 'Nje ya mtandao',
-'live_network_quality': 'Ubora wa mtandao',
 'live_error_title_required': 'Kichwa cha live kinahitajika',
 'live_error_offline': 'Uko nje ya mtandao. Angalia muunganisho wako.',
 'live_error_generic': 'Hitilafu imetokea. Tafadhali jaribu tena.',
@@ -6490,30 +6467,21 @@ const Map<String, String> _sw = {
 'live_exit_discard': 'Ondoka',
 'live_camera_loading': 'Inaanzisha kamera…',
 'live_camera_error': 'Imeshindikana kufikia kamera',
-// ─── LIVE HOST ───
 'live_chat_send_error': 'Imeshindikana kutuma ujumbe',
 'live_end_title': 'Maliza live?',
 'live_end_confirm': 'Je, una uhakika unataka kumaliza live hii?',
 'live_end_btn': 'Maliza',
-
-'live_chat_empty': 'Mazungumzo ni tupu — anza mazungumzo!',
-'live_chat_hint': 'Andika ujumbe…',
 'live_unmute': 'Washa sauti',
 'live_mute': 'Zima sauti',
 'live_video_on': 'Washa video',
 'live_video_off': 'Zima video',
 'live_flip_camera': 'Geuza kamera',
-'live_send': 'Tuma',
-'live_ending': 'Inamalizia live…',
-// ─── LIVE VIEWER ───
 'live_ended_by_host': 'Mwenyeji amemaliza live',
 'live_leave_title': 'Ondoka kwenye live?',
 'live_leave_confirm': 'Je, una uhakika unataka kuondoka kwenye live hii?',
-'live_leave_btn': 'Ondoka',
 'live_waiting_host': 'Inasubiri mwenyeji…',
-'live_like': 'Penda',
-'live_leaving': 'Inakatisha muunganisho…',
 'live_unknown': 'Live isiyojulikana',
+  
 };
 
 //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
@@ -8547,7 +8515,8 @@ const Map<String, String> _pt = {
 'escalation_unknown_agent': 'Agente desconhecido',
 'escalation_reject_button': 'Rejeitar',
 'escalation_accept_button': 'Aceitar',
-  // ─── ABA LIVE ───
+
+// ─── LIVE FALTANDO ───
 'live_tab_title': 'Ao vivo',
 'live_active_now': 'ativos agora',
 'live_go_live_btn': 'Iniciar live',
@@ -8555,9 +8524,7 @@ const Map<String, String> _pt = {
 'live_link_copied': 'Link do live copiado',
 'live_empty_title': 'Sem transmissões ao vivo',
 'live_empty_subtitle': 'Seja o primeiro a transmitir!',
-
 'live_badge_self': 'Tu',
-// ─── GO LIVE ───
 'live_audience_public': 'Público',
 'live_audience_followers': 'Seguidores',
 'live_audience_private': 'Privado',
@@ -8566,7 +8533,6 @@ const Map<String, String> _pt = {
 'live_network_good': 'Boa',
 'live_network_poor': 'Fraca',
 'live_network_offline': 'Sem ligação',
-'live_network_quality': 'Qualidade da rede',
 'live_error_title_required': 'O título do live é obrigatório',
 'live_error_offline': 'Está sem ligação. Verifique a sua ligação.',
 'live_error_generic': 'Ocorreu um erro. Tente novamente.',
@@ -8595,29 +8561,19 @@ const Map<String, String> _pt = {
 'live_exit_discard': 'Sair',
 'live_camera_loading': 'A inicializar a câmara…',
 'live_camera_error': 'Não é possível aceder à câmara',
-// ─── LIVE HOST ───
 'live_chat_send_error': 'Não foi possível enviar a mensagem',
 'live_end_title': 'Terminar o live?',
 'live_end_confirm': 'Quer mesmo terminar este live?',
 'live_end_btn': 'Terminar',
-
-'live_chat_empty': 'O chat está vazio — inicie a conversa!',
-'live_chat_hint': 'Escreva uma mensagem…',
 'live_unmute': 'Ativar microfone',
 'live_mute': 'Silenciar',
 'live_video_on': 'Ativar vídeo',
 'live_video_off': 'Desativar vídeo',
 'live_flip_camera': 'Virar câmara',
-'live_send': 'Enviar',
-'live_ending': 'A terminar o live…',
-// ─── LIVE VIEWER ───
 'live_ended_by_host': 'O anfitrião terminou o live',
 'live_leave_title': 'Sair do live?',
 'live_leave_confirm': 'Quer mesmo sair deste live?',
-'live_leave_btn': 'Sair',
 'live_waiting_host': 'À espera do anfitrião…',
-'live_like': 'Gosto',
-'live_leaving': 'A desligar…',
 'live_unknown': 'Live desconhecido',
 };
 
@@ -10653,7 +10609,8 @@ const Map<String, String> _ar = {
 'escalation_unknown_agent': 'وكيل غير معروف',
 'escalation_reject_button': 'رفض',
 'escalation_accept_button': 'قبول',
-  // ─── تبويب البث المباشر ───
+
+// ─── البث المباشر المفقود ───
 'live_tab_title': 'البث المباشر',
 'live_active_now': 'نشط الآن',
 'live_go_live_btn': 'بدء البث',
@@ -10661,9 +10618,7 @@ const Map<String, String> _ar = {
 'live_link_copied': 'تم نسخ رابط البث',
 'live_empty_title': 'لا توجد بثوث مباشرة',
 'live_empty_subtitle': 'كن أول من يبدأ البث المباشر!',
-
 'live_badge_self': 'أنت',
-// ─── GO LIVE ───
 'live_audience_public': 'عام',
 'live_audience_followers': 'المتابعون',
 'live_audience_private': 'خاص',
@@ -10672,7 +10627,6 @@ const Map<String, String> _ar = {
 'live_network_good': 'جيدة',
 'live_network_poor': 'ضعيفة',
 'live_network_offline': 'غير متصل',
-'live_network_quality': 'جودة الشبكة',
 'live_error_title_required': 'عنوان البث المباشر مطلوب',
 'live_error_offline': 'أنت غير متصل. تحقق من اتصالك.',
 'live_error_generic': 'حدث خطأ. يرجى المحاولة مرة أخرى.',
@@ -10701,28 +10655,19 @@ const Map<String, String> _ar = {
 'live_exit_discard': 'مغادرة',
 'live_camera_loading': 'جارٍ تهيئة الكاميرا…',
 'live_camera_error': 'تعذر الوصول إلى الكاميرا',
-// ─── LIVE HOST ───
 'live_chat_send_error': 'تعذر إرسال الرسالة',
 'live_end_title': 'إنهاء البث المباشر؟',
 'live_end_confirm': 'هل تريد حقًا إنهاء هذا البث المباشر؟',
 'live_end_btn': 'إنهاء',
-'live_chat_empty': 'الدردشة فارغة — ابدأ المحادثة!',
-'live_chat_hint': 'اكتب رسالة…',
 'live_unmute': 'تشغيل الميكروفون',
 'live_mute': 'كتم الصوت',
 'live_video_on': 'تشغيل الفيديو',
 'live_video_off': 'إيقاف الفيديو',
 'live_flip_camera': 'تبديل الكاميرا',
-'live_send': 'إرسال',
-'live_ending': 'جارٍ إنهاء البث…',
-// ─── LIVE VIEWER ───
 'live_ended_by_host': 'أنهى المضيف البث المباشر',
 'live_leave_title': 'مغادرة البث المباشر؟',
 'live_leave_confirm': 'هل تريد حقًا مغادرة هذا البث المباشر؟',
-'live_leave_btn': 'مغادرة',
 'live_waiting_host': 'بانتظار المضيف…',
-'live_like': 'إعجاب',
-'live_leaving': 'جارٍ قطع الاتصال…',
 'live_unknown': 'بث مباشر غير معروف',
 };
 
@@ -12757,7 +12702,7 @@ const Map<String, String> _zh = {
 'escalation_unknown_agent': '未知客服',
 'escalation_reject_button': '拒绝',
 'escalation_accept_button': '接受',
-  // ─── 直播标签页 ───
+// ─── 直播缺失键 ───
 'live_tab_title': '直播',
 'live_active_now': '正在进行',
 'live_go_live_btn': '开始直播',
@@ -12765,9 +12710,7 @@ const Map<String, String> _zh = {
 'live_link_copied': '直播链接已复制',
 'live_empty_title': '暂无直播',
 'live_empty_subtitle': '成为第一个开播的人！',
-
 'live_badge_self': '你',
-// ─── GO LIVE ───
 'live_audience_public': '公开',
 'live_audience_followers': '关注者',
 'live_audience_private': '私密',
@@ -12776,7 +12719,6 @@ const Map<String, String> _zh = {
 'live_network_good': '良好',
 'live_network_poor': '较弱',
 'live_network_offline': '离线',
-'live_network_quality': '网络质量',
 'live_error_title_required': '直播标题为必填项',
 'live_error_offline': '您已离线。请检查您的连接。',
 'live_error_generic': '发生错误。请重试。',
@@ -12805,30 +12747,21 @@ const Map<String, String> _zh = {
 'live_exit_discard': '退出',
 'live_camera_loading': '正在初始化相机…',
 'live_camera_error': '无法访问相机',
-// ─── LIVE HOST ───
 'live_chat_send_error': '无法发送消息',
 'live_end_title': '结束直播？',
 'live_end_confirm': '确定要结束此直播吗？',
 'live_end_btn': '结束',
-'live_likes': '点赞',
-'live_chat_empty': '聊天为空 — 开始对话吧！',
-'live_chat_hint': '输入消息…',
 'live_unmute': '开启麦克风',
 'live_mute': '静音',
 'live_video_on': '开启视频',
 'live_video_off': '关闭视频',
 'live_flip_camera': '翻转相机',
-'live_send': '发送',
-'live_ending': '正在结束直播…',
-// ─── LIVE VIEWER ───
 'live_ended_by_host': '主播已结束直播',
 'live_leave_title': '离开直播？',
 'live_leave_confirm': '确定要离开此直播吗？',
-'live_leave_btn': '离开',
 'live_waiting_host': '等待主播…',
-
-'live_leaving': '正在断开连接…',
 'live_unknown': '未知直播',
+
 };
 
 
@@ -14105,7 +14038,7 @@ const Map<String, String> _es = {
 'escalation_unknown_agent': 'Agente desconocido',
 'escalation_reject_button': 'Rechazar',
 'escalation_accept_button': 'Aceptar',
-  // ─── PESTAÑA LIVE ───
+// ─── LIVE FALTANTE ───
 'live_tab_title': 'En vivo',
 'live_active_now': 'activos ahora',
 'live_go_live_btn': 'Iniciar live',
@@ -14113,9 +14046,7 @@ const Map<String, String> _es = {
 'live_link_copied': 'Enlace del live copiado',
 'live_empty_title': 'No hay transmisiones en vivo',
 'live_empty_subtitle': '¡Sé el primero en transmitir!',
-
 'live_badge_self': 'Tú',
-// ─── GO LIVE ───
 'live_audience_public': 'Público',
 'live_audience_followers': 'Seguidores',
 'live_audience_private': 'Privado',
@@ -14124,7 +14055,6 @@ const Map<String, String> _es = {
 'live_network_good': 'Buena',
 'live_network_poor': 'Débil',
 'live_network_offline': 'Sin conexión',
-'live_network_quality': 'Calidad de red',
 'live_error_title_required': 'El título del live es obligatorio',
 'live_error_offline': 'Estás sin conexión. Comprueba tu conexión.',
 'live_error_generic': 'Se produjo un error. Inténtalo de nuevo.',
@@ -14153,31 +14083,19 @@ const Map<String, String> _es = {
 'live_exit_discard': 'Salir',
 'live_camera_loading': 'Inicializando cámara…',
 'live_camera_error': 'No se puede acceder a la cámara',
-// ─── LIVE HOST ───
 'live_chat_send_error': 'No se pudo enviar el mensaje',
 'live_end_title': '¿Terminar el live?',
 'live_end_confirm': '¿Seguro que quieres terminar este live?',
 'live_end_btn': 'Terminar',
-'live_likes': 'me gusta',
-'live_chat_empty': 'El chat está vacío — ¡inicia la conversación!',
-'live_chat_hint': 'Escribe un mensaje…',
 'live_unmute': 'Activar micro',
 'live_mute': 'Silenciar',
 'live_video_on': 'Activar vídeo',
 'live_video_off': 'Desactivar vídeo',
 'live_flip_camera': 'Cambiar cámara',
-'live_send': 'Enviar',
-'live_ending': 'Terminando live…',
-// ─── LIVE VIEWER ───
 'live_ended_by_host': 'El anfitrión terminó el live',
 'live_leave_title': '¿Salir del live?',
 'live_leave_confirm': '¿Seguro que quieres salir de este live?',
-'live_leave_btn': 'Salir',
 'live_waiting_host': 'Esperando al anfitrión…',
-
-'live_leaving': 'Desconectando…',
 'live_unknown': 'Live desconocido',
+
 };
-
-
-
