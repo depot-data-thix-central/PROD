@@ -636,7 +636,7 @@ class _ExperimentPageState extends ConsumerState<ExperimentPage> {
                         : Text(
                             isEdit
                                 ? 'Enregistrer'
-                                : 'Créer dans Supabase',
+                                : 'Créer',
                             style: const TextStyle(
                                 fontWeight: FontWeight.bold)),
                   ),
