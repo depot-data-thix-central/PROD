@@ -525,7 +525,7 @@ class _RoadmapPageState extends ConsumerState<RoadmapPage> {
                         if (mounted) setState(() => _busy = false);
                       }
                     },
-                    child: Text(isEdit ? 'Enregistrer' : 'Créer dans Supabase',
+                    child: Text(isEdit ? 'Enregistrer' : 'Créer',
                         style: const TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
