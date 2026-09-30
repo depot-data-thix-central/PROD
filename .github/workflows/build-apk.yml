@@ -100,14 +100,13 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      # --- NOUVELLE ÉTAPE : CRÉATION DU FICHIER .ENV ---
+      # --- CRÉATION DU FICHIER .ENV ---
       - name: Create .env file from Secrets
         run: |
           echo "Creating .env file..."
           
-          # Vérifier que les secrets existent
           if [ -z "${{ secrets.SUPABASE_URL }}" ]; then
-            echo " Error: Secret SUPABASE_URL is missing in GitHub Settings."
+            echo "❌ Error: Secret SUPABASE_URL is missing in GitHub Settings."
             exit 1
           fi
           if [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
@@ -115,14 +114,10 @@ jobs:
             exit 1
           fi
 
-          # Création du fichier .env
           echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
           echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
           
-          # Affichage (masqué partiellement pour la sécurité dans les logs, mais visible ici car contrôlé)
           echo "✅ .env file created successfully."
-          echo "SUPABASE_URL is set."
-          echo "SUPABASE_ANON_KEY starts with: ${SUPABASE_ANON_KEY:0:10}..." 
         env:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       # --------------------------------------------------
@@ -150,7 +145,7 @@ jobs:
             echo "Secret ANDROID_KEYSTORE_BASE64 is empty."
             exit 1
           fi
-          if [ -z "${STORE_PASSWORD}" ] || [ -z "${KEY_PASSWORD}" ] || [ -z "${KEY_ALIAS}" ]; then
+          if [ -z "${STORE_PASSWORD}" ] || [ -z "${KEY_PASSWORD}" ] \vert{}\vert{} [ -z "${KEY_ALIAS}" ]; then
             echo "Missing ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_PASSWORD or ANDROID_KEY_ALIAS."
             exit 1
           fi
@@ -187,7 +182,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           echo "full_version=$VERSION+$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "Version: $VERSION (build $BUILD_NUMBER)"
+          echo "Version: $VERSION (build$BUILD_NUMBER)"
 
       - name: Build release App Bundle (Obfuscated)
         run: |
@@ -195,7 +190,9 @@ jobs:
             --build-name=${{ steps.version.outputs.version }} \
             --build-number=${{ steps.version.outputs.build_number }} \
             --obfuscate \
-            --split-debug-info=${{ env.SYMBOLS_DIR }}
+            --split-debug-info=${{ env.SYMBOLS_DIR }} \
+            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
 
       - name: Build release APKs (Obfuscated & Split by ABI)
         run: |
@@ -203,7 +200,9 @@ jobs:
             --build-name=${{ steps.version.outputs.version }} \
             --build-number=${{ steps.version.outputs.build_number }} \
             --obfuscate \
-            --split-debug-info=${{ env.SYMBOLS_DIR }}
+            --split-debug-info=${{ env.SYMBOLS_DIR }} \
+            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
 
       - name: Verify artifacts
         run: |
@@ -212,7 +211,6 @@ jobs:
           test "$APK_COUNT" -gt 0
           echo "Found 1 AAB and $APK_COUNT APKs"
           
-          # Vérifier que les symboles ont bien été générés
           if [ -d "${{ env.SYMBOLS_DIR }}" ]; then
             echo "Symbols directory found."
             ls -la ${{ env.SYMBOLS_DIR }}
@@ -226,7 +224,6 @@ jobs:
           sha256sum bundle/release/app-release.aab > bundle/release/app-release.aab.sha256
           cd flutter-apk
           sha256sum *.apk > checksums.sha256
-          # Générer checksum pour les symboles si le dossier existe
           if [ -d "../${{ env.SYMBOLS_DIR }}" ]; then
             cd ..
             tar -czf symbols.tar.gz ${{ env.SYMBOLS_DIR }}
