@@ -19,6 +19,9 @@ concurrency:
 env:
   JAVA_VERSION: "17"
   SYMBOLS_DIR: "build/app/outputs/symbols"
+  # --- TEST TEMPORAIRE : clés en dur (à remettre en secrets après le test) ---
+  SUPABASE_URL: "https://lldgnysfiabakhaibgzq.supabase.co"
+  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZGdueXNmaWFiYWtoYWliZ3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NzgxNjcsImV4cCI6MjA5ODE1NDE2N30.AmrEd5RECLsamIjYiUBk_F4azYtBeMV3drL5RPzFhjo"
 
 jobs:
   test-and-analyze:
@@ -99,26 +102,14 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      # --- CRÉATION DU FICHIER .ENV ---
-      - name: Create .env file from Secrets
+      # --- CRÉATION DU FICHIER .ENV (clés en dur pour le test) ---
+      - name: Create .env file (hardcoded test)
         run: |
           echo "Creating .env file..."
-          
-          if [ -z "${{ secrets.SUPABASE_URL }}" ]; then
-            echo "❌ Error: Secret SUPABASE_URL is missing in GitHub Settings."
-            exit 1
-          fi
-          if [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
-            echo "❌ Error: Secret SUPABASE_ANON_KEY is missing in GitHub Settings."
-            exit 1
-          fi
-
-          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
-          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
-          
+          echo "SUPABASE_URL=${{ env.SUPABASE_URL }}" > .env
+          echo "SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }}" >> .env
           echo "✅ .env file created successfully."
-        env:
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          echo "Lines in .env: $(wc -l < .env)"
 
       - name: Generate code (build_runner)
         run: |
@@ -143,7 +134,7 @@ jobs:
             echo "Secret ANDROID_KEYSTORE_BASE64 is empty."
             exit 1
           fi
-          if [ -z "${STORE_PASSWORD}" ] || [ -z "${KEY_PASSWORD}" ] \vert{}\vert{} [ -z "${KEY_ALIAS}" ]; then
+          if [ -z "${STORE_PASSWORD}" ] || [ -z "${KEY_PASSWORD}" ] || [ -z "${KEY_ALIAS}" ]; then
             echo "Missing ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_PASSWORD or ANDROID_KEY_ALIAS."
             exit 1
           fi
@@ -180,7 +171,7 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           echo "full_version=$VERSION+$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "Version: $VERSION (build$BUILD_NUMBER)"
+          echo "Version: $VERSION (build $BUILD_NUMBER)"
 
       - name: Build release App Bundle (Obfuscated)
         run: |
@@ -189,8 +180,8 @@ jobs:
             --build-number=${{ steps.version.outputs.build_number }} \
             --obfuscate \
             --split-debug-info=${{ env.SYMBOLS_DIR }} \
-            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
-            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+            --dart-define=SUPABASE_URL="${{ env.SUPABASE_URL }}" \
+            --dart-define=SUPABASE_ANON_KEY="${{ env.SUPABASE_ANON_KEY }}"
 
       - name: Build release APKs (Obfuscated & Split by ABI)
         run: |
@@ -199,8 +190,8 @@ jobs:
             --build-number=${{ steps.version.outputs.build_number }} \
             --obfuscate \
             --split-debug-info=${{ env.SYMBOLS_DIR }} \
-            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
-            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+            --dart-define=SUPABASE_URL="${{ env.SUPABASE_URL }}" \
+            --dart-define=SUPABASE_ANON_KEY="${{ env.SUPABASE_ANON_KEY }}"
 
       - name: Verify artifacts
         run: |
@@ -208,7 +199,7 @@ jobs:
           APK_COUNT=$(ls -1 build/app/outputs/flutter-apk/*.apk 2>/dev/null | wc -l)
           test "$APK_COUNT" -gt 0
           echo "Found 1 AAB and $APK_COUNT APKs"
-          
+
           if [ -d "${{ env.SYMBOLS_DIR }}" ]; then
             echo "Symbols directory found."
             ls -la ${{ env.SYMBOLS_DIR }}
@@ -219,7 +210,7 @@ jobs:
       - name: Generate checksums & Compress symbols
         run: |
           sha256sum build/app/outputs/bundle/release/app-release.aab > build/app/outputs/bundle/release/app-release.aab.sha256
-          
+
           cd build/app/outputs/flutter-apk
           sha256sum *.apk > checksums.sha256
           cd -
@@ -268,7 +259,7 @@ jobs:
             echo "**Commit:** ${{ github.sha }}"
             echo "**Branch:** ${{ github.ref_name }}"
             echo "**Obfuscation:** Enabled ✅"
-            echo "**Environment:** Configured with Supabase Secrets ✅"
+            echo "**Environment:** Supabase hardcoded (TEST) ⚠️"
             echo ""
             echo "### Artifacts"
             echo "- App Bundle (AAB)"
