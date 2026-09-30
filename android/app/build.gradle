@@ -61,10 +61,9 @@ android {
                     ? signingConfigs.release
                     : signingConfigs.debug
 
-            // Désactivé temporairement pour faciliter le diagnostic
-            // du problème de compatibilité Android.
-            minifyEnabled false
-            shrinkResources false
+            // Activer la minification (obfuscation) et le nettoyage des ressources
+            minifyEnabled true
+            shrinkResources true
 
             proguardFiles getDefaultProguardFile(
                     'proguard-android-optimize.txt'
