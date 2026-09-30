@@ -7819,12 +7819,7 @@ const Map<String, String> _pt = {
 'status_rejected_long': 'Rejeitado',
 'status_active': 'Ativo',
 'status_inactive': 'Inativo',
-// ═══════════ COMUNS ═══════════
-'common_back': 'Voltar',
-'common_show_more': 'Ver mais',
-'common_show_less': 'Ver menos',
-'common_close': 'Fechar',
-'common_retry': 'Tentar novamente',
+
 // ═══════════ NOTIFICAÇÕES ═══════════
 'notif_title': 'Notificações',
 'notif_unread_count': '{0} não lida(s)',
@@ -9744,12 +9739,7 @@ const Map<String, String> _ar = {
 'status_rejected_long': 'تم الرفض',
 'status_active': 'نشط',
 'status_inactive': 'غير نشط',
-// ═══════════ مشتركة ═══════════
-'common_back': 'رجوع',
-'common_show_more': 'عرض المزيد',
-'common_show_less': 'عرض أقل',
-'common_close': 'إغلاق',
-'common_retry': 'إعادة المحاولة',
+
 // ═══════════ الإشعارات ═══════════
 'notif_title': 'الإشعارات',
 'notif_unread_count': '{0} غير مقروءة',
