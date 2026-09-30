@@ -2,106 +2,70 @@
 # THIX ID — Règles ProGuard/R8
 # ============================================================
 
-# ==========================================
-# APPLICATION ENTRY POINT & ACTIVITIES
-# (Empêche la suppression/renommage de la MainActivity)
-# ==========================================
--keep class com.thixhub.MainActivity { *; }
+# ---------- APPLICATION / ACTIVITIES ----------
+-keep class com.thixhub.** { *; }
 -keep public class * extends android.app.Activity
+-keep public class * extends android.app.Application
+-keep public class * extends android.app.Service
+-keep public class * extends android.content.BroadcastReceiver
 
-# ==========================================
-# FLUTTER CORE
-# ==========================================
--keep class io.flutter.app.** { *; }
--keep class io.flutter.plugin.** { *; }
--keep class io.flutter.util.** { *; }
--keep class io.flutter.view.** { *; }
+# ---------- ATTRIBUTS ----------
+-keepattributes Signature
+-keepattributes *Annotation*
+-keepattributes RuntimeVisibleAnnotations, AnnotationDefault
+-keepattributes SourceFile,LineNumberTable
+
+# ---------- FLUTTER ----------
 -keep class io.flutter.** { *; }
 -keep class io.flutter.plugins.** { *; }
 -dontwarn io.flutter.embedding.**
 
-# ==========================================
-# ML Kit Text Recognition — options de langue
-# ==========================================
+# ---------- ML KIT ----------
 -dontwarn com.google.mlkit.vision.text.chinese.**
 -dontwarn com.google.mlkit.vision.text.devanagari.**
 -dontwarn com.google.mlkit.vision.text.japanese.**
 -dontwarn com.google.mlkit.vision.text.korean.**
-
--keep class com.google.mlkit.vision.text.chinese.** { *; }
--keep class com.google.mlkit.vision.text.devanagari.** { *; }
--keep class com.google.mlkit.vision.text.japanese.** { *; }
--keep class com.google.mlkit.vision.text.korean.** { *; }
-
-# ML Kit — classes génériques
 -keep class com.google.mlkit.** { *; }
 -dontwarn com.google.mlkit.**
 
-# ==========================================
-# Google Play Core
-# ==========================================
+# ---------- GOOGLE PLAY CORE ----------
 -dontwarn com.google.android.play.core.**
 
-# ==========================================
-# AGORA RTC ENGINE (live streaming)
-# ==========================================
+# ---------- AGORA ----------
 -keep class io.agora.** { *; }
 -dontwarn io.agora.**
 -keepclasseswithmembernames class * {
     native <methods>;
 }
 
-# ==========================================
-# SUPABASE / GOTRUE / POSTGREST / REALTIME
-# ==========================================
--keep class io.github.jan.supabase.** { *; }
--dontwarn io.github.jan.supabase.**
-
-# ==========================================
-# FIREBASE (google-services)
-# ==========================================
+# ---------- FIREBASE / GMS ----------
 -keep class com.google.firebase.** { *; }
 -keep class com.google.android.gms.** { *; }
 -dontwarn com.google.firebase.**
 -dontwarn com.google.android.gms.**
 
-# ==========================================
-# GSON / JSON
-# ==========================================
--keepattributes Signature
--keepattributes *Annotation*
+# ---------- GSON ----------
 -keep class com.google.gson.** { *; }
 -dontwarn com.google.gson.**
 
-# ==========================================
-# PERMISSION_HANDLER
-# ==========================================
+# ---------- PERMISSION_HANDLER ----------
 -keep class com.baseflow.permissionhandler.** { *; }
 
-# ==========================================
-# ENUM
-# ==========================================
+# ---------- ENUM ----------
 -keepclassmembers enum * {
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }
 
-# ==========================================
-# PARCELABLE
-# ==========================================
+# ---------- PARCELABLE ----------
 -keepclassmembers class * implements android.os.Parcelable {
     static ** CREATOR;
 }
 
-# ==========================================
-# KOTLIN METADATA
-# ==========================================
+# ---------- KOTLIN ----------
 -keep class kotlin.Metadata { *; }
--keepattributes RuntimeVisibleAnnotations, AnnotationDefault
 
-# ==========================================
-# CACHED_NETWORK_IMAGE / OkHttp
-# ==========================================
+# ---------- OKHTTP / OKIO ----------
 -dontwarn okhttp3.**
 -dontwarn okio.**
 -keep class okhttp3.** { *; }
