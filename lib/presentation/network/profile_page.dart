@@ -328,7 +328,7 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       debugPrint('[Profile] Cleanup error: $e');
     }
   }
-
+  
   // ─── GALERIE PRIVÉE ───
   Future<void> _uploadPrivateMedia() async {
     if (_isUploading) return;
@@ -406,13 +406,13 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       setState(() {});
       if (mounted) {
         final message = successCount > 0
-            ? '\( successCount média \){successCount > 1 ? 's' : ''} ajouté${successCount > 1 ? 's' : ''}'
+            ? '$successCount média${successCount > 1 ? 's' : ''} ajouté${successCount > 1 ? 's' : ''}'
             : 'Aucun média ajouté';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               errorCount > 0
-                  ? '$message (\( errorCount erreur \){errorCount > 1 ? 's' : ''})'
+                  ? '$message ($errorCount erreur${errorCount > 1 ? 's' : ''})'
                   : message,
             ),
             backgroundColor: successCount > 0 ? ThixPolicy.success : ThixPolicy.warning,
