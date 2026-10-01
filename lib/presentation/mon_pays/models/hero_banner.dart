@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+/// 🎠 Bannière hero du module Mon Pays (miroir de mon_pays_banners)
 @immutable
 class HeroBanner {
   final String id;
