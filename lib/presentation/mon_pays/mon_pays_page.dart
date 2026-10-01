@@ -27,6 +27,7 @@ import 'pages/news/news_detail_page.dart';
 import 'mon_pays_routes.dart';
 import 'providers/historical_figures_provider.dart';
 import 'pages/historical_figures_page.dart';
+import 'providers/hero_banners_provider.dart';
 // ============================================================================
 // COULEURS PATRIOTIQUES RDC
 // ============================================================================
@@ -109,6 +110,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
   Timer? _carouselTimer;
   int _currentHero = 0;
   bool _isBackgrounded = false;
+  int _slideCount = 0;
 
   final List<Map<String, String>> heroSlides = [
     {
@@ -166,8 +168,8 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
   void _startCarousel() {
     _carouselTimer?.cancel();
     _carouselTimer = Timer.periodic(const Duration(seconds: 7), (_) {
-      if (_heroCtrl.hasClients && !_isBackgrounded && mounted) {
-        _currentHero = (_currentHero + 1) % heroSlides.length;
+      if (_heroCtrl.hasClients && !_isBackgrounded && mounted && _slideCount > 0) {
+        _currentHero = (_currentHero + 1) % _slideCount;
         _heroCtrl.animateToPage(
           _currentHero,
           duration: const Duration(milliseconds: 700),
@@ -418,14 +420,48 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
 
   // ─── HERO CAROUSEL ─────────────────────────────────────────────────────
   Widget _buildHeroCarousel() {
+    final banners = ref.watch(heroBannersProvider).valueOrNull ?? const <HeroBanner>[];
+
+    // Construit la liste : DB prioritaire, sinon slides locaux (sans img → dégradé)
+    final List<Map<String, String?>> slides = banners.isNotEmpty
+        ? banners
+            .map((b) => {
+                  'tag': b.tag,
+                  'title': b.title,
+                  'subtitle': b.subtitle,
+                  'img': b.imageUrl,
+                })
+            .toList()
+        : heroSlides
+            .map((s) => {
+                  'tag': s['tag'] as String?,
+                  'title': s['title'] as String?,
+                  'subtitle': s['subtitle'] as String?,
+                  'img': null, // force le dégradé premium (Unsplash cassé)
+                })
+            .toList();
+
+    // Synchronise le compteur pour le timer
+    if (_slideCount != slides.length) {
+      _slideCount = slides.length;
+      if (_currentHero >= _slideCount) _currentHero = 0;
+    }
+
     return SizedBox(
       height: _Compact.heroHeight,
       child: PageView.builder(
         controller: _heroCtrl,
-        itemCount: heroSlides.length,
+        itemCount: slides.length,
         onPageChanged: (index) => setState(() => _currentHero = index),
         itemBuilder: (context, index) {
-          final slide = heroSlides[index];
+          final slide = slides[index];
+          final rawImg = slide['img'];
+          final imgUrl = (rawImg == null ||
+                  rawImg.trim().isEmpty ||
+                  !(rawImg.startsWith('http://') || rawImg.startsWith('https://')))
+              ? null
+              : rawImg;
+
           return Container(
             margin: const EdgeInsets.symmetric(horizontal: ThixPolicy.s10),
             child: ClipRRect(
@@ -433,28 +469,33 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  CachedNetworkImage(
-                    imageUrl: slide['img']!,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(
-                      color: ThixPolicy.surfaceStrong,
-                      child: const Center(child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary)),
-                    ),
-                    errorWidget: (_, __, ___) => Container(
-                      color: ThixPolicy.surfaceStrong,
-                      child: const Icon(Icons.image_not_supported, color: ThixPolicy.textMuted, size: 32),
-                    ),
-                  ),
+                  // ✅ Image réseau OU dégradé premium (jamais d'image cassée)
+                  imgUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: imgUrl,
+                          fit: BoxFit.cover,
+                          fadeInDuration: const Duration(milliseconds: 400),
+                          placeholder: (_, __) => _heroGradientFallback(),
+                          errorWidget: (_, __, ___) => _heroGradientFallback(),
+                        )
+                      : _heroGradientFallback(),
+
+                  // Overlay dégradé lisibilité
                   Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, _MonPaysColors.rdcBlueDeep.withOpacity(0.95)],
+                        colors: [
+                          Colors.transparent,
+                          _MonPaysColors.rdcBlueDeep.withOpacity(0.95),
+                        ],
                         stops: const [0.35, 1.0],
                       ),
                     ),
                   ),
+
+                  // Contenu texte
                   Positioned(
                     bottom: ThixPolicy.s16,
                     left: ThixPolicy.s16,
@@ -470,7 +511,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
-                            slide['tag']!.toUpperCase(),
+                            (slide['tag'] ?? 'RDC').toUpperCase(),
                             style: TextStyle(
                               fontSize: 8,
                               fontWeight: FontWeight.w900,
@@ -481,37 +522,46 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
                         ),
                         const SizedBox(height: ThixPolicy.s8),
                         Text(
-                          slide['title']!,
+                          slide['title'] ?? '',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                           style: ThixPolicy.h2Style.copyWith(
                             color: ThixPolicy.onBrand,
                             fontSize: 20,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          slide['subtitle']!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: ThixPolicy.captionStyle.copyWith(color: Colors.white.withOpacity(0.85)),
-                        ),
+                        if ((slide['subtitle'] ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            slide['subtitle']!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: ThixPolicy.captionStyle
+                                .copyWith(color: Colors.white.withOpacity(0.85)),
+                          ),
+                        ],
                       ],
                     ),
                   ),
+
+                  // Indicateurs de pagination
                   Positioned(
                     bottom: ThixPolicy.s8,
                     right: ThixPolicy.s16,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: List.generate(
-                        heroSlides.length,
+                        slides.length,
                         (i) => AnimatedContainer(
                           duration: const Duration(milliseconds: 300),
                           margin: const EdgeInsets.only(left: 4),
                           width: i == _currentHero ? 18 : 6,
                           height: 6,
                           decoration: BoxDecoration(
-                            color: i == _currentHero ? ThixPolicy.gold : Colors.white.withOpacity(0.5),
+                            color: i == _currentHero
+                                ? ThixPolicy.gold
+                                : Colors.white.withOpacity(0.5),
                             borderRadius: BorderRadius.circular(3),
                           ),
                         ),
@@ -523,6 +573,50 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
             ),
           );
         },
+      ),
+    );
+  }
+
+  /// 🎨 Fond de secours premium : dégradé bleu nuit + bande rouge + étoile dorée
+  Widget _heroGradientFallback() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF12234F),
+            _MonPaysColors.rdcBlueDeep,
+            Color(0xFF050D1F),
+          ],
+        ),
+      ),
+      child: Stack(
+        children: [
+          // Bande diagonale rouge (rappel drapeau RDC)
+          Positioned(
+            right: -30,
+            top: -30,
+            child: Transform.rotate(
+              angle: 0.6,
+              child: Container(
+                width: 220,
+                height: 34,
+                color: _MonPaysColors.rdcRed.withOpacity(0.35),
+              ),
+            ),
+          ),
+          // Étoile dorée (symbole du drapeau)
+          Positioned(
+            right: 18,
+            bottom: 34,
+            child: Icon(
+              Icons.star_rounded,
+              size: 110,
+              color: ThixPolicy.gold.withOpacity(0.18),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1052,72 +1146,64 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
   }
 
   // ─── FIERTÉ DE LA NATION ───────────────────────────────────────────────
- // ─── FIERTÉ DE LA NATION ─────────────────────────────────────────
-Widget _buildPrideSection() {
-  final l10n = AppLocalizations.of(context);
-  final citizensAsync = ref.watch(citizensProvider);
+  Widget _buildPrideSection() {
+    final l10n = AppLocalizations.of(context);
+    final citizensAsync = ref.watch(citizensProvider);
 
-  return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-    child: _buildCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ✅ Header connecté à la route dédiée
-          _buildSectionHeader(
-            l10n.t('mon_pays_citizens_title'),
-            actionText: 'Tous les profils',
-            onTap: () => _navigateTo(MonPaysRoutes.citizens),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Ils bâtissent la RDC au quotidien par leur excellence.',
-            style: ThixPolicy.microStyle,
-          ),
-          const SizedBox(height: _Compact.innerGap),
-
-          SizedBox(
-            height: _Compact.prideHeight,
-            child: citizensAsync.when(
-              loading: () => _buildSkeletonCard(height: _Compact.prideHeight),
-
-              // ✅ Erreur avec bouton Réessayer
-              error: (e, _) => _buildErrorState(
-                l10n.t('mon_pays_citizens_error'),
-                onRetry: () => ref.invalidate(citizensProvider),
-              ),
-
-              data: (citizens) {
-                if (citizens.isEmpty) {
-                  return _buildEmptyState(l10n.t('mon_pays_citizens_empty'));
-                }
-                return ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  itemCount: citizens.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s12),
-
-                  // ✅ Carte cliquable → fiche détail
-                  itemBuilder: (context, i) {
-                    final citizen = citizens[i];
-                    return InkWell(
-                      onTap: () {
-                        HapticFeedback.lightImpact();
-                        showCitizenDetailSheet(context, citizen);
-                      },
-                      borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                      child: _buildCitizenCard(citizen),
-                    );
-                  },
-                );
-              },
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+      child: _buildCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionHeader(
+              l10n.t('mon_pays_citizens_title'),
+              actionText: 'Tous les profils',
+              onTap: () => _navigateTo(MonPaysRoutes.citizens),
             ),
-          ),
-        ],
+            const SizedBox(height: 4),
+            Text(
+              'Ils bâtissent la RDC au quotidien par leur excellence.',
+              style: ThixPolicy.microStyle,
+            ),
+            const SizedBox(height: _Compact.innerGap),
+            SizedBox(
+              height: _Compact.prideHeight,
+              child: citizensAsync.when(
+                loading: () => _buildSkeletonCard(height: _Compact.prideHeight),
+                error: (e, _) => _buildErrorState(
+                  l10n.t('mon_pays_citizens_error'),
+                  onRetry: () => ref.invalidate(citizensProvider),
+                ),
+                data: (citizens) {
+                  if (citizens.isEmpty) {
+                    return _buildEmptyState(l10n.t('mon_pays_citizens_empty'));
+                  }
+                  return ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: citizens.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s12),
+                    itemBuilder: (context, i) {
+                      final citizen = citizens[i];
+                      return InkWell(
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          showCitizenDetailSheet(context, citizen);
+                        },
+                        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                        child: _buildCitizenCard(citizen),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildCitizenCard(dynamic citizen) {
     final photoUrl = citizen.photoUrl;
@@ -1294,69 +1380,70 @@ Widget _buildPrideSection() {
 
   // ─── FIGURES HISTORIQUES ───────────────────────────────────────────────
   Widget _buildHistoricalFigures() {
-  final l10n = AppLocalizations.of(context);
-  final figuresAsync = ref.watch(historicalFiguresProvider);
+    final l10n = AppLocalizations.of(context);
+    final figuresAsync = ref.watch(historicalFiguresProvider);
 
-  return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-    child: _buildCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionHeader(
-            l10n.t('mon_pays_figures_title'),
-            actionText: l10n.t('mon_pays_figures_explore'),
-            onTap: () => _navigateTo(MonPaysRoutes.historicalFigures),
-          ),
-          const SizedBox(height: 4),
-          Text(l10n.t('mon_pays_figures_subtitle'), style: ThixPolicy.microStyle),
-          const SizedBox(height: _Compact.innerGap),
-          SizedBox(
-            height: 150,
-            child: figuresAsync.when(
-              loading: () => ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: 4,
-                separatorBuilder: (_, __) => const SizedBox(width: 12),
-                itemBuilder: (_, __) => Container(
-                  width: 110,
-                  decoration: BoxDecoration(
-                    color: ThixPolicy.surfaceStrong,
-                    borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+      child: _buildCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSectionHeader(
+              l10n.t('mon_pays_figures_title'),
+              actionText: l10n.t('mon_pays_figures_explore'),
+              onTap: () => _navigateTo(MonPaysRoutes.historicalFigures),
+            ),
+            const SizedBox(height: 4),
+            Text(l10n.t('mon_pays_figures_subtitle'), style: ThixPolicy.microStyle),
+            const SizedBox(height: _Compact.innerGap),
+            SizedBox(
+              height: 150,
+              child: figuresAsync.when(
+                loading: () => ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: 4,
+                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                  itemBuilder: (_, __) => Container(
+                    width: 110,
+                    decoration: BoxDecoration(
+                      color: ThixPolicy.surfaceStrong,
+                      borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                    ),
                   ),
                 ),
-              ),
-              error: (_, __) => Center(
-                child: TextButton.icon(
-                  onPressed: () => ref.invalidate(historicalFiguresProvider),
-                  icon: const Icon(Icons.refresh_rounded, size: 16),
-                  label: Text(l10n.t('common_retry'),
-                      style: ThixPolicy.captionStyle),
-                ),
-              ),
-              data: (figures) {
-                if (figures.isEmpty) {
-                  return Center(
-                    child: Text(l10n.t('mon_pays_figures_empty'),
+                error: (_, __) => Center(
+                  child: TextButton.icon(
+                    onPressed: () => ref.invalidate(historicalFiguresProvider),
+                    icon: const Icon(Icons.refresh_rounded, size: 16),
+                    label: Text(l10n.t('common_retry'),
                         style: ThixPolicy.captionStyle),
+                  ),
+                ),
+                data: (figures) {
+                  if (figures.isEmpty) {
+                    return Center(
+                      child: Text(l10n.t('mon_pays_figures_empty'),
+                          style: ThixPolicy.captionStyle),
+                    );
+                  }
+                  return ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: figures.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 12),
+                    itemBuilder: (_, i) =>
+                        HistoricalFigureTile(figure: figures[i]),
                   );
-                }
-                return ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  physics: const BouncingScrollPhysics(),
-                  itemCount: figures.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 12),
-                  itemBuilder: (_, i) =>
-                      HistoricalFigureTile(figure: figures[i]),
-                );
-              },
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
+
   // ─── UTILITAIRES ───────────────────────────────────────────────────────
   Widget _buildCard({required Widget child, EdgeInsetsGeometry? padding}) {
     return Container(
