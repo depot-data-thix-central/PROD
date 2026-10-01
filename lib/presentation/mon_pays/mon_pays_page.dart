@@ -1120,7 +1120,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
                     scrollDirection: Axis.horizontal,
                     physics: const BouncingScrollPhysics(),
                     itemCount: citizens.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s18 = 18),
+                    separatorBuilder: (_, __) => const SizedBox(width: 18),
                     itemBuilder: (context, i) => _buildCitizenCard(citizens[i]),
                   );
                 },
@@ -1284,7 +1284,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
         onTap: _showComingSoon,
         borderRadius: BorderRadius.circular(ThixPolicy.rXl),
         child: _buildCard(
-          padding: const EdgeInsets.all(ThixPolicy.s18 = 18),
+          padding: const EdgeInsets.all(18),
           child: Row(
             children: [
               Container(
