@@ -21,4 +21,6 @@ class MonPaysRoutes {
   static const String adminFormName = 'monPaysAdminForm';
   static const String citizens = '/mon-pays/citizens';
 static const String citizensName = 'monPaysCitizens';
+  static const String historicalFigures = '/mon-pays/historical-figures';
+static const String historicalFiguresName = 'monPaysHistoricalFigures';
 }
