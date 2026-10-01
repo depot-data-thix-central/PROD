@@ -18,7 +18,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-
+import 'pages/citizens_page.dart';
 import 'providers/news_provider.dart';
 import 'providers/provinces_provider.dart';
 import 'providers/authorities_provider.dart';
@@ -1050,50 +1050,72 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
   }
 
   // ─── FIERTÉ DE LA NATION ───────────────────────────────────────────────
-  Widget _buildPrideSection() {
-    final citizensAsync = ref.watch(citizensProvider);
+ // ─── FIERTÉ DE LA NATION ─────────────────────────────────────────
+Widget _buildPrideSection() {
+  final l10n = AppLocalizations.of(context);
+  final citizensAsync = ref.watch(citizensProvider);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-      child: _buildCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSectionHeader(
-              'Fierté de la Nation',
-              actionText: 'Tous les profils',
-              onTap: () => _showComingSoon(),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Ils bâtissent la RDC au quotidien par leur excellence.',
-              style: ThixPolicy.microStyle,
-            ),
-            const SizedBox(height: _Compact.innerGap),
-            SizedBox(
-              height: _Compact.prideHeight,
-              child: citizensAsync.when(
-                loading: () => _buildSkeletonCard(height: _Compact.prideHeight),
-                error: (_, __) => _buildErrorState('Erreur de chargement'),
-                data: (citizens) {
-                  if (citizens.isEmpty) {
-                    return _buildEmptyState('Aucun profil pour le moment');
-                  }
-                  return ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: citizens.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s12),
-                    itemBuilder: (context, i) => _buildCitizenCard(citizens[i]),
-                  );
-                },
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+    child: _buildCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ✅ Header connecté à la route dédiée
+          _buildSectionHeader(
+            l10n.t('mon_pays_citizens_title'),
+            actionText: 'Tous les profils',
+            onTap: () => _navigateTo(MonPaysRoutes.citizens),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Ils bâtissent la RDC au quotidien par leur excellence.',
+            style: ThixPolicy.microStyle,
+          ),
+          const SizedBox(height: _Compact.innerGap),
+
+          SizedBox(
+            height: _Compact.prideHeight,
+            child: citizensAsync.when(
+              loading: () => _buildSkeletonCard(height: _Compact.prideHeight),
+
+              // ✅ Erreur avec bouton Réessayer
+              error: (e, _) => _buildErrorState(
+                l10n.t('mon_pays_citizens_error'),
+                onRetry: () => ref.invalidate(citizensProvider),
               ),
+
+              data: (citizens) {
+                if (citizens.isEmpty) {
+                  return _buildEmptyState(l10n.t('mon_pays_citizens_empty'));
+                }
+                return ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: citizens.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s12),
+
+                  // ✅ Carte cliquable → fiche détail
+                  itemBuilder: (context, i) {
+                    final citizen = citizens[i];
+                    return InkWell(
+                      onTap: () {
+                        HapticFeedback.lightImpact();
+                        showCitizenDetailSheet(context, citizen);
+                      },
+                      borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                      child: _buildCitizenCard(citizen),
+                    );
+                  },
+                );
+              },
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildCitizenCard(dynamic citizen) {
     final photoUrl = citizen.photoUrl;
