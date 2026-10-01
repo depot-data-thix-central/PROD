@@ -4,20 +4,18 @@
 //
 // ✅ CORRECTIONS APPLIQUÉES:
 // - Cache Optimiste: Les Likes, Saves et Reposts ne redeviennent plus gris au scroll !
-// - Vérité serveur pour le like: si le cache optimiste n'a pas l'info (ex: après
-//   redémarrage de l'app, ou premier chargement du smart feed qui n'expose pas
-//   is_liked), on interroge directement post_likes pour ne plus jamais perdre
-//   l'état rouge du like de façon incohérente.
+// - Vérité serveur pour le like (post_likes) si le cache optimiste n'a pas l'info.
 // - Suppression des 'const' incorrects sur les widgets dynamiques
 // - Typage explicite <String, dynamic> pour toutes les Maps
 // - Vérification mounted après chaque await
 // - Protection _isDisposed dans le Notifier
 // - Gestion propre des StreamSubscription (AudioPlayer)
 //
-// ✅ NOUVELLES CORRECTIONS (Mise à jour UI) :
-// - _LikersStack : Alignement strict sur ThixPolicy (suppression de Colors.grey)
-// - _OriginalPostEmbed : Refonte du placeholder avec la palette _Mono
-// - _FullScreenVideoPlayer : Ajustement de l'AppBar (elevation: 0)
+// ✅ NOUVEAU (cette version) :
+// - _OriginalPostEmbed : charge et affiche le post original d'un repost
+//   (auteur, texte, média), avec fallback "post indisponible".
+// - _FullScreenVideoPlayer : vrai lecteur vidéo plein écran (video_player).
+// - Un repost n'affiche plus un contenu parasite "true".
 
 import 'dart:async';
 import 'dart:collection';
@@ -228,6 +226,11 @@ String? _safeImageUrl(String? url) {
   return _PostCardValidators.isValidUrl(url) ? url : null;
 }
 
+/// Un repost simple ne doit jamais afficher un contenu parasite "true".
+bool _isGhostRepostContent(NetworkPost post) {
+  return post.isRepostCard && post.content.trim().toLowerCase() == 'true';
+}
+
 // ============================================================================
 // CACHE LRU & OPTIMISTE
 // ============================================================================
@@ -274,6 +277,25 @@ class _PostCardCache {
     map[key] = _CacheEntry(value);
   }
 }
+
+// ============================================================================
+// POST ORIGINAL D'UN REPOST (chargé une fois, gardé en mémoire)
+// ============================================================================
+
+final _originalPostProvider =
+    FutureProvider.autoDispose.family<NetworkPost?, String>((ref, postId) async {
+  // Évite de recharger l'original à chaque scroll
+  ref.keepAlive();
+  try {
+    return await ref
+        .read(networkServiceProvider)
+        .getPostById(postId)
+        .timeout(_PostCardConfig.networkTimeout);
+  } catch (e) {
+    _PostCardLogger.warn('original post load failed', {'postId': postId, 'error': '$e'});
+    return null;
+  }
+});
 
 // ============================================================================
 // STATE NOTIFIER
@@ -408,7 +430,7 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
     if (!_isAuthenticated || _isDisposed) return;
     final was = state.isSaved;
     final newSaved = !was;
-    
+
     state = state.copyWith(isSaved: newSaved);
     _PostCardCache.instance.optimisticSaves[state.id] = newSaved;
 
@@ -445,30 +467,51 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
 }
 
 // ============================================================================
-// WIDGETS MANQUANTS (ÉDITION & PLEIN ÉCRAN)
+// POST ORIGINAL (embed d'un repost)
 // ============================================================================
 
 class _OriginalPostEmbed extends ConsumerWidget {
   final String postId;
   const _OriginalPostEmbed({required this.postId});
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // TODO: Intégrer l'affichage complet du post d'origine ou charger via networkServiceProvider
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
+  BoxDecoration get _boxDecoration => BoxDecoration(
         color: _Mono.accent.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _Mono.accent.withValues(alpha: 0.15)),
+      );
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(_originalPostProvider(postId));
+
+    return async.when(
+      loading: () => Container(
+        height: 90,
+        decoration: _boxDecoration,
+        child: const Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2, color: _Mono.accent),
+          ),
+        ),
       ),
+      error: (_, __) => _unavailable(),
+      data: (original) => original == null ? _unavailable() : _card(context, original),
+    );
+  }
+
+  Widget _unavailable() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: _boxDecoration,
       child: Row(
         children: [
-          const Icon(Icons.repeat_rounded, color: ThixPolicy.textSecondary, size: 18),
+          const Icon(Icons.info_outline_rounded, color: ThixPolicy.textSecondary, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Post original référencé ($postId)',
+              "Ce post n'est plus disponible",
               style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
             ),
           ),
@@ -476,7 +519,181 @@ class _OriginalPostEmbed extends ConsumerWidget {
       ),
     );
   }
+
+  Widget _card(BuildContext context, NetworkPost original) {
+    final name = _PostCardValidators.sanitize(original.authorName, maxLength: 100);
+    final avatar = _safeImageUrl(original.authorAvatar);
+    final content = _PostCardValidators.sanitize(original.content, maxLength: 600);
+    final mediaUrls = <String>[
+      ...original.imageUrls.where(_PostCardValidators.isValidUrl),
+      ...original.videoUrls.where(_PostCardValidators.isValidUrl),
+    ];
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        if (!_PostCardValidators.isValidId(original.id)) return;
+        HapticFeedback.selectionClick();
+        context.push('/network/comments/${original.id}');
+      },
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: _boxDecoration,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: ThixPolicy.surfaceSoft,
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.2),
+                  ),
+                  child: ClipOval(
+                    child: avatar != null
+                        ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover)
+                        : const Icon(Icons.person_rounded, size: 15, color: ThixPolicy.textMuted),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name.isEmpty ? 'Utilisateur' : name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: ThixPolicy.titleStyle.copyWith(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: ThixPolicy.textMain,
+                        ),
+                      ),
+                      Text(
+                        timeago.format(original.createdAt.toLocal(), locale: 'fr'),
+                        style: ThixPolicy.captionStyle.copyWith(
+                          fontSize: 10.5,
+                          color: ThixPolicy.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (content.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                content,
+                maxLines: 5,
+                overflow: TextOverflow.ellipsis,
+                style: ThixPolicy.bodyStyle.copyWith(
+                  fontSize: 13.5,
+                  height: 1.4,
+                  color: ThixPolicy.textMain,
+                ),
+              ),
+            ],
+            if (mediaUrls.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _media(context, mediaUrls),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _media(BuildContext context, List<String> urls) {
+    final first = urls.first;
+    final imageOnly = urls.where((u) => !_isVideoUrl(u)).toList();
+    final extra = urls.length - 1;
+
+    Widget tile;
+    if (_isVideoUrl(first)) {
+      tile = _VideoThumbTile(
+        videoUrl: first,
+        width: double.infinity,
+        height: 190,
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => _FullScreenVideoPlayer(videoUrl: first)),
+          );
+        },
+      );
+    } else {
+      tile = GestureDetector(
+        onTap: () {
+          HapticFeedback.mediumImpact();
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => _FullScreenGallery(
+                imageUrls: imageOnly,
+                initialIndex: imageOnly.indexOf(first).clamp(0, imageOnly.length - 1),
+              ),
+            ),
+          );
+        },
+        child: CachedNetworkImage(
+          imageUrl: first,
+          width: double.infinity,
+          height: 190,
+          fit: BoxFit.cover,
+          memCacheWidth: 600,
+          placeholder: (_, __) => Container(color: Colors.white.withValues(alpha: 0.5)),
+          errorWidget: (_, __, ___) => Container(
+            height: 190,
+            color: Colors.white.withValues(alpha: 0.5),
+            child: const Icon(Icons.broken_image_outlined, color: ThixPolicy.textMuted),
+          ),
+        ),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        height: 190,
+        width: double.infinity,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            tile,
+            if (extra > 0)
+              Positioned(
+                right: 8,
+                bottom: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '+$extra',
+                    style: ThixPolicy.captionStyle.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
+
+// ============================================================================
+// GALERIE & LECTEUR VIDÉO PLEIN ÉCRAN
+// ============================================================================
 
 class _FullScreenGallery extends StatelessWidget {
   final List<String> imageUrls;
@@ -499,17 +716,220 @@ class _FullScreenGallery extends StatelessWidget {
   }
 }
 
-class _FullScreenVideoPlayer extends StatelessWidget {
+class _FullScreenVideoPlayer extends StatefulWidget {
   final String videoUrl;
   const _FullScreenVideoPlayer({required this.videoUrl});
+
+  @override
+  State<_FullScreenVideoPlayer> createState() => _FullScreenVideoPlayerState();
+}
+
+class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
+  VideoPlayerController? _controller;
+  bool _initialized = false;
+  bool _hasError = false;
+  bool _showControls = true;
+  Timer? _hideTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    final uri = Uri.tryParse(widget.videoUrl);
+    if (uri == null || !_PostCardValidators.isValidUrl(widget.videoUrl)) {
+      setState(() => _hasError = true);
+      return;
+    }
+
+    final controller = VideoPlayerController.networkUrl(
+      uri,
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+    );
+    _controller = controller;
+
+    try {
+      await controller.initialize();
+      if (!mounted) return;
+      await controller.setLooping(false);
+      await controller.play();
+      if (!mounted) return;
+      setState(() => _initialized = true);
+      _scheduleHide();
+    } catch (e) {
+      _PostCardLogger.error('video init failed', {'error': '$e'});
+      if (mounted) setState(() => _hasError = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  void _scheduleHide() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && (_controller?.value.isPlaying ?? false)) {
+        setState(() => _showControls = false);
+      }
+    });
+  }
+
+  void _toggleControls() {
+    setState(() => _showControls = !_showControls);
+    if (_showControls) _scheduleHide();
+  }
+
+  Future<void> _togglePlay() async {
+    final c = _controller;
+    if (c == null || !_initialized) return;
+    HapticFeedback.selectionClick();
+
+    final v = c.value;
+    final ended = v.duration > Duration.zero && v.position >= v.duration;
+
+    if (v.isPlaying) {
+      await c.pause();
+      _hideTimer?.cancel();
+    } else {
+      if (ended) await c.seekTo(Duration.zero);
+      await c.play();
+      _scheduleHide();
+    }
+  }
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return d.inHours > 0 ? '${d.inHours}:$m:$s' : '$m:$s';
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(backgroundColor: Colors.transparent, iconTheme: const IconThemeData(color: Colors.white), elevation: 0),
-      body: const Center(
-        child: Text('Lecteur vidéo (À implémenter)', style: TextStyle(color: Colors.white)),
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_hasError) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline_rounded, color: Colors.white70, size: 40),
+              SizedBox(height: 12),
+              Text(
+                'Impossible de lire cette vidéo',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final controller = _controller;
+    if (!_initialized || controller == null) {
+      return const Center(child: CircularProgressIndicator(color: Colors.white));
+    }
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _toggleControls,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Center(
+            child: AspectRatio(
+              aspectRatio: controller.value.aspectRatio == 0 ? 16 / 9 : controller.value.aspectRatio,
+              child: VideoPlayer(controller),
+            ),
+          ),
+          ValueListenableBuilder<VideoPlayerValue>(
+            valueListenable: controller,
+            builder: (context, value, _) {
+              final ended = value.duration > Duration.zero && value.position >= value.duration;
+              final showCenter = _showControls || !value.isPlaying;
+
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (value.isBuffering)
+                    const Center(child: CircularProgressIndicator(color: Colors.white)),
+                  if (showCenter && !value.isBuffering)
+                    Center(
+                      child: GestureDetector(
+                        onTap: _togglePlay,
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            ended
+                                ? Icons.replay_rounded
+                                : (value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                            color: Colors.white,
+                            size: 44,
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (_showControls)
+                    Positioned(
+                      left: 16,
+                      right: 16,
+                      bottom: 24,
+                      child: SafeArea(
+                        top: false,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            VideoProgressIndicator(
+                              controller,
+                              allowScrubbing: true,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              colors: VideoProgressColors(
+                                playedColor: Colors.white,
+                                bufferedColor: Colors.white38,
+                                backgroundColor: Colors.white24,
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                Text(_fmt(value.position),
+                                    style: const TextStyle(color: Colors.white, fontSize: 12)),
+                                const Spacer(),
+                                Text(_fmt(value.duration),
+                                    style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
       ),
     );
   }
@@ -1794,6 +2214,9 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           final isFollowingDB = ref.watch(followStatusProvider(post.userId)).valueOrNull;
           final isFollowing = isFollowingDB ?? _isFollowingLocal;
 
+          // Un repost simple n'affiche pas le texte parasite "true"
+          final showContent = post.content.isNotEmpty && !_isGhostRepostContent(post);
+
           WidgetsBinding.instance.addPostFrameCallback((_) => _registerImpression(post.id));
 
           return RepaintBoundary(
@@ -1835,7 +2258,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                                   ]),
                                 ),
                               const SizedBox(height: 12),
-                              if (post.content.isNotEmpty) _buildPostContent(post, l10n),
+                              if (showContent) _buildPostContent(post, l10n),
                               if (post.isRepostCard && _PostCardValidators.isValidId(post.repostOfId)) ...[
                                 const SizedBox(height: 12),
                                 _OriginalPostEmbed(postId: post.repostOfId!),
@@ -2382,10 +2805,12 @@ class _VideoThumbTileState extends State<_VideoThumbTile> {
             else
               const Center(child: Icon(Icons.videocam_rounded, color: Colors.white24, size: 40)),
             Container(color: Colors.black.withValues(alpha: 0.2)),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5), shape: BoxShape.circle),
-              child: const Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 40),
+            Center(
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.5), shape: BoxShape.circle),
+                child: const Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 40),
+              ),
             ),
           ],
         ),
@@ -2495,7 +2920,7 @@ class _LikersStackState extends State<_LikersStack> {
               );
             }),
           ),
-          
+
           if (extra > 0)
             Padding(
               padding: const EdgeInsets.only(left: 4),
@@ -2508,9 +2933,9 @@ class _LikersStackState extends State<_LikersStack> {
                 ),
               ),
             ),
-            
+
           const SizedBox(width: 8),
-          
+
           Expanded(
             child: Text(
               text,
@@ -2521,8 +2946,8 @@ class _LikersStackState extends State<_LikersStack> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-        ], 
-      ),   
-    );     
-  }       
+        ],
+      ),
+    );
+  }
 }
