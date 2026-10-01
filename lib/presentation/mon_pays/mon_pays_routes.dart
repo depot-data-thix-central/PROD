@@ -19,4 +19,6 @@ class MonPaysRoutes {
   static const String authorityProfileName = 'monPaysAuthorityProfile';
   static const String adminName = 'monPaysAdmin';
   static const String adminFormName = 'monPaysAdminForm';
+  static const String citizens = '/mon-pays/citizens';
+static const String citizensName = 'monPaysCitizens';
 }
