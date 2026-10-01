@@ -86,7 +86,7 @@ import 'package:thix_id/presentation/thix_media/user_profile_page.dart';
 import 'package:thix_id/presentation/thix_media/thix_media_page.dart';
 import 'package:thix_id/presentation/thix_media/video_player_page.dart';
 import 'package:thix_id/presentation/thix_media/admin/thix_media_admin_page.dart';
-
+import 'package:thix_id/presentation/mon_pays/pages/citizens_page.dart'; 
 // === THIX MARKET ===
 import 'package:thix_id/presentation/thix_market/pages/market_home_page.dart';
 import 'package:thix_id/presentation/thix_market/pages/search_page.dart' as marketSearch;
@@ -624,6 +624,11 @@ class AppRouter {
             victimUserId: state.uri.queryParameters['victim'],
           ),
         ),
+        GoRoute(
+  path: MonPaysRoutes.citizens,
+  name: MonPaysRoutes.citizensName,
+  builder: (context, state) => const CitizensPage(),
+),
         GoRoute(path: '/thix-retrouve', name: 'thixRetrouve', builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 2), routes: [
           GoRoute(path: 'detail', name: 'thixRetrouveDetail', pageBuilder: (_, __) => const NoTransitionPage(child: ObjectDetailPage())),
           GoRoute(path: 'ai-match', name: 'thixRetrouveAiMatch', pageBuilder: (_, __) => const NoTransitionPage(child: AiMatchPage())),
