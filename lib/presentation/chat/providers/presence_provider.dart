@@ -298,28 +298,24 @@ class PresenceNotifier extends StateNotifier<PresenceState>
 
     try {
       final raw = _channel?.presenceState();
-      if (raw is! Map) {
-        debugPrint(
-            '[Presence] ⚠️ presenceState() type inattendu: ${raw.runtimeType}');
+      if (raw == null || raw.isEmpty) {
+        state = state.copyWith(onlineUserIds: {});
         return;
       }
 
       final newState = <String>{};
-      for (final entry in raw.entries) {
-        final list = entry.value;
-        if (list is! List) continue;
 
-        for (final presence in list) {
+      // realtime_client 2.x → List<SinglePresenceState>
+      for (final single in raw) {
+        for (final presence in single.presences) {
           final userId =
               _PresenceValidators.extractUserId(_payloadOf(presence));
           if (userId != null) {
             newState.add(userId);
-            if (newState.length >= _kMaxSetSize) {
-              debugPrint('[Presence] ⚠️ Max set size reached ($_kMaxSetSize)');
-              break;
-            }
+            if (newState.length >= _kMaxSetSize) break;
           }
         }
+        if (newState.length >= _kMaxSetSize) break;
       }
 
       state = state.copyWith(onlineUserIds: newState);
@@ -328,7 +324,6 @@ class PresenceNotifier extends StateNotifier<PresenceState>
       _logError('Sync error', e, stack);
     }
   }
-
   // ── JOIN / LEAVE ──────────────────────────────────────────────────────
   void _handlePresenceJoin(dynamic join) {
     if (_isDisposed) return;
