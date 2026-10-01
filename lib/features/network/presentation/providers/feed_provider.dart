@@ -2,13 +2,14 @@
 //
 // FeedProvider — Production Enterprise (Riverpod AsyncNotifier)
 //
-// ✅ Timeouts + retry sur erreurs 5xx
-// ✅ Logs structurés avec niveaux INFO/WARN/ERROR
-// ✅ Validation des inputs et données reçues
-// ✅ Throttling sur actions utilisateur
-// ✅ Protection contre race conditions
-// ✅ Error recovery robuste
-// ✅ Observabilité complète
+// Timeouts + retry sur erreurs 5xx
+// Logs structurés avec niveaux INFO/WARN/ERROR
+//  Validation des inputs et données reçues
+//  Throttling sur actions utilisateur
+//  Protection contre race conditions
+//  Error recovery robuste
+//  Observabilité complète
+//  Onglet "Pour vous" (foryou) branché sur le smart feed DB
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -69,6 +70,33 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
   bool get hasMore => _hasMore;
   String get currentType => _currentType;
   bool get isFetchingMore => _isFetchingMore;
+
+  // ════════════════════════════════════════════════════════════════════
+  // NORMALISATION DU TYPE DE FEED
+  // ════════════════════════════════════════════════════════════════════
+
+  /// "Pour vous" (foryou, for_you, smart, ...) → 'all' = smart feed DB.
+  /// Avant : 'foryou' n'était pas reconnu, donc l'app lisait le feed
+  /// par date de création au lieu du smart feed.
+  String _normalizeType(String type) {
+    final t = type.trim().toLowerCase().replaceAll(' ', '').replaceAll('_', '');
+    switch (t) {
+      case 'foryou':
+      case 'pourvous':
+      case 'smart':
+      case 'edgerank':
+      case 'all':
+        return 'all';
+      case 'réseau':
+      case 'reseau':
+        return 'network';
+      case 'tendance':
+      case 'trending':
+        return 'popular';
+      default:
+        return t;
+    }
+  }
 
   // ════════════════════════════════════════════════════════════════════
   // CONNEXIONS (avec cache TTL)
@@ -204,7 +232,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
   // ════════════════════════════════════════════════════════════════════
 
   Future<void> loadFeed({String? feedType, bool force = false}) async {
-    if (feedType != null) _currentType = feedType;
+    if (feedType != null) _currentType = _normalizeType(feedType);
     state = const AsyncLoading();
 
     try {
@@ -213,6 +241,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
         _connectionsLastFetched = null;
       }
 
+      _hasMore = true;
       _lastPostDate = null;
       // ✅ NOUVEAU seed à chaque refresh pour varier le contenu
       _feedSeed = Random().nextInt(1000000000);
@@ -360,7 +389,10 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
     _lastDeleteAction = now;
 
     final current = state.valueOrNull ?? [];
-    final original = current.firstWhere((p) => p.id == postId, orElse: () => throw Exception('Post not found'));
+    if (!current.any((p) => p.id == postId)) {
+      _FeedLogger.warn('Delete rejected: post not found', {'id': postId});
+      return;
+    }
 
     // Optimistic update
     state = AsyncData(current.where((p) => p.id != postId).toList());
