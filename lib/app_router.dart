@@ -254,6 +254,8 @@ import 'package:thix_id/presentation/mon_pays/admin/admin_achievement_form_page.
 import 'package:thix_id/presentation/mon_pays/admin/admin_media_form_page.dart';
 import 'package:thix_id/presentation/mon_pays/models/province.dart';
 import 'package:thix_id/presentation/mon_pays/mon_pays_routes.dart';
+import 'package:thix_id/presentation/mon_pays/pages/citizens_page.dart';
+
 // === THIX RETROUVE & IA ===
 import 'package:thix_id/presentation/thix_retrouve/thix_retrouve_screen.dart';
 import 'package:thix_id/presentation/thix_retrouve/pages/object_detail_page.dart';
