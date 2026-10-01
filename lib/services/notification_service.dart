@@ -1,27 +1,7 @@
-/// Notification Service (Production Enterprise)
-///  SÉCURISÉ : Validation stricte, sanitization, masquage UID (RGPD)
-///  ROBUSTE : Timeouts, error handling, retry avec backoff
-/// 
-/// OBSERVABLE : Logs structurés avec emojis et contexte
-///
-/// Service pour gérer les notifications utilisateur :
-/// - Stream temps réel des notifications
-/// - Affichage de popups locaux
-/// - Ajout/marquage de notifications
-///
-/// **Architecture** :
-/// - Realtime Supabase avec fallback polling (configurable)
-/// - Retry avec backoff exponentiel (500ms → 8s max)
-/// - Validation stricte de tous les inputs
-/// - Sanitization des strings (XSS protection)
-/// - Masquage des UIDs dans les logs (RGPD)
-///
-/// **Edge cases gérés** :
-/// - UID invalide → Stream vide + log
-/// - Timeout réseau → Fallback polling automatique
-/// - Erreur Supabase → Retry avec backoff exponentiel
-/// - Collision d'IDs → UUID v4 généré
-/// - Limite mémoire → LRU cache sur `_shownPopIds`
+/// Notification Service
+/// - Stream temps réel des notifications (Realtime + fallback polling)
+/// - Pop locale UNIQUEMENT pour les notifications reçues par l'utilisateur connecté
+/// - Ajout / marquage de notifications
 import 'dart:async';
 import 'dart:collection';
 import 'package:flutter/foundation.dart';
@@ -37,8 +17,10 @@ const Duration _kQueryTimeout = Duration(seconds: 15);
 const Duration _kPollingInterval = Duration(seconds: 5);
 const Duration _kMinRetryDelay = Duration(milliseconds: 500);
 const Duration _kMaxRetryDelay = Duration(seconds: 8);
+const Duration _kPopMaxAge = Duration(minutes: 2);
 const int _kMaxRetries = 10;
 const int _kMaxShownPopIds = 100;
+const int _kMaxPopsPerRefresh = 3;
 const int _kMaxNotificationsPerQuery = 50;
 const int _kMinUidLength = 20;
 const int _kMaxUidLength = 64;
@@ -54,7 +36,6 @@ const int _kMaxNotificationIdLength = 64;
 class _Validators {
   _Validators._();
 
-  /// Valide le format d'un UID Firebase/Supabase
   static bool isValidUid(String? uid) {
     if (uid == null || uid.isEmpty) return false;
     if (uid.length < _kMinUidLength || uid.length > _kMaxUidLength) return false;
@@ -62,32 +43,26 @@ class _Validators {
     return regex.hasMatch(uid);
   }
 
-  /// Valide le format d'un ID de notification
   static bool isValidNotificationId(String? id) {
     if (id == null || id.isEmpty) return false;
     if (id.length > _kMaxNotificationIdLength) return false;
     return true;
   }
 
-  /// Masque un UID pour les logs (RGPD)
-  ///
-  /// Exemple : `abc123def456ghi789` → `abc1...789`
   static String maskUid(String uid) {
     if (uid.length <= 8) return '***';
     return '${uid.substring(0, 4)}...${uid.substring(uid.length - 3)}';
   }
 
-  /// Sanitize un string pour éviter XSS
   static String sanitizeString(String? input, {required int maxLength}) {
     if (input == null) return '';
     final s = input
-        .replaceAll(RegExp(r'<[^>]*>'), '') // Strip HTML tags
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '') // Strip control chars
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
         .trim();
     return s.length > maxLength ? s.substring(0, maxLength) : s;
   }
 
-  /// Sanitize un type de notification
   static String sanitizeType(String? type) {
     return sanitizeString(type, maxLength: _kMaxTypeLength).toLowerCase();
   }
@@ -97,7 +72,6 @@ class _Validators {
 // LRU CACHE
 // ============================================================================
 
-/// Cache LRU (Least Recently Used) pour limiter la mémoire
 class _LRUCache<K> {
   final int maxSize;
   final LinkedHashMap<K, DateTime> _map = LinkedHashMap<K, DateTime>();
@@ -106,7 +80,6 @@ class _LRUCache<K> {
 
   bool contains(K key) {
     if (!_map.containsKey(key)) return false;
-    // Move to end (most recently used)
     final value = _map.remove(key)!;
     _map[key] = value;
     return true;
@@ -116,7 +89,6 @@ class _LRUCache<K> {
     if (_map.containsKey(key)) {
       _map.remove(key);
     } else if (_map.length >= maxSize) {
-      // Remove oldest (first element)
       _map.remove(_map.keys.first);
     }
     _map[key] = DateTime.now();
@@ -154,7 +126,6 @@ class NotificationService {
   }
 
   Map<String, dynamic> _normalizeRow(Map<String, dynamic> r) {
-    // Safe cast avec fallback
     final data = (r['data'] is Map)
         ? Map<String, dynamic>.from(r['data'] as Map)
         : <String, dynamic>{};
@@ -184,14 +155,19 @@ class NotificationService {
     };
   }
 
-  /// Génère un ID unique pour notification locale (évite collisions)
   int _generateLocalNotificationId() {
-    // Utilise microsecondes + random pour éviter collisions
     final now = DateTime.now().microsecondsSinceEpoch;
-    final random = now % 100000;
-    return random;
+    return now % 100000;
   }
 
+  bool _isRecent(Map<String, dynamic> notif) {
+    final raw = notif['created_at'];
+    final created = raw == null ? null : DateTime.tryParse(raw.toString());
+    if (created == null) return false;
+    return DateTime.now().toUtc().difference(created.toUtc()) <= _kPopMaxAge;
+  }
+
+  /// Pop locale pour une notification REÇUE par l'utilisateur connecté.
   Future<void> _maybeShowPop(Map<String, dynamic> notif) async {
     final id = notif['id']?.toString();
     if (id == null || id.isEmpty) {
@@ -200,6 +176,12 @@ class NotificationService {
     }
     if (notif['read'] == true) return;
     if (_shownPopIds.contains(id)) return;
+
+    // Une notification ancienne (ex. non lue depuis hier) n'ouvre pas de pop
+    if (!_isRecent(notif)) {
+      _shownPopIds.add(id);
+      return;
+    }
 
     _shownPopIds.add(id);
 
@@ -229,28 +211,12 @@ class NotificationService {
   // PUBLIC API : STREAMS
   // ========================================================================
 
-  /// Stream des notifications pour un utilisateur donné.
-  ///
-  /// **Comportement** :
-  /// - UID invalide → `Stream.value([])`
-  /// - Realtime Supabase → Mise à jour instantanée
-  /// - Erreur réseau → Fallback polling automatique
-  ///
-  /// **Usage** :
-  /// ```dart
-  /// final service = NotificationService();
-  /// service.streamForUser(uid).listen((notifications) {
-  ///   print('${notifications.length} notifications');
-  /// });
-  /// ```
   Stream<List<Map<String, dynamic>>> streamForUser(String uid) {
     if (!_Validators.isValidUid(uid)) {
       debugPrint('[NotifService] ⚠️ Invalid UID, returning empty stream');
       return Stream<List<Map<String, dynamic>>>.value(const []);
-
     }
 
-    // Vérifier cohérence avec auth actuel
     final authUid = _client.auth.currentUser?.id;
     final effectiveUid = (authUid != null && authUid != uid) ? authUid : uid;
 
@@ -268,6 +234,7 @@ class NotificationService {
     var isCancelled = false;
     Timer? pollTimer;
     var polling = false;
+    var firstLoad = true;
 
     Future<void> emitLatest() async {
       if (isCancelled) return;
@@ -286,8 +253,17 @@ class NotificationService {
         debugPrint('[NotifService] ✓ emitLatest: ${list.length} notifications '
             'for ${_Validators.maskUid(effectiveUid)}');
 
-        if (list.isNotEmpty) {
-          unawaited(_maybeShowPop(list.first));
+        if (firstLoad) {
+          // Chargement initial : on mémorise sans afficher de pop
+          firstLoad = false;
+          for (final n in list) {
+            final id = n['id']?.toString();
+            if (id != null && id.isNotEmpty) _shownPopIds.add(id);
+          }
+        } else {
+          for (final n in list.take(_kMaxPopsPerRefresh)) {
+            unawaited(_maybeShowPop(n));
+          }
         }
 
         if (!isCancelled) {
@@ -407,7 +383,6 @@ class NotificationService {
     return controller.stream;
   }
 
-  /// Stream du nombre de notifications non lues.
   Stream<int> streamUnreadCount(String uid) {
     return streamForUser(uid)
         .map((rows) => rows.where((r) => (r['read'] as bool?) != true).length)
@@ -418,28 +393,9 @@ class NotificationService {
   // PUBLIC API : MUTATIONS
   // ========================================================================
 
-  /// Ajoute une notification + affiche immédiatement une pop.
-  ///
-  /// **Validation** :
-  /// - `toUid` : doit être un UID valide
-  /// - `type` : max 50 caractères, lowercase
-  /// - `title` : max 100 caractères, HTML stripped
-  /// - `body` : max 500 caractères, HTML stripped
-  /// - `data` : Map validée
-  ///
-  /// **Retourne** :
-  /// - `true` si succès
-  /// - `false` si validation échoue ou erreur
-  ///
-  /// **Usage** :
-  /// ```dart
-  /// final success = await service.add(
-  ///   toUid: uid,
-  ///   type: 'message',
-  ///   title: 'Nouveau message',
-  ///   body: 'Vous avez reçu un message',
-  /// );
-  /// ```
+  /// Insère une notification pour [toUid].
+  /// Aucune pop locale ici : le destinataire la reçoit via son propre stream
+  /// (ou le push FCM). Avant, la pop s'affichait sur le téléphone de l'expéditeur.
   Future<bool> add({
     required String toUid,
     required String type,
@@ -449,7 +405,6 @@ class NotificationService {
     String? postId,
     Map<String, dynamic>? data,
   }) async {
-    // Validation stricte
     if (!_Validators.isValidUid(toUid)) {
       debugPrint('[NotifService] ⚠️ add: invalid toUid');
       return false;
@@ -459,7 +414,6 @@ class NotificationService {
       return false;
     }
 
-    // Sanitization
     final sanitizedType = _Validators.sanitizeType(type);
     if (sanitizedType.isEmpty) {
       debugPrint('[NotifService] ⚠️ add: empty type after sanitization');
@@ -484,7 +438,7 @@ class NotificationService {
             'type': sanitizedType,
             'title': sanitizedTitle,
             'body': sanitizedBody,
-            'content': sanitizedBody, // Compatibilité
+            'content': sanitizedBody,
             'is_read': false,
             'data': data ?? const <String, dynamic>{},
             'created_at': DateTime.now().toUtc().toIso8601String(),
@@ -493,14 +447,6 @@ class NotificationService {
 
       debugPrint('[NotifService] ✓ Notification added: type=$sanitizedType '
           'to=${_Validators.maskUid(toUid)}');
-
-      // Afficher pop locale
-      await LocalNotificationService.instance.show(
-        id: _generateLocalNotificationId(),
-        title: sanitizedTitle,
-        body: sanitizedBody,
-        payload: sanitizedType,
-      );
 
       return true;
     } on TimeoutException {
@@ -512,11 +458,6 @@ class NotificationService {
     }
   }
 
-  /// Marque une notification comme lue.
-  ///
-  /// **Retourne** :
-  /// - `true` si succès
-  /// - `false` si validation échoue ou erreur
   Future<bool> markRead({
     required String uid,
     required String notificationId,
@@ -550,11 +491,6 @@ class NotificationService {
     }
   }
 
-  /// Marque toutes les notifications d'un utilisateur comme lues.
-  ///
-  /// **Retourne** :
-  /// - `true` si succès
-  /// - `false` si validation échoue ou erreur
   Future<bool> markAllRead(String uid) async {
     if (!_Validators.isValidUid(uid)) {
       debugPrint('[NotifService] ⚠️ markAllRead: invalid uid');
