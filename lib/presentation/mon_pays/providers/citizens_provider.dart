@@ -3,7 +3,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'models/votre_modele.dart';
+import 'package:thix_id/presentation/mon_pays/models/exemplary_citizen.dart';
 
 
 class CitizensService {
