@@ -113,33 +113,32 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
   bool _isBackgrounded = false;
   int _slideCount = 0;
 
-  final List<Map<String, String>> heroSlides = [
+  final List<Map<String, String?>> heroSlides = [
     {
       'title': 'Unité Nationale',
       'subtitle': 'Bendele ya Congo',
-      'img': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200',
+      'img': null, // ✅ Dégradé premium automatique
       'tag': 'PATRIOTISME',
     },
     {
       'title': 'Devoir Civique',
       'subtitle': 'S\'engager pour la Patrie',
-      'img': 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=1200',
+      'img': null, // ✅ Dégradé premium automatique
       'tag': 'CITOYENNETÉ',
     },
     {
       'title': 'Mémoire Collective',
       'subtitle': 'Honorer nos Héros',
-      'img': 'https://images.unsplash.com/photo-1497895121-66bdc4d7d3b2?w=1200',
+      'img': null, // ✅ Dégradé premium automatique
       'tag': 'HISTOIRE',
     },
     {
       'title': 'Travail et Progrès',
       'subtitle': 'Bâtir la RDC',
-      'img': 'https://images.unsplash.com/photo-1516026672322-bc52d61a55e5?w=1200',
+      'img': null, // ✅ Dégradé premium automatique
       'tag': 'DÉVELOPPEMENT',
     },
   ];
-
   @override
   void initState() {
     super.initState();
