@@ -510,14 +510,30 @@ class AppRouter {
             // === THIX NETWORK ===
             StatefulShellBranch(routes: [
               GoRoute(
-                path: AppRoutes.network, 
-                name: 'network', 
-                pageBuilder: (_, __) => const NoTransitionPage(child: NetworkProHome()), 
+                path: AppRoutes.network,
+                name: 'network',
+                pageBuilder: (_, __) => const NoTransitionPage(child: NetworkProHome()),
                 routes: [
                   GoRoute(path: 'search', name: 'networkSearch', pageBuilder: (_, __) => const NoTransitionPage(child: SearchNetworkPage())),
                   GoRoute(path: 'notifications', name: 'networkNotifications', pageBuilder: (_, __) => const NoTransitionPage(child: NotificationsPage())),
                   GoRoute(path: 'messages', name: 'networkMessages', pageBuilder: (_, __) => const NoTransitionPage(child: ConversationsList())),
-                  GoRoute(path: 'chat/:userId', name: 'networkChat', pageBuilder: (_, state) => NoTransitionPage(child: network_chat.ChatScreen(userId: state.pathParameters['userId']!, userName: state.extra is String ? state.extra as String : (state.extra is Map ? (state.extra as Map)['userName'] ?? 'Discussion' : 'Discussion'), userAvatar: state.extra is Map ? (state.extra as Map)['userAvatar'] : null))),
+                  GoRoute(
+                    path: 'chat/:userId',
+                    name: 'networkChat',
+                    pageBuilder: (_, state) => NoTransitionPage(
+                      child: network_chat.ChatScreen(
+                        userId: state.pathParameters['userId']!,
+                        userName: state.extra is String
+                            ? state.extra as String
+                            : (state.extra is Map
+                                ? (state.extra as Map)['userName'] ?? 'Discussion'
+                                : 'Discussion'),
+                        userAvatar: state.extra is Map
+                            ? (state.extra as Map)['userAvatar']
+                            : null,
+                      ),
+                    ),
+                  ),
                   GoRoute(path: 'connections', name: 'networkConnections', pageBuilder: (_, __) => const NoTransitionPage(child: ConnectionsListPage())),
                   GoRoute(path: 'profile-settings', name: 'networkProfileSettings', pageBuilder: (_, __) => const NoTransitionPage(child: ProfileSettingsPage())),
                   GoRoute(path: 'blocked', name: 'networkBlockedUsers', pageBuilder: (_, __) => const NoTransitionPage(child: BlockedUsersPage())),
@@ -532,11 +548,6 @@ class AppRouter {
                   GoRoute(path: 'profile/:userId', name: 'networkProfile', pageBuilder: (_, state) => NoTransitionPage(child: ProfilePage(userId: state.pathParameters['userId']!))),
                   GoRoute(path: 'followers/:uid', name: 'networkFollowers', pageBuilder: (_, state) => NoTransitionPage(child: FollowersListPage(userId: state.pathParameters['uid']!))),
                   GoRoute(path: 'following/:uid', name: 'networkFollowing', pageBuilder: (_, state) => NoTransitionPage(child: FollowingListPage(userId: state.pathParameters['uid']!))),
-                 
-                  ]
-              ),
-            ]),
-            GoRoute(path: 'following/:uid', name: 'networkFollowing', pageBuilder: (_, state) => NoTransitionPage(child: FollowingListPage(userId: state.pathParameters['uid']!))),
                 ],
               ),
             ]),
