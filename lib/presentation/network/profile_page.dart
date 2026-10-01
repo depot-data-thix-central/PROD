@@ -404,7 +404,6 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
       }
 
       setState(() {});
-
       if (mounted) {
         final message = successCount > 0
             ? '\( successCount média \){successCount > 1 ? 's' : ''} ajouté${successCount > 1 ? 's' : ''}'
