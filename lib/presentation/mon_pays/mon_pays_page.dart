@@ -28,6 +28,7 @@ import 'mon_pays_routes.dart';
 import 'providers/historical_figures_provider.dart';
 import 'pages/historical_figures_page.dart';
 import 'providers/hero_banners_provider.dart';
+import 'models/hero_banner.dart';
 // ============================================================================
 // COULEURS PATRIOTIQUES RDC
 // ============================================================================
@@ -418,28 +419,33 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
     );
   }
 
+  
   // ─── HERO CAROUSEL ─────────────────────────────────────────────────────
   Widget _buildHeroCarousel() {
     final banners = ref.watch(heroBannersProvider).valueOrNull ?? const <HeroBanner>[];
 
-    // Construit la liste : DB prioritaire, sinon slides locaux (sans img → dégradé)
-    final List<Map<String, String?>> slides = banners.isNotEmpty
-        ? banners
-            .map((b) => {
-                  'tag': b.tag,
-                  'title': b.title,
-                  'subtitle': b.subtitle,
-                  'img': b.imageUrl,
-                })
-            .toList()
-        : heroSlides
-            .map((s) => {
-                  'tag': s['tag'] as String?,
-                  'title': s['title'] as String?,
-                  'subtitle': s['subtitle'] as String?,
-                  'img': null, // force le dégradé premium (Unsplash cassé)
-                })
-            .toList();
+    // Construit la liste avec typage explicite
+    final List<Map<String, String?>> slides = <Map<String, String?>>[];
+    
+    if (banners.isNotEmpty) {
+      for (final b in banners) {
+        slides.add({
+          'tag': b.tag,
+          'title': b.title,
+          'subtitle': b.subtitle,
+          'img': b.imageUrl,
+        });
+      }
+    } else {
+      for (final s in heroSlides) {
+        slides.add({
+          'tag': s['tag'],
+          'title': s['title'],
+          'subtitle': s['subtitle'],
+          'img': null, // force le dégradé premium (Unsplash cassé)
+        });
+      }
+    }
 
     // Synchronise le compteur pour le timer
     if (_slideCount != slides.length) {
@@ -576,7 +582,6 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
       ),
     );
   }
-
   /// 🎨 Fond de secours premium : dégradé bleu nuit + bande rouge + étoile dorée
   Widget _heroGradientFallback() {
     return Container(
