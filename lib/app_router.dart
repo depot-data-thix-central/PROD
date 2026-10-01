@@ -255,7 +255,7 @@ import 'package:thix_id/presentation/mon_pays/admin/admin_media_form_page.dart';
 import 'package:thix_id/presentation/mon_pays/models/province.dart';
 import 'package:thix_id/presentation/mon_pays/mon_pays_routes.dart';
 import 'package:thix_id/presentation/mon_pays/pages/citizens_page.dart';
-import 'package:thix_id/presentation/mon_pays/pages/historical_figures_page.dart'; 
+import 'package:thix_id/presentation/mon_pays/pages/historical_figures_page.dart';
 
 
 // === THIX RETROUVE & IA ===
@@ -911,7 +911,8 @@ GoRoute(path: '/thix-info/downloads', name: 'thixInfoDownloads',
         GoRoute(path: '/admin/articles/:id/edit', builder: (context, state) => thix_admin_form.AdminArticleFormPage(articleId: state.pathParameters['id'])),
         GoRoute(path: '${AppRoutes.admin}/:module', name: 'admin', pageBuilder: (_, state) => NoTransitionPage(child: AdminPage(module: AdminModuleX.fromSlug(state.pathParameters['module'])))),
         GoRoute(path: AppRoutes.admin, name: 'adminRoot', redirect: (_, __) => '${AppRoutes.admin}/${AdminModule.overview.slug}'),
-// === MON PAYS ===
+
+        // === MON PAYS ===
 GoRoute(
   path: AppRoutes.monPays,
   name: 'monPays',
