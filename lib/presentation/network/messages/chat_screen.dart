@@ -29,7 +29,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:mime/mime.dart';
 import 'package:video_player/video_player.dart';
-
+import 'package:timeago/timeago.dart' as timeago;
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/certification_tier.dart';
@@ -406,22 +406,26 @@ class ChatMessagesNotifier extends StateNotifier<AsyncValue<List<ChatMessage>>> 
       final myId = _client.auth.currentUser!.id;
       final currentMessages = state.valueOrNull ?? [];
 
+      // 1. Filtres (PostgrestFilterBuilder) - DOIVENT être en premier
       var query = _client
           .from('messages')
           .select('*')
-          .or('and(sender_id.eq.$myId,receiver_id.eq.$peerId),and(sender_id.eq.$peerId,receiver_id.eq.$myId)')
-          .order('created_at', ascending: false);
-
-      final limit = loadMore ? _kPaginationLimit : _kInitialMessageLimit;
-      query = query.limit(limit);
+          .or('and(sender_id.eq.$myId,receiver_id.eq.$peerId),and(sender_id.eq.$peerId,receiver_id.eq.$myId)');
 
       if (loadMore && currentMessages.isNotEmpty) {
         final oldestMessage = currentMessages.first;
+        // .lt() est un filtre, on l'applique ici avant les transformations
         query = query.lt(
             'created_at', oldestMessage.createdAt.toUtc().toIso8601String());
       }
 
-      final messages = await query.timeout(_kRequestTimeout);
+      // 2. Transformations (PostgrestTransformBuilder) - DOIVENT être en dernier
+      final limit = loadMore ? _kPaginationLimit : _kInitialMessageLimit;
+      final finalQuery = query
+          .order('created_at', ascending: false)
+          .limit(limit);
+
+      final messages = await finalQuery.timeout(_kRequestTimeout);
 
       final parsed = (messages as List)
           .map((m) => ChatMessage.fromJson(Map<String, dynamic>.from(m)))
