@@ -25,6 +25,8 @@ import 'providers/authorities_provider.dart';
 import 'providers/citizens_provider.dart';
 import 'pages/news/news_detail_page.dart';
 import 'mon_pays_routes.dart';
+import 'providers/historical_figures_provider.dart';
+import 'pages/historical_figures_page.dart';
 // ============================================================================
 // COULEURS PATRIOTIQUES RDC
 // ============================================================================
@@ -1292,50 +1294,69 @@ Widget _buildPrideSection() {
 
   // ─── FIGURES HISTORIQUES ───────────────────────────────────────────────
   Widget _buildHistoricalFigures() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-      child: _buildCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSectionHeader(
-              'Figures Historiques',
-              actionText: 'Explorer',
-              onTap: () => _showComingSoon(),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Découvrez ceux qui ont marqué notre histoire.',
-              style: ThixPolicy.microStyle,
-            ),
-            const SizedBox(height: _Compact.innerGap),
-            Center(
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                decoration: BoxDecoration(
-                  color: ThixPolicy.surfaceSoft,
-                  borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-                  border: Border.all(color: ThixPolicy.card, width: 1.5),
-                ),
-                child: Column(
-                  children: [
-                    Icon(Icons.history_edu_rounded, size: 38, color: ThixPolicy.textMuted),
-                    const SizedBox(height: ThixPolicy.s10),
-                    Text(
-                      'Module en préparation',
-                      style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
-                    ),
-                  ],
+  final l10n = AppLocalizations.of(context);
+  final figuresAsync = ref.watch(historicalFiguresProvider);
+
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+    child: _buildCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+            l10n.t('mon_pays_figures_title'),
+            actionText: l10n.t('mon_pays_figures_explore'),
+            onTap: () => _navigateTo(MonPaysRoutes.historicalFigures),
+          ),
+          const SizedBox(height: 4),
+          Text(l10n.t('mon_pays_figures_subtitle'), style: ThixPolicy.microStyle),
+          const SizedBox(height: _Compact.innerGap),
+          SizedBox(
+            height: 150,
+            child: figuresAsync.when(
+              loading: () => ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: 4,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (_, __) => Container(
+                  width: 110,
+                  decoration: BoxDecoration(
+                    color: ThixPolicy.surfaceStrong,
+                    borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                  ),
                 ),
               ),
+              error: (_, __) => Center(
+                child: TextButton.icon(
+                  onPressed: () => ref.invalidate(historicalFiguresProvider),
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: Text(l10n.t('common_retry'),
+                      style: ThixPolicy.captionStyle),
+                ),
+              ),
+              data: (figures) {
+                if (figures.isEmpty) {
+                  return Center(
+                    child: Text(l10n.t('mon_pays_figures_empty'),
+                        style: ThixPolicy.captionStyle),
+                  );
+                }
+                return ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: figures.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                  itemBuilder: (_, i) =>
+                      HistoricalFigureTile(figure: figures[i]),
+                );
+              },
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
-
+    ),
+  );
+}
   // ─── UTILITAIRES ───────────────────────────────────────────────────────
   Widget _buildCard({required Widget child, EdgeInsetsGeometry? padding}) {
     return Container(
