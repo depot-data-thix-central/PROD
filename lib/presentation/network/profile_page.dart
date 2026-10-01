@@ -411,7 +411,11 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
             : 'Aucun média ajouté';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(errorCount > 0 ? '$message (\( errorCount erreur \){errorCount > 1 ? 's' : ''})' : message),
+            content: Text(
+              errorCount > 0
+                  ? '$message (\( errorCount erreur \){errorCount > 1 ? 's' : ''})'
+                  : message,
+            ),
             backgroundColor: successCount > 0 ? ThixPolicy.success : ThixPolicy.warning,
             behavior: SnackBarBehavior.floating,
           ),
