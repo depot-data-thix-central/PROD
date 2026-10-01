@@ -1,34 +1,8 @@
 // lib/services/chat/chat_service.dart
 //
-// ============================================================================
-// CHAT SERVICE — Production Enterprise
-// ============================================================================
-//
 // Service principal de messagerie : conversations, messages, présence, médias.
-//
-// Architecture :
-//   - SupabaseClient injecté via Riverpod
-//   - Validation UUID stricte sur tous les IDs
-//   - Sanitization XSS sur tous les contenus user-generated
-//   - Timeouts + retry sur tous les appels réseau
-//   - Cache profils en mémoire (TTL 5min) pour éviter N+1 queries
-//   - Batch notifications (1 query par lot au lieu de N)
-//
-// Sécurité :
-//   - Validation UUID v4 sur conversationId, messageId, userId
-//   - Sanitization XSS (HTML, javascript:, on*=, control chars)
-//   - Validation mediaType (whitelist)
-//   - Validation bucket name (whitelist)
-//   - Max file size 50MB
-//   - Max message length 10 000 caractères
-//   - Stack traces masquées en production (kDebugMode)
-//
-// Performance :
-//   - Cache profils LRU avec TTL
-//   - Batch notifications (1 insert par lot de 50)
-//   - Realtime messages avec cache profile (pas de requête par event)
-//   - inFilter limité à 100 IDs (chunk automatique)
-// ============================================================================
+// Les notifications de message sont créées par le trigger SQL
+// trg_notify_new_message (+ webhook push). Aucune insertion côté Dart.
 
 import 'dart:async';
 import 'dart:typed_data';
@@ -41,7 +15,6 @@ import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/models/chat/chat_message.dart';
 import 'package:thix_id/models/chat/group_info.dart';
 import 'package:thix_id/models/chat/user_status.dart';
-import 'package:thix_id/services/module_notifications.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -51,28 +24,25 @@ const int _kMaxLimit = 100;
 const int _kMaxMessageLength = 10000;
 const int _kMaxPreviewLength = 120;
 const int _kMaxProfileNameLength = 100;
-const int _kMaxInFilterSize = 100; // Supabase limit
+const int _kMaxInFilterSize = 100;
 const int _kMaxFileBytes = 50 * 1024 * 1024; // 50MB
-const int _kMaxNotificationBatch = 50;
 const int _kProfileCacheTtlMinutes = 5;
 const int _kMaxCacheSize = 500;
 const Duration _kPresenceHeartbeat = Duration(seconds: 45);
 const Duration _kDbTimeout = Duration(seconds: 15);
 const Duration _kStorageTimeout = Duration(seconds: 60);
-const Duration _kRetryDelay = Duration(milliseconds: 500);
-const int _kMaxRetries = 2;
+const Duration _kMessageSyncInterval = Duration(seconds: 20);
+const Duration _kPresenceDebounce = Duration(seconds: 1);
 
-/// Whitelist des buckets autorisés
 const Set<String> _kAllowedBuckets = {
   'audio_uploads',
-  'chat-media',      
+  'chat-media',
   'images',
   'videos',
   'documents',
   'avatars',
 };
 
-/// Whitelist des mediaTypes autorisés
 const Set<String> _kAllowedMediaTypes = {
   'image',
   'video',
@@ -92,7 +62,6 @@ const Set<String> _kAllowedMediaTypes = {
 class _ChatValidators {
   _ChatValidators._();
 
-  /// Valide un UUID v4 strict.
   static bool isValidUuid(String? id) {
     if (id == null) return false;
     final trimmed = id.trim();
@@ -103,43 +72,37 @@ class _ChatValidators {
     ).hasMatch(trimmed);
   }
 
-  /// Sanitize un contenu texte (XSS + caractères de contrôle).
   static String sanitizeContent(String? input, {int maxLength = _kMaxMessageLength}) {
     if (input == null) return '';
     var s = input
-        .replaceAll(RegExp(r'<[^>]*>'), '')              // Strip HTML
+        .replaceAll(RegExp(r'<[^>]*>'), '')
         .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
         .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')     // Control chars
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
         .trim();
     return s.length > maxLength ? s.substring(0, maxLength) : s;
   }
 
-  /// Sanitize un nom (display_name, group_name).
   static String sanitizeName(String? input, {int maxLength = _kMaxProfileNameLength}) {
     return sanitizeContent(input, maxLength: maxLength);
   }
 
-  /// Valide un mediaType (whitelist).
   static bool isValidMediaType(String? type) {
     if (type == null || type.isEmpty) return false;
     return _kAllowedMediaTypes.contains(type.toLowerCase());
   }
 
-  /// Valide un bucket name (whitelist).
   static bool isValidBucket(String? bucket) {
     if (bucket == null || bucket.isEmpty) return false;
     return _kAllowedBuckets.contains(bucket);
   }
 
-  /// Valide une extension de fichier.
   static bool isValidExtension(String? ext) {
     if (ext == null || ext.isEmpty) return false;
     final clean = ext.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
     return clean.isNotEmpty && clean.length <= 10;
   }
 
-  /// Tronque une preview en respectant les mots.
   static String truncatePreview(String? text, {int maxLength = _kMaxPreviewLength}) {
     if (text == null) return '';
     final trimmed = text.trim();
@@ -150,7 +113,6 @@ class _ChatValidators {
     return (lastSpace > maxLength ~/ 2 ? truncated.substring(0, lastSpace) : truncated) + '…';
   }
 
-  /// Obfusque un ID pour les logs.
   static String obfuscate(String? s) {
     if (s == null || s.length <= 8) return '***';
     return '${s.substring(0, 4)}...${s.substring(s.length - 4)}';
@@ -158,9 +120,8 @@ class _ChatValidators {
 }
 
 // ============================================================================
-// PROFILE CACHE (LRU avec TTL)
+// PROFILE CACHE (TTL)
 // ============================================================================
-
 class _ProfileCacheEntry {
   final Map<String, dynamic> profile;
   final DateTime expiresAt;
@@ -183,7 +144,6 @@ class _ProfileCache {
   }
 
   void put(String userId, Map<String, dynamic> profile) {
-    // Évite croissance infinie
     if (_cache.length >= _kMaxCacheSize) {
       _cache.remove(_cache.keys.first);
     }
@@ -200,14 +160,6 @@ class _ProfileCache {
 // ============================================================================
 // CHAT SERVICE
 // ============================================================================
-
-/// Service principal de messagerie.
-///
-/// **Usage** :
-/// ```dart
-/// final chatService = ref.read(chatServiceProvider);
-/// final messages = await chatService.getMessages(convId);
-/// ```
 class ChatService {
   final SupabaseClient _supabase;
   Timer? _presenceHeartbeat;
@@ -226,7 +178,6 @@ class ChatService {
   // HELPERS
   // ============================================================
 
-  /// Résout le display name depuis un profil (avec sanitization).
   static String _resolveDisplayName(Map<String, dynamic>? profile) {
     if (profile == null) return 'Utilisateur inconnu';
     final displayName = _ChatValidators.sanitizeName(profile['display_name'] as String?);
@@ -236,7 +187,6 @@ class ChatService {
     return 'Utilisateur inconnu';
   }
 
-  /// Vérifie que l'utilisateur courant est participant d'une conversation.
   Future<void> _assertParticipant(String conversationId) async {
     if (!_ChatValidators.isValidUuid(conversationId)) {
       throw ArgumentError('conversationId invalide');
@@ -258,94 +208,6 @@ class ChatService {
     }
   }
 
-  /// Récupère les user_ids des autres participants d'une conversation.
-  Future<List<String>> _otherParticipantIds(String conversationId) async {
-    if (!_ChatValidators.isValidUuid(conversationId)) return [];
-
-    try {
-      final rows = await _supabase
-          .from('conversation_participants')
-          .select('user_id')
-          .eq('conversation_id', conversationId)
-          .timeout(_kDbTimeout);
-
-      return rows
-          .map((r) => (r['user_id'] ?? '').toString())
-          .where((id) =>
-              id.isNotEmpty &&
-              id != currentUserId &&
-              _ChatValidators.isValidUuid(id))
-          .toList();
-    } catch (e) {
-      debugPrint('[ChatService] ⚠️ _otherParticipantIds: '
-          '${kDebugMode ? e : e.toString().split('\n').first}');
-      return [];
-    }
-  }
-
-  /// Notifie les destinataires d'un nouveau message (batch best-effort).
-  Future<void> _notifyRecipients({
-    required String conversationId,
-    required String senderName,
-    required String preview,
-  }) async {
-    if (_isDisposed) return;
-
-    try {
-      final recipients = await _otherParticipantIds(conversationId);
-      if (recipients.isEmpty) return;
-
-      final shortPreview = _ChatValidators.truncatePreview(
-        preview.trim().isEmpty ? 'Fichier média reçu' : preview,
-      );
-      final sanitizedSenderName = _ChatValidators.sanitizeName(senderName);
-      final now = DateTime.now().toUtc().toIso8601String();
-
-      // Batch insert en lots de 50 (évite requête par user)
-      for (var i = 0; i < recipients.length; i += _kMaxNotificationBatch) {
-        final batch = recipients.skip(i).take(_kMaxNotificationBatch).toList();
-
-        // 1. Push/FCM via ModuleNotifications (best-effort)
-        for (final toUid in batch) {
-          unawaited(
-            ModuleNotifications.instance
-                .chatMessage(
-                  toUid: toUid,
-                  senderName: sanitizedSenderName,
-                  preview: shortPreview,
-                  conversationId: conversationId,
-                )
-                .catchError((e) {
-              debugPrint('[ChatService] ⚠️ Push failed for ${_ChatValidators.obfuscate(toUid)}: $e');
-            }),
-          );
-        }
-
-        // 2. Insert DB batch (allume les badges)
-        try {
-          await _supabase.from('notifications').insert(
-            batch.map((toUid) => {
-              'user_id': toUid,
-              'type': 'chat',
-              'title': sanitizedSenderName,
-              'body': shortPreview,
-              'is_read': false,
-              'data': {'conversation_id': conversationId},
-              'created_at': now,
-            }).toList(),
-          ).timeout(_kDbTimeout);
-        } catch (e) {
-          debugPrint('[ChatService] ⚠️ Batch insert notifications: '
-              '${kDebugMode ? e : "failed"}');
-        }
-      }
-    } catch (e) {
-      debugPrint('[ChatService] ⚠️ _notifyRecipients: '
-          '${kDebugMode ? e : e.toString().split('\n').first}');
-    }
-  }
-
-  /// Récupère un profil depuis le cache ou la DB.
   Future<Map<String, dynamic>?> _getProfile(String userId) async {
     if (!_ChatValidators.isValidUuid(userId)) return null;
 
@@ -371,13 +233,57 @@ class ChatService {
     return null;
   }
 
-  /// Chunk une liste d'IDs pour respecter la limite inFilter (100).
+  /// Précharge les profils des participants (évite une requête au 1er message reçu).
+  Future<void> _warmProfiles(String conversationId) async {
+    try {
+      final rows = await _supabase
+          .from('conversation_participants')
+          .select('user_id')
+          .eq('conversation_id', conversationId)
+          .timeout(_kDbTimeout);
+
+      final ids = (rows as List)
+          .map((r) => (r['user_id'] ?? '').toString())
+          .where((id) =>
+              _ChatValidators.isValidUuid(id) && _profileCache.get(id) == null)
+          .toList();
+      if (ids.isEmpty) return;
+
+      for (final chunk in _chunkIds(ids)) {
+        final profiles = await _supabase
+            .from('profiles')
+            .select('id, display_name, full_name, avatar_url')
+            .inFilter('id', chunk)
+            .timeout(_kDbTimeout);
+        for (final p in (profiles as List)) {
+          final map = Map<String, dynamic>.from(p as Map);
+          _profileCache.put(map['id'].toString(), map);
+        }
+      }
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ warmProfiles: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
   List<List<String>> _chunkIds(List<String> ids) {
     final chunks = <List<String>>[];
     for (var i = 0; i < ids.length; i += _kMaxInFilterSize) {
       chunks.add(ids.skip(i).take(_kMaxInFilterSize).toList());
     }
     return chunks;
+  }
+
+  /// Transforme une ligne `messages` (avec profil joint) en ChatMessage.
+  ChatMessage _messageFromRow(Map<String, dynamic> row) {
+    final map = Map<String, dynamic>.from(row);
+    final profile = map['profiles'] is Map
+        ? Map<String, dynamic>.from(map['profiles'] as Map)
+        : null;
+    map['sender_name'] = _resolveDisplayName(profile);
+    map['sender_avatar'] = profile?['avatar_url'];
+    map['content'] = _ChatValidators.sanitizeContent(map['content'] as String?);
+    return ChatMessage.fromJson(map);
   }
 
   // ============================================================
@@ -491,7 +397,6 @@ class ChatService {
         return _conversationFromRpcRow(map);
       }).toList();
 
-      // Correction profils depuis DB (avec cache)
       final otherUserIds = <String>{};
       for (final conv in conversations) {
         if (!conv.isGroup) {
@@ -576,13 +481,11 @@ class ChatService {
     List<String> otherUserIds,
   ) async {
     try {
-      // Filtrer ceux déjà en cache
       final toFetch = <String>[];
       for (final id in otherUserIds) {
         if (_profileCache.get(id) == null) toFetch.add(id);
       }
 
-      // Fetch en chunks
       for (final chunk in _chunkIds(toFetch)) {
         final profilesResponse = await _supabase
             .from('profiles')
@@ -597,7 +500,6 @@ class ChatService {
         }
       }
 
-      // Appliquer aux conversations
       for (var i = 0; i < conversations.length; i++) {
         final conv = conversations[i];
         if (!conv.isGroup) {
@@ -788,7 +690,6 @@ class ChatService {
       throw StateError('Non authentifié');
     }
 
-    // Validation participants
     final validParticipants =
         participantIds.where(_ChatValidators.isValidUuid).toList();
     if (validParticipants.isEmpty) {
@@ -812,7 +713,6 @@ class ChatService {
 
     final allParticipants = {...validParticipants, uid}.toList();
 
-    // Insert participants en batch
     await _supabase.from('conversation_participants').insert(
       allParticipants.map((userId) => {
         'conversation_id': conversationId,
@@ -914,14 +814,9 @@ class ChatService {
           .range(safeOffset, safeOffset + safeLimit - 1)
           .timeout(_kDbTimeout);
 
-      return (response as List).map((e) {
-        final map = Map<String, dynamic>.from(e);
-        final profile = map['profiles'] as Map<String, dynamic>?;
-        map['sender_name'] = _resolveDisplayName(profile);
-        map['sender_avatar'] = profile?['avatar_url'];
-        map['content'] = _ChatValidators.sanitizeContent(map['content'] as String?);
-        return ChatMessage.fromJson(map);
-      }).toList();
+      return (response as List)
+          .map((e) => _messageFromRow(Map<String, dynamic>.from(e as Map)))
+          .toList();
     } catch (e) {
       debugPrint('[ChatService] ⚠️ getMessages: '
           '${kDebugMode ? e : e.toString().split('\n').first}');
@@ -929,6 +824,38 @@ class ChatService {
     }
   }
 
+  /// Messages plus récents que [since] (rattrapage après coupure Realtime).
+  Future<List<ChatMessage>> _getMessagesSince(
+    String conversationId,
+    DateTime since,
+  ) async {
+    try {
+      final response = await _supabase
+          .from('messages')
+          .select('''
+            *,
+            profiles!sender_id (display_name, full_name, avatar_url)
+          ''')
+          .eq('conversation_id', conversationId)
+          .eq('is_deleted', false)
+          .gt('created_at', since.toUtc().toIso8601String())
+          .order('created_at', ascending: true)
+          .limit(50)
+          .timeout(_kDbTimeout);
+
+      return (response as List)
+          .map((e) => _messageFromRow(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ getMessagesSince: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+      return [];
+    }
+  }
+
+  /// Envoie un message.
+  /// La notification des destinataires est créée par le trigger SQL
+  /// `trg_notify_new_message` : aucune insertion de notification ici.
   Future<ChatMessage> sendMessage({
     required String conversationId,
     required String content,
@@ -991,21 +918,9 @@ class ChatService {
         .timeout(_kDbTimeout);
 
     final profile = response['profiles'] as Map<String, dynamic>?;
-    final senderName = _resolveDisplayName(profile);
-    response['sender_name'] = senderName;
+    response['sender_name'] = _resolveDisplayName(profile);
     response['sender_avatar'] = profile?['avatar_url'];
     response['content'] = sanitizedContent;
-
-    // Notifie les autres participants (best-effort, async)
-    unawaited(_notifyRecipients(
-      conversationId: conversationId,
-      senderName: senderName,
-      preview: sanitizedContent.isNotEmpty
-          ? sanitizedContent
-          : (mediaType != null ? 'Fichier $mediaType' : 'Message'),
-    ).catchError((e) {
-      debugPrint('[ChatService] ⚠️ notify failed: $e');
-    }));
 
     debugPrint('[ChatService] ✓ Message sent '
         '(conv=${_ChatValidators.obfuscate(conversationId)})');
@@ -1080,12 +995,42 @@ class ChatService {
   // REALTIME
   // ============================================================
 
+  /// Flux des messages d'une conversation.
+  /// - Profils préchargés : pas de requête avant d'émettre un message reçu.
+  /// - Rattrapage à chaque (re)connexion du channel + filet toutes les 20 s,
+  ///   qui n'émettent QUE les messages nouveaux (la liste locale n'est pas écrasée).
   Stream<List<ChatMessage>> subscribeToMessages(String conversationId) {
     final controller = StreamController<List<ChatMessage>>();
 
     if (!_ChatValidators.isValidUuid(conversationId)) {
       scheduleMicrotask(() => controller.close());
       return controller.stream;
+    }
+
+    unawaited(_warmProfiles(conversationId));
+
+    var lastSeen = DateTime.now().toUtc().subtract(const Duration(seconds: 30));
+    var syncing = false;
+    Timer? syncTimer;
+
+    void track(ChatMessage m) {
+      if (m.createdAt.isAfter(lastSeen)) lastSeen = m.createdAt;
+    }
+
+    Future<void> catchUp() async {
+      if (_isDisposed || controller.isClosed || syncing) return;
+      syncing = true;
+      try {
+        final fresh = await _getMessagesSince(conversationId, lastSeen);
+        if (fresh.isNotEmpty && !controller.isClosed) {
+          for (final m in fresh) {
+            track(m);
+          }
+          controller.add(fresh);
+        }
+      } finally {
+        syncing = false;
+      }
     }
 
     final channel = _supabase.channel('messages:$conversationId');
@@ -1109,9 +1054,10 @@ class ChatService {
                 final map = Map<String, dynamic>.from(raw);
                 final senderId = map['sender_id']?.toString();
 
-                // Utilise le cache pour éviter N+1 queries
                 if (senderId != null && _ChatValidators.isValidUuid(senderId)) {
-                  final profile = await _getProfile(senderId);
+                  final profile = _profileCache.get(senderId) ??
+                      await _getProfile(senderId)
+                          .timeout(const Duration(seconds: 2), onTimeout: () => null);
                   map['sender_name'] = _resolveDisplayName(profile);
                   map['sender_avatar'] = profile?['avatar_url'];
                 } else {
@@ -1121,7 +1067,9 @@ class ChatService {
                 map['content'] = _ChatValidators.sanitizeContent(map['content'] as String?);
 
                 if (!controller.isClosed) {
-                  controller.add([ChatMessage.fromJson(map)]);
+                  final msg = ChatMessage.fromJson(map);
+                  track(msg);
+                  controller.add([msg]);
                 }
                 return;
               }
@@ -1130,16 +1078,24 @@ class ChatService {
                   '${kDebugMode ? e : "error"}');
             }
 
-            // Fallback : recharger tous les messages
+            // Fallback (DELETE ou payload illisible) : recharger
             if (!controller.isClosed) {
               final messages = await getMessages(conversationId);
               if (!controller.isClosed) controller.add(messages);
             }
           },
         )
-        .subscribe();
+        .subscribe((status, [error]) {
+          // À chaque (re)connexion : récupère ce qui a pu être manqué
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            unawaited(catchUp());
+          }
+        });
+
+    syncTimer = Timer.periodic(_kMessageSyncInterval, (_) => unawaited(catchUp()));
 
     controller.onCancel = () {
+      syncTimer?.cancel();
       try {
         _supabase.removeChannel(channel);
       } catch (_) {}
@@ -1150,7 +1106,7 @@ class ChatService {
   }
 
   // ============================================================
-  // ALIAS + GROUPES + PRESENCE + DELETE + UPLOAD
+  // GROUPES + PRESENCE + DELETE + UPLOAD
   // ============================================================
 
   Future<void> markAsRead(String conversationId) =>
@@ -1192,9 +1148,14 @@ class ChatService {
     }
   }
 
+  /// Flux de présence : channel filtré sur les utilisateurs concernés
+  /// (avant : toute la table + substring(0, 50) qui plantait pour 1 seul id).
   Stream<List<UserStatus>> subscribeToPresence(List<String> userIds) {
     final controller = StreamController<List<UserStatus>>();
-    final validIds = userIds.where(_ChatValidators.isValidUuid).toList();
+    final validIds = userIds
+        .where(_ChatValidators.isValidUuid)
+        .take(_kMaxInFilterSize)
+        .toList();
 
     if (validIds.isEmpty) {
       scheduleMicrotask(() => controller.close());
@@ -1205,7 +1166,9 @@ class ChatService {
       if (!controller.isClosed) controller.add(list);
     });
 
-    final channelName = 'presence-${validIds.take(5).join('-').substring(0, 50)}';
+    final sorted = [...validIds]..sort();
+    final channelName = 'presence-${sorted.take(5).join('-')}';
+    Timer? debounce;
     final channel = _supabase.channel(channelName);
 
     channel
@@ -1213,15 +1176,25 @@ class ChatService {
           event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'user_presence',
-          callback: (_) async {
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.inFilter,
+            column: 'user_id',
+            value: validIds,
+          ),
+          callback: (_) {
             if (_isDisposed || controller.isClosed) return;
-            final list = await getUsersPresence(validIds);
-            if (!controller.isClosed) controller.add(list);
+            debounce?.cancel();
+            debounce = Timer(_kPresenceDebounce, () async {
+              if (_isDisposed || controller.isClosed) return;
+              final list = await getUsersPresence(validIds);
+              if (!controller.isClosed) controller.add(list);
+            });
           },
         )
         .subscribe();
 
     controller.onCancel = () {
+      debounce?.cancel();
       try {
         _supabase.removeChannel(channel);
       } catch (_) {}
@@ -1261,7 +1234,6 @@ class ChatService {
   ) async {
     if (_isDisposed) return null;
 
-    // Validations sécurité
     if (!_ChatValidators.isValidBucket(bucket)) {
       debugPrint('[ChatService] ❌ Invalid bucket: $bucket');
       return null;
@@ -1274,7 +1246,6 @@ class ChatService {
       debugPrint('[ChatService] ❌ File too large: ${data.length} bytes');
       return null;
     }
-    // Protection path traversal
     if (folder.contains('..') || folder.startsWith('/')) {
       debugPrint('[ChatService] ❌ Invalid folder path: $folder');
       return null;
@@ -1319,7 +1290,7 @@ class ChatService {
       throw ArgumentError('Durée audio invalide');
     }
 
-    final extension = 'm4a'; // Force extension safe
+    const extension = 'm4a';
     final uniqueName = '${const Uuid().v4()}.$extension';
     final path = 'messages/$conversationId/$uniqueName';
 
@@ -1344,7 +1315,6 @@ class ChatService {
   // DISPOSE
   // ============================================================
 
-  /// Libère toutes les ressources.
   void dispose() {
     if (_isDisposed) return;
     _isDisposed = true;
