@@ -909,30 +909,35 @@ GoRoute(path: '/thix-info/downloads', name: 'thixInfoDownloads',
         GoRoute(path: '/admin/articles/:id/edit', builder: (context, state) => thix_admin_form.AdminArticleFormPage(articleId: state.pathParameters['id'])),
         GoRoute(path: '${AppRoutes.admin}/:module', name: 'admin', pageBuilder: (_, state) => NoTransitionPage(child: AdminPage(module: AdminModuleX.fromSlug(state.pathParameters['module'])))),
         GoRoute(path: AppRoutes.admin, name: 'adminRoot', redirect: (_, __) => '${AppRoutes.admin}/${AdminModule.overview.slug}'),
-
-        // === MON PAYS ===
-        GoRoute(path: AppRoutes.monPays, name: 'monPays', pageBuilder: (_, __) => const NoTransitionPage(child: MonPaysPage()), routes: [
-          GoRoute(
-  path: MonPaysRoutes.citizens,
-  name: MonPaysRoutes.citizensName,
-  builder: (context, state) => const CitizensPage(),
+// === MON PAYS ===
+GoRoute(
+  path: AppRoutes.monPays,
+  name: 'monPays',
+  pageBuilder: (_, __) => const NoTransitionPage(child: MonPaysPage()),
+  routes: [
+    // ✅ FIERTÉ DE LA NATION — chemin RELATIF obligatoire
+    GoRoute(
+      path: 'citizens',
+      name: 'monPaysCitizens',
+      pageBuilder: (_, __) => const NoTransitionPage(child: CitizensPage()),
+    ),
+    GoRoute(path: 'authorities', name: 'monPaysAuthorities', pageBuilder: (_, __) => const NoTransitionPage(child: AuthoritiesPage())),
+    GoRoute(path: 'authorities/:id', name: 'monPaysAuthorityProfile', pageBuilder: (_, state) => NoTransitionPage(child: AuthorityProfilePage(authorityId: state.pathParameters['id']!))),
+    GoRoute(path: 'laws', name: 'monPaysLaws', pageBuilder: (_, __) => const NoTransitionPage(child: LawsPage())),
+    GoRoute(path: 'laws/:type', name: 'monPaysArticleType', pageBuilder: (_, state) => NoTransitionPage(child: ArticleTypePage(type: ArticleType.fromString(state.pathParameters['type']!), title: ArticleType.fromString(state.pathParameters['type']!).label))),
+    GoRoute(path: 'laws/article/:id', name: 'monPaysArticleDetail', pageBuilder: (_, state) => NoTransitionPage(child: monPaysArticle.ArticleDetailPage(articleId: state.pathParameters['id']!))),
+    GoRoute(path: 'provinces', name: 'monPaysProvinces', pageBuilder: (_, __) => const NoTransitionPage(child: ProvincesPage())),
+    GoRoute(path: 'provinces/:id', name: 'monPaysProvinceDetail', pageBuilder: (_, state) => NoTransitionPage(child: ProvinceDetailPage(provinceId: state.pathParameters['id']!))),
+    GoRoute(path: 'admin', name: 'monPaysAdmin', pageBuilder: (_, __) => const NoTransitionPage(child: AdminDashboardPage())),
+    GoRoute(path: 'admin/authorities', name: 'monPaysAdminAuthorities', pageBuilder: (_, __) => const NoTransitionPage(child: AdminAuthoritiesPage())),
+    GoRoute(path: 'admin/form', name: 'monPaysAdminForm', pageBuilder: (_, state) => NoTransitionPage(child: AdminAuthorityFormPage(authority: state.extra as dynamic))),
+    GoRoute(path: 'admin/articles', name: 'monPaysAdminArticles', pageBuilder: (_, __) => const NoTransitionPage(child: monpays_articles.AdminArticlesPage())),
+    GoRoute(path: 'admin/articles/form', name: 'monPaysAdminArticleForm', pageBuilder: (_, state) => NoTransitionPage(child: monpays_form.AdminArticleFormPage(article: state.extra as Article?))),
+    GoRoute(path: 'admin/provinces', name: 'monPaysAdminProvinces', pageBuilder: (_, __) => const NoTransitionPage(child: AdminProvincesPage())),
+    GoRoute(path: 'admin/provinces/form', name: 'monPaysAdminProvinceForm', pageBuilder: (_, state) => NoTransitionPage(child: AdminProvinceFormPage(province: state.extra as Province?))),
+  ],
 ),
-          GoRoute(path: 'authorities', name: 'monPaysAuthorities', pageBuilder: (_, __) => const NoTransitionPage(child: AuthoritiesPage())),
-          GoRoute(path: 'authorities/:id', name: 'monPaysAuthorityProfile', pageBuilder: (_, state) => NoTransitionPage(child: AuthorityProfilePage(authorityId: state.pathParameters['id']!))),
-          GoRoute(path: 'laws', name: 'monPaysLaws', pageBuilder: (_, __) => const NoTransitionPage(child: LawsPage())),
-          GoRoute(path: 'laws/:type', name: 'monPaysArticleType', pageBuilder: (_, state) => NoTransitionPage(child: ArticleTypePage(type: ArticleType.fromString(state.pathParameters['type']!), title: ArticleType.fromString(state.pathParameters['type']!).label))),
-          GoRoute(path: 'laws/article/:id', name: 'monPaysArticleDetail', pageBuilder: (_, state) => NoTransitionPage(child: monPaysArticle.ArticleDetailPage(articleId: state.pathParameters['id']!))),
-          GoRoute(path: 'provinces', name: 'monPaysProvinces', pageBuilder: (_, __) => const NoTransitionPage(child: ProvincesPage())),
-          GoRoute(path: 'provinces/:id', name: 'monPaysProvinceDetail', pageBuilder: (_, state) => NoTransitionPage(child: ProvinceDetailPage(provinceId: state.pathParameters['id']!))),
-          GoRoute(path: 'admin', name: 'monPaysAdmin', pageBuilder: (_, __) => const NoTransitionPage(child: AdminDashboardPage())),
-          GoRoute(path: 'admin/authorities', name: 'monPaysAdminAuthorities', pageBuilder: (_, __) => const NoTransitionPage(child: AdminAuthoritiesPage())),
-          GoRoute(path: 'admin/form', name: 'monPaysAdminForm', pageBuilder: (_, state) => NoTransitionPage(child: AdminAuthorityFormPage(authority: state.extra as dynamic))),
-          GoRoute(path: 'admin/articles', name: 'monPaysAdminArticles', pageBuilder: (_, __) => const NoTransitionPage(child: monpays_articles.AdminArticlesPage())),
-          GoRoute(path: 'admin/articles/form', name: 'monPaysAdminArticleForm', pageBuilder: (_, state) => NoTransitionPage(child: monpays_form.AdminArticleFormPage(article: state.extra as Article?))),
-          GoRoute(path: 'admin/provinces', name: 'monPaysAdminProvinces', pageBuilder: (_, __) => const NoTransitionPage(child: AdminProvincesPage())),
-          GoRoute(path: 'admin/provinces/form', name: 'monPaysAdminProvinceForm', pageBuilder: (_, state) => NoTransitionPage(child: AdminProvinceFormPage(province: state.extra as Province?))),
-        ]),
-
+        
         // ============================================================
         // === THIX IA NEW MODULE - 15 PAGES - FULL PROD ENTERPRISE ===
         // ============================================================
