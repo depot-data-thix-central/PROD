@@ -2217,6 +2217,173 @@ const Map<String, String> _fr = {
 'live_leave_confirm': 'Voulez-vous vraiment quitter ce live ?',
 'live_waiting_host': 'En attente de l\'hôte…',
 'live_unknown': 'Live inconnu',
+// ─── CONVERSATIONS LIST ───
+'conversations_title': 'Messages',
+'conversations_search_title': 'Search',
+'conversations_search_hint': 'Person\'s name...',
+'conversations_load_error': 'Loading error',
+'conversations_empty_title': 'No conversations',
+'conversations_empty_subtitle': 'Send a message to someone to start a conversation',
+'conversations_no_results_title': 'No results',
+'conversations_no_results_subtitle': 'No conversation matches "{0}"',
+'conversations_no_message': 'No message',
+
+// ─── CHAT ATTACHMENTS & MEDIA ───
+'chat_message_invalid': 'Invalid message',
+'chat_send_error': 'Failed to send',
+'chat_message_deleted': 'Message deleted',
+'chat_delete_title': 'Delete message',
+'chat_delete_confirm': 'Are you sure you want to delete this message?',
+'chat_delete_error': 'Failed to delete',
+'chat_load_error': 'Loading error',
+'chat_start_conversation': 'Start conversation',
+'chat_send_first_message': 'Send your first message to {0}',
+'chat_is_typing': 'is typing...',
+'chat_type_message': 'Type a message...',
+'chat_video_call_soon': 'Video call coming soon',
+'chat_view_profile': 'View profile',
+'chat_search_messages': 'Search in conversation',
+'chat_report': 'Report',
+'chat_report_sent': 'Report sent',
+'chat_block_user': 'Block user',
+'chat_user_blocked': 'User blocked',
+'chat_status_online': 'Online',
+'chat_attachments_title': 'Attachments',
+'chat_attach_photo': 'Photo',
+'chat_attach_video': 'Video',
+'chat_attach_camera': 'Camera',
+'chat_attach_document': 'Document',
+'chat_attach_sticker': 'Sticker',
+'chat_attach_flag': 'Flag',
+'chat_attach_location': 'Location',
+'chat_attach_contact': 'Contact',
+'chat_media_uploading': 'Uploading media...',
+'chat_media_upload_failed': 'Media upload failed',
+'chat_media_too_large': 'File too large (max {0} MB)',
+'chat_media_unsupported': 'Unsupported format',
+'chat_sticker_title': 'Stickers',
+'chat_flag_title': 'Flags',
+'chat_common_coming_soon': 'Coming soon',
+
+// ── MY COUNTRY (CLIENT / PUBLIC) ───────────────────────────────────
+'mon_pays_app_title': 'My Country',
+'mon_pays_subtitle': 'Discover the richness of the DRC',
+'mon_pays_loading_provinces': 'Loading provinces...',
+'mon_pays_error_loading': 'Unable to load data',
+'mon_pays_retry': 'Try again',
+'mon_pays_no_data': 'No data available',
+'mon_pays_search_hint': 'Search for a province, city...',
+
+// ── PROVINCES LIST ─────────────────────────────────────────
+'mon_pays_provinces_list_title': 'Our Provinces',
+'mon_pays_provinces_filter_all': 'All regions',
+'mon_pays_provinces_filter_centre': 'Central',
+'mon_pays_provinces_filter_est': 'East',
+'mon_pays_provinces_filter_ouest': 'West',
+'mon_pays_provinces_filter_nord': 'North',
+'mon_pays_provinces_filter_sud': 'South',
+'mon_pays_provinces_empty_state': 'No province matches your search',
+'mon_pays_provinces_item_population': '{count} inhabitants',
+'mon_pays_provinces_item_area': '{area} sq km',
+
+// ── PROVINCE DETAILS ──────────────────────────────────────
+'mon_pays_province_details_overview': 'Overview',
+'mon_pays_province_details_history': 'History',
+'mon_pays_province_details_governance': 'Governance',
+'mon_pays_province_details_economy': 'Economy',
+'mon_pays_province_details_tourism': 'Tourism',
+'mon_pays_province_details_culture': 'Culture',
+'mon_pays_province_details_admin': 'Administration',
+
+// ── IDENTITY SECTION (DETAILS) ──────────────────────────────────
+'mon_pays_detail_capital': 'Capital',
+'mon_pays_detail_region': 'Region',
+'mon_pays_detail_area': 'Area',
+'mon_pays_detail_population': 'Population',
+'mon_pays_detail_territories': 'Territories',
+'mon_pays_detail_website': 'Official website',
+'mon_pays_detail_visit_website': 'Visit website',
+'mon_pays_detail_coat_of_arms': 'Coat of arms',
+'mon_pays_detail_map': 'Geographic map',
+
+// ── HISTORY & CLIMATE SECTION ───────────────────────────────────
+'mon_pays_detail_history_title': 'History & Origins',
+'mon_pays_detail_climate_title': 'Climate & Environment',
+'mon_pays_detail_infrastructure_title': 'Infrastructure',
+'mon_pays_detail_education_title': 'Education & Healthcare',
+
+// ── GOVERNANCE SECTION ─────────────────────────────────────────
+'mon_pays_detail_governor': 'Governor',
+'mon_pays_detail_vice_governor': 'Vice-Governor',
+'mon_pays_detail_ministers': 'Provincial Government',
+'mon_pays_detail_minister_role': '{role}',
+'mon_pays_detail_no_ministers': 'No ministers listed',
+
+// ── CITIES SECTION ──────────────────────────────────────────────
+'mon_pays_detail_cities_title': 'Major Cities',
+'mon_pays_detail_city_mayor': 'Mayor: {name}',
+'mon_pays_detail_city_capital_marker': 'Provincial capital',
+'mon_pays_detail_view_all_cities': 'View all cities',
+
+// ── ECONOMY SECTION ────────────────────────────────────────────
+'mon_pays_detail_economy_title': 'Economic Sectors',
+'mon_pays_detail_economy_resources': 'Key Resources',
+'mon_pays_detail_sector_key': 'Key Sector',
+'mon_pays_detail_no_economy': 'No economic data available',
+
+// ── TOURISM SECTION ────────────────────────────────────────────
+'mon_pays_detail_tourism_title': 'Tourist Sites',
+'mon_pays_detail_tourism_type': 'Type: {type}',
+'mon_pays_detail_visit_site': 'Explore site',
+'mon_pays_detail_no_tourism': 'No tourist sites listed',
+
+// ── CULTURE & TRIBES SECTION ────────────────────────────────────
+'mon_pays_detail_culture_title': 'Culture & Peoples',
+'mon_pays_detail_languages': 'Spoken Languages',
+'mon_pays_detail_tribes_title': 'Tribes & Ethnic Groups',
+'mon_pays_detail_tribe_zone': 'Area: {zone}',
+'mon_pays_detail_no_culture': 'No cultural information available',
+
+// ── ADMINISTRATION SECTION ──────────────────────────────────────
+'mon_pays_detail_admin_divisions': 'Administrative Divisions',
+'mon_pays_detail_division_type': '{type}: {name}',
+'mon_pays_detail_division_pop': '{pop} inh.',
+'mon_pays_detail_achievements_title': 'Major Achievements',
+'mon_pays_detail_achievement_date': '{date} • {location}',
+'mon_pays_detail_no_achievements': 'No achievements recorded',
+
+// ── EMERGENCY SECTION ────────────────────────────────────────────
+'mon_pays_detail_emergency_title': 'Useful Contacts',
+'mon_pays_detail_call_now': 'Call now',
+'mon_pays_detail_emergency_service': '{service}',
+
+// ── MEDIA GALLERY ───────────────────────────────────────────────
+'mon_pays_gallery_title': 'Photo & Video Gallery',
+'mon_pays_gallery_photos': 'Photos',
+'mon_pays_gallery_videos': 'Videos',
+'mon_pays_gallery_view_fullscreen': 'View full screen',
+
+// ── MY COUNTRY: CITIZENS SECTION (PRIDE OF THE NATION) ───────────
+'mon_pays_citizens_title': 'Pride of the Nation',
+'mon_pays_citizens_subtitle': 'Building the DRC daily through their excellence.',
+'mon_pays_citizens_view_all': 'All profiles',
+'mon_pays_citizens_domain': '{domain}', // e.g., Music & Culture
+
+// ── MY COUNTRY: HISTORICAL FIGURES SECTION ─────────────────────
+'mon_pays_figures_title': 'Historical Figures',
+'mon_pays_figures_subtitle': 'Leaders who shaped the nation\'s history.',
+'mon_pays_figures_explore': 'Explore',
+'mon_pays_figures_mandate': '({start} - {end})', // e.g., (2001 - 2019)
+
+// ── MY COUNTRY: QUICK MENU (CENTER ICONS) ───────────────────
+'mon_pays_menu_videos': 'Videos',
+'mon_pays_menu_documents': 'Documents',
+'mon_pays_menu_laws': 'Laws',
+'mon_pays_menu_participate': 'Get Involved',
+
+// ── MY COUNTRY: ACTION BUTTONS (BOTTOM OF PAGE) ──────────────────
+'mon_pays_action_wanted': 'Wanted Person',
+'mon_pays_action_civic_search': 'Civic Search',
 
 };
   
@@ -4348,7 +4515,174 @@ const Map<String, String> _en = {
 'live_leave_confirm': 'Do you really want to leave this live?',
 'live_waiting_host': 'Waiting for host…',
 'live_unknown': 'Unknown live',
-  
+  // ─── CONVERSATIONS LIST ───
+'conversations_title': 'Messages',
+'conversations_search_title': 'Search',
+'conversations_search_hint': 'Person\'s name...',
+'conversations_load_error': 'Loading error',
+'conversations_empty_title': 'No conversations',
+'conversations_empty_subtitle': 'Send a message to someone to start a conversation',
+'conversations_no_results_title': 'No results',
+'conversations_no_results_subtitle': 'No conversation matches "{0}"',
+'conversations_no_message': 'No message',
+
+// ─── CHAT ATTACHMENTS & MEDIA ───
+'chat_message_invalid': 'Invalid message',
+'chat_send_error': 'Failed to send',
+'chat_message_deleted': 'Message deleted',
+'chat_delete_title': 'Delete message',
+'chat_delete_confirm': 'Are you sure you want to delete this message?',
+'chat_delete_error': 'Failed to delete',
+'chat_load_error': 'Loading error',
+'chat_start_conversation': 'Start conversation',
+'chat_send_first_message': 'Send your first message to {0}',
+'chat_is_typing': 'is typing...',
+'chat_type_message': 'Type a message...',
+'chat_video_call_soon': 'Video call coming soon',
+'chat_view_profile': 'View profile',
+'chat_search_messages': 'Search in conversation',
+'chat_report': 'Report',
+'chat_report_sent': 'Report sent',
+'chat_block_user': 'Block user',
+'chat_user_blocked': 'User blocked',
+'chat_status_online': 'Online',
+'chat_attachments_title': 'Attachments',
+'chat_attach_photo': 'Photo',
+'chat_attach_video': 'Video',
+'chat_attach_camera': 'Camera',
+'chat_attach_document': 'Document',
+'chat_attach_sticker': 'Sticker',
+'chat_attach_flag': 'Flag',
+'chat_attach_location': 'Location',
+'chat_attach_contact': 'Contact',
+'chat_media_uploading': 'Uploading media...',
+'chat_media_upload_failed': 'Media upload failed',
+'chat_media_too_large': 'File too large (max {0} MB)',
+'chat_media_unsupported': 'Unsupported format',
+'chat_sticker_title': 'Stickers',
+'chat_flag_title': 'Flags',
+'chat_common_coming_soon': 'Coming soon',
+
+// ── MY COUNTRY (CLIENT / PUBLIC) ───────────────────────────────────
+'mon_pays_app_title': 'My Country',
+'mon_pays_subtitle': 'Discover the richness of the DRC',
+'mon_pays_loading_provinces': 'Loading provinces...',
+'mon_pays_error_loading': 'Unable to load data',
+'mon_pays_retry': 'Try again',
+'mon_pays_no_data': 'No data available',
+'mon_pays_search_hint': 'Search for a province, city...',
+
+// ── PROVINCES LIST ─────────────────────────────────────────
+'mon_pays_provinces_list_title': 'Our Provinces',
+'mon_pays_provinces_filter_all': 'All regions',
+'mon_pays_provinces_filter_centre': 'Central',
+'mon_pays_provinces_filter_est': 'East',
+'mon_pays_provinces_filter_ouest': 'West',
+'mon_pays_provinces_filter_nord': 'North',
+'mon_pays_provinces_filter_sud': 'South',
+'mon_pays_provinces_empty_state': 'No province matches your search',
+'mon_pays_provinces_item_population': '{count} inhabitants',
+'mon_pays_provinces_item_area': '{area} sq km',
+
+// ── PROVINCE DETAILS ──────────────────────────────────────
+'mon_pays_province_details_overview': 'Overview',
+'mon_pays_province_details_history': 'History',
+'mon_pays_province_details_governance': 'Governance',
+'mon_pays_province_details_economy': 'Economy',
+'mon_pays_province_details_tourism': 'Tourism',
+'mon_pays_province_details_culture': 'Culture',
+'mon_pays_province_details_admin': 'Administration',
+
+// ── IDENTITY SECTION (DETAILS) ──────────────────────────────────
+'mon_pays_detail_capital': 'Capital',
+'mon_pays_detail_region': 'Region',
+'mon_pays_detail_area': 'Area',
+'mon_pays_detail_population': 'Population',
+'mon_pays_detail_territories': 'Territories',
+'mon_pays_detail_website': 'Official website',
+'mon_pays_detail_visit_website': 'Visit website',
+'mon_pays_detail_coat_of_arms': 'Coat of arms',
+'mon_pays_detail_map': 'Geographic map',
+
+// ── HISTORY & CLIMATE SECTION ───────────────────────────────────
+'mon_pays_detail_history_title': 'History & Origins',
+'mon_pays_detail_climate_title': 'Climate & Environment',
+'mon_pays_detail_infrastructure_title': 'Infrastructure',
+'mon_pays_detail_education_title': 'Education & Healthcare',
+
+// ── GOVERNANCE SECTION ─────────────────────────────────────────
+'mon_pays_detail_governor': 'Governor',
+'mon_pays_detail_vice_governor': 'Vice-Governor',
+'mon_pays_detail_ministers': 'Provincial Government',
+'mon_pays_detail_minister_role': '{role}',
+'mon_pays_detail_no_ministers': 'No ministers listed',
+
+// ── CITIES SECTION ──────────────────────────────────────────────
+'mon_pays_detail_cities_title': 'Major Cities',
+'mon_pays_detail_city_mayor': 'Mayor: {name}',
+'mon_pays_detail_city_capital_marker': 'Provincial capital',
+'mon_pays_detail_view_all_cities': 'View all cities',
+
+// ── ECONOMY SECTION ────────────────────────────────────────────
+'mon_pays_detail_economy_title': 'Economic Sectors',
+'mon_pays_detail_economy_resources': 'Key Resources',
+'mon_pays_detail_sector_key': 'Key Sector',
+'mon_pays_detail_no_economy': 'No economic data available',
+
+// ── TOURISM SECTION ────────────────────────────────────────────
+'mon_pays_detail_tourism_title': 'Tourist Sites',
+'mon_pays_detail_tourism_type': 'Type: {type}',
+'mon_pays_detail_visit_site': 'Explore site',
+'mon_pays_detail_no_tourism': 'No tourist sites listed',
+
+// ── CULTURE & TRIBES SECTION ────────────────────────────────────
+'mon_pays_detail_culture_title': 'Culture & Peoples',
+'mon_pays_detail_languages': 'Spoken Languages',
+'mon_pays_detail_tribes_title': 'Tribes & Ethnic Groups',
+'mon_pays_detail_tribe_zone': 'Area: {zone}',
+'mon_pays_detail_no_culture': 'No cultural information available',
+
+// ── ADMINISTRATION SECTION ──────────────────────────────────────
+'mon_pays_detail_admin_divisions': 'Administrative Divisions',
+'mon_pays_detail_division_type': '{type}: {name}',
+'mon_pays_detail_division_pop': '{pop} inh.',
+'mon_pays_detail_achievements_title': 'Major Achievements',
+'mon_pays_detail_achievement_date': '{date} • {location}',
+'mon_pays_detail_no_achievements': 'No achievements recorded',
+
+// ── EMERGENCY SECTION ────────────────────────────────────────────
+'mon_pays_detail_emergency_title': 'Useful Contacts',
+'mon_pays_detail_call_now': 'Call now',
+'mon_pays_detail_emergency_service': '{service}',
+
+// ── MEDIA GALLERY ───────────────────────────────────────────────
+'mon_pays_gallery_title': 'Photo & Video Gallery',
+'mon_pays_gallery_photos': 'Photos',
+'mon_pays_gallery_videos': 'Videos',
+'mon_pays_gallery_view_fullscreen': 'View full screen',
+
+// ── MY COUNTRY: CITIZENS SECTION (PRIDE OF THE NATION) ───────────
+'mon_pays_citizens_title': 'Pride of the Nation',
+'mon_pays_citizens_subtitle': 'Building the DRC daily through their excellence.',
+'mon_pays_citizens_view_all': 'All profiles',
+'mon_pays_citizens_domain': '{domain}', // e.g., Music & Culture
+
+// ── MY COUNTRY: HISTORICAL FIGURES SECTION ─────────────────────
+'mon_pays_figures_title': 'Historical Figures',
+'mon_pays_figures_subtitle': 'Leaders who shaped the nation\'s history.',
+'mon_pays_figures_explore': 'Explore',
+'mon_pays_figures_mandate': '({start} - {end})', // e.g., (2001 - 2019)
+
+// ── MY COUNTRY: QUICK MENU (CENTER ICONS) ───────────────────
+'mon_pays_menu_videos': 'Videos',
+'mon_pays_menu_documents': 'Documents',
+'mon_pays_menu_laws': 'Laws',
+'mon_pays_menu_participate': 'Get Involved',
+
+// ── MY COUNTRY: ACTION BUTTONS (BOTTOM OF PAGE) ──────────────────
+'mon_pays_action_wanted': 'Wanted Person',
+'mon_pays_action_civic_search': 'Civic Search',
+
 };
 
 
@@ -6481,7 +6815,174 @@ const Map<String, String> _sw = {
 'live_leave_confirm': 'Je, una uhakika unataka kuondoka kwenye live hii?',
 'live_waiting_host': 'Inasubiri mwenyeji…',
 'live_unknown': 'Live isiyojulikana',
-  
+  // ─── CONVERSATIONS LIST ───
+'conversations_title': 'Ujumbe',
+'conversations_search_title': 'Tafuta',
+'conversations_search_hint': 'Jina la mtu...',
+'conversations_load_error': 'Hitilafu ya kupakia',
+'conversations_empty_title': 'Hakuna mazungumzo',
+'conversations_empty_subtitle': 'Mtumie mtu ujumbe ili kuanza mazungumzo',
+'conversations_no_results_title': 'Hakuna matokeo',
+'conversations_no_results_subtitle': 'Hakuna mazungumzo yanayolingana na "{0}"',
+'conversations_no_message': 'Hakuna ujumbe',
+
+// ─── CHAT ATTACHMENTS & MEDIA ───
+'chat_message_invalid': 'Ujumbe si sahihi',
+'chat_send_error': 'Imeshindwa kutuma',
+'chat_message_deleted': 'Ujumbe umefutwa',
+'chat_delete_title': 'Futa ujumbe',
+'chat_delete_confirm': 'Je, una uhakika unataka kufuta ujumbe huu?',
+'chat_delete_error': 'Imeshindwa kufuta',
+'chat_load_error': 'Hitilafu ya kupakia',
+'chat_start_conversation': 'Anza mazungumzo',
+'chat_send_first_message': 'Tuma ujumbe wako wa kwanza kwa {0}',
+'chat_is_typing': 'anaandika...',
+'chat_type_message': 'Andika ujumbe...',
+'chat_video_call_soon': 'Piga simu ya video inakuja hivi karibuni',
+'chat_view_profile': 'Tazama Wasifu',
+'chat_search_messages': 'Tafuta kwenye mazungumzo',
+'chat_report': 'Ripoti',
+'chat_report_sent': 'Ripoti imetumwa',
+'chat_block_user': 'Mzuie mtumiaji',
+'chat_user_blocked': 'Mtumiaji amezuiwa',
+'chat_status_online': 'Yupo mtandaoni',
+'chat_attachments_title': 'Vifakio',
+'chat_attach_photo': 'Picha',
+'chat_attach_video': 'Video',
+'chat_attach_camera': 'Kamera',
+'chat_attach_document': 'Nyaraka',
+'chat_attach_sticker': 'Stika',
+'chat_attach_flag': 'Bendera',
+'chat_attach_location': 'Eneo',
+'chat_attach_contact': 'Namba ya simu',
+'chat_media_uploading': 'Inapakia media...',
+'chat_media_upload_failed': 'Upakiaji wa media umeshindikana',
+'chat_media_too_large': 'Faili ni kubwa mno (kiwango cha juu {0} MB)',
+'chat_media_unsupported': 'Aina ya faili haitumiki',
+'chat_sticker_title': 'Stika',
+'chat_flag_title': 'Bendera',
+'chat_common_coming_soon': 'Inakuja hivi karibuni',
+
+// ── NCHI YANGU (MTEJA / UMMA) ───────────────────────────────────
+'mon_pays_app_title': 'Nchi Yangu',
+'mon_pays_subtitle': 'Gundua utajiri wa RDC',
+'mon_pays_loading_provinces': 'Inapakia mikoa...',
+'mon_pays_error_loading': 'Imeshindwa kupakia data',
+'mon_pays_retry': 'Jaribu tena',
+'mon_pays_no_data': 'Hakuna data inayopatikana',
+'mon_pays_search_hint': 'Tafuta mkoa, mji...',
+
+// ── ORODHA YA MIKOA ─────────────────────────────────────────
+'mon_pays_provinces_list_title': 'Mikoa Yetu',
+'mon_pays_provinces_filter_all': 'Kanda zote',
+'mon_pays_provinces_filter_centre': 'Kati',
+'mon_pays_provinces_filter_est': 'Mashariki',
+'mon_pays_provinces_filter_ouest': 'Magharibi',
+'mon_pays_provinces_filter_nord': 'Kaskazini',
+'mon_pays_provinces_filter_sud': 'Kusini',
+'mon_pays_provinces_empty_state': 'Hakuna mkoa unaolingana na utafutaji wako',
+'mon_pays_provinces_item_population': 'Wakazi {count}',
+'mon_pays_provinces_item_area': 'km² {area}',
+
+// ── MAELEZO YA MKOA ──────────────────────────────────────
+'mon_pays_province_details_overview': 'Muhtasari',
+'mon_pays_province_details_history': 'Historia',
+'mon_pays_province_details_governance': 'Utawala',
+'mon_pays_province_details_economy': 'Uchumi',
+'mon_pays_province_details_tourism': 'Utalii',
+'mon_pays_province_details_culture': 'Utamaduni',
+'mon_pays_province_details_admin': 'Utawala wa Eneo',
+
+// ── SEHEMU YA UTAMBULISHO (MAELEZO) ──────────────────────────────
+'mon_pays_detail_capital': 'Makao Makuu',
+'mon_pays_detail_region': 'Kanda',
+'mon_pays_detail_area': 'Eneo',
+'mon_pays_detail_population': 'Idadi ya Watu',
+'mon_pays_detail_territories': 'Maeneo',
+'mon_pays_detail_website': 'Tovuti Rasmi',
+'mon_pays_detail_visit_website': 'Tembelea Tovuti',
+'mon_pays_detail_coat_of_arms': 'Nembo ya Taifa',
+'mon_pays_detail_map': 'Ramani ya Eneo',
+
+// ── SEHEMU YA HISTORIA NA HALI YA HEWA ───────────────────────────
+'mon_pays_detail_history_title': 'Historia na Chimbuko',
+'mon_pays_detail_climate_title': 'Hali ya Hewa na Mazingira',
+'mon_pays_detail_infrastructure_title': 'Miundombinu',
+'mon_pays_detail_education_title': 'Elimu na Afya',
+
+// ── SEHEMU YA UTAWALA ─────────────────────────────────────────
+'mon_pays_detail_governor': 'Gavana',
+'mon_pays_detail_vice_governor': 'Makamu wa Gavana',
+'mon_pays_detail_ministers': 'Serikali ya Mkoa',
+'mon_pays_detail_minister_role': '{role}',
+'mon_pays_detail_no_ministers': 'Hakuna mawaziri walioorodheshwa',
+
+// ── SEHEMU YA MIJI ──────────────────────────────────────────────
+'mon_pays_detail_cities_title': 'Miji Mikuu',
+'mon_pays_detail_city_mayor': 'Meya: {name}',
+'mon_pays_detail_city_capital_marker': 'Makao Makuu ya Mkoa',
+'mon_pays_detail_view_all_cities': 'Tazama miji yote',
+
+// ── SEHEMU YA UCHUMI ────────────────────────────────────────────
+'mon_pays_detail_economy_title': 'Sekta za Kiuchumi',
+'mon_pays_detail_economy_resources': 'Rasilimali Kuu',
+'mon_pays_detail_sector_key': 'Sekta Muhimu',
+'mon_pays_detail_no_economy': 'Hakuna data ya kiuchumi inayopatikana',
+
+// ── SEHEMU YA UTALII ────────────────────────────────────────────
+'mon_pays_detail_tourism_title': 'Maeneo ya Utalii',
+'mon_pays_detail_tourism_type': 'Aina: {type}',
+'mon_pays_detail_visit_site': 'Gundua eneo hili',
+'mon_pays_detail_no_tourism': 'Hakuna eneo la utalii lililoorodheshwa',
+
+// ── SEHEMU YA UTAMADUNI NA KABILA ──────────────────────────────
+'mon_pays_detail_culture_title': 'Utamaduni na Jamii',
+'mon_pays_detail_languages': 'Lugha Zinazozungumzwa',
+'mon_pays_detail_tribes_title': 'Makabila na Jamii',
+'mon_pays_detail_tribe_zone': 'Eneo: {zone}',
+'mon_pays_detail_no_culture': 'Hakuna taarifa za kitamaduni zinazopatikana',
+
+// ── SEHEMU YA UTAWALA WA ENEO ────────────────────────────────────
+'mon_pays_detail_admin_divisions': 'Mgawanyo wa Kitawala',
+'mon_pays_detail_division_type': '{type}: {name}',
+'mon_pays_detail_division_pop': 'wakazi {pop}',
+'mon_pays_detail_achievements_title': 'Mafanikio Makubwa',
+'mon_pays_detail_achievement_date': '{date} • {location}',
+'mon_pays_detail_no_achievements': 'Hakuna mafanikio yaliyorekodiwa',
+
+// ── SEHEMU YA DHARURA ────────────────────────────────────────────
+'mon_pays_detail_emergency_title': 'Namba za Dharura',
+'mon_pays_detail_call_now': 'Piga simu sasa',
+'mon_pays_detail_emergency_service': '{service}',
+
+// ── NYUMBA YA PICHA NA VIDEO ─────────────────────────────────────
+'mon_pays_gallery_title': 'Maktaba ya Picha na Video',
+'mon_pays_gallery_photos': 'Picha',
+'mon_pays_gallery_videos': 'Video',
+'mon_pays_gallery_view_fullscreen': 'Tazama skrini nzima',
+
+// ── NCHI YANGU: SEHEMU YA WANANCHI (FAKHARI YA TAIFA) ───────────
+'mon_pays_citizens_title': 'Fahari ya Taifa',
+'mon_pays_citizens_subtitle': 'Wanajenga RDC kila siku kupitia umahiri wao.',
+'mon_pays_citizens_view_all': 'Wasifu wote',
+'mon_pays_citizens_domain': '{domain}', // Mfano: Muziki na Utamaduni
+
+// ── NCHI YANGU: SEHEMU YA WAKUBWA WA HISTORIA ─────────────────
+'mon_pays_figures_title': 'Shujaa wa Historia',
+'mon_pays_figures_subtitle': 'Viongozi walioweka alama katika historia ya nchi.',
+'mon_pays_figures_explore': 'Gundua',
+'mon_pays_figures_mandate': '({start} - {end})', // Mfano: (2001 - 2019)
+
+// ── NCHI YANGU: MENYU YA HARAKA (AINA ZA KATIKATI) ─────────────
+'mon_pays_menu_videos': 'Video',
+'mon_pays_menu_documents': 'Nyaraka',
+'mon_pays_menu_laws': 'Sheria',
+'mon_pays_menu_participate': 'Shiriki',
+
+// ── NCHI YANGU: VITUFA VYA KUTENDA (CHINI YA UKURASA) ───────────
+'mon_pays_action_wanted': 'Mtu Anayetafutwa',
+'mon_pays_action_civic_search': 'Utafutaji wa Kiraia',
+
 };
 
 //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
@@ -8575,6 +9076,174 @@ const Map<String, String> _pt = {
 'live_leave_confirm': 'Quer mesmo sair deste live?',
 'live_waiting_host': 'À espera do anfitrião…',
 'live_unknown': 'Live desconhecido',
+  // ─── CONVERSATIONS LIST ───
+'conversations_title': 'Mensagens',
+'conversations_search_title': 'Pesquisar',
+'conversations_search_hint': 'Nome da pessoa...',
+'conversations_load_error': 'Erro ao carregar',
+'conversations_empty_title': 'Nenhuma conversa',
+'conversations_empty_subtitle': 'Envie uma mensagem para alguém para iniciar uma conversa',
+'conversations_no_results_title': 'Nenhum resultado',
+'conversations_no_results_subtitle': 'Nenhuma conversa corresponde a "{0}"',
+'conversations_no_message': 'Nenhuma mensagem',
+
+// ─── CHAT ATTACHMENTS & MEDIA ───
+'chat_message_invalid': 'Mensagem inválida',
+'chat_send_error': 'Erro ao enviar',
+'chat_message_deleted': 'Mensagem apagada',
+'chat_delete_title': 'Apagar mensagem',
+'chat_delete_confirm': 'Tem certeza de que deseja apagar esta mensagem?',
+'chat_delete_error': 'Erro ao apagar',
+'chat_load_error': 'Erro ao carregar',
+'chat_start_conversation': 'Iniciar conversa',
+'chat_send_first_message': 'Envie sua primeira mensagem para {0}',
+'chat_is_typing': 'está digitando...',
+'chat_type_message': 'Digite uma mensagem...',
+'chat_video_call_soon': 'Chamada de vídeo em breve',
+'chat_view_profile': 'Ver perfil',
+'chat_search_messages': 'Pesquisar na conversa',
+'chat_report': 'Denunciar',
+'chat_report_sent': 'Denúncia enviada',
+'chat_block_user': 'Bloquear usuário',
+'chat_user_blocked': 'Usuário bloqueado',
+'chat_status_online': 'Online',
+'chat_attachments_title': 'Anexos',
+'chat_attach_photo': 'Foto',
+'chat_attach_video': 'Vídeo',
+'chat_attach_camera': 'Câmera',
+'chat_attach_document': 'Documento',
+'chat_attach_sticker': 'Figurinha',
+'chat_attach_flag': 'Bandeira',
+'chat_attach_location': 'Localização',
+'chat_attach_contact': 'Contato',
+'chat_media_uploading': 'Enviando mídia...',
+'chat_media_upload_failed': 'Falha no envio da mídia',
+'chat_media_too_large': 'Arquivo muito grande (máx {0} MB)',
+'chat_media_unsupported': 'Formato não suportado',
+'chat_sticker_title': 'Figurinhas',
+'chat_flag_title': 'Bandeiras',
+'chat_common_coming_soon': 'Em breve',
+
+// ── MEU PAÍS (CLIENTE / PÚBLICO) ───────────────────────────────────
+'mon_pays_app_title': 'Meu País',
+'mon_pays_subtitle': 'Descubra a riqueza da RDC',
+'mon_pays_loading_provinces': 'Carregando províncias...',
+'mon_pays_error_loading': 'Impossível carregar os dados',
+'mon_pays_retry': 'Tentar novamente',
+'mon_pays_no_data': 'Nenhum dado disponível',
+'mon_pays_search_hint': 'Pesquisar uma província, cidade...',
+
+// ── LISTA DE PROVÍNCIAS ─────────────────────────────────────────
+'mon_pays_provinces_list_title': 'Nossas Províncias',
+'mon_pays_provinces_filter_all': 'Todas as regiões',
+'mon_pays_provinces_filter_centre': 'Centro',
+'mon_pays_provinces_filter_est': 'Leste',
+'mon_pays_provinces_filter_ouest': 'Oeste',
+'mon_pays_provinces_filter_nord': 'Norte',
+'mon_pays_provinces_filter_sud': 'Sul',
+'mon_pays_provinces_empty_state': 'Nenhuma província corresponde à sua pesquisa',
+'mon_pays_provinces_item_population': '{count} habitantes',
+'mon_pays_provinces_item_area': '{area} km²',
+
+// ── DETALHES DA PROVÍNCIA ──────────────────────────────────────
+'mon_pays_province_details_overview': 'Visão geral',
+'mon_pays_province_details_history': 'História',
+'mon_pays_province_details_governance': 'Governança',
+'mon_pays_province_details_economy': 'Economia',
+'mon_pays_province_details_tourism': 'Turismo',
+'mon_pays_province_details_culture': 'Cultura',
+'mon_pays_province_details_admin': 'Administração',
+
+// ── SEÇÃO IDENTIDADE (DETALHES) ──────────────────────────────────
+'mon_pays_detail_capital': 'Capital',
+'mon_pays_detail_region': 'Região',
+'mon_pays_detail_area': 'Área',
+'mon_pays_detail_population': 'População',
+'mon_pays_detail_territories': 'Territórios',
+'mon_pays_detail_website': 'Site oficial',
+'mon_pays_detail_visit_website': 'Visitar o site',
+'mon_pays_detail_coat_of_arms': 'Brasão de armas',
+'mon_pays_detail_map': 'Mapa geográfico',
+
+// ── SEÇÃO HISTÓRIA E CLIMA ───────────────────────────────────
+'mon_pays_detail_history_title': 'História e Origens',
+'mon_pays_detail_climate_title': 'Clima e Meio Ambiente',
+'mon_pays_detail_infrastructure_title': 'Infraestrutura',
+'mon_pays_detail_education_title': 'Educação e Saúde',
+
+// ── SEÇÃO GOVERNANÇA ─────────────────────────────────────────
+'mon_pays_detail_governor': 'Governador',
+'mon_pays_detail_vice_governor': 'Vice-Governador',
+'mon_pays_detail_ministers': 'Governo Provincial',
+'mon_pays_detail_minister_role': '{role}',
+'mon_pays_detail_no_ministers': 'Nenhum ministro registrado',
+
+// ── SEÇÃO CIDADES ──────────────────────────────────────────────
+'mon_pays_detail_cities_title': 'Principais Cidades',
+'mon_pays_detail_city_mayor': 'Prefeito: {name}',
+'mon_pays_detail_city_capital_marker': 'Capital provincial',
+'mon_pays_detail_view_all_cities': 'Ver todas as cidades',
+
+// ── SEÇÃO ECONOMIA ────────────────────────────────────────────
+'mon_pays_detail_economy_title': 'Setores Econômicos',
+'mon_pays_detail_economy_resources': 'Recursos Principais',
+'mon_pays_detail_sector_key': 'Setor Chave',
+'mon_pays_detail_no_economy': 'Nenhum dado econômico disponível',
+
+// ── SEÇÃO TURISMO ────────────────────────────────────────────
+'mon_pays_detail_tourism_title': 'Pontos Turísticos',
+'mon_pays_detail_tourism_type': 'Tipo: {type}',
+'mon_pays_detail_visit_site': 'Explorar local',
+'mon_pays_detail_no_tourism': 'Nenhum ponto turístico cadastrado',
+
+// ── SEÇÃO CULTURA E TRIBOS ────────────────────────────────────
+'mon_pays_detail_culture_title': 'Cultura e Povos',
+'mon_pays_detail_languages': 'Idiomas Falados',
+'mon_pays_detail_tribes_title': 'Tribos e Grupos Étnicos',
+'mon_pays_detail_tribe_zone': 'Zona: {zone}',
+'mon_pays_detail_no_culture': 'Nenhuma informação cultural disponível',
+
+// ── SEÇÃO ADMINISTRAÇÃO ──────────────────────────────────────
+'mon_pays_detail_admin_divisions': 'Divisão Administrativa',
+'mon_pays_detail_division_type': '{type}: {name}',
+'mon_pays_detail_division_pop': '{pop} hab.',
+'mon_pays_detail_achievements_title': 'Principais Realizações',
+'mon_pays_detail_achievement_date': '{date} • {location}',
+'mon_pays_detail_no_achievements': 'Nenhuma realização registrada',
+
+// ── SEÇÃO EMERGÊNCIAS ────────────────────────────────────────────
+'mon_pays_detail_emergency_title': 'Contatos Úteis',
+'mon_pays_detail_call_now': 'Ligar agora',
+'mon_pays_detail_emergency_service': '{service}',
+
+// ── GALERIA DE MÍDIA ───────────────────────────────────────────────
+'mon_pays_gallery_title': 'Galeria de Fotos e Vídeos',
+'mon_pays_gallery_photos': 'Fotos',
+'mon_pays_gallery_videos': 'Vídeos',
+'mon_pays_gallery_view_fullscreen': 'Ver em tela cheia',
+
+// ── MEU PAÍS: SEÇÃO CIDADÃOS (ORGULHO DA NAÇÃO) ───────────
+'mon_pays_citizens_title': 'Orgulho da Nação',
+'mon_pays_citizens_subtitle': 'Eles constroem a RDC diariamente através de sua excelência.',
+'mon_pays_citizens_view_all': 'Todos os perfis',
+'mon_pays_citizens_domain': '{domain}', // Ex: Música e Cultura
+
+// ── MEU PAÍS: SEÇÃO FIGURAS HISTÓRICAS ─────────────────────
+'mon_pays_figures_title': 'Figuras Históricas',
+'mon_pays_figures_subtitle': 'Líderes que marcaram a história do país.',
+'mon_pays_figures_explore': 'Explorar',
+'mon_pays_figures_mandate': '({start} - {end})', // Ex: (2001 - 2019)
+
+// ── MEU PAÍS: MENU RÁPIDO (ÍCONES CENTRALIZADOS) ───────────────────
+'mon_pays_menu_videos': 'Vídeos',
+'mon_pays_menu_documents': 'Documentos',
+'mon_pays_menu_laws': 'Leis',
+'mon_pays_menu_participate': 'Participar',
+
+// ── MEU PAÍS: BOTÕES DE AÇÃO (RODAPÉ DA PÁGINA) ──────────────────
+'mon_pays_action_wanted': 'Pessoa Procurada',
+'mon_pays_action_civic_search': 'Pesquisa Cidadã',
+
 };
 
 
@@ -10669,6 +11338,174 @@ const Map<String, String> _ar = {
 'live_leave_confirm': 'هل تريد حقًا مغادرة هذا البث المباشر؟',
 'live_waiting_host': 'بانتظار المضيف…',
 'live_unknown': 'بث مباشر غير معروف',
+  // ─── CONVERSATIONS LIST ───
+'conversations_title': 'الرسائل',
+'conversations_search_title': 'بحث',
+'conversations_search_hint': 'اسم الشخص...',
+'conversations_load_error': 'خطأ في التحميل',
+'conversations_empty_title': 'لا توجد المحادثات',
+'conversations_empty_subtitle': 'أرسل رسالة إلى شخص ما لبدء محادثة',
+'conversations_no_results_title': 'لا توجد نتائج',
+'conversations_no_results_subtitle': 'لا توجد محادثة تطابق "{0}"',
+'conversations_no_message': 'لا توجد رسائل',
+
+// ─── CHAT ATTACHMENTS & MEDIA ───
+'chat_message_invalid': 'رسالة غير صالحة',
+'chat_send_error': 'فشل الإرسال',
+'chat_message_deleted': 'تم حذف الرسالة',
+'chat_delete_title': 'حذف الرسالة',
+'chat_delete_confirm': 'هل أنت تأكد من أنك تريد حذف هذه الرسالة؟',
+'chat_delete_error': 'فشل الحذف',
+'chat_load_error': 'خطأ في التحميل',
+'chat_start_conversation': 'بدء المحادثة',
+'chat_send_first_message': 'أرسل رسالتك الأولى إلى {0}',
+'chat_is_typing': 'يكتب الآن...',
+'chat_type_message': 'اكتب رسالة...',
+'chat_video_call_soon': 'المكالمات المرئية قريباً',
+'chat_view_profile': 'عرض الملف الشخصي',
+'chat_search_messages': 'البحث في المحادثة',
+'chat_report': 'إبلاغ',
+'chat_report_sent': 'تم إرسال الإبلاغ',
+'chat_block_user': 'حظر المستخدم',
+'chat_user_blocked': 'تم حظر المستخدم',
+'chat_status_online': 'متصل الآن',
+'chat_attachments_title': 'المرفقات',
+'chat_attach_photo': 'صورة',
+'chat_attach_video': 'فيديو',
+'chat_attach_camera': 'الكاميرا',
+'chat_attach_document': 'مستند',
+'chat_attach_sticker': 'ملصق',
+'chat_attach_flag': 'علم',
+'chat_attach_location': 'الموقع',
+'chat_attach_contact': 'جهة اتصال',
+'chat_media_uploading': 'جاري تحميل الوسائط...',
+'chat_media_upload_failed': 'فشل تحميل الوسائط',
+'chat_media_too_large': 'الملف كبير جداً (الحجم الأقصى {0} ميغابايت)',
+'chat_media_unsupported': 'صيغة غير مدعومة',
+'chat_sticker_title': 'الملصقات',
+'chat_flag_title': 'الأعلام',
+'chat_common_coming_soon': 'قريباً',
+
+// ── MY COUNTRY (CLIENT / PUBLIC) ───────────────────────────────────
+'mon_pays_app_title': 'بلدي',
+'mon_pays_subtitle': 'اكتشف ثراء جمهورية الكونغو الديمقراطية',
+'mon_pays_loading_provinces': 'جاري تحميل المقاطعات...',
+'mon_pays_error_loading': 'تعذر تحميل البيانات',
+'mon_pays_retry': 'إعادة المحاولة',
+'mon_pays_no_data': 'لا توجد بيانات متاحة',
+'mon_pays_search_hint': 'البحث عن مقاطعة، مدينة...',
+
+// ── PROVINCES LIST ─────────────────────────────────────────
+'mon_pays_provinces_list_title': 'مقاطعاتنا',
+'mon_pays_provinces_filter_all': 'جميع المناطق',
+'mon_pays_provinces_filter_centre': 'الوسط',
+'mon_pays_provinces_filter_est': 'الشرق',
+'mon_pays_provinces_filter_ouest': 'الغرب',
+'mon_pays_provinces_filter_nord': 'الشمال',
+'mon_pays_provinces_filter_sud': 'الجنوب',
+'mon_pays_provinces_empty_state': 'لا توجد مقاطعة تطابق بحثك',
+'mon_pays_provinces_item_population': '{count} نسمة',
+'mon_pays_provinces_item_area': '{area} كم²',
+
+// ── PROVINCE DETAILS ──────────────────────────────────────
+'mon_pays_province_details_overview': 'نظرة عامة',
+'mon_pays_province_details_history': 'التاريخ',
+'mon_pays_province_details_governance': 'الحوكمة',
+'mon_pays_province_details_economy': 'الاقتصاد',
+'mon_pays_province_details_tourism': 'السياحة',
+'mon_pays_province_details_culture': 'الثقافة',
+'mon_pays_province_details_admin': 'الإدارة',
+
+// ── IDENTITY SECTION (DETAILS) ──────────────────────────────────
+'mon_pays_detail_capital': 'العاصمة',
+'mon_pays_detail_region': 'المنطقة',
+'mon_pays_detail_area': 'المساحة',
+'mon_pays_detail_population': 'السكان',
+'mon_pays_detail_territories': 'الأقاليم',
+'mon_pays_detail_website': 'الموقع الرسمي',
+'mon_pays_detail_visit_website': 'زيارة الموقع',
+'mon_pays_detail_coat_of_arms': 'شعار الدولة',
+'mon_pays_detail_map': 'الخريطة الجغرافية',
+
+// ── HISTORY & CLIMATE SECTION ───────────────────────────────────
+'mon_pays_detail_history_title': 'التاريخ والأصول',
+'mon_pays_detail_climate_title': 'المناخ والبيئة',
+'mon_pays_detail_infrastructure_title': 'البنية التحتية',
+'mon_pays_detail_education_title': 'التعليم والصحة',
+
+// ── GOVERNANCE SECTION ─────────────────────────────────────────
+'mon_pays_detail_governor': 'الحاكم',
+'mon_pays_detail_vice_governor': 'نائب الحاكم',
+'mon_pays_detail_ministers': 'حكومة المقاطعة',
+'mon_pays_detail_minister_role': '{role}',
+'mon_pays_detail_no_ministers': 'لا يوجد وزراء مدرجون',
+
+// ── CITIES SECTION ──────────────────────────────────────────────
+'mon_pays_detail_cities_title': 'المدن الرئيسية',
+'mon_pays_detail_city_mayor': 'العمدة: {name}',
+'mon_pays_detail_city_capital_marker': 'حاضرة المقاطعة',
+'mon_pays_detail_view_all_cities': 'عرض جميع المدن',
+
+// ── ECONOMY SECTION ────────────────────────────────────────────
+'mon_pays_detail_economy_title': 'القطاعات الاقتصادية',
+'mon_pays_detail_economy_resources': 'الموارد الرئيسية',
+'mon_pays_detail_sector_key': 'القطاع الرئيسي',
+'mon_pays_detail_no_economy': 'لا توجد بيانات اقتصادية متاحة',
+
+// ── TOURISM SECTION ────────────────────────────────────────────
+'mon_pays_detail_tourism_title': 'المواقع السياحية',
+'mon_pays_detail_tourism_type': 'النوع: {type}',
+'mon_pays_detail_visit_site': 'استكشاف الموقع',
+'mon_pays_detail_no_tourism': 'لا توجد مواقع سياحية مدرجة',
+
+// ── CULTURE & TRIBES SECTION ────────────────────────────────────
+'mon_pays_detail_culture_title': 'الثقافة والشعوب',
+'mon_pays_detail_languages': 'اللغات المتحدث بها',
+'mon_pays_detail_tribes_title': 'القبائل والمجموعات العرقية',
+'mon_pays_detail_tribe_zone': 'المنطقة: {zone}',
+'mon_pays_detail_no_culture': 'لا توجد معلومات ثقافية متاحة',
+
+// ── ADMINISTRATION SECTION ──────────────────────────────────────
+'mon_pays_detail_admin_divisions': 'التقسيم الإداري',
+'mon_pays_detail_division_type': '{type}: {name}',
+'mon_pays_detail_division_pop': '{pop} نسمة',
+'mon_pays_detail_achievements_title': 'الإنجازات الرئيسية',
+'mon_pays_detail_achievement_date': '{date} • {location}',
+'mon_pays_detail_no_achievements': 'لا توجد إنجازات مسجلة',
+
+// ── EMERGENCY SECTION ────────────────────────────────────────────
+'mon_pays_detail_emergency_title': 'جهات اتصال مفيدة',
+'mon_pays_detail_call_now': 'الاتصال الآن',
+'mon_pays_detail_emergency_service': '{service}',
+
+// ── MEDIA GALLERY ───────────────────────────────────────────────
+'mon_pays_gallery_title': 'معرض الصور والفيديو',
+'mon_pays_gallery_photos': 'الصور',
+'mon_pays_gallery_videos': 'الفيديوهات',
+'mon_pays_gallery_view_fullscreen': 'العرض في الشاشة الكاملة',
+
+// ── MY COUNTRY: CITIZENS SECTION (PRIDE OF THE NATION) ───────────
+'mon_pays_citizens_title': 'فخر الأمة',
+'mon_pays_citizens_subtitle': 'يبنون جمهورية الكونغو الديمقراطية يومياً بتميزهم.',
+'mon_pays_citizens_view_all': 'جميع الملفات الشخصية',
+'mon_pays_citizens_domain': '{domain}', // مثال: الموسيقى والثقافة
+
+// ── MY COUNTRY: HISTORICAL FIGURES SECTION ─────────────────────
+'mon_pays_figures_title': 'شخصيات تاريخية',
+'mon_pays_figures_subtitle': 'القادة الذين تركوا بصمتهم في تاريخ البلاد.',
+'mon_pays_figures_explore': 'استكشاف',
+'mon_pays_figures_mandate': '({start} - {end})', // مثال: (2001 - 2019)
+
+// ── MY COUNTRY: QUICK MENU (CENTER ICONS) ───────────────────
+'mon_pays_menu_videos': 'الفيديوهات',
+'mon_pays_menu_documents': 'المستندات',
+'mon_pays_menu_laws': 'القوانين',
+'mon_pays_menu_participate': 'المشاركة',
+
+// ── MY COUNTRY: ACTION BUTTONS (BOTTOM OF PAGE) ──────────────────
+'mon_pays_action_wanted': 'شخص مطلوب',
+'mon_pays_action_civic_search': 'بحث مدني',
+
 };
 
 //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
@@ -12761,6 +13598,174 @@ const Map<String, String> _zh = {
 'live_leave_confirm': '确定要离开此直播吗？',
 'live_waiting_host': '等待主播…',
 'live_unknown': '未知直播',
+  
+// ─── CONVERSATIONS LIST ───
+'conversations_title': '消息',
+'conversations_search_title': '搜索',
+'conversations_search_hint': '联系人姓名...',
+'conversations_load_error': '加载失败',
+'conversations_empty_title': '暂无对话',
+'conversations_empty_subtitle': '给其他人发送消息以发起对话',
+'conversations_no_results_title': '无搜索结果',
+'conversations_no_results_subtitle': '未找到匹配“{0}”的对话',
+'conversations_no_message': '暂无消息',
+
+// ─── CHAT ATTACHMENTS & MEDIA ───
+'chat_message_invalid': '无效消息',
+'chat_send_error': '发送失败',
+'chat_message_deleted': '消息已删除',
+'chat_delete_title': '删除消息',
+'chat_delete_confirm': '确定要删除这条消息吗？',
+'chat_delete_error': '删除失败',
+'chat_load_error': '加载失败',
+'chat_start_conversation': '发起对话',
+'chat_send_first_message': '给 {0} 发送第一条消息',
+'chat_is_typing': '正在输入...',
+'chat_type_message': '输入消息...',
+'chat_video_call_soon': '视频通话功能即将来袭',
+'chat_view_profile': '查看主页',
+'chat_search_messages': '搜索聊天记录',
+'chat_report': '举报',
+'chat_report_sent': '举报已发送',
+'chat_block_user': '拉黑用户',
+'chat_user_blocked': '用户已拉黑',
+'chat_status_online': '在线',
+'chat_attachments_title': '附件',
+'chat_attach_photo': '照片',
+'chat_attach_video': '视频',
+'chat_attach_camera': '拍摄',
+'chat_attach_document': '文档',
+'chat_attach_sticker': '表情贴纸',
+'chat_attach_flag': '旗帜',
+'chat_attach_location': '位置',
+'chat_attach_contact': '联系人',
+'chat_media_uploading': '正在上传媒体文件...',
+'chat_media_upload_failed': '媒体文件上传失败',
+'chat_media_too_large': '文件过大（最大支持 {0} MB）',
+'chat_media_unsupported': '不支持的文件格式',
+'chat_sticker_title': '表情包',
+'chat_flag_title': '旗帜',
+'chat_common_coming_soon': '敬请期待',
+
+// ── 我的国家（客户端 / 公共） ───────────────────────────────────
+'mon_pays_app_title': '我的国家',
+'mon_pays_subtitle': '探索刚果民主共和国的丰富风采',
+'mon_pays_loading_provinces': '正在加载省份...',
+'mon_pays_error_loading': '无法加载数据',
+'mon_pays_retry': '重试',
+'mon_pays_no_data': '暂无可用数据',
+'mon_pays_search_hint': '搜索省份、城市...',
+
+// ── 省份列表 ─────────────────────────────────────────
+'mon_pays_provinces_list_title': '省份一览',
+'mon_pays_provinces_filter_all': '所有地区',
+'mon_pays_provinces_filter_centre': '中部',
+'mon_pays_provinces_filter_est': '东部',
+'mon_pays_provinces_filter_ouest': '西部',
+'mon_pays_provinces_filter_nord': '北部',
+'mon_pays_provinces_filter_sud': '南部',
+'mon_pays_provinces_empty_state': '未找到符合条件的省份',
+'mon_pays_provinces_item_population': '{count} 人口',
+'mon_pays_provinces_item_area': '{area} 平方公里',
+
+// ── 省份详情 ──────────────────────────────────────
+'mon_pays_province_details_overview': '概况',
+'mon_pays_province_details_history': '历史',
+'mon_pays_province_details_governance': '治理',
+'mon_pays_province_details_economy': '经济',
+'mon_pays_province_details_tourism': '旅游',
+'mon_pays_province_details_culture': '文化',
+'mon_pays_province_details_admin': '行政区划',
+
+// ── 标识区（详情） ──────────────────────────────────
+'mon_pays_detail_capital': '首府',
+'mon_pays_detail_region': '地区',
+'mon_pays_detail_area': '面积',
+'mon_pays_detail_population': '人口',
+'mon_pays_detail_territories': '辖区',
+'mon_pays_detail_website': '官方网站',
+'mon_pays_detail_visit_website': '访问官网',
+'mon_pays_detail_coat_of_arms': '省徽',
+'mon_pays_detail_map': '地理地图',
+
+// ── 历史与气候板块 ───────────────────────────────────
+'mon_pays_detail_history_title': '历史与起源',
+'mon_pays_detail_climate_title': '气候与环境',
+'mon_pays_detail_infrastructure_title': '基础设施',
+'mon_pays_detail_education_title': '教育与医疗',
+
+// ── 治理板块 ─────────────────────────────────────────
+'mon_pays_detail_governor': '省长',
+'mon_pays_detail_vice_governor': '副省长',
+'mon_pays_detail_ministers': '省政府',
+'mon_pays_detail_minister_role': '{role}',
+'mon_pays_detail_no_ministers': '暂无部长信息',
+
+// ── 城市板块 ──────────────────────────────────────────────
+'mon_pays_detail_cities_title': '主要城市',
+'mon_pays_detail_city_mayor': '市长：{name}',
+'mon_pays_detail_city_capital_marker': '省会',
+'mon_pays_detail_view_all_cities': '查看所有城市',
+
+// ── 经济板块 ────────────────────────────────────────────
+'mon_pays_detail_economy_title': '经济产业',
+'mon_pays_detail_economy_resources': '主要资源',
+'mon_pays_detail_sector_key': '核心产业',
+'mon_pays_detail_no_economy': '暂无经济数据',
+
+// ── 旅游板块 ────────────────────────────────────────────
+'mon_pays_detail_tourism_title': '旅游景点',
+'mon_pays_detail_tourism_type': '类型：{type}',
+'mon_pays_detail_visit_site': '探索景点',
+'mon_pays_detail_no_tourism': '暂无收录景点',
+
+// ── 文化与部族板块 ────────────────────────────────────
+'mon_pays_detail_culture_title': '文化与民族',
+'mon_pays_detail_languages': '使用语言',
+'mon_pays_detail_tribes_title': '部族与族群',
+'mon_pays_detail_tribe_zone': '区域：{zone}',
+'mon_pays_detail_no_culture': '暂无文化相关信息',
+
+// ── 行政区划板块 ──────────────────────────────────────
+'mon_pays_detail_admin_divisions': '行政划分',
+'mon_pays_detail_division_type': '{type}：{name}',
+'mon_pays_detail_division_pop': '{pop} 人',
+'mon_pays_detail_achievements_title': '重大成就',
+'mon_pays_detail_achievement_date': '{date} • {location}',
+'mon_pays_detail_no_achievements': '暂无重大成就记录',
+
+// ── 紧急联系板块 ────────────────────────────────────────────
+'mon_pays_detail_emergency_title': '常用电话',
+'mon_pays_detail_call_now': '立即拨打',
+'mon_pays_detail_emergency_service': '{service}',
+
+// ── 媒体相册 ───────────────────────────────────────────────
+'mon_pays_gallery_title': '图集与视频',
+'mon_pays_gallery_photos': '照片',
+'mon_pays_gallery_videos': '视频',
+'mon_pays_gallery_view_fullscreen': '全屏查看',
+
+// ── 我的国家：国家骄傲板块 ───────────
+'mon_pays_citizens_title': '国家的骄傲',
+'mon_pays_citizens_subtitle': '他们用卓越的贡献日复一日建设刚果民主共和国。',
+'mon_pays_citizens_view_all': '所有人物',
+'mon_pays_citizens_domain': '{domain}', // 例如：音乐与文化
+
+// ── 我的国家：历史人物板块 ─────────────────────
+'mon_pays_figures_title': '历史风云人物',
+'mon_pays_figures_subtitle': '深刻影响本国历史进程的领袖们。',
+'mon_pays_figures_explore': '探索',
+'mon_pays_figures_mandate': '（{start} - {end}）', // 例如：（2001 - 2019）
+
+// ── 我的国家：快捷菜单（核心图标） ───────────────────
+'mon_pays_menu_videos': '视频',
+'mon_pays_menu_documents': '文件',
+'mon_pays_menu_laws': '法律法规',
+'mon_pays_menu_participate': '参与互动',
+
+// ── 我的国家：操作按钮（页脚） ──────────────────
+'mon_pays_action_wanted': '通缉/寻人',
+'mon_pays_action_civic_search': '公民查询',
 
 };
 
@@ -14097,5 +15102,173 @@ const Map<String, String> _es = {
 'live_leave_confirm': '¿Seguro que quieres salir de este live?',
 'live_waiting_host': 'Esperando al anfitrión…',
 'live_unknown': 'Live desconocido',
+  // ─── CONVERSATIONS LIST ───
+'conversations_title': 'Mensajes',
+'conversations_search_title': 'Buscar',
+'conversations_search_hint': 'Nombre de la persona...',
+'conversations_load_error': 'Error de carga',
+'conversations_empty_title': 'Sin conversaciones',
+'conversations_empty_subtitle': 'Envía un mensaje a alguien para iniciar una conversación',
+'conversations_no_results_title': 'Sin resultados',
+'conversations_no_results_subtitle': 'Ninguna conversación coincide con "{0}"',
+'conversations_no_message': 'Sin mensajes',
+
+// ─── CHAT ATTACHMENTS & MEDIA ───
+'chat_message_invalid': 'Mensaje no válido',
+'chat_send_error': 'Error al enviar',
+'chat_message_deleted': 'Mensaje eliminado',
+'chat_delete_title': 'Eliminar mensaje',
+'chat_delete_confirm': '¿Estás seguro de que quieres eliminar este mensaje?',
+'chat_delete_error': 'Error al eliminar',
+'chat_load_error': 'Error de carga',
+'chat_start_conversation': 'Iniciar conversación',
+'chat_send_first_message': 'Envía tu primer mensaje a {0}',
+'chat_is_typing': 'está escribiendo...',
+'chat_type_message': 'Escribe un mensaje...',
+'chat_video_call_soon': 'Videollamada disponible próximamente',
+'chat_view_profile': 'Ver perfil',
+'chat_search_messages': 'Buscar en la conversación',
+'chat_report': 'Reportar',
+'chat_report_sent': 'Reporte enviado',
+'chat_block_user': 'Bloquear usuario',
+'chat_user_blocked': 'Usuario bloqueado',
+'chat_status_online': 'En línea',
+'chat_attachments_title': 'Archivos adjuntos',
+'chat_attach_photo': 'Foto',
+'chat_attach_video': 'Video',
+'chat_attach_camera': 'Cámara',
+'chat_attach_document': 'Documento',
+'chat_attach_sticker': 'Sticker',
+'chat_attach_flag': 'Bandera',
+'chat_attach_location': 'Ubicación',
+'chat_attach_contact': 'Contacto',
+'chat_media_uploading': 'Subiendo archivo...',
+'chat_media_upload_failed': 'Error al subir el archivo',
+'chat_media_too_large': 'Archivo demasiado grande (máx {0} MB)',
+'chat_media_unsupported': 'Formato no compatible',
+'chat_sticker_title': 'Stickers',
+'chat_flag_title': 'Banderas',
+'chat_common_coming_soon': 'Próximamente',
+
+// ── MI PAÍS (CLIENTE / PÚBLICO) ───────────────────────────────────
+'mon_pays_app_title': 'Mi País',
+'mon_pays_subtitle': 'Descubre la riqueza de la RDC',
+'mon_pays_loading_provinces': 'Cargando provincias...',
+'mon_pays_error_loading': 'No se pudieron cargar los datos',
+'mon_pays_retry': 'Reintentar',
+'mon_pays_no_data': 'No hay datos disponibles',
+'mon_pays_search_hint': 'Buscar una provincia, ciudad...',
+
+// ── LISTA DE PROVINCIAS ─────────────────────────────────────────
+'mon_pays_provinces_list_title': 'Nuestras Provincias',
+'mon_pays_provinces_filter_all': 'Todas las regiones',
+'mon_pays_provinces_filter_centre': 'Centro',
+'mon_pays_provinces_filter_est': 'Este',
+'mon_pays_provinces_filter_ouest': 'Oeste',
+'mon_pays_provinces_filter_nord': 'Norte',
+'mon_pays_provinces_filter_sud': 'Sur',
+'mon_pays_provinces_empty_state': 'Ninguna provincia coincide con tu búsqueda',
+'mon_pays_provinces_item_population': '{count} habitantes',
+'mon_pays_provinces_item_area': '{area} km²',
+
+// ── DETALLES DE LA PROVINCIA ──────────────────────────────────────
+'mon_pays_province_details_overview': 'Resumen',
+'mon_pays_province_details_history': 'Historia',
+'mon_pays_province_details_governance': 'Gobernanza',
+'mon_pays_province_details_economy': 'Economía',
+'mon_pays_province_details_tourism': 'Turismo',
+'mon_pays_province_details_culture': 'Cultura',
+'mon_pays_province_details_admin': 'Administración',
+
+// ── SECCIÓN IDENTIDAD (DETALLES) ──────────────────────────────────
+'mon_pays_detail_capital': 'Capital',
+'mon_pays_detail_region': 'Región',
+'mon_pays_detail_area': 'Superficie',
+'mon_pays_detail_population': 'Población',
+'mon_pays_detail_territories': 'Territorios',
+'mon_pays_detail_website': 'Sitio web oficial',
+'mon_pays_detail_visit_website': 'Visitar sitio web',
+'mon_pays_detail_coat_of_arms': 'Escudo de armas',
+'mon_pays_detail_map': 'Mapa geográfico',
+
+// ── SECCIÓN HISTORIA Y CLIMA ───────────────────────────────────
+'mon_pays_detail_history_title': 'Historia u Orígenes',
+'mon_pays_detail_climate_title': 'Clima y Medio Ambiente',
+'mon_pays_detail_infrastructure_title': 'Infraestructuras',
+'mon_pays_detail_education_title': 'Educación y Salud',
+
+// ── SECCIÓN GOBERNAZA ─────────────────────────────────────────
+'mon_pays_detail_governor': 'Gobernador',
+'mon_pays_detail_vice_governor': 'Vicegobernador',
+'mon_pays_detail_ministers': 'Gobierno Provincial',
+'mon_pays_detail_minister_role': '{role}',
+'mon_pays_detail_no_ministers': 'Ningún ministro registrado',
+
+// ── SECCIÓN CIUDADES ──────────────────────────────────────────────
+'mon_pays_detail_cities_title': 'Ciudades Principales',
+'mon_pays_detail_city_mayor': 'Alcalde: {name}',
+'mon_pays_detail_city_capital_marker': 'Capital provincial',
+'mon_pays_detail_view_all_cities': 'Ver todas las ciudades',
+
+// ── SECCIÓN ECONOMÍA ────────────────────────────────────────────
+'mon_pays_detail_economy_title': 'Sectores Económicos',
+'mon_pays_detail_economy_resources': 'Recursos Principales',
+'mon_pays_detail_sector_key': 'Sector Clave',
+'mon_pays_detail_no_economy': 'Sin datos económicos disponibles',
+
+// ── SECCIÓN TURISMO ────────────────────────────────────────────
+'mon_pays_detail_tourism_title': 'Sitios Turísticos',
+'mon_pays_detail_tourism_type': 'Tipo: {type}',
+'mon_pays_detail_visit_site': 'Explorar sitio',
+'mon_pays_detail_no_tourism': 'Ningún sitio turístico registrado',
+
+// ── SECCIÓN CULTURA Y TRIBUS ────────────────────────────────────
+'mon_pays_detail_culture_title': 'Cultura y Pueblos',
+'mon_pays_detail_languages': 'Idiomas Hablados',
+'mon_pays_detail_tribes_title': 'Tribus y Grupos Étnicos',
+'mon_pays_detail_tribe_zone': 'Zona: {zone}',
+'mon_pays_detail_no_culture': 'Sin información cultural disponible',
+
+// ── SECCIÓN ADMINISTRACIÓN ──────────────────────────────────────
+'mon_pays_detail_admin_divisions': 'División Administrativa',
+'mon_pays_detail_division_type': '{type}: {name}',
+'mon_pays_detail_division_pop': '{pop} hab.',
+'mon_pays_detail_achievements_title': 'Logros Principales',
+'mon_pays_detail_achievement_date': '{date} • {location}',
+'mon_pays_detail_no_achievements': 'Ningún logro registrado',
+
+// ── SECCIÓN EMERGENCIAS ────────────────────────────────────────────
+'mon_pays_detail_emergency_title': 'Contactos Útiles',
+'mon_pays_detail_call_now': 'Llamar ahora',
+'mon_pays_detail_emergency_service': '{service}',
+
+// ── GALERÍA MULTIMEDIA ───────────────────────────────────────────────
+'mon_pays_gallery_title': 'Galería de Fotos y Videos',
+'mon_pays_gallery_photos': 'Fotos',
+'mon_pays_gallery_videos': 'Videos',
+'mon_pays_gallery_view_fullscreen': 'Ver en pantalla completa',
+
+// ── MI PAÍS: SECCIÓN CIUDADANOS (ORGULLO DE LA NACIÓN) ───────────
+'mon_pays_citizens_title': 'Orgullo de la Nación',
+'mon_pays_citizens_subtitle': 'Construyen la RDC día a día a través de su excelencia.',
+'mon_pays_citizens_view_all': 'Todos los perfiles',
+'mon_pays_citizens_domain': '{domain}', // Ej: Música y Cultura
+
+// ── MI PAÍS: SECCIÓN FIGURAS HISTÓRICAS ─────────────────────
+'mon_pays_figures_title': 'Figuras Históricas',
+'mon_pays_figures_subtitle': 'Líderes que marcaron la historia del país.',
+'mon_pays_figures_explore': 'Explorar',
+'mon_pays_figures_mandate': '({start} - {end})', // Ej: (2001 - 2019)
+
+// ── MI PAÍS: MENÚ RÁPIDO (ÍCONOS CENTRALES) ───────────────────
+'mon_pays_menu_videos': 'Videos',
+'mon_pays_menu_documents': 'Documentos',
+'mon_pays_menu_laws': 'Leyes',
+'mon_pays_menu_participate': 'Participar',
+
+// ── MI PAÍS: BOTONES DE ACCIÓN (PIE DE PÁGINA) ──────────────────
+'mon_pays_action_wanted': 'Persona Buscada',
+'mon_pays_action_civic_search': 'Búsqueda Ciudadana',
+
 
 };
