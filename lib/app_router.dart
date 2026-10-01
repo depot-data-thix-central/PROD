@@ -86,7 +86,7 @@ import 'package:thix_id/presentation/thix_media/user_profile_page.dart';
 import 'package:thix_id/presentation/thix_media/thix_media_page.dart';
 import 'package:thix_id/presentation/thix_media/video_player_page.dart';
 import 'package:thix_id/presentation/thix_media/admin/thix_media_admin_page.dart';
-import 'package:thix_id/presentation/mon_pays/pages/citizens_page.dart'; 
+
 // === THIX MARKET ===
 import 'package:thix_id/presentation/thix_market/pages/market_home_page.dart';
 import 'package:thix_id/presentation/thix_market/pages/search_page.dart' as marketSearch;
@@ -253,7 +253,7 @@ import 'package:thix_id/presentation/mon_pays/admin/admin_administrative_form_pa
 import 'package:thix_id/presentation/mon_pays/admin/admin_achievement_form_page.dart';
 import 'package:thix_id/presentation/mon_pays/admin/admin_media_form_page.dart';
 import 'package:thix_id/presentation/mon_pays/models/province.dart';
-
+import 'package:thix_id/presentation/mon_pays/mon_pays_routes.dart';
 // === THIX RETROUVE & IA ===
 import 'package:thix_id/presentation/thix_retrouve/thix_retrouve_screen.dart';
 import 'package:thix_id/presentation/thix_retrouve/pages/object_detail_page.dart';
@@ -624,11 +624,7 @@ class AppRouter {
             victimUserId: state.uri.queryParameters['victim'],
           ),
         ),
-        GoRoute(
-  path: MonPaysRoutes.citizens,
-  name: MonPaysRoutes.citizensName,
-  builder: (context, state) => const CitizensPage(),
-),
+        
         GoRoute(path: '/thix-retrouve', name: 'thixRetrouve', builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 2), routes: [
           GoRoute(path: 'detail', name: 'thixRetrouveDetail', pageBuilder: (_, __) => const NoTransitionPage(child: ObjectDetailPage())),
           GoRoute(path: 'ai-match', name: 'thixRetrouveAiMatch', pageBuilder: (_, __) => const NoTransitionPage(child: AiMatchPage())),
@@ -914,6 +910,11 @@ GoRoute(path: '/thix-info/downloads', name: 'thixInfoDownloads',
 
         // === MON PAYS ===
         GoRoute(path: AppRoutes.monPays, name: 'monPays', pageBuilder: (_, __) => const NoTransitionPage(child: MonPaysPage()), routes: [
+          GoRoute(
+  path: MonPaysRoutes.citizens,
+  name: MonPaysRoutes.citizensName,
+  builder: (context, state) => const CitizensPage(),
+),
           GoRoute(path: 'authorities', name: 'monPaysAuthorities', pageBuilder: (_, __) => const NoTransitionPage(child: AuthoritiesPage())),
           GoRoute(path: 'authorities/:id', name: 'monPaysAuthorityProfile', pageBuilder: (_, state) => NoTransitionPage(child: AuthorityProfilePage(authorityId: state.pathParameters['id']!))),
           GoRoute(path: 'laws', name: 'monPaysLaws', pageBuilder: (_, __) => const NoTransitionPage(child: LawsPage())),
