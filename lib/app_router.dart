@@ -532,27 +532,16 @@ class AppRouter {
                   GoRoute(path: 'profile/:userId', name: 'networkProfile', pageBuilder: (_, state) => NoTransitionPage(child: ProfilePage(userId: state.pathParameters['userId']!))),
                   GoRoute(path: 'followers/:uid', name: 'networkFollowers', pageBuilder: (_, state) => NoTransitionPage(child: FollowersListPage(userId: state.pathParameters['uid']!))),
                   GoRoute(path: 'following/:uid', name: 'networkFollowing', pageBuilder: (_, state) => NoTransitionPage(child: FollowingListPage(userId: state.pathParameters['uid']!))),
-                  GoRoute(
+                 
                   ]
               ),
             ]),
-            path: 'chat/:userId',
-  name: 'networkChat',
-  pageBuilder: (_, state) => NoTransitionPage(
-    child: network_chat.ChatScreen(
-      userId: state.pathParameters['userId']!,
-      userName: state.extra is String
-          ? state.extra as String
-          : (state.extra is Map
-              ? (state.extra as Map)['userName'] ?? 'Discussion'
-              : 'Discussion'),
-      userAvatar: state.extra is Map
-          ? (state.extra as Map)['userAvatar']
-          : null,
-    ),
-  ),
-),
+            GoRoute(path: 'following/:uid', name: 'networkFollowing', pageBuilder: (_, state) => NoTransitionPage(child: FollowingListPage(userId: state.pathParameters['uid']!))),
+                ],
+              ),
+            ]),
 
+            
             // === THIX CHAT ===
             StatefulShellBranch(routes: [
               GoRoute(path: AppRoutes.chat, name: 'chat', pageBuilder: (_, __) => const NoTransitionPage(child: ChatListPage()), routes: [
