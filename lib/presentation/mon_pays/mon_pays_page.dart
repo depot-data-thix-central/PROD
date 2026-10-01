@@ -24,7 +24,7 @@ import 'providers/provinces_provider.dart';
 import 'providers/authorities_provider.dart';
 import 'providers/citizens_provider.dart';
 import 'pages/news/news_detail_page.dart';
-
+import 'mon_pays_routes.dart';
 // ============================================================================
 // COULEURS PATRIOTIQUES RDC
 // ============================================================================
