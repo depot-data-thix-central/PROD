@@ -126,12 +126,17 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
   CommentItem? _editingComment;
   final Set<String> _likedIds = {};
   final Map<String, int> _localCommentLikes = {};
-  // ✅ Cache des certifications par user_id
+  
+  // Cache des certifications par user_id
   final Map<String, _CertInfo> _certCache = {};
+  
+  // Avatar de l'utilisateur connecté
+  String? _currentUserAvatarUrl;
 
   @override
   void initState() {
     super.initState();
+    _fetchCurrentUserProfile();
     _fetchRoots();
     debugPrint('[Comments] Sheet opened for media ${widget.mediaId}');
   }
@@ -157,7 +162,45 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
     );
   }
 
-  // ✅ Récupération batch des certifications
+  // Chargement du profil de l'utilisateur connecté pour la barre de saisie
+  Future<void> _fetchCurrentUserProfile() async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return;
+
+    try {
+      final p = await _client
+          .from('profiles')
+          .select('avatar_url, certification_tier, certification_status')
+          .eq('id', uid)
+          .maybeSingle()
+          .timeout(_kQueryTimeout);
+
+      if (!mounted || p == null) return;
+
+      final tierStr = (p['certification_tier'] ?? '').toString().toLowerCase();
+      final statusStr = (p['certification_status'] ?? '').toString().toLowerCase();
+      final verified = statusStr == 'approved' || statusStr == 'generated' || statusStr == 'active';
+      _CertTier tier = _CertTier.none;
+      if (verified) {
+        switch (tierStr) {
+          case 'official': tier = _CertTier.official; break;
+          case 'enterprise': tier = _CertTier.enterprise; break;
+          case 'premium': tier = _CertTier.premium; break;
+          case 'standard': tier = _CertTier.standard; break;
+          default: tier = _CertTier.standard;
+        }
+      }
+
+      setState(() {
+        _currentUserAvatarUrl = p['avatar_url']?.toString();
+        _certCache[uid] = _CertInfo(tier: tier, verified: verified);
+      });
+    } catch (e) {
+      debugPrint('[Comments] fetchCurrentUserProfile failed: $e');
+    }
+  }
+
+  // Récupération batch des certifications
   Future<void> _loadCertifications(List<CommentItem> comments) async {
     final userIds = comments.map((c) => c.userId).where((id) => id != null && id.isNotEmpty).toSet();
     final toFetch = userIds.where((id) => !_certCache.containsKey(id)).toList();
@@ -167,7 +210,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
       final res = await _client
           .from('profiles')
           .select('id, certification_tier, certification_status')
-          .inFilter('id', toFetch)
+          .in_('id', toFetch)
           .timeout(_kQueryTimeout);
 
       if (!mounted) return;
@@ -212,7 +255,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
             'id,user_id,user_name,avatar_url,content,created_at,parent_id,like_count,reply_count',
           )
           .eq('media_id', widget.mediaId)
-          .isFilter('parent_id', null)
+          .is_('parent_id', null)
           .order('created_at', ascending: false)
           .limit(_kRootsLimit)
           .timeout(_kQueryTimeout);
@@ -246,7 +289,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
           .from('comment_likes')
           .select('comment_id')
           .eq('user_id', uid)
-          .inFilter('comment_id', ids)
+          .in_('comment_id', ids)
           .timeout(_kQueryTimeout);
       if (mounted) {
         setState(() {
@@ -313,7 +356,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
             })
             .eq('id', _editingComment!.id)
             .timeout(_kQueryTimeout);
-        setState(() => _editingComment = null);
+        if (mounted) setState(() => _editingComment = null);
         await _fetchRoots();
       } else {
         final p = await _client
@@ -330,7 +373,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
           name = p!['full_name'].toString();
         }
 
-        // ✅ Mise à jour cache certification auteur
+        // Mise à jour du cache de certification de l'auteur
         final tierStr = (p?['certification_tier'] ?? '').toString().toLowerCase();
         final statusStr = (p?['certification_status'] ?? '').toString().toLowerCase();
         final verified = statusStr == 'approved' || statusStr == 'generated' || statusStr == 'active';
@@ -362,6 +405,8 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
           await _fetchRoots();
         }
       }
+
+      if (!mounted) return;
       _controller.clear();
       _focusNode.unfocus();
       setState(() => _replyingTo = null);
@@ -381,8 +426,10 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
           .delete()
           .eq('id', id)
           .timeout(_kQueryTimeout);
-      _fetchRoots();
-      ref.invalidate(mediaCommentCountProvider(widget.mediaId));
+      if (mounted) {
+        await _fetchRoots();
+        ref.invalidate(mediaCommentCountProvider(widget.mediaId));
+      }
     } catch (e) {
       debugPrint('[Comments] Delete failed: $e');
       _showError('comments_delete_error');
@@ -525,7 +572,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.15),
+              color: Colors.black12,
               blurRadius: 20,
               offset: Offset(0, -4),
             ),
@@ -578,12 +625,15 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                     child: Container(
                       width: 32,
                       height: 32,
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         color: _CommentsPalette.surfaceSoft,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.close_rounded,
-                          color: _CommentsPalette.textSec, size: 16),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        color: _CommentsPalette.textSec,
+                        size: 16,
+                      ),
                     ),
                   ),
                 ],
@@ -610,12 +660,15 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                             children: [
                               Container(
                                 padding: const EdgeInsets.all(18),
-                                decoration: BoxDecoration(
+                                decoration: const BoxDecoration(
                                   color: _CommentsPalette.surfaceSoft,
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.chat_bubble_outline_rounded,
-                                    size: 32, color: _CommentsPalette.textMut),
+                                child: const Icon(
+                                  Icons.chat_bubble_outline_rounded,
+                                  size: 32,
+                                  color: _CommentsPalette.textMut,
+                                ),
                               ),
                               const SizedBox(height: 12),
                               Text(
@@ -657,18 +710,17 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
     final myCert = uid != null ? (_certCache[uid] ?? _CertInfo.empty) : _CertInfo.empty;
 
     return Container(
-      decoration: const BoxDecoration( 
+      decoration: const BoxDecoration(
         color: _CommentsPalette.surface,
         border: Border(top: BorderSide(color: _CommentsPalette.borderSoft)),
         boxShadow: [
           BoxShadow(
-            color: Color(0x0A000000), 
+            color: Color(0x0A000000),
             blurRadius: 8,
             offset: Offset(0, -2),
           ),
         ],
       ),
-
       child: Column(
         children: [
           if (_replyingTo != null || _editingComment != null)
@@ -710,8 +762,11 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                       });
                       _controller.clear();
                     },
-                    child: const Icon(Icons.close_rounded,
-                        color: _CommentsPalette.textMut, size: 16),
+                    child: const Icon(
+                      Icons.close_rounded,
+                      color: _CommentsPalette.textMut,
+                      size: 16,
+                    ),
                   ),
                 ],
               ),
@@ -726,11 +781,9 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                // Avatar de l'auteur courant avec badge
+                // Avatar réel de l'utilisateur avec son badge de certification
                 _AvatarWithBadge(
-                  url: _client.auth.currentUser?.id != null
-                      ? null // Sera chargé via profile
-                      : null,
+                  url: _currentUserAvatarUrl,
                   cert: myCert,
                 ),
                 const SizedBox(width: 10),
@@ -777,7 +830,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                // ✅ Bouton envoi doré premium
+                // Bouton d'envoi doré premium
                 GestureDetector(
                   onTap: _sending ? null : _submit,
                   child: Container(
@@ -811,8 +864,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                               strokeWidth: 2,
                             ),
                           )
-                        : const Icon(Icons.send_rounded,
-                            color: Colors.white, size: 18),
+                        : const Icon(Icons.send_rounded, color: Colors.white, size: 18),
                   ),
                 ),
               ],
@@ -1088,12 +1140,15 @@ class _AvatarWithBadge extends StatelessWidget {
             bottom: -2,
             child: Container(
               padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: _CommentsPalette.surface,
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.verified_rounded,
-                  color: cert.badgeColor, size: 12),
+              child: Icon(
+                Icons.verified_rounded,
+                color: cert.badgeColor,
+                size: 12,
+              ),
             ),
           ),
       ],
