@@ -3,6 +3,9 @@
 // MonPaysPage — Production Enterprise (Portail Institutionnel RDC)
 // VERSION COMPACTE : densité visuelle accrue, éléments réduits ~35%
 // Design System ThixPolicy + couleurs patriotiques RDC
+//
+// ✅ Diagnostic : le bloc "Découpage Territorial" affiche l'erreur réelle aux
+//    admins, propose "Réessayer" et ne déborde plus.
 
 import 'dart:async';
 import 'dart:ui';
@@ -227,6 +230,20 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
         behavior: SnackBarBehavior.floating,
       ),
     );
+  }
+
+  /// Résumé court d'une erreur (type + message) pour l'affichage admin.
+  String _describeError(Object e) {
+    final s = e.toString().replaceAll('\n', ' ').trim();
+    final short = s.length > 260 ? '${s.substring(0, 260)}…' : s;
+    return '${e.runtimeType} — $short';
+  }
+
+  /// Initiales d'un code province, sans jamais planter (code vide ou 1 lettre).
+  String _initials(String code) {
+    final c = code.trim();
+    if (c.isEmpty) return '?';
+    return c.length >= 2 ? c.substring(0, 2) : c;
   }
 
   @override
@@ -1041,6 +1058,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
   // ─── PROVINCES ─────────────────────────────────────────────────────────
   Widget _buildProvincesCarousel() {
     final prov = ref.watch(provincesProvider(null));
+    final isAdmin = ref.watch(isAdminProvider).value ?? false;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
@@ -1053,22 +1071,36 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
               onTap: () => _navigateTo('/mon-pays/provinces'),
             ),
             const SizedBox(height: _Compact.innerGap),
-            SizedBox(
-              height: _Compact.provinceHeight,
-              child: prov.when(
-                loading: () => _buildSkeletonCard(height: _Compact.provinceHeight),
-                error: (_, __) => _buildErrorState('Erreur de chargement'),
-                data: (list) {
-                  if (list.isEmpty) return _buildEmptyState('Aucune province disponible');
-                  return ListView.separated(
+            prov.when(
+              loading: () => SizedBox(
+                height: _Compact.provinceHeight,
+                child: _buildSkeletonCard(height: _Compact.provinceHeight),
+              ),
+              error: (e, st) {
+                debugPrint('[MonPays] provinces load failed: $e\n$st');
+                return _buildErrorState(
+                  // Les admins voient l'erreur réelle (utile pour diagnostiquer l'APK)
+                  isAdmin
+                      ? 'Provinces : ${_describeError(e)}'
+                      : 'Erreur de chargement',
+                  onRetry: () => ref.invalidate(provincesProvider),
+                );
+              },
+              data: (list) {
+                if (list.isEmpty) {
+                  return _buildEmptyState('Aucune province disponible');
+                }
+                return SizedBox(
+                  height: _Compact.provinceHeight,
+                  child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     physics: const BouncingScrollPhysics(),
                     itemCount: list.length,
                     separatorBuilder: (_, __) => const SizedBox(width: ThixPolicy.s10),
                     itemBuilder: (c, i) => _buildProvinceCard(list[i]),
-                  );
-                },
-              ),
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -1108,7 +1140,7 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
                 child: (coatUrl == null || coatUrl.isEmpty)
                     ? Center(
                         child: Text(
-                          p.code.substring(0, 2),
+                          _initials('${p.code}'),
                           style: ThixPolicy.captionStyle.copyWith(
                             color: ThixPolicy.inkDeep,
                             fontWeight: FontWeight.w900,
@@ -1534,12 +1566,14 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
 
   Widget _buildErrorState(String message, {VoidCallback? onRetry}) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(ThixPolicy.s20),
       decoration: BoxDecoration(
         color: ThixPolicy.danger.withOpacity(0.05),
         borderRadius: BorderRadius.circular(ThixPolicy.rSm),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Icon(Icons.error_outline, color: ThixPolicy.danger, size: 34),
@@ -1547,6 +1581,8 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
           Text(
             message,
             textAlign: TextAlign.center,
+            maxLines: 8,
+            overflow: TextOverflow.ellipsis,
             style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.danger),
           ),
           if (onRetry != null) ...[
@@ -1568,12 +1604,14 @@ class _MonPaysPageState extends ConsumerState<MonPaysPage>
 
   Widget _buildEmptyState(String message) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(ThixPolicy.s20),
       decoration: BoxDecoration(
         color: ThixPolicy.surfaceSoft,
         borderRadius: BorderRadius.circular(ThixPolicy.rSm),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.inbox_rounded, color: ThixPolicy.textMuted, size: 34),
