@@ -292,12 +292,15 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
                         decoration: InputDecoration(
                           counterText: '',
                           border: InputBorder.none,
+                          filled: false,
+                          fillColor: Colors.transparent,
                           hintText: l10n.t('status_hint'),
                           hintStyle: TextStyle(
                             color: Colors.white54,
                             fontSize: _kFontSizeHint,
                             fontWeight: FontWeight.w600,
                           ),
+                          contentPadding: EdgeInsets.zero,
                         ),
                       ),
                     ),
@@ -367,7 +370,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
       ),
     );
   }
-} // <--- FERMETURE DE LA CLASSE _CreateStatusPageState (CRUCIAL)
+}
 
 // ============================================================================
 // ACTION CHIP
