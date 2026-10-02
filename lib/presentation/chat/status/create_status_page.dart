@@ -11,7 +11,7 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
 import 'package:thix_id/presentation/chat/providers/status_provider.dart';
-import 'package:thix_id/services/chat/status_service.dart'; // Assurez-vous que ce service existe ou utilisez chatServiceProvider
+import 'package:thix_id/services/chat/status_service.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -25,11 +25,10 @@ const double _kFontSizeStatus = 26.0;
 const double _kFontSizeHint = 24.0;
 const double _kLoaderSize = 18.0;
 
-// Palette de couleurs "Thix Status" (basée sur ThixPolicy mais avec variantes)
-// Utilisation de couleurs prédéfinies pour garantir le contraste avec le texte blanc
+// Palette de couleurs "Thix Status"
 final List<Color> _kStatusColors = [
   ThixPolicy.primary,          // Bleu
-  const Color(0xFF0F172A),     // Noir profond (Slate 900)
+  const Color(0xFF0F172A),     // Noir profond
   const Color(0xFF7C3AED),     // Violet
   ThixPolicy.success,          // Vert
   ThixPolicy.danger,           // Rouge
@@ -44,7 +43,6 @@ final List<Color> _kStatusColors = [
 class _StatusValidators {
   _StatusValidators._();
 
-  /// Sanitize le texte du statut (retire HTML, caractères de contrôle)
   static String sanitizeText(String? input, {int maxLength = _kMaxStatusLength}) {
     if (input == null || input.trim().isEmpty) return '';
     final doc = html_parser.parse(input);
@@ -56,7 +54,6 @@ class _StatusValidators {
     return s.length > maxLength ? s.substring(0, maxLength) : s;
   }
 
-  /// Valide la taille de l'image
   static bool isValidImageSize(int bytes) {
     return bytes > 0 && bytes <= _kMaxImageSizeBytes;
   }
@@ -74,12 +71,6 @@ class _StatusValidators {
 // CREATE STATUS PAGE
 // ============================================================================
 
-/// Page de création de statut (texte ou image).
-///
-/// Permet de :
-/// - Saisir un texte sur fond coloré
-/// - Choisir une couleur de fond
-/// - Ajouter une image avec légende optionnelle
 class CreateStatusPage extends ConsumerStatefulWidget {
   const CreateStatusPage({super.key});
 
@@ -172,14 +163,12 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
 
     final sanitizedCaption = _StatusValidators.sanitizeText(
       _textCtrl.text.trim(),
-      maxLength: 100, // Caption plus courte
+      maxLength: 100,
     );
 
     setState(() => _sending = true);
 
     try {
-      // Note: Utilisez le service approprié selon votre architecture
-      // Ici on suppose que statusServiceProvider existe ou on utilise chatServiceProvider
       final svc = ref.read(statusServiceProvider); 
       
       debugPrint('[CreateStatus] ⬆️ Uploading image status...');
@@ -277,12 +266,11 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
       body: SafeArea(
         child: Column(
           children: [
-            // Zone de texte avec hauteur limitée
             Expanded(
               child: Center(
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    maxHeight: MediaQuery.of(context).size.height * 0.6, // Limite à 60% de la hauteur
+                    maxHeight: MediaQuery.of(context).size.height * 0.6,
                   ),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 28),
@@ -318,7 +306,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
               ),
             ),
             
-            // Sélecteur de couleurs
             SizedBox(
               height: 48,
               child: ListView.separated(
@@ -362,7 +349,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
             
             const SizedBox(height: 16),
             
-            // Actions (Image)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
               child: Row(
@@ -379,6 +365,9 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
           ],
         ),
       ),
+    );
+  }
+} // <--- FERMETURE DE LA CLASSE _CreateStatusPageState (CRUCIAL)
 
 // ============================================================================
 // ACTION CHIP
