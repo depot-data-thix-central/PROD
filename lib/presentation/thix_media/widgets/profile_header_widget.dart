@@ -1,27 +1,20 @@
 // lib/presentation/thix_media/widgets/profile_header_widget.dart
-/// ProfileHeaderWidget (Production Enterprise)
-///
-/// - Design : Modern Sleek Light (Clair, épuré, ombres douces)
-/// - Sécurité : Sanitization des URLs et textes via MediaSanitizer
-/// - i18n : Textes de secours en cas d'absence de traduction
-/// - UX : Optimistic UI pour le Follow/Unfollow, HapticFeedback
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/services/media_service.dart';
 
 import '../thix_media_page.dart' show MediaLightPalette, MediaSanitizer, formatMediaNumber;
 
-class ProfileHeaderWidget extends StatefulWidget {
+class ProfileHeaderWidget extends StatelessWidget {
   final Map<String, dynamic> profile;
-  final Map<String, int> stats;
+  final Map<String, int>? stats;
   final bool isFollowing;
   final bool isMe;
-  final VoidCallback? onEditProfile;
+  final String? certTier;
+  final bool isCertified;
+  final VoidCallback onEditProfile;
 
   const ProfileHeaderWidget({
     super.key,
@@ -29,35 +22,10 @@ class ProfileHeaderWidget extends StatefulWidget {
     required this.stats,
     required this.isFollowing,
     required this.isMe,
-    this.onEditProfile,
+    required this.certTier,
+    required this.isCertified,
+    required this.onEditProfile,
   });
-
-  @override
-  State<ProfileHeaderWidget> createState() => _ProfileHeaderWidgetState();
-}
-
-class _ProfileHeaderWidgetState extends State<ProfileHeaderWidget> {
-  late bool _isFollowing;
-  late Map<String, int> _stats;
-  bool _busy = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _isFollowing = widget.isFollowing;
-    _stats = Map.from(widget.stats);
-  }
-
-  @override
-  void didUpdateWidget(ProfileHeaderWidget oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.isFollowing != widget.isFollowing) {
-      _isFollowing = widget.isFollowing;
-    }
-    if (oldWidget.stats != widget.stats) {
-      _stats = Map.from(widget.stats);
-    }
-  }
 
   String _safeTr(AppLocalizations l10n, String key, String fallback) {
     final val = l10n.t(key);
@@ -65,219 +33,258 @@ class _ProfileHeaderWidgetState extends State<ProfileHeaderWidget> {
     return val;
   }
 
-  Future<void> _handleFollowToggle(AppLocalizations l10n) async {
-  if (_busy) return;
-  HapticFeedback.mediumImpact();
-
-  final targetId = widget.profile['id'] as String?;
-  if (targetId == null || targetId.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_safeTr(l10n, 'profile_follow_error', 'Erreur : profil invalide.')),
-        backgroundColor: ThixPolicy.danger,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-    return;
+  // ✅ Couleur du badge selon le tier
+  Color _getCertBadgeColor() {
+    if (!isCertified) return MediaLightPalette.textMuted;
+    switch (certTier?.toLowerCase()) {
+      case 'official':
+        return const Color(0xFF1E40AF); // Bleu officiel
+      case 'enterprise':
+        return const Color(0xFF7C3AED); // Violet
+      case 'premium':
+        return const Color(0xFFD4A017); // Or
+      case 'standard':
+        return const Color(0xFF0891B2); // Cyan
+      default:
+        return MediaLightPalette.textMuted;
+    }
   }
 
-  final wasFollowing = _isFollowing;
-  final previousCount = _stats['followers'] ?? 0;
-
-  // ✅ Optimistic UI
-  setState(() {
-    _isFollowing = !_isFollowing;
-    _stats['followers'] = _isFollowing ? previousCount + 1 : (previousCount > 0 ? previousCount - 1 : 0);
-    _busy = true;
-  });
-
-  try {
-    final success = await MediaService().toggleFollow(targetId);
-
-    if (!success) {
-      // Rollback explicite quand le service retourne false
-      if (mounted) {
-        setState(() {
-          _isFollowing = wasFollowing;
-          _stats['followers'] = previousCount;
-          _busy = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_safeTr(l10n, 'profile_follow_error', 'Erreur réseau. Impossible de modifier l\'abonnement.')),
-            backgroundColor: ThixPolicy.danger,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-      return;
+  String _getCertLabel(AppLocalizations l10n) {
+    if (!isCertified) return '';
+    switch (certTier?.toLowerCase()) {
+      case 'official':
+        return _safeTr(l10n, 'certification_tier_official', 'Officiel');
+      case 'enterprise':
+        return _safeTr(l10n, 'certification_tier_enterprise', 'Entreprise');
+      case 'premium':
+        return _safeTr(l10n, 'certification_tier_premium', 'Premium');
+      case 'standard':
+        return _safeTr(l10n, 'certification_tier_standard', 'Standard');
+      default:
+        return '';
     }
-  } catch (e) {
-    // Rollback en cas d’exception inattendue
-    if (mounted) {
-      setState(() {
-        _isFollowing = wasFollowing;
-        _stats['followers'] = previousCount;
-        _busy = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_safeTr(l10n, 'profile_follow_error', 'Erreur réseau. Impossible de modifier l\'abonnement.')),
-          backgroundColor: ThixPolicy.danger,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-    return;
-  }
-
-  if (mounted) setState(() => _busy = false);
-}
-  String _getDisplayName(AppLocalizations l10n) {
-    final uname = widget.profile['username'] as String?;
-    final fname = widget.profile['full_name'] as String?;
-    if (fname != null && fname.trim().isNotEmpty) return MediaSanitizer.text(fname, maxLength: 40);
-    if (uname != null && uname.trim().isNotEmpty) return MediaSanitizer.text(uname, maxLength: 40);
-    return _safeTr(l10n, 'detail_creator_default', 'Utilisateur');
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final avatarUrl = MediaSanitizer.imageUrl(widget.profile['avatar_url'] as String?);
-    final hasAvatar = avatarUrl != null;
-    final bio = MediaSanitizer.text(widget.profile['bio'] as String?, maxLength: 250);
-    
-    final safeUsername = MediaSanitizer.text(widget.profile['username'] as String?, maxLength: 30);
-    final displayUsername = safeUsername.isNotEmpty ? safeUsername : 'utilisateur';
+    final avatarUrl = profile['avatar_url'] as String?;
+    final fullName = MediaSanitizer.text(
+        profile['full_name'] as String? ?? '',
+        maxLength: 40);
+    final username = MediaSanitizer.text(
+        profile['username'] as String? ?? '',
+        maxLength: 30);
+    final bio = MediaSanitizer.text(
+        profile['bio'] as String? ?? '',
+        maxLength: 200);
+
+    final followers = stats?['followers'] ?? 0;
+    final following = stats?['following'] ?? 0;
+    final posts = stats?['posts'] ?? 0;
+
+    final displayName = fullName.isNotEmpty ? fullName : username;
+    final certColor = _getCertBadgeColor();
+    final certLabel = _getCertLabel(l10n);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 100, 20, 24), // 100 de padding-top pour compenser l'AppBar transparente
+      padding: const EdgeInsets.fromLTRB(20, 100, 20, 20),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Avatar
               Container(
-                width: 86,
-                height: 86,
+                width: 96,
+                height: 96,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(color: MediaLightPalette.border, width: 2),
-                  color: MediaLightPalette.surface,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 15,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                  image: hasAvatar
+                  border: Border.all(
+                      color: MediaLightPalette.border, width: 3),
+                  image: avatarUrl != null && avatarUrl.isNotEmpty
                       ? DecorationImage(
                           image: CachedNetworkImageProvider(avatarUrl),
                           fit: BoxFit.cover,
                         )
                       : null,
                 ),
-                child: !hasAvatar
-                    ? const Icon(Icons.person_rounded, size: 40, color: MediaLightPalette.textMuted)
+                child: avatarUrl == null || avatarUrl.isEmpty
+                    ? const Icon(Icons.person,
+                        size: 48, color: MediaLightPalette.textMuted)
                     : null,
               ),
-
-              const SizedBox(width: 24),
-
+              const SizedBox(width: 20),
+              // Stats
               Expanded(
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _TopStat(label: _safeTr(l10n, 'profile_stats_posts', 'Publications'), count: _stats['posts'] ?? 0),
-                    Container(width: 1, height: 30, color: MediaLightPalette.border),
-                    _TopStat(label: _safeTr(l10n, 'profile_stats_followers', 'Abonnés'), count: _stats['followers'] ?? 0),
-                    Container(width: 1, height: 30, color: MediaLightPalette.border),
-                    _TopStat(label: _safeTr(l10n, 'profile_stats_following', 'Suivis'), count: _stats['following'] ?? 0),
+                    _StatColumn(
+                        count: posts,
+                        label: _safeTr(l10n, 'profile_posts', 'Publications')),
+                    _StatColumn(
+                        count: followers,
+                        label: _safeTr(l10n, 'network_followers', 'Abonnés')),
+                    _StatColumn(
+                        count: following,
+                        label: _safeTr(l10n, 'network_following', 'Abonnements')),
                   ],
                 ),
               ),
             ],
           ),
-
-          const SizedBox(height: 20),
-
-          // Nom et bio
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _getDisplayName(l10n),
+          const SizedBox(height: 16),
+          // ✅ Nom + Badge de certification
+          Row(
+            children: [
+              Flexible(
+                child: Text(
+                  displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: MediaLightPalette.textPrimary,
-                    fontSize: 18,
+                    fontSize: 20,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -0.3,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '@$displayUsername',
-                  style: const TextStyle(
-                    color: MediaLightPalette.textSecondary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+              ),
+              if (isCertified && certLabel.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                _CertBadge(color: certColor, label: certLabel),
+              ],
+            ],
+          ),
+          if (username.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              '@$username',
+              style: const TextStyle(
+                color: MediaLightPalette.textSecondary,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          if (bio.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              bio,
+              style: const TextStyle(
+                color: MediaLightPalette.textSecondary,
+                fontSize: 14,
+                height: 1.4,
+              ),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          const SizedBox(height: 16),
+          // Boutons d'action
+          Row(
+            children: [
+              if (isMe)
+                Expanded(
+                  child: _ActionButton(
+                    label: _safeTr(l10n, 'profile_edit', 'Modifier le profil'),
+                    icon: Icons.edit_rounded,
+                    onTap: onEditProfile,
+                    isPrimary: true,
+                  ),
+                )
+              else ...[
+                Expanded(
+                  child: _ActionButton(
+                    label: isFollowing
+                        ? _safeTr(l10n, 'network_following', 'Abonné')
+                        : _safeTr(l10n, 'network_follow', 'Suivre'),
+                    icon: isFollowing
+                        ? Icons.check_rounded
+                        : Icons.person_add_rounded,
+                    onTap: () {/* TODO: toggle follow */},
+                    isPrimary: !isFollowing,
                   ),
                 ),
-                if (bio.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    bio,
-                    style: const TextStyle(
-                      color: MediaLightPalette.textPrimary,
-                      fontSize: 13.5,
-                      height: 1.4,
-                    ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _ActionButton(
+                    label: _safeTr(l10n, 'common_chat', 'Message'),
+                    icon: Icons.chat_bubble_outline_rounded,
+                    onTap: () {/* TODO: open chat */},
+                    isPrimary: false,
                   ),
-                ],
+                ),
               ],
-            ),
+            ],
           ),
+        ],
+      ),
+    );
+  }
+}
 
-          const SizedBox(height: 24),
+class _StatColumn extends StatelessWidget {
+  final int count;
+  final String label;
+  const _StatColumn({required this.count, required this.label});
 
-          // Bouton d'action
-          SizedBox(
-            width: double.infinity,
-            height: 46,
-            child: ElevatedButton(
-              onPressed: _busy ? null : (widget.isMe ? widget.onEditProfile : () => _handleFollowToggle(l10n)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: widget.isMe || _isFollowing
-                    ? MediaLightPalette.surface
-                    : MediaLightPalette.textPrimary,
-                foregroundColor: widget.isMe || _isFollowing
-                    ? MediaLightPalette.textPrimary
-                    : Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                side: widget.isMe || _isFollowing
-                    ? const BorderSide(color: MediaLightPalette.border, width: 1.5)
-                    : BorderSide.none,
-              ),
-              child: _busy
-                  ? SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2, 
-                        color: widget.isMe || _isFollowing ? MediaLightPalette.textPrimary : Colors.white
-                      ),
-                    )
-                  : Text(
-                      widget.isMe 
-                          ? _safeTr(l10n, 'profile_edit_btn', 'Modifier le profil') 
-                          : (_isFollowing ? _safeTr(l10n, 'profile_following_btn', 'Abonné') : _safeTr(l10n, 'profile_follow_btn', 'Suivre')),
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-                    ),
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          formatMediaNumber(count),
+          style: const TextStyle(
+            color: MediaLightPalette.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: const TextStyle(
+            color: MediaLightPalette.textSecondary,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _CertBadge extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _CertBadge({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.verified_rounded, color: color, size: 13),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.3,
             ),
           ),
         ],
@@ -286,30 +293,65 @@ class _ProfileHeaderWidgetState extends State<ProfileHeaderWidget> {
   }
 }
 
-class _TopStat extends StatelessWidget {
+class _ActionButton extends StatelessWidget {
   final String label;
-  final int count;
-
-  const _TopStat({required this.label, required this.count});
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool isPrimary;
+  const _ActionButton({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    required this.isPrimary,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          formatMediaNumber(count), // ✅ Utilisation du formatteur global
-          style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 17, fontWeight: FontWeight.w900),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: const TextStyle(
-            color: MediaLightPalette.textSecondary,
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: isPrimary ? ThixPolicy.primary : MediaLightPalette.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isPrimary
+                ? ThixPolicy.primary
+                : MediaLightPalette.border,
+            width: 1.5,
           ),
+          boxShadow: isPrimary
+              ? [
+                  BoxShadow(
+                    color: ThixPolicy.primary.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : [],
         ),
-      ],
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon,
+                size: 16,
+                color: isPrimary
+                    ? Colors.white
+                    : MediaLightPalette.textPrimary),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: isPrimary
+                    ? Colors.white
+                    : MediaLightPalette.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
