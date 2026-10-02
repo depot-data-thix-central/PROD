@@ -1024,6 +1024,149 @@ class MediaService {
     }
   }
 
+        // ============================================================================
+  // DELETE
+  // ============================================================================
+
+  Future<void> deleteMedia(MediaContent item) async {
+    _MediaValidators.requireValidUuid(item.id, 'mediaId');
+    await _checkPermissions(item.id);
+
+    final filesToDelete = <String>[];
+    if (item.videoUrl.isNotEmpty) {
+      final name = _MediaValidators.extractFileName(item.videoUrl);
+      if (name.isNotEmpty) filesToDelete.add('thix_media/${item.id}/videos/$name');
+    }
+    if (item.coverUrl.isNotEmpty) {
+      final name = _MediaValidators.extractFileName(item.coverUrl);
+      if (name.isNotEmpty) filesToDelete.add('thix_media/${item.id}/covers/$name');
+    }
+    for (final epUrl in item.episodesUrls) {
+      if (epUrl.isNotEmpty) {
+        final name = _MediaValidators.extractFileName(epUrl);
+        if (name.isNotEmpty) filesToDelete.add('thix_media/${item.id}/episodes/$name');
+      }
+    }
+
+    try {
+      if (filesToDelete.isNotEmpty) {
+        await _cleanupFiles(filesToDelete);
+      }
+      await _client
+          .from('media_content')
+          .delete()
+          .eq('id', item.id)
+          .timeout(_supabaseTimeout);
+      _MediaLogger.info('Media deleted', {'id': item.id, 'files': filesToDelete.length});
+    } catch (e) {
+      _MediaLogger.error('deleteMedia failed', {'id': item.id, 'error': '$e'});
+      throw MediaException('DELETE_FAILED', 'Échec de la suppression', e);
+    }
+  }
+
+  // ============================================================================
+  // REPOST (Partager/Republier un média)
+  // ============================================================================
+
+  Future<bool> repostMedia(String mediaId) async {
+    _MediaValidators.requireValidUuid(mediaId, 'mediaId');
+    
+    final user = _client.auth.currentUser;
+    if (user == null) {
+      throw MediaPermissionException('Utilisateur non connecté');
+    }
+
+    try {
+      final original = await _client
+          .from('media_content')
+          .select()
+          .eq('id', mediaId)
+          .maybeSingle()
+          .timeout(_supabaseTimeout);
+
+      if (original == null) {
+        throw MediaException('NOT_FOUND', 'Média introuvable');
+      }
+
+      if (original['user_id'] == user.id) {
+        throw MediaException('SELF_REPOST', 'Impossible de reposter votre propre média');
+      }
+
+      final existing = await _client
+          .from('media_content')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('repost_of', mediaId)
+          .maybeSingle()
+          .timeout(_supabaseTimeout);
+
+      if (existing != null) {
+        _MediaLogger.warn('Media already reposted', {'mediaId': mediaId, 'userId': user.id});
+        return true;
+      }
+
+      final repostId = _uuid.v4();
+      final now = DateTime.now().toIso8601String();
+      
+      final repostData = {
+        'id': repostId,
+        'user_id': user.id,
+        'title': original['title'],
+        'subtitle': original['subtitle'],
+        'type': original['type'],
+        'video_url': original['video_url'],
+        'cover_url': original['cover_url'],
+        'episodes_urls': original['episodes_urls'],
+        'is_paid': false,
+        'price': null,
+        'repost_of': mediaId,
+        'repost_count': 0,
+        'like_count': 0,
+        'comment_count': 0,
+        'view_count': 0,
+        'created_at': now,
+        'updated_at': now,
+      };
+
+      await _client
+          .from('media_content')
+          .insert(repostData)
+          .timeout(_supabaseTimeout);
+
+      try {
+        await _client.rpc(
+          'increment_repost_count',
+          params: {'p_media_id': mediaId},
+        ).timeout(_supabaseTimeout);
+      } catch (e) {
+        _MediaLogger.warn('Failed to increment repost count', {'error': '$e'});
+      }
+
+      _MediaLogger.info('Media reposted', {
+        'originalId': mediaId,
+        'repostId': repostId,
+        'userId': user.id,
+      });
+      return true;
+    } catch (e) {
+      _MediaLogger.error('repostMedia failed', {'mediaId': mediaId, 'error': '$e'});
+      if (e is MediaException) rethrow;
+      throw MediaException('REPOST_FAILED', 'Échec du repost', e);
+    }
+  }
+} //
+</think>
+
+L'erreur `media_service.dart:1164:1: Expected a method, getter, setter or operator declaration` indique un **problème d'accolades `{}`** à la fin du fichier `media_service.dart`.
+
+Cela arrive parce que la méthode `repostMedia` a été collée **après** l'accolade fermante finale `}` de la classe `MediaService`, ou qu'il y a une accolade en trop/manquante. Dart pense que le code est en dehors de la classe.
+
+### 🛠️ Comment corriger
+
+Ouvre `lib/services/media_service.dart` et va tout en bas du fichier (vers la ligne 1164). 
+Assure-toi que la fin de ton fichier ressemble **exactement** à ceci (avec une seule accolade fermante `}` à la toute fin pour fermer la classe) :
+
+```dart
   // ============================================================================
   // DELETE
   // ============================================================================
@@ -1063,12 +1206,11 @@ class MediaService {
       throw MediaException('DELETE_FAILED', 'Échec de la suppression', e);
     }
   }
+
   // ============================================================================
   // REPOST (Partager/Republier un média)
   // ============================================================================
 
-  /// Reposte un média sur le profil de l'utilisateur courant.
-  /// Crée une copie indépendante du média original avec attribution.
   Future<bool> repostMedia(String mediaId) async {
     _MediaValidators.requireValidUuid(mediaId, 'mediaId');
     
@@ -1078,7 +1220,6 @@ class MediaService {
     }
 
     try {
-      // 1. Récupérer le média original
       final original = await _client
           .from('media_content')
           .select()
@@ -1090,12 +1231,10 @@ class MediaService {
         throw MediaException('NOT_FOUND', 'Média introuvable');
       }
 
-      // 2. Empêcher de reposter son propre média
       if (original['user_id'] == user.id) {
         throw MediaException('SELF_REPOST', 'Impossible de reposter votre propre média');
       }
 
-      // 3. Vérifier si déjà reposté par cet utilisateur
       final existing = await _client
           .from('media_content')
           .select('id')
@@ -1109,7 +1248,6 @@ class MediaService {
         return true;
       }
 
-      // 4. Créer le repost (copie avec attribution)
       final repostId = _uuid.v4();
       final now = DateTime.now().toIso8601String();
       
@@ -1138,7 +1276,6 @@ class MediaService {
           .insert(repostData)
           .timeout(_supabaseTimeout);
 
-      // 5. Incrémenter le compteur sur l'original
       try {
         await _client.rpc(
           'increment_repost_count',
@@ -1160,5 +1297,4 @@ class MediaService {
       throw MediaException('REPOST_FAILED', 'Échec du repost', e);
     }
   }
-}
 }
