@@ -26,8 +26,6 @@ class DocumentService {
   static final Map<String, _UrlCache> _urlCache = {};
   SupabaseClient get _db => _client;
 
-  
-
   // ---------------------------------------------------------------------------
   // Helpers internes
   // ---------------------------------------------------------------------------
@@ -112,6 +110,9 @@ class DocumentService {
     return _retry(() async {
       final st = _db.storage.from(bucketName);
       if (kIsWeb) {
+        if (file.bytes == null) {
+          throw Exception('Les octets du fichier sont introuvables pour le Web');
+        }
         return await st.uploadBinary(
           objectPath,
           file.bytes!,
@@ -135,7 +136,7 @@ class DocumentService {
     try {
       await _db.storage.from(bucketName).remove([storagePath]);
     } catch (e) {
-      debugPrint('[DocumentService] ⚠️ Delete object failed: $e');
+      debugPrint('[DocumentService] ⚠️️ Delete object failed: $e');
     }
   }
 
@@ -485,9 +486,10 @@ class DocumentService {
       return cached.url;
     }
 
+    final seconds = expiresIn.inSeconds.clamp(60, 3600);
     final url = await _retry(() => _db.storage
         .from(bucketName)
-        .createSignedUrl(storagePath.trim(), expiresIn.inSeconds.clamp(60, 3600)));
+        .createSignedUrl(storagePath.trim(), seconds));
 
     _urlCache[key] = _UrlCache(url, expiresIn: expiresIn);
     return url;
@@ -501,7 +503,7 @@ class DocumentService {
   }
 
   // ---------------------------------------------------------------------------
-  // Hash / Verify - SÉPARATION CLAIRE
+  // Hash / Verify - SÉPARATION CLAIRE & MÉTHODES POUR DART2JS
   // ---------------------------------------------------------------------------
 
   /// Hash local SHA-256 pour PIN du coffre (rapide, pas de réseau)
@@ -557,6 +559,36 @@ class DocumentService {
       debugPrint('[DocumentService] ❌ Verify share password failed: $e');
       return false;
     }
+  }
+
+  /// ✅ Méthode requise par document_vault_page.dart (Evite l'erreur dart2js)
+  /// Permet de vérifier un mot de passe soit via un hash direct, soit via l'ID de partage du document.
+  Future<bool> verifyPassword({
+    required String password,
+    String? hash,
+    String? shareId,
+    String? documentId,
+  }) async {
+    if (hash != null && hash.isNotEmpty) {
+      return verifySharePassword(password: password, hash: hash);
+    }
+
+    final targetShareId = shareId ?? documentId;
+    if (targetShareId != null && targetShareId.isNotEmpty) {
+      final shareRow = await _db
+          .from(sharesTable)
+          .select('password_hash')
+          .eq('id', targetShareId)
+          .maybeSingle();
+
+      final storedHash = shareRow?['password_hash'] as String?;
+      if (storedHash == null || storedHash.isEmpty) {
+        return true; // Pas de mot de passe requis pour ce partage
+      }
+      return verifySharePassword(password: password, hash: storedHash);
+    }
+
+    return false;
   }
 
   // ---------------------------------------------------------------------------
@@ -796,5 +828,5 @@ class _UrlCache {
 
   _UrlCache(this.url, {required this.expiresIn}) : createdAt = DateTime.now();
 
-  bool get isValid => DateTime.now().difference(createdAt) < expiresIn;
+  bool get isValid => DateTime.now().difference(createdAt) < (expiresIn - const Duration(seconds: 30));
 }
