@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -19,7 +20,7 @@ import '../thix_media_page.dart' show MediaConfig, MediaLightPalette, MediaSanit
 import '../user_profile_page.dart';
 import 'comments_sheet.dart';
 import 'feed_video_player.dart';
-import 'media_poster_card.dart'; // Assure-toi d'importer MediaPosterCard s'il est dans le même dossier
+import 'media_poster_card.dart';
 
 // ============================================================================
 // LOGGING & CONSTANTS
@@ -60,7 +61,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
   late List<String> _episodes;
   int _currentEpisode = 0;
   bool _liked = false;
-  bool _saved = false;
+  bool _favorited = false; // ✅ Renommé de _saved
   bool _previewExpired = false;
   bool _unlocked = false;
   final Set<String> _newlyFollowed = {};
@@ -75,7 +76,6 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     _loadSuggestions();
   }
 
-  // ✅ TEXTES DE SECOURS (ANTI CLÉS BRUTES)
   String _safeTr(AppLocalizations l10n, String key, String fallback, {List<String>? args}) {
     final val = args != null ? l10n.t(key, args: args) : l10n.t(key);
     if (val.isEmpty || val == key || val.contains(key)) return fallback;
@@ -120,10 +120,119 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     }
   }
 
-  void _toggleSave() {
+  // ✅ FAVORIS (anciennement Enregistrer)
+  void _toggleFavorite(AppLocalizations l10n) {
     if (!_throttle()) return;
     HapticFeedback.lightImpact();
-    setState(() => _saved = !_saved);
+    setState(() => _favorited = !_favorited);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(_favorited 
+          ? _safeTr(l10n, 'detail_favorite_added', 'Ajouté aux favoris')
+          : _safeTr(l10n, 'detail_favorite_removed', 'Retiré des favoris')),
+      backgroundColor: _favorited ? ThixPolicy.success : ThixPolicy.primary,
+      duration: const Duration(seconds: 1),
+    ));
+  }
+
+  // ✅ TÉLÉCHARGER
+  Future<void> _downloadMedia(AppLocalizations l10n) async {
+    if (!_throttle()) return;
+    HapticFeedback.mediumImpact();
+    
+    final videoUrl = _episodes.isEmpty ? widget.item.videoUrl : _episodes[_currentEpisode];
+    if (videoUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(_safeTr(l10n, 'detail_download_error', 'Lien de téléchargement indisponible')),
+        backgroundColor: ThixPolicy.danger,
+      ));
+      return;
+    }
+
+    try {
+      final uri = Uri.parse(videoUrl);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(_safeTr(l10n, 'detail_download_started', 'Téléchargement lancé')),
+          backgroundColor: ThixPolicy.success,
+          duration: const Duration(seconds: 2),
+        ));
+      } else {
+        throw Exception('Cannot launch URL');
+      }
+    } catch (e) {
+      _DetailLogger.error('Download failed', {'error': e.toString()});
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(_safeTr(l10n, 'detail_download_failed', 'Échec du téléchargement')),
+        backgroundColor: ThixPolicy.danger,
+      ));
+    }
+  }
+
+  // ✅ REPOST (Partager/Republier)
+  Future<void> _repostMedia(AppLocalizations l10n) async {
+    if (!_throttle()) return;
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+    if (uid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(_safeTr(l10n, 'detail_login_required', 'Veuillez vous connecter')),
+        backgroundColor: ThixPolicy.danger,
+      ));
+      return;
+    }
+
+    HapticFeedback.mediumImpact();
+    
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: MediaLightPalette.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          _safeTr(l10n, 'detail_repost_title', 'Reposter ce contenu'),
+          style: const TextStyle(color: MediaLightPalette.textPrimary, fontWeight: FontWeight.w800),
+        ),
+        content: Text(
+          _safeTr(l10n, 'detail_repost_message', 'Voulez-vous reposter "${widget.item.title}" à vos abonnés ?'),
+          style: const TextStyle(color: MediaLightPalette.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(_safeTr(l10n, 'common_cancel', 'Annuler'), style: const TextStyle(color: MediaLightPalette.textSecondary)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ThixPolicy.primary, 
+              foregroundColor: Colors.white, 
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(_safeTr(l10n, 'detail_repost_confirm', 'Reposter')),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await MediaService().repostMedia(widget.item.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(_safeTr(l10n, 'detail_repost_success', 'Reposté avec succès !')),
+        backgroundColor: ThixPolicy.success,
+        duration: const Duration(seconds: 2),
+      ));
+    } catch (e) {
+      _DetailLogger.error('Repost failed', {'error': e.toString()});
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(_safeTr(l10n, 'detail_repost_failed', 'Échec du repost')),
+        backgroundColor: ThixPolicy.danger,
+      ));
+    }
   }
 
   void _openComments() {
@@ -139,14 +248,12 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     });
   }
 
-  // ✅ CORRECTION DE LA NAVIGATION (Navigator.push au lieu de context.push)
   void _openCreatorProfile(String creatorId) {
     if (!_throttle()) return;
     HapticFeedback.selectionClick();
     Navigator.push(context, MaterialPageRoute(builder: (_) => UserProfilePage(userId: creatorId)));
   }
 
-  // ✅ CORRECTION DE LA NAVIGATION DES SUGGESTIONS (Plus d'écran bleu)
   void _openSuggestion(MediaContent suggestion) {
     if (!_throttle()) return;
     HapticFeedback.mediumImpact();
@@ -253,7 +360,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
             if (isSeries && !requiresPayment)
               RepaintBoundary(child: _buildEpisodesSection(l10n)),
             _buildCreatorSection(l10n, creatorProfile, creatorId, creatorIsOfficial, displayName, showFollowBtn),
-            RepaintBoundary(child: _buildActionsBar(l10n, live)),
+            RepaintBoundary(child: _buildActionsBar(l10n, live)), // ✅ Nouvelle barre d'actions
             if (item.subtitle != null && item.subtitle!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
@@ -273,11 +380,10 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     );
   }
 
-  // ✅ CORRECTION DE L'AFFICHAGE DE LA VIDÉO (Taille adaptée + Fond Noir pour les bords)
-    Widget _buildVideoSection(MediaContent item, bool requiresPayment, bool enforcePreview, AppLocalizations l10n) {
+  Widget _buildVideoSection(MediaContent item, bool requiresPayment, bool enforcePreview, AppLocalizations l10n) {
     return Container(
       width: double.infinity,
-      color: Colors.black, // Le fond noir masque les bandes blanches
+      color: Colors.black,
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.45),
       child: Center(
         child: requiresPayment
@@ -289,7 +395,6 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
                 isPlaying: true,
                 enforcePreviewLimit: enforcePreview,
                 previewSeconds: MediaConfig.previewSeconds,
-                
                 onPreviewLimitReached: () {
                   if (mounted) setState(() => _previewExpired = true);
                 },
@@ -298,7 +403,6 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
       ),
     );
   }
-
 
   Widget _buildEpisodesSection(AppLocalizations l10n) {
     return Padding(
@@ -399,12 +503,13 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     );
   }
 
+  // ✅ NOUVELLE BARRE D'ACTIONS : J'aime | Commentaires | Télécharger | Repost | Favoris
   Widget _buildActionsBar(AppLocalizations l10n, dynamic live) {
     final item = widget.item;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
           color: MediaLightPalette.surface,
           borderRadius: BorderRadius.circular(20),
@@ -412,34 +517,37 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4))],
         ),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             _detailActionBtn(
               icon: _liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
               label: formatMediaNumber(live?.likeCount ?? item.likeCount),
               color: _liked ? ThixPolicy.danger : MediaLightPalette.textPrimary,
-              labelL10n: _safeTr(l10n, 'detail_likes', 'J\'aime'),
               onTap: () => _toggleLike(l10n),
             ),
             _detailActionBtn(
               icon: Icons.chat_bubble_outline_rounded,
               label: formatMediaNumber(live?.commentCount ?? item.commentCount),
               color: MediaLightPalette.textPrimary,
-              labelL10n: _safeTr(l10n, 'detail_comments', 'Commentaires'),
               onTap: _openComments,
             ),
             _detailActionBtn(
-              icon: Icons.remove_red_eye_outlined,
-              label: formatMediaNumber(live?.viewCount ?? item.viewCount),
-              color: MediaLightPalette.textSecondary,
-              labelL10n: _safeTr(l10n, 'detail_views', 'Vues'),
-              onTap: () {},
+              icon: Icons.download_rounded,
+              label: _safeTr(l10n, 'detail_download', 'Télécharger'),
+              color: ThixPolicy.primary,
+              onTap: () => _downloadMedia(l10n),
             ),
             _detailActionBtn(
-              icon: _saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-              label: _safeTr(l10n, 'detail_save', 'Enregistrer'),
-              color: _saved ? ThixPolicy.primary : MediaLightPalette.textSecondary,
-              labelL10n: _safeTr(l10n, 'detail_save', 'Enregistrer'),
-              onTap: _toggleSave,
+              icon: Icons.forward_rounded,
+              label: _safeTr(l10n, 'detail_repost', 'Repost'),
+              color: MediaLightPalette.textPrimary,
+              onTap: () => _repostMedia(l10n),
+            ),
+            _detailActionBtn(
+              icon: _favorited ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+              label: _safeTr(l10n, 'detail_favorite', 'Favoris'),
+              color: _favorited ? ThixPolicy.gold : MediaLightPalette.textSecondary,
+              onTap: () => _toggleFavorite(l10n),
             ),
           ],
         ),
@@ -447,18 +555,24 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     );
   }
 
-  Widget _detailActionBtn({required IconData icon, required String label, required String labelL10n, required Color color, required VoidCallback onTap}) {
+  Widget _detailActionBtn({required IconData icon, required String label, required Color color, required VoidCallback onTap}) {
     return Expanded(
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: color, size: 24),
+              Icon(icon, color: color, size: 22),
               const SizedBox(height: 4),
-              Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w800)),
+              Text(
+                label,
+                style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ],
           ),
         ),
