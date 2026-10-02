@@ -277,33 +277,39 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
       body: SafeArea(
         child: Column(
           children: [
+            // Zone de texte avec hauteur limitée
             Expanded(
               child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 28),
-                  child: Semantics(
-                    label: l10n.t('status_text_input'),
-                    textField: true,
-                    child: TextField(
-                      controller: _textCtrl,
-                      maxLines: null,
-                      maxLength: _kMaxStatusLength,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: _kFontSizeStatus,
-                        fontWeight: FontWeight.w700,
-                        height: 1.3,
-                      ),
-                      cursorColor: Colors.white,
-                      decoration: InputDecoration(
-                        counterText: '',
-                        border: InputBorder.none,
-                        hintText: l10n.t('status_hint'),
-                        hintStyle: TextStyle(
-                          color: Colors.white54,
-                          fontSize: _kFontSizeHint,
-                          fontWeight: FontWeight.w600,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.6, // Limite à 60% de la hauteur
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 28),
+                    child: Semantics(
+                      label: l10n.t('status_text_input'),
+                      textField: true,
+                      child: TextField(
+                        controller: _textCtrl,
+                        maxLines: null,
+                        maxLength: _kMaxStatusLength,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: _kFontSizeStatus,
+                          fontWeight: FontWeight.w700,
+                          height: 1.3,
+                        ),
+                        cursorColor: Colors.white,
+                        decoration: InputDecoration(
+                          counterText: '',
+                          border: InputBorder.none,
+                          hintText: l10n.t('status_hint'),
+                          hintStyle: TextStyle(
+                            color: Colors.white54,
+                            fontSize: _kFontSizeHint,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ),
@@ -373,9 +379,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
           ],
         ),
       ),
-    );
-  }
-}
 
 // ============================================================================
 // ACTION CHIP
