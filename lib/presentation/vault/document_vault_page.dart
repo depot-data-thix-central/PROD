@@ -1431,10 +1431,9 @@ class _InboxTabState extends State<_InboxTab> {
             final ad = DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
             final cd = DateTime.tryParse((s['created_at'] ?? '').toString()) ?? now;
             final locked = st == 'pending' && af != null && af.isAfter(now);
-            final sender = (s['sender_thix_id'] as String?) ??
-                ((s['sender_id'] as String?) ?? '').length >= 8
-                    ? (s['sender_id'] as String).substring(0, 8)
-                    : '—';
+            final senderThix = s['sender_thix_id'] as String?;
+            final senderId = (s['sender_id'] as String?) ?? '';
+            final sender = senderThix ?? (senderId.length >= 8 ? senderId.substring(0, 8) : '—');
             return GestureDetector(
               onTap: () => _openShare(s),
               child: Container(
