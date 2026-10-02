@@ -131,7 +131,7 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.t('detail_login_required', fallback: 'Veuillez vous connecter'))),
+        SnackBar(content: Text(l10n.t('detail_login_required'))),
       );
       return;
     }
@@ -193,13 +193,13 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
               ),
               const SizedBox(height: 16),
               Text(
-                l10n.t('fil_empty', fallback: 'Aucune vidéo disponible'),
+                l10n.t('fil_empty'),
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 8),
               Text(
-                l10n.t('fil_empty_hint', fallback: 'Ajoutez des contenus via l\'admin'),
+                l10n.t('fil_empty_hint'),
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white70, fontSize: 13),
               ),
@@ -229,10 +229,10 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
             : (ref.watch(mediaIsFollowingProvider(creatorId)).valueOrNull ?? true);
         final displayName = creatorId.isEmpty 
             ? 'TDIA' 
-            : (creatorProfile?['full_name'] ?? creatorProfile?['username'] ?? l10n.t('detail_creator_default', fallback: 'Créateur'));
+            : (creatorProfile?['full_name'] ?? creatorProfile?['username'] ?? l10n.t('detail_creator_default'));
         final showFollow = creatorId.isNotEmpty && creatorId != currentUid && !isFollowing;
         
-        // ✅ Extraction certification
+        // Extraction certification
         final certTier = creatorProfile?['certification_tier'] as String?;
         final certStatus = creatorProfile?['certification_status'] as String?;
         final isCertified = certStatus == 'approved' || 
@@ -350,18 +350,17 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
     });
   }
 
-  // ✅ Couleur du badge selon le tier
   Color _getCertBadgeColor() {
     if (!widget.isCertified) return Colors.white54;
     switch (widget.certTier?.toLowerCase()) {
       case 'official':
-        return const Color(0xFF3B82F6); // Bleu officiel
+        return const Color(0xFF3B82F6);
       case 'enterprise':
-        return const Color(0xFF8B5CF6); // Violet
+        return const Color(0xFF8B5CF6);
       case 'premium':
-        return const Color(0xFFF59E0B); // Or
+        return const Color(0xFFF59E0B);
       case 'standard':
-        return const Color(0xFF06B6D4); // Cyan
+        return const Color(0xFF06B6D4);
       default:
         return Colors.white54;
     }
@@ -371,13 +370,13 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
     if (!widget.isCertified) return '';
     switch (widget.certTier?.toLowerCase()) {
       case 'official':
-        return l10n.t('certification_tier_official', fallback: 'Officiel');
+        return l10n.t('certification_tier_official');
       case 'enterprise':
-        return l10n.t('certification_tier_enterprise', fallback: 'Entreprise');
+        return l10n.t('certification_tier_enterprise');
       case 'premium':
-        return l10n.t('certification_tier_premium', fallback: 'Premium');
+        return l10n.t('certification_tier_premium');
       case 'standard':
-        return l10n.t('certification_tier_standard', fallback: 'Standard');
+        return l10n.t('certification_tier_standard');
       default:
         return '';
     }
@@ -395,7 +394,6 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // ✅ LE LECTEUR VIDÉO
           Container(
             color: Colors.black,
             child: FeedVideoPlayer(
@@ -406,7 +404,6 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
             ),
           ),
           
-          // Ombre légère en bas
           Positioned(
             left: 0, 
             right: 0, 
@@ -430,7 +427,6 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
             ),
           ),
 
-          // ✅ Animation du cœur améliorée
           if (_showHeart)
             AnimatedBuilder(
               animation: _heartController,
@@ -461,7 +457,6 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
               },
             ),
 
-          // ✅ DISPOSITION COMPACTE (Texte + Boutons)
           Positioned(
             left: 16,
             right: 16,
@@ -469,7 +464,6 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Ligne Créateur & Titre
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -519,7 +513,6 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // ✅ Nom + Badge certification
                             Row(
                               children: [
                                 Flexible(
@@ -575,7 +568,7 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
                             ],
                           ),
                           child: Text(
-                            l10n.t('detail_follow', fallback: 'Suivre'),
+                            l10n.t('detail_follow'),
                             style: const TextStyle(
                               color: Colors.white, 
                               fontSize: 12, 
@@ -587,7 +580,6 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
                   ],
                 ),
                 const SizedBox(height: 14),
-                // Ligne des Boutons d'Action
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                   decoration: BoxDecoration(
