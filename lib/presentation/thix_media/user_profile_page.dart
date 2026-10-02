@@ -34,7 +34,6 @@ class UserProfilePage extends ConsumerStatefulWidget {
 }
 
 class _UserProfilePageState extends ConsumerState<UserProfilePage> {
-  // ✅ VARIABLE D'ÉTAT POUR L'ONGLET
   bool _showPrivate = false;
 
   @override
@@ -54,18 +53,24 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     try {
       ref.invalidate(userProfileDataProvider(widget.userId));
       ref.invalidate(userPostsProvider(widget.userId));
-      ref.invalidate(userPrivatePostsProvider(widget.userId)); // Refresh private too
+      ref.invalidate(userPrivatePostsProvider(widget.userId));
     } catch (e) {
       _ProfileLogger.error('Refresh failed', {'error': '$e'});
     }
   }
 
   String _getTitle(UserProfileBundle bundle, AppLocalizations l10n) {
-    if (Supabase.instance.client.auth.currentUser?.id == widget.userId) return _safeTr(l10n, 'profile_my_profile', 'Mon Profil');
+    if (Supabase.instance.client.auth.currentUser?.id == widget.userId) {
+      return _safeTr(l10n, 'profile_my_profile', 'Mon Profil');
+    }
     final fname = bundle.profile?['full_name'] as String?;
     final uname = bundle.profile?['username'] as String?;
-    if (fname != null && fname.trim().isNotEmpty) return MediaSanitizer.text(fname, maxLength: 30);
-    if (uname != null && uname.trim().isNotEmpty) return MediaSanitizer.text(uname, maxLength: 30);
+    if (fname != null && fname.trim().isNotEmpty) {
+      return MediaSanitizer.text(fname, maxLength: 30);
+    }
+    if (uname != null && uname.trim().isNotEmpty) {
+      return MediaSanitizer.text(uname, maxLength: 30);
+    }
     return _safeTr(l10n, 'nav_profile', 'Profil');
   }
 
@@ -82,7 +87,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: MediaLightPalette.textPrimary, size: 20),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: MediaLightPalette.textPrimary, size: 20),
           onPressed: () {
             HapticFeedback.lightImpact();
             Navigator.of(context).pop();
@@ -90,44 +96,68 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
         ),
         flexibleSpace: ClipRRect(
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: MediaConfig.glassBlur, sigmaY: MediaConfig.glassBlur),
+            filter: ImageFilter.blur(
+                sigmaX: MediaConfig.glassBlur, sigmaY: MediaConfig.glassBlur),
             child: Container(
               decoration: BoxDecoration(
                 color: MediaLightPalette.surface.withValues(alpha: 0.85),
-                border: const Border(bottom: BorderSide(color: MediaLightPalette.border)),
+                border: const Border(
+                    bottom: BorderSide(color: MediaLightPalette.border)),
               ),
             ),
           ),
         ),
         title: profileAsync.whenOrNull(
-              data: (bundle) => Text(_getTitle(bundle, l10n), style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 16, fontWeight: FontWeight.w800)),
+              data: (bundle) => Text(_getTitle(bundle, l10n),
+                  style: const TextStyle(
+                      color: MediaLightPalette.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800)),
             ) ??
-            Text(_safeTr(l10n, 'nav_profile', 'Profil'), style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 16, fontWeight: FontWeight.w800)),
+            Text(_safeTr(l10n, 'nav_profile', 'Profil'),
+                style: const TextStyle(
+                    color: MediaLightPalette.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800)),
         centerTitle: true,
       ),
       body: profileAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator(color: ThixPolicy.primary)),
+        loading: () => const Center(
+            child: CircularProgressIndicator(color: ThixPolicy.primary)),
         error: (e, _) => _buildErrorState(l10n, e.toString()),
         data: (bundle) {
-          if (bundle.hasError || bundle.profile == null) return _buildNotFoundState(l10n, bundle.error ?? 'Introuvable');
+          if (bundle.hasError || bundle.profile == null) {
+            return _buildNotFoundState(l10n, bundle.error ?? 'Introuvable');
+          }
           return _buildProfileContent(bundle, l10n);
         },
       ),
     );
   }
 
-  Widget _buildErrorState(AppLocalizations l10n, String error) => Center(child: Text(error));
-  Widget _buildNotFoundState(AppLocalizations l10n, String message) => Center(child: Text(message));
+  Widget _buildErrorState(AppLocalizations l10n, String error) =>
+      Center(child: Text(error));
+
+  Widget _buildNotFoundState(AppLocalizations l10n, String message) =>
+      Center(child: Text(message));
 
   Widget _buildProfileContent(UserProfileBundle bundle, AppLocalizations l10n) {
     final isMe = Supabase.instance.client.auth.currentUser?.id == widget.userId;
+    
+    // ✅ Extraction des données de certification
+    final certTier = bundle.profile?['certification_tier'] as String?;
+    final certStatus = bundle.profile?['certification_status'] as String?;
+    final isCertified = certStatus == 'approved' || 
+                        certStatus == 'generated' || 
+                        certStatus == 'active';
 
     return RefreshIndicator(
       onRefresh: _refresh,
       color: ThixPolicy.primary,
       backgroundColor: MediaLightPalette.surface,
       child: CustomScrollView(
-        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics()),
         slivers: [
           SliverToBoxAdapter(
             child: SafeArea(
@@ -137,23 +167,20 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                 stats: bundle.stats,
                 isFollowing: bundle.isFollowing,
                 isMe: isMe,
-                onEditProfile: () {}, // Ton action existante
+                certTier: certTier,
+                isCertified: isCertified,
+                onEditProfile: () {},
               ),
             ),
           ),
-
-          // ✅ LES ONGLETS DE SÉLECTION (Si c'est mon profil)
           SliverToBoxAdapter(
             child: isMe ? _buildTabs(l10n) : _buildPublicTitle(l10n),
           ),
-
-          // ✅ LA GRILLE VIDÉO QUI RÉAGIT À L'ONGLET
           ProfileVideosGrid(
             userId: widget.userId,
             isOwner: isMe,
-            showPrivate: _showPrivate, // Transmet l'état
+            showPrivate: _showPrivate,
           ),
-
           const SliverToBoxAdapter(child: SizedBox(height: 40)),
         ],
       ),
@@ -163,14 +190,21 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
   Widget _buildPublicTitle(AppLocalizations l10n) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: MediaLightPalette.border, width: 1.5))),
+      decoration: const BoxDecoration(
+          border: Border(
+              bottom: BorderSide(color: MediaLightPalette.border, width: 1.5))),
       child: Padding(
         padding: const EdgeInsets.only(bottom: 12, right: 16),
         child: Row(
           children: [
-            const Icon(Icons.grid_view_rounded, color: MediaLightPalette.textPrimary, size: 18),
+            const Icon(Icons.grid_view_rounded,
+                color: MediaLightPalette.textPrimary, size: 18),
             const SizedBox(width: 8),
-            Text(_safeTr(l10n, 'profile_posts', 'Publications'), style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 14, fontWeight: FontWeight.w800)),
+            Text(_safeTr(l10n, 'profile_posts', 'Publications'),
+                style: const TextStyle(
+                    color: MediaLightPalette.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800)),
           ],
         ),
       ),
@@ -216,7 +250,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     );
   }
 
-  Widget _buildTabButton({required String title, required IconData icon, required bool isSelected, required VoidCallback onTap}) {
+  Widget _buildTabButton({
+    required String title,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -224,19 +263,33 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
         decoration: BoxDecoration(
           color: isSelected ? MediaLightPalette.surface : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
-          boxShadow: isSelected ? [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, 2))] : [],
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2))
+                ]
+              : [],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 16, color: isSelected ? MediaLightPalette.textPrimary : MediaLightPalette.textSecondary),
+            Icon(icon,
+                size: 16,
+                color: isSelected
+                    ? MediaLightPalette.textPrimary
+                    : MediaLightPalette.textSecondary),
             const SizedBox(width: 6),
             Text(
               title,
               style: TextStyle(
                 fontSize: 13,
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected ? MediaLightPalette.textPrimary : MediaLightPalette.textSecondary,
+                fontWeight:
+                    isSelected ? FontWeight.w800 : FontWeight.w600,
+                color: isSelected
+                    ? MediaLightPalette.textPrimary
+                    : MediaLightPalette.textSecondary,
               ),
             ),
           ],
