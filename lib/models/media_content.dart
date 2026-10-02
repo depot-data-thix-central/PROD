@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 /// - Sérialisation UTC pour la cohérence des timestamps
 /// - Validation et nettoyage rigoureux des URLs
 /// - Immutabilité stricte des listes pour Riverpod / Bloc
+/// - Support complet des reposts (attribution + compteur)
 class MediaContent {
   // ============================================================================
   // REGEX PRE-COMPILÉES (Optimisation des performances mémoire)
@@ -15,6 +16,10 @@ class MediaContent {
   static final RegExp _javascriptRegex = RegExp(r'javascript:', caseSensitive: false);
   static final RegExp _onEventRegex = RegExp(r'on\w+\s*=', caseSensitive: false);
   static final RegExp _controlCharRegex = RegExp(r'[\x00-\x1F\x7F]');
+  static final RegExp _uuidRegex = RegExp(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+    caseSensitive: false,
+  );
 
   // ============================================================================
   // CHAMPS PRINCIPAUX
@@ -34,6 +39,7 @@ class MediaContent {
   final int viewCount;
   final int likeCount;
   final int commentCount;
+  final int repostCount;          // ✅ Nombre de fois que ce média a été reposté
   final int? rankPosition;
   
   // Flags
@@ -48,6 +54,9 @@ class MediaContent {
   final bool isPaid;
   final double price;
   final String filterApplied;
+
+  // ✅ Repost : ID du média original si celui-ci est un repost
+  final String? repostOf;
   
   // Timestamps (toujours UTC)
   final DateTime createdAt;
@@ -68,6 +77,7 @@ class MediaContent {
     this.viewCount = 0,
     this.likeCount = 0,
     this.commentCount = 0,
+    this.repostCount = 0,           // ✅
     this.rankPosition,
     this.isTrending = false,
     this.isNewRelease = false,
@@ -78,12 +88,14 @@ class MediaContent {
     this.isPaid = false,
     this.price = 0.0,
     this.filterApplied = 'Normal',
+    this.repostOf,                  // ✅
     required this.createdAt,
     required this.updatedAt,
   })  : episodesUrls = List.unmodifiable(episodesUrls),
         assert(id.isNotEmpty, 'MediaContent.id cannot be empty'),
         assert(title.isNotEmpty, 'MediaContent.title cannot be empty'),
-        assert(price >= 0, 'MediaContent.price cannot be negative');
+        assert(price >= 0, 'MediaContent.price cannot be negative'),
+        assert(repostCount >= 0, 'MediaContent.repostCount cannot be negative');
 
   // ============================================================================
   // MÉTHODES UTILITAIRES
@@ -109,6 +121,12 @@ class MediaContent {
   
   /// Indique si le contenu est premium (payant et publié)
   bool get isPremium => isPaid && isPublished && price > 0;
+
+  /// ✅ Indique si ce média est un repost d'un autre média
+  bool get isRepost => repostOf != null && repostOf!.isNotEmpty;
+
+  /// ✅ Indique si ce média a été reposté au moins une fois
+  bool get hasReposts => repostCount > 0;
 
   // ============================================================================
   // SANITIZATION (Anti-XSS & Sécurité)
@@ -140,6 +158,14 @@ class MediaContent {
     return trimmed
         .replaceAll(_controlCharRegex, '')
         .replaceAll(' ', '%20');
+  }
+
+  /// ✅ Valide et sanitise un UUID (pour repostOf)
+  static String? _sanitizeUuid(String? input) {
+    if (input == null || input.trim().isEmpty) return null;
+    final trimmed = input.trim();
+    if (!_uuidRegex.hasMatch(trimmed)) return null;
+    return trimmed;
   }
 
   // ============================================================================
@@ -208,6 +234,7 @@ class MediaContent {
       viewCount: (json['view_count'] as num?)?.toInt() ?? 0,
       likeCount: (json['like_count'] as num?)?.toInt() ?? 0,
       commentCount: (json['comment_count'] as num?)?.toInt() ?? 0,
+      repostCount: ((json['repost_count'] as num?)?.toInt() ?? 0).clamp(0, 999999999), // ✅
       rankPosition: (json['rank_position'] as num?)?.toInt(),
       isTrending: json['is_trending'] == true,
       isNewRelease: json['is_new_release'] == true,
@@ -218,6 +245,7 @@ class MediaContent {
       isPaid: json['is_paid'] == true,
       price: ((json['price'] as num?)?.toDouble() ?? 0.0).clamp(0.0, double.infinity),
       filterApplied: parsedFilter,
+      repostOf: _sanitizeUuid(json['repost_of']?.toString()), // ✅
       createdAt: parsedCreatedAt,
       updatedAt: parsedUpdatedAt,
     );
@@ -239,6 +267,7 @@ class MediaContent {
     'view_count': viewCount,
     'like_count': likeCount,
     'comment_count': commentCount,
+    'repost_count': repostCount,       // ✅
     'rank_position': rankPosition,
     'is_trending': isTrending,
     'is_new_release': isNewRelease,
@@ -249,6 +278,7 @@ class MediaContent {
     'is_paid': isPaid,
     'price': price,
     'filter_applied': filterApplied,
+    'repost_of': repostOf,             // ✅
     'created_at': createdAt.toUtc().toIso8601String(),
     'updated_at': updatedAt.toUtc().toIso8601String(),
   };
@@ -269,6 +299,7 @@ class MediaContent {
     int? viewCount,
     int? likeCount,
     int? commentCount,
+    int? repostCount,           // ✅
     int? rankPosition,
     bool? isTrending,
     bool? isNewRelease,
@@ -279,6 +310,8 @@ class MediaContent {
     bool? isPaid,
     double? price,
     String? filterApplied,
+    String? repostOf,           // ✅
+    bool clearRepostOf = false, // ✅ Permet de supprimer le repost (utile si annulation)
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -294,6 +327,7 @@ class MediaContent {
       viewCount: viewCount ?? this.viewCount,
       likeCount: likeCount ?? this.likeCount,
       commentCount: commentCount ?? this.commentCount,
+      repostCount: repostCount ?? this.repostCount,   // ✅
       rankPosition: rankPosition ?? this.rankPosition,
       isTrending: isTrending ?? this.isTrending,
       isNewRelease: isNewRelease ?? this.isNewRelease,
@@ -304,6 +338,7 @@ class MediaContent {
       isPaid: isPaid ?? this.isPaid,
       price: price ?? this.price,
       filterApplied: filterApplied ?? this.filterApplied,
+      repostOf: clearRepostOf ? null : (repostOf ?? this.repostOf), // ✅
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -325,6 +360,7 @@ class MediaContent {
 
   @override
   String toString() {
-    return 'MediaContent(id: $id, title: $title, type: $type, isSeries: $isSeries, isPaid: $isPaid)';
+    final repostInfo = isRepost ? ', repostOf: $repostOf' : '';
+    return 'MediaContent(id: $id, title: $title, type: $type, isSeries: $isSeries, isPaid: $isPaid, repostCount: $repostCount$repostInfo)';
   }
 }
