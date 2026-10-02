@@ -344,6 +344,11 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
     final isImage = mime.toLowerCase().contains('image');
     final accent = _typeAccentColor(mime, res['doc_type'] as String?);
 
+    // CORRECTION : initiale calculée proprement (avant le showDialog)
+    final ownerNameRaw = (res['owner_name'] as String?) ?? '';
+    final ownerInitial =
+        ownerNameRaw.isNotEmpty ? ownerNameRaw.substring(0, 1).toUpperCase() : '?';
+
     Future<String>? downloadFuture;
     if (storagePath.isNotEmpty) {
       downloadFuture = _docs.createDownloadUrl(storagePath: storagePath);
@@ -369,14 +374,7 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
                     backgroundImage:
                         avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
                     child: avatarUrl.isEmpty
-                        ? Text(
-                            (((res['owner_name'] as String?)
-                                        ?.isNotEmpty ==
-                                    true
-                                ? (res['owner_name'] as String)
-                                    .substring(0, 1)
-                                : '?')
-                              .toUpperCase(),
+                        ? Text(ownerInitial,
                             style: const TextStyle(
                                 color: _V.primary, fontWeight: FontWeight.bold))
                         : null,
@@ -1968,110 +1966,133 @@ class _RecuTab extends StatefulWidget {
 class _RecuTabState extends State<_RecuTab> {
   final Set<String> _autoDestroyed = {};
 
-  Future<void> _handleOpenShare(BuildContext context, Map<String, dynamic> share) async {
-  final autoDestructRaw = share['auto_destruct_at'];
-  final hasPassword = (share['password_hash'] as String?)?.isNotEmpty == true;
-  final shareId = share['id']?.toString();
-  final documentId = share['document_id']?.toString();
+  Future<void> _handleOpenShare(
+      BuildContext context, Map<String, dynamic> share) async {
+    final autoDestructRaw = share['auto_destruct_at'];
+    final hasPassword =
+        (share['password_hash'] as String?)?.isNotEmpty == true;
+    final shareId = share['id']?.toString();
+    final documentId = share['document_id']?.toString();
 
-  if (shareId == null || documentId == null) return;
+    if (shareId == null || documentId == null) return;
 
-  if (autoDestructRaw != null) {
-    final autoAt = DateTime.tryParse(autoDestructRaw.toString());
-    if (autoAt != null && autoAt.isBefore(DateTime.now())) {
-      await widget.docsService.markShareDestroyed(shareId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Ce document a expiré et a été détruit.', style: TextStyle(color: Colors.white)),
-            backgroundColor: _V.danger,
-          ),
-        );
+    if (autoDestructRaw != null) {
+      final autoAt = DateTime.tryParse(autoDestructRaw.toString());
+      if (autoAt != null && autoAt.isBefore(DateTime.now())) {
+        await widget.docsService.markShareDestroyed(shareId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Ce document a expiré et a été détruit.',
+                  style: TextStyle(color: Colors.white)),
+              backgroundColor: _V.danger,
+            ),
+          );
+        }
+        return;
       }
-      return;
     }
-  }
 
-  if (hasPassword) {
-    final stored = share['password_hash'] as String?;
-    final ctrl = TextEditingController();
-    String? error;
-    final entered = await showDialog<String>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlg) => Dialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text('Mot de passe requis', style: TextStyle(color: _V.textMain, fontSize: 18, fontWeight: FontWeight.w900)),
-                const SizedBox(height: 16),
-                _LightTextField(controller: ctrl, label: 'Mot de passe', obscureText: true),
-                if (error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(error!, style: const TextStyle(color: _V.danger, fontSize: 12)),
+    if (hasPassword) {
+      final stored = share['password_hash'] as String?;
+      final ctrl = TextEditingController();
+      String? error;
+      final entered = await showDialog<String>(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDlg) => Dialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20)),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text('Mot de passe requis',
+                      style: TextStyle(
+                          color: _V.textMain,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 16),
+                  _LightTextField(
+                      controller: ctrl,
+                      label: 'Mot de passe',
+                      obscureText: true),
+                  if (error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(error!,
+                          style: const TextStyle(
+                              color: _V.danger, fontSize: 12)),
+                    ),
+                  const SizedBox(height: 24),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _V.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () async {
+                      if (stored == null) {
+                        Navigator.pop(ctx, ctrl.text);
+                        return;
+                      }
+                      final valid = await widget.docsService
+                          .verifyPassword(
+                              password: ctrl.text, hash: stored);
+                      if (valid) {
+                        Navigator.pop(ctx, ctrl.text);
+                      } else {
+                        setDlg(() => error = 'Mot de passe incorrect');
+                      }
+                    },
+                    child: const Text('Déchiffrer et Ouvrir',
+                        style: TextStyle(fontWeight: FontWeight.w900)),
                   ),
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _V.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onPressed: () async {
-                    if (stored == null) {
-                      Navigator.pop(ctx, ctrl.text);
-                      return;
-                    }
-                    final valid = await widget.docsService.verifyPassword(password: ctrl.text, hash: stored);
-                    if (valid) {
-                      Navigator.pop(ctx, ctrl.text);
-                    } else {
-                      setDlg(() => error = 'Mot de passe incorrect');
-                    }
-                  },
-                  child: const Text('Déchiffrer et Ouvrir', style: TextStyle(fontWeight: FontWeight.w900)),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    );
-    if (entered == null) return;
-  }
+      );
+      if (entered == null) return;
+    }
 
-  try {
-    final docRow = await widget.docsService.fetchDocumentById(documentId);
-    if (docRow == null) {
+    try {
+      final docRow =
+          await widget.docsService.fetchDocumentById(documentId);
+      if (docRow == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Archive introuvable.',
+                  style: TextStyle(color: Colors.white)),
+              backgroundColor: _V.danger,
+            ),
+          );
+        }
+        return;
+      }
+      await widget.docsService.markShareOpened(shareId,
+          uid: docRow['user_id']?.toString(),
+          docId: docRow['generated_doc_id']?.toString());
+      await widget.onOpenDoc(docRow);
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Archive introuvable.', style: TextStyle(color: Colors.white)),
+            content: Text('Ouverture impossible.',
+                style: TextStyle(color: Colors.white)),
             backgroundColor: _V.danger,
           ),
         );
       }
-      return;
-    }
-    await widget.docsService.markShareOpened(shareId, uid: docRow['user_id']?.toString(), docId: docRow['generated_doc_id']?.toString());
-    await widget.onOpenDoc(docRow);
-  } catch (_) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Ouverture impossible.', style: TextStyle(color: Colors.white)),
-          backgroundColor: _V.danger,
-        ),
-      );
     }
   }
-}
+
   @override
   Widget build(BuildContext context) {
     if (widget.me == null) {
@@ -2287,11 +2308,10 @@ class _HistoriqueTab extends StatelessWidget {
               icon: _iconForAction(action),
               accentColor: action == 'delete'
                   ? _V.danger
-                  : (action == 'screenshot'
-                      ? _V.gold
-                      : _V.primary),
+                  : (action == 'screenshot' ? _V.gold : _V.primary),
               title: _labelForAction(action),
-              subtitle: '${(t['detail'] as String?) ?? (t['doc_id'] as String?) ?? ''}',
+              subtitle:
+                  '${(t['detail'] as String?) ?? (t['doc_id'] as String?) ?? ''}',
               trailing: formatDate(t['created_at']),
             );
           },
@@ -2447,9 +2467,9 @@ class _UploadDocumentSheetState extends State<_UploadDocumentSheet> {
                         borderRadius: BorderRadius.circular(16),
                         borderSide: const BorderSide(color: _V.border))),
                 items: [
-                  const DropdownMenuItem(
+                  const DropdownMenuItem<String?>(
                       value: null, child: Text('Racine principale')),
-                  ...widget.folders.map((f) => DropdownMenuItem(
+                  ...widget.folders.map((f) => DropdownMenuItem<String?>(
                       value: f['id'] as String,
                       child: Text(f['name'] as String? ?? 'Dossier'))),
                 ],
@@ -2618,8 +2638,7 @@ class _SendDocumentSheetState extends State<_SendDocumentSheet> {
 
   void _onRecipientsChanged(String value) {
     _debounce?.cancel();
-    _debounce =
-        Timer(const Duration(milliseconds: 500), () async {
+    _debounce = Timer(const Duration(milliseconds: 500), () async {
       final ids = value
           .split(RegExp(r'[,;\s]+'))
           .map((e) => e.trim())
@@ -2629,8 +2648,7 @@ class _SendDocumentSheetState extends State<_SendDocumentSheet> {
         return;
       }
       setState(() => _verifying = true);
-      final profile =
-          await widget.docsService.verifyThixId(ids.last);
+      final profile = await widget.docsService.verifyThixId(ids.last);
       if (!mounted) return;
       setState(() {
         _verifying = false;
@@ -2745,11 +2763,9 @@ class _SendDocumentSheetState extends State<_SendDocumentSheet> {
                       'Document';
                   return DropdownMenuItem(
                       value: id,
-                      child:
-                          Text(title, overflow: TextOverflow.ellipsis));
+                      child: Text(title, overflow: TextOverflow.ellipsis));
                 }).toList(),
-                onChanged: (v) =>
-                    setState(() => _selectedDocId = v),
+                onChanged: (v) => setState(() => _selectedDocId = v),
               ),
               const SizedBox(height: 16),
               _LightTextField(
@@ -2857,8 +2873,7 @@ class _SendDocumentSheetState extends State<_SendDocumentSheet> {
                             fontWeight: FontWeight.w800),
                         items: const [
                           DropdownMenuItem(
-                              value: 'secondes',
-                              child: Text('Secondes')),
+                              value: 'secondes', child: Text('Secondes')),
                           DropdownMenuItem(
                               value: 'minutes', child: Text('Minutes')),
                           DropdownMenuItem(
@@ -2910,8 +2925,8 @@ class _SendDocumentSheetState extends State<_SendDocumentSheet> {
                               const SnackBar(
                                   content: Text(
                                       'Veuillez sélectionner une archive.',
-                                      style: TextStyle(
-                                          color: Colors.white)),
+                                      style:
+                                          TextStyle(color: Colors.white)),
                                   backgroundColor: _V.danger));
                           return;
                         }
@@ -2925,8 +2940,8 @@ class _SendDocumentSheetState extends State<_SendDocumentSheet> {
                               const SnackBar(
                                   content: Text(
                                       'Indiquez au moins un destinataire.',
-                                      style: TextStyle(
-                                          color: Colors.white)),
+                                      style:
+                                          TextStyle(color: Colors.white)),
                                   backgroundColor: _V.danger));
                           return;
                         }
@@ -2937,8 +2952,7 @@ class _SendDocumentSheetState extends State<_SendDocumentSheet> {
                         await widget.onSend(_SendPayload(
                           documentId: _selectedDocId!,
                           docIdLabel:
-                              (selectedDoc['generated_doc_id']
-                                      as String?) ??
+                              (selectedDoc['generated_doc_id'] as String?) ??
                                   (selectedDoc['doc_id'] as String?),
                           recipients: recipients,
                           subject: _subjectC.text.trim().isEmpty
@@ -2963,9 +2977,7 @@ class _SendDocumentSheetState extends State<_SendDocumentSheet> {
                             strokeWidth: 2, color: Colors.white))
                     : const Icon(Icons.send_rounded, size: 20),
                 label: Text(
-                    _sending
-                        ? 'Transmission...'
-                        : 'TRANSMETTRE LE DOCUMENT',
+                    _sending ? 'Transmission...' : 'TRANSMETTRE LE DOCUMENT',
                     style: const TextStyle(
                         fontWeight: FontWeight.w900,
                         letterSpacing: 0.5)),
