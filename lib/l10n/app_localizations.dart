@@ -2421,7 +2421,7 @@ const Map<String, String> _fr = {
 'login_new_user': 'Nouveau sur la plateforme ?',
 'login_create_account': 'Créer un compte',
 // ─── THIX VAULT (COFFRE-FORT) ───
-'vault_title': 'THIX VAULT',
+
 'vault_secure': 'SÉCURISÉ',
 'vault_search_hint': 'Rechercher titre, ID, type…',
 'vault_results': '{0} résultat(s)',
@@ -5012,7 +5012,7 @@ const Map<String, String> _en = {
 'login_new_user': 'New user?',
 'login_create_account': 'Create an account',
 // ─── THIX VAULT ───
-'vault_title': 'THIX VAULT',
+
 'vault_secure': 'SECURE',
 'vault_search_hint': 'Search title, ID, type…',
 'vault_results': '{0} result(s)',
@@ -7605,7 +7605,7 @@ const Map<String, String> _sw = {
 'login_new_user': 'Je, wewe ni mgeni?',
 'login_create_account': 'Fungua akaunti',
 // ─── THIX VAULT (KIKAPU CHA SIRI / VAULT) ───
-'vault_title': 'THIX VAULT',
+
 'vault_secure': 'IMELINDWA',
 'vault_search_hint': 'Tafuta kichwa, ID, aina…',
 'vault_results': 'Matokeo {0}',
@@ -10159,7 +10159,7 @@ const Map<String, String> _pt = {
 'login_create_account': 'Criar uma conta',
 
 // ─── THIX VAULT (COFRE) ───
-'vault_title': 'THIX VAULT',
+
 'vault_secure': 'SEGURO',
 'vault_search_hint': 'Pesquisar título, ID, tipo…',
 'vault_results': '{0} resultado(s)',
@@ -12713,7 +12713,7 @@ const Map<String, String> _ar = {
 'login_new_user': 'مستخدم جديد؟',
 'login_create_account': 'إنشاء حساب',
 // ─── THIX VAULT (الخزنة الآمنة) ───
-'vault_title': 'THIX VAULT',
+
 'vault_secure': 'آمن',
 'vault_search_hint': 'البحث عن العنوان، المعرف، النوع…',
 'vault_results': '{0} نتيجة',
@@ -17063,7 +17063,7 @@ const Map<String, String> _es = {
 'login_new_user': '¿Nuevo usuario?',
 'login_create_account': 'Crear una cuenta',
 // ─── THIX VAULT (BÓVEDA) ───
-'vault_title': 'THIX VAULT',
+
 'vault_secure': 'SEGURO',
 'vault_search_hint': 'Buscar título, ID, tipo…',
 'vault_results': '{0} resultado(s)',
