@@ -89,6 +89,73 @@ class UserProfileBundle {
 }
 
 // ============================================================================
+// HELPER : CHARGEMENT CERTIFICATION AVEC FALLBACKS
+// ============================================================================
+
+Future<Map<String, String?>> _loadCertificationData(String userId) async {
+  final client = Supabase.instance.client;
+  String? tier;
+  String? status;
+
+  try {
+    // 1) Essayer depuis profiles (colonnes directes)
+    final p = await client
+        .from('profiles')
+        .select('certification_tier, certification_status')
+        .eq('id', userId)
+        .maybeSingle()
+        .timeout(const Duration(seconds: 5));
+
+    tier = (p?['certification_tier'] as String?)?.trim();
+    status = (p?['certification_status'] as String?)?.trim().toLowerCase();
+    
+    _ProviderLogger.info('Cert from profiles', {'tier': tier, 'status': status});
+
+    // 2) Fallback : table certifications
+    if ((tier == null || tier.isEmpty) && (status == null || status.isEmpty)) {
+      try {
+        final c = await client
+            .from('certifications')
+            .select('tier, status')
+            .eq('user_id', userId)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle()
+            .timeout(const Duration(seconds: 3));
+        if (c != null) {
+          tier = (c['tier'] as String?)?.trim();
+          status = (c['status'] as String?)?.trim().toLowerCase();
+          _ProviderLogger.info('Cert from certifications', {'tier': tier, 'status': status});
+        }
+      } catch (_) {}
+    }
+
+    // 3) Fallback : table certification_requests
+    if ((tier == null || tier.isEmpty) && (status == null || status.isEmpty)) {
+      try {
+        final r = await client
+            .from('certification_requests')
+            .select('tier, status')
+            .eq('user_id', userId)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle()
+            .timeout(const Duration(seconds: 3));
+        if (r != null) {
+          tier = (r['tier'] as String?)?.trim();
+          status = (r['status'] as String?)?.trim().toLowerCase();
+          _ProviderLogger.info('Cert from certification_requests', {'tier': tier, 'status': status});
+        }
+      } catch (_) {}
+    }
+  } catch (e) {
+    _ProviderLogger.error('Cert load failed', {'error': '$e'});
+  }
+
+  return {'tier': tier, 'status': status};
+}
+
+// ============================================================================
 // PROVIDER : DONNÉES DE PROFIL
 // ============================================================================
 
@@ -111,27 +178,39 @@ final userProfileDataProvider = FutureProvider.autoDispose.family<UserProfileBun
       service.fetchProfile(userId),
       service.fetchUserStats(userId),
       service.isFollowing(userId),
+      _loadCertificationData(userId), // ✅ AJOUT : chargement certification
     ]).timeout(_kQueryTimeout);
 
     final profile = results[0] as Map<String, dynamic>?;
     final stats = Map<String, int>.from(results[1] as Map);
     final isFollowing = results[2] as bool;
+    final certData = results[3] as Map<String, String?>; // ✅ Résultat certification
 
     if (profile == null) return UserProfileBundle.error('Profil introuvable');
 
+    // ✅ Fusion : profile de base + données certification
     final sanitizedProfile = {
       ...profile,
       'username': _sanitize(profile['username']?.toString()),
       'full_name': _sanitize(profile['full_name']?.toString()),
       'bio': _sanitize(profile['bio']?.toString()),
       'avatar_url': profile['avatar_url'],
+      'certification_tier': certData['tier'],     // ✅ Ajout certification
+      'certification_status': certData['status'], // ✅ Ajout certification
     };
 
     _ProfileCache.setProfile(userId, sanitizedProfile);
     _ProfileCache.setStats(userId, stats);
 
+    _ProviderLogger.info('Profile loaded', {
+      'userId': userId,
+      'certTier': certData['tier'],
+      'certStatus': certData['status'],
+    });
+
     return UserProfileBundle(profile: sanitizedProfile, stats: stats, isFollowing: isFollowing);
   } catch (e) {
+    _ProviderLogger.error('Profile load failed', {'error': '$e'});
     return UserProfileBundle.error('Erreur de chargement, veuillez vérifier votre connexion.');
   }
 });
@@ -152,7 +231,6 @@ class UserPostsState {
 }
 
 class UserPostsNotifier extends StateNotifier<AsyncValue<UserPostsState>> {
-  // ✅ AJOUT DE isPublished pour filtrer les vidéos privées
   UserPostsNotifier(this.userId, {this.isPublished = true}) : super(const AsyncValue.loading()) {
     _load();
   }
@@ -228,7 +306,7 @@ class UserPostsNotifier extends StateNotifier<AsyncValue<UserPostsState>> {
         .from('media_content')
         .select('*')
         .eq('user_id', userId)
-        .eq('is_published', isPublished); // ✅ FILTRE APPLIQUÉ ICI
+        .eq('is_published', isPublished);
 
     if (cursor != null) {
       query = query.lt('created_at', cursor.toIso8601String());
@@ -239,7 +317,6 @@ class UserPostsNotifier extends StateNotifier<AsyncValue<UserPostsState>> {
   }
 }
 
-// ✅ DEUX PROVIDERS : 1 pour les publics, 1 pour les privés
 final userPostsProvider = StateNotifierProvider.autoDispose.family<UserPostsNotifier, AsyncValue<UserPostsState>, String>(
   (ref, userId) => UserPostsNotifier(userId, isPublished: true),
 );
