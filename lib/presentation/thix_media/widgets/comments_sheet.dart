@@ -1,4 +1,4 @@
-/// CommentsSheet (Production Enterprise) — v2 Light
+/// CommentsSheet (Production Enterprise) — v3 Light Fixed
 /// i18n + sanitization + Semantics + timeouts + ThixPolicy + Certification Badges
 import 'dart:ui';
 
@@ -72,29 +72,30 @@ class _CertInfo {
     if (!verified) return _CommentsPalette.textMut;
     switch (tier) {
       case _CertTier.official:
-        return const Color(0xFF1E40AF); // Bleu officiel
+        return const Color(0xFF1E40AF);
       case _CertTier.enterprise:
-        return const Color(0xFF7C3AED); // Violet
+        return const Color(0xFF7C3AED);
       case _CertTier.premium:
-        return _CommentsPalette.gold; // Or
+        return _CommentsPalette.gold;
       case _CertTier.standard:
-        return const Color(0xFF0891B2); // Cyan
+        return const Color(0xFF0891B2);
       case _CertTier.none:
         return _CommentsPalette.textMut;
     }
   }
 
-  String label(AppLocalizations l10n) {
+  // ✅ CORRIGÉ : utilise _safeTr au lieu de fallback
+  String label(AppLocalizations l10n, String Function(AppLocalizations, String, String) safeTr) {
     if (!verified) return '';
     switch (tier) {
       case _CertTier.official:
-        return l10n.t('certification_tier_official', fallback: 'Officiel');
+        return safeTr(l10n, 'certification_tier_official', 'Officiel');
       case _CertTier.enterprise:
-        return l10n.t('certification_tier_enterprise', fallback: 'Entreprise');
+        return safeTr(l10n, 'certification_tier_enterprise', 'Entreprise');
       case _CertTier.premium:
-        return l10n.t('certification_tier_premium', fallback: 'Premium');
+        return safeTr(l10n, 'certification_tier_premium', 'Premium');
       case _CertTier.standard:
-        return l10n.t('certification_tier_standard', fallback: 'Standard');
+        return safeTr(l10n, 'certification_tier_standard', 'Standard');
       case _CertTier.none:
         return '';
     }
@@ -126,12 +127,16 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
   CommentItem? _editingComment;
   final Set<String> _likedIds = {};
   final Map<String, int> _localCommentLikes = {};
-  
-  // Cache des certifications par user_id
+
   final Map<String, _CertInfo> _certCache = {};
-  
-  // Avatar de l'utilisateur connecté
   String? _currentUserAvatarUrl;
+
+  // ✅ AJOUTÉ : helper _safeTr pour remplacer fallback:
+  String _safeTr(AppLocalizations l10n, String key, String fallback) {
+    final val = l10n.t(key);
+    if (val.isEmpty || val == key || val.contains(key)) return fallback;
+    return val;
+  }
 
   @override
   void initState() {
@@ -162,7 +167,6 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
     );
   }
 
-  // Chargement du profil de l'utilisateur connecté pour la barre de saisie
   Future<void> _fetchCurrentUserProfile() async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) return;
@@ -200,17 +204,17 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
     }
   }
 
-  // Récupération batch des certifications
   Future<void> _loadCertifications(List<CommentItem> comments) async {
     final userIds = comments.map((c) => c.userId).where((id) => id != null && id.isNotEmpty).toSet();
     final toFetch = userIds.where((id) => !_certCache.containsKey(id)).toList();
     if (toFetch.isEmpty) return;
 
     try {
+      // ✅ CORRIGÉ : .in_() → .inFilter()
       final res = await _client
           .from('profiles')
           .select('id, certification_tier, certification_status')
-          .in_('id', toFetch)
+          .inFilter('id', toFetch)
           .timeout(_kQueryTimeout);
 
       if (!mounted) return;
@@ -255,7 +259,8 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
             'id,user_id,user_name,avatar_url,content,created_at,parent_id,like_count,reply_count',
           )
           .eq('media_id', widget.mediaId)
-          .is_('parent_id', null)
+          // ✅ CORRIGÉ : .is_() → .isFilter()
+          .isFilter('parent_id', null)
           .order('created_at', ascending: false)
           .limit(_kRootsLimit)
           .timeout(_kQueryTimeout);
@@ -285,11 +290,12 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
     if (uid == null || _roots.isEmpty) return;
     try {
       final ids = _roots.map((c) => c.id).toList();
+      // ✅ CORRIGÉ : .in_() → .inFilter()
       final res = await _client
           .from('comment_likes')
           .select('comment_id')
           .eq('user_id', uid)
-          .in_('comment_id', ids)
+          .inFilter('comment_id', ids)
           .timeout(_kQueryTimeout);
       if (mounted) {
         setState(() {
@@ -373,7 +379,6 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
           name = p!['full_name'].toString();
         }
 
-        // Mise à jour du cache de certification de l'auteur
         final tierStr = (p?['certification_tier'] ?? '').toString().toLowerCase();
         final statusStr = (p?['certification_status'] ?? '').toString().toLowerCase();
         final verified = statusStr == 'approved' || statusStr == 'generated' || statusStr == 'active';
@@ -594,8 +599,9 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                     ),
                   ),
                   const SizedBox(width: 10),
+                  // ✅ CORRIGÉ : _safeTr au lieu de fallback:
                   Text(
-                    l10n.t('comments_title', fallback: 'Commentaires'),
+                    _safeTr(l10n, 'comments_title', 'Commentaires'),
                     style: const TextStyle(
                       color: _CommentsPalette.textMain,
                       fontSize: 16,
@@ -607,7 +613,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: _CommentsPalette.gold.withOpacity(0.12),
+                      color: _CommentsPalette.gold.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
@@ -680,9 +686,9 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                                 ),
                               ),
                               const SizedBox(height: 4),
+                              // ✅ CORRIGÉ : _safeTr au lieu de fallback:
                               Text(
-                                l10n.t('comments_empty_hint',
-                                    fallback: 'Soyez le premier à commenter'),
+                                _safeTr(l10n, 'comments_empty_hint', 'Soyez le premier à commenter'),
                                 style: const TextStyle(
                                   color: _CommentsPalette.textMut,
                                   fontSize: 11,
@@ -781,10 +787,10 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                // Avatar réel de l'utilisateur avec son badge de certification
                 _AvatarWithBadge(
                   url: _currentUserAvatarUrl,
                   cert: myCert,
+                  safeTr: _safeTr,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -830,7 +836,6 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                // Bouton d'envoi doré premium
                 GestureDetector(
                   onTap: _sending ? null : _submit,
                   child: Container(
@@ -850,7 +855,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                           ? null
                           : [
                               BoxShadow(
-                                color: _CommentsPalette.gold.withOpacity(0.4),
+                                color: _CommentsPalette.gold.withValues(alpha: 0.4),
                                 blurRadius: 10,
                                 offset: const Offset(0, 3),
                               ),
@@ -897,7 +902,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
         border: Border.all(color: _CommentsPalette.borderSoft),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withValues(alpha: 0.02),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -914,7 +919,6 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── NOM + BADGE CERTIFICATION ──
                   Row(
                     children: [
                       Flexible(
@@ -932,7 +936,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                       ),
                       if (cert.verified) ...[
                         const SizedBox(width: 5),
-                        _CertificationBadge(cert: cert, l10n: l10n),
+                        _CertificationBadge(cert: cert, l10n: l10n, safeTr: _safeTr),
                       ],
                     ],
                   ),
@@ -983,7 +987,7 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: isLiked
-                                ? ThixPolicy.danger.withOpacity(0.08)
+                                ? ThixPolicy.danger.withValues(alpha: 0.08)
                                 : _CommentsPalette.surfaceSoft,
                             borderRadius: BorderRadius.circular(10),
                           ),
@@ -1083,16 +1087,22 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
 class _CertificationBadge extends StatelessWidget {
   final _CertInfo cert;
   final AppLocalizations l10n;
-  const _CertificationBadge({required this.cert, required this.l10n});
+  final String Function(AppLocalizations, String, String) safeTr;
+
+  const _CertificationBadge({
+    required this.cert,
+    required this.l10n,
+    required this.safeTr,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: cert.badgeColor.withOpacity(0.12),
+        color: cert.badgeColor.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: cert.badgeColor.withOpacity(0.3), width: 0.8),
+        border: Border.all(color: cert.badgeColor.withValues(alpha: 0.3), width: 0.8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1100,7 +1110,7 @@ class _CertificationBadge extends StatelessWidget {
           Icon(Icons.verified_rounded, color: cert.badgeColor, size: 11),
           const SizedBox(width: 3),
           Text(
-            cert.label(l10n),
+            cert.label(l10n, safeTr),
             style: TextStyle(
               color: cert.badgeColor,
               fontSize: 9,
@@ -1118,7 +1128,13 @@ class _CertificationBadge extends StatelessWidget {
 class _AvatarWithBadge extends StatelessWidget {
   final String? url;
   final _CertInfo cert;
-  const _AvatarWithBadge({this.url, required this.cert});
+  final String Function(AppLocalizations, String, String)? safeTr;
+
+  const _AvatarWithBadge({
+    this.url,
+    required this.cert,
+    this.safeTr,
+  });
 
   @override
   Widget build(BuildContext context) {
