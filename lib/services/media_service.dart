@@ -27,7 +27,7 @@ class FeedPage {
   final List<MediaContent> items;
   final List<Map<String, dynamic>> raw;
   const FeedPage({required this.items, required this.raw});
-  
+
   bool get isEmpty => items.isEmpty;
 }
 
@@ -40,19 +40,17 @@ class MediaException implements Exception {
   final String message;
   final Object? cause;
   MediaException(this.code, this.message, [this.cause]);
-  
+
   @override
   String toString() => 'MediaException[$code]: $message';
 }
 
 class MediaValidationException extends MediaException {
-  MediaValidationException(String code, String message)
-      : super(code, message);
+  MediaValidationException(String code, String message) : super(code, message);
 }
 
 class MediaPermissionException extends MediaException {
-  MediaPermissionException(String message)
-      : super('PERMISSION_DENIED', message);
+  MediaPermissionException(String message) : super('PERMISSION_DENIED', message);
 }
 
 class MediaUploadException extends MediaException {
@@ -67,7 +65,6 @@ class MediaUploadException extends MediaException {
 class _MediaValidators {
   _MediaValidators._();
 
-  /// Regex UUID v4 (accepte aussi nil UUID '00000000-0000-0000-0000-000000000000')
   static final _uuidRegex = RegExp(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
     caseSensitive: false,
@@ -90,10 +87,8 @@ class _MediaValidators {
   static String extractFileName(String url) {
     try {
       final uri = Uri.parse(url);
-      // Retirer les query params avant d'extraire le basename
       final cleanPath = uri.path.split('?').first;
       final name = p.basename(cleanPath);
-      // Sanitize : pas de '..', pas de '/'
       if (name.contains('..') || name.contains('/')) {
         return '';
       }
@@ -110,7 +105,7 @@ class _MediaValidators {
 
 class _MediaLogger {
   static const _tag = 'MediaService';
-  
+
   static void info(String msg, [Map<String, dynamic>? data]) =>
       _log('INFO', msg, data);
   static void warn(String msg, [Map<String, dynamic>? data]) =>
@@ -120,7 +115,9 @@ class _MediaLogger {
 
   static void _log(String level, String msg, Map<String, dynamic>? data) {
     if (!kDebugMode && level == 'INFO') return;
-    final dataStr = data != null ? ' ${data.entries.map((e) => '${e.key}=${e.value}').join(', ')}' : '';
+    final dataStr = data != null
+        ? ' ${data.entries.map((e) => '${e.key}=${e.value}').join(', ')}'
+        : '';
     debugPrint('[$_tag] [$level] $msg$dataStr');
   }
 }
@@ -131,10 +128,12 @@ class _MediaLogger {
 
 class _AsyncLock {
   Future<void>? _last;
-  
+
   Future<T> run<T>(Future<T> Function() action) async {
     while (_last != null) {
-      try { await _last; } catch (_) {}
+      try {
+        await _last;
+      } catch (_) {}
     }
     final completer = Completer<void>();
     _last = completer.future;
@@ -153,31 +152,30 @@ class _AsyncLock {
 
 class MediaService {
   static MediaService? _instance;
-  
+
   final SupabaseClient _client;
   final Uuid _uuid = const Uuid();
   final _AsyncLock _flushLock = _AsyncLock();
-  
-  // Batch analytics state (protégé par _flushLock)
+
   final Set<String> _pendingViews = {};
   Timer? _viewTimer;
   int _consecutiveFailures = 0;
   bool _disposed = false;
 
-  // Constants
-  static const _maxFileSize = 500 * 1024 * 1024;       // 500 MB
-  static const _maxThumbSize = 10 * 1024 * 1024;       // 10 MB
-  static const _maxCoverSize = 5 * 1024 * 1024;        // 5 MB
+  static const _maxFileSize = 500 * 1024 * 1024;
+  static const _maxThumbSize = 10 * 1024 * 1024;
+  static const _maxCoverSize = 5 * 1024 * 1024;
   static const _batchThreshold = 10;
   static const _flushInterval = Duration(seconds: 15);
   static const _maxRetryDelay = Duration(minutes: 2);
   static const _supabaseTimeout = Duration(seconds: 15);
   static const _uploadTimeout = Duration(minutes: 5);
-  
-  static const _allowedVideoExts = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'};
+
+  static const _allowedVideoExts = {
+    '.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'
+  };
   static const _allowedImageExts = {'.jpg', '.jpeg', '.png', '.webp'};
 
-  /// Factory injectable pour tests (client custom) ou prod (singleton)
   factory MediaService({SupabaseClient? client}) {
     _instance ??= MediaService._internal(client ?? Supabase.instance.client);
     return _instance!;
@@ -189,14 +187,12 @@ class MediaService {
 
   SupabaseClient get supabase => _client;
 
-  /// Cleanup pour tests (reset singleton + cancel timer)
   @visibleForTesting
   static void resetForTesting() {
     _instance?.dispose();
     _instance = null;
   }
 
-  /// Dispose les ressources (timers)
   void dispose() {
     if (_disposed) return;
     _disposed = true;
@@ -206,62 +202,69 @@ class MediaService {
   }
 
   // ============================================================================
-  // MIME DETECTION (complet : JPEG, PNG, WebP, MP4/MOV, WebM, MKV, AVI)
+  // MIME DETECTION
   // ============================================================================
 
   String _detectMimeType(Uint8List bytes) {
     if (bytes.length < 12) return 'application/octet-stream';
 
-    // JPEG : FF D8 FF
     if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
       return 'image/jpeg';
     }
 
-    // PNG : 89 50 4E 47 0D 0A 1A 0A
     if (bytes.length >= 8 &&
-        bytes[0] == 0x89 && bytes[1] == 0x50 &&
-        bytes[2] == 0x4E && bytes[3] == 0x47 &&
-        bytes[4] == 0x0D && bytes[5] == 0x0A &&
-        bytes[6] == 0x1A && bytes[7] == 0x0A) {
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47 &&
+        bytes[4] == 0x0D &&
+        bytes[5] == 0x0A &&
+        bytes[6] == 0x1A &&
+        bytes[7] == 0x0A) {
       return 'image/png';
     }
 
-    // WebP : RIFF .... WEBP
     if (bytes.length >= 12 &&
-        bytes[0] == 0x52 && bytes[1] == 0x49 &&
-        bytes[2] == 0x46 && bytes[3] == 0x46 &&
-        bytes[8] == 0x57 && bytes[9] == 0x45 &&
-        bytes[10] == 0x42 && bytes[11] == 0x50) {
+        bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50) {
       return 'image/webp';
     }
 
-    // MP4/MOV/M4V : .. .. .. .. 66 74 79 70 (ftyp)
     if (bytes.length >= 8 &&
-        bytes[4] == 0x66 && bytes[5] == 0x74 &&
-        bytes[6] == 0x79 && bytes[7] == 0x70) {
-      // Détecter brand pour distinguer MOV vs MP4
+        bytes[4] == 0x66 &&
+        bytes[5] == 0x74 &&
+        bytes[6] == 0x79 &&
+        bytes[7] == 0x70) {
       final brand = String.fromCharCodes(bytes.sublist(8, 12));
       if (brand == 'qt  ' || brand == 'M4V ') return 'video/quicktime';
       return 'video/mp4';
     }
 
-    // WebM / MKV (EBML header) : 1A 45 DF A3
-    if (bytes[0] == 0x1A && bytes[1] == 0x45 &&
-        bytes[2] == 0xDF && bytes[3] == 0xA3) {
-      // Distinguer WebM (DocType=webm) vs MKV (DocType=matroska)
-      // Le DocType est à offset variable après le header EBML
-      // Heuristique : chercher "webm" dans les 100 premiers bytes
-      final header = String.fromCharCodes(bytes.sublist(0, bytes.length.clamp(0, 100)));
+    if (bytes[0] == 0x1A &&
+        bytes[1] == 0x45 &&
+        bytes[2] == 0xDF &&
+        bytes[3] == 0xA3) {
+      final header = String.fromCharCodes(
+          bytes.sublist(0, bytes.length.clamp(0, 100)));
       if (header.contains('webm')) return 'video/webm';
       return 'video/x-matroska';
     }
 
-    // AVI : RIFF .... AVI
     if (bytes.length >= 12 &&
-        bytes[0] == 0x52 && bytes[1] == 0x49 &&
-        bytes[2] == 0x46 && bytes[3] == 0x46 &&
-        bytes[8] == 0x41 && bytes[9] == 0x56 &&
-        bytes[10] == 0x49 && bytes[11] == 0x20) {
+        bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46 &&
+        bytes[8] == 0x41 &&
+        bytes[9] == 0x56 &&
+        bytes[10] == 0x49 &&
+        bytes[11] == 0x20) {
       return 'video/x-msvideo';
     }
 
@@ -277,7 +280,7 @@ class MediaService {
       throw MediaValidationException(
         'FILE_TOO_LARGE',
         'Vidéo trop volumineuse: ${(file.size / 1024 / 1024).toStringAsFixed(1)} MB '
-        '(max ${_maxFileSize ~/ 1024 ~/ 1024} MB)',
+            '(max ${_maxFileSize ~/ 1024 ~/ 1024} MB)',
       );
     }
 
@@ -291,7 +294,8 @@ class MediaService {
 
     final bytes = file.bytes;
     if (bytes == null) {
-      throw MediaValidationException('NO_BYTES', 'Bytes manquants (withData: true requis)');
+      throw MediaValidationException(
+          'NO_BYTES', 'Bytes manquants (withData: true requis)');
     }
 
     final mime = _detectMimeType(bytes);
@@ -313,7 +317,8 @@ class MediaService {
 
     final ext = p.extension(file.name).toLowerCase();
     if (!_allowedImageExts.contains(ext)) {
-      throw MediaValidationException('UNSUPPORTED_FORMAT', 'Format image non supporté: $ext');
+      throw MediaValidationException(
+          'UNSUPPORTED_FORMAT', 'Format image non supporté: $ext');
     }
 
     final bytes = file.bytes;
@@ -344,17 +349,20 @@ class MediaService {
     final expected = ext.toLowerCase().replaceAll('.', '');
     if (expected == 'jpg' || expected == 'jpeg') {
       if (mime != 'image/jpeg') {
-        throw MediaValidationException('MIME_MISMATCH', 'Attendu JPEG, reçu: $mime');
+        throw MediaValidationException(
+            'MIME_MISMATCH', 'Attendu JPEG, reçu: $mime');
       }
     } else if (expected == 'png' && mime != 'image/png') {
-      throw MediaValidationException('MIME_MISMATCH', 'Attendu PNG, reçu: $mime');
+      throw MediaValidationException(
+          'MIME_MISMATCH', 'Attendu PNG, reçu: $mime');
     } else if (expected == 'webp' && mime != 'image/webp') {
-      throw MediaValidationException('MIME_MISMATCH', 'Attendu WebP, reçu: $mime');
+      throw MediaValidationException(
+          'MIME_MISMATCH', 'Attendu WebP, reçu: $mime');
     }
   }
 
   // ============================================================================
-  // OWNERSHIP & PERMISSIONS (optimisé : 1 RPC au lieu de 2 requêtes)
+  // OWNERSHIP & PERMISSIONS
   // ============================================================================
 
   Future<bool> _isMediaOwner(String mediaId) async {
@@ -371,7 +379,8 @@ class MediaService {
           .timeout(_supabaseTimeout);
       return media?['user_id'] == user.id;
     } catch (e) {
-      _MediaLogger.warn('Ownership check failed', {'mediaId': mediaId, 'error': '$e'});
+      _MediaLogger.warn('Ownership check failed',
+          {'mediaId': mediaId, 'error': '$e'});
       return false;
     }
   }
@@ -390,7 +399,7 @@ class MediaService {
   }
 
   // ============================================================================
-  // BATCH ANALYTICS (race-condition safe, retry exponentiel)
+  // BATCH ANALYTICS
   // ============================================================================
 
   void registerView(String id) {
@@ -404,12 +413,12 @@ class MediaService {
       if (_pendingViews.length >= _batchThreshold) {
         await _flushLocked();
       } else {
-        _viewTimer ??= Timer(_flushInterval, () => _flushLock.run(_flushLocked));
+        _viewTimer ??=
+            Timer(_flushInterval, () => _flushLock.run(_flushLocked));
       }
     });
   }
 
-  /// Doit être appelé sous _flushLock
   Future<void> _flushLocked() async {
     _viewTimer?.cancel();
     _viewTimer = null;
@@ -426,20 +435,19 @@ class MediaService {
       _MediaLogger.info('Batch flushed', {'count': batch.length});
     } catch (e) {
       _consecutiveFailures++;
-      // Backoff exponentiel : 30s, 60s, 120s (max)
-      final delaySec = (30 * (1 << (_consecutiveFailures - 1))).clamp(30, _maxRetryDelay.inSeconds);
+      final delaySec = (30 * (1 << (_consecutiveFailures - 1)))
+          .clamp(30, _maxRetryDelay.inSeconds);
       _MediaLogger.warn('Batch flush failed, scheduling retry', {
         'count': batch.length,
         'failures': _consecutiveFailures,
         'retryIn': '${delaySec}s',
       });
-      // Remettre le batch ET planifier le retry
       _pendingViews.addAll(batch);
-      _viewTimer = Timer(Duration(seconds: delaySec), () => _flushLock.run(_flushLocked));
+      _viewTimer =
+          Timer(Duration(seconds: delaySec), () => _flushLock.run(_flushLocked));
     }
   }
 
-  /// Force flush immédiat (pour dispose / logout)
   Future<void> flushPendingViews() => _flushLock.run(_flushLocked);
 
   // ============================================================================
@@ -461,7 +469,8 @@ class MediaService {
           .timeout(_supabaseTimeout);
 
       if (data is! List) {
-        _MediaLogger.error('Unexpected feed data type', {'type': data.runtimeType.toString()});
+        _MediaLogger.error('Unexpected feed data type',
+            {'type': data.runtimeType.toString()});
         return const FeedPage(items: [], raw: []);
       }
 
@@ -516,7 +525,8 @@ class MediaService {
           .rpc('toggle_media_like', params: {'p_media_id': id})
           .timeout(_supabaseTimeout);
       if (r is bool) return r;
-      _MediaLogger.warn('toggleLike unexpected return type', {'type': r.runtimeType.toString()});
+      _MediaLogger.warn('toggleLike unexpected return type',
+          {'type': r.runtimeType.toString()});
       return false;
     } catch (e) {
       _MediaLogger.error('toggleLike failed', {'id': id, 'error': '$e'});
@@ -539,7 +549,8 @@ class MediaService {
           .timeout(_supabaseTimeout);
       return result == true;
     } catch (e) {
-      _MediaLogger.warn('toggleFollow RPC failed, using fallback', {'error': '$e'});
+      _MediaLogger.warn('toggleFollow RPC failed, using fallback',
+          {'error': '$e'});
       return await _toggleFollowFallback(uid, targetId);
     }
   }
@@ -606,12 +617,12 @@ class MediaService {
       if (r is List) return r.map((e) => e.toString()).toSet();
       return {};
     } catch (e) {
-      _MediaLogger.warn('getLikedMediaIds RPC failed, using chunked fallback', {'error': '$e'});
+      _MediaLogger.warn('getLikedMediaIds RPC failed, using chunked fallback',
+          {'error': '$e'});
       return await _getLikedIdsFallback(validIds);
     }
   }
 
-  /// Fallback par chunks de 500 (évite la limite inFilter de Supabase)
   Future<Set<String>> _getLikedIdsFallback(List<String> ids) async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) return {};
@@ -631,7 +642,8 @@ class MediaService {
           result.addAll(r.map((e) => (e as Map)['media_id'].toString()));
         }
       } catch (e) {
-        _MediaLogger.error('getLikedIds chunk failed', {'chunk': i, 'error': '$e'});
+        _MediaLogger.error('getLikedIds chunk failed',
+            {'chunk': i, 'error': '$e'});
       }
     }
     return result;
@@ -659,11 +671,22 @@ class MediaService {
   Future<Map<String, dynamic>> fetchUserStats(String userId) async {
     _MediaValidators.requireValidUuid(userId, 'userId');
     try {
-      // ✅ Parallèle : 3 requêtes en simultané
       final results = await Future.wait([
-        _client.from('follows').count(CountOption.exact).eq('following_id', userId).timeout(_supabaseTimeout),
-        _client.from('follows').count(CountOption.exact).eq('follower_id', userId).timeout(_supabaseTimeout),
-        _client.from('media_content').count(CountOption.exact).eq('user_id', userId).timeout(_supabaseTimeout),
+        _client
+            .from('follows')
+            .count(CountOption.exact)
+            .eq('following_id', userId)
+            .timeout(_supabaseTimeout),
+        _client
+            .from('follows')
+            .count(CountOption.exact)
+            .eq('follower_id', userId)
+            .timeout(_supabaseTimeout),
+        _client
+            .from('media_content')
+            .count(CountOption.exact)
+            .eq('user_id', userId)
+            .timeout(_supabaseTimeout),
       ]);
       return {
         'followers': results[0],
@@ -708,7 +731,7 @@ class MediaService {
   }
 
   // ============================================================================
-  // UPLOAD WITH RETRY (exponentiel backoff)
+  // UPLOAD WITH RETRY
   // ============================================================================
 
   Future<String> _uploadWithRetry(
@@ -728,7 +751,7 @@ class MediaService {
               bytes,
               fileOptions: FileOptions(
                 cacheControl: '31536000',
-                upsert: false,  // ✅ Pas d'upsert : éviter overwrite accidentel
+                upsert: false,
                 contentType: contentType,
               ),
             )
@@ -736,9 +759,10 @@ class MediaService {
         return _client.storage.from('media').getPublicUrl(path);
       } catch (e) {
         if (attempt >= maxAttempts) {
-          throw MediaUploadException('Upload failed after $maxAttempts attempts', e);
+          throw MediaUploadException(
+              'Upload failed after $maxAttempts attempts', e);
         }
-        final delay = Duration(seconds: 1 << (attempt - 1));  // 1s, 2s, 4s
+        final delay = Duration(seconds: 1 << (attempt - 1));
         _MediaLogger.warn('Upload retry', {
           'path': path,
           'attempt': attempt,
@@ -749,9 +773,13 @@ class MediaService {
     }
   }
 
-  Future<String> _uploadFile(PlatformFile f, String base, String expectedType) async {
-    if (expectedType == 'video') _validateVideo(f);
-    else if (expectedType == 'image') _validateImage(f);
+  Future<String> _uploadFile(
+      PlatformFile f, String base, String expectedType) async {
+    if (expectedType == 'video') {
+      _validateVideo(f);
+    } else if (expectedType == 'image') {
+      _validateImage(f);
+    }
 
     final bytes = f.bytes;
     if (bytes == null) {
@@ -800,14 +828,15 @@ class MediaService {
     if (validPaths.isEmpty) return;
     try {
       await _client.storage.from('media').remove(validPaths);
-      _MediaLogger.info('Cleaned up orphaned files', {'count': validPaths.length});
+      _MediaLogger.info('Cleaned up orphaned files',
+          {'count': validPaths.length});
     } catch (e) {
       _MediaLogger.warn('Cleanup failed (non-critical)', {'error': '$e'});
     }
   }
 
   // ============================================================================
-  // CREATE (avec rollback atomique + compteur précis)
+  // CREATE
   // ============================================================================
 
   Future<MediaContent> insertWithFiles(
@@ -829,8 +858,7 @@ class MediaService {
 
     final nid = _uuid.v4();
     final uploadedPaths = <String>[];
-    
-    // Compteur précis : vidéo(1) + épisodes(n) + cover(1) + db(1) = n+3
+
     final totalSteps = 1 + (episodeFiles?.length ?? 0) + 1 + 1;
     var doneSteps = 0;
     void bump() {
@@ -842,37 +870,41 @@ class MediaService {
     final episodeUrls = <String>[];
 
     try {
-      // 1. Vidéo principale
       if (videoFile != null) {
-        videoUrl = await _uploadFile(videoFile, 'thix_media/$nid/videos', 'video');
-        uploadedPaths.add('thix_media/$nid/videos/${_MediaValidators.extractFileName(videoUrl)}');
+        videoUrl =
+            await _uploadFile(videoFile, 'thix_media/$nid/videos', 'video');
+        uploadedPaths.add(
+            'thix_media/$nid/videos/${_MediaValidators.extractFileName(videoUrl)}');
       }
       bump();
 
-      // 2. Épisodes
       if (episodeFiles != null) {
         for (final ep in episodeFiles) {
-          final url = await _uploadFile(ep, 'thix_media/$nid/episodes', 'video');
+          final url =
+              await _uploadFile(ep, 'thix_media/$nid/episodes', 'video');
           episodeUrls.add(url);
-          uploadedPaths.add('thix_media/$nid/episodes/${_MediaValidators.extractFileName(url)}');
+          uploadedPaths.add(
+              'thix_media/$nid/episodes/${_MediaValidators.extractFileName(url)}');
           bump();
         }
       }
 
-      // 3. Couverture
       if (coverFile != null) {
-        coverUrl = await _uploadFile(coverFile, 'thix_media/$nid/covers', 'image');
-        uploadedPaths.add('thix_media/$nid/covers/${_MediaValidators.extractFileName(coverUrl)}');
+        coverUrl =
+            await _uploadFile(coverFile, 'thix_media/$nid/covers', 'image');
+        uploadedPaths.add(
+            'thix_media/$nid/covers/${_MediaValidators.extractFileName(coverUrl)}');
       } else if (videoFile != null) {
         final thumb = await _generateThumbnail(videoFile);
         if (thumb != null) {
-          coverUrl = await _uploadBytes(thumb, 'thix_media/$nid/covers', '.jpg');
-          uploadedPaths.add('thix_media/$nid/covers/${_MediaValidators.extractFileName(coverUrl)}');
+          coverUrl =
+              await _uploadBytes(thumb, 'thix_media/$nid/covers', '.jpg');
+          uploadedPaths.add(
+              'thix_media/$nid/covers/${_MediaValidators.extractFileName(coverUrl)}');
         }
       }
       bump();
 
-      // 4. Insertion DB avec ajout des métadonnées d'édition
       final ins = item
           .copyWith(
             id: nid,
@@ -910,7 +942,8 @@ class MediaService {
         'stack': stack.toString(),
       });
       if (e is MediaException) rethrow;
-      throw MediaUploadException('Échec de la publication : ${e.toString()}', e);
+      throw MediaUploadException(
+          'Échec de la publication : ${e.toString()}', e);
     }
   }
 
@@ -947,28 +980,37 @@ class MediaService {
 
     try {
       if (newVideoFile != null) {
-        videoUrl = await _uploadFile(newVideoFile, 'thix_media/${ex.id}/videos', 'video');
-        uploadedPaths.add('thix_media/${ex.id}/videos/${_MediaValidators.extractFileName(videoUrl)}');
+        videoUrl = await _uploadFile(
+            newVideoFile, 'thix_media/${ex.id}/videos', 'video');
+        uploadedPaths.add(
+            'thix_media/${ex.id}/videos/${_MediaValidators.extractFileName(videoUrl)}');
       }
       bump();
 
       if (newEpisodeFiles != null) {
         for (final ep in newEpisodeFiles) {
-          final url = await _uploadFile(ep, 'thix_media/${ex.id}/episodes', 'video');
+          final url =
+              await _uploadFile(ep, 'thix_media/${ex.id}/episodes', 'video');
           episodeUrls.add(url);
-          uploadedPaths.add('thix_media/${ex.id}/episodes/${_MediaValidators.extractFileName(url)}');
+          uploadedPaths.add(
+              'thix_media/${ex.id}/episodes/${_MediaValidators.extractFileName(url)}');
           bump();
         }
       }
 
       if (newCoverFile != null) {
-        coverUrl = await _uploadFile(newCoverFile, 'thix_media/${ex.id}/covers', 'image');
-        uploadedPaths.add('thix_media/${ex.id}/covers/${_MediaValidators.extractFileName(coverUrl)}');
-      } else if (newVideoFile != null && (coverUrl == null || coverUrl.isEmpty)) {
+        coverUrl = await _uploadFile(
+            newCoverFile, 'thix_media/${ex.id}/covers', 'image');
+        uploadedPaths.add(
+            'thix_media/${ex.id}/covers/${_MediaValidators.extractFileName(coverUrl)}');
+      } else if (newVideoFile != null &&
+          (coverUrl == null || coverUrl.isEmpty)) {
         final thumb = await _generateThumbnail(newVideoFile);
         if (thumb != null) {
-          coverUrl = await _uploadBytes(thumb, 'thix_media/${ex.id}/covers', '.jpg');
-          uploadedPaths.add('thix_media/${ex.id}/covers/${_MediaValidators.extractFileName(coverUrl)}');
+          coverUrl =
+              await _uploadBytes(thumb, 'thix_media/${ex.id}/covers', '.jpg');
+          uploadedPaths.add(
+              'thix_media/${ex.id}/covers/${_MediaValidators.extractFileName(coverUrl)}');
         }
       }
       bump();
@@ -1004,12 +1046,15 @@ class MediaService {
         'stack': stack.toString(),
       });
       if (e is MediaException) rethrow;
-      throw MediaUploadException('Échec de la mise à jour : ${e.toString()}', e);
+      throw MediaUploadException(
+          'Échec de la mise à jour : ${e.toString()}', e);
     }
   }
-  Future<void> updateMediaMeta(String mediaId, Map<String, dynamic> updates) async {
+
+  Future<void> updateMediaMeta(
+      String mediaId, Map<String, dynamic> updates) async {
     _MediaValidators.requireValidUuid(mediaId, 'mediaId');
-    await _checkPermissions(mediaId); // Vérifie que l'utilisateur est bien le propriétaire
+    await _checkPermissions(mediaId);
 
     try {
       await _client
@@ -1019,12 +1064,14 @@ class MediaService {
           .timeout(_supabaseTimeout);
       _MediaLogger.info('Media metadata updated', {'id': mediaId});
     } catch (e) {
-      _MediaLogger.error('updateMediaMeta failed', {'id': mediaId, 'error': '$e'});
-      throw MediaException('UPDATE_FAILED', 'Impossible de mettre à jour le média', e);
+      _MediaLogger.error('updateMediaMeta failed',
+          {'id': mediaId, 'error': '$e'});
+      throw MediaException(
+          'UPDATE_FAILED', 'Impossible de mettre à jour le média', e);
     }
   }
 
-        // ============================================================================
+  // ============================================================================
   // DELETE
   // ============================================================================
 
@@ -1035,16 +1082,22 @@ class MediaService {
     final filesToDelete = <String>[];
     if (item.videoUrl.isNotEmpty) {
       final name = _MediaValidators.extractFileName(item.videoUrl);
-      if (name.isNotEmpty) filesToDelete.add('thix_media/${item.id}/videos/$name');
+      if (name.isNotEmpty) {
+        filesToDelete.add('thix_media/${item.id}/videos/$name');
+      }
     }
     if (item.coverUrl.isNotEmpty) {
       final name = _MediaValidators.extractFileName(item.coverUrl);
-      if (name.isNotEmpty) filesToDelete.add('thix_media/${item.id}/covers/$name');
+      if (name.isNotEmpty) {
+        filesToDelete.add('thix_media/${item.id}/covers/$name');
+      }
     }
     for (final epUrl in item.episodesUrls) {
       if (epUrl.isNotEmpty) {
         final name = _MediaValidators.extractFileName(epUrl);
-        if (name.isNotEmpty) filesToDelete.add('thix_media/${item.id}/episodes/$name');
+        if (name.isNotEmpty) {
+          filesToDelete.add('thix_media/${item.id}/episodes/$name');
+        }
       }
     }
 
@@ -1057,20 +1110,22 @@ class MediaService {
           .delete()
           .eq('id', item.id)
           .timeout(_supabaseTimeout);
-      _MediaLogger.info('Media deleted', {'id': item.id, 'files': filesToDelete.length});
+      _MediaLogger.info('Media deleted',
+          {'id': item.id, 'files': filesToDelete.length});
     } catch (e) {
-      _MediaLogger.error('deleteMedia failed', {'id': item.id, 'error': '$e'});
+      _MediaLogger.error('deleteMedia failed',
+          {'id': item.id, 'error': '$e'});
       throw MediaException('DELETE_FAILED', 'Échec de la suppression', e);
     }
   }
 
   // ============================================================================
-  // REPOST (Partager/Republier un média)
+  // REPOST
   // ============================================================================
 
   Future<bool> repostMedia(String mediaId) async {
     _MediaValidators.requireValidUuid(mediaId, 'mediaId');
-    
+
     final user = _client.auth.currentUser;
     if (user == null) {
       throw MediaPermissionException('Utilisateur non connecté');
@@ -1089,7 +1144,8 @@ class MediaService {
       }
 
       if (original['user_id'] == user.id) {
-        throw MediaException('SELF_REPOST', 'Impossible de reposter votre propre média');
+        throw MediaException(
+            'SELF_REPOST', 'Impossible de reposter votre propre média');
       }
 
       final existing = await _client
@@ -1101,13 +1157,14 @@ class MediaService {
           .timeout(_supabaseTimeout);
 
       if (existing != null) {
-        _MediaLogger.warn('Media already reposted', {'mediaId': mediaId, 'userId': user.id});
+        _MediaLogger.warn('Media already reposted',
+            {'mediaId': mediaId, 'userId': user.id});
         return true;
       }
 
       final repostId = _uuid.v4();
       final now = DateTime.now().toIso8601String();
-      
+
       final repostData = {
         'id': repostId,
         'user_id': user.id,
@@ -1134,12 +1191,12 @@ class MediaService {
           .timeout(_supabaseTimeout);
 
       try {
-        await _client.rpc(
-          'increment_repost_count',
-          params: {'p_media_id': mediaId},
-        ).timeout(_supabaseTimeout);
+        await _client
+            .rpc('increment_repost_count', params: {'p_media_id': mediaId})
+            .timeout(_supabaseTimeout);
       } catch (e) {
-        _MediaLogger.warn('Failed to increment repost count', {'error': '$e'});
+        _MediaLogger.warn('Failed to increment repost count',
+            {'error': '$e'});
       }
 
       _MediaLogger.info('Media reposted', {
@@ -1149,150 +1206,8 @@ class MediaService {
       });
       return true;
     } catch (e) {
-      _MediaLogger.error('repostMedia failed', {'mediaId': mediaId, 'error': '$e'});
-      if (e is MediaException) rethrow;
-      throw MediaException('REPOST_FAILED', 'Échec du repost', e);
-    }
-  }
-} //
-</think>
-
-L'erreur `media_service.dart:1164:1: Expected a method, getter, setter or operator declaration` indique un **problème d'accolades `{}`** à la fin du fichier `media_service.dart`.
-
-Cela arrive parce que la méthode `repostMedia` a été collée **après** l'accolade fermante finale `}` de la classe `MediaService`, ou qu'il y a une accolade en trop/manquante. Dart pense que le code est en dehors de la classe.
-
-### 🛠️ Comment corriger
-
-Ouvre `lib/services/media_service.dart` et va tout en bas du fichier (vers la ligne 1164). 
-Assure-toi que la fin de ton fichier ressemble **exactement** à ceci (avec une seule accolade fermante `}` à la toute fin pour fermer la classe) :
-
-```dart
-  // ============================================================================
-  // DELETE
-  // ============================================================================
-
-  Future<void> deleteMedia(MediaContent item) async {
-    _MediaValidators.requireValidUuid(item.id, 'mediaId');
-    await _checkPermissions(item.id);
-
-    final filesToDelete = <String>[];
-    if (item.videoUrl.isNotEmpty) {
-      final name = _MediaValidators.extractFileName(item.videoUrl);
-      if (name.isNotEmpty) filesToDelete.add('thix_media/${item.id}/videos/$name');
-    }
-    if (item.coverUrl.isNotEmpty) {
-      final name = _MediaValidators.extractFileName(item.coverUrl);
-      if (name.isNotEmpty) filesToDelete.add('thix_media/${item.id}/covers/$name');
-    }
-    for (final epUrl in item.episodesUrls) {
-      if (epUrl.isNotEmpty) {
-        final name = _MediaValidators.extractFileName(epUrl);
-        if (name.isNotEmpty) filesToDelete.add('thix_media/${item.id}/episodes/$name');
-      }
-    }
-
-    try {
-      if (filesToDelete.isNotEmpty) {
-        await _cleanupFiles(filesToDelete);
-      }
-      await _client
-          .from('media_content')
-          .delete()
-          .eq('id', item.id)
-          .timeout(_supabaseTimeout);
-      _MediaLogger.info('Media deleted', {'id': item.id, 'files': filesToDelete.length});
-    } catch (e) {
-      _MediaLogger.error('deleteMedia failed', {'id': item.id, 'error': '$e'});
-      throw MediaException('DELETE_FAILED', 'Échec de la suppression', e);
-    }
-  }
-
-  // ============================================================================
-  // REPOST (Partager/Republier un média)
-  // ============================================================================
-
-  Future<bool> repostMedia(String mediaId) async {
-    _MediaValidators.requireValidUuid(mediaId, 'mediaId');
-    
-    final user = _client.auth.currentUser;
-    if (user == null) {
-      throw MediaPermissionException('Utilisateur non connecté');
-    }
-
-    try {
-      final original = await _client
-          .from('media_content')
-          .select()
-          .eq('id', mediaId)
-          .maybeSingle()
-          .timeout(_supabaseTimeout);
-
-      if (original == null) {
-        throw MediaException('NOT_FOUND', 'Média introuvable');
-      }
-
-      if (original['user_id'] == user.id) {
-        throw MediaException('SELF_REPOST', 'Impossible de reposter votre propre média');
-      }
-
-      final existing = await _client
-          .from('media_content')
-          .select('id')
-          .eq('user_id', user.id)
-          .eq('repost_of', mediaId)
-          .maybeSingle()
-          .timeout(_supabaseTimeout);
-
-      if (existing != null) {
-        _MediaLogger.warn('Media already reposted', {'mediaId': mediaId, 'userId': user.id});
-        return true;
-      }
-
-      final repostId = _uuid.v4();
-      final now = DateTime.now().toIso8601String();
-      
-      final repostData = {
-        'id': repostId,
-        'user_id': user.id,
-        'title': original['title'],
-        'subtitle': original['subtitle'],
-        'type': original['type'],
-        'video_url': original['video_url'],
-        'cover_url': original['cover_url'],
-        'episodes_urls': original['episodes_urls'],
-        'is_paid': false,
-        'price': null,
-        'repost_of': mediaId,
-        'repost_count': 0,
-        'like_count': 0,
-        'comment_count': 0,
-        'view_count': 0,
-        'created_at': now,
-        'updated_at': now,
-      };
-
-      await _client
-          .from('media_content')
-          .insert(repostData)
-          .timeout(_supabaseTimeout);
-
-      try {
-        await _client.rpc(
-          'increment_repost_count',
-          params: {'p_media_id': mediaId},
-        ).timeout(_supabaseTimeout);
-      } catch (e) {
-        _MediaLogger.warn('Failed to increment repost count', {'error': '$e'});
-      }
-
-      _MediaLogger.info('Media reposted', {
-        'originalId': mediaId,
-        'repostId': repostId,
-        'userId': user.id,
-      });
-      return true;
-    } catch (e) {
-      _MediaLogger.error('repostMedia failed', {'mediaId': mediaId, 'error': '$e'});
+      _MediaLogger.error('repostMedia failed',
+          {'mediaId': mediaId, 'error': '$e'});
       if (e is MediaException) rethrow;
       throw MediaException('REPOST_FAILED', 'Échec du repost', e);
     }
