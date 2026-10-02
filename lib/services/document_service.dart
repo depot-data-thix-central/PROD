@@ -4,10 +4,9 @@ import 'package:crypto/crypto.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:thix_id/supabase/supabase_config.dart';
-import 'package:thix_id/services/platform_file_from_path_stub.dart'
-    if (dart.library.io) 'package:thix_id/services/platform_file_from_path_io.dart';
 
+/// Service de gestion des documents du coffre-fort THIX
+/// Compatible Riverpod avec injection de dépendances
 class DocumentService {
   static const String table = 'documents';
   static const String bucket = 'documents';
@@ -18,32 +17,42 @@ class DocumentService {
   static const String vaultLocksTable = 'vault_locks';
 
   final SupabaseClient _client;
-  DocumentService({SupabaseClient? client}) : _client = client ?? SupabaseConfig.client;
-
   static final Map<String, _UrlCache> _urlCache = {};
+
+  /// Constructeur pour Riverpod - injection de dépendances
+  DocumentService({required SupabaseClient client}) : _client = client;
+
   SupabaseClient get _db => _client;
 
   // ---------------------------------------------------------------------------
   // Helpers internes
   // ---------------------------------------------------------------------------
 
-  Future<T> _retry<T>(Future<T> Function() fn) async {
-    for (int i = 0; i < 3; i++) {
+  /// Retry avec backoff exponentiel
+  Future<T> _retry<T>(Future<T> Function() fn, {int maxAttempts = 3}) async {
+    for (int i = 0; i < maxAttempts; i++) {
       try {
         return await fn();
-      } catch (_) {
-        if (i == 2) rethrow;
-        await Future.delayed(Duration(milliseconds: 200 * (i + 1)));
+      } catch (e) {
+        if (i == maxAttempts - 1) {
+          debugPrint('[DocumentService] ❌ Failed after $maxAttempts attempts: $e');
+          rethrow;
+        }
+        final delay = Duration(milliseconds: 200 * (i + 1) * (i + 1));
+        debugPrint('[DocumentService] ⏳ Retry ${i + 1}/$maxAttempts in ${delay.inMilliseconds}ms');
+        await Future.delayed(delay);
       }
     }
-    throw StateError('retry failed');
+    throw StateError('Retry failed');
   }
 
+  /// Vérifie si l'erreur est un bucket non trouvé
   static bool isBucketNotFound(Object e) {
     if (e is! StorageException) return false;
     return e.statusCode == 404 && e.message.toLowerCase().contains('bucket');
   }
 
+  /// Détecte le MIME type depuis l'extension
   static String _mime(PlatformFile f) {
     const m = {
       'pdf': 'application/pdf',
@@ -54,10 +63,15 @@ class DocumentService {
       'mp4': 'video/mp4',
       'mov': 'video/quicktime',
       'webm': 'video/webm',
+      'doc': 'application/msword',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'xls': 'application/vnd.ms-excel',
+      'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     };
     return m[(f.extension ?? '').toLowerCase()] ?? 'application/octet-stream';
   }
 
+  /// Log une transaction dans l'audit
   Future<void> _logTransaction({
     required String uid,
     String? documentId,
@@ -74,14 +88,15 @@ class DocumentService {
         'detail': detail,
       });
     } catch (e) {
-      debugPrint('DocumentService: log transaction failed → $e');
+      debugPrint('[DocumentService] ⚠️ Log transaction failed: $e');
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Upload de base (Storage)
+  // Upload Storage
   // ---------------------------------------------------------------------------
 
+  /// Upload un fichier vers le bucket
   Future<String> uploadPickedFileToBucket({
     required String bucketName,
     required String uid,
@@ -108,30 +123,42 @@ class DocumentService {
     });
   }
 
+  /// Supprime un objet du bucket
   Future<void> deleteObjectFromBucket({
     required String bucketName,
     required String storagePath,
   }) async {
-    await _db.storage.from(bucketName).remove([storagePath]);
+    try {
+      await _db.storage.from(bucketName).remove([storagePath]);
+    } catch (e) {
+      debugPrint('[DocumentService] ⚠️ Delete object failed: $e');
+    }
   }
 
   // ---------------------------------------------------------------------------
   // Génération d'identifiant unique
   // ---------------------------------------------------------------------------
 
+  /// Génère un ID unique THIX-DOC-XXXXX via RPC
   Future<String> generateDocumentId(String uid) async {
-    final res = await _db.rpc('generate_thix_doc_id', params: {'p_user_id': uid});
-    final id = (res as String?)?.trim();
-    if (id == null || id.isEmpty) {
-      throw Exception('Impossible de générer l\'identifiant du document');
+    try {
+      final res = await _db.rpc('generate_thix_doc_id', params: {'p_user_id': uid});
+      final id = (res as String?)?.trim();
+      if (id == null || id.isEmpty) {
+        throw Exception('Impossible de générer l\'identifiant du document');
+      }
+      return id;
+    } catch (e) {
+      debugPrint('[DocumentService] ❌ Generate doc ID failed: $e');
+      rethrow;
     }
-    return id;
   }
 
   // ---------------------------------------------------------------------------
   // Dossiers
   // ---------------------------------------------------------------------------
 
+  /// Récupère tous les dossiers d'un utilisateur
   Future<List<Map<String, dynamic>>> fetchFolders(String uid) async {
     final res = await _db
         .from(foldersTable)
@@ -141,6 +168,7 @@ class DocumentService {
     return (res as List).cast<Map<String, dynamic>>();
   }
 
+  /// Stream des dossiers en temps réel
   Stream<List<Map<String, dynamic>>> streamFolders(String uid) {
     return _db
         .from(foldersTable)
@@ -150,6 +178,7 @@ class DocumentService {
         .map((rows) => rows.cast<Map<String, dynamic>>().toList());
   }
 
+  /// Crée un nouveau dossier
   Future<String> createFolder({
     required String uid,
     required String name,
@@ -166,6 +195,7 @@ class DocumentService {
     return id;
   }
 
+  /// Supprime un dossier
   Future<void> deleteFolder({required String uid, required String folderId}) async {
     await _db.from(foldersTable).delete().eq('id', folderId).eq('user_id', uid);
   }
@@ -174,6 +204,7 @@ class DocumentService {
   // Upload simplifié
   // ---------------------------------------------------------------------------
 
+  /// Upload un document avec génération automatique d'ID
   Future<String> uploadPickedFileSimple({
     required String uid,
     required PlatformFile file,
@@ -191,52 +222,58 @@ class DocumentService {
     final safeName = file.name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
     final path = 'users/$uid/$generatedId/${DateTime.now().millisecondsSinceEpoch}_$safeName';
 
-    await uploadPickedFileToBucket(
-      bucketName: bucket,
-      uid: uid,
-      objectPath: path,
-      file: file,
-    );
-
-    String? insertedId;
     try {
-      final row = await _db.from(table).insert({
-        'user_id': uid,
-        'doc_id': generatedId,
-        'generated_doc_id': generatedId,
-        'title': (title?.trim().isNotEmpty == true) ? title!.trim() : file.name,
-        'doc_type': docType,
-        'status': 'uploaded',
-        'file_name': file.name,
-        'mime_type': _mime(file),
-        'size_bytes': file.size,
-        'storage_path': path,
-        'expires_at': expiresAt?.toIso8601String(),
-        'country_code': generatedId.contains('/') ? generatedId.split('/').last : null,
-        'folder_id': folderId,
-        'is_public': isPublic,
-      }).select('id').single();
-      insertedId = row['id'].toString();
+      await uploadPickedFileToBucket(
+        bucketName: bucket,
+        uid: uid,
+        objectPath: path,
+        file: file,
+      );
+
+      String? insertedId;
+      try {
+        final row = await _db.from(table).insert({
+          'user_id': uid,
+          'doc_id': generatedId,
+          'generated_doc_id': generatedId,
+          'title': (title?.trim().isNotEmpty == true) ? title!.trim() : file.name,
+          'doc_type': docType,
+          'status': 'uploaded',
+          'file_name': file.name,
+          'mime_type': _mime(file),
+          'size_bytes': file.size,
+          'storage_path': path,
+          'expires_at': expiresAt?.toIso8601String(),
+          'country_code': generatedId.contains('/') ? generatedId.split('/').last : null,
+          'folder_id': folderId,
+          'is_public': isPublic,
+        }).select('id').single();
+        insertedId = row['id'].toString();
+      } catch (e) {
+        await _db.storage.from(bucket).remove([path]).catchError((_) => []);
+        rethrow;
+      }
+
+      await _logTransaction(
+        uid: uid,
+        documentId: insertedId,
+        docId: generatedId,
+        action: 'upload',
+        detail: file.name,
+      );
+
+      return generatedId;
     } catch (e) {
-      await _db.storage.from(bucket).remove([path]).catchError((_) => []);
+      debugPrint('[DocumentService] ❌ Upload failed: $e');
       rethrow;
     }
-
-    await _logTransaction(
-      uid: uid,
-      documentId: insertedId,
-      docId: generatedId,
-      action: 'upload',
-      detail: file.name,
-    );
-
-    return generatedId;
   }
 
   // ---------------------------------------------------------------------------
   // Ancienne méthode (compatibilité)
   // ---------------------------------------------------------------------------
 
+  /// Upload avec doc_id manuel (legacy)
   Future<String> uploadPickedFile({
     required String uid,
     required String docId,
@@ -281,6 +318,7 @@ class DocumentService {
   // Lecture / Stream / Suppression
   // ---------------------------------------------------------------------------
 
+  /// Récupère les documents paginés
   Future<List<Map<String, dynamic>>> fetchDocumentsPaginated(
     String uid, {
     int limit = 20,
@@ -299,9 +337,11 @@ class DocumentService {
         return (res as List).cast<Map<String, dynamic>>();
       });
 
+  /// Récupère les documents (limit 20 par défaut)
   Future<List<Map<String, dynamic>>> fetchDocuments(String uid, {int limit = 20}) =>
       fetchDocumentsPaginated(uid, limit: limit, offset: 0);
 
+  /// Stream des documents en temps réel
   Stream<List<Map<String, dynamic>>> streamDocuments(String uid) {
     return _db
         .from(table)
@@ -311,11 +351,13 @@ class DocumentService {
         .map((rows) => rows.cast<Map<String, dynamic>>().toList());
   }
 
+  /// Récupère un document par son ID
   Future<Map<String, dynamic>?> fetchDocumentById(String documentId) async {
     final res = await _db.from(table).select().eq('id', documentId).maybeSingle();
     return res == null ? null : (res as Map).cast<String, dynamic>();
   }
 
+  /// Récupère la dernière version d'un document par doc_id
   Future<Map<String, dynamic>?> fetchLatestDocumentRowByDocId({
     required String uid,
     required String docId,
@@ -331,6 +373,7 @@ class DocumentService {
     return r == null ? null : (r as Map).cast<String, dynamic>();
   }
 
+  /// Supprime un document
   Future<void> deleteDocument({
     required String uid,
     required String documentId,
@@ -344,6 +387,7 @@ class DocumentService {
     await _logTransaction(uid: uid, documentId: documentId, docId: docId, action: 'delete');
   }
 
+  /// Supprime la dernière version d'un document
   Future<void> deleteLatestDocumentByDocId({
     required String uid,
     required String docId,
@@ -359,6 +403,7 @@ class DocumentService {
     }
   }
 
+  /// Met à jour le statut d'un document
   Future<void> updateDocumentStatus({
     required String uid,
     required String documentId,
@@ -370,6 +415,7 @@ class DocumentService {
     }).eq('id', documentId).eq('user_id', uid);
   }
 
+  /// Bascule la visibilité publique/privée
   Future<void> togglePublic({
     required String uid,
     required String documentId,
@@ -393,6 +439,7 @@ class DocumentService {
   // Recherche publique
   // ---------------------------------------------------------------------------
 
+  /// Recherche un document public par doc_id
   Future<Map<String, dynamic>?> searchPublicDocument(String docId) async {
     if (docId.trim().isEmpty) return null;
     final res = await _db.rpc('search_public_document', params: {'p_doc_id': docId.trim()});
@@ -406,6 +453,7 @@ class DocumentService {
   // Vérification THIX ID
   // ---------------------------------------------------------------------------
 
+  /// Vérifie si un THIX ID existe
   Future<Map<String, dynamic>?> verifyThixId(String thixId) async {
     final clean = thixId.trim().toUpperCase();
     if (clean.isEmpty) return null;
@@ -421,22 +469,27 @@ class DocumentService {
   // URLs signées
   // ---------------------------------------------------------------------------
 
+  /// Crée une URL signée temporaire
   Future<String> createDownloadUrl({
     required String storagePath,
     Duration expiresIn = const Duration(minutes: 18),
     String bucketName = bucket,
   }) async {
     final key = '$bucketName::$storagePath';
-    if (_urlCache[key]?.isValid == true) return _urlCache[key]!.url;
+    final cached = _urlCache[key];
+    if (cached != null && cached.isValid) {
+      return cached.url;
+    }
 
     final url = await _retry(() => _db.storage
         .from(bucketName)
         .createSignedUrl(storagePath.trim(), expiresIn.inSeconds.clamp(60, 3600)));
 
-    _urlCache[key] = _UrlCache(url);
+    _urlCache[key] = _UrlCache(url, expiresIn: expiresIn);
     return url;
   }
 
+  /// Résout l'URL de téléchargement depuis une row
   Future<String> resolveRowDownloadUrl(Map<String, dynamic> row) async {
     final sp = (row['storage_path'] ?? '').toString().trim();
     if (sp.isEmpty) return (row['download_url'] ?? '').toString();
@@ -444,41 +497,52 @@ class DocumentService {
   }
 
   // ---------------------------------------------------------------------------
-  // Hash / Verify (local pour Vault + Edge Function pour partages)
+  // Hash / Verify - SÉPARATION CLAIRE
   // ---------------------------------------------------------------------------
 
-  Future<String?> _hashSecret(String action, String secret) async {
-    // Vault → hash local (SHA-256)
-    if (action == 'vault') {
-      final bytes = utf8.encode('${secret}THIX_VAULT_SALT_v1');
-      return sha256.convert(bytes).toString();
-    }
+  /// Hash local SHA-256 pour PIN du coffre (rapide, pas de réseau)
+  Future<String> _hashVaultPin(String pin) async {
+    final bytes = utf8.encode('${pin}THIX_VAULT_SALT_v1');
+    return sha256.convert(bytes).toString();
+  }
 
-    // Partages → Edge Function
+  /// Hash via Edge Function pour mots de passe de partage (bcrypt sécurisé)
+  Future<String?> _hashSharePassword(String password) async {
     try {
       final res = await _db.functions.invoke(
         'vault-share-password',
-        body: {'action': 'hash', 'password': secret},
+        body: {'action': 'hash', 'password': password},
       );
       return res.data?['hash'] as String?;
     } catch (e) {
-      debugPrint('DocumentService: hash failed ($action) → $e');
+      debugPrint('[DocumentService] ❌ Hash share password failed: $e');
       return null;
     }
   }
 
-  Future<bool> verifyPassword({
+  /// Vérifie un PIN du coffre (hash local SHA-256)
+  Future<bool> verifyVaultPin({
+    required String uid,
+    required String pin,
+  }) async {
+    final res = await _db
+        .from(vaultLocksTable)
+        .select('pin_hash')
+        .eq('user_id', uid)
+        .maybeSingle();
+    
+    final hash = res?['pin_hash'] as String?;
+    if (hash == null) return false;
+
+    final computed = await _hashVaultPin(pin);
+    return computed == hash;
+  }
+
+  /// Vérifie un mot de passe de partage (Edge Function bcrypt)
+  Future<bool> verifySharePassword({
     required String password,
     required String hash,
   }) async {
-    // Hash local (SHA-256 = 64 caractères hex, sans ":")
-    if (hash.length == 64 && !hash.contains(':')) {
-      final bytes = utf8.encode('${password}THIX_VAULT_SALT_v1');
-      final computed = sha256.convert(bytes).toString();
-      return computed == hash;
-    }
-
-    // Hash Edge Function
     try {
       final res = await _db.functions.invoke(
         'vault-share-password',
@@ -486,7 +550,7 @@ class DocumentService {
       );
       return res.data?['valid'] == true;
     } catch (e) {
-      debugPrint('DocumentService: verify password failed → $e');
+      debugPrint('[DocumentService] ❌ Verify share password failed: $e');
       return false;
     }
   }
@@ -495,6 +559,7 @@ class DocumentService {
   // PARTAGE / ENVOI DE DOCUMENTS
   // ---------------------------------------------------------------------------
 
+  /// Partage un document avec plusieurs destinataires
   Future<void> shareDocument({
     required String senderId,
     required String documentId,
@@ -516,6 +581,7 @@ class DocumentService {
       throw Exception('Aucun destinataire valide');
     }
 
+    // Résoudre les THIX IDs en user_ids
     final profiles = await _db
         .from('profiles')
         .select('id, thix_id')
@@ -527,9 +593,13 @@ class DocumentService {
       if (tid != null) mapThixToUid[tid] = p['id'] as String;
     }
 
+    // Hash du mot de passe via Edge Function (bcrypt)
     String? passwordHash;
     if (password != null && password.trim().isNotEmpty) {
-      passwordHash = await _hashSecret('share', password.trim());
+      passwordHash = await _hashSharePassword(password.trim());
+      if (passwordHash == null) {
+        throw Exception('Impossible de sécuriser le mot de passe');
+      }
     }
 
     final now = DateTime.now().toUtc();
@@ -570,6 +640,7 @@ class DocumentService {
   // Streams des partages
   // ---------------------------------------------------------------------------
 
+  /// Stream des partages reçus
   Stream<List<Map<String, dynamic>>> streamReceivedShares(String uid, String thixId) {
     return _db
         .from(sharesTable)
@@ -586,6 +657,7 @@ class DocumentService {
     });
   }
 
+  /// Stream des partages envoyés
   Stream<List<Map<String, dynamic>>> streamSentShares(String uid) {
     return _db
         .from(sharesTable)
@@ -599,6 +671,7 @@ class DocumentService {
   // Actions sur les partages
   // ---------------------------------------------------------------------------
 
+  /// Marque un partage comme ouvert
   Future<void> markShareOpened(String shareId, {String? uid, String? docId}) async {
     await _db.from(sharesTable).update({
       'status': 'opened',
@@ -610,6 +683,7 @@ class DocumentService {
     }
   }
 
+  /// Marque un partage comme détruit
   Future<void> markShareDestroyed(String shareId) async {
     await _db.from(sharesTable).update({
       'status': 'destroyed',
@@ -618,6 +692,7 @@ class DocumentService {
     }).eq('id', shareId);
   }
 
+  /// Marque un partage comme expiré
   Future<void> markShareExpired(String shareId) async {
     await _db.from(sharesTable).update({
       'status': 'expired',
@@ -629,6 +704,7 @@ class DocumentService {
   // Captures d'écran
   // ---------------------------------------------------------------------------
 
+  /// Signale une capture d'écran
   Future<void> reportScreenshot({
     required String shareId,
     required String capturedBy,
@@ -663,6 +739,7 @@ class DocumentService {
   // Historique
   // ---------------------------------------------------------------------------
 
+  /// Récupère l'historique des transactions
   Future<List<Map<String, dynamic>>> fetchTransactions(String uid, {int limit = 50}) async {
     final res = await _db
         .from(transactionsTable)
@@ -673,6 +750,7 @@ class DocumentService {
     return (res as List).cast<Map<String, dynamic>>();
   }
 
+  /// Stream de l'historique en temps réel
   Stream<List<Map<String, dynamic>>> streamTransactions(String uid) {
     return _db
         .from(transactionsTable)
@@ -686,36 +764,33 @@ class DocumentService {
   // Verrou du panneau THIX VAULT (PIN)
   // ---------------------------------------------------------------------------
 
+  /// Vérifie si un verrou PIN existe
   Future<bool> hasVaultLock(String uid) async {
     final res = await _db.from(vaultLocksTable).select('user_id').eq('user_id', uid).maybeSingle();
     return res != null;
   }
 
+  /// Définit le PIN du coffre (hash local SHA-256)
   Future<void> setVaultPin({required String uid, required String pin}) async {
-    final hash = await _hashSecret('vault', pin);
-    if (hash == null) throw Exception('Impossible de sécuriser le code');
+    final hash = await _hashVaultPin(pin);
     await _db.from(vaultLocksTable).upsert({
       'user_id': uid,
       'pin_hash': hash,
       'updated_at': DateTime.now().toUtc().toIso8601String(),
     });
   }
-
-  Future<bool> verifyVaultPin({required String uid, required String pin}) async {
-    final res = await _db.from(vaultLocksTable).select('pin_hash').eq('user_id', uid).maybeSingle();
-    final hash = res?['pin_hash'] as String?;
-    if (hash == null) return false;
-    return verifyPassword(password: pin, hash: hash);
-  }
 }
 
 // ---------------------------------------------------------------------------
-// Cache URL signée
+// Cache URL signée avec expiration configurable
 // ---------------------------------------------------------------------------
 
 class _UrlCache {
   final String url;
-  final DateTime at = DateTime.now();
-  _UrlCache(this.url);
-  bool get isValid => DateTime.now().difference(at).inMinutes < 15;
+  final DateTime createdAt;
+  final Duration expiresIn;
+
+  _UrlCache(this.url, {required this.expiresIn}) : createdAt = DateTime.now();
+
+  bool get isValid => DateTime.now().difference(createdAt) < expiresIn;
 }
