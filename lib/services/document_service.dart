@@ -4,9 +4,10 @@ import 'package:crypto/crypto.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:thix_id/supabase/supabase_config.dart';
+import 'package:thix_id/services/platform_file_from_path_stub.dart'
+    if (dart.library.io) 'package:thix_id/services/platform_file_from_path_io.dart';
 
-/// Service de gestion des documents du coffre-fort THIX
-/// Compatible Riverpod avec injection de dépendances
 class DocumentService {
   static const String table = 'documents';
   static const String bucket = 'documents';
@@ -17,12 +18,15 @@ class DocumentService {
   static const String vaultLocksTable = 'vault_locks';
 
   final SupabaseClient _client;
+
+  // ✅ Constructeur d'origine — compatible avec tout le reste du code
+  DocumentService({SupabaseClient? client})
+      : _client = client ?? SupabaseConfig.client;
+
   static final Map<String, _UrlCache> _urlCache = {};
-
-  /// Constructeur pour Riverpod - injection de dépendances
-  DocumentService({required SupabaseClient client}) : _client = client;
-
   SupabaseClient get _db => _client;
+
+  
 
   // ---------------------------------------------------------------------------
   // Helpers internes
