@@ -657,17 +657,18 @@ class _CommentsSheetState extends ConsumerState<CommentsSheet> {
     final myCert = uid != null ? (_certCache[uid] ?? _CertInfo.empty) : _CertInfo.empty;
 
     return Container(
-      decoration: const BoxDecoration(
+      decoration: const BoxDecoration( 
         color: _CommentsPalette.surface,
         border: Border(top: BorderSide(color: _CommentsPalette.borderSoft)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Color(0x0A000000), 
             blurRadius: 8,
             offset: Offset(0, -2),
           ),
         ],
       ),
+
       child: Column(
         children: [
           if (_replyingTo != null || _editingComment != null)
