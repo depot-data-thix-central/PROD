@@ -35,11 +35,90 @@ class UserProfilePage extends ConsumerStatefulWidget {
 
 class _UserProfilePageState extends ConsumerState<UserProfilePage> {
   bool _showPrivate = false;
+  String? _certTier;
+  bool _isCertified = false;
 
   @override
   void initState() {
     super.initState();
     _ProfileLogger.info('Page initialized', {'userId': widget.userId});
+    _loadCertification();
+  }
+
+  @override
+  void didUpdateWidget(covariant UserProfilePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId) {
+      _loadCertification();
+    }
+  }
+
+  Future<void> _loadCertification() async {
+    final client = Supabase.instance.client;
+    String? tier;
+    String? status;
+
+    try {
+      final p = await client
+          .from('profiles')
+          .select('certification_tier, certification_status')
+          .eq('id', widget.userId)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 5));
+
+      tier = (p?['certification_tier'] as String?)?.trim();
+      status = (p?['certification_status'] as String?)?.trim().toLowerCase();
+
+      if ((tier == null || tier.isEmpty) && (status == null || status.isEmpty)) {
+        try {
+          final c = await client
+              .from('certifications')
+              .select('tier, status')
+              .eq('user_id', widget.userId)
+              .order('created_at', ascending: false)
+              .limit(1)
+              .maybeSingle()
+              .timeout(const Duration(seconds: 3));
+          if (c != null) {
+            tier = (c['tier'] as String?)?.trim();
+            status = (c['status'] as String?)?.trim().toLowerCase();
+          }
+        } catch (_) {}
+      }
+
+      if ((tier == null || tier.isEmpty) && (status == null || status.isEmpty)) {
+        try {
+          final r = await client
+              .from('certification_requests')
+              .select('tier, status')
+              .eq('user_id', widget.userId)
+              .order('created_at', ascending: false)
+              .limit(1)
+              .maybeSingle()
+              .timeout(const Duration(seconds: 3));
+          if (r != null) {
+            tier = (r['tier'] as String?)?.trim();
+            status = (r['status'] as String?)?.trim().toLowerCase();
+          }
+        } catch (_) {}
+      }
+    } catch (e) {
+      _ProfileLogger.error('Cert load failed', {'error': '$e'});
+    }
+
+    if (!mounted) return;
+
+    const okStatus = {'approved', 'generated', 'active', 'verified', 'paid', 'valid'};
+    final hasTier = tier != null &&
+        tier.isNotEmpty &&
+        tier.toLowerCase() != 'free' &&
+        tier.toLowerCase() != 'none';
+    final isCert = hasTier || (status != null && okStatus.contains(status));
+
+    setState(() {
+      _certTier = tier;
+      _isCertified = isCert;
+    });
   }
 
   String _safeTr(AppLocalizations l10n, String key, String fallback) {
@@ -54,6 +133,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
       ref.invalidate(userProfileDataProvider(widget.userId));
       ref.invalidate(userPostsProvider(widget.userId));
       ref.invalidate(userPrivatePostsProvider(widget.userId));
+      await _loadCertification();
     } catch (e) {
       _ProfileLogger.error('Refresh failed', {'error': '$e'});
     }
@@ -143,13 +223,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
 
   Widget _buildProfileContent(UserProfileBundle bundle, AppLocalizations l10n) {
     final isMe = Supabase.instance.client.auth.currentUser?.id == widget.userId;
-    
-    // ✅ Extraction des données de certification
-    final certTier = bundle.profile?['certification_tier'] as String?;
-    final certStatus = bundle.profile?['certification_status'] as String?;
-    final isCertified = certStatus == 'approved' || 
-                        certStatus == 'generated' || 
-                        certStatus == 'active';
 
     return RefreshIndicator(
       onRefresh: _refresh,
@@ -167,8 +240,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                 stats: bundle.stats,
                 isFollowing: bundle.isFollowing,
                 isMe: isMe,
-                certTier: certTier,
-                isCertified: isCertified,
+                certTier: _certTier,
+                isCertified: _isCertified,
                 onEditProfile: () {},
               ),
             ),
@@ -285,8 +358,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
               title,
               style: TextStyle(
                 fontSize: 13,
-                fontWeight:
-                    isSelected ? FontWeight.w800 : FontWeight.w600,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                 color: isSelected
                     ? MediaLightPalette.textPrimary
                     : MediaLightPalette.textSecondary,
