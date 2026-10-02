@@ -20,7 +20,7 @@ const double _kGridChildAspectRatio = 0.65;
 class ProfileVideosGrid extends ConsumerStatefulWidget {
   final String userId;
   final bool isOwner;
-  final bool showPrivate; // ✅ NOUVEAU PARAMÈTRE
+  final bool showPrivate;
 
   const ProfileVideosGrid({
     super.key, 
@@ -38,10 +38,10 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
   Timer? _scrollDebounce;
   DateTime? _lastRefresh;
 
-  // Détermine quel provider utiliser
   AutoDisposeStateNotifierProviderFamily<UserPostsNotifier, AsyncValue<UserPostsState>, String> get _provider {
     return widget.showPrivate ? userPrivatePostsProvider : userPostsProvider;
   }
+
   @override
   void initState() {
     super.initState();
@@ -68,6 +68,7 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
       if (!mounted || !_scrollController.hasClients) return;
       final pos = _scrollController.position;
       if (pos.pixels >= pos.maxScrollExtent - _kScrollThreshold) {
+        HapticFeedback.lightImpact();
         ref.read(_provider(widget.userId).notifier).loadMore();
       }
     });
@@ -83,7 +84,6 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
 
   @override
   Widget build(BuildContext context) {
-    // Écoute le bon provider selon l'onglet
     final postsAsync = ref.watch(_provider(widget.userId));
 
     return postsAsync.when(
@@ -96,12 +96,12 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
         final itemCount = state.posts.length + (state.hasMore ? 1 : 0);
 
         return SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           sliver: SliverGrid(
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: _kGridCrossAxisCount,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
+              crossAxisSpacing: 6,
+              mainAxisSpacing: 6,
               childAspectRatio: _kGridChildAspectRatio,
             ),
             delegate: SliverChildBuilderDelegate(
@@ -125,26 +125,90 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
 
   Widget _buildEmptyState(BuildContext context, {bool loading = false}) {
     final l10n = AppLocalizations.of(context);
-    final title = loading ? _safeTr(l10n, 'profile_loading', 'Chargement...') 
-        : (widget.showPrivate 
-            ? _safeTr(l10n, 'profile_no_private_posts', 'Aucune vidéo privée') 
-            : _safeTr(l10n, 'profile_no_posts', 'Aucune publication'));
     
+    String title;
+    IconData icon;
+    String? subtitle;
+
+    if (loading) {
+      title = _safeTr(l10n, 'profile_loading', 'Chargement...');
+      icon = Icons.hourglass_empty_rounded;
+    } else if (widget.showPrivate) {
+      title = _safeTr(l10n, 'profile_no_private_posts', 'Aucune vidéo privée');
+      icon = Icons.lock_outline_rounded;
+      subtitle = _safeTr(l10n, 'profile_no_private_hint', 'Vos vidéos privées apparaîtront ici');
+    } else {
+      title = _safeTr(l10n, 'profile_no_posts', 'Aucune publication');
+      icon = Icons.video_library_rounded;
+      subtitle = widget.isOwner 
+          ? _safeTr(l10n, 'profile_no_posts_hint_owner', 'Créez votre première vidéo')
+          : _safeTr(l10n, 'profile_no_posts_hint_other', 'Cet utilisateur n\'a pas encore publié');
+    }
+
     return Padding(
-      padding: const EdgeInsets.only(top: 60),
+      padding: const EdgeInsets.only(top: 60, bottom: 40),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               padding: const EdgeInsets.all(24),
-              decoration: const BoxDecoration(shape: BoxShape.circle, color: MediaLightPalette.border),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: MediaLightPalette.border.withOpacity(0.5),
+              ),
               child: loading
-                  ? const SizedBox(width: 48, height: 48, child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 2))
-                  : Icon(widget.showPrivate ? Icons.lock_outline_rounded : Icons.video_library_rounded, size: 48, color: MediaLightPalette.textSecondary),
+                  ? const SizedBox(
+                      width: 48, 
+                      height: 48, 
+                      child: CircularProgressIndicator(
+                        color: ThixPolicy.primary, 
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : Icon(icon, size: 48, color: MediaLightPalette.textSecondary),
             ),
             const SizedBox(height: 16),
-            Text(title, style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 16, fontWeight: FontWeight.w800)),
+            Text(
+              title, 
+              style: const TextStyle(
+                color: MediaLightPalette.textPrimary, 
+                fontSize: 16, 
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                subtitle, 
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: MediaLightPalette.textSecondary, 
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+            if (widget.isOwner && !loading && !widget.showPrivate) ...[
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: () {
+                  // TODO: Naviguer vers la page de création
+                  HapticFeedback.mediumImpact();
+                },
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: Text(_safeTr(l10n, 'profile_create_first', 'Créer une vidéo')),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ThixPolicy.primary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -154,20 +218,54 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
   Widget _buildErrorState(BuildContext context, Object error) {
     final l10n = AppLocalizations.of(context);
     return Padding(
-      padding: const EdgeInsets.only(top: 60),
+      padding: const EdgeInsets.only(top: 60, bottom: 40),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline_rounded, color: ThixPolicy.danger, size: 48),
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: ThixPolicy.danger.withOpacity(0.1),
+              ),
+              child: const Icon(
+                Icons.error_outline_rounded, 
+                color: ThixPolicy.danger, 
+                size: 48,
+              ),
+            ),
             const SizedBox(height: 16),
-            Text(_safeTr(l10n, 'profile_load_error', 'Erreur de chargement'), style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 16, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 16),
+            Text(
+              _safeTr(l10n, 'profile_load_error', 'Erreur de chargement'), 
+              style: const TextStyle(
+                color: MediaLightPalette.textPrimary, 
+                fontSize: 16, 
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _safeTr(l10n, 'profile_load_error_hint', 'Vérifiez votre connexion'),
+              style: const TextStyle(
+                color: MediaLightPalette.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 20),
             ElevatedButton.icon(
               onPressed: _refresh,
-              icon: const Icon(Icons.refresh_rounded),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
               label: Text(_safeTr(l10n, 'common_retry', 'Réessayer')),
-              style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white, elevation: 0),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ThixPolicy.primary, 
+                foregroundColor: Colors.white, 
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
             ),
           ],
         ),
@@ -178,8 +276,21 @@ class _ProfileVideosGridState extends ConsumerState<ProfileVideosGrid> {
 
 class _LoadingIndicator extends StatelessWidget {
   const _LoadingIndicator();
+  
   @override
   Widget build(BuildContext context) {
-    return const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(color: ThixPolicy.primary, strokeWidth: 2)));
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+            color: ThixPolicy.primary, 
+            strokeWidth: 2,
+          ),
+        ),
+      ),
+    );
   }
 }
