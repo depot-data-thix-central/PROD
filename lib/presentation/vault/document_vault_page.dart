@@ -1969,122 +1969,123 @@ class _RecuTabState extends State<_RecuTab> {
   final Set<String> _autoDestroyed = {};
 
   Future<void> _handleOpenShare(
-      BuildContext context, Map<String, dynamic> share) async {
-    final autoDestructRaw = share['auto_destruct_at'];
-    final hasPassword =
-        (share['password_hash'] as String?)?.isNotEmpty == true;
-    final shareId = share['id']?.toString();
-    final documentId = share['document_id']?.toString();
+    BuildContext context, Map<String, dynamic> share) async {
+  final autoDestructRaw = share['auto_destruct_at'];
+  final hasPassword =
+      (share['password_hash'] as String?)?.isNotEmpty == true;
+  final shareId = share['id']?.toString();
+  final documentId = share['document_id']?.toString();
 
-    if (shareId == null || documentId == null) return;
+  if (shareId == null || documentId == null) return;
 
-    if (autoDestructRaw != null) {
-      final autoAt = DateTime.tryParse(autoDestructRaw.toString());
-      if (autoAt != null && autoAt.isBefore(DateTime.now())) {
-        await widget.docsService.markShareDestroyed(shareId);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Ce document a expiré et a été détruit.',
-                  style: TextStyle(color: Colors.white)),
-              backgroundColor: _V.danger));
-        }
-        return;
-      }
-    }
-
-    if (hasPassword) {
-      final stored = share['password_hash'] as String?;
-      final ctrl = TextEditingController();
-      String? error;
-      final entered = await showDialog<String>(
-        context: context,
-        builder: (ctx) => StatefulBuilder(
-          builder: (ctx, setDlg) => Dialog(
-            backgroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20)),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text('Mot de passe requis',
-                      style: TextStyle(
-                          color: _V.textMain,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 16),
-                  _LightTextField(
-                      controller: ctrl,
-                      label: 'Mot de passe',
-                      obscureText: true),
-                  if (error != null)
-                    Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(error!,
-                            style: const TextStyle(
-                                color: _V.danger, fontSize: 12))),
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: _V.primary,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12))),
-                    onPressed: () async {
-                      if (stored == null) {
-                        Navigator.pop(ctx, ctrl.text);
-                        return;
-                      }
-                      final valid = await widget.docsService
-                          .verifySharePassword(
-                              password: ctrl.text, hash: stored);
-                      if (valid) {
-                        Navigator.pop(ctx, ctrl.text);
-                      } else {
-                        setDlg(() => error = 'Mot de passe incorrect');
-                      }
-                    },
-                    child: const Text('Déchiffrer et Ouvrir',
-                        style:
-                            TextStyle(fontWeight: FontWeight.w900)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-      if (entered == null) return;
-    }
-
-    try {
-      final docRow =
-          await widget.docsService.fetchDocumentById(documentId);
-      if (docRow == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Archive introuvable.',
-                  style: TextStyle(color: Colors.white)),
-              backgroundColor: _V.danger));
-        }
-        return;
-      }
-      await widget.docsService.markShareOpened(shareId,
-          uid: docRow['user_id']?.toString(),
-          docId: docRow['generated_doc_id']?.toString());
-      await widget.onOpenDoc(docRow);
-    } catch (_) {
+  if (autoDestructRaw != null) {
+    final autoAt = DateTime.tryParse(autoDestructRaw.toString());
+    if (autoAt != null && autoAt.isBefore(DateTime.now())) {
+      await widget.docsService.markShareDestroyed(shareId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Ouverture impossible.',
+            content: Text(
+                'Ce document a expiré et a été détruit.',
                 style: TextStyle(color: Colors.white)),
             backgroundColor: _V.danger));
       }
+      return;
     }
   }
+
+  if (hasPassword) {
+    final stored = share['password_hash'] as String?;
+    final ctrl = TextEditingController();
+    String? error;
+    final entered = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20)),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('Mot de passe requis',
+                    style: TextStyle(
+                        color: _V.textMain,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900)),
+                const SizedBox(height: 16),
+                _LightTextField(
+                    controller: ctrl,
+                    label: 'Mot de passe',
+                    obscureText: true),
+                if (error != null)
+                  Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(error!,
+                          style: const TextStyle(
+                              color: _V.danger, fontSize: 12))),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: _V.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12))),
+                  onPressed: () async {
+                    if (stored == null) {
+                      Navigator.pop(ctx, ctrl.text);
+                      return;
+                    }
+                    // ✅ CORRIGÉ : verifyPassword au lieu de verifySharePassword
+                    final valid = await widget.docsService
+                        .verifyPassword(
+                            password: ctrl.text, hash: stored);
+                    if (valid) {
+                      Navigator.pop(ctx, ctrl.text);
+                    } else {
+                      setDlg(() => error = 'Mot de passe incorrect');
+                    }
+                  },
+                  child: const Text('Déchiffrer et Ouvrir',
+                      style:
+                          TextStyle(fontWeight: FontWeight.w900)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (entered == null) return;
+  }
+
+  try {
+    final docRow =
+        await widget.docsService.fetchDocumentById(documentId);
+    if (docRow == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Archive introuvable.',
+                style: TextStyle(color: Colors.white)),
+            backgroundColor: _V.danger));
+      }
+      return;
+    }
+    await widget.docsService.markShareOpened(shareId,
+        uid: docRow['user_id']?.toString(),
+        docId: docRow['generated_doc_id']?.toString());
+    await widget.onOpenDoc(docRow);
+  } catch (_) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Ouverture impossible.',
+              style: TextStyle(color: Colors.white)),
+          backgroundColor: _V.danger));
+    }
+  }
+}
 
   @override
   Widget build(BuildContext context) {
