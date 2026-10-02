@@ -15267,7 +15267,7 @@ const Map<String, String> _zh = {
 'login_new_user': '新用户？',
 'login_create_account': '创建账号',
 // ─── THIX VAULT (安全保险库) ───
-'vault_title': 'THIX VAULT',
+
 'vault_secure': '已加密',
 'vault_search_hint': '搜索标题、ID、类型…',
 'vault_results': '{0} 个结果',
