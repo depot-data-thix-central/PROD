@@ -3,11 +3,19 @@ import 'package:flutter/foundation.dart';
 /// Modèle de contenu média (vidéo, série, etc.)
 /// 
 /// Conçu pour la production enterprise avec :
-/// - Protection XSS sur tous les champs texte
-/// - Sérialisation UTC pour cohérence des timestamps
-/// - Validation des URLs
-/// - Méthodes utilitaires pour séries/épisodes
+/// - Protection XSS optimisée sur tous les champs texte
+/// - Sérialisation UTC pour la cohérence des timestamps
+/// - Validation et nettoyage rigoureux des URLs
+/// - Immutabilité stricte des listes pour Riverpod / Bloc
 class MediaContent {
+  // ============================================================================
+  // REGEX PRE-COMPILÉES (Optimisation des performances mémoire)
+  // ============================================================================
+  static final RegExp _htmlTagRegex = RegExp(r'<[^>]*>');
+  static final RegExp _javascriptRegex = RegExp(r'javascript:', caseSensitive: false);
+  static final RegExp _onEventRegex = RegExp(r'on\w+\s*=', caseSensitive: false);
+  static final RegExp _controlCharRegex = RegExp(r'[\x00-\x1F\x7F]');
+
   // ============================================================================
   // CHAMPS PRINCIPAUX
   // ============================================================================
@@ -56,7 +64,7 @@ class MediaContent {
     this.year,
     required this.coverUrl,
     required this.videoUrl,
-    this.episodesUrls = const [],
+    List<String> episodesUrls = const [],
     this.viewCount = 0,
     this.likeCount = 0,
     this.commentCount = 0,
@@ -72,9 +80,10 @@ class MediaContent {
     this.filterApplied = 'Normal',
     required this.createdAt,
     required this.updatedAt,
-  }) : assert(id.isNotEmpty, 'MediaContent.id cannot be empty'),
-       assert(title.isNotEmpty, 'MediaContent.title cannot be empty'),
-       assert(price >= 0, 'MediaContent.price cannot be negative');
+  })  : episodesUrls = List.unmodifiable(episodesUrls),
+        assert(id.isNotEmpty, 'MediaContent.id cannot be empty'),
+        assert(title.isNotEmpty, 'MediaContent.title cannot be empty'),
+        assert(price >= 0, 'MediaContent.price cannot be negative');
 
   // ============================================================================
   // MÉTHODES UTILITAIRES
@@ -102,7 +111,7 @@ class MediaContent {
   bool get isPremium => isPaid && isPublished && price > 0;
 
   // ============================================================================
-  // SANITIZATION (Anti-XSS)
+  // SANITIZATION (Anti-XSS & Sécurité)
   // ============================================================================
   
   /// Nettoie une chaîne de caractères pour prévenir les injections XSS
@@ -110,10 +119,10 @@ class MediaContent {
     if (input == null || input.trim().isEmpty) return '';
     
     return input
-        .replaceAll(RegExp(r'<[^>]*>'), '') // Supprime les tags HTML
-        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '') // Supprime javascript:
-        .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '') // Supprime on*=
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '') // Supprime les caractères de contrôle
+        .replaceAll(_htmlTagRegex, '')
+        .replaceAll(_javascriptRegex, '')
+        .replaceAll(_onEventRegex, '')
+        .replaceAll(_controlCharRegex, '')
         .trim();
   }
 
@@ -123,15 +132,14 @@ class MediaContent {
     
     final trimmed = input.trim();
     
-    // Vérifie que c'est une URL HTTP/HTTPS valide
+    // Vérifie qu'il s'agit d'une URL HTTP/HTTPS valide
     if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
       return '';
     }
     
-    // Supprime les caractères dangereux
     return trimmed
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '') // Caractères de contrôle
-        .replaceAll(' ', '%20'); // Encode les espaces
+        .replaceAll(_controlCharRegex, '')
+        .replaceAll(' ', '%20');
   }
 
   // ============================================================================
@@ -139,6 +147,16 @@ class MediaContent {
   // ============================================================================
   
   factory MediaContent.fromJson(Map<String, dynamic> json) {
+    // ID et Titre sécurisés pour prévenir les plantages d'assertion en Debug
+    final rawId = json['id']?.toString() ?? '';
+    final parsedId = rawId.trim().isNotEmpty ? rawId : 'unknown_id';
+    if (rawId.trim().isEmpty) {
+      debugPrint('[MediaContent] Warning: Received empty ID from API payload');
+    }
+
+    final rawTitle = _sanitize(json['title']?.toString());
+    final parsedTitle = rawTitle.isNotEmpty ? rawTitle : 'Sans titre';
+
     // Parsing sécurisé des dates (UTC)
     DateTime parsedCreatedAt;
     try {
@@ -166,7 +184,7 @@ class MediaContent {
     final episodesList = <String>[];
     final rawEpisodes = json['episodes_urls'];
     if (rawEpisodes is List) {
-      for (var ep in rawEpisodes) {
+      for (final ep in rawEpisodes) {
         final sanitized = _sanitizeUrl(ep?.toString());
         if (sanitized.isNotEmpty) {
           episodesList.add(sanitized);
@@ -174,9 +192,13 @@ class MediaContent {
       }
     }
 
+    // Extraction optimisée du filtre appliqué
+    final sanitizedFilter = _sanitize(json['filter_applied']?.toString());
+    final parsedFilter = sanitizedFilter.isEmpty ? 'Normal' : sanitizedFilter;
+
     return MediaContent(
-      id: json['id']?.toString() ?? '',
-      title: _sanitize(json['title']?.toString()),
+      id: parsedId,
+      title: parsedTitle,
       subtitle: _sanitize(json['subtitle']?.toString()),
       type: _sanitize(json['type']?.toString()),
       year: json['year']?.toString(),
@@ -190,14 +212,12 @@ class MediaContent {
       isTrending: json['is_trending'] == true,
       isNewRelease: json['is_new_release'] == true,
       isRecommended: json['is_recommended'] == true,
-      isPublished: json['is_published'] != false, // Défaut true
+      isPublished: json['is_published'] != false,
       isFeedOnly: json['is_feed_only'] == true,
       userId: json['user_id']?.toString(),
       isPaid: json['is_paid'] == true,
-      price: (json['price'] as num?)?.toDouble() ?? 0.0,
-      filterApplied: _sanitize(json['filter_applied']?.toString()).isEmpty 
-          ? 'Normal' 
-          : _sanitize(json['filter_applied']?.toString()),
+      price: ((json['price'] as num?)?.toDouble() ?? 0.0).clamp(0.0, double.infinity),
+      filterApplied: parsedFilter,
       createdAt: parsedCreatedAt,
       updatedAt: parsedUpdatedAt,
     );
@@ -229,8 +249,8 @@ class MediaContent {
     'is_paid': isPaid,
     'price': price,
     'filter_applied': filterApplied,
-    'created_at': createdAt.toUtc().toIso8601String(), // ✅ Toujours UTC
-    'updated_at': updatedAt.toUtc().toIso8601String(), // ✅ Toujours UTC
+    'created_at': createdAt.toUtc().toIso8601String(),
+    'updated_at': updatedAt.toUtc().toIso8601String(),
   };
 
   // ============================================================================
@@ -296,7 +316,9 @@ class MediaContent {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is MediaContent && runtimeType == other.runtimeType && id == other.id;
+      other is MediaContent &&
+          runtimeType == other.runtimeType &&
+          id == other.id;
 
   @override
   int get hashCode => id.hashCode;
