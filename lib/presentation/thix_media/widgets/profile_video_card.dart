@@ -9,10 +9,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/media_content.dart';
-import 'package:thix_id/presentation/thix_media/media_routes.dart';
 import 'package:thix_id/presentation/thix_media/providers/thix_media_provider.dart';
 import 'package:thix_id/presentation/thix_media/providers/user_profile_providers.dart';
 import 'package:thix_id/services/media_service.dart';
+
+// ✅ Import du lecteur vidéo
+import 'feed_video_player.dart';
 
 const Duration _kTapThrottle = Duration(milliseconds: 500);
 
@@ -64,7 +66,7 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
     }
   }
 
-  bool get _isRepost => 
+  bool get _isRepost =>
       widget.post.repostOf != null && widget.post.repostOf!.isNotEmpty;
 
   String _safeTr(AppLocalizations l10n, String key, String fallback) {
@@ -73,9 +75,8 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
     return val;
   }
 
-  /// Vérifie si l'utilisateur courant a déjà reposté ce média
   Future<void> _checkRepostStatus() async {
-    if (_isRepost) return; // Déjà un repost, pas besoin de vérifier
+    if (_isRepost) return;
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null || uid == widget.ownerUserId) return;
     try {
@@ -92,7 +93,6 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
     } catch (_) {}
   }
 
-  /// Charge le nom de l'auteur original si c'est un repost
   Future<void> _loadOriginalAuthor() async {
     if (!_isRepost) return;
     try {
@@ -105,7 +105,7 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
       if (original == null) return;
       final userId = original['user_id']?.toString();
       if (userId == null) return;
-      
+
       final profile = await Supabase.instance.client
           .from('profiles')
           .select('username, full_name')
@@ -121,6 +121,7 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
     } catch (_) {}
   }
 
+  // ✅ OUVERTURE DIRECTE DU LECTEUR (sans passer par MediaRoutes)
   void _handleTap() {
     final now = DateTime.now();
     if (_lastTap != null && now.difference(_lastTap!) < _kTapThrottle) return;
@@ -129,10 +130,15 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
     HapticFeedback.selectionClick();
     if (widget.post.videoUrl.trim().isEmpty) return;
 
-    MediaRoutes.goToVideoPlayer(
-      context, 
-      videoUrl: widget.post.videoUrl, 
-      title: widget.post.title,
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _InlineVideoPlayerPage(
+          videoUrl: widget.post.videoUrl,
+          coverUrl: widget.post.coverUrl,
+          title: widget.post.title,
+        ),
+      ),
     );
   }
 
@@ -159,7 +165,7 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
     }
   }
 
-  /// Ouvre le média original (si c'est un repost)
+  // ✅ OUVERTURE DE L'ORIGINAL (repost) — version inline
   Future<void> _openOriginal() async {
     if (!_isRepost) return;
     try {
@@ -170,14 +176,21 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
           .maybeSingle()
           .timeout(const Duration(seconds: 5));
       if (original == null || !mounted) return;
-      
+
       final originalMedia = MediaContent.fromJson(
         Map<String, dynamic>.from(original as Map),
       );
-      MediaRoutes.goToVideoPlayer(
+
+      // ✅ Ouvre directement le lecteur inline
+      Navigator.push(
         context,
-        videoUrl: originalMedia.videoUrl,
-        title: originalMedia.title,
+        MaterialPageRoute(
+          builder: (_) => _InlineVideoPlayerPage(
+            videoUrl: originalMedia.videoUrl,
+            coverUrl: originalMedia.coverUrl,
+            title: originalMedia.title,
+          ),
+        ),
       );
     } catch (_) {
       if (mounted) {
@@ -195,7 +208,6 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
     }
   }
 
-  /// Reposte le média sur le profil de l'utilisateur courant
   Future<void> _repostMedia() async {
     final l10n = AppLocalizations.of(context);
     final uid = Supabase.instance.client.auth.currentUser?.id;
@@ -420,9 +432,9 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
     final views = liveStats.valueOrNull?.viewCount ?? widget.post.viewCount;
     final repostCount = widget.post.repostCount;
     final currentUid = Supabase.instance.client.auth.currentUser?.id;
-    final canRepost = currentUid != null && 
-                       currentUid != widget.ownerUserId && 
-                       !_isRepost;
+    final canRepost = currentUid != null &&
+        currentUid != widget.ownerUserId &&
+        !_isRepost;
 
     return RepaintBoundary(
       child: Stack(
@@ -446,7 +458,6 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
             ),
           ),
 
-          // Menu popup (owner OU visiteur avec options repost)
           Positioned(
             top: 4,
             right: 4,
@@ -455,12 +466,12 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
               borderRadius: BorderRadius.circular(20),
               child: PopupMenuButton<String>(
                 enabled: !_busy,
-                icon: _busy 
+                icon: _busy
                     ? const SizedBox(
-                        width: 18, 
-                        height: 18, 
+                        width: 18,
+                        height: 18,
                         child: CircularProgressIndicator(
-                          strokeWidth: 2, 
+                          strokeWidth: 2,
                           color: Colors.white,
                         ),
                       )
@@ -469,8 +480,7 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
                 onSelected: _onMenuSelected,
                 itemBuilder: (ctx) {
                   final items = <PopupMenuEntry<String>>[];
-                  
-                  // Options OWNER
+
                   if (widget.isOwner) {
                     items.addAll([
                       PopupMenuItem(
@@ -488,21 +498,20 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
                         child: Row(
                           children: [
                             Icon(
-                              widget.post.isPublished 
-                                  ? Icons.lock_outline 
+                              widget.post.isPublished
+                                  ? Icons.lock_outline
                                   : Icons.public,
                               size: 20,
                             ),
                             const SizedBox(width: 12),
-                            Text(widget.post.isPublished 
-                                ? _safeTr(l10n, 'profile_menu_private', 'Mettre en privé') 
+                            Text(widget.post.isPublished
+                                ? _safeTr(l10n, 'profile_menu_private', 'Mettre en privé')
                                 : _safeTr(l10n, 'profile_menu_public', 'Publier')),
                           ],
                         ),
                       ),
                     ]);
-                    
-                    // "Voir original" si c'est un repost
+
                     if (_isRepost) {
                       items.add(PopupMenuItem(
                         value: 'view_original',
@@ -515,7 +524,7 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
                         ),
                       ));
                     }
-                    
+
                     items.add(const PopupMenuDivider());
                     items.add(PopupMenuItem(
                       value: 'delete',
@@ -531,7 +540,6 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
                       ),
                     ));
                   } else {
-                    // Options VISITEUR
                     if (_isRepost) {
                       items.add(PopupMenuItem(
                         value: 'view_original',
@@ -544,7 +552,7 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
                         ),
                       ));
                     }
-                    
+
                     if (canRepost) {
                       items.add(PopupMenuItem(
                         value: 'repost',
@@ -552,12 +560,12 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
                         child: Row(
                           children: [
                             Icon(
-                              _alreadyReposted 
-                                  ? Icons.check_circle_outline 
+                              _alreadyReposted
+                                  ? Icons.check_circle_outline
                                   : Icons.repeat_rounded,
                               size: 20,
-                              color: _alreadyReposted 
-                                  ? ThixPolicy.success 
+                              color: _alreadyReposted
+                                  ? ThixPolicy.success
                                   : ThixPolicy.primary,
                             ),
                             const SizedBox(width: 12),
@@ -566,8 +574,8 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
                                   ? _safeTr(l10n, 'profile_already_reposted', 'Déjà reposté')
                                   : _safeTr(l10n, 'profile_repost', 'Reposter'),
                               style: TextStyle(
-                                color: _alreadyReposted 
-                                    ? ThixPolicy.success 
+                                color: _alreadyReposted
+                                    ? ThixPolicy.success
                                     : ThixPolicy.primary,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -577,7 +585,7 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
                       ));
                     }
                   }
-                  
+
                   return items;
                 },
               ),
@@ -612,52 +620,51 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
   }
 
   Widget _buildGradient() => const DecoratedBox(
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [Colors.transparent, Color(0x1A000000), Color(0xCC000000)],
-        stops: [0.5, 0.7, 1.0],
-      ),
-    ),
-  );
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.transparent, Color(0x1A000000), Color(0xCC000000)],
+            stops: [0.5, 0.7, 1.0],
+          ),
+        ),
+      );
 
   Widget _buildPaidBadge() => Positioned(
-    top: 6,
-    left: 6,
-    child: Container(
-      padding: const EdgeInsets.all(4),
-      decoration: const BoxDecoration(color: ThixPolicy.warning, shape: BoxShape.circle),
-      child: const Icon(Icons.lock_rounded, size: 10, color: ThixPolicy.inkDeep),
-    ),
-  );
+        top: 6,
+        left: 6,
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          decoration: const BoxDecoration(color: ThixPolicy.warning, shape: BoxShape.circle),
+          child: const Icon(Icons.lock_rounded, size: 10, color: ThixPolicy.inkDeep),
+        ),
+      );
 
   Widget _buildPrivateBadge(AppLocalizations l10n) => Positioned(
-    top: 6,
-    left: widget.post.isPaid ? 28 : 6,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.black87,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        _safeTr(l10n, 'profile_badge_private', 'Privé'),
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
+        top: 6,
+        left: widget.post.isPaid ? 28 : 6,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            _safeTr(l10n, 'profile_badge_private', 'Privé'),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
-      ),
-    ),
-  );
+      );
 
-  /// ✅ Badge Repost avec attribution à l'auteur original
   Widget _buildRepostBadge(AppLocalizations l10n) {
     final authorDisplay = _originalAuthorName != null && _originalAuthorName!.isNotEmpty
         ? '@${_originalAuthorName!}'
         : _safeTr(l10n, 'profile_original_author', 'auteur');
-    
+
     return Positioned(
       top: 6,
       left: widget.post.isPaid ? 28 : 6,
@@ -698,50 +705,185 @@ class _ProfileVideoCardState extends ConsumerState<ProfileVideoCard> {
     );
   }
 
-  /// ✅ Overlay stats : Vues + Reposts
   Widget _buildStatsOverlay(int views, int repostCount) => Positioned(
-    left: 6,
-    right: 6,
-    bottom: 6,
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        // Vues
-        Row(
-          mainAxisSize: MainAxisSize.min,
+        left: 6,
+        right: 6,
+        bottom: 6,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 14),
-            const SizedBox(width: 2),
-            Text(
-              _formatNumber(views),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                shadows: [Shadow(color: Colors.black54, blurRadius: 2)],
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 14),
+                const SizedBox(width: 2),
+                Text(
+                  _formatNumber(views),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    shadows: [Shadow(color: Colors.black54, blurRadius: 2)],
+                  ),
+                ),
+              ],
+            ),
+            if (repostCount > 0)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.repeat_rounded, color: Colors.white, size: 12),
+                  const SizedBox(width: 2),
+                  Text(
+                    _formatNumber(repostCount),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      shadows: [Shadow(color: Colors.black54, blurRadius: 2)],
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      );
+}
+
+// ============================================================================
+// ✅ LECTEUR VIDÉO PLEIN ÉCRAN INTÉGRÉ
+// ============================================================================
+
+class _InlineVideoPlayerPage extends StatefulWidget {
+  final String videoUrl;
+  final String? coverUrl;
+  final String title;
+
+  const _InlineVideoPlayerPage({
+    required this.videoUrl,
+    this.coverUrl,
+    required this.title,
+  });
+
+  @override
+  State<_InlineVideoPlayerPage> createState() => _InlineVideoPlayerPageState();
+}
+
+class _InlineVideoPlayerPageState extends State<_InlineVideoPlayerPage> {
+  bool _showUI = true;
+  Timer? _hideTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Mode immersif : cacher les barres système
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    _scheduleHideUI();
+  }
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    // Restaurer les barres système
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
+  }
+
+  void _scheduleHideUI() {
+    _hideTimer?.cancel();
+    _hideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _showUI = false);
+    });
+  }
+
+  void _toggleUI() {
+    setState(() => _showUI = !_showUI);
+    if (_showUI) _scheduleHideUI();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final topPadding = MediaQuery.of(context).padding.top;
+    final hasVideo = widget.videoUrl.trim().isNotEmpty;
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: GestureDetector(
+        onTap: _toggleUI,
+        behavior: HitTestBehavior.translucent,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // ── Lecteur vidéo ──
+            if (!hasVideo)
+              const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.videocam_off_rounded, color: Colors.white54, size: 48),
+                    SizedBox(height: 12),
+                    Text(
+                      'Vidéo indisponible',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                  ],
+                ),
+              )
+            else
+              FeedVideoPlayer(
+                videoUrl: widget.videoUrl,
+                coverUrl: widget.coverUrl,
+                isPlaying: true,
+                onPlayStateChanged: (_) {},
+              ),
+
+            // ── Overlay UI (barre du haut) ──
+            AnimatedOpacity(
+              opacity: _showUI ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 250),
+              child: IgnorePointer(
+                ignoring: !_showUI,
+                child: Container(
+                  padding: EdgeInsets.only(top: topPadding + 8, left: 8, right: 8),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.black.withOpacity(0.7), Colors.transparent],
+                      stops: const [0.0, 1.0],
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                            color: Colors.white, size: 20),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          widget.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ],
         ),
-        // Reposts (si > 0)
-        if (repostCount > 0)
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.repeat_rounded, color: Colors.white, size: 12),
-              const SizedBox(width: 2),
-              Text(
-                _formatNumber(repostCount),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  shadows: [Shadow(color: Colors.black54, blurRadius: 2)],
-                ),
-              ),
-            ],
-          ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
