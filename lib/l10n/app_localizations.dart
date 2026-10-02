@@ -2384,6 +2384,43 @@ const Map<String, String> _fr = {
 // ── MY COUNTRY: ACTION BUTTONS (BOTTOM OF PAGE) ──────────────────
 'mon_pays_action_wanted': 'Wanted Person',
 'mon_pays_action_civic_search': 'Civic Search',
+  // ── STATUS / STORY ───────────────────────────────────────────────
+'status_publish': 'Publier',
+'status_empty_error': 'Le statut ne peut pas être vide',
+'status_publish_error': 'Échec de la publication du statut',
+'status_file_read_error': 'Impossible de lire le fichier',
+'status_file_too_big': 'Fichier trop volumineux',
+'status_text_input': 'Saisie du statut',
+'status_hint': 'Quoi de neuf ?',
+'status_color': 'Couleur',
+'status_add_image': 'Ajouter une image',
+
+// ── STATUS VIEWER (VISIONNEUSE) ─────────────────────────────────
+'status_no_stories': 'Aucun statut disponible',
+'status_my_status': 'Mon statut',
+'status_unknown_user': 'Utilisateur inconnu',
+'status_just_now': 'À l\'instant',
+'status_minutes_ago': 'min',
+'status_yesterday': 'Hier',
+'status_delete_title': 'Supprimer le statut ?',
+'status_delete_message': 'Cette action est irréversible. Le statut sera définitivement supprimé.',
+'status_reaction_sent': 'Réaction envoyée :',
+'status_reposted': 'Statut republié avec succès',
+'status_repost_error': 'Échec du repost',
+'status_viewed_by': 'Vu par',
+'status_no_views': 'Personne n\'a encore vu ce statut',
+'status_view_views': 'Voir les vues',
+'status_edit': 'Modifier',
+'status_delete': 'Supprimer',
+'status_views_count': '{count} vues',
+'status_repost': 'Republier',
+
+// ── LOGIN PAGE (SÉCURITÉ ET INSCRIPTION) ─────────────────────────
+'login_security_title': 'Connexion sécurisée',
+'login_security_subtitle': 'Vos données sont protégées par un chiffrement de bout en bout',
+'login_new_user': 'Nouveau sur la plateforme ?',
+'login_create_account': 'Créer un compte',
+
 
 };
   
@@ -4682,6 +4719,43 @@ const Map<String, String> _en = {
 // ── MY COUNTRY: ACTION BUTTONS (BOTTOM OF PAGE) ──────────────────
 'mon_pays_action_wanted': 'Wanted Person',
 'mon_pays_action_civic_search': 'Civic Search',
+  // ── STATUS / STORY ───────────────────────────────────────────────
+'status_publish': 'Publish',
+'status_empty_error': 'Status cannot be empty',
+'status_publish_error': 'Failed to publish status',
+'status_file_read_error': 'Unable to read file',
+'status_file_too_big': 'File too large',
+'status_text_input': 'Status input',
+'status_hint': 'What\'s on your mind?',
+'status_color': 'Color',
+'status_add_image': 'Add an image',
+
+// ── STATUS VIEWER ────────────────────────────────────────────────
+'status_no_stories': 'No status available',
+'status_my_status': 'My status',
+'status_unknown_user': 'Unknown user',
+'status_just_now': 'Just now',
+'status_minutes_ago': 'min',
+'status_yesterday': 'Yesterday',
+'status_delete_title': 'Delete status?',
+'status_delete_message': 'This action cannot be undone. The status will be permanently deleted.',
+'status_reaction_sent': 'Reaction sent:',
+'status_reposted': 'Status reposted successfully',
+'status_repost_error': 'Failed to repost',
+'status_viewed_by': 'Viewed by',
+'status_no_views': 'No one has viewed this status yet',
+'status_view_views': 'View views',
+'status_edit': 'Edit',
+'status_delete': 'Delete',
+'status_views_count': '{count} views',
+'status_repost': 'Repost',
+
+// ── LOGIN PAGE (SECURITY & REGISTRATION) ─────────────────────────
+'login_security_title': 'Secure Login',
+'login_security_subtitle': 'Your data is protected with end-to-end encryption',
+'login_new_user': 'New user?',
+'login_create_account': 'Create an account',
+
 
 };
 
@@ -6982,6 +7056,42 @@ const Map<String, String> _sw = {
 // ── NCHI YANGU: VITUFA VYA KUTENDA (CHINI YA UKURASA) ───────────
 'mon_pays_action_wanted': 'Mtu Anayetafutwa',
 'mon_pays_action_civic_search': 'Utafutaji wa Kiraia',
+// ── STATUS / STORY ───────────────────────────────────────────────
+'status_publish': 'Chapisha',
+'status_empty_error': 'Hali haiwezi kuwa tupu',
+'status_publish_error': 'Imeshindwa kuchapisha hali',
+'status_file_read_error': 'Imeshindwa kusoma faili',
+'status_file_too_big': 'Faili ni kubwa mno',
+'status_text_input': 'Ingiza hali',
+'status_hint': 'Unafikiria nini?',
+'status_color': 'Rangi',
+'status_add_image': 'Ongeza picha',
+
+// ── STATUS VIEWER ────────────────────────────────────────────────
+'status_no_stories': 'Hakuna hali inayopatikana',
+'status_my_status': 'Hali yangu',
+'status_unknown_user': 'Mtumiaji asiyejulikana',
+'status_just_now': 'Hivi sasa',
+'status_minutes_ago': 'daika',
+'status_yesterday': 'Jana',
+'status_delete_title': 'Futa hali?',
+'status_delete_message': 'Kitendo hiki hakiwezi kubatilishwa. Hali itafutwa kabisa.',
+'status_reaction_sent': 'Jibu limetumwa:',
+'status_reposted': 'Hali imechapishwa tena kwa mafanikio',
+'status_repost_error': 'Imeshindwa kuchapisha tena',
+'status_viewed_by': 'Imeangaliwa na',
+'status_no_views': 'Hakuna mtu aliyeangalia hali hii bado',
+'status_view_views': 'Tazama waliotazama',
+'status_edit': 'Hariri',
+'status_delete': 'Futa',
+'status_views_count': 'Waliotazama {count}',
+'status_repost': 'Chapisha tena',
+
+// ── LOGIN PAGE (USALAMA NA USAJILI) ─────────────────────────────
+'login_security_title': 'Ingia kwa usalama',
+'login_security_subtitle': 'Data yako imelindwa kwa njia ya fiche ya mwisho hadi mwisho',
+'login_new_user': 'Je, wewe ni mgeni?',
+'login_create_account': 'Fungua akaunti',
 
 };
 
@@ -9243,6 +9353,43 @@ const Map<String, String> _pt = {
 // ── MEU PAÍS: BOTÕES DE AÇÃO (RODAPÉ DA PÁGINA) ──────────────────
 'mon_pays_action_wanted': 'Pessoa Procurada',
 'mon_pays_action_civic_search': 'Pesquisa Cidadã',
+  // ── STATUS / STORY ───────────────────────────────────────────────
+'status_publish': 'Publicar',
+'status_empty_error': 'O status não pode estar vazio',
+'status_publish_error': 'Falha ao publicar o status',
+'status_file_read_error': 'Não foi possível ler o arquivo',
+'status_file_too_big': 'Arquivo muito grande',
+'status_text_input': 'Digitar status',
+'status_hint': 'No que você está pensando?',
+'status_color': 'Cor',
+'status_add_image': 'Adicionar uma imagem',
+
+// ── STATUS VIEWER ────────────────────────────────────────────────
+'status_no_stories': 'Nenhum status disponível',
+'status_my_status': 'Meu status',
+'status_unknown_user': 'Usuário desconhecido',
+'status_just_now': 'Agora mesmo',
+'status_minutes_ago': 'min',
+'status_yesterday': 'Ontem',
+'status_delete_title': 'Excluir status?',
+'status_delete_message': 'Esta ação é irreversível. O status será excluído permanentemente.',
+'status_reaction_sent': 'Reação enviada:',
+'status_reposted': 'Status republicado com sucesso',
+'status_repost_error': 'Falha ao republicar',
+'status_viewed_by': 'Visto por',
+'status_no_views': 'Ninguém viu este status ainda',
+'status_view_views': 'Ver visualizações',
+'status_edit': 'Editar',
+'status_delete': 'Excluir',
+'status_views_count': '{count} visualizações',
+'status_repost': 'Republicar',
+
+// ── LOGIN PAGE (SEGURANÇA E REGISTRO) ─────────────────────────────
+'login_security_title': 'Conexão segura',
+'login_security_subtitle': 'Seus dados estão protegidos com criptografia de ponta a ponta',
+'login_new_user': 'Novo por aqui?',
+'login_create_account': 'Criar uma conta',
+
 
 };
 
@@ -11505,6 +11652,43 @@ const Map<String, String> _ar = {
 // ── MY COUNTRY: ACTION BUTTONS (BOTTOM OF PAGE) ──────────────────
 'mon_pays_action_wanted': 'شخص مطلوب',
 'mon_pays_action_civic_search': 'بحث مدني',
+  // ── STATUS / STORY ───────────────────────────────────────────────
+'status_publish': 'نشر',
+'status_empty_error': 'لا يمكن أن تكون الحالة فارغة',
+'status_publish_error': 'فشل نشر الحالة',
+'status_file_read_error': 'تعذر قراءة الملف',
+'status_file_too_big': 'الملف كبير جداً',
+'status_text_input': 'إدخال الحالة',
+'status_hint': 'بماذا تفكر؟',
+'status_color': 'اللون',
+'status_add_image': 'إضافة صورة',
+
+// ── STATUS VIEWER ────────────────────────────────────────────────
+'status_no_stories': 'لا توجد حالات متاحة',
+'status_my_status': 'حالاتي',
+'status_unknown_user': 'مستخدم غير معروف',
+'status_just_now': 'الآن',
+'status_minutes_ago': 'د',
+'status_yesterday': 'أمس',
+'status_delete_title': 'حذف الحالة؟',
+'status_delete_message': 'هذا الإجراء غير قابل للاسترداد. سيتم حذف الحالة نهائياً.',
+'status_reaction_sent': 'تم إرسال التفاعل:',
+'status_reposted': 'تم إعادة نشر الحالة بنجاح',
+'status_repost_error': 'فشل إعادة النشر',
+'status_viewed_by': 'شوهد بواسطة',
+'status_no_views': 'لم يشاهد أحد هذه الحالة بعد',
+'status_view_views': 'عرض المشاهدات',
+'status_edit': 'تعديل',
+'status_delete': 'حذف',
+'status_views_count': '{count} مشاهدة',
+'status_repost': 'إعادة نشر',
+
+// ── LOGIN PAGE (الأمان والتسجيل) ─────────────────────────────
+'login_security_title': 'تسجيل دخول آمن',
+'login_security_subtitle': 'بياناتك محمية بتشفير من الطرف إلى الطرف',
+'login_new_user': 'مستخدم جديد؟',
+'login_create_account': 'إنشاء حساب',
+
 
 };
 
@@ -13766,6 +13950,42 @@ const Map<String, String> _zh = {
 // ── 我的国家：操作按钮（页脚） ──────────────────
 'mon_pays_action_wanted': '通缉/寻人',
 'mon_pays_action_civic_search': '公民查询',
+// ── STATUS / STORY ───────────────────────────────────────────────
+'status_publish': '发布',
+'status_empty_error': '动态内容不能为空',
+'status_publish_error': '动态发布失败',
+'status_file_read_error': '无法读取文件',
+'status_file_too_big': '文件过大',
+'status_text_input': '输入动态',
+'status_hint': '分享新鲜事...',
+'status_color': '颜色',
+'status_add_image': '添加图片',
+
+// ── STATUS VIEWER ────────────────────────────────────────────────
+'status_no_stories': '暂无可用动态',
+'status_my_status': '我的动态',
+'status_unknown_user': '未知用户',
+'status_just_now': 'GAI',
+'status_minutes_ago': '分钟前',
+'status_yesterday': '昨天',
+'status_delete_title': '删除动态？',
+'status_delete_message': '此操作无法撤销，该动态将被永久删除。',
+'status_reaction_sent': '已发送回应：',
+'status_reposted': '动态转发表成功',
+'status_repost_error': '转发失败',
+'status_viewed_by': '浏览记录',
+'status_no_views': '暂无人员浏览此动态',
+'status_view_views': '查看浏览记录',
+'status_edit': '编辑',
+'status_delete': '删除',
+'status_views_count': '{count} 次浏览',
+'status_repost': '转发',
+
+// ── LOGIN PAGE (安全与注册) ─────────────────────────────
+'login_security_title': '安全登录',
+'login_security_subtitle': '您的数据受端到端加密保护',
+'login_new_user': '新用户？',
+'login_create_account': '创建账号',
 
 };
 
@@ -15270,5 +15490,41 @@ const Map<String, String> _es = {
 'mon_pays_action_wanted': 'Persona Buscada',
 'mon_pays_action_civic_search': 'Búsqueda Ciudadana',
 
+// ── STATUS / STORY ───────────────────────────────────────────────
+'status_publish': 'Publicar',
+'status_empty_error': 'El estado no puede estar vacío',
+'status_publish_error': 'Error al publicar el estado',
+'status_file_read_error': 'No se pudo leer el archivo',
+'status_file_too_big': 'Archivo demasiado grande',
+'status_text_input': 'Entrada de estado',
+'status_hint': '¿Qué estás pensando?',
+'status_color': 'Color',
+'status_add_image': 'Añadir una imagen',
+
+// ── STATUS VIEWER ────────────────────────────────────────────────
+'status_no_stories': 'No hay estados disponibles',
+'status_my_status': 'Mi estado',
+'status_unknown_user': 'Usuario desconocido',
+'status_just_now': 'Justo ahora',
+'status_minutes_ago': 'min',
+'status_yesterday': 'Ayer',
+'status_delete_title': '¿Eliminar estado?',
+'status_delete_message': 'Esta acción no se puede deshacer. El estado se eliminará permanentemente.',
+'status_reaction_sent': 'Reacción enviada:',
+'status_reposted': 'Estado republicado con éxito',
+'status_repost_error': 'Error al republicar',
+'status_viewed_by': 'Visto por',
+'status_no_views': 'Nadie ha visto este estado todavía',
+'status_view_views': 'Ver visualizaciones',
+'status_edit': 'Editar',
+'status_delete': 'Eliminar',
+'status_views_count': '{count} visualizaciones',
+'status_repost': 'Republicar',
+
+// ── LOGIN PAGE (SEGURIDAD Y REGISTRO) ─────────────────────────────
+'login_security_title': 'Inicio de sesión seguro',
+'login_security_subtitle': 'Tus datos están protegidos con cifrado de extremo a extremo',
+'login_new_user': '¿Nuevo usuario?',
+'login_create_account': 'Crear una cuenta',
 
 };
