@@ -1,4 +1,6 @@
+// lib/presentation/vault/document_vault_page.dart
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -7,6 +9,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:thix_id/auth/auth_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -15,7 +18,7 @@ import 'package:thix_id/nav.dart';
 import 'package:thix_id/services/document_service.dart';
 
 // =============================================================
-// PALETTE VAULT v2 — graphite & or (compact)
+// PALETTE VAULT v3 — graphite & or (compact)
 // =============================================================
 class _V {
   static const bg = Color(0xFF0B1017);
@@ -30,9 +33,13 @@ class _V {
   static const ok = Color(0xFF34D399);
   static const warn = Color(0xFFFBBF24);
   static const danger = Color(0xFFF87171);
+  static const dangerBright = Color(0xFFFF453A);
   static const info = Color(0xFF60A5FA);
 }
 
+// =============================================================
+// PAGE PRINCIPALE
+// =============================================================
 class DocumentVaultPage extends StatefulWidget {
   const DocumentVaultPage({super.key});
   @override
@@ -52,6 +59,10 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(() => setState(() {}));
+    // Cache images Flutter agrandi (évite les re-téléchargements)
+    PaintingBinding.instance.imageCache
+      ..maximumSize = 500
+      ..maximumSizeBytes = 200 * 1024 * 1024;
   }
 
   @override
@@ -65,7 +76,7 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg, style: const TextStyle(fontSize: 12)),
-      backgroundColor: error ? _V.danger : _V.ok,
+      backgroundColor: error ? _V.dangerBright : _V.ok,
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 2),
     ));
@@ -75,7 +86,9 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
     try {
       await launchUrl(
         Uri.parse(url),
-        mode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication,
+        mode: kIsWeb
+            ? LaunchMode.platformDefault
+            : LaunchMode.externalApplication,
         webOnlyWindowName: kIsWeb ? '_blank' : null,
       );
     } catch (_) {
@@ -89,7 +102,8 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
       if (url.trim().isEmpty) throw Exception('empty');
       await _openUrl(url);
     } catch (_) {
-      _snack(AppLocalizations.of(context).t('vault_download_failed'), error: true);
+      _snack(AppLocalizations.of(context).t('vault_download_failed'),
+          error: true);
     }
   }
 
@@ -112,7 +126,8 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
         backgroundColor: _V.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         title: Text(l10n.t('vault_new_folder'),
-            style: const TextStyle(color: _V.text, fontSize: 14, fontWeight: FontWeight.w800)),
+            style: const TextStyle(
+                color: _V.text, fontSize: 14, fontWeight: FontWeight.w800)),
         content: TextField(
           controller: ctrl,
           style: const TextStyle(color: _V.text, fontSize: 13),
@@ -135,10 +150,12 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
               style: FilledButton.styleFrom(
                   backgroundColor: _V.gold,
                   foregroundColor: _V.bg,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
               onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
               child: Text(l10n.t('vault_create'),
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800))),
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w800))),
         ],
       ),
     );
@@ -179,17 +196,17 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
       );
       _snack(l10n.t('vault_upload_ok', args: [id]));
     } catch (e) {
-      _snack(DocumentService.isBucketNotFound(e)
-          ? l10n.t('vault_upload_failed')
-          : l10n.t('vault_upload_failed'), error: true);
+      _snack(l10n.t('vault_upload_failed'), error: true);
     }
   }
 
-  Future<void> _openSendSheet() async {
+  Future<void> _openSendSheet({Map<String, dynamic>? singleDoc}) async {
     final l10n = AppLocalizations.of(context);
     final me = context.read<AuthController>().currentUser;
     if (me == null) return;
-    final docs = await _docs.fetchDocuments(me.id, limit: 50);
+    final docs = singleDoc != null
+        ? [singleDoc]
+        : await _docs.fetchDocuments(me.id, limit: 50);
     if (!mounted) return;
     if (docs.isEmpty) {
       _snack(l10n.t('vault_select_archive'), error: true);
@@ -202,10 +219,12 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
       builder: (_) => _SendSheet(
         documents: docs,
         docsService: _docs,
+        initialDocId: singleDoc?['id']?.toString(),
         onDone: (ok) {
           if (!mounted) return;
           Navigator.of(context).pop();
-          _snack(ok ? l10n.t('vault_send_ok') : l10n.t('vault_send_failed'), error: !ok);
+          _snack(l10n.t(ok ? 'vault_send_ok' : 'vault_send_failed'),
+              error: !ok);
         },
       ),
     );
@@ -220,7 +239,8 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
         backgroundColor: _V.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         title: Text(l10n.t('vault_verify_title'),
-            style: const TextStyle(color: _V.text, fontSize: 14, fontWeight: FontWeight.w800)),
+            style: const TextStyle(
+                color: _V.text, fontSize: 14, fontWeight: FontWeight.w800)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -252,10 +272,12 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
               style: FilledButton.styleFrom(
                   backgroundColor: _V.gold,
                   foregroundColor: _V.bg,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
               onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
               child: Text(l10n.t('common_search'),
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800))),
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w800))),
         ],
       ),
     );
@@ -268,7 +290,14 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
     }
     await showDialog(
       context: context,
-      builder: (ctx) => _CertifiedDocDialog(res: res, docs: _docs, onOpen: _openUrl),
+      builder: (ctx) => _CertifiedDocDialog(
+        res: res,
+        docs: _docs,
+        onOpen: _openUrl,
+        me: context.read<AuthController>().currentUser,
+        onSaved: () => _snack(l10n.t('vault_saved_ok')),
+        onSaveFailed: () => _snack(l10n.t('vault_save_failed'), error: true),
+      ),
     );
   }
 
@@ -284,8 +313,8 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
       builder: (_) => StatefulBuilder(
         builder: (ctx, setSheet) => Container(
           margin: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-              color: _V.card, borderRadius: BorderRadius.circular(16)),
+          decoration:
+              BoxDecoration(color: _V.card, borderRadius: BorderRadius.circular(16)),
           padding: const EdgeInsets.all(14),
           child: SafeArea(
             child: Column(
@@ -299,27 +328,24 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
                         color: _V.text, fontSize: 13, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 10),
                 _MenuTile(
-                  icon: Icons.open_in_new_rounded,
-                  label: l10n.t('vault_open_archive'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _openDoc(row);
-                  },
-                ),
+                    icon: Icons.open_in_new_rounded,
+                    label: l10n.t('vault_open_archive'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _openDoc(row);
+                    }),
                 _MenuTile(
-                  icon: Icons.qr_code_2_rounded,
-                  label: l10n.t('vault_menu_qr'),
-                  onTap: () => showQrDialog(context,
-                      title: (row['title'] as String?) ?? '',
-                      value: docId.isNotEmpty ? docId : (row['title'] as String? ?? '')),
-                ),
+                    icon: Icons.qr_code_2_rounded,
+                    label: l10n.t('vault_menu_qr'),
+                    onTap: () => showQrDialog(context,
+                        title: (row['title'] as String?) ?? '',
+                        value: docId.isNotEmpty ? docId : (row['title'] ?? ''))),
                 _MenuTile(
-                  icon: Icons.badge_outlined,
-                  label: l10n.t('vault_menu_id'),
-                  onTap: () => showDocIdDialog(context,
-                      docId: docId.isNotEmpty ? docId : '—',
-                      title: (row['title'] as String?) ?? ''),
-                ),
+                    icon: Icons.badge_outlined,
+                    label: l10n.t('vault_menu_id'),
+                    onTap: () => showDocIdDialog(context,
+                        docId: docId.isNotEmpty ? docId : '—',
+                        title: (row['title'] as String?) ?? '')),
                 SwitchListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
@@ -346,24 +372,23 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
                         },
                 ),
                 _MenuTile(
-                  icon: Icons.delete_outline_rounded,
-                  label: l10n.t('common_delete'),
-                  color: _V.danger,
-                  onTap: () async {
-                    if (me == null) return;
-                    try {
-                      await _docs.deleteDocument(
-                          uid: me.id,
-                          documentId: (row['id'] ?? '').toString(),
-                          storagePath: (row['storage_path'] as String?) ?? '',
-                          docId: docId);
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      _snack(l10n.t('vault_deleted'));
-                    } catch (_) {
-                      _snack(l10n.t('vault_delete_failed'), error: true);
-                    }
-                  },
-                ),
+                    icon: Icons.delete_outline_rounded,
+                    label: l10n.t('common_delete'),
+                    color: _V.dangerBright,
+                    onTap: () async {
+                      if (me == null) return;
+                      try {
+                        await _docs.deleteDocument(
+                            uid: me.id,
+                            documentId: (row['id'] ?? '').toString(),
+                            storagePath: (row['storage_path'] as String?) ?? '',
+                            docId: docId);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        _snack(l10n.t('vault_deleted'));
+                      } catch (_) {
+                        _snack(l10n.t('vault_delete_failed'), error: true);
+                      }
+                    }),
               ],
             ),
           ),
@@ -382,26 +407,24 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
       body: SafeArea(
         child: Column(
           children: [
-            // ── HEADER compact ──
             Container(
               color: _V.surface,
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
               child: Row(
                 children: [
                   _IconBtn(
-                    icon: Icons.arrow_back_ios_new_rounded,
-                    onTap: () {
-                      final auth = context.read<AuthController>();
-                      if (auth.isAuthenticated) {
-                        final t = auth.currentUser?.accountType;
-                        context.go(t == AccountType.enterprise
-                            ? AppRoutes.enterpriseDashboard
-                            : AppRoutes.userDashboard);
-                        return;
-                      }
-                      context.go(AppRoutes.home);
-                    },
-                  ),
+                      icon: Icons.arrow_back_ios_new_rounded,
+                      onTap: () {
+                        final auth = context.read<AuthController>();
+                        if (auth.isAuthenticated) {
+                          final t = auth.currentUser?.accountType;
+                          context.go(t == AccountType.enterprise
+                              ? AppRoutes.enterpriseDashboard
+                              : AppRoutes.userDashboard);
+                          return;
+                        }
+                        context.go(AppRoutes.home);
+                      }),
                   const SizedBox(width: 8),
                   const Icon(Icons.lock_rounded, color: _V.gold, size: 16),
                   const SizedBox(width: 6),
@@ -413,7 +436,8 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
                           letterSpacing: 0.5)),
                   const Spacer(),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(
                         color: _V.ok.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(6),
@@ -421,7 +445,8 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.verified_user_rounded, color: _V.ok, size: 10),
+                        const Icon(Icons.verified_user_rounded,
+                            color: _V.ok, size: 10),
                         const SizedBox(width: 4),
                         Text(l10n.t('vault_secure'),
                             style: const TextStyle(
@@ -436,7 +461,6 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
                 ],
               ),
             ),
-            // ── SEARCH inline compact ──
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
               child: Container(
@@ -457,8 +481,8 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
                   decoration: InputDecoration(
                     hintText: l10n.t('vault_search_hint'),
                     hintStyle: const TextStyle(color: _V.textMut, fontSize: 11.5),
-                    prefixIcon:
-                        const Icon(Icons.search_rounded, size: 15, color: _V.textSec),
+                    prefixIcon: const Icon(Icons.search_rounded,
+                        size: 15, color: _V.textSec),
                     suffixIcon: _query.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.close_rounded,
@@ -470,13 +494,11 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
                           )
                         : null,
                     border: InputBorder.none,
-                    contentPadding:
-                        const EdgeInsets.symmetric(vertical: 9),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 9),
                   ),
                 ),
               ),
             ),
-            // ── TABS compact ──
             Container(
               height: 34,
               margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
@@ -486,12 +508,13 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
                   border: Border.all(color: _V.border)),
               child: TabBar(
                 controller: _tabController,
-                indicator: BoxDecoration(
-                    color: _V.gold, borderRadius: BorderRadius.circular(8)),
+                indicator:
+                    BoxDecoration(color: _V.gold, borderRadius: BorderRadius.circular(8)),
                 indicatorSize: TabBarIndicatorSize.tab,
                 labelColor: _V.bg,
                 unselectedLabelColor: _V.textSec,
-                labelStyle: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900),
+                labelStyle:
+                    const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900),
                 unselectedLabelStyle:
                     const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600),
                 dividerColor: Colors.transparent,
@@ -519,7 +542,8 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
                     fmtDate: _fmtDate,
                     fmtSize: _fmtSize,
                   ),
-                  _SendTab(me: me, docs: _docs, onSend: _openSendSheet, fmtDate: _fmtDate),
+                  _SendTab(
+                      me: me, docs: _docs, onSend: () => _openSendSheet(), fmtDate: _fmtDate),
                   _InboxTab(me: me, docs: _docs, onOpen: _openDoc, fmtDate: _fmtDate),
                   _AuditTab(me: me, docs: _docs, fmtDate: _fmtDate),
                 ],
@@ -594,6 +618,48 @@ class _MenuTile extends StatelessWidget {
   }
 }
 
+/// Image mise en cache (bytes en mémoire) — évite les appels réseau répétés.
+class _CachedImg extends StatefulWidget {
+  final String url;
+  final double size;
+  final BorderRadius? radius;
+  final Widget fallback;
+  const _CachedImg(
+      {required this.url,
+      required this.size,
+      this.radius,
+      required this.fallback});
+  @override
+  State<_CachedImg> createState() => _CachedImgState();
+}
+
+class _CachedImgState extends State<_CachedImg> {
+  static final Map<String, Future<Uint8List>> _cache = {};
+  @override
+  Widget build(BuildContext context) {
+    final fut = _cache.putIfAbsent(widget.url,
+        () => http.get(Uri.parse(widget.url)).then((r) => r.bodyBytes));
+    return FutureBuilder<Uint8List>(
+      future: fut,
+      builder: (context, snap) {
+        if (!snap.hasData) return widget.fallback;
+        return ClipRRect(
+          borderRadius: widget.radius ?? BorderRadius.zero,
+          child: Image.memory(
+            snap.data!,
+            width: widget.size,
+            height: widget.size,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => widget.fallback,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Countdown ROUGE CLAIR (visible, lumineux)
 class _Count extends StatefulWidget {
   final DateTime start;
   final DateTime target;
@@ -603,7 +669,7 @@ class _Count extends StatefulWidget {
       {required this.start,
       required this.target,
       required this.label,
-      this.color = _V.danger});
+      this.color = _V.dangerBright});
   @override
   State<_Count> createState() => _CountState();
 }
@@ -642,21 +708,29 @@ class _CountState extends State<_Count> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(widget.label,
-                style: const TextStyle(
-                    fontSize: 9, color: _V.textMut, fontWeight: FontWeight.w700)),
+                style: TextStyle(
+                    fontSize: 9,
+                    color: widget.color.withOpacity(0.85),
+                    fontWeight: FontWeight.w800)),
             Text(f(rem),
                 style: TextStyle(
-                    fontSize: 9.5, color: widget.color, fontWeight: FontWeight.w900)),
+                    fontSize: 10.5,
+                    color: widget.color,
+                    fontWeight: FontWeight.w900,
+                    shadows: [
+                      Shadow(color: widget.color.withOpacity(0.6), blurRadius: 6)
+                    ])),
           ],
         ),
-        const SizedBox(height: 3),
+        const SizedBox(height: 4),
         ClipRRect(
           borderRadius: BorderRadius.circular(4),
           child: LinearProgressIndicator(
-              value: p,
-              minHeight: 3,
-              backgroundColor: widget.color.withOpacity(0.15),
-              valueColor: AlwaysStoppedAnimation(widget.color)),
+            value: p,
+            minHeight: 5,
+            backgroundColor: widget.color.withOpacity(0.25),
+            valueColor: AlwaysStoppedAnimation(widget.color),
+          ),
         ),
       ],
     );
@@ -683,6 +757,16 @@ IconData _typeIcon(String? mime, String? docType) {
   if (t.contains('diplome') || t.contains('diplôme')) return Icons.school_rounded;
   if (t == 'cin' || t == 'passeport' || t == 'permis') return Icons.badge_rounded;
   return Icons.description_rounded;
+}
+
+bool _isImageMime(String? mime, String? fileName) {
+  final m = (mime ?? '').toLowerCase();
+  final n = (fileName ?? '').toLowerCase();
+  return m.startsWith('image/') ||
+      n.endsWith('.jpg') ||
+      n.endsWith('.jpeg') ||
+      n.endsWith('.png') ||
+      n.endsWith('.webp');
 }
 
 void showQrDialog(BuildContext context,
@@ -769,11 +853,11 @@ void showDocIdDialog(BuildContext context,
             ),
             const SizedBox(height: 14),
             SizedBox(
-              height: 36,
+              height: 32,
               child: TextButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: Text(AppLocalizations.of(context).t('common_close'),
-                    style: const TextStyle(color: _V.textSec, fontSize: 12)),
+                    style: const TextStyle(color: _V.textSec, fontSize: 11)),
               ),
             ),
           ],
@@ -781,6 +865,78 @@ void showDocIdDialog(BuildContext context,
       ),
     ),
   );
+}
+
+/// Demande de mot de passe (partage chiffré) — fonction globale
+Future<bool> askVaultPassword(
+    BuildContext context, DocumentService docs, String stored) async {
+  final l10n = AppLocalizations.of(context);
+  final ctrl = TextEditingController();
+  String? err;
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setDlg) => AlertDialog(
+        backgroundColor: _V.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Row(children: [
+          const Icon(Icons.lock_rounded, color: _V.gold, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+              child: Text(l10n.t('vault_password_required'),
+                  style: const TextStyle(
+                      color: _V.text, fontSize: 13, fontWeight: FontWeight.w800))),
+        ]),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: ctrl,
+            obscureText: true,
+            style: const TextStyle(color: _V.text, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: l10n.t('vault_password'),
+              hintStyle: const TextStyle(color: _V.textMut, fontSize: 12),
+              filled: true,
+              fillColor: _V.cardSoft,
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: _V.border)),
+            ),
+          ),
+          if (err != null)
+            Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(err!,
+                    style: const TextStyle(
+                        color: _V.dangerBright, fontSize: 10.5))),
+        ]),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.t('common_cancel'),
+                  style: const TextStyle(color: _V.textSec, fontSize: 12))),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: _V.gold,
+                foregroundColor: _V.bg,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
+            onPressed: () async {
+              final valid =
+                  await docs.verifyPassword(password: ctrl.text, hash: stored);
+              if (valid) {
+                Navigator.pop(ctx, true);
+              } else {
+                setDlg(() => err = l10n.t('vault_wrong_password'));
+              }
+            },
+            child: Text(l10n.t('vault_decrypt_open'),
+                style: const TextStyle(
+                    fontSize: 11.5, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    ),
+  );
+  return ok == true;
 }
 
 // =============================================================
@@ -822,7 +978,6 @@ class _VaultTab extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 90),
       children: [
-        // Dossiers
         SizedBox(
           height: 28,
           child: StreamBuilder<List<Map<String, dynamic>>>(
@@ -970,7 +1125,7 @@ class _DocRow extends StatelessWidget {
     final docType = data['doc_type'] as String?;
     final color = _typeColor(mime, docType);
     final isPublic = (data['is_public'] as bool?) ?? false;
-    final isImage = mime.toLowerCase().contains('image');
+    final isImage = _isImageMime(mime, data['file_name'] as String?);
     return GestureDetector(
       onTap: onOpen,
       onLongPress: onMenu,
@@ -993,12 +1148,13 @@ class _DocRow extends StatelessWidget {
               child: isImage
                   ? FutureBuilder<String>(
                       future: docs.resolveRowDownloadUrl(data),
-                      builder: (context, snap) => snap.hasData
-                          ? Image.network(snap.data!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
-                                  Icon(_typeIcon(mime, docType),
-                                      color: color, size: 17))
+                      builder: (c, sn) => sn.hasData
+                          ? _CachedImg(
+                              url: sn.data!,
+                              size: 38,
+                              radius: BorderRadius.circular(9),
+                              fallback:
+                                  Icon(_typeIcon(mime, docType), color: color, size: 17))
                           : Icon(_typeIcon(mime, docType), color: color, size: 17),
                     )
                   : Icon(_typeIcon(mime, docType), color: color, size: 17),
@@ -1012,9 +1168,7 @@ class _DocRow extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                          color: _V.text,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800)),
+                          color: _V.text, fontSize: 12, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 2),
                   Text(
                       '${fmtDate(data['created_at'])} • ${fmtSize((data['size_bytes'] as num?)?.toInt() ?? 0)} • ${(data['generated_doc_id'] as String?) ?? ''}',
@@ -1029,8 +1183,8 @@ class _DocRow extends StatelessWidget {
             const SizedBox(width: 4),
             GestureDetector(
                 onTap: onMenu,
-                child: const Icon(Icons.more_vert_rounded,
-                    size: 14, color: _V.textSec)),
+                child:
+                    const Icon(Icons.more_vert_rounded, size: 14, color: _V.textSec)),
           ],
         ),
       ),
@@ -1058,6 +1212,23 @@ class _SendTab extends StatefulWidget {
 class _SendTabState extends State<_SendTab> {
   final Set<String> _destroyed = {};
 
+  String _stLabel(AppLocalizations l10n, String st) {
+    switch (st) {
+      case 'opened':
+        return l10n.t('vault_st_opened');
+      case 'available':
+        return l10n.t('vault_st_sent');
+      case 'pending':
+        return l10n.t('vault_st_pending');
+      case 'expired':
+        return l10n.t('vault_st_expired');
+      case 'destroyed':
+        return l10n.t('vault_st_destroyed');
+      default:
+        return st;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -1078,12 +1249,11 @@ class _SendTabState extends State<_SendTab> {
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                    color: _V.gold.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(9)),
-                child: const Icon(Icons.shield_rounded, color: _V.gold, size: 18),
-              ),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                      color: _V.gold.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(9)),
+                  child: const Icon(Icons.shield_rounded, color: _V.gold, size: 18)),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(l10n.t('vault_send_subtitle'),
@@ -1113,7 +1283,8 @@ class _SendTabState extends State<_SendTab> {
             final now = DateTime.now();
             final visible = shares.where((s) {
               final st = (s['status'] as String?) ?? 'pending';
-              final ad = DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
+              final ad =
+                  DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
               if (st == 'destroyed' || st == 'expired') return false;
               if (ad != null && ad.isBefore(now)) {
                 final id = s['id']?.toString();
@@ -1136,12 +1307,12 @@ class _SendTabState extends State<_SendTab> {
             return Column(
               children: visible.map((s) {
                 final st = (s['status'] as String?) ?? 'pending';
+                final hasPw = (s['password_hash'] as String?)?.isNotEmpty == true;
                 final ad =
                     DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
-                final cd =
-                    DateTime.tryParse((s['created_at'] ?? '').toString()) ?? now;
-                final hasPw = (s['password_hash'] as String?)?.isNotEmpty == true;
-                Color c = st == 'opened'
+                final cd = DateTime.tryParse((s['created_at'] ?? '').toString()) ??
+                    now;
+                final c = st == 'opened'
                     ? _V.ok
                     : (st == 'pending' ? _V.warn : _V.info);
                 return Container(
@@ -1166,8 +1337,7 @@ class _SendTabState extends State<_SendTab> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                    (s['recipient_thix_id'] as String?) ?? '—',
+                                Text((s['recipient_thix_id'] as String?) ?? '—',
                                     style: const TextStyle(
                                         color: _V.text,
                                         fontSize: 11.5,
@@ -1184,8 +1354,7 @@ class _SendTabState extends State<_SendTab> {
                             ),
                           ),
                           if (hasPw)
-                            const Icon(Icons.lock_rounded,
-                                size: 11, color: _V.gold),
+                            const Icon(Icons.lock_rounded, size: 11, color: _V.gold),
                           const SizedBox(width: 6),
                           Container(
                             padding: const EdgeInsets.symmetric(
@@ -1207,7 +1376,7 @@ class _SendTabState extends State<_SendTab> {
                             start: cd,
                             target: ad,
                             label: l10n.t('vault_destruct_in'),
-                            color: _V.danger),
+                            color: _V.dangerBright),
                       ],
                     ],
                   ),
@@ -1219,27 +1388,10 @@ class _SendTabState extends State<_SendTab> {
       ],
     );
   }
-
-  String _stLabel(AppLocalizations l10n, String st) {
-    switch (st) {
-      case 'opened':
-        return l10n.t('vault_st_opened');
-      case 'available':
-        return l10n.t('vault_st_sent');
-      case 'pending':
-        return l10n.t('vault_st_pending');
-      case 'expired':
-        return l10n.t('vault_st_expired');
-      case 'destroyed':
-        return l10n.t('vault_st_destroyed');
-      default:
-        return st;
-    }
-  }
 }
 
 // =============================================================
-// ONGLET REÇUS (boîte mail)
+// ONGLET REÇUS (boîte mail + détail "Voir plus")
 // =============================================================
 class _InboxTab extends StatefulWidget {
   final AppUser? me;
@@ -1258,117 +1410,19 @@ class _InboxTab extends StatefulWidget {
 class _InboxTabState extends State<_InboxTab> {
   final Set<String> _destroyed = {};
 
-  Future<void> _openShare(Map<String, dynamic> s) async {
-    final l10n = AppLocalizations.of(context);
-    final shareId = s['id']?.toString();
-    final docId = s['document_id']?.toString();
-    if (shareId == null || docId == null) return;
-    final ad = DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
-    if (ad != null && ad.isBefore(DateTime.now())) {
-      await widget.docs.markShareDestroyed(shareId);
-      if (mounted) _snackLocal(l10n.t('vault_expired_destroyed'));
-      return;
-    }
-    final hasPw = (s['password_hash'] as String?)?.isNotEmpty == true;
-    if (hasPw) {
-      final ok = await _askPassword(s['password_hash'] as String);
-      if (!ok) return;
-    }
-    final doc = await widget.docs.fetchDocumentById(docId);
-    if (doc == null) {
-      if (mounted) _snackLocal(l10n.t('vault_archive_missing'));
-      return;
-    }
-    await widget.docs.markShareOpened(shareId,
-        uid: doc['user_id']?.toString(),
-        docId: doc['generated_doc_id']?.toString());
-    await widget.onOpen(doc);
-  }
-
-  void _snackLocal(String m) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(m, style: const TextStyle(fontSize: 12)),
-        backgroundColor: _V.danger,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2)));
-  }
-
-  Future<bool> _askPassword(String stored) async {
-    final l10n = AppLocalizations.of(context);
-    final ctrl = TextEditingController();
-    String? err;
-    final ok = await showDialog<bool>(
+  void _showDetail(Map<String, dynamic> s) {
+    showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlg) => AlertDialog(
-          backgroundColor: _V.card,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          title: Row(
-            children: [
-              const Icon(Icons.lock_rounded, color: _V.gold, size: 16),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(l10n.t('vault_password_required'),
-                    style: const TextStyle(
-                        color: _V.text,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800)),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: ctrl,
-                obscureText: true,
-                style: const TextStyle(color: _V.text, fontSize: 13),
-                decoration: InputDecoration(
-                  hintText: l10n.t('vault_password'),
-                  hintStyle: const TextStyle(color: _V.textMut, fontSize: 12),
-                  filled: true,
-                  fillColor: _V.cardSoft,
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: const BorderSide(color: _V.border)),
-                ),
-              ),
-              if (err != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(err!,
-                      style: const TextStyle(color: _V.danger, fontSize: 10.5)),
-                ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: Text(l10n.t('common_cancel'),
-                    style: const TextStyle(color: _V.textSec, fontSize: 12))),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: _V.gold,
-                  foregroundColor: _V.bg,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
-              onPressed: () async {
-                final valid = await widget.docs.verifyPassword(
-                    password: ctrl.text, hash: stored);
-                if (valid) {
-                  Navigator.pop(ctx, true);
-                } else {
-                  setDlg(() => err = l10n.t('vault_wrong_password'));
-                }
-              },
-              child: Text(l10n.t('vault_decrypt_open'),
-                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
-            ),
-          ],
-        ),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _InboxDetailSheet(
+        share: s,
+        docs: widget.docs,
+        me: widget.me,
+        fmtDate: widget.fmtDate,
+        onOpenDoc: widget.onOpen,
       ),
     );
-    return ok == true;
   }
 
   @override
@@ -1380,8 +1434,8 @@ class _InboxTabState extends State<_InboxTab> {
               style: const TextStyle(color: _V.textSec, fontSize: 12)));
     }
     return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: widget.docs
-          .streamReceivedShares(widget.me!.id, widget.me!.thixId),
+      stream:
+          widget.docs.streamReceivedShares(widget.me!.id, widget.me!.thixId),
       builder: (context, snap) {
         final shares = snap.data ?? const [];
         if (snap.connectionState == ConnectionState.waiting) {
@@ -1389,8 +1443,7 @@ class _InboxTabState extends State<_InboxTab> {
               child: SizedBox(
                   width: 18,
                   height: 18,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: _V.gold)));
+                  child: CircularProgressIndicator(strokeWidth: 2, color: _V.gold)));
         }
         final now = DateTime.now();
         final visible = shares.where((s) {
@@ -1415,9 +1468,7 @@ class _InboxTabState extends State<_InboxTab> {
               const SizedBox(height: 10),
               Text(l10n.t('vault_received_empty'),
                   style: const TextStyle(
-                      color: _V.textSec,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700)),
+                      color: _V.textSec, fontSize: 12.5, fontWeight: FontWeight.w700)),
             ],
           ));
         }
@@ -1429,13 +1480,15 @@ class _InboxTabState extends State<_InboxTab> {
             final shots = (s['screenshot_count'] as num?)?.toInt() ?? 0;
             final af = DateTime.tryParse((s['available_from'] ?? '').toString());
             final ad = DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
-            final cd = DateTime.tryParse((s['created_at'] ?? '').toString()) ?? now;
+            final cd =
+                DateTime.tryParse((s['created_at'] ?? '').toString()) ?? now;
             final locked = st == 'pending' && af != null && af.isAfter(now);
             final senderThix = s['sender_thix_id'] as String?;
             final senderId = (s['sender_id'] as String?) ?? '';
-            final sender = senderThix ?? (senderId.length >= 8 ? senderId.substring(0, 8) : '—');
+            final sender = senderThix ??
+                (senderId.length >= 8 ? senderId.substring(0, 8) : '—');
             return GestureDetector(
-              onTap: () => _openShare(s),
+              onTap: () => _showDetail(s),
               child: Container(
                 margin: const EdgeInsets.only(bottom: 6),
                 padding: const EdgeInsets.all(10),
@@ -1471,8 +1524,7 @@ class _InboxTabState extends State<_InboxTab> {
                                 children: [
                                   Expanded(
                                     child: Text(
-                                        (s['subject'] as String?)?.isNotEmpty ==
-                                                true
+                                        (s['subject'] as String?)?.isNotEmpty == true
                                             ? s['subject'] as String
                                             : l10n.t('vault_attachment'),
                                         maxLines: 1,
@@ -1523,9 +1575,7 @@ class _InboxTabState extends State<_InboxTab> {
                           decoration: BoxDecoration(
                               color: (locked
                                       ? _V.warn
-                                      : (st == 'opened'
-                                          ? _V.ok
-                                          : _V.info))
+                                      : (st == 'opened' ? _V.ok : _V.info))
                                   .withOpacity(0.12),
                               borderRadius: BorderRadius.circular(6)),
                           child: Text(
@@ -1541,6 +1591,9 @@ class _InboxTabState extends State<_InboxTab> {
                                   fontSize: 8.5,
                                   fontWeight: FontWeight.w900)),
                         ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.chevron_right_rounded,
+                            size: 14, color: _V.textMut),
                       ],
                     ),
                     if (locked && af != null) ...[
@@ -1556,7 +1609,7 @@ class _InboxTabState extends State<_InboxTab> {
                           start: cd,
                           target: ad,
                           label: l10n.t('vault_destruct_in'),
-                          color: _V.danger),
+                          color: _V.dangerBright),
                     ],
                   ],
                 ),
@@ -1570,14 +1623,454 @@ class _InboxTabState extends State<_InboxTab> {
 }
 
 // =============================================================
+// SHEET DÉTAIL REÇU (type mail + actions)
+// =============================================================
+class _InboxDetailSheet extends StatefulWidget {
+  final Map<String, dynamic> share;
+  final DocumentService docs;
+  final AppUser? me;
+  final String Function(dynamic) fmtDate;
+  final Future<void> Function(Map<String, dynamic>) onOpenDoc;
+  const _InboxDetailSheet({
+    required this.share,
+    required this.docs,
+    required this.me,
+    required this.fmtDate,
+    required this.onOpenDoc,
+  });
+  @override
+  State<_InboxDetailSheet> createState() => _InboxDetailSheetState();
+}
+
+class _InboxDetailSheetState extends State<_InboxDetailSheet> {
+  Map<String, dynamic>? _doc;
+  Map<String, dynamic>? _sender;
+  bool _loading = true;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final docId = widget.share['document_id']?.toString();
+    final senderId = widget.share['sender_id']?.toString();
+    try {
+      final res = await Future.wait<dynamic>([
+        docId != null
+            ? widget.docs.fetchDocumentById(docId)
+            : Future.value(null),
+        senderId != null
+            ? Supabase.instance.client
+                .from('profiles')
+                .select('full_name, thix_id, avatar_url')
+                .eq('id', senderId)
+                .maybeSingle()
+            : Future.value(null),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _doc = (res[0] as Map?)?.cast<String, dynamic>();
+        _sender = (res[1] as Map?)?.cast<String, dynamic>();
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _snack(String m, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(m, style: const TextStyle(fontSize: 11)),
+        backgroundColor: error ? _V.dangerBright : _V.ok,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2)));
+  }
+
+  Future<void> _open() async {
+    if (_doc == null) return;
+    final hasPw = (widget.share['password_hash'] as String?)?.isNotEmpty == true;
+    if (hasPw) {
+      final ok = await askVaultPassword(
+          context, widget.docs, widget.share['password_hash'] as String);
+      if (!ok) return;
+    }
+    await widget.docs.markShareOpened(widget.share['id'].toString(),
+        uid: _doc!['user_id']?.toString(),
+        docId: _doc!['generated_doc_id']?.toString());
+    if (mounted) Navigator.pop(context);
+    await widget.onOpenDoc(_doc!);
+  }
+
+  Future<void> _saveToVault() async {
+    final l10n = AppLocalizations.of(context);
+    if (_doc == null || widget.me == null) return;
+    setState(() => _busy = true);
+    try {
+      final url = await widget.docs.resolveRowDownloadUrl(_doc!);
+      final resp = await http.get(Uri.parse(url));
+      final name = (_doc!['file_name'] as String?) ??
+          (_doc!['title'] as String?) ??
+          'document';
+      final file =
+          PlatformFile(name: name, bytes: resp.bodyBytes, size: resp.bodyBytes.length);
+      await widget.docs.uploadPickedFileSimple(
+        uid: widget.me!.id,
+        file: file,
+        docType: (_doc!['doc_type'] as String?) ?? 'Autre',
+        title: _doc!['title'] as String?,
+        isPublic: false,
+      );
+      _snack(l10n.t('vault_saved_ok'));
+    } catch (_) {
+      _snack(l10n.t('vault_save_failed'), error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _forward() async {
+    if (_doc == null) return;
+    Navigator.pop(context);
+    final me = widget.me;
+    if (me == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _SendSheet(
+        documents: [_doc!],
+        docsService: widget.docs,
+        initialDocId: _doc!['id'].toString(),
+        onDone: (ok) {
+          if (!mounted) return;
+          Navigator.pop(context);
+          _snack(AppLocalizations.of(context)
+              .t(ok ? 'vault_send_ok' : 'vault_send_failed'), error: !ok);
+        },
+      ),
+    );
+  }
+
+  Future<void> _download() async {
+    if (_doc == null) return;
+    try {
+      final url = await widget.docs.resolveRowDownloadUrl(_doc!);
+      await launchUrl(Uri.parse(url),
+          mode: kIsWeb
+              ? LaunchMode.platformDefault
+              : LaunchMode.externalApplication);
+    } catch (_) {
+      _snack(AppLocalizations.of(context).t('vault_download_failed'), error: true);
+    }
+  }
+
+  Widget _chip(String t, Color c) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration:
+            BoxDecoration(color: c.withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
+        child: Text(t,
+            style: TextStyle(color: c, fontSize: 8.5, fontWeight: FontWeight.w900)),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final s = widget.share;
+    final st = (s['status'] as String?) ?? 'pending';
+    final hasPw = (s['password_hash'] as String?)?.isNotEmpty == true;
+    final shots = (s['screenshot_count'] as num?)?.toInt() ?? 0;
+    final af = DateTime.tryParse((s['available_from'] ?? '').toString());
+    final ad = DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
+    final cd = DateTime.tryParse((s['created_at'] ?? '').toString()) ?? DateTime.now();
+    final locked = st == 'pending' && af != null && af.isAfter(DateTime.now());
+    final name = (_sender?['full_name'] as String?) ?? l10n.t('vault_anonymous');
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    final mime = (_doc?['mime_type'] as String?) ?? '';
+    final isImage = _isImageMime(mime, _doc?['file_name'] as String?);
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        constraints:
+            BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.92),
+        decoration: const BoxDecoration(
+            color: _V.card,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+        padding: const EdgeInsets.all(16),
+        child: _loading
+            ? const Center(
+                child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: _V.gold)))
+            : SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                              color: _V.gold.withOpacity(0.15),
+                              shape: BoxShape.circle),
+                          child: Center(
+                              child: Text(initial,
+                                  style: const TextStyle(
+                                      color: _V.gold,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w900))),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(name,
+                                  style: const TextStyle(
+                                      color: _V.text,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w800)),
+                              Text(
+                                  (_sender?['thix_id'] as String?) ??
+                                      '${l10n.t('vault_from')} ${(s['sender_id'] as String? ?? '').length >= 8 ? (s['sender_id'] as String).substring(0, 8) : '—'}',
+                                  style: const TextStyle(
+                                      color: _V.textMut, fontSize: 9.5)),
+                            ],
+                          ),
+                        ),
+                        Text(widget.fmtDate(s['created_at']),
+                            style:
+                                const TextStyle(color: _V.textMut, fontSize: 9)),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                            onTap: () => Navigator.pop(context),
+                            child: const Icon(Icons.close_rounded,
+                                size: 16, color: _V.textSec)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                        (s['subject'] as String?)?.isNotEmpty == true
+                            ? s['subject'] as String
+                            : l10n.t('vault_attachment'),
+                        style: const TextStyle(
+                            color: _V.text, fontSize: 14, fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        _chip(
+                            locked
+                                ? l10n.t('vault_st_pending')
+                                : (st == 'opened'
+                                    ? l10n.t('vault_st_opened')
+                                    : l10n.t('vault_st_available')),
+                            locked ? _V.warn : (st == 'opened' ? _V.ok : _V.info)),
+                        if (hasPw) _chip(l10n.t('vault_password'), _V.gold),
+                        if (shots > 0) _chip('📸 $shots', _V.warn),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                          color: _V.cardSoft,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: _V.border)),
+                      child: SelectableText(
+                          (s['body'] as String?)?.isNotEmpty == true
+                              ? s['body'] as String
+                              : l10n.t('vault_no_message'),
+                          style: const TextStyle(
+                              color: _V.textSec, fontSize: 11.5, height: 1.5)),
+                    ),
+                    const SizedBox(height: 12),
+                    if (_doc != null)
+                      GestureDetector(
+                        onTap: _open,
+                        child: Container(
+                          padding: const EdgeInsets.all(9),
+                          decoration: BoxDecoration(
+                              color: _V.cardSoft,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: _V.gold.withOpacity(0.35))),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                clipBehavior: Clip.antiAlias,
+                                decoration: BoxDecoration(
+                                    color: _typeColor(mime,
+                                            _doc!['doc_type'] as String?)
+                                        .withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(9)),
+                                child: isImage
+                                    ? FutureBuilder<String>(
+                                        future: widget.docs
+                                            .resolveRowDownloadUrl(_doc!),
+                                        builder: (c, sn) => sn.hasData
+                                            ? _CachedImg(
+                                                url: sn.data!,
+                                                size: 44,
+                                                radius: BorderRadius.circular(9),
+                                                fallback: Icon(
+                                                    _typeIcon(mime,
+                                                        _doc!['doc_type'] as String?),
+                                                    color: _typeColor(mime,
+                                                        _doc!['doc_type'] as String?),
+                                                    size: 18))
+                                            : Icon(
+                                                _typeIcon(mime,
+                                                    _doc!['doc_type'] as String?),
+                                                color: _typeColor(mime,
+                                                    _doc!['doc_type'] as String?),
+                                                size: 18))
+                                    : Icon(
+                                        _typeIcon(mime, _doc!['doc_type'] as String?),
+                                        color: _typeColor(
+                                            mime, _doc!['doc_type'] as String?),
+                                        size: 18),
+                              ),
+                              const SizedBox(width: 9),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text((_doc!['title'] as String?) ?? '—',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                            color: _V.text,
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w800)),
+                                    Text(
+                                        '${_doc!['doc_type'] ?? '—'} • ${(_doc!['generated_doc_id'] as String?) ?? ''}',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                            color: _V.textMut, fontSize: 9)),
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right_rounded,
+                                  size: 15, color: _V.gold),
+                            ],
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    if (locked && af != null) ...[
+                      _Count(
+                          start: cd,
+                          target: af,
+                          label: l10n.t('vault_unlock_in'),
+                          color: _V.warn),
+                      const SizedBox(height: 10),
+                    ],
+                    if (ad != null) ...[
+                      _Count(
+                          start: cd,
+                          target: ad,
+                          label: l10n.t('vault_destruct_in'),
+                          color: _V.dangerBright),
+                      const SizedBox(height: 10),
+                    ],
+                    Row(
+                      children: [
+                        Expanded(
+                            child: _ActBtn(
+                                icon: Icons.open_in_new_rounded,
+                                label: l10n.t('vault_open'),
+                                color: _V.gold,
+                                busy: _busy,
+                                onTap: _open)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: _ActBtn(
+                                icon: Icons.download_rounded,
+                                label: l10n.t('vault_download'),
+                                color: _V.info,
+                                busy: _busy,
+                                onTap: _download)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                            child: _ActBtn(
+                                icon: Icons.save_rounded,
+                                label: l10n.t('vault_save_vault'),
+                                color: _V.ok,
+                                busy: _busy,
+                                onTap: _saveToVault)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: _ActBtn(
+                                icon: Icons.forward_rounded,
+                                label: l10n.t('vault_forward'),
+                                color: _V.warn,
+                                busy: _busy,
+                                onTap: _forward)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class _ActBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool busy;
+  final VoidCallback onTap;
+  const _ActBtn(
+      {required this.icon,
+      required this.label,
+      required this.color,
+      required this.busy,
+      required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 36,
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+            side: BorderSide(color: color.withOpacity(0.5)),
+            foregroundColor: color,
+            padding: const EdgeInsets.symmetric(horizontal: 8)),
+        onPressed: busy ? null : onTap,
+        icon: Icon(icon, size: 13),
+        label: Text(label,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800)),
+      ),
+    );
+  }
+}
+
+// =============================================================
 // ONGLET AUDIT
 // =============================================================
 class _AuditTab extends StatelessWidget {
   final AppUser? me;
   final DocumentService docs;
   final String Function(dynamic) fmtDate;
-  const _AuditTab(
-      {required this.me, required this.docs, required this.fmtDate});
+  const _AuditTab({required this.me, required this.docs, required this.fmtDate});
 
   @override
   Widget build(BuildContext context) {
@@ -1596,8 +2089,7 @@ class _AuditTab extends StatelessWidget {
               child: SizedBox(
                   width: 18,
                   height: 18,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: _V.gold)));
+                  child: CircularProgressIndicator(strokeWidth: 2, color: _V.gold)));
         }
         if (tx.isEmpty) {
           return Center(
@@ -1629,7 +2121,7 @@ class _AuditTab extends StatelessWidget {
                 break;
               case 'delete':
                 ic = Icons.delete_outline_rounded;
-                c = _V.danger;
+                c = _V.dangerBright;
                 lb = l10n.t('vault_act_delete');
                 break;
               case 'screenshot':
@@ -1675,8 +2167,7 @@ class _AuditTab extends StatelessWidget {
                         Text((t['detail'] as String?) ?? (t['doc_id'] as String?) ?? '',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                                color: _V.textMut, fontSize: 9)),
+                            style: const TextStyle(color: _V.textMut, fontSize: 9)),
                       ],
                     ),
                   ),
@@ -1693,140 +2184,208 @@ class _AuditTab extends StatelessWidget {
 }
 
 // =============================================================
-// DIALOG DOCUMENT CERTIFIÉ (recherche par ID)
+// DIALOG DOCUMENT CERTIFIÉ (recherche publique → affiche le doc)
 // =============================================================
 class _CertifiedDocDialog extends StatelessWidget {
   final Map<String, dynamic> res;
   final DocumentService docs;
   final Future<void> Function(String) onOpen;
-  const _CertifiedDocDialog(
-      {required this.res, required this.docs, required this.onOpen});
+  final AppUser? me;
+  final VoidCallback onSaved;
+  final VoidCallback onSaveFailed;
+  const _CertifiedDocDialog({
+    required this.res,
+    required this.docs,
+    required this.onOpen,
+    required this.me,
+    required this.onSaved,
+    required this.onSaveFailed,
+  });
+
+  Future<void> _saveToVault(BuildContext context) async {
+    final path = (res['storage_path'] as String?) ?? '';
+    if (path.isEmpty || me == null) return;
+    try {
+      final url = await docs.createDownloadUrl(storagePath: path);
+      final resp = await http.get(Uri.parse(url));
+      final name = (res['file_name'] as String?) ?? (res['title'] as String?) ?? 'doc';
+      final file =
+          PlatformFile(name: name, bytes: resp.bodyBytes, size: resp.bodyBytes.length);
+      await docs.uploadPickedFileSimple(
+        uid: me!.id,
+        file: file,
+        docType: (res['doc_type'] as String?) ?? 'Autre',
+        title: res['title'] as String?,
+        isPublic: false,
+      );
+      onSaved();
+    } catch (_) {
+      onSaveFailed();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final mime = (res['mime_type'] as String?) ?? '';
     final path = (res['storage_path'] as String?) ?? '';
-    final isImage = mime.toLowerCase().contains('image');
-    final color = _typeColor(mime, res['doc_type'] as String?);
+    final color = _typeColor(res['mime_type'] as String?, res['doc_type'] as String?);
+    final img = _isImageMime(res['mime_type'] as String?, res['file_name'] as String?);
     return Dialog(
       backgroundColor: _V.card,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text((res['owner_name'] as String?) ?? l10n.t('vault_from'),
-                          style: const TextStyle(
-                              color: _V.text,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w800)),
-                      Text((res['owner_thix_id'] as String?) ?? '—',
-                          style: const TextStyle(
-                              color: _V.textMut, fontSize: 9.5)),
-                    ],
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text((res['owner_name'] as String?) ?? l10n.t('vault_from'),
+                            style: const TextStyle(
+                                color: _V.text,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800)),
+                        Text((res['owner_thix_id'] as String?) ?? '—',
+                            style:
+                                const TextStyle(color: _V.textMut, fontSize: 9.5)),
+                      ],
+                    ),
                   ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                        color: _V.ok.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(6)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.verified_rounded, size: 9, color: _V.ok),
+                        const SizedBox(width: 3),
+                        Text(l10n.t('vault_certified'),
+                            style: const TextStyle(
+                                color: _V.ok,
+                                fontSize: 8,
+                                fontWeight: FontWeight.w900)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                height: img ? 200 : 90,
+                decoration: BoxDecoration(
+                    color: _V.cardSoft,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: color.withOpacity(0.35))),
+                clipBehavior: Clip.antiAlias,
+                child: img && path.isNotEmpty
+                    ? FutureBuilder<String>(
+                        future: docs.createDownloadUrl(storagePath: path),
+                        builder: (context, snap) => snap.hasData
+                            ? _CachedImg(
+                                url: snap.data!,
+                                size: 200,
+                                fallback: Icon(
+                                    _typeIcon(res['mime_type'] as String?,
+                                        res['doc_type'] as String?),
+                                    color: color,
+                                    size: 30))
+                            : const Center(
+                                child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2, color: _V.gold))))
+                    : Center(
+                        child: Icon(
+                            _typeIcon(res['mime_type'] as String?,
+                                res['doc_type'] as String?),
+                            color: color,
+                            size: 30)),
+              ),
+              const SizedBox(height: 12),
+              Text((res['title'] as String?) ?? '—',
+                  style: const TextStyle(
+                      color: _V.text, fontSize: 13, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 3),
+              Text('${res['doc_type'] ?? '—'} • ${res['generated_doc_id'] ?? '—'}',
+                  style: const TextStyle(color: _V.textMut, fontSize: 9.5)),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  if (res['size_bytes'] != null)
+                    Text(
+                        '${l10n.t('vault_size')}: ${(((res['size_bytes'] as num).toInt()) / 1024).toStringAsFixed(0)} KB',
+                        style: const TextStyle(color: _V.textSec, fontSize: 9.5)),
+                  const SizedBox(width: 10),
+                  Text('${l10n.t('vault_date')}: ${widget_date(res['created_at'])}',
+                      style: const TextStyle(color: _V.textSec, fontSize: 9.5)),
+                ],
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                height: 36,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                      backgroundColor: _V.gold, foregroundColor: _V.bg),
+                  onPressed: path.isEmpty
+                      ? null
+                      : () async {
+                          final url =
+                              await docs.createDownloadUrl(storagePath: path);
+                          if (context.mounted) Navigator.pop(context);
+                          await onOpen(url);
+                        },
+                  icon: const Icon(Icons.open_in_new_rounded, size: 14),
+                  label: Text(l10n.t('vault_open_file'),
+                      style: const TextStyle(
+                          fontSize: 11.5, fontWeight: FontWeight.w900)),
                 ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(
-                      color: _V.ok.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(6)),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.verified_rounded,
-                          size: 9, color: _V.ok),
-                      const SizedBox(width: 3),
-                      Text(l10n.t('vault_certified'),
-                          style: const TextStyle(
-                              color: _V.ok,
-                              fontSize: 8,
-                              fontWeight: FontWeight.w900)),
-                    ],
+              ),
+              if (me != null) ...[
+                const SizedBox(height: 6),
+                SizedBox(
+                  height: 34,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: _V.ok.withOpacity(0.5)),
+                        foregroundColor: _V.ok),
+                    onPressed: () => _saveToVault(context),
+                    icon: const Icon(Icons.save_rounded, size: 13),
+                    label: Text(l10n.t('vault_save_vault'),
+                        style: const TextStyle(
+                            fontSize: 11, fontWeight: FontWeight.w800)),
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 12),
-            Container(
-              height: isImage ? 180 : 90,
-              decoration: BoxDecoration(
-                  color: _V.cardSoft,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: color.withOpacity(0.35))),
-              clipBehavior: Clip.antiAlias,
-              child: isImage && path.isNotEmpty
-                  ? FutureBuilder<String>(
-                      future: docs.createDownloadUrl(storagePath: path),
-                      builder: (context, snap) => snap.hasData
-                          ? Image.network(snap.data!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
-                                  Icon(_typeIcon(mime, res['doc_type'] as String?),
-                                      color: color, size: 30))
-                          : const Center(
-                              child: SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2, color: _V.gold))))
-                  : Center(
-                      child: Icon(
-                          _typeIcon(mime, res['doc_type'] as String?),
-                          color: color,
-                          size: 30)),
-            ),
-            const SizedBox(height: 12),
-            Text((res['title'] as String?) ?? '—',
-                style: const TextStyle(
-                    color: _V.text, fontSize: 13, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 3),
-            Text(
-                '${res['doc_type'] ?? '—'} • ${res['generated_doc_id'] ?? '—'}',
-                style: const TextStyle(color: _V.textMut, fontSize: 9.5)),
-            const SizedBox(height: 14),
-            SizedBox(
-              height: 36,
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(
-                    backgroundColor: _V.gold, foregroundColor: _V.bg),
-                onPressed: path.isEmpty
-                    ? null
-                    : () async {
-                        final url =
-                            await docs.createDownloadUrl(storagePath: path);
-                        if (context.mounted) Navigator.pop(context);
-                        await onOpen(url);
-                      },
-                icon: const Icon(Icons.open_in_new_rounded, size: 14),
-                label: Text(l10n.t('vault_open_file'),
-                    style: const TextStyle(
-                        fontSize: 11.5, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 6),
+              SizedBox(
+                height: 32,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(l10n.t('common_close'),
+                      style: const TextStyle(color: _V.textSec, fontSize: 11)),
+                ),
               ),
-            ),
-            const SizedBox(height: 6),
-            SizedBox(
-              height: 32,
-              child: TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(l10n.t('common_close'),
-                    style: const TextStyle(color: _V.textSec, fontSize: 11)),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  String widget_date(dynamic v) {
+    final d = DateTime.tryParse((v ?? '').toString());
+    if (d == null) return '—';
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   }
 }
 
@@ -1889,8 +2448,7 @@ class _UploadSheetState extends State<_UploadSheet> {
         focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
             borderSide: const BorderSide(color: _V.gold)),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       );
 
   @override
@@ -1911,12 +2469,11 @@ class _UploadSheetState extends State<_UploadSheet> {
               Row(
                 children: [
                   Expanded(
-                    child: Text(l10n.t('vault_new_archive'),
-                        style: const TextStyle(
-                            color: _V.text,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w900)),
-                  ),
+                      child: Text(l10n.t('vault_new_archive'),
+                          style: const TextStyle(
+                              color: _V.text,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900))),
                   GestureDetector(
                       onTap: () => context.pop(),
                       child: const Icon(Icons.close_rounded,
@@ -1954,14 +2511,11 @@ class _UploadSheetState extends State<_UploadSheet> {
                   DropdownMenuItem(
                       value: 'CIN', child: Text(l10n.t('vault_class_cin'))),
                   DropdownMenuItem(
-                      value: 'Passeport',
-                      child: Text(l10n.t('vault_class_passport'))),
+                      value: 'Passeport', child: Text(l10n.t('vault_class_passport'))),
                   DropdownMenuItem(
-                      value: 'Permis',
-                      child: Text(l10n.t('vault_class_license'))),
+                      value: 'Permis', child: Text(l10n.t('vault_class_license'))),
                   DropdownMenuItem(
-                      value: 'Diplôme',
-                      child: Text(l10n.t('vault_class_diploma'))),
+                      value: 'Diplôme', child: Text(l10n.t('vault_class_diploma'))),
                   DropdownMenuItem(
                       value: 'PreuveAdresse',
                       child: Text(l10n.t('vault_class_address'))),
@@ -1998,9 +2552,7 @@ class _UploadSheetState extends State<_UploadSheet> {
                                   primary: _V.gold, surface: _V.card)),
                           child: ch!),
                     );
-                    if (p != null) {
-                      setState(() => _expiresAt = p);
-                    }
+                    if (p != null) setState(() => _expiresAt = p);
                   },
                   icon: const Icon(Icons.event_available_rounded,
                       size: 14, color: _V.gold),
@@ -2009,9 +2561,7 @@ class _UploadSheetState extends State<_UploadSheet> {
                           ? l10n.t('vault_pick_date')
                           : '${l10n.t('vault_expiry')} : ${_expiresAt!.day.toString().padLeft(2, '0')}/${_expiresAt!.month.toString().padLeft(2, '0')}/${_expiresAt!.year}',
                       style: const TextStyle(
-                          color: _V.text,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700)),
+                          color: _V.text, fontSize: 11, fontWeight: FontWeight.w700)),
                 ),
               ],
               const SizedBox(height: 14),
@@ -2025,14 +2575,13 @@ class _UploadSheetState extends State<_UploadSheet> {
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                           content: Text(l10n.t('vault_expiry_required'),
                               style: const TextStyle(fontSize: 11)),
-                          backgroundColor: _V.danger));
+                          backgroundColor: _V.dangerBright));
                       return;
                     }
                     context.pop(_UploadPayload(
                       docType: _type,
-                      title: _titleC.text.trim().isEmpty
-                          ? null
-                          : _titleC.text.trim(),
+                      title:
+                          _titleC.text.trim().isEmpty ? null : _titleC.text.trim(),
                       expiresAt: _expiresAt,
                       folderId: _folderId,
                     ));
@@ -2057,11 +2606,14 @@ class _UploadSheetState extends State<_UploadSheet> {
 class _SendSheet extends StatefulWidget {
   final List<Map<String, dynamic>> documents;
   final DocumentService docsService;
+  final String? initialDocId;
   final void Function(bool ok) onDone;
-  const _SendSheet(
-      {required this.documents,
-      required this.docsService,
-      required this.onDone});
+  const _SendSheet({
+    required this.documents,
+    required this.docsService,
+    required this.onDone,
+    this.initialDocId,
+  });
   @override
   State<_SendSheet> createState() => _SendSheetState();
 }
@@ -2081,6 +2633,12 @@ class _SendSheetState extends State<_SendSheet> {
   bool _verifying = false;
 
   @override
+  void initState() {
+    super.initState();
+    _docId = widget.initialDocId;
+  }
+
+  @override
   void dispose() {
     _recipC.dispose();
     _subjectC.dispose();
@@ -2094,10 +2652,8 @@ class _SendSheetState extends State<_SendSheet> {
   void _onRecip(String v) {
     _deb?.cancel();
     _deb = Timer(const Duration(milliseconds: 500), () async {
-      final ids = v
-          .split(RegExp(r'[,;\s]+'))
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty);
+      final ids =
+          v.split(RegExp(r'[,;\s]+')).map((e) => e.trim()).where((e) => e.isNotEmpty);
       if (ids.isEmpty) {
         setState(() => _verified = null);
         return;
@@ -2107,9 +2663,7 @@ class _SendSheetState extends State<_SendSheet> {
       if (!mounted) return;
       setState(() {
         _verifying = false;
-        _verified = p == null
-            ? 'KO'
-            : (p['full_name'] as String? ?? 'OK');
+        _verified = p == null ? 'KO' : (p['full_name'] as String? ?? 'OK');
       });
     });
   }
@@ -2144,8 +2698,7 @@ class _SendSheetState extends State<_SendSheet> {
         focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
             borderSide: const BorderSide(color: _V.gold)),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       );
 
   @override
@@ -2168,12 +2721,11 @@ class _SendSheetState extends State<_SendSheet> {
               Row(
                 children: [
                   Expanded(
-                    child: Text(l10n.t('vault_send_title'),
-                        style: const TextStyle(
-                            color: _V.text,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w900)),
-                  ),
+                      child: Text(l10n.t('vault_send_title'),
+                          style: const TextStyle(
+                              color: _V.text,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900))),
                   GestureDetector(
                       onTap: () => Navigator.pop(context),
                       child: const Icon(Icons.close_rounded,
@@ -2189,9 +2741,11 @@ class _SendSheetState extends State<_SendSheet> {
                 items: widget.documents.map((d) {
                   final id = d['id'].toString();
                   final t = (d['title'] as String?) ?? '—';
-                  return DropdownMenuItem(value: id, child: Text(t,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 11.5)));
+                  return DropdownMenuItem(
+                      value: id,
+                      child: Text(t,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11.5)));
                 }).toList(),
                 onChanged: (v) => setState(() => _docId = v),
               ),
@@ -2204,11 +2758,9 @@ class _SendSheetState extends State<_SendSheet> {
               ),
               if (_verifying)
                 Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(l10n.t('vault_verifying'),
-                      style: const TextStyle(
-                          color: _V.textMut, fontSize: 9.5)),
-                )
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(l10n.t('vault_verifying'),
+                        style: const TextStyle(color: _V.textMut, fontSize: 9.5)))
               else if (_verified != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
@@ -2219,7 +2771,7 @@ class _SendSheetState extends State<_SendSheet> {
                               ? Icons.error_rounded
                               : Icons.check_circle_rounded,
                           size: 12,
-                          color: _verified == 'KO' ? _V.danger : _V.ok),
+                          color: _verified == 'KO' ? _V.dangerBright : _V.ok),
                       const SizedBox(width: 5),
                       Text(
                           _verified == 'KO'
@@ -2228,7 +2780,7 @@ class _SendSheetState extends State<_SendSheet> {
                           style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w800,
-                              color: _verified == 'KO' ? _V.danger : _V.ok)),
+                              color: _verified == 'KO' ? _V.dangerBright : _V.ok)),
                     ],
                   ),
                 ),
@@ -2256,12 +2808,10 @@ class _SendSheetState extends State<_SendSheet> {
               SwitchListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                activeColor: _V.danger,
+                activeColor: _V.dangerBright,
                 title: Text(l10n.t('vault_autodestruct'),
                     style: const TextStyle(
-                        color: _V.text,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w800)),
+                        color: _V.text, fontSize: 11.5, fontWeight: FontWeight.w800)),
                 subtitle: Text(l10n.t('vault_autodestruct_sub'),
                     style: const TextStyle(color: _V.textMut, fontSize: 9.5)),
                 value: _autoDestruct,
@@ -2290,8 +2840,7 @@ class _SendSheetState extends State<_SendSheet> {
                           DropdownMenuItem(
                               value: 's', child: Text(l10n.t('vault_seconds'))),
                           DropdownMenuItem(
-                              value: 'minutes',
-                              child: Text(l10n.t('vault_minutes'))),
+                              value: 'minutes', child: Text(l10n.t('vault_minutes'))),
                           DropdownMenuItem(
                               value: 'h', child: Text(l10n.t('vault_hours'))),
                           DropdownMenuItem(
@@ -2315,7 +2864,7 @@ class _SendSheetState extends State<_SendSheet> {
                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                                 content: Text(l10n.t('vault_select_archive'),
                                     style: const TextStyle(fontSize: 11)),
-                                backgroundColor: _V.danger));
+                                backgroundColor: _V.dangerBright));
                             return;
                           }
                           final recips = _recipC.text
@@ -2327,16 +2876,15 @@ class _SendSheetState extends State<_SendSheet> {
                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                                 content: Text(l10n.t('vault_need_recipient'),
                                     style: const TextStyle(fontSize: 11)),
-                                backgroundColor: _V.danger));
+                                backgroundColor: _V.dangerBright));
                             return;
                           }
                           setState(() => _sending = true);
-                          final sel = widget.documents.firstWhere(
-                              (d) => d['id'].toString() == _docId);
+                          final sel = widget.documents
+                              .firstWhere((d) => d['id'].toString() == _docId);
                           try {
-                            final me = context
-                                .read<AuthController>()
-                                .currentUser;
+                            final me =
+                                context.read<AuthController>().currentUser;
                             await widget.docsService.shareDocument(
                               senderId: me!.id,
                               documentId: _docId!,
@@ -2368,9 +2916,7 @@ class _SendSheetState extends State<_SendSheet> {
                               strokeWidth: 2, color: _V.bg))
                       : const Icon(Icons.send_rounded, size: 14),
                   label: Text(
-                      _sending
-                          ? l10n.t('vault_sending')
-                          : l10n.t('vault_send_btn'),
+                      _sending ? l10n.t('vault_sending') : l10n.t('vault_send_btn'),
                       style: const TextStyle(
                           fontSize: 11.5, fontWeight: FontWeight.w900)),
                 ),
