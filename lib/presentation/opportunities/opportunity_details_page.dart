@@ -1035,7 +1035,7 @@ class _StickyApply extends StatelessWidget {
         padding: EdgeInsets.fromLTRB(18, 14, 18, bottom + 14),
         decoration: BoxDecoration(
           color: _Opp.card,
-          border: Border(top: BorderSide(color: _Opp.line)),
+          border: const Border(top: BorderSide(color: _Opp.line)),
           boxShadow: [
             BoxShadow(
                 color: _Opp.navy.withOpacity(0.08),
@@ -1066,13 +1066,11 @@ class _StickyApply extends StatelessWidget {
                 child: ElevatedButton(
                   onPressed: disabled ? null : onApply,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: disabled ? _Opp.mut : _Opp.gold,
-                    foregroundColor: _Opp.navy,
+                    backgroundColor: disabled ? _Opp.mut.withOpacity(0.3) : _Opp.gold,
+                    foregroundColor: disabled ? _Opp.mut : _Opp.navy,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
-                    disabledBackgroundColor: _Opp.mut.withOpacity(0.15),
-                    disabledForegroundColor: _Opp.mut,
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1093,7 +1091,6 @@ class _StickyApply extends StatelessWidget {
     );
   }
 }
-
 // ============================================================================
 // HELPERS
 // ============================================================================
