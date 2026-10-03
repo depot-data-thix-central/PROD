@@ -20,6 +20,7 @@ import '../thix_media_page.dart' show MediaConfig, MediaLightPalette, MediaSanit
 import '../user_profile_page.dart';
 import 'comments_sheet.dart';
 import 'feed_video_player.dart';
+import 'media_cert_badge.dart';
 import 'media_poster_card.dart';
 
 // ============================================================================
@@ -61,7 +62,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
   late List<String> _episodes;
   int _currentEpisode = 0;
   bool _liked = false;
-  bool _favorited = false; // ✅ Renommé de _saved
+  bool _favorited = false;
   bool _previewExpired = false;
   bool _unlocked = false;
   final Set<String> _newlyFollowed = {};
@@ -120,13 +121,12 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     }
   }
 
-  // ✅ FAVORIS (anciennement Enregistrer)
   void _toggleFavorite(AppLocalizations l10n) {
     if (!_throttle()) return;
     HapticFeedback.lightImpact();
     setState(() => _favorited = !_favorited);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(_favorited 
+      content: Text(_favorited
           ? _safeTr(l10n, 'detail_favorite_added', 'Ajouté aux favoris')
           : _safeTr(l10n, 'detail_favorite_removed', 'Retiré des favoris')),
       backgroundColor: _favorited ? ThixPolicy.success : ThixPolicy.primary,
@@ -134,11 +134,10 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     ));
   }
 
-  // ✅ TÉLÉCHARGER
   Future<void> _downloadMedia(AppLocalizations l10n) async {
     if (!_throttle()) return;
     HapticFeedback.mediumImpact();
-    
+
     final videoUrl = _episodes.isEmpty ? widget.item.videoUrl : _episodes[_currentEpisode];
     if (videoUrl.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -169,7 +168,6 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     }
   }
 
-  // ✅ REPOST (Partager/Republier)
   Future<void> _repostMedia(AppLocalizations l10n) async {
     if (!_throttle()) return;
     final uid = Supabase.instance.client.auth.currentUser?.id;
@@ -182,7 +180,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     }
 
     HapticFeedback.mediumImpact();
-    
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -203,8 +201,8 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: ThixPolicy.primary, 
-              foregroundColor: Colors.white, 
+              backgroundColor: ThixPolicy.primary,
+              foregroundColor: Colors.white,
               elevation: 0,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
@@ -259,8 +257,8 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     HapticFeedback.mediumImpact();
     AnalyticsBatcher.register(suggestion.id);
     Navigator.pushReplacement(
-      context, 
-      MaterialPageRoute(builder: (_) => MediaDetailPage(item: suggestion, catalog: widget.catalog))
+      context,
+      MaterialPageRoute(builder: (_) => MediaDetailPage(item: suggestion, catalog: widget.catalog)),
     );
   }
 
@@ -329,7 +327,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     final isFollowing = creatorId.isNotEmpty ? (ref.watch(mediaIsFollowingProvider(creatorId)).valueOrNull ?? true) : true;
     final creatorIsOfficial = creatorId.isEmpty;
     final showFollowBtn = !creatorIsOfficial && creatorId.isNotEmpty && creatorId != currentUid && !isFollowing && !_newlyFollowed.contains(creatorId);
-    
+
     final displayName = creatorIsOfficial ? 'TDIA' : (creatorProfile?['full_name'] ?? creatorProfile?['username'] ?? _safeTr(l10n, 'detail_creator_default', 'Créateur'));
 
     return Scaffold(
@@ -360,7 +358,7 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
             if (isSeries && !requiresPayment)
               RepaintBoundary(child: _buildEpisodesSection(l10n)),
             _buildCreatorSection(l10n, creatorProfile, creatorId, creatorIsOfficial, displayName, showFollowBtn),
-            RepaintBoundary(child: _buildActionsBar(l10n, live)), // ✅ Nouvelle barre d'actions
+            RepaintBoundary(child: _buildActionsBar(l10n, live)),
             if (item.subtitle != null && item.subtitle!.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
@@ -416,7 +414,8 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
           ),
           const SizedBox(height: 12),
           Wrap(
-            spacing: 8, runSpacing: 8,
+            spacing: 8,
+            runSpacing: 8,
             children: List.generate(_episodes.length, (i) {
               final active = i == _currentEpisode;
               final label = _safeTr(l10n, 'detail_part_n', 'Partie ${i + 1}', args: ['${i + 1}']);
@@ -461,7 +460,8 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
           GestureDetector(
             onTap: !creatorIsOfficial && creatorId.isNotEmpty ? () => _openCreatorProfile(creatorId) : null,
             child: Container(
-              width: 48, height: 48,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(color: MediaLightPalette.border, width: 1.6),
@@ -475,7 +475,25 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('@$displayName', style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 16, fontWeight: FontWeight.w900)),
+                // ✅ Nom + sceau de certification
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        '@$displayName',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: MediaLightPalette.textPrimary, fontSize: 16, fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                    MediaCertBadge(
+                      userId: creatorId,
+                      official: creatorIsOfficial,
+                      iconSize: 17,
+                      padding: const EdgeInsets.only(left: 5),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 2),
                 Text(widget.item.type, style: const TextStyle(color: MediaLightPalette.textSecondary, fontSize: 12, fontWeight: FontWeight.w500)),
               ],
@@ -503,7 +521,6 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
     );
   }
 
-  // ✅ NOUVELLE BARRE D'ACTIONS : J'aime | Commentaires | Télécharger | Repost | Favoris
   Widget _buildActionsBar(AppLocalizations l10n, dynamic live) {
     final item = widget.item;
     return Padding(
@@ -597,7 +614,10 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
           physics: const NeverScrollableScrollPhysics(),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2, crossAxisSpacing: 16, mainAxisSpacing: 16, childAspectRatio: 0.70,
+            crossAxisCount: 2,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            childAspectRatio: 0.70,
           ),
           itemCount: _suggestions.length,
           itemBuilder: (c, i) => MediaPosterCard(
@@ -646,9 +666,11 @@ class _MediaDetailPageState extends ConsumerState<MediaDetailPage> {
               const SizedBox(height: 28),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: ThixPolicy.gold, foregroundColor: Colors.black87,
+                  backgroundColor: ThixPolicy.gold,
+                  foregroundColor: Colors.black87,
                   padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                  elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                 ),
                 onPressed: () => _unlockPremium(l10n),
                 child: Text(
