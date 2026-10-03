@@ -66,14 +66,20 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   void initState() {
     super.initState();
     _future = _service.listOpportunities();
-    _featCtrl.addListener(() {
-      final p = (_featCtrl.page ?? 0).round();
-      if (p != _featPage && mounted) setState(() => _featPage = p);
-    });
+    _featCtrl.addListener(_handlePageChange);
+  }
+
+  void _handlePageChange() {
+    if (!_featCtrl.hasClients || !_featCtrl.position.haveDimensions) return;
+    final p = (_featCtrl.page ?? 0).round();
+    if (p != _featPage && mounted) {
+      setState(() => _featPage = p);
+    }
   }
 
   @override
   void dispose() {
+    _featCtrl.removeListener(_handlePageChange);
     _searchCtrl.dispose();
     _featCtrl.dispose();
     super.dispose();
@@ -176,35 +182,71 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
           setState(() => _future = _service.listOpportunities());
           await _future;
         },
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-          slivers: [
-            SliverToBoxAdapter(
-              child: FutureBuilder<List<OpportunityItem>>(
-                future: _future,
-                builder: (context, snap) {
-                  if (snap.connectionState != ConnectionState.done) return _skeletonAll(l10n);
-                  if (snap.hasError) return Column(children: [_hero(const [], l10n), _errorState(l10n)]);
-                  final all = snap.data ?? const <OpportunityItem>[];
-                  if (all.isEmpty) {
-                    return Column(children: [_hero(const [], l10n), _emptyState(l10n)]);
-                  }
-                  final list = _filter(all);
-                  return Column(
+        child: FutureBuilder<List<OpportunityItem>>(
+          future: _future,
+          builder: (context, snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return CustomScrollView(
+                physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                slivers: [
+                  SliverToBoxAdapter(child: _skeletonAll(l10n)),
+                ],
+              );
+            }
+            if (snap.hasError) {
+              return CustomScrollView(
+                physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                slivers: [
+                  SliverToBoxAdapter(child: _hero(const [], l10n)),
+                  SliverToBoxAdapter(child: _errorState(l10n)),
+                ],
+              );
+            }
+
+            final all = snap.data ?? const <OpportunityItem>[];
+            if (all.isEmpty) {
+              return CustomScrollView(
+                physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                slivers: [
+                  SliverToBoxAdapter(child: _hero(const [], l10n)),
+                  SliverToBoxAdapter(child: _emptyState(l10n)),
+                ],
+              );
+            }
+
+            final filteredList = _filter(all);
+
+            return CustomScrollView(
+              physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _hero(all, l10n),
                       _catsRail(l10n),
                       _featuredSection(all, l10n),
                       _closingSection(all, l10n),
-                      _listSection(list, l10n),
-                      const SizedBox(height: 110),
+                      _listSectionHeader(filteredList.length, l10n),
                     ],
-                  );
-                },
-              ),
-            ),
-          ],
+                  ),
+                ),
+                if (filteredList.isEmpty)
+                  SliverToBoxAdapter(child: _noResult(l10n))
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverList.builder(
+                      itemCount: filteredList.length,
+                      itemBuilder: (context, index) {
+                        return _editorialCard(filteredList[index], l10n);
+                      },
+                    ),
+                  ),
+                const SliverToBoxAdapter(child: SizedBox(height: 110)),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -258,11 +300,11 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
           const SizedBox(height: 18),
           Row(
             children: [
-              _statGlass('${open}', _tr(l10n, 'opp_stat_open', 'Ouvertes'), Icons.rocket_launch_rounded, _Opp.gold),
+              _statGlass('$open', _tr(l10n, 'opp_stat_open', 'Ouvertes'), Icons.rocket_launch_rounded, _Opp.gold),
               const SizedBox(width: 8),
-              _statGlass('${closing}', _tr(l10n, 'opp_stat_closing', '≤ 7 jours'), Icons.timer_rounded, const Color(0xFFFB7185)),
+              _statGlass('$closing', _tr(l10n, 'opp_stat_closing', '≤ 7 jours'), Icons.timer_rounded, const Color(0xFFFB7185)),
               const SizedBox(width: 8),
-              _statGlass('${funded}', _tr(l10n, 'opp_stat_funded', 'Financées'), Icons.payments_rounded, const Color(0xFF34D399)),
+              _statGlass('$funded', _tr(l10n, 'opp_stat_funded', 'Financées'), Icons.payments_rounded, const Color(0xFF34D399)),
             ],
           ),
           const SizedBox(height: 14),
@@ -684,31 +726,19 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   }
 
   // ═══════════════════ LISTE ÉDITORIALE ═══════════════════
-  Widget _listSection(List<OpportunityItem> list, AppLocalizations l10n) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-          child: Row(
-            children: [
-              Container(width: 4, height: 16, decoration: BoxDecoration(color: _Opp.navy2, borderRadius: BorderRadius.circular(2))),
-              const SizedBox(width: 8),
-              Text(_savedOnly ? _tr(l10n, 'opp_favorites', 'Mes favoris') : _tr(l10n, 'opp_all', 'Toutes les opportunités'),
-                  style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: _Opp.txt, letterSpacing: -0.2)),
-              const Spacer(),
-              Text('${list.length}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _Opp.mut)),
-            ],
-          ),
-        ),
-        if (list.isEmpty)
-          _noResult(l10n)
-        else
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(children: list.map((o) => _editorialCard(o, l10n)).toList()),
-          ),
-      ],
+  Widget _listSectionHeader(int count, AppLocalizations l10n) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      child: Row(
+        children: [
+          Container(width: 4, height: 16, decoration: BoxDecoration(color: _Opp.navy2, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(width: 8),
+          Text(_savedOnly ? _tr(l10n, 'opp_favorites', 'Mes favoris') : _tr(l10n, 'opp_all', 'Toutes les opportunités'),
+              style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: _Opp.txt, letterSpacing: -0.2)),
+          const Spacer(),
+          Text('$count', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _Opp.mut)),
+        ],
+      ),
     );
   }
 
@@ -943,7 +973,10 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                  onPressed: () => Navigator.pop(ctx),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    setState(() {});
+                  },
                   child: Text(_tr(l10n, 'opp_apply', 'Appliquer'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
                 ),
               ),
@@ -1126,10 +1159,22 @@ class _CountdownTimerWidgetState extends State<CountdownTimerWidget> {
   Duration _left = Duration.zero;
 
   @override
-  void initState() { super.initState(); _tick(); _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick()); }
-  void _tick() { final d = widget.targetDate.difference(DateTime.now()); if (mounted) setState(() => _left = d.isNegative ? Duration.zero : d); }
+  void initState() {
+    super.initState();
+    _tick();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+  }
+
+  void _tick() {
+    final d = widget.targetDate.difference(DateTime.now());
+    if (mounted) setState(() => _left = d.isNegative ? Duration.zero : d);
+  }
+
   @override
-  void dispose() { _timer.cancel(); super.dispose(); }
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
