@@ -1,6 +1,6 @@
 // lib/presentation/thix_market/pages/market_home_page.dart
 // ============================================================================
-// MARKET HOME PAGE — Production Enterprise v2 (sans duplication)
+// MARKET HOME PAGE — Production Enterprise v3
 // ============================================================================
 
 import 'dart:async';
@@ -32,6 +32,7 @@ const int _kMaxDescriptionLength = 300;
 const int _kMaxNameLength = 50;
 const int _kMaxLiveCards = 10;
 const int _kMaxFeaturedShops = 4;
+const double _kGridCardHeight = 250;
 
 class _MarketValidators {
   _MarketValidators._();
@@ -134,8 +135,11 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     ref.read(forYouProvider.notifier).refresh();
   }
 
+  // ✅ FIX : garde hasClients
   void _onScroll() {
-    if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 700) {
+    if (!_scroll.hasClients) return;
+    final pos = _scroll.position;
+    if (pos.pixels > pos.maxScrollExtent - 700) {
       ref.read(forYouProvider.notifier).loadMore();
     }
   }
@@ -230,6 +234,12 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     return !dt.isAfter(DateTime.now());
   }
 
+  String _allProductsTitle(AppLocalizations l10n) {
+    final t = l10n.t('market_all_products');
+    if (t.trim().isEmpty || t == 'market_all_products') return 'Tous les produits';
+    return t;
+  }
+
   Widget _buildBlurOrb(Color color, double size) {
     return IgnorePointer(
       child: Container(
@@ -250,6 +260,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     final flashAsync = ref.watch(flashSalesProvider);
     final forYouAsync = ref.watch(forYouProvider);
     final liveSessionsAsync = ref.watch(activeMarketLiveSessionsProvider);
+    final fallbackProducts = ref.watch(allMarketProductsProvider);
 
     final hasMore = ref.read(forYouProvider.notifier).hasMore;
 
@@ -295,9 +306,9 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
                 SliverToBoxAdapter(child: _buildB2BTools(l10n)),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s24)),
                 SliverToBoxAdapter(child: _buildFlashSaleSection(flashAsync, l10n)),
-                SliverToBoxAdapter(child: _buildSectionHeader(l10n.t('market_all_products'))),
+                SliverToBoxAdapter(child: _buildSectionHeader(_allProductsTitle(l10n))),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
-                _buildGrid(forYouAsync, hasMore, l10n),
+                _buildGrid(forYouAsync, fallbackProducts, hasMore, l10n),
                 const SliverToBoxAdapter(child: SizedBox(height: 120)),
               ],
             ),
@@ -1060,7 +1071,12 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
                         child: FlashSaleTimer(endTime: timerEnd!),
                       ),
                     ),
-                    Expanded(child: ClipRect(child: _MarqueeText(text: _MarketValidators.sanitize(l10n.t('market_flash_sale_banner'), maxLength: 100)))),
+                    Expanded(
+                      child: SizedBox(
+                        height: 24,
+                        child: _MarqueeText(text: _MarketValidators.sanitize(l10n.t('market_flash_sale_banner'), maxLength: 100)),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1101,27 +1117,37 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     );
   }
 
+  // ✅ FIX PRINCIPAL : grid robuste (hauteur fixe + variante horizontal + fallback)
   Widget _buildGrid(
     AsyncValue<List<Map<String, dynamic>>> forYouAsync,
+    List<Map<String, dynamic>> fallback,
     bool hasMore,
     AppLocalizations l10n,
   ) {
     return forYouAsync.when(
-      loading: () => const SliverToBoxAdapter(child: _GridSkeleton()),
-      error: (e, _) => SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: _MarketErrorCard(
-            message: _MarketValidators.parseError(e, l10n),
-            onRetry: () => ref.read(forYouProvider.notifier).refresh(),
+      skipLoadingOnReload: true,
+      skipLoadingOnRefresh: true,
+      loading: () {
+        // Si on a déjà des produits (featured/flash), on les montre pendant le chargement
+        if (fallback.isNotEmpty) return _productGridSliver(fallback, false);
+        return const SliverToBoxAdapter(child: _GridSkeleton());
+      },
+      error: (e, _) {
+        if (fallback.isNotEmpty) return _productGridSliver(fallback, false);
+        return SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: _MarketErrorCard(
+              message: _MarketValidators.parseError(e, l10n),
+              onRetry: () => ref.read(forYouProvider.notifier).refresh(),
+            ),
           ),
-        ),
-      ),
+        );
+      },
       data: (items) {
-        final sorted = _stableSort(items);
+        final source = items.isNotEmpty ? items : fallback;
 
-        // ✅ Empty state — plus de page blanche silencieuse
-        if (sorted.isEmpty) {
+        if (source.isEmpty) {
           return SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
@@ -1134,7 +1160,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    l10n.t('market_no_products'), // ou fallback ci-dessous
+                    l10n.t('market_no_products'),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontSize: 15,
@@ -1169,31 +1195,48 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
           );
         }
 
-        return SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-          sliver: SliverGrid(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 0.65,
-            ),
-            delegate: SliverChildBuilderDelegate(
-              (_, i) {
-                if (i >= sorted.length) {
-                  return const Center(
-                    child: CircularProgressIndicator(
-                      color: ThixPolicy.domainMarket,
-                    ),
-                  );
-                }
-                return ProductCard(product: sorted[i]);
-              },
-              childCount: sorted.length + (hasMore ? 1 : 0),
-            ),
-          ),
-        );
+        return _productGridSliver(source, hasMore);
       },
+    );
+  }
+
+  Widget _productGridSliver(List<Map<String, dynamic>> source, bool hasMore) {
+    final sorted = _stableSort(source);
+    return SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          mainAxisExtent: _kGridCardHeight,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (_, i) {
+            if (i >= sorted.length) {
+              return const Center(
+                child: CircularProgressIndicator(color: ThixPolicy.domainMarket),
+              );
+            }
+            final p = sorted[i];
+            return LayoutBuilder(
+              builder: (context, box) {
+                return SizedBox(
+                  width: box.maxWidth,
+                  height: _kGridCardHeight,
+                  child: ProductCard(
+                    key: ValueKey('grid_${p['id']}'),
+                    product: p,
+                    variant: ProductCardVariant.horizontal,
+                    width: box.maxWidth,
+                  ),
+                );
+              },
+            );
+          },
+          childCount: sorted.length + (hasMore ? 1 : 0),
+        ),
+      ),
     );
   }
 
@@ -1274,7 +1317,9 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
         onTap: () {
           HapticFeedback.lightImpact();
           setState(() => _selectedNav = index);
-          if (index == 0) _scroll.animateTo(0, duration: const Duration(milliseconds: 400), curve: Curves.easeOut);
+          if (index == 0 && _scroll.hasClients) {
+            _scroll.animateTo(0, duration: const Duration(milliseconds: 400), curve: Curves.easeOut);
+          }
           if (index == 1) context.push('/market/orders');
           if (index == 3) context.push('/market/wishlist');
           if (index == 4) context.push('/market/price-alerts');
@@ -1378,7 +1423,12 @@ class _GridSkeleton extends StatelessWidget {
       child: GridView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 0.65),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          mainAxisExtent: _kGridCardHeight,
+        ),
         itemCount: 4,
         itemBuilder: (_, __) => Container(
           decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(16)),
@@ -1420,7 +1470,6 @@ class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderState
   }
 }
 
-// ✅ UNIQUE DÉCLARATION — pas de doublon
 enum _StripBadge { flash, featured, none }
 
 class _AutoScrollProductStrip extends StatefulWidget {
@@ -1549,6 +1598,7 @@ class _AutoScrollProductStripState extends State<_AutoScrollProductStrip> {
   }
 }
 
+// ✅ FIX : Marquee sans OverflowBox/infinity (Stack + Positioned à largeur fixe)
 class _MarqueeText extends StatefulWidget {
   final String text;
   const _MarqueeText({required this.text});
@@ -1558,14 +1608,12 @@ class _MarqueeText extends StatefulWidget {
 
 class _MarqueeTextState extends State<_MarqueeText> with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
-  late final Animation<double> _anim;
-  static const double _itemWidth = 400;
+  static const double _itemWidth = 300;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 10))..repeat();
-    _anim = Tween<double>(begin: 0, end: _itemWidth).animate(_ctrl);
+    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 8))..repeat();
   }
 
   @override
@@ -1576,29 +1624,37 @@ class _MarqueeTextState extends State<_MarqueeText> with SingleTickerProviderSta
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _anim,
-      builder: (_, __) => ClipRect(
-        child: OverflowBox(
-          maxWidth: double.infinity,
-          child: Row(
-            children: List.generate(4, (i) {
-              final offset = (_anim.value + i * _itemWidth) % (_itemWidth * 2) - _itemWidth;
-              return Transform.translate(
-                offset: Offset(offset, 0),
-                child: SizedBox(
-                  width: _itemWidth,
-                  child: Center(
-                    child: Text(
-                      widget.text,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5),
+    return ClipRect(
+      child: LayoutBuilder(
+        builder: (context, box) {
+          final w = box.maxWidth.isFinite ? box.maxWidth : 300.0;
+          final count = (w / _itemWidth).ceil() + 2;
+          return AnimatedBuilder(
+            animation: _ctrl,
+            builder: (_, __) {
+              final shift = _ctrl.value * _itemWidth;
+              return Stack(
+                clipBehavior: Clip.hardEdge,
+                children: List.generate(count, (i) {
+                  return Positioned(
+                    left: i * _itemWidth - shift,
+                    top: 0,
+                    bottom: 0,
+                    width: _itemWidth,
+                    child: Center(
+                      child: Text(
+                        widget.text,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.5),
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                }),
               );
-            }),
-          ),
-        ),
+            },
+          );
+        },
       ),
     );
   }
