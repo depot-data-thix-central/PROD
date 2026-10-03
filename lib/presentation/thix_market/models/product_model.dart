@@ -1,3 +1,5 @@
+import 'package:thix_id/presentation/thix_market/core/african_countries.dart';
+
 class ProductModel {
   final String id;
   final String shopId;
@@ -25,7 +27,9 @@ class ProductModel {
   final String status;
   final DateTime createdAt;
   final DateTime? updatedAt;
-
+  final String? city;
+  final String? country; 
+  
   ProductModel({
     required this.id,
     required this.shopId,
@@ -53,10 +57,15 @@ class ProductModel {
     this.status = 'active',
     required this.createdAt,
     this.updatedAt,
+    this.city,
+    this.country,
+
   });
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
     return ProductModel(
+      city: json['city'] as String?,
+      country: json['country'] as String?,
       id: json['id'] as String,
       shopId: json['shop_id'] as String,
       title: json['title'] as String,
@@ -94,6 +103,8 @@ class ProductModel {
 
   Map<String, dynamic> toJson() {
     return {
+      'city': city,
+      'country': country,
       'id': id,
       'shop_id': shopId,
       'title': title,
@@ -122,7 +133,9 @@ class ProductModel {
       'updated_at': updatedAt?.toIso8601String(),
     };
   }
-
+String get locationLabel =>
+    AfricanCountries.locationLine(city: city ?? '', code: country);
+String get countryFlag => AfricanCountries.flagOf(country);
   double get finalPrice => discountPrice ?? price;
   int get discountPercent => discountPrice != null
       ? ((price - discountPrice!) / price * 100).round()
