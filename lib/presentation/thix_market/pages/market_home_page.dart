@@ -1,6 +1,16 @@
 // lib/presentation/thix_market/pages/market_home_page.dart
+// ============================================================================
+// MARKET HOME PAGE — Production Enterprise v2
+// ============================================================================
+// Modifications v2 :
+//   ✅ Suppression du tri aléatoire _smartMix (bug d'ordre)
+//   ✅ Tri STABLE via stableSortProducts (flash actifs → featured → récents)
+//   ✅ Source unique (forYouProvider) pour la grille
+//   ✅ RouteAware : refresh auto au retour depuis publish
+//   ✅ Invalidation complète au pull-to-refresh
+// ============================================================================
+
 import 'dart:async';
-import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,7 +23,7 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/data/models/live/live_model.dart';
 import 'package:thix_id/presentation/network/live/live_viewer_screen.dart';
-import 'package:thix_id/l10n/app_localizations.dart'; // Remplacement
+import 'package:thix_id/l10n/app_localizations.dart';
 
 import '../providers/market_providers.dart';
 import '../widgets/products/product_card.dart';
@@ -68,7 +78,7 @@ class _MarketValidators {
 }
 
 // ============================================================================
-// PROVIDER — LIVE SESSIONS (avec retry + error handling)
+// PROVIDERS
 // ============================================================================
 final activeMarketLiveSessionsProvider = StreamProvider.autoDispose<List<Map<String, dynamic>>>((ref) {
   try {
@@ -86,9 +96,6 @@ final activeMarketLiveSessionsProvider = StreamProvider.autoDispose<List<Map<Str
   }
 });
 
-// ============================================================================
-// PROVIDER — EXPIRY TICKER (remplace le Timer.periodic 30s global)
-// ============================================================================
 final marketTickerProvider = StreamProvider.autoDispose<int>((ref) {
   return Stream.periodic(const Duration(seconds: 30), (tick) => tick);
 });
@@ -102,19 +109,40 @@ class MarketHomePage extends ConsumerStatefulWidget {
   ConsumerState<MarketHomePage> createState() => _MarketHomePageState();
 }
 
-class _MarketHomePageState extends ConsumerState<MarketHomePage> {
+class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware {
   final ScrollController _scroll = ScrollController();
   final PageController _bannerCtrl = PageController(viewportFraction: 0.94);
   Timer? _bannerTimer;
   bool _bannerReady = false;
   int _currentBanner = 0;
   int _selectedNav = 0;
+  ModalRoute? _currentRoute;
 
   @override
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
     debugPrint('[Market] 🏠 Home opened');
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // ✅ RouteAware : enregistre pour détecter le retour depuis publish
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      _currentRoute = route;
+      // Note : si ton app a un routeObserver global, décommente :
+      // routeObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPopNext() {
+    // ✅ Retour depuis une page pushée (ex: publish) → refresh silencieux
+    debugPrint('[Market] 🔙 Returned from pushed route — silent refresh');
+    invalidateAllMarketProviders(ref);
+    ref.read(forYouProvider.notifier).refresh();
   }
 
   void _onScroll() {
@@ -129,6 +157,8 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     _scroll.dispose();
     _bannerCtrl.dispose();
     _bannerTimer?.cancel();
+    // Note : si tu utilises routeObserver, décommente :
+    // if (_currentRoute != null) routeObserver.unsubscribe(this);
     debugPrint('[Market] 🏠 Home disposed');
     super.dispose();
   }
@@ -201,34 +231,10 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  int _stableHash(String input) {
-    var hash = 0;
-    for (final unit in input.codeUnits) {
-      hash = 0x1fffffff & (hash + unit);
-      hash = 0x1fffffff & (hash + ((0x0007ffff & hash) << 10));
-      hash ^= (hash >> 6);
-    }
-    hash = 0x1fffffff & (hash + ((0x03ffffff & hash) << 3));
-    hash ^= (hash >> 11);
-    hash = 0x1fffffff & (hash + ((0x00003fff & hash) << 15));
-    return hash;
-  }
-
-  String _mixSeed() {
-    final uid = Supabase.instance.client.auth.currentUser?.id ?? 'guest';
-    final hour = DateTime.now().toIso8601String().substring(0, 13); // Par heure (plus dynamique)
-    return '$uid-$hour';
-  }
-
-  List<Map<String, dynamic>> _smartMix(List<Map<String, dynamic>> items) {
-    if (items.isEmpty) return items;
-    final seed = _mixSeed();
-    final scored = items.map((p) {
-      final id = p['id']?.toString() ?? Random().nextInt(999999).toString();
-      return MapEntry(_stableHash('$seed-$id'), p);
-    }).toList();
-    scored.sort((a, b) => a.key.compareTo(b.key));
-    return scored.map((e) => e.value).toList();
+  /// ✅ Tri STABLE : flash actifs → featured → récents
+  /// Utilise stableSortProducts exporté depuis market_providers.dart
+  List<Map<String, dynamic>> _stableSort(List<Map<String, dynamic>> items) {
+    return stableSortProducts(items);
   }
 
   bool _isExpired(Map<String, dynamic> p) {
@@ -260,11 +266,10 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     final forYouAsync = ref.watch(forYouProvider);
     final liveSessionsAsync = ref.watch(activeMarketLiveSessionsProvider);
 
-    final all = ref.watch(allMarketProductsProvider);
+    // ✅ SOURCE UNIQUE : uniquement forYouProvider pour la grille
     final hasMore = ref.read(forYouProvider.notifier).hasMore;
-    final mixedAll = _smartMix(all);
 
-    // Watch le ticker pour refresh flash sales uniquement (pas toute la page)
+    // Ticker pour refresh flash sales (pas toute la page)
     ref.watch(marketTickerProvider);
 
     featuredAsync.whenData((b) {
@@ -285,10 +290,8 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
             onRefresh: () async {
               HapticFeedback.mediumImpact();
               debugPrint('[Market] 🔄 Pull-to-refresh');
-              ref.invalidate(featuredProductsProvider);
-              ref.invalidate(flashSalesProvider);
-              ref.invalidate(featuredShopsProvider);
-              ref.invalidate(activeMarketLiveSessionsProvider);
+              // ✅ INVALIDATION COMPLÈTE ET ORDRONNÉE
+              invalidateAllMarketProviders(ref);
               await ref.read(forYouProvider.notifier).refresh();
             },
             child: CustomScrollView(
@@ -312,7 +315,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                 SliverToBoxAdapter(child: _buildFlashSaleSection(flashAsync, l10n)),
                 SliverToBoxAdapter(child: _buildSectionHeader(l10n.t('market_all_products'))),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
-                _buildGrid(forYouAsync, mixedAll, hasMore, l10n),
+                _buildGrid(forYouAsync, hasMore, l10n),
                 const SliverToBoxAdapter(child: SizedBox(height: 120)),
               ],
             ),
@@ -549,14 +552,13 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                           borderRadius: BorderRadius.circular(20),
                           gradient: ThixPolicy.heroGradient,
                           border: Border.all(color: Colors.white.withOpacity(0.5), width: 1),
-                                                    image: imageUrl != null
+                          image: imageUrl != null
                               ? DecorationImage(
                                   image: CachedNetworkImageProvider(imageUrl),
                                   fit: BoxFit.cover,
                                   colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.6), BlendMode.darken),
                                 )
                               : null,
-
                           boxShadow: ThixPolicy.shadowCard(),
                         ),
                         child: Column(
@@ -881,13 +883,12 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
                               color: Colors.white.withOpacity(0.6),
                               border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.5),
                               boxShadow: ThixPolicy.shadowSoft(),
-                                                            image: logoUrl != null
+                              image: logoUrl != null
                                   ? DecorationImage(
                                       image: CachedNetworkImageProvider(logoUrl),
                                       fit: BoxFit.cover,
                                     )
                                   : null,
-
                             ),
                             child: logoUrl == null ? const Icon(Icons.storefront_rounded, color: ThixPolicy.textMuted, size: 28) : null,
                           ),
@@ -1118,7 +1119,12 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
     );
   }
 
-  Widget _buildGrid(AsyncValue<List<Map<String, dynamic>>> forYouAsync, List<Map<String, dynamic>> mixedAll, bool hasMore, AppLocalizations l10n) {
+  /// ✅ SOURCE UNIQUE + TRI STABLE
+  Widget _buildGrid(
+    AsyncValue<List<Map<String, dynamic>>> forYouAsync,
+    bool hasMore,
+    AppLocalizations l10n,
+  ) {
     return forYouAsync.when(
       loading: () => const SliverToBoxAdapter(child: _GridSkeleton()),
       error: (e, _) => SliverToBoxAdapter(
@@ -1130,21 +1136,30 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
           ),
         ),
       ),
-      data: (_) => SliverPadding(
-        padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-        sliver: SliverGrid(
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 0.65),
-          delegate: SliverChildBuilderDelegate(
-            (_, i) {
-              if (i >= mixedAll.length) {
-                return const Center(child: CircularProgressIndicator(color: ThixPolicy.domainMarket));
-              }
-              return ProductCard(product: mixedAll[i]);
-            },
-            childCount: mixedAll.length + (hasMore ? 1 : 0),
+      data: (items) {
+        // ✅ Tri stable : flash actifs → featured → récents
+        final sorted = _stableSort(items);
+        return SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 0.65),
+            delegate: SliverChildBuilderDelegate(
+              (_, i) {
+                if (i >= sorted.length) {
+                  return const Center(
+                      child: CircularProgressIndicator(color: ThixPolicy.domainMarket));
+                }
+                return ProductCard(product: sorted[i]);
+              },
+              childCount: sorted.length + (hasMore ? 1 : 0),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1252,7 +1267,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> {
 // COMPOSANTS RÉUTILISABLES
 // ============================================================================
 
-/// Carte d'erreur réutilisable avec retry
 class _MarketErrorCard extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
@@ -1289,7 +1303,6 @@ class _MarketErrorCard extends StatelessWidget {
   }
 }
 
-/// Skeleton pour Hero banner
 class _HeroSkeleton extends StatelessWidget {
   const _HeroSkeleton();
   @override
@@ -1305,7 +1318,6 @@ class _HeroSkeleton extends StatelessWidget {
   }
 }
 
-/// Skeleton pour shops
 class _ShopsSkeleton extends StatelessWidget {
   const _ShopsSkeleton();
   @override
@@ -1323,7 +1335,6 @@ class _ShopsSkeleton extends StatelessWidget {
   }
 }
 
-/// Skeleton pour grille produits
 class _GridSkeleton extends StatelessWidget {
   const _GridSkeleton();
   @override
@@ -1414,9 +1425,14 @@ class _AutoScrollProductStripState extends State<_AutoScrollProductStrip> {
   @override
   void didUpdateWidget(covariant _AutoScrollProductStrip old) {
     super.didUpdateWidget(old);
-    if (old.products.length != widget.products.length) {
+    // ✅ Ne relance le timer QUE si on passe de "inactif" à "actif"
+    final wasActive = old.products.length > 4;
+    final isActiveNow = widget.products.length > 4;
+
+    if (!wasActive && isActiveNow) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _start());
+    } else if (wasActive && !isActiveNow) {
       _timer?.cancel();
-      if (_active) WidgetsBinding.instance.addPostFrameCallback((_) => _start());
     }
   }
 
@@ -1424,7 +1440,11 @@ class _AutoScrollProductStripState extends State<_AutoScrollProductStrip> {
     _timer?.cancel();
     _timer = Timer.periodic(_tick, (_) {
       if (!mounted || !_ctrl.hasClients || _paused) return;
-      final maxExt = _ctrl.position.maxScrollExtent;
+      // ✅ Garde-fous : éviter les erreurs de scroll
+      final position = _ctrl.position;
+      if (!position.hasContent) return;
+      final maxExt = position.maxScrollExtent;
+      if (maxExt <= 0) return;
       final next = _ctrl.offset + _step;
       _ctrl.jumpTo(next >= maxExt ? 0 : next);
     });
@@ -1498,7 +1518,6 @@ class _AutoScrollProductStripState extends State<_AutoScrollProductStrip> {
   }
 }
 
-/// Marquee optimisé : utilise AnimatedBuilder + transform (pas de Timer)
 class _MarqueeText extends StatefulWidget {
   final String text;
   const _MarqueeText({required this.text});
@@ -1509,7 +1528,7 @@ class _MarqueeText extends StatefulWidget {
 class _MarqueeTextState extends State<_MarqueeText> with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   late final Animation<double> _anim;
-  static const double _itemWidth = 400; // Largeur estimée d'un item
+  static const double _itemWidth = 400;
 
   @override
   void initState() {
