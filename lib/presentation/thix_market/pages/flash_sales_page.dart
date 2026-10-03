@@ -60,6 +60,15 @@ abstract class _FlashSanitizer {
       return '';
     }
   }
+
+  static double parsePrice(dynamic input) {
+    if (input == null) return 0.0;
+    if (input is num) return input.toDouble();
+    if (input is String) {
+      return double.tryParse(input) ?? 0.0;
+    }
+    return 0.0;
+  }
 }
 
 // ============================================================================
@@ -112,7 +121,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
           .toList();
     }
 
-    // Tri
+    // Tri sécurisé
     list.sort((a, b) {
       switch (_sort) {
         case _FlashSort.urgency:
@@ -122,12 +131,12 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
               DateTime(2100);
           return aExp.compareTo(bExp);
         case _FlashSort.priceAsc:
-          final aP = ((a['discount_price'] ?? a['price']) as num?) ?? 0;
-          final bP = ((b['discount_price'] ?? b['price']) as num?) ?? 0;
+          final aP = _FlashSanitizer.parsePrice(a['discount_price'] ?? a['price']);
+          final bP = _FlashSanitizer.parsePrice(b['discount_price'] ?? b['price']);
           return aP.compareTo(bP);
         case _FlashSort.priceDesc:
-          final aP = ((a['discount_price'] ?? a['price']) as num?) ?? 0;
-          final bP = ((b['discount_price'] ?? b['price']) as num?) ?? 0;
+          final aP = _FlashSanitizer.parsePrice(a['discount_price'] ?? a['price']);
+          final bP = _FlashSanitizer.parsePrice(b['discount_price'] ?? b['price']);
           return bP.compareTo(aP);
         case _FlashSort.newest:
           final aDate = DateTime.tryParse(a['created_at']?.toString() ?? '') ??
@@ -384,20 +393,24 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
     return Semantics(
       button: true,
       label: tooltip,
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.lightImpact();
-          onTap();
-        },
-        child: Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.18),
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withOpacity(0.25)),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onTap();
+          },
+          borderRadius: BorderRadius.circular(21),
+          child: Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.18),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withOpacity(0.25)),
+            ),
+            child: Icon(icon, color: Colors.white, size: 18),
           ),
-          child: Icon(icon, color: Colors.white, size: 18),
         ),
       ),
     );
@@ -924,7 +937,7 @@ class _SortRow extends StatelessWidget {
 }
 
 // ============================================================================
-// MARQUEE STRIP (Optimisé sans coupures)
+// MARQUEE STRIP (Défilement fluide continu sans saut)
 // ============================================================================
 class _MarqueeStrip extends StatefulWidget {
   final String text;
@@ -943,7 +956,7 @@ class _MarqueeStripState extends State<_MarqueeStrip>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 18),
+      duration: const Duration(seconds: 15),
     )..repeat();
   }
 
@@ -959,7 +972,7 @@ class _MarqueeStripState extends State<_MarqueeStrip>
       animation: _ctrl,
       builder: (context, child) {
         return FractionalTranslation(
-          translation: Offset(-_ctrl.value, 0.0),
+          translation: Offset(-_ctrl.value * 0.5, 0.0),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
