@@ -679,77 +679,116 @@ class _FactTile extends StatelessWidget {
   }
 }
 
+// ═══════════════════ CARTE INFO RAIL v2 — layout vertical anti-overflow ═══════════════════
 class _InfoRail extends StatelessWidget {
   final OpportunityItem opp;
   final int daysLeft;
   final AppLocalizations l10n;
-  const _InfoRail(
-      {required this.opp, required this.daysLeft, required this.l10n});
+  const _InfoRail({required this.opp, required this.daysLeft, required this.l10n});
 
   @override
   Widget build(BuildContext context) {
     final reward = opp.rewardLabel;
     final hasReward = reward.isNotEmpty && reward != '—';
+    final ringColor = daysLeft <= 0 ? _Opp.mut : (daysLeft <= 7 ? _Opp.red : _Opp.gold);
+
     return Container(
-      padding: const EdgeInsets.all(14),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [_Opp.navy, _Opp.navy2],
         ),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-              color: _Opp.navy.withOpacity(0.25),
-              blurRadius: 14,
-              offset: const Offset(0, 6)),
+            color: _Opp.navy.withOpacity(0.28),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _countdownRing(daysLeft),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(_tr(l10n, 'opp_detail_deadline_title', 'Date limite'),
-                    style: TextStyle(
+          // ── Ligne 1 : anneau + date limite ──
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _countdownRing(daysLeft, ringColor),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _tr(l10n, 'opp_detail_deadline_title', 'Date limite'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w700,
                         color: Colors.white.withOpacity(0.65),
-                        letterSpacing: 0.3)),
-                const SizedBox(height: 3),
-                Text(opp.deadlineLabel,
-                    style: const TextStyle(
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      opp.deadlineLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w900)),
-              ],
-            ),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    _statusChip(daysLeft, ringColor),
+                  ],
+                ),
+              ),
+            ],
           ),
+          // ── Ligne 2 : récompense (contrainte, max 2 lignes) ──
           if (hasReward) ...[
-            Container(width: 1, height: 36, color: Colors.white.withOpacity(0.2)),
-            const SizedBox(width: 14),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(_tr(l10n, 'opp_detail_reward', 'Récompense'),
-                    style: TextStyle(
-                        fontSize: 10.5,
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.18)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 1),
+                    child: Icon(Icons.volunteer_activism_rounded,
+                        color: _Opp.gold, size: 15),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Text(
+                      reward,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12.5,
                         fontWeight: FontWeight.w700,
-                        color: Colors.white.withOpacity(0.65),
-                        letterSpacing: 0.3)),
-                const SizedBox(height: 3),
-                Text(reward,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: _Opp.gold,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900)),
-              ],
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ],
@@ -757,32 +796,65 @@ class _InfoRail extends StatelessWidget {
     );
   }
 
-  Widget _countdownRing(int daysLeft) {
-    final color = daysLeft <= 0
-        ? _Opp.mut
-        : (daysLeft <= 7 ? _Opp.red : _Opp.gold);
+  Widget _statusChip(int daysLeft, Color color) {
+    final label = daysLeft <= 0
+        ? _tr(l10n, 'opp_closed', 'Clôturé')
+        : (daysLeft == 1
+            ? _tr(l10n, 'opp_last_day', 'Dernier jour')
+            : '${_tr(l10n, 'opp_days_left_short', 'J-')}$daysLeft');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.22),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.5)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(daysLeft <= 0 ? Icons.lock_clock_rounded : Icons.timer_rounded,
+              size: 11, color: color),
+          const SizedBox(width: 5),
+          Text(label,
+              style: TextStyle(
+                  color: color, fontSize: 10, fontWeight: FontWeight.w900)),
+        ],
+      ),
+    );
+  }
+
+  Widget _countdownRing(int daysLeft, Color color) {
     final progress = (daysLeft.clamp(0, 30)) / 30.0;
-    return SizedBox(
-      width: 58,
-      height: 58,
-      child: CustomPaint(
-        painter: _RingPainter(progress: progress, color: color),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('${daysLeft <= 0 ? 0 : daysLeft}',
-                  style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                      height: 1)),
-              Text('j',
-                  style: TextStyle(
-                      fontSize: 8.5,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white.withOpacity(0.6))),
-            ],
+    return Container(
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+              color: color.withOpacity(0.35), blurRadius: 12, spreadRadius: 1),
+        ],
+      ),
+      child: SizedBox(
+        width: 62,
+        height: 62,
+        child: CustomPaint(
+          painter: _RingPainter(progress: progress, color: color),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('${daysLeft <= 0 ? 0 : daysLeft}',
+                    style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        height: 1)),
+                Text('j',
+                    style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white.withOpacity(0.6))),
+              ],
+            ),
           ),
         ),
       ),
