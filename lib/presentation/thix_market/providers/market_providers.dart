@@ -13,7 +13,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/market_repository.dart';
 
 // ============================================================================
@@ -325,8 +325,10 @@ final featuredProductsProvider = FutureProvider.autoDispose<List<Map<String, dyn
 /// pour garantir la cohérence de la home.
 ///
 /// Usage :
-///   invalidateAllMarketProviders(ref);
-void invalidateAllMarketProviders(Ref ref) {
+// ✅ APRÈS
+/// Invalide TOUS les providers market en une seule ligne.
+/// Accepte WidgetRef (widgets ConsumerStatefulWidget).
+void invalidateAllMarketProviders(WidgetRef ref) {
   debugPrint('[MarketProvider] 🧹 Invalidating ALL market providers');
   ref.invalidate(allMarketProductsProvider);
   ref.invalidate(featuredProductsProvider);
@@ -334,8 +336,6 @@ void invalidateAllMarketProviders(Ref ref) {
   ref.invalidate(featuredShopsProvider);
   ref.invalidate(forYouProvider);
   ref.invalidate(bannersProvider);
-  // unreadProvider volontairement non invalidé (polling auto)
-  // myShopIdProvider volontairement non invalidé (rarement modifié)
 }
 
 /// Tri STABLE et prévisible d'une liste de produits.
