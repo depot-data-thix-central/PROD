@@ -79,15 +79,18 @@ Future<T> _withRetry<T>(
   }
 }
 
-/// Wrapper qui retourne une liste vide en cas d'erreur (non-bloquant)
+/// Wrapper qui retourne une liste vide en cas d'erreur (non-bloquant).
+/// ⚠️ Ne PAS utiliser pour fetchProducts / données critiques affichées à l'utilisateur.
+/// Pour ces cas, laisser l'erreur remonter afin que l'UI affiche un état d'erreur.
 Future<List<Map<String, dynamic>>> _safeQuery(
   Future<List<Map<String, dynamic>>> Function() fn, {
   required String label,
 }) async {
   try {
     return await fn();
-  } catch (e) {
+  } catch (e, st) {
     debugPrint('[MarketRepo] ⚠️ $label failed safely: $e');
+    debugPrint('[MarketRepo] ⚠️ stack: $st');
     return [];
   }
 }
@@ -150,34 +153,40 @@ class MarketRepository {
       return [];
     }
 
-    return _safeQuery(
-      () => _withRetry(() async {
-        debugPrint('[MarketRepo] 📦 Fetching products (page=$safePage, limit=$safeLimit, flash=$flashOnly, featured=$featuredOnly, cat=$category, search="${safeSearch?.substring(0, safeSearch.length > 20 ? 20 : safeSearch.length)}...")');
+    // ⚠️ PAS de _safeQuery ici : les erreurs doivent remonter
+    // pour que forYouProvider / flashSales / featured affichent un état d'erreur
+    // au lieu d'une grille vide silencieuse.
+    return _withRetry(() async {
+      final searchPreview = safeSearch == null
+          ? ''
+          : safeSearch.substring(0, safeSearch.length > 20 ? 20 : safeSearch.length);
+      debugPrint(
+        '[MarketRepo] 📦 Fetching products (page=$safePage, limit=$safeLimit, '
+        'flash=$flashOnly, featured=$featuredOnly, cat=$category, search="$searchPreview...")',
+      );
 
-        var q = _db
-            .from('products')
-            .select('*, shop:shops(id,name,rating,logo_url,city)')
-            .eq('status', 'active');
+      var q = _db
+          .from('products')
+          .select('*, shop:shops(id,name,rating,logo_url,city)')
+          .eq('status', 'active');
 
-        if (flashOnly) q = q.eq('is_flash_sale', true);
-        if (featuredOnly) q = q.eq('is_featured', true);
-        if (category != null && category != 'all' && category.isNotEmpty) {
-          q = q.eq('category', category);
-        }
-        if (safeSearch != null && safeSearch.isNotEmpty) {
-          q = q.ilike('title', '%$safeSearch%');
-        }
+      if (flashOnly) q = q.eq('is_flash_sale', true);
+      if (featuredOnly) q = q.eq('is_featured', true);
+      if (category != null && category != 'all' && category.isNotEmpty) {
+        q = q.eq('category', category);
+      }
+      if (safeSearch != null && safeSearch.isNotEmpty) {
+        q = q.ilike('title', '%$safeSearch%');
+      }
 
-        final res = await q
-            .order('created_at', ascending: false)
-            .range(safePage * safeLimit, (safePage + 1) * safeLimit - 1);
+      final res = await q
+          .order('created_at', ascending: false)
+          .range(safePage * safeLimit, (safePage + 1) * safeLimit - 1);
 
-        final list = List<Map<String, dynamic>>.from(res);
-        debugPrint('[MarketRepo] ✓ ${list.length} products loaded');
-        return list;
-      }, label: 'fetchProducts'),
-      label: 'fetchProducts',
-    );
+      final list = List<Map<String, dynamic>>.from(res as List);
+      debugPrint('[MarketRepo] ✓ ${list.length} products loaded');
+      return list;
+    }, label: 'fetchProducts');
   }
 
   /// Version avec info pagination (total + hasMore)
@@ -437,7 +446,7 @@ class MarketRepository {
             .from('shops')
             .select('id,name,logo_url,city,rating,is_verified')
             .ilike('name', '%$query%')
-            .eq('is_active', true)
+            .eq('status', 'active') // colonne réelle = status (pas is_active)
             .limit(10);
         return List<Map<String, dynamic>>.from(res);
       }, label: 'searchShops'),
@@ -568,18 +577,16 @@ class MarketRepository {
       productIds = productIds.sublist(0, 5);
     }
 
-    return _safeQuery(
-      () => _withRetry(() async {
-        debugPrint('[MarketRepo] ⚖️ Fetching ${productIds.length} products for comparison');
-        final res = await _db
-            .from('products')
-            .select('*, shop:shops(id,name,logo_url)')
-            .inFilter('id', productIds)
-            .eq('status', 'active');
-        return List<Map<String, dynamic>>.from(res);
-      }, label: 'fetchProductsForComparison'),
-      label: 'fetchProductsForComparison',
-    );
+    // Pas de _safeQuery : erreur visible dans le comparateur
+    return _withRetry(() async {
+      debugPrint('[MarketRepo] ⚖️ Fetching ${productIds.length} products for comparison');
+      final res = await _db
+          .from('products')
+          .select('*, shop:shops(id,name,logo_url)')
+          .inFilter('id', productIds)
+          .eq('status', 'active');
+      return List<Map<String, dynamic>>.from(res as List);
+    }, label: 'fetchProductsForComparison');
   }
 
   // ─────────────────────────────────────────────────────────────
