@@ -99,9 +99,9 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
   static const Color _colorLearning = ThixPolicy.domainLearning;
   static const Color _colorEvent = ThixPolicy.warning;
 
-  double _angle = -pi / 2; // nœud 0 en focale au démarrage
+  double _angle = -pi / 2 - (7 * _kStep); // nœud 0 en focale au démarrage
   double _radius = 140;
-  int _focus = 0;
+  int _focus = 7;
   bool _interacted = false;
 
   late final AnimationController _ctrl;
