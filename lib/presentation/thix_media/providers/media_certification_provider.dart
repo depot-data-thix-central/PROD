@@ -1,26 +1,29 @@
 // lib/presentation/thix_media/providers/media_certification_provider.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/models/certification_tier.dart';
 
-/// Convertit un texte de niveau en CertificationTier avec le même parseur
-/// que le dashboard. Retourne null si gratuit / inconnu.
+/// Même règle que le dashboard : seuls approved / generated comptent.
+const Set<String> _kOkStatus = {'approved', 'generated'};
+
+bool _statusOk(dynamic raw) =>
+    _kOkStatus.contains((raw ?? '').toString().trim().toLowerCase());
+
+/// Convertit un texte de niveau en CertificationTier.
+/// Retourne null si vide, gratuit ou inconnu : jamais de niveau par défaut.
 CertificationTier? parseCertTier(String? tier, {String? status}) {
-  if (tier == null || tier.trim().isEmpty) return null;
-  final t = CertificationTierX.parse(tier);
+  final raw = (tier ?? '').trim().toLowerCase();
+  if (raw.isEmpty || raw == 'free' || raw == 'none' || raw == 'gratuit') {
+    return null;
+  }
+  final t = CertificationTierX.parse(raw);
   return t == CertificationTier.free ? null : t;
 }
 
-bool _statusOk(dynamic raw) {
-  final s = CertificationStatusX.parse(raw);
-  return s == CertificationStatus.approved ||
-      s == CertificationStatus.generated;
-}
-
 /// Niveau de certification réel d'un utilisateur (null = non certifié).
-/// Même source que le dashboard :
-/// - mon compte : rpc_get_my_certification
+/// - mon compte : rpc_get_my_certification (même source que le dashboard)
 /// - autres comptes : colonnes certification_* de profiles
 Future<CertificationTier?> resolveUserCertTier(String userId) async {
   if (userId.trim().isEmpty) return null;
@@ -52,10 +55,14 @@ Future<CertificationTier?> resolveUserCertTier(String userId) async {
   }
 
   if (row == null) return null;
-  if (!_statusOk(row['certification_status'])) return null;
 
-  final tier = CertificationTierX.parse(row['certification_tier']);
-  return tier == CertificationTier.free ? null : tier;
+  if (kDebugMode) {
+    debugPrint(
+        '[MediaCert] $userId tier=${row['certification_tier']} status=${row['certification_status']}');
+  }
+
+  if (!_statusOk(row['certification_status'])) return null;
+  return parseCertTier(row['certification_tier']?.toString());
 }
 
 /// Niveau de certification d'un utilisateur (mis en cache par userId).
