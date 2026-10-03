@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="/PROD/">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="THIX ID Central">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0A2F5C">
+  <title>THIX ID CENTRAL</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    html, body { height: 100%; margin: 0; background: #0A2F5C; }
+    #startup {
+      position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 16px;
+      color: #fff; font-family: system-ui, sans-serif; text-align: center; padding: 24px;
+    }
+    #startup .spinner {
+      width: 42px; height: 42px; border-radius: 50%;
+      border: 4px solid rgba(255,255,255,.25); border-top-color: #fff;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #startup-error {
+      display: none; max-width: 480px; background: rgba(229,9,20,.25);
+      border: 1px solid #E50914; border-radius: 8px; padding: 12px;
+      font-size: 13px; white-space: pre-wrap;
+    }
+  </style>
+
+  <!-- ✅ Capture les erreurs JS AVANT le bootstrap (affichées au lieu d'écran gris) -->
+  <script>
+    window.addEventListener('error', function (e) {
+      var el = document.getElementById('startup-error');
+      var msg = document.getElementById('startup-msg');
+      if (el) {
+        el.style.display = 'block';
+        el.textContent = 'Erreur de démarrage :\n' + (e.message || e.error || 'inconnue');
+      }
+      if (msg) msg.textContent = 'Échec du chargement';
+    }, true);
+    window.addEventListener('unhandledrejection', function (e) {
+      var el = document.getElementById('startup-error');
+      if (el) {
+        el.style.display = 'block';
+        el.textContent = 'Erreur async :\n' + (e.reason && e.reason.message ? e.reason.message : e.reason);
+      }
+    });
+  </script>
+</head>
+<body>
+  <!-- ✅ Loader visible pendant le bootstrap (remplace l'écran gris) -->
+  <div id="startup">
+    <div class="spinner"></div>
+    <div id="startup-msg">Chargement de THIX ID…</div>
+    <div id="startup-error"></div>
+  </div>
+
+  <!-- ✅ Masque le loader au premier frame rendu -->
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var el = document.getElementById('startup');
+      if (el) el.remove();
+    });
+  </script>
+
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
