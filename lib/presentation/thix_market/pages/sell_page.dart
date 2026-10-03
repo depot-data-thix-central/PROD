@@ -148,9 +148,14 @@ final myAnnouncementsProvider =
   debugPrint('[SellPage] 📢 Loading announcements');
   try {
     final res = await _withRetry(
-      () => db.from('products').select().eq('owner_id', uid).order('created_at', ascending: false),
-      label: 'fetchAnnouncements',
-    );
+  () => db
+      .from('products')
+      .select()
+      .or('owner_id.eq.$uid,vendor_id.eq.$uid') // Vérifie owner_id OU vendor_id
+      .order('created_at', ascending: false),
+  label: 'fetchAnnouncements',
+);
+
     debugPrint('[SellPage] ✓ Loaded ${(res as List).length} announcements');
     return List<Map<String, dynamic>>.from(res);
   } catch (e) {
