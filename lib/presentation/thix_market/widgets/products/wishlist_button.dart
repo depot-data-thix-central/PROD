@@ -3,240 +3,135 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// ============================================================================
-// CONSTANTES
-// ============================================================================
-const Duration _kRequestTimeout = Duration(seconds: 15);
-const Duration _kRetryDelay = Duration(milliseconds: 400);
-const int _kMaxRetries = 1;
+import 'package:thix_id/core/theme/thix_design_policy.dart';
 
-// ============================================================================
-// PROVIDER (avec écoute de session + autoDispose)
-// ============================================================================
+const String _table = 'wishlist';
 
-class WishlistNotifier extends AutoDisposeAsyncNotifier<Set<String>> {
-  bool _isToggling = false;
-  StreamSubscription? _authSub;
+/// Ensemble des product_id favoris de l'utilisateur (1 seule requête pour toutes les cartes)
+final wishlistIdsProvider =
+    NotifierProvider<WishlistIdsNotifier, Set<String>>(WishlistIdsNotifier.new);
 
-  bool get isToggling => _isToggling;
+class WishlistIdsNotifier extends Notifier<Set<String>> {
+  bool _loading = false;
+
+  SupabaseClient get _db => Supabase.instance.client;
+  String? get _uid => _db.auth.currentUser?.id;
 
   @override
-  Future<Set<String>> build() async {
-    debugPrint('[Wishlist] ❤️ Building wishlist state');
-
-    // Écoute les changements d'auth (login/logout) pour recharger
-    _authSub?.cancel();
-    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
-      debugPrint('[Wishlist] 🔐 Auth state changed: ${data.event} — invalidating');
-      ref.invalidateSelf();
-    });
-    ref.onDispose(() => _authSub?.cancel());
-
-    return _load();
+  Set<String> build() {
+    Future.microtask(load);
+    return <String>{};
   }
 
-  Future<Set<String>> _load() async {
-    final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null) {
-      debugPrint('[Wishlist] ⚠️ Not authenticated — empty set');
-      return <String>{};
-    }
-
+  Future<void> load() async {
+    if (_loading) return;
+    final uid = _uid;
+    if (uid == null) return;
+    _loading = true;
     try {
-      final res = await Supabase.instance.client
-          .from('wishlist')
+      final res = await _db
+          .from(_table)
           .select('product_id')
           .eq('user_id', uid)
-          .timeout(_kRequestTimeout);
-
-      final ids = (res as List)
-          .map((e) => e['product_id']?.toString() ?? '')
-          .where((id) => id.isNotEmpty)
-          .toSet();
-
-      debugPrint('[Wishlist] ✓ Loaded ${ids.length} favorites');
-      return ids;
-    } catch (e) {
-      debugPrint('[Wishlist] ❌ Load error: $e');
-      rethrow;
-    }
-  }
-
-  /// Refresh manuel (pull-to-refresh sur la page wishlist).
-  Future<void> refresh() async {
-    debugPrint('[Wishlist] 🔄 Manual refresh');
-    ref.invalidateSelf();
-    await future;
-  }
-
-  Future<void> toggle(String id, {BuildContext? context}) async {
-    // Validation ID
-    if (id.isEmpty) {
-      debugPrint('[Wishlist] ⚠️ Toggle with empty ID — ignored');
-      return;
-    }
-
-    // Garde anti-double-tap
-    if (_isToggling) {
-      debugPrint('[Wishlist] ⚠️ Toggle in progress — ignored');
-      return;
-    }
-
-    final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null) {
-      debugPrint('[Wishlist] ⚠️ Not authenticated — redirect to login');
-      if (context != null && context.mounted) {
-        context.go('/login');
+          .timeout(const Duration(seconds: 10));
+      final ids = <String>{};
+      for (final row in List<Map<String, dynamic>>.from(res as List)) {
+        final id = row['product_id']?.toString();
+        if (id != null && id.isNotEmpty) ids.add(id);
       }
-      return;
+      state = ids;
+      debugPrint('[Wishlist] ✓ ${ids.length} favoris chargés');
+    } catch (e) {
+      debugPrint('[Wishlist] ⚠️ load error: $e');
+    } finally {
+      _loading = false;
     }
+  }
 
-    _isToggling = true;
-    final cur = state.valueOrNull ?? <String>{};
-    final wasFav = cur.contains(id);
+  /// Retourne null si OK, sinon un message d'erreur.
+  Future<String?> toggle(String productId) async {
+    final uid = _uid;
+    if (uid == null) return 'Connectez-vous pour ajouter aux favoris';
+    if (productId.isEmpty) return 'Produit invalide';
 
-    // Optimistic UI
-    final optimistic = Set<String>.from(cur);
-    if (wasFav) {
-      optimistic.remove(id);
-    } else {
-      optimistic.add(id);
-    }
-    state = AsyncData(optimistic);
+    final wasLiked = state.contains(productId);
+
+    // Optimiste : le cœur change immédiatement
+    final next = Set<String>.from(state);
+    wasLiked ? next.remove(productId) : next.add(productId);
+    state = next;
 
     try {
-      if (wasFav) {
-        await Supabase.instance.client
-            .from('wishlist')
+      if (wasLiked) {
+        await _db
+            .from(_table)
             .delete()
             .eq('user_id', uid)
-            .eq('product_id', id)
-            .timeout(_kRequestTimeout);
-        debugPrint('[Wishlist] 💔 Removed $id');
+            .eq('product_id', productId)
+            .timeout(const Duration(seconds: 10));
       } else {
-        await Supabase.instance.client
-            .from('wishlist')
-            .insert({'user_id': uid, 'product_id': id})
-            .timeout(_kRequestTimeout);
-        debugPrint('[Wishlist] ❤️ Added $id');
+        await _db
+            .from(_table)
+            .insert({'user_id': uid, 'product_id': productId})
+            .timeout(const Duration(seconds: 10));
       }
+      return null;
     } catch (e) {
-      debugPrint('[Wishlist] ❌ Toggle error: $e — rollback');
-
-      // Rollback
-      final rollback = Set<String>.from(cur);
-      state = AsyncData(rollback);
-
-      // Feedback visuel d'erreur
-      if (context != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(wasFav
-                ? 'Impossible de retirer des favoris'
-                : 'Impossible d\'ajouter aux favoris'),
-            backgroundColor: Theme.of(context).colorScheme.error,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 2),
-          ),
-        );
+      final msg = e.toString();
+      // Doublon : déjà en favori côté serveur, on garde l'état
+      if (msg.contains('23505') || msg.toLowerCase().contains('duplicate')) {
+        return null;
       }
-    } finally {
-      _isToggling = false;
+      debugPrint('[Wishlist] ❌ toggle error: $e');
+      // Retour arrière
+      final back = Set<String>.from(state);
+      wasLiked ? back.add(productId) : back.remove(productId);
+      state = back;
+      return msg.length > 120 ? msg.substring(0, 120) : msg;
     }
   }
 }
 
-final wishlistIdsProvider =
-    AsyncNotifierProvider.autoDispose<WishlistNotifier, Set<String>>(
-  WishlistNotifier.new,
-);
-
-// ============================================================================
-// BOUTON WISHLIST
-// ============================================================================
-
-class WishlistButton extends ConsumerStatefulWidget {
+class WishlistButton extends ConsumerWidget {
   final String productId;
   final double size;
-  final Color? activeColor;
-  final Color? inactiveColor;
 
-  const WishlistButton({
-    super.key,
-    required this.productId,
-    this.size = 24,
-    this.activeColor,
-    this.inactiveColor,
-  });
+  const WishlistButton({super.key, required this.productId, this.size = 20});
 
   @override
-  ConsumerState<WishlistButton> createState() => _WishlistButtonState();
-}
-
-class _WishlistButtonState extends ConsumerState<WishlistButton>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _scaleAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    // Animation "pop" : 1.0 → 1.3 → 1.0 (elastic)
-    _ctrl = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _scaleAnim = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.3), weight: 0.4),
-      TweenSequenceItem(tween: Tween(begin: 1.3, end: 1.0), weight: 0.6),
-    ]).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack));
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final favAsync = ref.watch(wishlistIdsProvider);
-    final favIds = favAsync.valueOrNull ?? <String>{};
-    final isFav = favIds.contains(widget.productId);
-    final isToggling = ref.watch(wishlistIdsProvider.notifier).isToggling;
-
-    final activeColor = widget.activeColor ?? Colors.red;
-    final inactiveColor = widget.inactiveColor ?? Colors.grey;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final liked = ref.watch(wishlistIdsProvider.select((s) => s.contains(productId)));
 
     return Semantics(
       button: true,
-      label: isFav ? 'Retirer des favoris' : 'Ajouter aux favoris',
-      selected: isFav,
+      label: liked ? 'Retirer des favoris' : 'Ajouter aux favoris',
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () async {
           HapticFeedback.selectionClick();
-          _ctrl.forward(from: 0);
-          await ref
-              .read(wishlistIdsProvider.notifier)
-              .toggle(widget.productId, context: context);
+          final err = await ref.read(wishlistIdsProvider.notifier).toggle(productId);
+          if (err != null && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(err),
+                backgroundColor: ThixPolicy.danger,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
         },
-        child: ScaleTransition(
-          scale: _scaleAnim,
-          child: favAsync.isLoading
-              ? SizedBox(
-                  width: widget.size,
-                  height: widget.size,
-                  child: const CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Icon(
-                  isFav ? Icons.favorite : Icons.favorite_border,
-                  size: widget.size,
-                  color: isFav ? activeColor : inactiveColor,
-                ),
+        child: SizedBox(
+          width: size + 6,
+          height: size + 6,
+          child: Center(
+            child: Icon(
+              liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+              size: size,
+              color: liked ? ThixPolicy.danger : ThixPolicy.textSecondary,
+            ),
+          ),
         ),
       ),
     );
