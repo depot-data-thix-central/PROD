@@ -14,9 +14,6 @@ import 'package:thix_id/nav.dart';
 import 'package:thix_id/services/external_link_service.dart';
 import 'package:thix_id/services/opportunity_service.dart';
 
-// ============================================================================
-// PALETTE PREMIUM (identique à OpportunitiesPage)
-// ============================================================================
 class _Opp {
   static const navy = Color(0xFF0A1F44);
   static const navy2 = Color(0xFF123B7A);
@@ -181,7 +178,6 @@ class OpportunityDetailsPage extends StatelessWidget {
                       : _heroFallback(opp, color)))
             else
               _heroFallback(opp, color),
-            // Gradient navy premium
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -196,7 +192,6 @@ class OpportunityDetailsPage extends StatelessWidget {
                 ),
               ),
             ),
-            // Top safe area tint
             Positioned(
               top: 0,
               left: 0,
@@ -212,7 +207,6 @@ class OpportunityDetailsPage extends StatelessWidget {
                 ),
               ),
             ),
-            // Category badge glass
             Positioned(
               left: 18,
               bottom: 20,
@@ -344,7 +338,6 @@ class OpportunityDetailsPage extends StatelessWidget {
       return;
     }
 
-    // Confirmation élégante
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -420,9 +413,6 @@ class OpportunityDetailsPage extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// BLOC TITRE ÉDITORIAL
-// ============================================================================
 class _TitleBlock extends StatelessWidget {
   final OpportunityItem opp;
   final Color color;
@@ -527,9 +517,6 @@ class _TitleBlock extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// GRILLE QUICK FACTS (2x2 glass)
-// ============================================================================
 class _QuickFacts extends StatelessWidget {
   final OpportunityItem opp;
   final int daysLeft;
@@ -676,9 +663,6 @@ class _FactTile extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// RAIL D'INFORMATIONS HORIZONTAL (countdown + reward)
-// ============================================================================
 class _InfoRail extends StatelessWidget {
   final OpportunityItem opp;
   final int daysLeft;
@@ -818,9 +802,6 @@ class _RingPainter extends CustomPainter {
       old.progress != progress || old.color != color;
 }
 
-// ============================================================================
-// DESCRIPTION (style editorial)
-// ============================================================================
 class _DescriptionBlock extends StatelessWidget {
   final OpportunityItem opp;
   final AppLocalizations l10n;
@@ -857,9 +838,6 @@ class _DescriptionBlock extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// ELIGIBILITY
-// ============================================================================
 class _EligibilityBlock extends StatelessWidget {
   final OpportunityItem opp;
   final Color color;
@@ -937,9 +915,6 @@ class _EligibilityItem extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// ORGANIZER CARD
-// ============================================================================
 class _OrganizerCard extends StatelessWidget {
   final OpportunityItem opp;
   final Color color;
@@ -996,9 +971,6 @@ class _OrganizerCard extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// STICKY BOTTOM BAR
-// ============================================================================
 class _StickyApply extends StatelessWidget {
   final bool applied;
   final bool isClosed;
@@ -1035,7 +1007,7 @@ class _StickyApply extends StatelessWidget {
         padding: EdgeInsets.fromLTRB(18, 14, 18, bottom + 14),
         decoration: BoxDecoration(
           color: _Opp.card,
-          border: const Border(top: BorderSide(color: _Opp.line)),
+          border: Border(top: BorderSide(color: _Opp.line, width: 1)),
           boxShadow: [
             BoxShadow(
                 color: _Opp.navy.withOpacity(0.08),
@@ -1091,9 +1063,7 @@ class _StickyApply extends StatelessWidget {
     );
   }
 }
-// ============================================================================
-// HELPERS
-// ============================================================================
+
 class _SectionTitle extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1124,9 +1094,6 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// SKELETON
-// ============================================================================
 class _DetailSkeleton extends StatelessWidget {
   const _DetailSkeleton();
 
