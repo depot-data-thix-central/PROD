@@ -1,4 +1,12 @@
 // lib/presentation/mon_pays/models/province.dart
+//
+// ✅ Parsing tolérant : compatible Dart natif (APK) ET web.
+//    - area / population / territories_count acceptent int, double ou texte
+//      (121308, 121308.0, "121308.00")
+//    - une valeur inattendue ne fait plus échouer toute la liste
+//    - les listes (ministers, achievements, tribes, galleryMedia) ne sont plus nulles
+
+import 'dart:convert';
 
 import 'province_government.dart';
 import 'province_economic.dart';
@@ -17,7 +25,7 @@ class Province {
   final int? area;
   final int? population;
   final String? description;
-  
+
   // Champs institutionnels, historiques et environnementaux enrichis
   final String? history;
   final String? climate;
@@ -28,22 +36,22 @@ class Province {
   final String? coatOfArmsUrl;
   final String? mapUrl;
   final String? website;
-  
+
   // Gouvernance de base & photos
   final String? governor;
   final String? governorPhotoUrl;
   final String? viceGovernor;
   final String? viceGovernorPhotoUrl;
-  final List<Map<String, dynamic>>? ministers; // Liste des ministres provinciaux
-  
+  final List<Map<String, dynamic>> ministers; // Liste des ministres provinciaux
+
   final String? languages;
   final String? resources;
   final int? territoriesCount;
 
   // Réalisations, Tribus et Galerie média
-  final List<Map<String, dynamic>>? achievements;
-  final List<Map<String, dynamic>>? tribes; // Tribus et peuples autochtones
-  final List<Map<String, dynamic>>? galleryMedia;
+  final List<Map<String, dynamic>> achievements;
+  final List<Map<String, dynamic>> tribes; // Tribus et peuples autochtones
+  final List<Map<String, dynamic>> galleryMedia;
 
   final ProvinceGovernment? government; // relation 1-1
   final List<City> cities; // villes
@@ -76,13 +84,13 @@ class Province {
     this.governorPhotoUrl,
     this.viceGovernor,
     this.viceGovernorPhotoUrl,
-    this.ministers,
+    List<Map<String, dynamic>>? ministers,
     this.languages,
     this.resources,
     this.territoriesCount,
-    this.achievements,
-    this.tribes,
-    this.galleryMedia,
+    List<Map<String, dynamic>>? achievements,
+    List<Map<String, dynamic>>? tribes,
+    List<Map<String, dynamic>>? galleryMedia,
     this.government,
     this.cities = const [],
     this.economicResources = const [],
@@ -92,107 +100,178 @@ class Province {
     this.administrativeDivisions = const [],
     this.createdAt,
     this.updatedAt,
-  });
+  })  : ministers = ministers ?? const [],
+        achievements = achievements ?? const [],
+        tribes = tribes ?? const [],
+        galleryMedia = galleryMedia ?? const [];
+
+  // ============================================================
+  // HELPERS DE PARSING (tolérants)
+  // ============================================================
+
+  /// Accepte int, double (121308.0), String ("121308", "121308.00").
+  static int? _asInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.round();
+    final s = v.toString().trim().replaceAll(' ', '').replaceAll(',', '.');
+    if (s.isEmpty) return null;
+    return int.tryParse(s) ?? double.tryParse(s)?.round();
+  }
+
+  static String _asString(dynamic v, {String fallback = ''}) =>
+      v == null ? fallback : v.toString();
+
+  static String? _asStringOrNull(dynamic v) => v?.toString();
+
+  static DateTime? _asDate(dynamic v) =>
+      v == null ? null : DateTime.tryParse(v.toString());
+
+  /// Liste de Map, même si la valeur arrive sous forme de texte JSON.
+  static List<Map<String, dynamic>> _asMapList(dynamic v) {
+    dynamic value = v;
+    if (value is String) {
+      try {
+        value = jsonDecode(value);
+      } catch (_) {
+        return <Map<String, dynamic>>[];
+      }
+    }
+    if (value is! List) return <Map<String, dynamic>>[];
+    return value
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  /// Parse une liste de modèles : une ligne invalide est ignorée.
+  static List<T> _asModelList<T>(
+    dynamic v,
+    T Function(Map<String, dynamic> json) parse,
+  ) {
+    if (v is! List) return <T>[];
+    final out = <T>[];
+    for (final item in v) {
+      if (item is! Map) continue;
+      try {
+        out.add(parse(Map<String, dynamic>.from(item)));
+      } catch (_) {
+        // ligne ignorée
+      }
+    }
+    return out;
+  }
 
   factory Province.fromJson(Map<String, dynamic> json) {
+    ProvinceGovernment? government;
+    final govRaw = json['government'];
+    if (govRaw is Map) {
+      try {
+        government = ProvinceGovernment.fromJson(Map<String, dynamic>.from(govRaw));
+      } catch (_) {
+        government = null;
+      }
+    }
+
     return Province(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      code: json['code'] as String,
-      capital: json['capital'] as String,
-      region: json['region'] as String,
-      area: json['area'] as int?,
-      population: json['population'] as int?,
-      description: json['description'] as String?,
-      
-      history: json['history'] as String?,
-      climate: json['climate'] as String?,
-      infrastructure: json['infrastructure'] as String?,
-      education: json['education'] as String?,
+      id: _asString(json['id']),
+      name: _asString(json['name']),
+      code: _asString(json['code'], fallback: '--'),
+      capital: _asString(json['capital']),
+      region: _asString(json['region']),
+      area: _asInt(json['area']),
+      population: _asInt(json['population']),
+      description: _asStringOrNull(json['description']),
 
-      coverImageUrl: json['cover_image_url'] as String? ?? json['coverImageUrl'] as String?,
-      coatOfArmsUrl: json['coat_of_arms_url'] as String? ?? json['coatOfArmsUrl'] as String?,
-      mapUrl: json['map_url'] as String? ?? json['mapUrl'] as String?,
-      website: json['website'] as String?,
-      
+      history: _asStringOrNull(json['history']),
+      climate: _asStringOrNull(json['climate']),
+      infrastructure: _asStringOrNull(json['infrastructure']),
+      education: _asStringOrNull(json['education']),
+
+      coverImageUrl: _asStringOrNull(json['cover_image_url'] ?? json['coverImageUrl']),
+      coatOfArmsUrl: _asStringOrNull(json['coat_of_arms_url'] ?? json['coatOfArmsUrl']),
+      mapUrl: _asStringOrNull(json['map_url'] ?? json['mapUrl']),
+      website: _asStringOrNull(json['website']),
+
       // Prise en charge du camelCase (Formulaire App) et du snake_case (Supabase)
-      governor: json['governor'] as String?,
-      governorPhotoUrl: json['governorPhotoUrl'] as String? ?? json['governor_photo_url'] as String?,
-      viceGovernor: json['viceGovernor'] as String? ?? json['vice_governor'] as String?,
-      viceGovernorPhotoUrl: json['viceGovernorPhotoUrl'] as String? ?? json['vice_governor_photo_url'] as String?,
-      ministers: json['ministers'] != null ? List<Map<String, dynamic>>.from(json['ministers']) : null,
+      governor: _asStringOrNull(json['governor']),
+      governorPhotoUrl:
+          _asStringOrNull(json['governorPhotoUrl'] ?? json['governor_photo_url']),
+      viceGovernor: _asStringOrNull(json['viceGovernor'] ?? json['vice_governor']),
+      viceGovernorPhotoUrl: _asStringOrNull(
+          json['viceGovernorPhotoUrl'] ?? json['vice_governor_photo_url']),
+      ministers: _asMapList(json['ministers']),
 
-      languages: json['languages'] as String?,
-      resources: json['resources'] as String?,
-      territoriesCount: json['territoriesCount'] as int? ?? json['territories_count'] as int?,
+      languages: _asStringOrNull(json['languages']),
+      resources: _asStringOrNull(json['resources']),
+      territoriesCount: _asInt(json['territoriesCount'] ?? json['territories_count']),
 
-      achievements: (json['achievements'] as List?)
-          ?.map((e) => Map<String, dynamic>.from(e))
-          .toList(),
-      tribes: (json['tribes'] as List?)
-          ?.map((e) => Map<String, dynamic>.from(e))
-          .toList(),
-      galleryMedia: (json['gallery_media'] ?? json['galleryMedia'] as List?)
-          ?.map((e) => Map<String, dynamic>.from(e))
-          .toList(),
+      achievements: _asMapList(json['achievements']),
+      tribes: _asMapList(json['tribes']),
+      galleryMedia: _asMapList(json['gallery_media'] ?? json['galleryMedia']),
 
-      government: json['government'] != null
-          ? ProvinceGovernment.fromJson(json['government'])
-          : null,
-      cities: (json['cities'] as List?)?.map((e) => City.fromJson(e)).toList() ?? [],
-      economicResources: (json['economic_resources'] as List?)?.map((e) => ProvinceEconomicResource.fromJson(e)).toList() ?? [],
-      budgetPriorities: (json['budget_priorities'] as List?)?.map((e) => ProvinceBudgetPriority.fromJson(e)).toList() ?? [],
-      tourismSites: (json['tourism_sites'] as List?)?.map((e) => ProvinceTourism.fromJson(e)).toList() ?? [],
-      emergencyContacts: (json['emergency_contacts'] as List?)?.map((e) => ProvinceEmergencyContact.fromJson(e)).toList() ?? [],
-      administrativeDivisions: (json['administrative_divisions'] as List?)?.map((e) => ProvinceAdministrativeDivision.fromJson(e)).toList() ?? [],
-      createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
-      updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
+      government: government,
+      cities: _asModelList<City>(json['cities'], (j) => City.fromJson(j)),
+      economicResources: _asModelList<ProvinceEconomicResource>(
+          json['economic_resources'], (j) => ProvinceEconomicResource.fromJson(j)),
+      budgetPriorities: _asModelList<ProvinceBudgetPriority>(
+          json['budget_priorities'], (j) => ProvinceBudgetPriority.fromJson(j)),
+      tourismSites: _asModelList<ProvinceTourism>(
+          json['tourism_sites'], (j) => ProvinceTourism.fromJson(j)),
+      emergencyContacts: _asModelList<ProvinceEmergencyContact>(
+          json['emergency_contacts'], (j) => ProvinceEmergencyContact.fromJson(j)),
+      administrativeDivisions: _asModelList<ProvinceAdministrativeDivision>(
+          json['administrative_divisions'],
+          (j) => ProvinceAdministrativeDivision.fromJson(j)),
+      createdAt: _asDate(json['created_at']),
+      updatedAt: _asDate(json['updated_at']),
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'code': code,
-    'capital': capital,
-    'region': region,
-    'area': area,
-    'population': population,
-    'description': description,
-    
-    'history': history,
-    'climate': climate,
-    'infrastructure': infrastructure,
-    'education': education,
+        'id': id,
+        'name': name,
+        'code': code,
+        'capital': capital,
+        'region': region,
+        'area': area,
+        'population': population,
+        'description': description,
 
-    'cover_image_url': coverImageUrl,
-    'coat_of_arms_url': coatOfArmsUrl,
-    'map_url': mapUrl,
-    'website': website,
-    
-    // Enregistrement en snake_case pour la BDD Supabase
-    'governor': governor,
-    'governor_photo_url': governorPhotoUrl,
-    'vice_governor': viceGovernor,
-    'vice_governor_photo_url': viceGovernorPhotoUrl,
-    'ministers': ministers,
+        'history': history,
+        'climate': climate,
+        'infrastructure': infrastructure,
+        'education': education,
 
-    'languages': languages,
-    'resources': resources,
-    'territories_count': territoriesCount,
+        'cover_image_url': coverImageUrl,
+        'coat_of_arms_url': coatOfArmsUrl,
+        'map_url': mapUrl,
+        'website': website,
 
-    'achievements': achievements,
-    'tribes': tribes,
-    'gallery_media': galleryMedia,
+        // Enregistrement en snake_case pour la BDD Supabase
+        'governor': governor,
+        'governor_photo_url': governorPhotoUrl,
+        'vice_governor': viceGovernor,
+        'vice_governor_photo_url': viceGovernorPhotoUrl,
+        'ministers': ministers,
 
-    'government': government?.toJson(),
-    'cities': cities.map((e) => e.toJson()).toList(),
-    'economic_resources': economicResources.map((e) => e.toJson()).toList(),
-    'budget_priorities': budgetPriorities.map((e) => e.toJson()).toList(),
-    'tourism_sites': tourismSites.map((e) => e.toJson()).toList(),
-    'emergency_contacts': emergencyContacts.map((e) => e.toJson()).toList(),
-    'administrative_divisions': administrativeDivisions.map((e) => e.toJson()).toList(),
-  };
+        'languages': languages,
+        'resources': resources,
+        'territories_count': territoriesCount,
+
+        'achievements': achievements,
+        'tribes': tribes,
+        'gallery_media': galleryMedia,
+
+        'government': government?.toJson(),
+        'cities': cities.map((e) => e.toJson()).toList(),
+        'economic_resources': economicResources.map((e) => e.toJson()).toList(),
+        'budget_priorities': budgetPriorities.map((e) => e.toJson()).toList(),
+        'tourism_sites': tourismSites.map((e) => e.toJson()).toList(),
+        'emergency_contacts': emergencyContacts.map((e) => e.toJson()).toList(),
+        'administrative_divisions':
+            administrativeDivisions.map((e) => e.toJson()).toList(),
+      };
 
   Province copyWith({
     String? governor,
@@ -227,7 +306,7 @@ class Province {
       area: area,
       population: population,
       description: description,
-      
+
       history: history ?? this.history,
       climate: climate ?? this.climate,
       infrastructure: infrastructure ?? this.infrastructure,
@@ -237,7 +316,7 @@ class Province {
       coatOfArmsUrl: coatOfArmsUrl,
       mapUrl: mapUrl,
       website: website,
-      
+
       governor: governor ?? this.governor,
       governorPhotoUrl: governorPhotoUrl ?? this.governorPhotoUrl,
       viceGovernor: viceGovernor ?? this.viceGovernor,
