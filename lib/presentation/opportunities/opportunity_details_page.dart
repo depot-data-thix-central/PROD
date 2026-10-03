@@ -13,6 +13,11 @@ import 'package:thix_id/nav.dart';
 import 'package:thix_id/services/external_link_service.dart';
 import 'package:thix_id/services/opportunity_service.dart';
 
+String _tr(AppLocalizations l10n, String key, String fb) {
+  final v = l10n.t(key);
+  return (v.isEmpty || v == key) ? fb : v;
+}
+
 class _Opp {
   static const navy = Color(0xFF0A1F44);
   static const navy2 = Color(0xFF123B7A);
@@ -47,15 +52,10 @@ class _OpportunityDetailsPageState extends State<OpportunityDetailsPage> {
   late final Future<OpportunityItem?> _opportunityFuture;
   final _service = OpportunityService();
 
-@override
-void initState() {
-  super.initState();
-  _opportunityFuture = _service.fetchOpportunity(widget.opportunityId);
-}
-
-  String _tr(AppLocalizations l10n, String key, String fb) {
-    final v = l10n.t(key);
-    return (v.isEmpty || v == key) ? fb : v;
+  @override
+  void initState() {
+    super.initState();
+    _opportunityFuture = _service.fetchOpportunity(widget.opportunityId);
   }
 
   Color _catColor(String c) {
@@ -551,19 +551,19 @@ class _QuickFacts extends StatelessWidget {
             Expanded(
               child: _FactTile(
                 icon: Icons.event_rounded,
-                label: l10n.t('opp_detail_deadline'),
+                label: _tr(l10n, 'opp_detail_deadline', 'Date limite'),
                 value: opp.deadlineLabel,
                 color: daysLeft <= 7 ? _Opp.red : _Opp.blue,
                 accent: daysLeft <= 0
-                    ? l10n.t('opp_closed')
-                    : '$daysLeft ${l10n.t('opp_days')}',
+                    ? _tr(l10n, 'opp_closed', 'Fermé')
+                    : '$daysLeft ${_tr(l10n, 'opp_days', 'jours')}',
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: _FactTile(
                 icon: Icons.location_on_rounded,
-                label: l10n.t('opp_detail_location'),
+                label: _tr(l10n, 'opp_detail_location', 'Lieu'),
                 value: opp.location.isEmpty ? '—' : opp.location,
                 color: const Color(0xFF0891B2),
               ),
@@ -579,8 +579,8 @@ class _QuickFacts extends StatelessWidget {
                     ? Icons.volunteer_activism_rounded
                     : Icons.category_rounded,
                 label: hasReward
-                    ? l10n.t('opp_detail_reward')
-                    : l10n.t('opp_detail_category'),
+                    ? _tr(l10n, 'opp_detail_reward', 'Récompense')
+                    : _tr(l10n, 'opp_detail_category', 'Catégorie'),
                 value: hasReward ? reward : opp.category,
                 color: hasReward ? _Opp.green : _Opp.amber,
               ),
@@ -589,7 +589,7 @@ class _QuickFacts extends StatelessWidget {
             Expanded(
               child: _FactTile(
                 icon: Icons.apartment_rounded,
-                label: l10n.t('opp_detail_organizer'),
+                label: _tr(l10n, 'opp_detail_organizer', 'Organisation'),
                 value: opp.organizer,
                 color: _Opp.navy2,
               ),
@@ -714,7 +714,7 @@ class _InfoRail extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(l10n.t('opp_detail_deadline_title', fallback: 'Date limite'),
+                Text(_tr(l10n, 'opp_detail_deadline_title', 'Date limite'),
                     style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w700,
@@ -735,7 +735,7 @@ class _InfoRail extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(l10n.t('opp_detail_reward', fallback: 'Récompense'),
+                Text(_tr(l10n, 'opp_detail_reward', 'Récompense'),
                     style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w700,
@@ -831,7 +831,7 @@ class _DescriptionBlock extends StatelessWidget {
       children: [
         _SectionTitle(
             icon: Icons.article_rounded,
-            label: l10n.t('opp_detail_about', fallback: 'À propos'),
+            label: _tr(l10n, 'opp_detail_about', 'À propos'),
             color: _Opp.navy2),
         const SizedBox(height: 12),
         Container(
@@ -868,7 +868,7 @@ class _EligibilityBlock extends StatelessWidget {
       children: [
         _SectionTitle(
             icon: Icons.how_to_reg_rounded,
-            label: l10n.t('opp_detail_eligibility', fallback: 'Critères d\'éligibilité'),
+            label: _tr(l10n, 'opp_detail_eligibility', 'Critères d\'éligibilité'),
             color: color),
         const SizedBox(height: 12),
         Container(
@@ -963,7 +963,7 @@ class _OrganizerCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(l10n.t('opp_detail_organized_by', fallback: 'Organisé par'),
+                Text(_tr(l10n, 'opp_detail_organized_by', 'Organisé par'),
                     style: const TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
@@ -1007,10 +1007,10 @@ class _StickyApply extends StatelessWidget {
     final bottom = MediaQuery.of(context).padding.bottom;
     final disabled = applied || isClosed;
     final label = isClosed
-        ? l10n.t('opp_closed')
+        ? _tr(l10n, 'opp_closed', 'Fermé')
         : (applied
-            ? l10n.t('opp_applied', fallback: 'Candidature envoyée')
-            : l10n.t('opp_apply_now', fallback: 'Postuler maintenant'));
+            ? _tr(l10n, 'opp_applied', 'Candidature envoyée')
+            : _tr(l10n, 'opp_apply_now', 'Postuler maintenant'));
     final icon = isClosed
         ? Icons.block_rounded
         : (applied ? Icons.verified_rounded : Icons.open_in_new_rounded);
