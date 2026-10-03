@@ -1,20 +1,13 @@
 // lib/presentation/thix_market/pages/flash_sales_page.dart
 // ============================================================================
-// FLASH SALES PAGE — Production Enterprise
-// ============================================================================
-// Architecture :
-//   - Consomme flashSalesProvider (déjà défini dans market_providers.dart)
-//   - Tri stable via stableSortProducts (flash actifs d'abord, puis urgence)
-//   - Countdown global sur l'expiration la plus proche
-//   - Filtres par catégorie + tri (urgence, prix, récents)
-//   - Pull-to-refresh + invalidation complète
-//   - Design cohérent avec ThixPolicy + accents bordeaux (vente exclusive)
+// FLASH SALES PAGE — Production Enterprise (Corrected & Optimized)
 // ============================================================================
 
 import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -30,10 +23,7 @@ import '../providers/market_providers.dart';
 // ============================================================================
 // DESIGN TOKENS — palette "Vente Exclusive"
 // ============================================================================
-class _FlashPalette {
-  _FlashPalette._();
-
-  /// Bordeaux demandé par l'utilisateur — couleur signature des flash sales
+abstract class _FlashPalette {
   static const Color bordeaux = Color(0xFF800020);
   static const Color bordeauxDeep = Color(0xFF5A0016);
   static const Color bordeauxLight = Color(0xFFB02040);
@@ -44,26 +34,17 @@ class _FlashPalette {
     colors: [bordeauxDeep, bordeaux, Color(0xFFB30030)],
     stops: [0.0, 0.55, 1.0],
   );
-
-  static const LinearGradient cardAccent = LinearGradient(
-    begin: Alignment.topCenter,
-    end: Alignment.bottomCenter,
-    colors: [Color(0x40FFFFFF), Color(0x00000000)],
-  );
 }
 
 // ============================================================================
 // CONSTANTES
 // ============================================================================
 const int _kMaxTitleLength = 120;
-const Duration _kCountdownTick = Duration(seconds: 1);
 
 // ============================================================================
-// SANITIZER (copie légère de _MarketValidators pour rester autonome)
+// SANITIZER
 // ============================================================================
-class _FlashSanitizer {
-  _FlashSanitizer._();
-
+abstract class _FlashSanitizer {
   static String text(String? input, {int maxLength = 500}) {
     if (input == null || input.trim().isEmpty) return '';
     try {
@@ -82,10 +63,10 @@ class _FlashSanitizer {
 }
 
 // ============================================================================
-// ÉTAT LOCAL — filtres + tri
+// ÉTAT LOCAL — TRI
 // ============================================================================
 enum _FlashSort {
-  urgency, // Expire bientôt (défaut)
+  urgency,
   priceAsc,
   priceDesc,
   newest,
@@ -105,7 +86,6 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
   final ScrollController _scroll = ScrollController();
   String _selectedCategory = 'all';
   _FlashSort _sort = _FlashSort.urgency;
-  bool _showFilters = false;
 
   @override
   void dispose() {
@@ -116,7 +96,8 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
   // ─── Filtres clients ─────────────────────────────────────────────
   List<Map<String, dynamic>> _applyFilters(List<Map<String, dynamic>> items) {
     final now = DateTime.now();
-    // Ne garder que les flash actifs (non expirés)
+
+    // Filtre des offres actives non expirées
     var list = items.where((p) {
       final exp = p['expires_at'];
       if (exp == null) return true;
@@ -141,12 +122,12 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
               DateTime(2100);
           return aExp.compareTo(bExp);
         case _FlashSort.priceAsc:
-          final aP = (a['discount_price'] ?? a['price'] ?? 0) as num;
-          final bP = (b['discount_price'] ?? b['price'] ?? 0) as num;
+          final aP = ((a['discount_price'] ?? a['price']) as num?) ?? 0;
+          final bP = ((b['discount_price'] ?? b['price']) as num?) ?? 0;
           return aP.compareTo(bP);
         case _FlashSort.priceDesc:
-          final aP = (a['discount_price'] ?? a['price'] ?? 0) as num;
-          final bP = (b['discount_price'] ?? b['price'] ?? 0) as num;
+          final aP = ((a['discount_price'] ?? a['price']) as num?) ?? 0;
+          final bP = ((b['discount_price'] ?? b['price']) as num?) ?? 0;
           return bP.compareTo(aP);
         case _FlashSort.newest:
           final aDate = DateTime.tryParse(a['created_at']?.toString() ?? '') ??
@@ -171,10 +152,11 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
 
   DateTime? _nearestExpiration(List<Map<String, dynamic>> items) {
     DateTime? nearest;
+    final now = DateTime.now();
     for (final p in items) {
       final dt = DateTime.tryParse(p['expires_at']?.toString() ?? '');
       if (dt == null) continue;
-      if (!dt.isAfter(DateTime.now())) continue;
+      if (!dt.isAfter(now)) continue;
       if (nearest == null || dt.isBefore(nearest)) nearest = dt;
     }
     return nearest;
@@ -208,10 +190,11 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
     return Stack(
       children: [
         _buildHeader(l10n, null, const []),
-        Padding(
-          padding: const EdgeInsets.only(top: 200),
-          child: const Center(
-              child: CircularProgressIndicator(color: Colors.white)),
+        const Padding(
+          padding: EdgeInsets.only(top: 200),
+          child: Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          ),
         ),
       ],
     );
@@ -223,20 +206,24 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
       slivers: [
         SliverToBoxAdapter(child: _buildHeader(l10n, null, const [])),
         SliverFillRemaining(
+          hasScrollBody: false,
           child: Center(
             child: Padding(
               padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.error_outline_rounded,
+                  const Icon(Icons.error_outline_rounded,
                       color: _FlashPalette.bordeaux, size: 48),
                   const SizedBox(height: 12),
-                  Text(l10n.t('error_generic'),
-                      style: const TextStyle(
-                          color: ThixPolicy.textMain,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700)),
+                  Text(
+                    l10n.t('error_generic'),
+                    style: const TextStyle(
+                      color: ThixPolicy.textMain,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   ElevatedButton.icon(
                     onPressed: _refresh,
@@ -258,7 +245,8 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
   }
 
   // ─── CONTENT ─────────────────────────────────────────────────────
-  Widget _buildContent(AppLocalizations l10n, List<Map<String, dynamic>> items) {
+  Widget _buildContent(
+      AppLocalizations l10n, List<Map<String, dynamic>> items) {
     final filtered = _applyFilters(items);
     final categories = _extractCategories(items);
     final nearest = _nearestExpiration(filtered);
@@ -270,7 +258,8 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
       child: CustomScrollView(
         controller: _scroll,
         physics: const BouncingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics()),
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
         slivers: [
           SliverToBoxAdapter(child: _buildHeader(l10n, nearest, items)),
           if (items.isNotEmpty) ...[
@@ -293,10 +282,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
                   childAspectRatio: 0.65,
                 ),
                 delegate: SliverChildBuilderDelegate(
-                  (_, i) {
-                    final p = filtered[i];
-                    return _buildProductTap(p);
-                  },
+                  (context, i) => _buildProductTap(filtered[i]),
                   childCount: filtered.length,
                 ),
               ),
@@ -307,25 +293,24 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
     );
   }
 
-  // ─── HEADER (bordeaux gradient) ──────────────────────────────────
+  // ─── HEADER ──────────────────────────────────────────────────────
   Widget _buildHeader(AppLocalizations l10n, DateTime? nearest,
       List<Map<String, dynamic>> items) {
     final top = MediaQuery.paddingOf(context).top;
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: _FlashPalette.heroGradient,
         boxShadow: [
           BoxShadow(
             color: _FlashPalette.bordeaux.withOpacity(0.3),
             blurRadius: 20,
-            offset: Offset(0, 8),
+            offset: const Offset(0, 8),
           ),
         ],
       ),
       child: Column(
         children: [
           SizedBox(height: top),
-          // App bar
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
             child: Row(
@@ -333,6 +318,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
                 _headerIconButton(
                   icon: Icons.arrow_back_ios_new_rounded,
                   onTap: () => Navigator.of(context).pop(),
+                  tooltip: 'Retour',
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -373,12 +359,11 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
                       ),
                     );
                   },
+                  tooltip: 'Notifications',
                 ),
               ],
             ),
           ),
-
-          // Countdown card
           if (nearest != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
@@ -391,9 +376,14 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
     );
   }
 
-  Widget _headerIconButton({required IconData icon, required VoidCallback onTap}) {
+  Widget _headerIconButton({
+    required IconData icon,
+    required VoidCallback onTap,
+    String? tooltip,
+  }) {
     return Semantics(
       button: true,
+      label: tooltip,
       child: GestureDetector(
         onTap: () {
           HapticFeedback.lightImpact();
@@ -431,7 +421,6 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
       ),
       child: Row(
         children: [
-          // Badge icon
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
@@ -442,7 +431,6 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
                 color: _FlashPalette.bordeaux, size: 22),
           ),
           const SizedBox(width: 12),
-          // Info
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -461,7 +449,6 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
               ],
             ),
           ),
-          // Compteur d'offres
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
@@ -482,7 +469,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
     );
   }
 
-  // ─── MARQUEE BANNER ──────────────────────────────────────────────
+  // ─── BANDEAU DÉFILANT ────────────────────────────────────────────
   Widget _buildMarqueeBanner(AppLocalizations l10n) {
     final label = _FlashSanitizer.text(
       l10n.t('market_flash_sale_banner',
@@ -498,7 +485,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
     );
   }
 
-  // ─── FILTERS BAR ─────────────────────────────────────────────────
+  // ─── FILTRES BAR ─────────────────────────────────────────────────
   Widget _buildFiltersBar(AppLocalizations l10n, Set<String> categories) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -523,16 +510,19 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
                 GestureDetector(
                   onTap: () {
                     HapticFeedback.selectionClick();
-                    setState(() => _selectedCategory = 'all');
+                    if (mounted) setState(() => _selectedCategory = 'all');
                   },
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(l10n.t('common_reset', fallback: 'Réinitialiser'),
-                          style: const TextStyle(
-                              color: _FlashPalette.bordeaux,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700)),
+                      Text(
+                        l10n.t('common_reset', fallback: 'Réinitialiser'),
+                        style: const TextStyle(
+                          color: _FlashPalette.bordeaux,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                       const SizedBox(width: 2),
                       const Icon(Icons.close_rounded,
                           size: 12, color: _FlashPalette.bordeaux),
@@ -560,7 +550,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
                   selected: selected,
                   onTap: () {
                     HapticFeedback.selectionClick();
-                    setState(() => _selectedCategory = value);
+                    if (mounted) setState(() => _selectedCategory = value);
                   },
                 );
               },
@@ -601,11 +591,14 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
                   const Icon(Icons.sort_rounded,
                       size: 14, color: _FlashPalette.bordeaux),
                   const SizedBox(width: 5),
-                  Text(_sortLabel(l10n),
-                      style: const TextStyle(
-                          color: ThixPolicy.textMain,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700)),
+                  Text(
+                    _sortLabel(l10n),
+                    style: const TextStyle(
+                      color: ThixPolicy.textMain,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   const SizedBox(width: 3),
                   const Icon(Icons.keyboard_arrow_down_rounded,
                       size: 14, color: ThixPolicy.textSecondary),
@@ -640,7 +633,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
         current: _sort,
         l10n: l10n,
         onPick: (s) {
-          setState(() => _sort = s);
+          if (mounted) setState(() => _sort = s);
           Navigator.pop(context);
         },
       ),
@@ -693,7 +686,8 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
               foregroundColor: Colors.white,
               elevation: 0,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
           ),
         ],
@@ -714,15 +708,16 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
                 fallback: 'Aucun produit ne correspond à vos filtres'),
             textAlign: TextAlign.center,
             style: const TextStyle(
-                color: ThixPolicy.textMain,
-                fontSize: 14,
-                fontWeight: FontWeight.w700),
+              color: ThixPolicy.textMain,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 12),
           TextButton.icon(
             onPressed: () {
               HapticFeedback.selectionClick();
-              setState(() => _selectedCategory = 'all');
+              if (mounted) setState(() => _selectedCategory = 'all');
             },
             icon: const Icon(Icons.refresh_rounded, size: 16),
             label: Text(l10n.t('common_reset', fallback: 'Réinitialiser')),
@@ -732,7 +727,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
     );
   }
 
-  // ─── PRODUCT CARD (avec tap + semantics) ─────────────────────────
+  // ─── PRODUCT CARD ────────────────────────────────────────────────
   Widget _buildProductTap(Map<String, dynamic> product) {
     final id = product['id']?.toString() ?? '';
     final title = _FlashSanitizer.text(
@@ -825,7 +820,8 @@ class _SortSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final options = <_FlashSort, String>{
-      _FlashSort.urgency: l10n.t('sort_urgency', fallback: 'Urgence (expire bientôt)'),
+      _FlashSort.urgency:
+          l10n.t('sort_urgency', fallback: 'Urgence (expire bientôt)'),
       _FlashSort.priceAsc: l10n.t('sort_price_asc', fallback: 'Prix croissant'),
       _FlashSort.priceDesc: l10n.t('sort_price_desc', fallback: 'Prix décroissant'),
       _FlashSort.newest: l10n.t('sort_newest', fallback: 'Plus récents'),
@@ -877,6 +873,7 @@ class _SortRow extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+
   const _SortRow({
     required this.label,
     required this.selected,
@@ -905,14 +902,16 @@ class _SortRow extends StatelessWidget {
         child: Row(
           children: [
             Expanded(
-              child: Text(label,
-                  style: TextStyle(
-                    color: selected
-                        ? _FlashPalette.bordeaux
-                        : ThixPolicy.textMain,
-                    fontSize: 14,
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
-                  )),
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: selected
+                      ? _FlashPalette.bordeaux
+                      : ThixPolicy.textMain,
+                  fontSize: 14,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                ),
+              ),
             ),
             if (selected)
               const Icon(Icons.check_circle_rounded,
@@ -925,7 +924,7 @@ class _SortRow extends StatelessWidget {
 }
 
 // ============================================================================
-// MARQUEE STRIP (AnimationController + OverflowBox)
+// MARQUEE STRIP (Optimisé sans coupures)
 // ============================================================================
 class _MarqueeStrip extends StatefulWidget {
   final String text;
@@ -938,14 +937,13 @@ class _MarqueeStrip extends StatefulWidget {
 class _MarqueeStripState extends State<_MarqueeStrip>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
-  static const double _speed = 40; // px/sec
 
   @override
   void initState() {
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 20),
+      duration: const Duration(seconds: 18),
     )..repeat();
   }
 
@@ -957,43 +955,36 @@ class _MarqueeStripState extends State<_MarqueeStrip>
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final itemWidth = width;
-        return AnimatedBuilder(
-          animation: _ctrl,
-          builder: (_, __) {
-            final offset = -(_ctrl.value * itemWidth * 2) % itemWidth;
-            return OverflowBox(
-              maxWidth: double.infinity,
-              child: Row(
-                children: List.generate(4, (i) {
-                  return Transform.translate(
-                    offset: Offset(offset + i * itemWidth, 0),
-                    child: SizedBox(
-                      width: itemWidth,
-                      child: Center(
-                        child: Text(
-                          widget.text,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            );
-          },
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        return FractionalTranslation(
+          translation: Offset(-_ctrl.value, 0.0),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildTextItem(),
+              _buildTextItem(),
+            ],
+          ),
         );
       },
+    );
+  }
+
+  Widget _buildTextItem() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24.0),
+      child: Text(
+        widget.text,
+        maxLines: 1,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.5,
+        ),
+      ),
     );
   }
 }
