@@ -739,7 +739,7 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
           label: 'createAnnouncement',
           timeout: _kSubmitTimeout,
         );
-        debugPrint('[PublishForm] ✅ Created ${response['id']}');
+        debugPrint('[PublishForm] ✅ Created ${response?['id']}');
       }
     } on _UploadFailure catch (e) {
       debugPrint('[PublishForm] ❌ Upload error: ${e.cause}');
