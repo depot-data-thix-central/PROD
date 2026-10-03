@@ -1,6 +1,6 @@
 // lib/presentation/thix_market/pages/search_page.dart
 // ============================================================================
-// SEARCH PAGE — Production Enterprise v2
+// SEARCH PAGE — Production Enterprise v2.1
 // ============================================================================
 // Fonctionnalités :
 //   ✅ Champ de saisie lisible (fond blanc opaque + texte sombre)
@@ -11,6 +11,8 @@
 //   ✅ Pagination + dedup + retry + timeout
 //   ✅ Recherches récentes persistées (SharedPreferences)
 //   ✅ i18n avec fallbacks FR + Semantics + Haptics + logs structurés
+//   ✅ Chaînage Postgrest typé dynamic (compatibilité FilterBuilder/TransformBuilder)
+//   ✅ _ActiveFilterChips en ConsumerWidget (accès ref)
 // ============================================================================
 
 import 'dart:async';
@@ -355,7 +357,10 @@ class SearchNotifier extends StateNotifier<AsyncValue<List<Map<String, dynamic>>
       final offset = _all.length;
       final orValue = _SearchValidators.orSafe(q);
 
-      var builder = db
+      // ✅ Utilisation de `dynamic` pour permettre le chaînage
+      // (.or/.eq/.gte/.lte retournent PostgrestFilterBuilder,
+      //  .order retourne PostgrestTransformBuilder — incompatibles)
+      dynamic builder = db
           .from('products')
           .select(_kSelectColumns)
           .or('title.ilike.%$orValue%,brand.ilike.%$orValue%,description.ilike.%$orValue%');
@@ -377,7 +382,7 @@ class SearchNotifier extends StateNotifier<AsyncValue<List<Map<String, dynamic>>
         builder = builder.lte('price', filters.maxPrice!);
       }
 
-      // ── Tri ─
+      // ── Tri ──
       switch (filters.sortBy) {
         case 'price_asc':
           builder = builder.order('price', ascending: true);
@@ -1058,7 +1063,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                     const SizedBox(height: 18),
 
                     // ── TRI ──
-                    _sheetTitle(l10n.t('search_sort_by', fallback: 'Trier par')),
+                    _sheetTitle(_tr(l10n, 'search_sort_by', 'Trier par')),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
@@ -1157,7 +1162,7 @@ class _SearchPageState extends ConsumerState<SearchPage> {
                     _sheetTitle(_tr(l10n, 'search_country', 'Pays')),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String?>(
-                      initialValue: countryCode,
+                      value: countryCode,
                       isExpanded: true,
                       decoration: InputDecoration(
                         filled: true,
@@ -1350,16 +1355,16 @@ class _SearchPageState extends ConsumerState<SearchPage> {
 }
 
 // ============================================================================
-// CHIPS DE FILTRES ACTIFS (dismissibles)
+// CHIPS DE FILTRES ACTIFS (dismissibles) — ✅ ConsumerWidget pour accès ref
 // ============================================================================
-class _ActiveFilterChips extends StatelessWidget {
+class _ActiveFilterChips extends ConsumerWidget {
   final AppLocalizations l10n;
   final SearchFilters filters;
   const _ActiveFilterChips({required this.l10n, required this.filters});
 
   @override
-  Widget build(BuildContext context) {
-    final notifier = context.read(searchResultsProvider.notifier);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(searchResultsProvider.notifier);
     final chips = <Widget>[];
 
     if (filters.sortBy != 'newest') {
