@@ -1,16 +1,11 @@
 // lib/presentation/thix_market/pages/all_shops_and_supermarkets_page.dart
 // ============================================================================
-// ALL SHOPS & SUPERMARKETS PAGE — Production Enterprise v2
+// ALL SHOPS & SUPERMARKETS PAGE — Production Enterprise v2.1
 // ============================================================================
-// Architecture :
-//   ✅ 2 onglets : Supermarchés (cards détaillées) + Boutiques (grille)
-//   ✅ Featured shops en carousel horizontal dans chaque onglet
-//   ✅ Recherche + filtres (ville, note min) + tri (populaires/récents/alpha)
-//   ✅ Realtime + cache TTL + pull-to-refresh
-//   ✅ Navigation vers /market/shop/:id au tap
-//   ✅ Design system ThixPolicy cohérent
-//   ✅ Empty / Error / Skeleton / Badge count
-//   ✅ Semantics + HapticFeedback + logs structurés + i18n fallbacks
+// Corrections v2.1 :
+//   ✅ PostgREST chain avec `dynamic` (compatibilité FilterBuilder/TransformBuilder)
+//   ✅ Accolades vérifiées : aucune imbrication incorrecte de classes
+//   ✅ shopsCountProvider chaîné en dynamic
 // ============================================================================
 
 import 'dart:async';
@@ -36,10 +31,10 @@ const Duration _kSearchDebounce = Duration(milliseconds: 250);
 const int _kMaxNameLength = 80;
 const int _kMaxAddressLength = 200;
 const int _kMaxDescriptionLength = 300;
-const int _kMaxResults = 200; // garde anti-OOM
+const int _kMaxResults = 200;
 const int _kMaxFeatured = 8;
 
-// ─── VILLES (extrait de la liste pays/villes THIX) ─────────────────────────
+// ─── VILLES ─────────────────────────────────────────────────────────────────
 const List<String> _kCities = [
   'Toutes',
   'Kinshasa', 'Lubumbashi', 'Mbuji-Mayi', 'Kananga', 'Kisangani',
@@ -48,10 +43,10 @@ const List<String> _kCities = [
 
 // ─── TRI ────────────────────────────────────────────────────────────────────
 enum _ShopSort {
-  popular,   // followers DESC
-  newest,    // created_at DESC
-  alpha,     // name ASC
-  rating,    // rating DESC
+  popular,
+  newest,
+  alpha,
+  rating,
 }
 
 String _sortLabel(AppLocalizations l10n, _ShopSort s) {
@@ -118,7 +113,7 @@ Future<T> _withTimeout<T>(Future<T> f, {String label = 'op'}) async {
 }
 
 // ============================================================================
-// PROVIDER : liste des shops (avec cache + filtres)
+// PROVIDER : liste des shops
 // ============================================================================
 enum ShopKind { supermarket, boutique }
 
@@ -164,9 +159,7 @@ class ShopsNotifier extends StateNotifier<AsyncValue<List<Map<String, dynamic>>>
       final client = Supabase.instance.client;
       final qStr = _ShopSanitizer.text(query.search).trim();
 
-      // ✅ Utilisation de `dynamic` pour permettre le chaînage
-      // (.eq/.or/.gte retournent PostgrestFilterBuilder,
-      //  .order retourne PostgrestTransformBuilder — incompatibles)
+      // ✅ Utilisation de `dynamic` pour permettre le chaînage PostgREST
       dynamic builder = client
           .from('shops')
           .select('id, name, slug, logo_url, cover_url, address, city, '
@@ -219,6 +212,30 @@ class ShopsNotifier extends StateNotifier<AsyncValue<List<Map<String, dynamic>>>
       state = AsyncError(e, st);
     }
   }
+}
+
+final shopsProvider = StateNotifierProvider.family<ShopsNotifier,
+    AsyncValue<List<Map<String, dynamic>>>, _ShopQuery>(
+  (ref, query) => ShopsNotifier(ref, query),
+);
+
+// Provider compteur (pour badges dans les tabs) — chaîné en dynamic
+final shopsCountProvider = FutureProvider.family<int, ShopKind>((ref, kind) async {
+  try {
+    dynamic builder = Supabase.instance.client
+        .from('shops')
+        .select('id')
+        .eq('status', 'active')
+        .eq('type', kind == ShopKind.supermarket ? 'supermarket' : 'boutique');
+    final res = await _withTimeout(
+      builder.count(CountOption.exact),
+      label: 'count(${kind.name})',
+    );
+    return res.count ?? 0;
+  } catch (_) {
+    return 0;
+  }
+});
 
 // ============================================================================
 // PAGE PRINCIPALE
@@ -274,7 +291,7 @@ class _AllShopsAndSupermarketsPageState
 
   _ShopQuery _currentQuery() {
     final kind = _isSupermarketTab ? ShopKind.supermarket : ShopKind.boutique;
-    final q = _isSupermarketTab
+    return _isSupermarketTab
         ? _ShopQuery(
             kind: kind,
             city: _smCity,
@@ -289,7 +306,6 @@ class _AllShopsAndSupermarketsPageState
             sort: _btSort,
             search: _btSearch,
           );
-    return q;
   }
 
   void _onSearchChanged(String v) {
@@ -317,7 +333,6 @@ class _AllShopsAndSupermarketsPageState
     HapticFeedback.mediumImpact();
     final l10n = AppLocalizations.of(context);
 
-    // Copies locales des états actuels
     String? city = _isSupermarketTab ? _smCity : _btCity;
     double minRating = _isSupermarketTab ? _smMinRating : _btMinRating;
     _ShopSort sort = _isSupermarketTab ? _smSort : _btSort;
@@ -383,8 +398,7 @@ class _AllShopsAndSupermarketsPageState
                       .map((s) => ChoiceChip(
                             label: Text(_sortLabel(l10n, s)),
                             selected: sort == s,
-                            onSelected: (_) =>
-                                setModal(() => sort = s),
+                            onSelected: (_) => setModal(() => sort = s),
                             selectedColor: ThixPolicy.primary.withOpacity(0.15),
                             backgroundColor: ThixPolicy.surfaceSoft,
                             labelStyle: TextStyle(
@@ -542,7 +556,8 @@ class _AllShopsAndSupermarketsPageState
         physics: const BouncingScrollPhysics(),
         headerSliverBuilder: (ctx, inner) {
           return [
-            SliverToBoxAdapter(child: _buildHeader(l10n, smCountAsync, btCountAsync)),
+            SliverToBoxAdapter(
+                child: _buildHeader(l10n, smCountAsync, btCountAsync)),
           ];
         },
         body: TabBarView(
@@ -565,7 +580,11 @@ class _AllShopsAndSupermarketsPageState
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [ThixPolicy.inkDeep, ThixPolicy.primary, ThixPolicy.domainMarket],
+          colors: [
+            ThixPolicy.inkDeep,
+            ThixPolicy.primary,
+            ThixPolicy.domainMarket
+          ],
           stops: const [0.0, 0.55, 1.0],
         ),
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
@@ -698,12 +717,14 @@ class _AllShopsAndSupermarketsPageState
                 unselectedLabelStyle: const TextStyle(
                     fontSize: 13, fontWeight: FontWeight.w600),
                 tabs: [
-                  Tab(child: _tabLabel(
+                  Tab(
+                      child: _tabLabel(
                     _tr(l10n, 'shops_tab_supermarkets', 'Supermarchés'),
                     smCount,
                     Icons.storefront_rounded,
                   )),
-                  Tab(child: _tabLabel(
+                  Tab(
+                      child: _tabLabel(
                     _tr(l10n, 'shops_tab_boutiques', 'Boutiques'),
                     btCount,
                     Icons.shopping_bag_rounded,
@@ -758,7 +779,9 @@ class _AllShopsAndSupermarketsPageState
           child: Text(
             count.whenOrNull(data: (n) => '$n') ?? '–',
             style: const TextStyle(
-                color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w900),
           ),
         ),
       ],
@@ -771,7 +794,7 @@ class _AllShopsAndSupermarketsPageState
     final async = ref.watch(shopsProvider(query));
 
     return async.when(
-      loading: () => const _ShopsSkeleton(kind: null),
+      loading: () => const _ShopsSkeleton(),
       error: (e, _) => _ShopsErrorState(
         message: _ShopSanitizer.text(e.toString(), maxLength: 200),
         onRetry: () => ref.read(shopsProvider(query).notifier).load(),
@@ -801,8 +824,8 @@ class _AllShopsAndSupermarketsPageState
           );
         }
 
-        // Featured en top + reste
-        final featured = shops.where((s) => s['is_featured'] == true).toList();
+        final featured =
+            shops.where((s) => s['is_featured'] == true).toList();
         final rest = shops.where((s) => s['is_featured'] != true).toList();
 
         return RefreshIndicator(
@@ -819,9 +842,9 @@ class _AllShopsAndSupermarketsPageState
     );
   }
 
-  // ─── LISTE SUPERMARCHÉS (cards détaillées) ───────────────────────
-  Widget _buildSupermarketList(
-      List<Map<String, dynamic>> featured, List<Map<String, dynamic>> rest) {
+  // ─── LISTE SUPERMARCHÉS ──────────────────────────────────────────
+  Widget _buildSupermarketList(List<Map<String, dynamic>> featured,
+      List<Map<String, dynamic>> rest) {
     final l10n = AppLocalizations.of(context);
     return ListView(
       physics: const BouncingScrollPhysics(
@@ -829,7 +852,8 @@ class _AllShopsAndSupermarketsPageState
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
       children: [
         if (featured.isNotEmpty) ...[
-          _sectionTitle(l10n,
+          _sectionTitle(
+              l10n,
               _tr(l10n, 'shops_featured', 'Commerces en vedette'),
               Icons.star_rounded,
               ThixPolicy.gold),
@@ -846,7 +870,8 @@ class _AllShopsAndSupermarketsPageState
           ),
           const SizedBox(height: 20),
         ],
-        _sectionTitle(l10n,
+        _sectionTitle(
+            l10n,
             '${_tr(l10n, 'shops_all', 'Tous')} (${rest.length + featured.length})',
             Icons.storefront_rounded,
             ThixPolicy.primary),
@@ -860,8 +885,8 @@ class _AllShopsAndSupermarketsPageState
   }
 
   // ─── GRILLE BOUTIQUES ────────────────────────────────────────────
-  Widget _buildBoutiqueGrid(
-      List<Map<String, dynamic>> featured, List<Map<String, dynamic>> rest) {
+  Widget _buildBoutiqueGrid(List<Map<String, dynamic>> featured,
+      List<Map<String, dynamic>> rest) {
     final l10n = AppLocalizations.of(context);
     return ListView(
       physics: const BouncingScrollPhysics(
@@ -869,7 +894,8 @@ class _AllShopsAndSupermarketsPageState
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 120),
       children: [
         if (featured.isNotEmpty) ...[
-          _sectionTitle(l10n,
+          _sectionTitle(
+              l10n,
               _tr(l10n, 'shops_featured', 'Boutiques en vedette'),
               Icons.star_rounded,
               ThixPolicy.gold),
@@ -886,7 +912,8 @@ class _AllShopsAndSupermarketsPageState
           ),
           const SizedBox(height: 20),
         ],
-        _sectionTitle(l10n,
+        _sectionTitle(
+            l10n,
             '${_tr(l10n, 'shops_all', 'Toutes')} (${rest.length + featured.length})',
             Icons.shopping_bag_rounded,
             ThixPolicy.primary),
@@ -910,7 +937,8 @@ class _AllShopsAndSupermarketsPageState
     );
   }
 
-  Widget _sectionTitle(AppLocalizations l10n, String label, IconData icon, Color color) {
+  Widget _sectionTitle(
+      AppLocalizations l10n, String label, IconData icon, Color color) {
     return Row(
       children: [
         Container(
@@ -923,7 +951,7 @@ class _AllShopsAndSupermarketsPageState
         ),
         const SizedBox(width: 8),
         Text(label,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w800,
               color: ThixPolicy.textMain,
@@ -949,7 +977,8 @@ class _SupermarketCard extends StatelessWidget {
         maxLength: _kMaxNameLength);
     final address = _ShopSanitizer.text(shop['address']?.toString(),
         maxLength: _kMaxAddressLength);
-    final city = _ShopSanitizer.text(shop['city']?.toString(), maxLength: 40);
+    final city =
+        _ShopSanitizer.text(shop['city']?.toString(), maxLength: 40);
     final description = _ShopSanitizer.text(shop['description']?.toString(),
         maxLength: _kMaxDescriptionLength);
     final rating = (shop['rating'] as num?)?.toDouble() ?? 0;
@@ -971,7 +1000,6 @@ class _SupermarketCard extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Logo
               Container(
                 width: 90,
                 height: 110,
@@ -1003,7 +1031,6 @@ class _SupermarketCard extends StatelessWidget {
                             color: ThixPolicy.textMuted, size: 32),
                       ),
               ),
-              // Infos
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(12),
@@ -1072,7 +1099,8 @@ class _SupermarketCard extends StatelessWidget {
                         children: [
                           _stat(
                             icon: Icons.star_rounded,
-                            value: rating > 0 ? rating.toStringAsFixed(1) : '–',
+                            value:
+                                rating > 0 ? rating.toStringAsFixed(1) : '–',
                             color: ThixPolicy.gold,
                           ),
                           const SizedBox(width: 10),
@@ -1148,7 +1176,8 @@ class _BoutiqueCard extends StatelessWidget {
     final cover = _ShopSanitizer.url(shop['cover_url']?.toString());
     final name = _ShopSanitizer.text(shop['name']?.toString(),
         maxLength: _kMaxNameLength);
-    final city = _ShopSanitizer.text(shop['city']?.toString(), maxLength: 30);
+    final city =
+        _ShopSanitizer.text(shop['city']?.toString(), maxLength: 30);
     final rating = (shop['rating'] as num?)?.toDouble() ?? 0;
     final isVerified = shop['is_verified'] == true;
 
@@ -1167,7 +1196,6 @@ class _BoutiqueCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Cover / Logo
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
@@ -1190,7 +1218,6 @@ class _BoutiqueCard extends StatelessWidget {
                               )
                             : _buildFallbackLogo(name, logo),
                       ),
-                      // Gradient overlay
                       Positioned.fill(
                         child: DecoratedBox(
                           decoration: BoxDecoration(
@@ -1207,7 +1234,6 @@ class _BoutiqueCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      // Verified badge
                       if (isVerified)
                         Positioned(
                           top: 6,
@@ -1222,7 +1248,6 @@ class _BoutiqueCard extends StatelessWidget {
                                 color: Colors.white, size: 12),
                           ),
                         ),
-                      // Rating pill
                       if (rating > 0)
                         Positioned(
                           bottom: 6,
@@ -1253,7 +1278,6 @@ class _BoutiqueCard extends StatelessWidget {
                   ),
                 ),
               ),
-              // Infos
               Padding(
                 padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
                 child: Column(
@@ -1359,7 +1383,8 @@ class _FeaturedShopCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: ThixPolicy.card,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: ThixPolicy.gold.withOpacity(0.6), width: 1.5),
+            border: Border.all(
+                color: ThixPolicy.gold.withOpacity(0.6), width: 1.5),
             boxShadow: [
               BoxShadow(
                 color: ThixPolicy.gold.withOpacity(0.25),
@@ -1372,7 +1397,6 @@ class _FeaturedShopCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             child: Stack(
               children: [
-                // Cover
                 Positioned.fill(
                   child: cover != null
                       ? CachedNetworkImage(
@@ -1383,7 +1407,6 @@ class _FeaturedShopCard extends StatelessWidget {
                         )
                       : _initialsPlaceholder(name),
                 ),
-                // Gradient
                 Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -1399,7 +1422,6 @@ class _FeaturedShopCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Badge VEDETTE
                 Positioned(
                   top: 8,
                   left: 8,
@@ -1426,7 +1448,6 @@ class _FeaturedShopCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                // Logo
                 if (logo != null)
                   Positioned(
                     bottom: 12,
@@ -1451,7 +1472,6 @@ class _FeaturedShopCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                // Nom + rating
                 Positioned(
                   bottom: 10,
                   left: logo != null ? 52 : 10,
@@ -1532,48 +1552,59 @@ class _FeaturedShopCard extends StatelessWidget {
 // ÉTATS : SKELETON / ERROR / EMPTY
 // ============================================================================
 class _ShopsSkeleton extends StatelessWidget {
-  final ShopKind? kind;
-  const _ShopsSkeleton({this.kind});
+  const _ShopsSkeleton();
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
-      children: List.generate(6, (_) => Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        height: 110,
-        decoration: BoxDecoration(
-          color: ThixPolicy.card,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 90,
-              decoration: const BoxDecoration(
-                color: ThixPolicy.surfaceSoft,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-              ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      children: List.generate(
+          6,
+          (_) => Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                height: 110,
+                decoration: BoxDecoration(
+                  color: ThixPolicy.card,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
                   children: [
-                    Container(height: 14, width: double.infinity, color: ThixPolicy.surfaceSoft),
-                    const SizedBox(height: 8),
-                    Container(height: 10, width: 150, color: ThixPolicy.surfaceSoft),
-                    const SizedBox(height: 8),
-                    Container(height: 10, width: 80, color: ThixPolicy.surfaceSoft),
+                    Container(
+                      width: 90,
+                      decoration: const BoxDecoration(
+                        color: ThixPolicy.surfaceSoft,
+                        borderRadius:
+                            BorderRadius.vertical(top: Radius.circular(16)),
+                      ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                                height: 14,
+                                width: double.infinity,
+                                color: ThixPolicy.surfaceSoft),
+                            const SizedBox(height: 8),
+                            Container(
+                                height: 10,
+                                width: 150,
+                                color: ThixPolicy.surfaceSoft),
+                            const SizedBox(height: 8),
+                            Container(
+                                height: 10,
+                                width: 80,
+                                color: ThixPolicy.surfaceSoft),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-              ),
-            ),
-          ],
-        ),
-      )),
+              )),
     );
   }
 }
