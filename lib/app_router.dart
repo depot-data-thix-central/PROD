@@ -123,7 +123,7 @@ import 'package:thix_id/presentation/thix_market/pages/shop_detail_page.dart';
 import 'package:thix_id/presentation/thix_market/vendor/vendor_dashboard.dart';
 import 'package:thix_id/presentation/thix_market/vendor/delivery_management_page.dart';
 import 'package:thix_id/presentation/thix_market/vendor/vendor_orders_page.dart';
-
+import 'package:thix_id/presentation/thix_market/pages/flash_sales_page.dart';
 // === THIX SANTE ===
 import 'package:thix_id/presentation/thix_sante/patient/patient_dashboard_page.dart';
 import 'package:thix_id/presentation/thix_sante/patient/screens/mon_medecin_traitant_page.dart';
@@ -902,7 +902,16 @@ GoRoute(path: '/thix-info/downloads', name: 'thixInfoDownloads',
           GoRoute(path: 'live/:liveId/replay', name: 'marketLiveReplay', pageBuilder: (_, state) => NoTransitionPage(child: LiveReplayPage(liveId: state.pathParameters['liveId']!))),
           GoRoute(path: 'live/:liveId', name: 'marketLiveStream', pageBuilder: (_, state) => NoTransitionPage(child: LiveStreamPage(liveId: state.pathParameters['liveId']!))),
           GoRoute(path: 'chat/:conversationId', name: 'marketChat', pageBuilder: (_, state) => NoTransitionPage(child: ChatPage(conversationId: state.pathParameters['conversationId']!))),
+        GoRoute(
+  path: 'flash-sales',
+  name: 'marketFlashSales',
+  pageBuilder: (context, state) => const NoTransitionPageChild(
+    child: FlashSalesPage(), // Votre page dédiée aux offres flash
+  ),
+),
         ]),
+        
+
 
         // === ADMIN SYSTEM GLOBAL ===
         GoRoute(path: '/admin', builder: (context, state) => const thix_admin.AdminHomePage()),
