@@ -47,11 +47,11 @@ class _OpportunityDetailsPageState extends State<OpportunityDetailsPage> {
   late final Future<OpportunityItem?> _opportunityFuture;
   final _service = OpportunityService();
 
-  @override
-  void initState() {
-    super.override,
-    _opportunityFuture = _service.fetchOpportunity(widget.opportunityId);
-  }
+@override
+void initState() {
+  super.initState();
+  _opportunityFuture = _service.fetchOpportunity(widget.opportunityId);
+}
 
   String _tr(AppLocalizations l10n, String key, String fb) {
     final v = l10n.t(key);
