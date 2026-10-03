@@ -20,6 +20,7 @@ import '../thix_media_page.dart' show MediaConfig, MediaSanitizer, formatMediaNu
 import '../user_profile_page.dart';
 import 'feed_video_player.dart';
 import 'comments_sheet.dart';
+import 'media_cert_badge.dart';
 
 // ============================================================================
 // SMART FEED MIXER (anti-bubble, diversité créateurs)
@@ -175,7 +176,7 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    
+
     if (_mixedFeed.isEmpty) {
       return Center(
         child: Padding(
@@ -218,26 +219,19 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
         final isCurrent = index == _currentIndex;
         final isLiked = _localLikes[item.id] ?? false;
         final likeCount = _localLikeCounts[item.id] ?? item.likeCount;
-        
+
         final creatorId = item.userId ?? '';
-        final creatorProfile = creatorId.isNotEmpty 
-            ? ref.watch(mediaUserProfileProvider(creatorId)).valueOrNull 
+        final creatorProfile = creatorId.isNotEmpty
+            ? ref.watch(mediaUserProfileProvider(creatorId)).valueOrNull
             : null;
         final currentUid = Supabase.instance.client.auth.currentUser?.id;
-        final isFollowing = creatorId.isEmpty 
-            ? true 
+        final isFollowing = creatorId.isEmpty
+            ? true
             : (ref.watch(mediaIsFollowingProvider(creatorId)).valueOrNull ?? true);
-        final displayName = creatorId.isEmpty 
-            ? 'TDIA' 
+        final displayName = creatorId.isEmpty
+            ? 'TDIA'
             : (creatorProfile?['full_name'] ?? creatorProfile?['username'] ?? l10n.t('detail_creator_default'));
         final showFollow = creatorId.isNotEmpty && creatorId != currentUid && !isFollowing;
-        
-        // Extraction certification
-        final certTier = creatorProfile?['certification_tier'] as String?;
-        final certStatus = creatorProfile?['certification_status'] as String?;
-        final isCertified = certStatus == 'approved' || 
-                            certStatus == 'generated' || 
-                            certStatus == 'active';
 
         return _FilVideoCard(
           key: ValueKey(item.id),
@@ -248,10 +242,9 @@ class _FilFeedViewState extends ConsumerState<FilFeedView> {
           commentCount: item.commentCount,
           viewCount: item.viewCount,
           displayName: displayName,
+          creatorId: creatorId,
           creatorAvatar: creatorProfile?['avatar_url'] as String?,
           showFollow: showFollow,
-          certTier: certTier,
-          isCertified: isCertified,
           onLike: () => _toggleLike(item),
           onDoubleTapLike: () {
             if (!(_localLikes[item.id] ?? false)) _toggleLike(item);
@@ -282,30 +275,28 @@ class _FilVideoCard extends StatefulWidget {
   final bool isLiked;
   final int likeCount, commentCount, viewCount;
   final String displayName;
+  final String creatorId;
   final String? creatorAvatar;
   final bool showFollow;
-  final String? certTier;
-  final bool isCertified;
   final VoidCallback onLike, onDoubleTapLike, onComment, onOpenDetail, onOpenProfile, onFollow;
 
   const _FilVideoCard({
-    super.key, 
-    required this.item, 
-    required this.isCurrent, 
+    super.key,
+    required this.item,
+    required this.isCurrent,
     required this.isLiked,
-    required this.likeCount, 
-    required this.commentCount, 
+    required this.likeCount,
+    required this.commentCount,
     required this.viewCount,
-    required this.displayName, 
-    required this.creatorAvatar, 
+    required this.displayName,
+    required this.creatorId,
+    required this.creatorAvatar,
     required this.showFollow,
-    required this.certTier,
-    required this.isCertified,
-    required this.onLike, 
-    required this.onDoubleTapLike, 
+    required this.onLike,
+    required this.onDoubleTapLike,
     required this.onComment,
-    required this.onOpenDetail, 
-    required this.onOpenProfile, 
+    required this.onOpenDetail,
+    required this.onOpenProfile,
     required this.onFollow,
   });
 
@@ -350,44 +341,10 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
     });
   }
 
-  Color _getCertBadgeColor() {
-    if (!widget.isCertified) return Colors.white54;
-    switch (widget.certTier?.toLowerCase()) {
-      case 'official':
-        return const Color(0xFF3B82F6);
-      case 'enterprise':
-        return const Color(0xFF8B5CF6);
-      case 'premium':
-        return const Color(0xFFF59E0B);
-      case 'standard':
-        return const Color(0xFF06B6D4);
-      default:
-        return Colors.white54;
-    }
-  }
-
-  String _getCertLabel(AppLocalizations l10n) {
-    if (!widget.isCertified) return '';
-    switch (widget.certTier?.toLowerCase()) {
-      case 'official':
-        return l10n.t('certification_tier_official');
-      case 'enterprise':
-        return l10n.t('certification_tier_enterprise');
-      case 'premium':
-        return l10n.t('certification_tier_premium');
-      case 'standard':
-        return l10n.t('certification_tier_standard');
-      default:
-        return '';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final avatar = MediaSanitizer.imageUrl(widget.creatorAvatar);
-    final certColor = _getCertBadgeColor();
-    final certLabel = _getCertLabel(l10n);
 
     return GestureDetector(
       onDoubleTap: _handleDoubleTap,
@@ -403,20 +360,20 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
               onPlayStateChanged: (_) {},
             ),
           ),
-          
+
           Positioned(
-            left: 0, 
-            right: 0, 
+            left: 0,
+            right: 0,
             bottom: 0,
             height: 200,
             child: IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    begin: Alignment.bottomCenter, 
+                    begin: Alignment.bottomCenter,
                     end: Alignment.topCenter,
                     colors: [
-                      Colors.black.withOpacity(0.85), 
+                      Colors.black.withOpacity(0.85),
                       Colors.black.withOpacity(0.4),
                       Colors.transparent,
                     ],
@@ -443,8 +400,8 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
                           shape: BoxShape.circle,
                         ),
                         child: const Icon(
-                          Icons.favorite_rounded, 
-                          color: Colors.white, 
+                          Icons.favorite_rounded,
+                          color: Colors.white,
                           size: 80,
                           shadows: [
                             Shadow(color: Colors.black26, blurRadius: 8),
@@ -470,16 +427,16 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
                     GestureDetector(
                       onTap: widget.onOpenProfile,
                       child: Container(
-                        width: 44, 
+                        width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          shape: BoxShape.circle, 
+                          shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 2),
                         ),
                         child: ClipOval(
                           child: avatar != null
                               ? CachedNetworkImage(
-                                  imageUrl: avatar, 
+                                  imageUrl: avatar,
                                   fit: BoxFit.cover,
                                   placeholder: (context, url) => Container(
                                     color: Colors.white24,
@@ -500,7 +457,7 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
                                   ),
                                 )
                               : Container(
-                                  color: Colors.white24, 
+                                  color: Colors.white24,
                                   child: const Icon(Icons.person, color: Colors.white, size: 20),
                                 ),
                         ),
@@ -521,27 +478,30 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
-                                      color: Colors.white, 
-                                      fontSize: 14, 
+                                      color: Colors.white,
+                                      fontSize: 14,
                                       fontWeight: FontWeight.w900,
                                       shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
                                     ),
                                   ),
                                 ),
-                                if (widget.isCertified && certLabel.isNotEmpty) ...[
-                                  const SizedBox(width: 6),
-                                  _FilCertBadge(color: certColor, label: certLabel),
-                                ],
+                                // ✅ Sceau de certification à côté du nom
+                                MediaCertBadge(
+                                  userId: widget.creatorId,
+                                  official: widget.creatorId.isEmpty,
+                                  iconSize: 16,
+                                  padding: const EdgeInsets.only(left: 5),
+                                ),
                               ],
                             ),
                             const SizedBox(height: 3),
                             Text(
                               MediaSanitizer.text(widget.item.title, maxLength: MediaConfig.maxTitleLength),
-                              maxLines: 2, 
+                              maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                color: Colors.white, 
-                                fontSize: 13, 
+                                color: Colors.white,
+                                fontSize: 13,
                                 fontWeight: FontWeight.w500,
                                 height: 1.3,
                                 shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
@@ -570,8 +530,8 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
                           child: Text(
                             l10n.t('detail_follow'),
                             style: const TextStyle(
-                              color: Colors.white, 
-                              fontSize: 12, 
+                              color: Colors.white,
+                              fontSize: 12,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
@@ -606,11 +566,11 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
                         icon: Icons.remove_red_eye_outlined,
                         text: formatMediaNumber(widget.viewCount),
                         color: Colors.white,
-                        onTap: () {}, 
+                        onTap: () {},
                       ),
                       _actionBtn(
                         icon: Icons.fullscreen_rounded,
-                        text: '', 
+                        text: '',
                         color: Colors.white,
                         onTap: widget.onOpenDetail,
                       ),
@@ -626,9 +586,9 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
   }
 
   Widget _actionBtn({
-    required IconData icon, 
-    required String text, 
-    required Color color, 
+    required IconData icon,
+    required String text,
+    required Color color,
     required VoidCallback onTap,
   }) {
     return GestureDetector(
@@ -640,18 +600,18 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              icon, 
-              color: color, 
+              icon,
+              color: color,
               size: 22,
               shadows: const [Shadow(color: Colors.black45, blurRadius: 6)],
             ),
             if (text.isNotEmpty) ...[
               const SizedBox(width: 6),
               Text(
-                text, 
+                text,
                 style: TextStyle(
-                  color: color, 
-                  fontSize: 13, 
+                  color: color,
+                  fontSize: 13,
                   fontWeight: FontWeight.w800,
                   shadows: const [Shadow(color: Colors.black45, blurRadius: 4)],
                 ),
@@ -659,46 +619,6 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
             ],
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// BADGE CERTIFICATION (FIL)
-// ============================================================================
-
-class _FilCertBadge extends StatelessWidget {
-  final Color color;
-  final String label;
-  
-  const _FilCertBadge({required this.color, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.5), width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.verified_rounded, color: color, size: 11),
-          const SizedBox(width: 3),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 9,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.3,
-              shadows: const [Shadow(color: Colors.black26, blurRadius: 2)],
-            ),
-          ),
-        ],
       ),
     );
   }
