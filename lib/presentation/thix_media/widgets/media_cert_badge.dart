@@ -2,16 +2,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
 import 'package:thix_id/presentation/thix_media/providers/media_certification_provider.dart';
 import 'package:thix_id/services/certification_service.dart';
 
 /// Sceau de certification à placer à côté d'un nom dans THIX Media.
-/// - `userId` : récupère automatiquement le niveau de l'utilisateur
-/// - `official: true` : force le sceau Officiel (ex: compte TDIA)
+/// Le niveau vient uniquement de la base (profiles.certification_*).
+/// Pas de userId, ou compte non certifié : aucun sceau.
 class MediaCertBadge extends ConsumerWidget {
   final String? userId;
+
+  /// Conservé pour compatibilité, volontairement ignoré :
+  /// aucun sceau n'est forcé côté application.
   final bool official;
   final double iconSize;
   final EdgeInsetsGeometry padding;
@@ -26,15 +28,6 @@ class MediaCertBadge extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (official) {
-      return CertificationNameBadge(
-        tier: CertificationTier.official,
-        status: CertificationStatus.approved,
-        iconSize: iconSize,
-        padding: padding,
-      );
-    }
-
     final id = userId?.trim() ?? '';
     if (id.isEmpty) return const SizedBox.shrink();
 
