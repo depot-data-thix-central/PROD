@@ -346,7 +346,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${items.length} ${l10n.t('market_active_offers', fallback: 'offres actives')}',
+                        '${items.length} ${l10n.t('market_active_offers')}',
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.8),
                           fontSize: 12,
@@ -449,7 +449,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  l10n.t('market_next_expiry', fallback: 'Prochaine fin'),
+                  l10n.t('market_next_expiry'),
                   style: const TextStyle(
                     color: ThixPolicy.textSecondary,
                     fontSize: 10.5,
@@ -485,8 +485,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
   // ─── BANDEAU DÉFILANT ────────────────────────────────────────────
   Widget _buildMarqueeBanner(AppLocalizations l10n) {
     final label = _FlashSanitizer.text(
-      l10n.t('market_flash_sale_banner',
-          fallback: '🔥 VENTES FLASH • LIVRAISON OFFERTE • -50% MAXIMUM'),
+      l10n.t('market_flash_sale_banner'),
       maxLength: 120,
     );
     return Container(
@@ -511,7 +510,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
                   size: 16, color: ThixPolicy.textSecondary),
               const SizedBox(width: 6),
               Text(
-                l10n.t('market_filters', fallback: 'Filtres'),
+                l10n.t('market_filters'),
                 style: const TextStyle(
                   color: ThixPolicy.textMain,
                   fontSize: 13,
@@ -529,7 +528,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        l10n.t('common_reset', fallback: 'Réinitialiser'),
+                        l10n.t('common_reset'),
                         style: const TextStyle(
                           color: _FlashPalette.bordeaux,
                           fontSize: 11,
@@ -555,7 +554,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
                 final isAll = i == 0;
                 final value = isAll ? 'all' : categories.elementAt(i - 1);
                 final label = isAll
-                    ? l10n.t('common_all', fallback: 'Tout')
+                    ? l10n.t('common_all')
                     : _FlashSanitizer.text(value, maxLength: 30);
                 final selected = _selectedCategory == value;
                 return _FilterChip(
@@ -581,7 +580,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
       child: Row(
         children: [
           Text(
-            '$count ${l10n.t('market_results', fallback: 'résultats')}',
+            '$count ${l10n.t('market_results')}',
             style: const TextStyle(
               color: ThixPolicy.textSecondary,
               fontSize: 12,
@@ -627,13 +626,13 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
   String _sortLabel(AppLocalizations l10n) {
     switch (_sort) {
       case _FlashSort.urgency:
-        return l10n.t('sort_urgency', fallback: 'Urgence');
+        return l10n.t('sort_urgency');
       case _FlashSort.priceAsc:
-        return l10n.t('sort_price_asc', fallback: 'Prix ↑');
+        return l10n.t('sort_price_asc');
       case _FlashSort.priceDesc:
-        return l10n.t('sort_price_desc', fallback: 'Prix ↓');
+        return l10n.t('sort_price_desc');
       case _FlashSort.newest:
-        return l10n.t('sort_newest', fallback: 'Récents');
+        return l10n.t('sort_newest');
     }
   }
 
@@ -666,12 +665,12 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
               color: _FlashPalette.bordeaux.withOpacity(0.08),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.bolt_off_rounded,
+            child: const Icon(Icons.flash_off_rounded,
                 color: _FlashPalette.bordeaux, size: 40),
           ),
           const SizedBox(height: 16),
           Text(
-            l10n.t('market_no_flash', fallback: 'Aucune vente flash en cours'),
+            l10n.t('market_no_flash'),
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: ThixPolicy.textMain,
@@ -681,8 +680,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
           ),
           const SizedBox(height: 6),
           Text(
-            l10n.t('market_no_flash_sub',
-                fallback: 'De nouvelles offres arrivent bientôt.'),
+            l10n.t('market_no_flash_sub'),
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: ThixPolicy.textSecondary,
@@ -717,8 +715,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
               color: ThixPolicy.textMuted, size: 40),
           const SizedBox(height: 12),
           Text(
-            l10n.t('market_no_match',
-                fallback: 'Aucun produit ne correspond à vos filtres'),
+            l10n.t('market_no_match'),
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: ThixPolicy.textMain,
@@ -733,7 +730,7 @@ class _FlashSalesPageState extends ConsumerState<FlashSalesPage> {
               if (mounted) setState(() => _selectedCategory = 'all');
             },
             icon: const Icon(Icons.refresh_rounded, size: 16),
-            label: Text(l10n.t('common_reset', fallback: 'Réinitialiser')),
+            label: Text(l10n.t('common_reset')),
           ),
         ],
       ),
@@ -833,11 +830,10 @@ class _SortSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final options = <_FlashSort, String>{
-      _FlashSort.urgency:
-          l10n.t('sort_urgency', fallback: 'Urgence (expire bientôt)'),
-      _FlashSort.priceAsc: l10n.t('sort_price_asc', fallback: 'Prix croissant'),
-      _FlashSort.priceDesc: l10n.t('sort_price_desc', fallback: 'Prix décroissant'),
-      _FlashSort.newest: l10n.t('sort_newest', fallback: 'Plus récents'),
+      _FlashSort.urgency: l10n.t('sort_urgency'),
+      _FlashSort.priceAsc: l10n.t('sort_price_asc'),
+      _FlashSort.priceDesc: l10n.t('sort_price_desc'),
+      _FlashSort.newest: l10n.t('sort_newest'),
     };
 
     return Container(
@@ -862,7 +858,7 @@ class _SortSheet extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            l10n.t('market_sort_by', fallback: 'Trier par'),
+            l10n.t('market_sort_by'),
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w900,
