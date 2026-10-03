@@ -1,15 +1,16 @@
 // lib/presentation/thix_market/widgets/selling/publish_announcement_form.dart
 // ============================================================================
-// PUBLISH ANNOUNCEMENT FORM — Production Enterprise v2
+// PUBLISH ANNOUNCEMENT FORM — Production Enterprise v3
 // ============================================================================
-// Modifications v2 :
-//   ✅ Converti en ConsumerStatefulWidget pour accès à Riverpod
-//   ✅ Invalidation automatique de TOUS les providers market après succès
-//   ✅ Logs structurés + gestion d'erreur enterprise
+// v3 :
+//   ✅ Pays africains + drapeau (colonne products.country)
+//   ✅ Erreur réelle affichée (upload / base de données)
+//   ✅ Content-Type déduit de l'extension (web-safe)
+//   ✅ onSuccess hors du try (plus de suppression d'images après succès)
+//   ✅ Fix images.take(addedCount)
 // ============================================================================
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -25,6 +26,7 @@ import 'package:intl/intl.dart';
 import 'package:html/parser.dart' as html_parser;
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+import '../../core/african_countries.dart';
 import '../../l10n/market_strings.dart';
 import '../../providers/market_providers.dart' show invalidateAllMarketProviders;
 
@@ -67,9 +69,16 @@ class _AnnouncementValidators {
     return s.length > maxLength ? s.substring(0, maxLength) : s;
   }
 
+  static String extOf(String filename) {
+    final i = filename.lastIndexOf('.');
+    if (i < 0 || i == filename.length - 1) return '';
+    return filename.substring(i + 1).toLowerCase();
+  }
+
   static bool isValidExtension(String filename) {
-    final ext = filename.split('.').last.toLowerCase();
-    return _kAllowedExtensions.contains(ext);
+    final ext = extOf(filename);
+    // Sans extension (cas possible sur web) : on laisse passer, le MIME décidera
+    return ext.isEmpty || _kAllowedExtensions.contains(ext);
   }
 
   static bool isValidFileSize(int bytes) => bytes <= _kMaxFileSizeMB * 1024 * 1024;
@@ -106,6 +115,13 @@ class _AnnouncementValidators {
     if (msg.contains('storage') || msg.contains('upload')) return 'Échec upload image. Réessayez.';
     return 'Une erreur est survenue. Réessayez.';
   }
+
+  /// Détail technique court (affiché pour diagnostiquer)
+  static String detail(dynamic e) {
+    var s = e.toString().replaceAll('\n', ' ').trim();
+    if (s.length > 160) s = '${s.substring(0, 160)}…';
+    return s;
+  }
 }
 
 // ============================================================================
@@ -136,8 +152,15 @@ Future<T> _withRetry<T>(
   }
 }
 
+class _UploadFailure implements Exception {
+  final Object cause;
+  _UploadFailure(this.cause);
+  @override
+  String toString() => cause.toString();
+}
+
 // ============================================================================
-// WIDGET PRINCIPAL — ConsumerStatefulWidget
+// WIDGET PRINCIPAL
 // ============================================================================
 class PublishAnnouncementForm extends ConsumerStatefulWidget {
   final String? shopId;
@@ -177,6 +200,7 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
   String? _condition;
   String? _shippingType;
   String? _currency = 'CDF';
+  String? _country = AfricanCountries.defaultCode;
   String? _city;
   String _placement = 'normal';
   DateTime? _flashEndTime;
@@ -196,6 +220,7 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
   static const List<String> _conditionIds = ['new', 'like_new', 'good', 'fair'];
   static const List<String> _shippingTypeIds = ['delivery', 'pickup', 'both'];
 
+  // Villes proposées pour la RDC (les autres pays : saisie libre)
   final List<String> _cities = [
     'Kinshasa', 'Lubumbashi', 'Mbuji-Mayi', 'Kananga', 'Kisangani',
     'Bukavu', 'Goma', 'Matadi', 'Kolwezi', 'Likasi', 'Autre',
@@ -204,6 +229,7 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
   final ImagePicker _picker = ImagePicker();
 
   bool get _isEditMode => widget.editAnnouncement != null;
+  bool get _isDrc => _country == 'CD';
 
   @override
   void initState() {
@@ -256,7 +282,6 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
           locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium, timeLimit: Duration(seconds: 10)),
         );
         if (mounted) setState(() => _currentPosition = position);
-        debugPrint('[PublishForm] 📍 Location: ${position.latitude.toStringAsFixed(4)}, ${position.longitude.toStringAsFixed(4)}');
       }
     } catch (e) {
       debugPrint('[PublishForm] ⚠️ Location error: $e');
@@ -292,12 +317,28 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
           .toList();
     }
 
+    // Pays + ville
     final existingCity = data['city']?.toString();
-    if (existingCity != null && _cities.contains(existingCity)) {
-      _city = existingCity;
-    } else if (existingCity != null && existingCity.isNotEmpty) {
-      _city = 'Autre';
-      _customCityController.text = existingCity;
+    final existingCountry = data['country']?.toString().toUpperCase();
+    if (AfricanCountries.byCode(existingCountry) != null) {
+      _country = existingCountry;
+    } else if (existingCity != null && _cities.contains(existingCity)) {
+      _country = 'CD'; // anciennes annonces : villes de la liste RDC
+    } else {
+      _country = null; // à choisir par le vendeur
+    }
+
+    if (existingCity != null && existingCity.isNotEmpty) {
+      if (_country == 'CD') {
+        if (_cities.contains(existingCity)) {
+          _city = existingCity;
+        } else {
+          _city = 'Autre';
+          _customCityController.text = existingCity;
+        }
+      } else {
+        _customCityController.text = existingCity;
+      }
     }
 
     if (data['is_flash_sale'] == true) {
@@ -307,8 +348,6 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
     } else {
       _placement = 'normal';
     }
-
-    debugPrint('[PublishForm] ✓ Loaded edit data: "${_titleController.text.substring(0, _titleController.text.length.clamp(0, 40))}"');
   }
 
   // ============================================================
@@ -332,9 +371,9 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
         limit: remaining,
       );
 
-      if (images == null || images.isEmpty) return;
+      if (images.isEmpty) return;
 
-      int addedCount = 0;
+      final accepted = <XFile>[];
       int skippedCount = 0;
 
       for (final img in images) {
@@ -368,7 +407,7 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
           }
 
           _imageBytesCache[img.path] = bytes;
-          addedCount++;
+          accepted.add(img); // ✅ on garde les images réellement valides
         } catch (e) {
           debugPrint('[PublishForm] ❌ Read bytes error for ${img.path}: $e');
           skippedCount++;
@@ -376,13 +415,12 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
       }
 
       if (mounted) {
-        setState(() => _selectedImages = [..._selectedImages, ...images.take(addedCount)]);
+        setState(() => _selectedImages = [..._selectedImages, ...accepted]);
         widget.onDirty?.call();
 
         if (skippedCount > 0) {
           _showError('$skippedCount image(s) ignorée(s) (format/taille invalide)');
         }
-        debugPrint('[PublishForm] 📸 Picked $addedCount images, skipped $skippedCount');
       }
     } catch (e) {
       debugPrint('[PublishForm] ❌ Pick images error: $e');
@@ -406,6 +444,34 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
   // ============================================================
   // UPLOAD IMAGES
   // ============================================================
+  String _contentTypeFor(XFile image) {
+    final ext = _AnnouncementValidators.extOf(image.name.isNotEmpty ? image.name : image.path);
+    const byExt = {
+      'jpg': 'image/jpeg',
+      'jpeg': 'image/jpeg',
+      'png': 'image/png',
+      'webp': 'image/webp',
+      'heic': 'image/heic',
+    };
+    if (byExt.containsKey(ext)) return byExt[ext]!;
+
+    final mime = image.mimeType?.toLowerCase();
+    if (mime == 'image/jpg') return 'image/jpeg';
+    if (mime != null && mime.startsWith('image/')) return mime;
+    return 'image/jpeg';
+  }
+
+  String _extFromContentType(String contentType) {
+    const map = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'image/heic': 'heic',
+      'image/gif': 'gif',
+    };
+    return map[contentType] ?? 'jpg';
+  }
+
   Future<List<String>> _uploadImages() async {
     if (_selectedImages.isEmpty) return [];
 
@@ -421,37 +487,35 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
         final image = _selectedImages[i];
         final bytes = _imageBytesCache[image.path] ?? await image.readAsBytes();
 
-        String? mimeType = image.mimeType;
-        if (mimeType == null) {
-          final ext = image.path.split('.').last.toLowerCase();
-          mimeType = _getContentTypeFromExt(ext);
-        }
-        final ext = _getExtensionFromMime(mimeType);
+        final contentType = _contentTypeFor(image);
+        final ext = _extFromContentType(contentType);
         final fileName = '${const Uuid().v4()}.$ext';
         final filePath = 'products/$fileName';
 
         await _withRetry(
           () => Supabase.instance.client.storage.from('product_images').uploadBinary(
-            filePath,
-            bytes,
-            fileOptions: FileOptions(
-              contentType: mimeType,
-              cacheControl: '31536000',
-              upsert: false,
-            ),
-          ),
-          label: 'uploadImage[$i/${_selectedImages.length}]',
+                filePath,
+                bytes,
+                fileOptions: FileOptions(
+                  contentType: contentType,
+                  cacheControl: '31536000',
+                  upsert: false,
+                ),
+              ),
+          label: 'uploadImage[${i + 1}/${_selectedImages.length}]',
           maxRetries: 2,
         );
 
         final publicUrl = Supabase.instance.client.storage.from('product_images').getPublicUrl(filePath);
         urls.add(publicUrl);
 
-        if (mounted) {
-          setState(() => _uploadProgress = i + 1);
-        }
+        if (mounted) setState(() => _uploadProgress = i + 1);
       }
       debugPrint('[PublishForm] ✓ Uploaded ${urls.length} images');
+    } catch (e) {
+      // Nettoie ce qui a déjà été envoyé avant l'échec
+      await _cleanupOrphans(urls);
+      throw _UploadFailure(e);
     } finally {
       if (mounted) {
         setState(() {
@@ -481,29 +545,6 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
     } catch (e) {
       debugPrint('[PublishForm] ⚠️ Cleanup error: $e');
     }
-  }
-
-  String _getExtensionFromMime(String? mimeType) {
-    const map = {
-      'image/jpeg': 'jpg',
-      'image/png': 'png',
-      'image/gif': 'gif',
-      'image/webp': 'webp',
-      'image/heic': 'heic',
-    };
-    return map[mimeType] ?? 'jpg';
-  }
-
-  String _getContentTypeFromExt(String ext) {
-    const map = {
-      'jpg': 'image/jpeg',
-      'jpeg': 'image/jpeg',
-      'png': 'image/png',
-      'gif': 'image/gif',
-      'webp': 'image/webp',
-      'heic': 'image/heic',
-    };
-    return map[ext] ?? 'image/jpeg';
   }
 
   // ============================================================
@@ -556,14 +597,12 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
   }
 
   String? _resolveCity() {
-    if (_city == 'Autre') {
-      final custom = _AnnouncementValidators.sanitize(
-        _customCityController.text,
-        maxLength: _kMaxCityLength,
-      );
-      return custom.isEmpty ? null : custom;
-    }
-    return _city;
+    if (_isDrc && _city != null && _city != 'Autre') return _city;
+    final custom = _AnnouncementValidators.sanitize(
+      _customCityController.text,
+      maxLength: _kMaxCityLength,
+    );
+    return custom.isEmpty ? null : custom;
   }
 
   // ============================================================
@@ -580,6 +619,11 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
 
     if (_selectedImages.isEmpty && _existingImageUrls.isEmpty) {
       _showError(t.atLeastOneImage);
+      return;
+    }
+
+    if (_country == null) {
+      _showError('Choisissez le pays');
       return;
     }
 
@@ -632,6 +676,7 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
     setState(() => _isSubmitting = true);
 
     List<String> newUrls = [];
+    Map<String, dynamic>? response;
 
     try {
       if (_selectedImages.isNotEmpty) {
@@ -640,22 +685,23 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
 
       final allImageUrls = [..._existingImageUrls, ...newUrls];
 
-      final productData = {
+      final brand = _AnnouncementValidators.sanitize(_brandController.text, maxLength: _kMaxBrandLength);
+
+      final productData = <String, dynamic>{
         'shop_id': widget.shopId,
         'title': _AnnouncementValidators.sanitize(_titleController.text, maxLength: _kMaxTitleLength),
         'description': _AnnouncementValidators.sanitize(_descriptionController.text, maxLength: _kMaxDescLength),
         'price': price,
         'discount_price': discountPrice,
         'stock': stock ?? 0,
-        'brand': _AnnouncementValidators.sanitize(_brandController.text, maxLength: _kMaxBrandLength).isEmpty
-            ? null
-            : _AnnouncementValidators.sanitize(_brandController.text, maxLength: _kMaxBrandLength),
+        'brand': brand.isEmpty ? null : brand,
         'category': _category,
         'condition': _condition,
         'shipping_type': _shippingType,
         'free_shipping': _freeShipping,
         'is_service': _isService,
         'currency': _currency,
+        'country': _country,
         'city': resolvedCity,
         'is_flash_sale': _placement == 'flash_sale',
         'is_featured': _placement == 'recommended',
@@ -669,7 +715,6 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
         'shipping_cost': _AnnouncementValidators.safePrice(_shippingCostController.text),
       };
 
-      Map<String, dynamic> response;
       if (_isEditMode) {
         response = await _withRetry(
           () => Supabase.instance.client
@@ -696,23 +741,26 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
         );
         debugPrint('[PublishForm] ✅ Created ${response['id']}');
       }
-
-      // ✅ INVALIDATION IMMÉDIATE : force le refresh de TOUS les providers market
-      // Garantit que la home affichera le produit dès le retour
+    } on _UploadFailure catch (e) {
+      debugPrint('[PublishForm] ❌ Upload error: ${e.cause}');
       if (mounted) {
-        invalidateAllMarketProviders(ref);
-        debugPrint('[PublishForm] ✅ All market providers invalidated');
+        _showError('${_AnnouncementValidators.friendlyError(e.cause)}\nDétail : ${_AnnouncementValidators.detail(e.cause)}');
       }
-
-      widget.onSuccess?.call(response);
     } catch (e) {
       debugPrint('[PublishForm] ❌ Submit error: $e');
-      if (newUrls.isNotEmpty) {
-        await _cleanupOrphans(newUrls);
+      // La base a refusé : on supprime les images uploadées pour rien
+      if (newUrls.isNotEmpty) await _cleanupOrphans(newUrls);
+      if (mounted) {
+        _showError('${_AnnouncementValidators.friendlyError(e)}\nDétail : ${_AnnouncementValidators.detail(e)}');
       }
-      if (mounted) _showError(_AnnouncementValidators.friendlyError(e.toString()));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
+    }
+
+    // ✅ Succès : hors du try, une erreur ici ne supprime plus les images
+    if (response != null && mounted) {
+      invalidateAllMarketProviders(ref);
+      widget.onSuccess?.call(response);
     }
   }
 
@@ -722,8 +770,10 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
   void _showError(String message) {
     if (!mounted) return;
     HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
+        duration: const Duration(seconds: 6),
         content: Row(children: [
           const Icon(Icons.error_outline_rounded, color: Colors.white, size: 20),
           const SizedBox(width: 8),
@@ -967,24 +1017,51 @@ class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementFor
           ),
           const SizedBox(height: 16),
 
+          // ─── PAYS (54 pays africains + drapeau) ───
           _CategoryDropdown(
-            value: _city,
-            items: _cities.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-            label: '${t.cityLabel} *',
+            value: _country,
+            items: AfricanCountries.all
+                .map((c) => DropdownMenuItem(value: c.code, child: Text(c.label, overflow: TextOverflow.ellipsis)))
+                .toList(),
+            label: 'Pays *',
             onChanged: (v) {
-              setState(() => _city = v);
+              setState(() {
+                _country = v;
+                _city = null;
+                _customCityController.clear();
+              });
               widget.onDirty?.call();
             },
           ),
-          if (_city == 'Autre') ...[
-            const SizedBox(height: 8),
+          const SizedBox(height: 16),
+
+          // ─── VILLE : liste pour la RDC, saisie libre ailleurs ───
+          if (_isDrc) ...[
+            _CategoryDropdown(
+              value: _city,
+              items: _cities.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+              label: '${t.cityLabel} *',
+              onChanged: (v) {
+                setState(() => _city = v);
+                widget.onDirty?.call();
+              },
+            ),
+            if (_city == 'Autre') ...[
+              const SizedBox(height: 8),
+              _InputField(
+                controller: _customCityController,
+                label: t.customCityLabel,
+                isRequired: true,
+                maxLength: _kMaxCityLength,
+              ),
+            ],
+          ] else
             _InputField(
               controller: _customCityController,
-              label: t.customCityLabel,
+              label: '${t.cityLabel} *',
               isRequired: true,
               maxLength: _kMaxCityLength,
             ),
-          ],
           const SizedBox(height: 16),
 
           _CategoryDropdown(
@@ -1419,6 +1496,7 @@ class _CategoryDropdown extends StatelessWidget {
       child: DropdownButtonFormField<String>(
         value: value,
         isExpanded: true,
+        menuMaxHeight: 420,
         decoration: InputDecoration(
           labelText: label,
           filled: true,
