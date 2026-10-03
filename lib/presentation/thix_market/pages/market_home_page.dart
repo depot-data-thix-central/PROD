@@ -1119,19 +1119,73 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
       ),
       data: (items) {
         final sorted = _stableSort(items);
+
+        // ✅ Empty state — plus de page blanche silencieuse
+        if (sorted.isEmpty) {
+          return SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.inventory_2_outlined,
+                    size: 56,
+                    color: ThixPolicy.textSecondary.withOpacity(0.6),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    l10n.t('market_no_products'), // ou fallback ci-dessous
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: ThixPolicy.textMain,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Tirez vers le bas pour actualiser',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: ThixPolicy.textSecondary.withOpacity(0.8),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextButton.icon(
+                    onPressed: () {
+                      HapticFeedback.mediumImpact();
+                      ref.read(forYouProvider.notifier).refresh();
+                    },
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: Text(l10n.t('common_retry')),
+                    style: TextButton.styleFrom(
+                      foregroundColor: ThixPolicy.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
         return SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
           sliver: SliverGrid(
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: 0.65),
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 0.65,
+            ),
             delegate: SliverChildBuilderDelegate(
               (_, i) {
                 if (i >= sorted.length) {
                   return const Center(
-                      child: CircularProgressIndicator(color: ThixPolicy.domainMarket));
+                    child: CircularProgressIndicator(
+                      color: ThixPolicy.domainMarket,
+                    ),
+                  );
                 }
                 return ProductCard(product: sorted[i]);
               },
