@@ -2,9 +2,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
 import 'package:thix_id/presentation/thix_media/providers/media_certification_provider.dart';
-import 'package:thix_id/services/certification_service.dart';
 
 /// Sceau de certification à placer à côté d'un nom dans THIX Media.
 /// Le niveau vient uniquement de la base (profiles.certification_*).
