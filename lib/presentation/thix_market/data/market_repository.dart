@@ -153,21 +153,17 @@ class MarketRepository {
       return [];
     }
 
-    // ⚠️ PAS de _safeQuery ici : les erreurs doivent remonter
-    // pour que forYouProvider / flashSales / featured affichent un état d'erreur
-    // au lieu d'une grille vide silencieuse.
     return _withRetry(() async {
-      final searchPreview = safeSearch == null
-          ? ''
-          : safeSearch.substring(0, safeSearch.length > 20 ? 20 : safeSearch.length);
       debugPrint(
         '[MarketRepo] 📦 Fetching products (page=$safePage, limit=$safeLimit, '
-        'flash=$flashOnly, featured=$featuredOnly, cat=$category, search="$searchPreview...")',
+        'flash=$flashOnly, featured=$featuredOnly, cat=$category)',
       );
 
+      // ✅ Même style que shop_detail (qui affiche les produits)
+      // Pas d'embed shop:shops — évite les échecs silencieux
       var q = _db
           .from('products')
-          .select('*, shop:shops(id,name,rating,logo_url,city)')
+          .select('*')
           .eq('status', 'active');
 
       if (flashOnly) q = q.eq('is_flash_sale', true);
@@ -187,30 +183,6 @@ class MarketRepository {
       debugPrint('[MarketRepo] ✓ ${list.length} products loaded');
       return list;
     }, label: 'fetchProducts');
-  }
-
-  /// Version avec info pagination (total + hasMore)
-  Future<({List<Map<String, dynamic>> items, int total, bool hasMore})> fetchProductsWithMeta({
-    int page = 0,
-    int limit = _kDefaultPageSize,
-    bool flashOnly = false,
-    bool featuredOnly = false,
-    String? category,
-    String? search,
-  }) async {
-    final items = await fetchProducts(
-      page: page,
-      limit: limit + 1, // +1 pour détecter hasMore
-      flashOnly: flashOnly,
-      featuredOnly: featuredOnly,
-      category: category,
-      search: search,
-    );
-
-    final hasMore = items.length > limit;
-    final trimmed = hasMore ? items.sublist(0, limit) : items;
-
-    return (items: trimmed, total: items.length, hasMore: hasMore);
   }
 
   // ─────────────────────────────────────────────────────────────
