@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:html/parser.dart' as html_parser;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
@@ -16,6 +17,30 @@ import 'wishlist_button.dart';
 enum ProductCardVariant { grid, horizontal }
 
 // ============================================================================
+// PROVIDER BOUTIQUES (1 seule requête pour toutes les cartes)
+// ============================================================================
+/// Map shopId -> {id, name, logo_url}
+final marketShopsMapProvider =
+    FutureProvider.autoDispose<Map<String, Map<String, dynamic>>>((ref) async {
+  try {
+    final res = await Supabase.instance.client
+        .from('shops')
+        .select('id,name,logo_url')
+        .limit(500);
+    final map = <String, Map<String, dynamic>>{};
+    for (final row in List<Map<String, dynamic>>.from(res as List)) {
+      final id = row['id']?.toString();
+      if (id != null && id.isNotEmpty) map[id] = row;
+    }
+    debugPrint('[ProductCard] ✓ ${map.length} shops cached');
+    return map;
+  } catch (e) {
+    debugPrint('[ProductCard] ⚠️ shops map error: $e');
+    return const <String, Map<String, dynamic>>{};
+  }
+});
+
+// ============================================================================
 // VALIDATEURS
 // ============================================================================
 class _ProductCardValidators {
@@ -23,6 +48,7 @@ class _ProductCardValidators {
 
   static const int _kMaxTitleLength = 120;
   static const int _kMaxCityLength = 60;
+  static const int _kMaxShopLength = 40;
 
   static String sanitize(String? input, {int maxLength = 500}) {
     if (input == null || input.trim().isEmpty) return '';
@@ -77,6 +103,7 @@ class ProductCard extends ConsumerWidget {
   final bool isFlashSale;
   final bool isFeatured;
   final bool showFavoriteButton;
+  final bool showShop;
   final bool isFavorite;
   final double? width;
   final Function(Map<String, dynamic>)? onTap;
@@ -89,6 +116,7 @@ class ProductCard extends ConsumerWidget {
     this.isFlashSale = false,
     this.isFeatured = false,
     this.showFavoriteButton = true,
+    this.showShop = true,
     this.isFavorite = false,
     this.width,
     this.onTap,
@@ -103,6 +131,24 @@ class ProductCard extends ConsumerWidget {
     }
     if (p['media_url'] != null) return _ProductCardValidators.sanitizeUrl(p['media_url'].toString());
     return null;
+  }
+
+  /// Nom de boutique : embed > shop_name > map chargée depuis `shops`
+  String _resolveShopName(Map<String, Map<String, dynamic>> shops) {
+    String? raw;
+    final embedded = product['shop'];
+    if (embedded is Map && embedded['name'] != null) {
+      raw = embedded['name'].toString();
+    }
+    raw ??= product['shop_name']?.toString();
+    if (raw == null || raw.trim().isEmpty) {
+      final sid = product['shop_id']?.toString() ?? '';
+      raw = shops[sid]?['name']?.toString();
+    }
+    return _ProductCardValidators.sanitize(
+      raw,
+      maxLength: _ProductCardValidators._kMaxShopLength,
+    );
   }
 
   @override
@@ -137,6 +183,14 @@ class ProductCard extends ConsumerWidget {
       maxLength: _ProductCardValidators._kMaxCityLength,
     );
     final id = product['id']?.toString() ?? '';
+
+    // ─── Boutique ───
+    final shopId = product['shop_id']?.toString() ?? '';
+    final shopsMap = showShop
+        ? (ref.watch(marketShopsMapProvider).valueOrNull ??
+            const <String, Map<String, dynamic>>{})
+        : const <String, Map<String, dynamic>>{};
+    final shopName = showShop ? _resolveShopName(shopsMap) : '';
 
     final isHorizontal = variant == ProductCardVariant.horizontal;
     final borderRadius = isHorizontal ? 12.0 : 10.0;
@@ -243,6 +297,39 @@ class ProductCard extends ConsumerWidget {
                     height: 1.22,
                   ),
                 ),
+
+                // ─── Boutique (cliquable) ───
+                if (showShop && shopName.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: shopId.isEmpty
+                        ? null
+                        : () {
+                            HapticFeedback.selectionClick();
+                            context.push('/market/shop/$shopId');
+                          },
+                    child: Row(
+                      children: [
+                        const Icon(Icons.storefront_rounded, size: 10, color: ThixPolicy.domainMarket),
+                        const SizedBox(width: 3),
+                        Expanded(
+                          child: Text(
+                            shopName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: ThixPolicy.microStyle.copyWith(
+                              color: ThixPolicy.domainMarket,
+                              fontSize: 9.5,
+                              fontWeight: ThixPolicy.semiBold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 const SizedBox(height: 3),
                 Row(
                   children: [
