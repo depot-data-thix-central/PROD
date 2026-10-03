@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
+import 'package:thix_id/models/certification_tier.dart';
+import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
+import 'package:thix_id/presentation/thix_media/providers/media_certification_provider.dart';
+import 'package:thix_id/services/certification_service.dart';
 
 import '../thix_media_page.dart' show MediaLightPalette, MediaSanitizer, formatMediaNumber;
 
@@ -33,38 +37,6 @@ class ProfileHeaderWidget extends StatelessWidget {
     return val;
   }
 
-  Color _getCertBadgeColor() {
-    if (!isCertified) return MediaLightPalette.textMuted;
-    switch (certTier?.toLowerCase()) {
-      case 'official':
-        return const Color(0xFF1E40AF);
-      case 'enterprise':
-        return const Color(0xFF7C3AED);
-      case 'premium':
-        return const Color(0xFFD4A017);
-      case 'standard':
-        return const Color(0xFF0891B2);
-      default:
-        return MediaLightPalette.textMuted;
-    }
-  }
-
-  String _getCertLabel(AppLocalizations l10n) {
-    if (!isCertified) return '';
-    switch (certTier?.toLowerCase()) {
-      case 'official':
-        return _safeTr(l10n, 'certification_tier_official', 'Officiel');
-      case 'enterprise':
-        return _safeTr(l10n, 'certification_tier_enterprise', 'Entreprise');
-      case 'premium':
-        return _safeTr(l10n, 'certification_tier_premium', 'Premium');
-      case 'standard':
-        return _safeTr(l10n, 'certification_tier_standard', 'Standard');
-      default:
-        return '';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -81,8 +53,10 @@ class ProfileHeaderWidget extends StatelessWidget {
     final posts = stats?['posts'] ?? 0;
 
     final displayName = fullName.isNotEmpty ? fullName : username;
-    final certColor = _getCertBadgeColor();
-    final certLabel = _getCertLabel(l10n);
+
+    final CertificationTier? tier = isCertified
+        ? (parseCertTier(certTier) ?? CertificationTier.standard)
+        : null;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 100, 20, 20),
@@ -145,10 +119,13 @@ class ProfileHeaderWidget extends StatelessWidget {
                   ),
                 ),
               ),
-              if (isCertified && certLabel.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                _CertBadge(color: certColor, label: certLabel),
-              ],
+              if (tier != null)
+                CertificationNameBadge(
+                  tier: tier,
+                  status: CertificationStatus.approved,
+                  iconSize: 20,
+                  padding: const EdgeInsets.only(left: 6),
+                ),
             ],
           ),
           if (username.isNotEmpty) ...[
@@ -246,40 +223,6 @@ class _StatColumn extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _CertBadge extends StatelessWidget {
-  final Color color;
-  final String label;
-  const _CertBadge({required this.color, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3), width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.verified_rounded, color: color, size: 13),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.3,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
