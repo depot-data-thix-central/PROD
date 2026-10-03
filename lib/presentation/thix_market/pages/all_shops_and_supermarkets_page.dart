@@ -227,16 +227,17 @@ final shopsProvider = StateNotifierProvider.family<ShopsNotifier,
 final shopsCountProvider = FutureProvider.family<int, ShopKind>((ref, kind) async {
   try {
     final res = await _withTimeout(
-  Supabase.instance.client
-      .from('shops')
-      .select('id')
-      .eq('status', 'active')
-      .eq('type', kind == ShopKind.supermarket ? 'supermarket' : 'boutique')
-      .count(CountOption.exact),
-  label: 'count(${kind.name})',
-);
-return res.count ?? 0;
-
+      Supabase.instance.client
+          .from('shops')
+          .select('id')
+          .eq('status', 'active')
+          .eq('type', kind == ShopKind.supermarket ? 'supermarket' : 'boutique')
+          .count(CountOption.exact),
+      label: 'count(${kind.name})',
+    );
+    return res.count ?? 0;
+  } catch (_) {
+    return 0;
   }
 });
 
