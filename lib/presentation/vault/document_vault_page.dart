@@ -1,6 +1,7 @@
 // lib/presentation/vault/document_vault_page.dart
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -18,23 +19,288 @@ import 'package:thix_id/nav.dart';
 import 'package:thix_id/services/document_service.dart';
 
 // =============================================================
-// PALETTE VAULT v3 — graphite & or (compact)
+// PALETTE VAULT — clair & verre dépoli
 // =============================================================
 class _V {
-  static const bg = Color(0xFF0B1017);
-  static const surface = Color(0xFF10161D);
-  static const card = Color(0xFF171F29);
-  static const cardSoft = Color(0xFF1D2733);
-  static const border = Color(0xFF2A3644);
-  static const gold = Color(0xFFE3B23C);
-  static const text = Color(0xFFF2F6FA);
-  static const textSec = Color(0xFF9AA7B4);
-  static const textMut = Color(0xFF6B7885);
-  static const ok = Color(0xFF34D399);
-  static const warn = Color(0xFFFBBF24);
-  static const danger = Color(0xFFF87171);
-  static const dangerBright = Color(0xFFFF453A);
-  static const info = Color(0xFF60A5FA);
+  static const bg = Color(0xFFF4F7FB);
+  static const card = Color(0xFFFFFFFF);
+  static const cardSoft = Color(0xFFF1F5F9);
+  static const border = Color(0xFFE2E8F0);
+  static const primary = Color(0xFF2563EB);
+  static const gold = Color(0xFFD97706);
+  static const text = Color(0xFF0F172A);
+  static const textSec = Color(0xFF475569);
+  static const textMut = Color(0xFF94A3B8);
+  static const ok = Color(0xFF059669);
+  static const warn = Color(0xFFD97706);
+  static const danger = Color(0xFFDC2626);
+  static const dangerBright = Color(0xFFEF4444);
+  static const info = Color(0xFF0EA5E9);
+  static const violet = Color(0xFF8B5CF6);
+}
+
+// =============================================================
+// HELPERS GLOBAUX
+// =============================================================
+String _fmtDT(DateTime d) =>
+    '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year} à ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+
+Widget _spinner() => const Center(
+    child: SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(strokeWidth: 2, color: _V.primary)));
+
+bool _isLocked(Map<String, dynamic> s) {
+  final st = (s['status'] as String?) ?? 'pending';
+  final af = DateTime.tryParse((s['available_from'] ?? '').toString());
+  return af != null &&
+      af.isAfter(DateTime.now()) &&
+      st != 'opened' &&
+      st != 'destroyed' &&
+      st != 'expired';
+}
+
+Widget? _progressFor(AppLocalizations l10n, Map<String, dynamic> s) {
+  final now = DateTime.now();
+  final af = DateTime.tryParse((s['available_from'] ?? '').toString());
+  final ad = DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
+  final cd = DateTime.tryParse((s['created_at'] ?? '').toString()) ?? now;
+  if (_isLocked(s) && af != null) {
+    return _Count(
+        start: cd,
+        target: af,
+        label: l10n.t('vault_unlock_in'),
+        color: _V.primary);
+  }
+  if (ad != null) {
+    return _Count(
+        start: cd,
+        target: ad,
+        label: l10n.t('vault_destruct_in'),
+        color: _V.dangerBright);
+  }
+  return null;
+}
+
+InputDecoration _dec(String label) => InputDecoration(
+      labelText: label.isEmpty ? null : label,
+      labelStyle: const TextStyle(color: _V.textSec, fontSize: 11),
+      filled: true,
+      fillColor: Colors.white.withOpacity(0.7),
+      border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: _V.border)),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: _V.border)),
+      focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: _V.primary)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+    );
+
+Widget _lightPicker(BuildContext c, Widget? ch) => Theme(
+    data: ThemeData.light().copyWith(
+        colorScheme: const ColorScheme.light(
+            primary: _V.primary, surface: Colors.white)),
+    child: ch!);
+
+Color _typeColor(String? mime, String? docType) {
+  final m = (mime ?? '').toLowerCase();
+  final t = (docType ?? '').toLowerCase();
+  if (m.contains('image')) return _V.violet;
+  if (m.contains('pdf')) return _V.danger;
+  if (t.contains('diplome') ||
+      t.contains('diplôme') ||
+      t.contains('attestation')) {
+    return _V.ok;
+  }
+  if (t == 'cin' || t == 'passeport' || t == 'permis') return _V.primary;
+  return _V.gold;
+}
+
+IconData _typeIcon(String? mime, String? docType) {
+  final m = (mime ?? '').toLowerCase();
+  if (m.contains('pdf')) return Icons.picture_as_pdf_rounded;
+  if (m.contains('image')) return Icons.image_rounded;
+  final t = (docType ?? '').toLowerCase();
+  if (t.contains('diplome') || t.contains('diplôme')) {
+    return Icons.school_rounded;
+  }
+  if (t == 'cin' || t == 'passeport' || t == 'permis') {
+    return Icons.badge_rounded;
+  }
+  return Icons.description_rounded;
+}
+
+bool _isImageMime(String? mime, String? fileName) {
+  final m = (mime ?? '').toLowerCase();
+  final n = (fileName ?? '').toLowerCase();
+  return m.startsWith('image/') ||
+      n.endsWith('.jpg') ||
+      n.endsWith('.jpeg') ||
+      n.endsWith('.png') ||
+      n.endsWith('.webp');
+}
+
+// =============================================================
+// VERRE DÉPOLI : fond, carte, dialogue, feuille
+// =============================================================
+class _GlassBg extends StatelessWidget {
+  final Widget child;
+  const _GlassBg({required this.child});
+
+  Widget _blob(double s, Color c) => Container(
+        width: s,
+        height: s,
+        decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(colors: [c, c.withOpacity(0)])),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFE6EEFE), Color(0xFFF6F8FC), Color(0xFFFFF3DF)],
+            ),
+          ),
+        ),
+        Positioned(
+            top: -80, right: -70, child: _blob(280, _V.primary.withOpacity(0.25))),
+        Positioned(
+            bottom: 140, left: -100, child: _blob(300, _V.gold.withOpacity(0.2))),
+        Positioned(
+            top: 300, right: -120, child: _blob(240, _V.violet.withOpacity(0.14))),
+        child,
+      ],
+    );
+  }
+}
+
+class _Glass extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final EdgeInsetsGeometry? margin;
+  final double radius;
+  final double opacity;
+  final double blur;
+  final Color? borderColor;
+  const _Glass({
+    required this.child,
+    this.padding = EdgeInsets.zero,
+    this.margin,
+    this.radius = 16,
+    this.opacity = 0.62,
+    this.blur = 14,
+    this.borderColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: margin,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: [
+          BoxShadow(
+              color: const Color(0xFF1E293B).withOpacity(0.07),
+              blurRadius: 16,
+              offset: const Offset(0, 6))
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          child: Container(
+            padding: padding,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(opacity),
+              borderRadius: BorderRadius.circular(radius),
+              border: Border.all(
+                  color: borderColor ?? Colors.white.withOpacity(0.9)),
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GlassDialog extends StatelessWidget {
+  final Widget child;
+  const _GlassDialog({required this.child});
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: _Glass(
+          radius: 22,
+          opacity: 0.88,
+          blur: 20,
+          padding: const EdgeInsets.all(18),
+          child: child),
+    );
+  }
+}
+
+class _SheetShell extends StatelessWidget {
+  final Widget child;
+  final double maxFactor;
+  const _SheetShell({required this.child, this.maxFactor = 0.9});
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    return Padding(
+      padding: EdgeInsets.only(bottom: mq.viewInsets.bottom),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: mq.size.height * maxFactor),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.88),
+                border: Border(
+                    top: BorderSide(color: Colors.white.withOpacity(0.95))),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                          width: 38,
+                          height: 4,
+                          decoration: BoxDecoration(
+                              color: _V.border,
+                              borderRadius: BorderRadius.circular(2))),
+                      const SizedBox(height: 10),
+                      Flexible(child: child),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // =============================================================
@@ -59,7 +325,6 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(() => setState(() {}));
-    // Cache images Flutter agrandi (évite les re-téléchargements)
     PaintingBinding.instance.imageCache
       ..maximumSize = 500
       ..maximumSizeBytes = 200 * 1024 * 1024;
@@ -75,7 +340,8 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
   void _snack(String msg, {bool error = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, style: const TextStyle(fontSize: 12)),
+      content: Text(msg,
+          style: const TextStyle(fontSize: 12, color: Colors.white)),
       backgroundColor: error ? _V.dangerBright : _V.ok,
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 2),
@@ -122,41 +388,45 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
     final ctrl = TextEditingController();
     final name = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _V.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: Text(l10n.t('vault_new_folder'),
-            style: const TextStyle(
-                color: _V.text, fontSize: 14, fontWeight: FontWeight.w800)),
-        content: TextField(
-          controller: ctrl,
-          style: const TextStyle(color: _V.text, fontSize: 13),
-          decoration: InputDecoration(
-            hintText: l10n.t('vault_folder_name'),
-            hintStyle: const TextStyle(color: _V.textMut, fontSize: 12),
-            filled: true,
-            fillColor: _V.cardSoft,
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: _V.border)),
-          ),
+      builder: (ctx) => _GlassDialog(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(l10n.t('vault_new_folder'),
+                style: const TextStyle(
+                    color: _V.text, fontSize: 14, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              style: const TextStyle(color: _V.text, fontSize: 13),
+              decoration: _dec(l10n.t('vault_folder_name')),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: Text(l10n.t('common_cancel'),
+                          style: const TextStyle(
+                              color: _V.textSec, fontSize: 12))),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton(
+                      style: FilledButton.styleFrom(
+                          backgroundColor: _V.primary,
+                          foregroundColor: Colors.white),
+                      onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+                      child: Text(l10n.t('vault_create'),
+                          style: const TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.w800))),
+                ),
+              ],
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(l10n.t('common_cancel'),
-                  style: const TextStyle(color: _V.textSec, fontSize: 12))),
-          FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: _V.gold,
-                  foregroundColor: _V.bg,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: Text(l10n.t('vault_create'),
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w800))),
-        ],
       ),
     );
     if (name == null || name.isEmpty) return;
@@ -216,13 +486,13 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _SendSheet(
+      builder: (sheetCtx) => _SendSheet(
         documents: docs,
         docsService: _docs,
         initialDocId: singleDoc?['id']?.toString(),
         onDone: (ok) {
           if (!mounted) return;
-          Navigator.of(context).pop();
+          if (ok) Navigator.of(sheetCtx).pop();
           _snack(l10n.t(ok ? 'vault_send_ok' : 'vault_send_failed'),
               error: !ok);
         },
@@ -235,50 +505,48 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
     final ctrl = TextEditingController();
     final query = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _V.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: Text(l10n.t('vault_verify_title'),
-            style: const TextStyle(
-                color: _V.text, fontSize: 14, fontWeight: FontWeight.w800)),
-        content: Column(
+      builder: (ctx) => _GlassDialog(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Text(l10n.t('vault_verify_title'),
+                style: const TextStyle(
+                    color: _V.text, fontSize: 14, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 6),
             Text(l10n.t('vault_verify_hint'),
                 style: const TextStyle(color: _V.textSec, fontSize: 11)),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             TextField(
               controller: ctrl,
               style: const TextStyle(color: _V.text, fontSize: 13),
-              decoration: InputDecoration(
-                hintText: 'THIX-DOC-…',
-                hintStyle: const TextStyle(color: _V.textMut, fontSize: 12),
-                filled: true,
-                fillColor: _V.cardSoft,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: _V.border)),
-              ),
+              decoration: _dec('THIX-DOC-…'),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: Text(l10n.t('common_cancel'),
+                          style: const TextStyle(
+                              color: _V.textSec, fontSize: 12))),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton(
+                      style: FilledButton.styleFrom(
+                          backgroundColor: _V.primary,
+                          foregroundColor: Colors.white),
+                      onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+                      child: Text(l10n.t('common_search'),
+                          style: const TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.w800))),
+                ),
+              ],
             ),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(l10n.t('common_cancel'),
-                  style: const TextStyle(color: _V.textSec, fontSize: 12))),
-          FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: _V.gold,
-                  foregroundColor: _V.bg,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: Text(l10n.t('common_search'),
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w800))),
-        ],
       ),
     );
     if (query == null || query.isEmpty) return;
@@ -305,28 +573,27 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
     final l10n = AppLocalizations.of(context);
     final me = context.read<AuthController>().currentUser;
     final docId = (row['generated_doc_id'] as String?) ?? '';
+    final title = (row['title'] as String?) ?? '';
     bool isPublic = (row['is_public'] as bool?) ?? false;
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => StatefulBuilder(
-        builder: (ctx, setSheet) => Container(
-          margin: const EdgeInsets.all(10),
-          decoration:
-              BoxDecoration(color: _V.card, borderRadius: BorderRadius.circular(16)),
-          padding: const EdgeInsets.all(14),
-          child: SafeArea(
+        builder: (ctx, setSheet) => _SheetShell(
+          child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text((row['title'] as String?) ?? '—',
+                Text(title.isEmpty ? '—' : title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        color: _V.text, fontSize: 13, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 10),
+                        color: _V.text,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w900)),
+                const SizedBox(height: 8),
                 _MenuTile(
                     icon: Icons.open_in_new_rounded,
                     label: l10n.t('vault_open_archive'),
@@ -338,39 +605,56 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
                     icon: Icons.qr_code_2_rounded,
                     label: l10n.t('vault_menu_qr'),
                     onTap: () => showQrDialog(context,
-                        title: (row['title'] as String?) ?? '',
-                        value: docId.isNotEmpty ? docId : (row['title'] ?? ''))),
+                        title: title,
+                        value: docId.isNotEmpty ? docId : title)),
                 _MenuTile(
                     icon: Icons.badge_outlined,
                     label: l10n.t('vault_menu_id'),
                     onTap: () => showDocIdDialog(context,
-                        docId: docId.isNotEmpty ? docId : '—',
-                        title: (row['title'] as String?) ?? '')),
-                SwitchListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  activeColor: _V.gold,
-                  title: Text(
-                      isPublic ? l10n.t('vault_public') : l10n.t('vault_private'),
-                      style: const TextStyle(
-                          color: _V.text, fontSize: 12, fontWeight: FontWeight.w700)),
-                  subtitle: Text(
-                      isPublic
-                          ? l10n.t('vault_public_sub')
-                          : l10n.t('vault_private_sub'),
-                      style: const TextStyle(color: _V.textMut, fontSize: 10)),
-                  value: isPublic,
-                  onChanged: me == null
-                      ? null
-                      : (v) async {
-                          setSheet(() => isPublic = v);
-                          await _docs.togglePublic(
-                              uid: me.id,
-                              documentId: row['id'].toString(),
-                              docId: docId,
-                              isPublic: v);
-                        },
+                        docId: docId.isNotEmpty ? docId : '—', title: title)),
+                _MenuTile(
+                    icon: Icons.forward_rounded,
+                    label: l10n.t('vault_forward'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _openSendSheet(singleDoc: row);
+                    }),
+                const SizedBox(height: 4),
+                _Glass(
+                  radius: 12,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: SwitchListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    activeColor: _V.gold,
+                    title: Text(
+                        isPublic
+                            ? l10n.t('vault_public')
+                            : l10n.t('vault_private'),
+                        style: const TextStyle(
+                            color: _V.text,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800)),
+                    subtitle: Text(
+                        isPublic
+                            ? l10n.t('vault_public_sub')
+                            : l10n.t('vault_private_sub'),
+                        style:
+                            const TextStyle(color: _V.textMut, fontSize: 10)),
+                    value: isPublic,
+                    onChanged: me == null
+                        ? null
+                        : (v) async {
+                            setSheet(() => isPublic = v);
+                            await _docs.togglePublic(
+                                uid: me.id,
+                                documentId: row['id'].toString(),
+                                docId: docId,
+                                isPublic: v);
+                          },
+                  ),
                 ),
+                const SizedBox(height: 4),
                 _MenuTile(
                     icon: Icons.delete_outline_rounded,
                     label: l10n.t('common_delete'),
@@ -404,158 +688,177 @@ class _DocumentVaultPageState extends State<DocumentVaultPage>
 
     return Scaffold(
       backgroundColor: _V.bg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Container(
-              color: _V.surface,
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              child: Row(
-                children: [
-                  _IconBtn(
-                      icon: Icons.arrow_back_ios_new_rounded,
-                      onTap: () {
-                        final auth = context.read<AuthController>();
-                        if (auth.isAuthenticated) {
-                          final t = auth.currentUser?.accountType;
-                          context.go(t == AccountType.enterprise
-                              ? AppRoutes.enterpriseDashboard
-                              : AppRoutes.userDashboard);
-                          return;
-                        }
-                        context.go(AppRoutes.home);
-                      }),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.lock_rounded, color: _V.gold, size: 16),
-                  const SizedBox(width: 6),
-                  Text(l10n.t('vault_title'),
-                      style: const TextStyle(
-                          color: _V.text,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.5)),
-                  const Spacer(),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                        color: _V.ok.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: _V.ok.withOpacity(0.3))),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.verified_user_rounded,
-                            color: _V.ok, size: 10),
-                        const SizedBox(width: 4),
-                        Text(l10n.t('vault_secure'),
-                            style: const TextStyle(
-                                color: _V.ok,
-                                fontSize: 8.5,
-                                fontWeight: FontWeight.w900)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  _IconBtn(icon: Icons.search_rounded, onTap: _verifyById),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-              child: Container(
-                height: 36,
-                decoration: BoxDecoration(
-                    color: _V.card,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: _V.border)),
-                child: TextField(
-                  controller: _searchCtrl,
-                  style: const TextStyle(color: _V.text, fontSize: 12),
-                  onChanged: (v) {
-                    setState(() => _query = v.trim().toLowerCase());
-                    if (_query.isNotEmpty && _tabController.index != 0) {
-                      _tabController.animateTo(0);
-                    }
-                  },
-                  decoration: InputDecoration(
-                    hintText: l10n.t('vault_search_hint'),
-                    hintStyle: const TextStyle(color: _V.textMut, fontSize: 11.5),
-                    prefixIcon: const Icon(Icons.search_rounded,
-                        size: 15, color: _V.textSec),
-                    suffixIcon: _query.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.close_rounded,
-                                size: 13, color: _V.textSec),
-                            onPressed: () {
-                              _searchCtrl.clear();
-                              setState(() => _query = '');
-                            },
-                          )
-                        : null,
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 9),
+      body: _GlassBg(
+        child: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: _Glass(
+                  radius: 16,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  child: Row(
+                    children: [
+                      _IconBtn(
+                          icon: Icons.arrow_back_ios_new_rounded,
+                          onTap: () {
+                            final auth = context.read<AuthController>();
+                            if (auth.isAuthenticated) {
+                              final t = auth.currentUser?.accountType;
+                              context.go(t == AccountType.enterprise
+                                  ? AppRoutes.enterpriseDashboard
+                                  : AppRoutes.userDashboard);
+                              return;
+                            }
+                            context.go(AppRoutes.home);
+                          }),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.lock_rounded,
+                          color: _V.primary, size: 16),
+                      const SizedBox(width: 6),
+                      Text(l10n.t('vault_title'),
+                          style: const TextStyle(
+                              color: _V.text,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.5)),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                            color: _V.ok.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(6),
+                            border:
+                                Border.all(color: _V.ok.withOpacity(0.3))),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.verified_user_rounded,
+                                color: _V.ok, size: 10),
+                            const SizedBox(width: 4),
+                            Text(l10n.t('vault_secure'),
+                                style: const TextStyle(
+                                    color: _V.ok,
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.w900)),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      _IconBtn(icon: Icons.search_rounded, onTap: _verifyById),
+                    ],
                   ),
                 ),
               ),
-            ),
-            Container(
-              height: 34,
-              margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-              decoration: BoxDecoration(
-                  color: _V.card,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _V.border)),
-              child: TabBar(
-                controller: _tabController,
-                indicator:
-                    BoxDecoration(color: _V.gold, borderRadius: BorderRadius.circular(8)),
-                indicatorSize: TabBarIndicatorSize.tab,
-                labelColor: _V.bg,
-                unselectedLabelColor: _V.textSec,
-                labelStyle:
-                    const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900),
-                unselectedLabelStyle:
-                    const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600),
-                dividerColor: Colors.transparent,
-                tabs: [
-                  Tab(text: l10n.t('vault_tab_vault')),
-                  Tab(text: l10n.t('vault_tab_send')),
-                  Tab(text: l10n.t('vault_tab_received')),
-                  Tab(text: l10n.t('vault_tab_audit')),
-                ],
-              ),
-            ),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _VaultTab(
-                    me: me,
-                    docs: _docs,
-                    query: _query,
-                    folderFilter: _folderFilter,
-                    onFolder: (id) => setState(() => _folderFilter = id),
-                    onCreateFolder: _createFolder,
-                    onOpen: _openDoc,
-                    onMenu: _docMenu,
-                    fmtDate: _fmtDate,
-                    fmtSize: _fmtSize,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: _Glass(
+                  radius: 12,
+                  child: SizedBox(
+                    height: 38,
+                    child: TextField(
+                      controller: _searchCtrl,
+                      style: const TextStyle(color: _V.text, fontSize: 12),
+                      onChanged: (v) {
+                        setState(() => _query = v.trim().toLowerCase());
+                        if (_query.isNotEmpty && _tabController.index != 0) {
+                          _tabController.animateTo(0);
+                        }
+                      },
+                      decoration: InputDecoration(
+                        hintText: l10n.t('vault_search_hint'),
+                        hintStyle:
+                            const TextStyle(color: _V.textMut, fontSize: 11.5),
+                        prefixIcon: const Icon(Icons.search_rounded,
+                            size: 15, color: _V.textSec),
+                        suffixIcon: _query.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.close_rounded,
+                                    size: 13, color: _V.textSec),
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  setState(() => _query = '');
+                                },
+                              )
+                            : null,
+                        border: InputBorder.none,
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                    ),
                   ),
-                  _SendTab(
-                      me: me, docs: _docs, onSend: () => _openSendSheet(), fmtDate: _fmtDate),
-                  _InboxTab(me: me, docs: _docs, onOpen: _openDoc, fmtDate: _fmtDate),
-                  _AuditTab(me: me, docs: _docs, fmtDate: _fmtDate),
-                ],
+                ),
               ),
-            ),
-          ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                child: _Glass(
+                  radius: 12,
+                  padding: const EdgeInsets.all(3),
+                  child: SizedBox(
+                    height: 32,
+                    child: TabBar(
+                      controller: _tabController,
+                      indicator: BoxDecoration(
+                          color: _V.primary,
+                          borderRadius: BorderRadius.circular(9)),
+                      indicatorSize: TabBarIndicatorSize.tab,
+                      labelColor: Colors.white,
+                      unselectedLabelColor: _V.textSec,
+                      labelStyle: const TextStyle(
+                          fontSize: 10.5, fontWeight: FontWeight.w900),
+                      unselectedLabelStyle: const TextStyle(
+                          fontSize: 10.5, fontWeight: FontWeight.w600),
+                      dividerColor: Colors.transparent,
+                      tabs: [
+                        Tab(text: l10n.t('vault_tab_vault')),
+                        Tab(text: l10n.t('vault_tab_send')),
+                        Tab(text: l10n.t('vault_tab_received')),
+                        Tab(text: l10n.t('vault_tab_audit')),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _VaultTab(
+                      me: me,
+                      docs: _docs,
+                      query: _query,
+                      folderFilter: _folderFilter,
+                      onFolder: (id) => setState(() => _folderFilter = id),
+                      onCreateFolder: _createFolder,
+                      onOpen: _openDoc,
+                      onMenu: _docMenu,
+                      fmtDate: _fmtDate,
+                      fmtSize: _fmtSize,
+                    ),
+                    _SendTab(
+                        me: me,
+                        docs: _docs,
+                        onSend: () => _openSendSheet(),
+                        fmtDate: _fmtDate),
+                    _InboxTab(
+                        me: me,
+                        docs: _docs,
+                        onOpen: _openDoc,
+                        fmtDate: _fmtDate),
+                    _AuditTab(me: me, docs: _docs, fmtDate: _fmtDate),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
       floatingActionButton: _tabController.index == 0
           ? FloatingActionButton.small(
-              backgroundColor: _V.gold,
-              foregroundColor: _V.bg,
+              backgroundColor: _V.primary,
+              foregroundColor: Colors.white,
               onPressed: _pickAndUpload,
               child: const Icon(Icons.add_moderator_rounded, size: 18),
             )
@@ -579,8 +882,8 @@ class _IconBtn extends StatelessWidget {
         width: 30,
         height: 30,
         decoration: BoxDecoration(
-            color: _V.card,
-            borderRadius: BorderRadius.circular(8),
+            color: Colors.white.withOpacity(0.7),
+            borderRadius: BorderRadius.circular(9),
             border: Border.all(color: _V.border)),
         child: Icon(icon, size: 14, color: _V.textSec),
       ),
@@ -594,17 +897,20 @@ class _MenuTile extends StatelessWidget {
   final VoidCallback onTap;
   final Color? color;
   const _MenuTile(
-      {required this.icon, required this.label, required this.onTap, this.color});
+      {required this.icon,
+      required this.label,
+      required this.onTap,
+      this.color});
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(10),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
         child: Row(
           children: [
-            Icon(icon, size: 15, color: color ?? _V.textSec),
+            Icon(icon, size: 16, color: color ?? _V.primary),
             const SizedBox(width: 10),
             Text(label,
                 style: TextStyle(
@@ -618,27 +924,35 @@ class _MenuTile extends StatelessWidget {
   }
 }
 
-/// Image mise en cache (bytes en mémoire) — évite les appels réseau répétés.
+/// Image en cache mémoire (évite les appels réseau répétés).
 class _CachedImg extends StatefulWidget {
   final String url;
-  final double size;
+  final double? size;
   final BorderRadius? radius;
   final Widget fallback;
   const _CachedImg(
-      {required this.url,
-      required this.size,
-      this.radius,
-      required this.fallback});
+      {required this.url, this.size, this.radius, required this.fallback});
   @override
   State<_CachedImg> createState() => _CachedImgState();
 }
 
 class _CachedImgState extends State<_CachedImg> {
   static final Map<String, Future<Uint8List>> _cache = {};
+
+  static Future<Uint8List> _fetch(String url) async {
+    try {
+      final r = await http.get(Uri.parse(url));
+      if (r.statusCode != 200) throw Exception('http ${r.statusCode}');
+      return r.bodyBytes;
+    } catch (e) {
+      _cache.remove(url);
+      rethrow;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final fut = _cache.putIfAbsent(widget.url,
-        () => http.get(Uri.parse(widget.url)).then((r) => r.bodyBytes));
+    final fut = _cache.putIfAbsent(widget.url, () => _fetch(widget.url));
     return FutureBuilder<Uint8List>(
       future: fut,
       builder: (context, snap) {
@@ -647,8 +961,8 @@ class _CachedImgState extends State<_CachedImg> {
           borderRadius: widget.radius ?? BorderRadius.zero,
           child: Image.memory(
             snap.data!,
-            width: widget.size,
-            height: widget.size,
+            width: widget.size ?? double.infinity,
+            height: widget.size ?? double.infinity,
             fit: BoxFit.cover,
             gaplessPlayback: true,
             errorBuilder: (_, __, ___) => widget.fallback,
@@ -659,7 +973,7 @@ class _CachedImgState extends State<_CachedImg> {
   }
 }
 
-/// Countdown ROUGE CLAIR (visible, lumineux)
+/// Compte à rebours avec barre de progression
 class _Count extends StatefulWidget {
   final DateTime start;
   final DateTime target;
@@ -709,17 +1023,14 @@ class _CountState extends State<_Count> {
           children: [
             Text(widget.label,
                 style: TextStyle(
-                    fontSize: 9,
-                    color: widget.color.withOpacity(0.85),
+                    fontSize: 9.5,
+                    color: widget.color.withOpacity(0.9),
                     fontWeight: FontWeight.w800)),
             Text(f(rem),
                 style: TextStyle(
                     fontSize: 10.5,
                     color: widget.color,
-                    fontWeight: FontWeight.w900,
-                    shadows: [
-                      Shadow(color: widget.color.withOpacity(0.6), blurRadius: 6)
-                    ])),
+                    fontWeight: FontWeight.w900)),
           ],
         ),
         const SizedBox(height: 4),
@@ -728,7 +1039,7 @@ class _CountState extends State<_Count> {
           child: LinearProgressIndicator(
             value: p,
             minHeight: 5,
-            backgroundColor: widget.color.withOpacity(0.25),
+            backgroundColor: widget.color.withOpacity(0.15),
             valueColor: AlwaysStoppedAnimation(widget.color),
           ),
         ),
@@ -737,59 +1048,150 @@ class _CountState extends State<_Count> {
   }
 }
 
-Color _typeColor(String? mime, String? docType) {
-  final m = (mime ?? '').toLowerCase();
-  final t = (docType ?? '').toLowerCase();
-  if (m.contains('image')) return _V.info;
-  if (m.contains('pdf')) return _V.danger;
-  if (t.contains('diplome') || t.contains('diplôme') || t.contains('attestation')) {
-    return _V.ok;
+/// Carte "liste" (forme de l'ancien DocItem) — envoi / reçus / audit
+class _DocItem extends StatelessWidget {
+  final IconData icon;
+  final Color accent;
+  final String title;
+  final String subtitle;
+  final String? trailing;
+  final bool hasPassword;
+  final VoidCallback? onTap;
+  final Widget? progress;
+  final Color? borderColor;
+  const _DocItem({
+    required this.icon,
+    this.accent = _V.primary,
+    required this.title,
+    required this.subtitle,
+    this.trailing,
+    this.hasPassword = false,
+    this.onTap,
+    this.progress,
+    this.borderColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: _Glass(
+          radius: 16,
+          padding: const EdgeInsets.all(10),
+          borderColor: borderColor,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            color: accent.withOpacity(0.13)),
+                        alignment: Alignment.center,
+                        child: Icon(icon, color: accent, size: 19),
+                      ),
+                      if (hasPassword)
+                        Positioned(
+                          right: -4,
+                          bottom: -4,
+                          child: Container(
+                            padding: const EdgeInsets.all(3),
+                            decoration: BoxDecoration(
+                                color: _V.text,
+                                shape: BoxShape.circle,
+                                border:
+                                    Border.all(color: Colors.white, width: 1.5)),
+                            child: const Icon(Icons.lock_rounded,
+                                size: 8, color: Colors.white),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: _V.text,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w900)),
+                        const SizedBox(height: 2),
+                        Text(subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: _V.textSec,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                  if (trailing != null) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                          color: accent.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(8)),
+                      child: Text(trailing!,
+                          style: TextStyle(
+                              color: accent,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900)),
+                    ),
+                  ],
+                ],
+              ),
+              if (progress != null) ...[
+                const SizedBox(height: 10),
+                progress!,
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
-  if (t == 'cin' || t == 'passeport' || t == 'permis') return _V.gold;
-  return _V.textSec;
 }
 
-IconData _typeIcon(String? mime, String? docType) {
-  final m = (mime ?? '').toLowerCase();
-  if (m.contains('pdf')) return Icons.picture_as_pdf_rounded;
-  if (m.contains('image')) return Icons.image_rounded;
-  final t = (docType ?? '').toLowerCase();
-  if (t.contains('diplome') || t.contains('diplôme')) return Icons.school_rounded;
-  if (t == 'cin' || t == 'passeport' || t == 'permis') return Icons.badge_rounded;
-  return Icons.description_rounded;
-}
-
-bool _isImageMime(String? mime, String? fileName) {
-  final m = (mime ?? '').toLowerCase();
-  final n = (fileName ?? '').toLowerCase();
-  return m.startsWith('image/') ||
-      n.endsWith('.jpg') ||
-      n.endsWith('.jpeg') ||
-      n.endsWith('.png') ||
-      n.endsWith('.webp');
-}
-
+// =============================================================
+// DIALOGUES UTILITAIRES
+// =============================================================
 void showQrDialog(BuildContext context,
     {required String title, required String value}) {
   showDialog(
     context: context,
-    builder: (ctx) => Dialog(
-      backgroundColor: _V.card,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    color: _V.text, fontSize: 13, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 14),
-            Container(
+    builder: (ctx) => _GlassDialog(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: _V.text, fontSize: 13, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 14),
+          Center(
+            child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                  color: Colors.white, borderRadius: BorderRadius.circular(12)),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _V.border)),
               child: QrImageView(
                 data: value,
                 version: QrVersions.auto,
@@ -797,24 +1199,25 @@ void showQrDialog(BuildContext context,
                 backgroundColor: Colors.white,
               ),
             ),
-            const SizedBox(height: 10),
-            SelectableText(value,
-                style: const TextStyle(
-                    color: _V.textSec, fontSize: 10, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              height: 36,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                    backgroundColor: _V.gold, foregroundColor: _V.bg),
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(AppLocalizations.of(context).t('common_close'),
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
-              ),
+          ),
+          const SizedBox(height: 10),
+          SelectableText(value,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: _V.textSec, fontSize: 10, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 36,
+            child: FilledButton(
+              style: FilledButton.styleFrom(
+                  backgroundColor: _V.primary, foregroundColor: Colors.white),
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(AppLocalizations.of(context).t('common_close'),
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w800)),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     ),
   );
@@ -824,50 +1227,45 @@ void showDocIdDialog(BuildContext context,
     {required String docId, required String title}) {
   showDialog(
     context: context,
-    builder: (ctx) => Dialog(
-      backgroundColor: _V.card,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(title,
+    builder: (ctx) => _GlassDialog(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(title,
+              style: const TextStyle(
+                  color: _V.text, fontSize: 13, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _V.border)),
+            child: SelectableText(docId,
+                textAlign: TextAlign.center,
                 style: const TextStyle(
-                    color: _V.text, fontSize: 13, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                  color: _V.cardSoft,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _V.border)),
-              child: SelectableText(docId,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: _V.gold,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1)),
+                    color: _V.primary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1)),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 32,
+            child: TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(AppLocalizations.of(context).t('common_close'),
+                  style: const TextStyle(color: _V.textSec, fontSize: 11)),
             ),
-            const SizedBox(height: 14),
-            SizedBox(
-              height: 32,
-              child: TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(AppLocalizations.of(context).t('common_close'),
-                    style: const TextStyle(color: _V.textSec, fontSize: 11)),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     ),
   );
 }
 
-/// Demande de mot de passe (partage chiffré) — fonction globale
+/// Demande de mot de passe (partage chiffré)
 Future<bool> askVaultPassword(
     BuildContext context, DocumentService docs, String stored) async {
   final l10n = AppLocalizations.of(context);
@@ -876,63 +1274,68 @@ Future<bool> askVaultPassword(
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setDlg) => AlertDialog(
-        backgroundColor: _V.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: Row(children: [
-          const Icon(Icons.lock_rounded, color: _V.gold, size: 16),
-          const SizedBox(width: 8),
-          Expanded(
-              child: Text(l10n.t('vault_password_required'),
-                  style: const TextStyle(
-                      color: _V.text, fontSize: 13, fontWeight: FontWeight.w800))),
-        ]),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(
-            controller: ctrl,
-            obscureText: true,
-            style: const TextStyle(color: _V.text, fontSize: 13),
-            decoration: InputDecoration(
-              hintText: l10n.t('vault_password'),
-              hintStyle: const TextStyle(color: _V.textMut, fontSize: 12),
-              filled: true,
-              fillColor: _V.cardSoft,
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: _V.border)),
+      builder: (ctx, setDlg) => _GlassDialog(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(children: [
+              const Icon(Icons.lock_rounded, color: _V.primary, size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: Text(l10n.t('vault_password_required'),
+                      style: const TextStyle(
+                          color: _V.text,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800))),
+            ]),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              obscureText: true,
+              style: const TextStyle(color: _V.text, fontSize: 13),
+              decoration: _dec(l10n.t('vault_password')),
             ),
-          ),
-          if (err != null)
-            Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(err!,
-                    style: const TextStyle(
-                        color: _V.dangerBright, fontSize: 10.5))),
-        ]),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(l10n.t('common_cancel'),
-                  style: const TextStyle(color: _V.textSec, fontSize: 12))),
-          FilledButton(
-            style: FilledButton.styleFrom(
-                backgroundColor: _V.gold,
-                foregroundColor: _V.bg,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
-            onPressed: () async {
-              final valid =
-                  await docs.verifyPassword(password: ctrl.text, hash: stored);
-              if (valid) {
-                Navigator.pop(ctx, true);
-              } else {
-                setDlg(() => err = l10n.t('vault_wrong_password'));
-              }
-            },
-            child: Text(l10n.t('vault_decrypt_open'),
-                style: const TextStyle(
-                    fontSize: 11.5, fontWeight: FontWeight.w800)),
-          ),
-        ],
+            if (err != null)
+              Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(err!,
+                      style: const TextStyle(
+                          color: _V.dangerBright, fontSize: 10.5))),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: Text(l10n.t('common_cancel'),
+                          style: const TextStyle(
+                              color: _V.textSec, fontSize: 12))),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                        backgroundColor: _V.primary,
+                        foregroundColor: Colors.white),
+                    onPressed: () async {
+                      final valid = await docs.verifyPassword(
+                          password: ctrl.text, hash: stored);
+                      if (valid) {
+                        if (ctx.mounted) Navigator.pop(ctx, true);
+                      } else {
+                        setDlg(() => err = l10n.t('vault_wrong_password'));
+                      }
+                    },
+                    child: Text(l10n.t('vault_decrypt_open'),
+                        style: const TextStyle(
+                            fontSize: 11, fontWeight: FontWeight.w800)),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -940,7 +1343,7 @@ Future<bool> askVaultPassword(
 }
 
 // =============================================================
-// ONGLET COFFRE
+// ONGLET COFFRE (grille de cartes)
 // =============================================================
 class _VaultTab extends StatelessWidget {
   final AppUser? me;
@@ -979,7 +1382,7 @@ class _VaultTab extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 90),
       children: [
         SizedBox(
-          height: 28,
+          height: 34,
           child: StreamBuilder<List<Map<String, dynamic>>>(
             stream: docs.streamFolders(me!.id),
             builder: (context, snap) {
@@ -988,15 +1391,18 @@ class _VaultTab extends StatelessWidget {
                 scrollDirection: Axis.horizontal,
                 children: [
                   _FolderChip(
+                      icon: Icons.grid_view_rounded,
                       label: l10n.t('vault_all'),
                       selected: folderFilter == null,
                       onTap: () => onFolder(null)),
                   ...folders.map((f) => _FolderChip(
+                      icon: Icons.folder_rounded,
                       label: (f['name'] as String?) ?? '—',
                       selected: folderFilter == f['id'],
                       onTap: () => onFolder(f['id'] as String))),
                   _FolderChip(
-                      label: '+ ${l10n.t('vault_new_folder')}',
+                      icon: Icons.create_new_folder_rounded,
+                      label: l10n.t('vault_new_folder'),
                       selected: false,
                       onTap: () => onCreateFolder(me!.id)),
                 ],
@@ -1021,53 +1427,68 @@ class _VaultTab extends StatelessWidget {
               }).toList();
             }
             if (snap.connectionState == ConnectionState.waiting) {
-              return const Padding(
-                  padding: EdgeInsets.all(30),
-                  child: Center(
-                      child: SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: _V.gold))));
-            }
-            if (query.isNotEmpty) {
               return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(l10n.t('vault_results', args: ['${list.length}']),
-                    style: const TextStyle(
-                        color: _V.gold, fontSize: 10, fontWeight: FontWeight.w800)),
-              );
-            }
-            if (list.isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 50),
-                child: Column(
-                  children: [
-                    const Icon(Icons.shield_outlined, size: 40, color: _V.border),
-                    const SizedBox(height: 10),
-                    Text(l10n.t('vault_empty'),
-                        style: const TextStyle(
-                            color: _V.textSec,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 4),
-                    Text(l10n.t('vault_empty_hint'),
-                        style: const TextStyle(color: _V.textMut, fontSize: 10.5)),
-                  ],
-                ),
-              );
+                  padding: const EdgeInsets.all(30), child: _spinner());
             }
             return Column(
-              children: list
-                  .map((d) => _DocRow(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (query.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                        l10n.t('vault_results', args: ['${list.length}']),
+                        style: const TextStyle(
+                            color: _V.primary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800)),
+                  ),
+                if (list.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 50),
+                    child: Column(
+                      children: [
+                        const Icon(Icons.shield_outlined,
+                            size: 40, color: _V.textMut),
+                        const SizedBox(height: 10),
+                        Text(l10n.t('vault_empty'),
+                            style: const TextStyle(
+                                color: _V.textSec,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 4),
+                        Text(l10n.t('vault_empty_hint'),
+                            style: const TextStyle(
+                                color: _V.textMut, fontSize: 10.5)),
+                      ],
+                    ),
+                  )
+                else
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: list.length,
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 10,
+                      mainAxisSpacing: 10,
+                      childAspectRatio: 0.82,
+                    ),
+                    itemBuilder: (context, i) {
+                      final d = list[i];
+                      return _DocSquareCard(
+                        key: ValueKey(d['id']?.toString() ?? '$i'),
                         data: d,
                         docs: docs,
                         onOpen: () => onOpen(d),
                         onMenu: () => onMenu(d),
                         fmtDate: fmtDate,
                         fmtSize: fmtSize,
-                      ))
-                  .toList(),
+                      );
+                    },
+                  ),
+              ],
             );
           },
         ),
@@ -1077,40 +1498,52 @@ class _VaultTab extends StatelessWidget {
 }
 
 class _FolderChip extends StatelessWidget {
+  final IconData icon;
   final String label;
   final bool selected;
   final VoidCallback onTap;
   const _FolderChip(
-      {required this.label, required this.selected, required this.onTap});
+      {required this.icon,
+      required this.label,
+      required this.selected,
+      required this.onTap});
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(right: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
         decoration: BoxDecoration(
-            color: selected ? _V.gold : _V.card,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: selected ? _V.gold : _V.border)),
-        child: Text(label,
-            style: TextStyle(
-                color: selected ? _V.bg : _V.textSec,
-                fontSize: 10,
-                fontWeight: FontWeight.w800)),
+            color: selected ? _V.primary : Colors.white.withOpacity(0.7),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: selected ? _V.primary : _V.border)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: selected ? Colors.white : _V.textSec),
+            const SizedBox(width: 5),
+            Text(label,
+                style: TextStyle(
+                    color: selected ? Colors.white : _V.text,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800)),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _DocRow extends StatelessWidget {
+class _DocSquareCard extends StatefulWidget {
   final Map<String, dynamic> data;
   final DocumentService docs;
   final VoidCallback onOpen;
   final VoidCallback onMenu;
   final String Function(dynamic) fmtDate;
   final String Function(int) fmtSize;
-  const _DocRow({
+  const _DocSquareCard({
+    super.key,
     required this.data,
     required this.docs,
     required this.onOpen,
@@ -1118,73 +1551,145 @@ class _DocRow extends StatelessWidget {
     required this.fmtDate,
     required this.fmtSize,
   });
+  @override
+  State<_DocSquareCard> createState() => _DocSquareCardState();
+}
+
+class _DocSquareCardState extends State<_DocSquareCard> {
+  Future<String>? _url;
+
+  @override
+  void initState() {
+    super.initState();
+    final d = widget.data;
+    if (_isImageMime(d['mime_type'] as String?, d['file_name'] as String?)) {
+      _url = widget.docs.resolveRowDownloadUrl(d);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final mime = (data['mime_type'] as String?) ?? '';
-    final docType = data['doc_type'] as String?;
+    final d = widget.data;
+    final mime = (d['mime_type'] as String?) ?? '';
+    final docType = d['doc_type'] as String?;
     final color = _typeColor(mime, docType);
-    final isPublic = (data['is_public'] as bool?) ?? false;
-    final isImage = _isImageMime(mime, data['file_name'] as String?);
+    final icon = _typeIcon(mime, docType);
+    final isPublic = (d['is_public'] as bool?) ?? false;
+    final docId = (d['generated_doc_id'] as String?) ?? '';
+    final title = (d['title'] as String?) ?? (docId.isNotEmpty ? docId : '—');
+    final sub =
+        '${widget.fmtDate(d['created_at'])} • ${widget.fmtSize((d['size_bytes'] as num?)?.toInt() ?? 0)}';
+
+    final fallback = Container(
+        color: color.withOpacity(0.1),
+        alignment: Alignment.center,
+        child: Icon(icon, color: color, size: 34));
+
     return GestureDetector(
-      onTap: onOpen,
-      onLongPress: onMenu,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 6),
-        padding: const EdgeInsets.all(9),
-        decoration: BoxDecoration(
-            color: _V.card,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: _V.border)),
-        child: Row(
+      onTap: widget.onOpen,
+      onLongPress: widget.onMenu,
+      child: _Glass(
+        radius: 18,
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              width: 38,
-              height: 38,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                  color: color.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(9)),
-              child: isImage
-                  ? FutureBuilder<String>(
-                      future: docs.resolveRowDownloadUrl(data),
-                      builder: (c, sn) => sn.hasData
-                          ? _CachedImg(
-                              url: sn.data!,
-                              size: 38,
-                              radius: BorderRadius.circular(9),
-                              fallback:
-                                  Icon(_typeIcon(mime, docType), color: color, size: 17))
-                          : Icon(_typeIcon(mime, docType), color: color, size: 17),
-                    )
-                  : Icon(_typeIcon(mime, docType), color: color, size: 17),
-            ),
-            const SizedBox(width: 9),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Stack(
                 children: [
-                  Text((data['title'] as String?) ?? '—',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: _V.text, fontSize: 12, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 2),
-                  Text(
-                      '${fmtDate(data['created_at'])} • ${fmtSize((data['size_bytes'] as num?)?.toInt() ?? 0)} • ${(data['generated_doc_id'] as String?) ?? ''}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: _V.textMut, fontSize: 9.5)),
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(13),
+                      child: _url == null
+                          ? fallback
+                          : FutureBuilder<String>(
+                              future: _url,
+                              builder: (c, sn) => sn.hasData
+                                  ? _CachedImg(
+                                      url: sn.data!, fallback: fallback)
+                                  : fallback),
+                    ),
+                  ),
+                  if (isPublic)
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                            color: _V.gold,
+                            borderRadius: BorderRadius.circular(6)),
+                        child: const Text('PUBLIC',
+                            style: TextStyle(
+                                fontSize: 8,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white)),
+                      ),
+                    ),
                 ],
               ),
             ),
-            if (isPublic)
-              const Icon(Icons.public_rounded, size: 12, color: _V.gold),
-            const SizedBox(width: 4),
-            GestureDetector(
-                onTap: onMenu,
-                child:
-                    const Icon(Icons.more_vert_rounded, size: 14, color: _V.textSec)),
+            const SizedBox(height: 8),
+            Text(title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: _V.text, fontSize: 12, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(sub,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: _V.textSec,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w600)),
+                ),
+                GestureDetector(
+                  onTap: widget.onMenu,
+                  child: const Icon(Icons.more_horiz_rounded,
+                      size: 16, color: _V.textSec),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              height: 28,
+              decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _V.border)),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      borderRadius: const BorderRadius.horizontal(
+                          left: Radius.circular(10)),
+                      onTap: () => showQrDialog(context,
+                          title: title, value: docId.isNotEmpty ? docId : title),
+                      child: const Center(
+                          child: Icon(Icons.qr_code_2_rounded,
+                              size: 15, color: _V.primary)),
+                    ),
+                  ),
+                  Container(width: 1, height: 14, color: _V.border),
+                  Expanded(
+                    child: InkWell(
+                      borderRadius: const BorderRadius.horizontal(
+                          right: Radius.circular(10)),
+                      onTap: () => showDocIdDialog(context,
+                          docId: docId.isNotEmpty ? docId : '—', title: title),
+                      child: const Center(
+                          child: Icon(Icons.badge_outlined,
+                              size: 15, color: _V.primary)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -1240,33 +1745,35 @@ class _SendTabState extends State<_SendTab> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 90),
       children: [
-        Container(
+        _Glass(
+          radius: 18,
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-              color: _V.card,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _V.gold.withOpacity(0.35))),
+          borderColor: _V.primary.withOpacity(0.35),
           child: Row(
             children: [
               Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(9),
                   decoration: BoxDecoration(
-                      color: _V.gold.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(9)),
-                  child: const Icon(Icons.shield_rounded, color: _V.gold, size: 18)),
+                      color: _V.primary.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.shield_rounded,
+                      color: _V.primary, size: 18)),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(l10n.t('vault_send_subtitle'),
                     style: const TextStyle(
-                        color: _V.textSec, fontSize: 10.5, height: 1.35)),
+                        color: _V.textSec,
+                        fontSize: 10.5,
+                        height: 1.35,
+                        fontWeight: FontWeight.w600)),
               ),
               const SizedBox(width: 8),
               FilledButton(
                 style: FilledButton.styleFrom(
-                    backgroundColor: _V.gold,
-                    foregroundColor: _V.bg,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 9)),
+                    backgroundColor: _V.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 9)),
                 onPressed: widget.onSend,
                 child: Text(l10n.t('vault_new_send'),
                     style: const TextStyle(
@@ -1307,79 +1814,28 @@ class _SendTabState extends State<_SendTab> {
             return Column(
               children: visible.map((s) {
                 final st = (s['status'] as String?) ?? 'pending';
-                final hasPw = (s['password_hash'] as String?)?.isNotEmpty == true;
-                final ad =
-                    DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
-                final cd = DateTime.tryParse((s['created_at'] ?? '').toString()) ??
-                    now;
+                final locked = _isLocked(s);
+                final hasPw =
+                    (s['password_hash'] as String?)?.isNotEmpty == true;
                 final c = st == 'opened'
                     ? _V.ok
-                    : (st == 'pending' ? _V.warn : _V.info);
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 6),
-                  padding: const EdgeInsets.all(9),
-                  decoration: BoxDecoration(
-                      color: _V.card,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: _V.border)),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                              st == 'opened'
-                                  ? Icons.mark_email_read_rounded
-                                  : Icons.send_rounded,
-                              size: 14,
-                              color: c),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text((s['recipient_thix_id'] as String?) ?? '—',
-                                    style: const TextStyle(
-                                        color: _V.text,
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.w800)),
-                                Text(
-                                    (s['subject'] as String?)?.isNotEmpty == true
-                                        ? s['subject'] as String
-                                        : l10n.t('vault_send_subtitle'),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                        color: _V.textMut, fontSize: 9.5)),
-                              ],
-                            ),
-                          ),
-                          if (hasPw)
-                            const Icon(Icons.lock_rounded, size: 11, color: _V.gold),
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 3),
-                            decoration: BoxDecoration(
-                                color: c.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(6)),
-                            child: Text(_stLabel(l10n, st),
-                                style: TextStyle(
-                                    color: c,
-                                    fontSize: 8.5,
-                                    fontWeight: FontWeight.w900)),
-                          ),
-                        ],
-                      ),
-                      if (ad != null) ...[
-                        const SizedBox(height: 7),
-                        _Count(
-                            start: cd,
-                            target: ad,
-                            label: l10n.t('vault_destruct_in'),
-                            color: _V.dangerBright),
-                      ],
-                    ],
-                  ),
+                    : (locked ? _V.warn : _V.primary);
+                return _DocItem(
+                  icon: st == 'opened'
+                      ? Icons.mark_email_read_rounded
+                      : (locked
+                          ? Icons.schedule_send_rounded
+                          : Icons.send_rounded),
+                  accent: c,
+                  title: (s['recipient_thix_id'] as String?) ?? '—',
+                  subtitle: (s['subject'] as String?)?.isNotEmpty == true
+                      ? s['subject'] as String
+                      : l10n.t('vault_send_subtitle'),
+                  trailing: locked
+                      ? l10n.t('vault_st_pending')
+                      : _stLabel(l10n, st),
+                  hasPassword: hasPw,
+                  progress: _progressFor(l10n, s),
                 );
               }).toList(),
             );
@@ -1391,7 +1847,7 @@ class _SendTabState extends State<_SendTab> {
 }
 
 // =============================================================
-// ONGLET REÇUS (boîte mail + détail "Voir plus")
+// ONGLET REÇUS
 // =============================================================
 class _InboxTab extends StatefulWidget {
   final AppUser? me;
@@ -1439,16 +1895,13 @@ class _InboxTabState extends State<_InboxTab> {
       builder: (context, snap) {
         final shares = snap.data ?? const [];
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: _V.gold)));
+          return _spinner();
         }
         final now = DateTime.now();
         final visible = shares.where((s) {
           final st = (s['status'] as String?) ?? 'pending';
-          final ad = DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
+          final ad =
+              DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
           if (st == 'destroyed' || st == 'expired') return false;
           if (ad != null && ad.isBefore(now)) {
             final id = s['id']?.toString();
@@ -1464,11 +1917,13 @@ class _InboxTabState extends State<_InboxTab> {
               child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.inbox_rounded, size: 40, color: _V.border),
+              const Icon(Icons.inbox_rounded, size: 40, color: _V.textMut),
               const SizedBox(height: 10),
               Text(l10n.t('vault_received_empty'),
                   style: const TextStyle(
-                      color: _V.textSec, fontSize: 12.5, fontWeight: FontWeight.w700)),
+                      color: _V.textSec,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700)),
             ],
           ));
         }
@@ -1478,142 +1933,32 @@ class _InboxTabState extends State<_InboxTab> {
             final st = (s['status'] as String?) ?? 'pending';
             final hasPw = (s['password_hash'] as String?)?.isNotEmpty == true;
             final shots = (s['screenshot_count'] as num?)?.toInt() ?? 0;
-            final af = DateTime.tryParse((s['available_from'] ?? '').toString());
-            final ad = DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
-            final cd =
-                DateTime.tryParse((s['created_at'] ?? '').toString()) ?? now;
-            final locked = st == 'pending' && af != null && af.isAfter(now);
+            final locked = _isLocked(s);
             final senderThix = s['sender_thix_id'] as String?;
             final senderId = (s['sender_id'] as String?) ?? '';
             final sender = senderThix ??
                 (senderId.length >= 8 ? senderId.substring(0, 8) : '—');
-            return GestureDetector(
+            final accent =
+                locked ? _V.warn : (st == 'opened' ? _V.ok : _V.primary);
+            return _DocItem(
+              icon: locked
+                  ? Icons.lock_clock_rounded
+                  : Icons.mark_email_unread_rounded,
+              accent: accent,
+              title: (s['subject'] as String?)?.isNotEmpty == true
+                  ? s['subject'] as String
+                  : l10n.t('vault_attachment'),
+              subtitle:
+                  '${l10n.t('vault_from')} $sender • ${widget.fmtDate(s['created_at'])}${shots > 0 ? ' • 📸 $shots' : ''}',
+              trailing: locked
+                  ? l10n.t('vault_st_pending')
+                  : (st == 'opened'
+                      ? l10n.t('vault_st_opened')
+                      : l10n.t('vault_st_available')),
+              hasPassword: hasPw,
+              borderColor: locked ? _V.warn.withOpacity(0.45) : null,
               onTap: () => _showDetail(s),
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                    color: _V.card,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                        color: locked ? _V.warn.withOpacity(0.4) : _V.border)),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                              color: _V.gold.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(8)),
-                          child: Icon(
-                              locked
-                                  ? Icons.lock_clock_rounded
-                                  : Icons.mark_email_unread_rounded,
-                              size: 15,
-                              color: locked ? _V.warn : _V.gold),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                        (s['subject'] as String?)?.isNotEmpty == true
-                                            ? s['subject'] as String
-                                            : l10n.t('vault_attachment'),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                            color: _V.text,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w800)),
-                                  ),
-                                  if (hasPw)
-                                    const Icon(Icons.lock_rounded,
-                                        size: 11, color: _V.gold),
-                                  if (shots > 0) ...[
-                                    const SizedBox(width: 4),
-                                    const Icon(Icons.camera_alt_rounded,
-                                        size: 11, color: _V.warn),
-                                  ],
-                                ],
-                              ),
-                              Text(
-                                  (s['body'] as String?)?.isNotEmpty == true
-                                      ? s['body'] as String
-                                      : l10n.t('vault_no_message'),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                      color: _V.textSec, fontSize: 10)),
-                            ],
-                          ),
-                        ),
-                        Text(widget.fmtDate(s['created_at']),
-                            style: const TextStyle(
-                                color: _V.textMut, fontSize: 9)),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Text('${l10n.t('vault_from')} $sender',
-                            style: const TextStyle(
-                                color: _V.textMut,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700)),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                              color: (locked
-                                      ? _V.warn
-                                      : (st == 'opened' ? _V.ok : _V.info))
-                                  .withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(6)),
-                          child: Text(
-                              locked
-                                  ? l10n.t('vault_st_pending')
-                                  : (st == 'opened'
-                                      ? l10n.t('vault_st_opened')
-                                      : l10n.t('vault_st_available')),
-                              style: TextStyle(
-                                  color: locked
-                                      ? _V.warn
-                                      : (st == 'opened' ? _V.ok : _V.info),
-                                  fontSize: 8.5,
-                                  fontWeight: FontWeight.w900)),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.chevron_right_rounded,
-                            size: 14, color: _V.textMut),
-                      ],
-                    ),
-                    if (locked && af != null) ...[
-                      const SizedBox(height: 7),
-                      _Count(
-                          start: cd,
-                          target: af,
-                          label: l10n.t('vault_unlock_in'),
-                          color: _V.warn),
-                    ] else if (ad != null) ...[
-                      const SizedBox(height: 7),
-                      _Count(
-                          start: cd,
-                          target: ad,
-                          label: l10n.t('vault_destruct_in'),
-                          color: _V.dangerBright),
-                    ],
-                  ],
-                ),
-              ),
+              progress: _progressFor(l10n, s),
             );
           }).toList(),
         );
@@ -1623,7 +1968,7 @@ class _InboxTabState extends State<_InboxTab> {
 }
 
 // =============================================================
-// SHEET DÉTAIL REÇU (type mail + actions)
+// SHEET DÉTAIL REÇU
 // =============================================================
 class _InboxDetailSheet extends StatefulWidget {
   final Map<String, dynamic> share;
@@ -1684,15 +2029,30 @@ class _InboxDetailSheetState extends State<_InboxDetailSheet> {
   void _snack(String m, {bool error = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(m, style: const TextStyle(fontSize: 11)),
+        content: Text(m, style: const TextStyle(fontSize: 11, color: Colors.white)),
         backgroundColor: error ? _V.dangerBright : _V.ok,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2)));
   }
 
+  bool _guardLocked() {
+    if (_isLocked(widget.share)) {
+      final af = DateTime.tryParse(
+          (widget.share['available_from'] ?? '').toString());
+      _snack(
+          af != null
+              ? 'Document verrouillé jusqu\'au ${_fmtDT(af)}.'
+              : 'Document verrouillé.',
+          error: true);
+      return true;
+    }
+    return false;
+  }
+
   Future<void> _open() async {
-    if (_doc == null) return;
-    final hasPw = (widget.share['password_hash'] as String?)?.isNotEmpty == true;
+    if (_doc == null || _guardLocked()) return;
+    final hasPw =
+        (widget.share['password_hash'] as String?)?.isNotEmpty == true;
     if (hasPw) {
       final ok = await askVaultPassword(
           context, widget.docs, widget.share['password_hash'] as String);
@@ -1707,7 +2067,7 @@ class _InboxDetailSheetState extends State<_InboxDetailSheet> {
 
   Future<void> _saveToVault() async {
     final l10n = AppLocalizations.of(context);
-    if (_doc == null || widget.me == null) return;
+    if (_doc == null || widget.me == null || _guardLocked()) return;
     setState(() => _busy = true);
     try {
       final url = await widget.docs.resolveRowDownloadUrl(_doc!);
@@ -1715,8 +2075,8 @@ class _InboxDetailSheetState extends State<_InboxDetailSheet> {
       final name = (_doc!['file_name'] as String?) ??
           (_doc!['title'] as String?) ??
           'document';
-      final file =
-          PlatformFile(name: name, bytes: resp.bodyBytes, size: resp.bodyBytes.length);
+      final file = PlatformFile(
+          name: name, bytes: resp.bodyBytes, size: resp.bodyBytes.length);
       await widget.docs.uploadPickedFileSimple(
         uid: widget.me!.id,
         file: file,
@@ -1733,30 +2093,27 @@ class _InboxDetailSheetState extends State<_InboxDetailSheet> {
   }
 
   Future<void> _forward() async {
-    if (_doc == null) return;
-    Navigator.pop(context);
-    final me = widget.me;
-    if (me == null) return;
+    if (_doc == null || widget.me == null || _guardLocked()) return;
+    final l10n = AppLocalizations.of(context);
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _SendSheet(
+      builder: (sheetCtx) => _SendSheet(
         documents: [_doc!],
         docsService: widget.docs,
         initialDocId: _doc!['id'].toString(),
         onDone: (ok) {
-          if (!mounted) return;
-          Navigator.pop(context);
-          _snack(AppLocalizations.of(context)
-              .t(ok ? 'vault_send_ok' : 'vault_send_failed'), error: !ok);
+          if (ok && sheetCtx.mounted) Navigator.of(sheetCtx).pop();
+          _snack(l10n.t(ok ? 'vault_send_ok' : 'vault_send_failed'),
+              error: !ok);
         },
       ),
     );
   }
 
   Future<void> _download() async {
-    if (_doc == null) return;
+    if (_doc == null || _guardLocked()) return;
     try {
       final url = await widget.docs.resolveRowDownloadUrl(_doc!);
       await launchUrl(Uri.parse(url),
@@ -1764,16 +2121,18 @@ class _InboxDetailSheetState extends State<_InboxDetailSheet> {
               ? LaunchMode.platformDefault
               : LaunchMode.externalApplication);
     } catch (_) {
-      _snack(AppLocalizations.of(context).t('vault_download_failed'), error: true);
+      _snack(AppLocalizations.of(context).t('vault_download_failed'),
+          error: true);
     }
   }
 
   Widget _chip(String t, Color c) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-        decoration:
-            BoxDecoration(color: c.withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
+        decoration: BoxDecoration(
+            color: c.withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
         child: Text(t,
-            style: TextStyle(color: c, fontSize: 8.5, fontWeight: FontWeight.w900)),
+            style:
+                TextStyle(color: c, fontSize: 8.5, fontWeight: FontWeight.w900)),
       );
 
   @override
@@ -1785,249 +2144,228 @@ class _InboxDetailSheetState extends State<_InboxDetailSheet> {
     final shots = (s['screenshot_count'] as num?)?.toInt() ?? 0;
     final af = DateTime.tryParse((s['available_from'] ?? '').toString());
     final ad = DateTime.tryParse((s['auto_destruct_at'] ?? '').toString());
-    final cd = DateTime.tryParse((s['created_at'] ?? '').toString()) ?? DateTime.now();
-    final locked = st == 'pending' && af != null && af.isAfter(DateTime.now());
-    final name = (_sender?['full_name'] as String?) ?? l10n.t('vault_anonymous');
+    final cd =
+        DateTime.tryParse((s['created_at'] ?? '').toString()) ?? DateTime.now();
+    final locked = _isLocked(s);
+    final name =
+        (_sender?['full_name'] as String?) ?? l10n.t('vault_anonymous');
     final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
     final mime = (_doc?['mime_type'] as String?) ?? '';
+    final docType = _doc?['doc_type'] as String?;
     final isImage = _isImageMime(mime, _doc?['file_name'] as String?);
+    final dColor = _typeColor(mime, docType);
+    final dIcon = _typeIcon(mime, docType);
+    final sid = (s['sender_id'] as String?) ?? '';
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        constraints:
-            BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.92),
-        decoration: const BoxDecoration(
-            color: _V.card,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
-        padding: const EdgeInsets.all(16),
-        child: _loading
-            ? const Center(
-                child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: _V.gold)))
-            : SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                              color: _V.gold.withOpacity(0.15),
-                              shape: BoxShape.circle),
-                          child: Center(
-                              child: Text(initial,
-                                  style: const TextStyle(
-                                      color: _V.gold,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w900))),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(name,
-                                  style: const TextStyle(
-                                      color: _V.text,
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w800)),
-                              Text(
-                                  (_sender?['thix_id'] as String?) ??
-                                      '${l10n.t('vault_from')} ${(s['sender_id'] as String? ?? '').length >= 8 ? (s['sender_id'] as String).substring(0, 8) : '—'}',
-                                  style: const TextStyle(
-                                      color: _V.textMut, fontSize: 9.5)),
-                            ],
-                          ),
-                        ),
-                        Text(widget.fmtDate(s['created_at']),
-                            style:
-                                const TextStyle(color: _V.textMut, fontSize: 9)),
-                        const SizedBox(width: 6),
-                        GestureDetector(
-                            onTap: () => Navigator.pop(context),
-                            child: const Icon(Icons.close_rounded,
-                                size: 16, color: _V.textSec)),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                        (s['subject'] as String?)?.isNotEmpty == true
-                            ? s['subject'] as String
-                            : l10n.t('vault_attachment'),
-                        style: const TextStyle(
-                            color: _V.text, fontSize: 14, fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        _chip(
-                            locked
-                                ? l10n.t('vault_st_pending')
-                                : (st == 'opened'
-                                    ? l10n.t('vault_st_opened')
-                                    : l10n.t('vault_st_available')),
-                            locked ? _V.warn : (st == 'opened' ? _V.ok : _V.info)),
-                        if (hasPw) _chip(l10n.t('vault_password'), _V.gold),
-                        if (shots > 0) _chip('📸 $shots', _V.warn),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                          color: _V.cardSoft,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: _V.border)),
-                      child: SelectableText(
-                          (s['body'] as String?)?.isNotEmpty == true
-                              ? s['body'] as String
-                              : l10n.t('vault_no_message'),
-                          style: const TextStyle(
-                              color: _V.textSec, fontSize: 11.5, height: 1.5)),
-                    ),
-                    const SizedBox(height: 12),
-                    if (_doc != null)
-                      GestureDetector(
-                        onTap: _open,
-                        child: Container(
-                          padding: const EdgeInsets.all(9),
-                          decoration: BoxDecoration(
-                              color: _V.cardSoft,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: _V.gold.withOpacity(0.35))),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 44,
-                                height: 44,
-                                clipBehavior: Clip.antiAlias,
-                                decoration: BoxDecoration(
-                                    color: _typeColor(mime,
-                                            _doc!['doc_type'] as String?)
-                                        .withOpacity(0.12),
-                                    borderRadius: BorderRadius.circular(9)),
-                                child: isImage
-                                    ? FutureBuilder<String>(
-                                        future: widget.docs
-                                            .resolveRowDownloadUrl(_doc!),
-                                        builder: (c, sn) => sn.hasData
-                                            ? _CachedImg(
-                                                url: sn.data!,
-                                                size: 44,
-                                                radius: BorderRadius.circular(9),
-                                                fallback: Icon(
-                                                    _typeIcon(mime,
-                                                        _doc!['doc_type'] as String?),
-                                                    color: _typeColor(mime,
-                                                        _doc!['doc_type'] as String?),
-                                                    size: 18))
-                                            : Icon(
-                                                _typeIcon(mime,
-                                                    _doc!['doc_type'] as String?),
-                                                color: _typeColor(mime,
-                                                    _doc!['doc_type'] as String?),
-                                                size: 18))
-                                    : Icon(
-                                        _typeIcon(mime, _doc!['doc_type'] as String?),
-                                        color: _typeColor(
-                                            mime, _doc!['doc_type'] as String?),
-                                        size: 18),
-                              ),
-                              const SizedBox(width: 9),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text((_doc!['title'] as String?) ?? '—',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                            color: _V.text,
-                                            fontSize: 11.5,
-                                            fontWeight: FontWeight.w800)),
-                                    Text(
-                                        '${_doc!['doc_type'] ?? '—'} • ${(_doc!['generated_doc_id'] as String?) ?? ''}',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                            color: _V.textMut, fontSize: 9)),
-                                  ],
-                                ),
-                              ),
-                              const Icon(Icons.chevron_right_rounded,
-                                  size: 15, color: _V.gold),
-                            ],
-                          ),
+    return _SheetShell(
+      maxFactor: 0.92,
+      child: _loading
+          ? SizedBox(height: 120, child: _spinner())
+          : SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                            color: _V.primary.withOpacity(0.13),
+                            shape: BoxShape.circle),
+                        child: Center(
+                            child: Text(initial,
+                                style: const TextStyle(
+                                    color: _V.primary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w900))),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(name,
+                                style: const TextStyle(
+                                    color: _V.text,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w800)),
+                            Text(
+                                (_sender?['thix_id'] as String?) ??
+                                    '${l10n.t('vault_from')} ${sid.length >= 8 ? sid.substring(0, 8) : '—'}',
+                                style: const TextStyle(
+                                    color: _V.textMut, fontSize: 9.5)),
+                          ],
                         ),
                       ),
-                    const SizedBox(height: 12),
-                    if (locked && af != null) ...[
-                      _Count(
-                          start: cd,
-                          target: af,
-                          label: l10n.t('vault_unlock_in'),
-                          color: _V.warn),
-                      const SizedBox(height: 10),
+                      Text(widget.fmtDate(s['created_at']),
+                          style:
+                              const TextStyle(color: _V.textMut, fontSize: 9)),
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                          onTap: () => Navigator.pop(context),
+                          child: const Icon(Icons.close_rounded,
+                              size: 16, color: _V.textSec)),
                     ],
-                    if (ad != null) ...[
-                      _Count(
-                          start: cd,
-                          target: ad,
-                          label: l10n.t('vault_destruct_in'),
-                          color: _V.dangerBright),
-                      const SizedBox(height: 10),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                      (s['subject'] as String?)?.isNotEmpty == true
+                          ? s['subject'] as String
+                          : l10n.t('vault_attachment'),
+                      style: const TextStyle(
+                          color: _V.text,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _chip(
+                          locked
+                              ? l10n.t('vault_st_pending')
+                              : (st == 'opened'
+                                  ? l10n.t('vault_st_opened')
+                                  : l10n.t('vault_st_available')),
+                          locked
+                              ? _V.warn
+                              : (st == 'opened' ? _V.ok : _V.primary)),
+                      if (hasPw) _chip(l10n.t('vault_password'), _V.gold),
+                      if (shots > 0) _chip('📸 $shots', _V.warn),
+                      if (locked && af != null) _chip(_fmtDT(af), _V.primary),
                     ],
-                    Row(
-                      children: [
-                        Expanded(
-                            child: _ActBtn(
-                                icon: Icons.open_in_new_rounded,
-                                label: l10n.t('vault_open'),
-                                color: _V.gold,
-                                busy: _busy,
-                                onTap: _open)),
-                        const SizedBox(width: 8),
-                        Expanded(
-                            child: _ActBtn(
-                                icon: Icons.download_rounded,
-                                label: l10n.t('vault_download'),
-                                color: _V.info,
-                                busy: _busy,
-                                onTap: _download)),
-                      ],
+                  ),
+                  const SizedBox(height: 12),
+                  _Glass(
+                    radius: 12,
+                    padding: const EdgeInsets.all(10),
+                    child: SelectableText(
+                        (s['body'] as String?)?.isNotEmpty == true
+                            ? s['body'] as String
+                            : l10n.t('vault_no_message'),
+                        style: const TextStyle(
+                            color: _V.textSec, fontSize: 11.5, height: 1.5)),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_doc != null)
+                    GestureDetector(
+                      onTap: _open,
+                      child: _Glass(
+                        radius: 14,
+                        padding: const EdgeInsets.all(9),
+                        borderColor: _V.primary.withOpacity(0.35),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              clipBehavior: Clip.antiAlias,
+                              decoration: BoxDecoration(
+                                  color: dColor.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(11)),
+                              child: isImage && !locked
+                                  ? FutureBuilder<String>(
+                                      future: widget.docs
+                                          .resolveRowDownloadUrl(_doc!),
+                                      builder: (c, sn) => sn.hasData
+                                          ? _CachedImg(
+                                              url: sn.data!,
+                                              size: 44,
+                                              fallback: Icon(dIcon,
+                                                  color: dColor, size: 18))
+                                          : Icon(dIcon, color: dColor, size: 18))
+                                  : Icon(locked ? Icons.lock_rounded : dIcon,
+                                      color: dColor, size: 18),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text((_doc!['title'] as String?) ?? '—',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                          color: _V.text,
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w800)),
+                                  Text(
+                                      '${_doc!['doc_type'] ?? '—'} • ${(_doc!['generated_doc_id'] as String?) ?? ''}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                          color: _V.textMut, fontSize: 9)),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right_rounded,
+                                size: 15, color: _V.primary),
+                          ],
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                            child: _ActBtn(
-                                icon: Icons.save_rounded,
-                                label: l10n.t('vault_save_vault'),
-                                color: _V.ok,
-                                busy: _busy,
-                                onTap: _saveToVault)),
-                        const SizedBox(width: 8),
-                        Expanded(
-                            child: _ActBtn(
-                                icon: Icons.forward_rounded,
-                                label: l10n.t('vault_forward'),
-                                color: _V.warn,
-                                busy: _busy,
-                                onTap: _forward)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
+                  const SizedBox(height: 12),
+                  if (locked && af != null) ...[
+                    _Count(
+                        start: cd,
+                        target: af,
+                        label: l10n.t('vault_unlock_in'),
+                        color: _V.primary),
+                    const SizedBox(height: 10),
                   ],
-                ),
+                  if (ad != null) ...[
+                    _Count(
+                        start: cd,
+                        target: ad,
+                        label: l10n.t('vault_destruct_in'),
+                        color: _V.dangerBright),
+                    const SizedBox(height: 10),
+                  ],
+                  Row(
+                    children: [
+                      Expanded(
+                          child: _ActBtn(
+                              icon: Icons.open_in_new_rounded,
+                              label: l10n.t('vault_open'),
+                              color: _V.primary,
+                              busy: _busy,
+                              onTap: _open)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: _ActBtn(
+                              icon: Icons.download_rounded,
+                              label: l10n.t('vault_download'),
+                              color: _V.info,
+                              busy: _busy,
+                              onTap: _download)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                          child: _ActBtn(
+                              icon: Icons.save_rounded,
+                              label: l10n.t('vault_save_vault'),
+                              color: _V.ok,
+                              busy: _busy,
+                              onTap: _saveToVault)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                          child: _ActBtn(
+                              icon: Icons.forward_rounded,
+                              label: l10n.t('vault_forward'),
+                              color: _V.warn,
+                              busy: _busy,
+                              onTap: _forward)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                ],
               ),
-      ),
+            ),
     );
   }
 }
@@ -2050,8 +2388,11 @@ class _ActBtn extends StatelessWidget {
       height: 36,
       child: OutlinedButton.icon(
         style: OutlinedButton.styleFrom(
+            backgroundColor: Colors.white.withOpacity(0.55),
             side: BorderSide(color: color.withOpacity(0.5)),
             foregroundColor: color,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(11)),
             padding: const EdgeInsets.symmetric(horizontal: 8)),
         onPressed: busy ? null : onTap,
         icon: Icon(icon, size: 13),
@@ -2070,7 +2411,8 @@ class _AuditTab extends StatelessWidget {
   final AppUser? me;
   final DocumentService docs;
   final String Function(dynamic) fmtDate;
-  const _AuditTab({required this.me, required this.docs, required this.fmtDate});
+  const _AuditTab(
+      {required this.me, required this.docs, required this.fmtDate});
 
   @override
   Widget build(BuildContext context) {
@@ -2085,11 +2427,7 @@ class _AuditTab extends StatelessWidget {
       builder: (context, snap) {
         final tx = snap.data ?? const [];
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Center(
-              child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: _V.gold)));
+          return _spinner();
         }
         if (tx.isEmpty) {
           return Center(
@@ -2111,7 +2449,7 @@ class _AuditTab extends StatelessWidget {
                 break;
               case 'send':
                 ic = Icons.send_rounded;
-                c = _V.gold;
+                c = _V.primary;
                 lb = l10n.t('vault_act_send');
                 break;
               case 'open':
@@ -2144,37 +2482,13 @@ class _AuditTab extends StatelessWidget {
                 c = _V.textSec;
                 lb = a;
             }
-            return Container(
-              margin: const EdgeInsets.only(bottom: 5),
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
-              decoration: BoxDecoration(
-                  color: _V.card,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: _V.border)),
-              child: Row(
-                children: [
-                  Icon(ic, size: 13, color: c),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(lb,
-                            style: const TextStyle(
-                                color: _V.text,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800)),
-                        Text((t['detail'] as String?) ?? (t['doc_id'] as String?) ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: _V.textMut, fontSize: 9)),
-                      ],
-                    ),
-                  ),
-                  Text(fmtDate(t['created_at']),
-                      style: const TextStyle(color: _V.textMut, fontSize: 9)),
-                ],
-              ),
+            return _DocItem(
+              icon: ic,
+              accent: c,
+              title: lb,
+              subtitle:
+                  (t['detail'] as String?) ?? (t['doc_id'] as String?) ?? '',
+              trailing: fmtDate(t['created_at']),
             );
           }).toList(),
         );
@@ -2183,8 +2497,8 @@ class _AuditTab extends StatelessWidget {
   }
 }
 
-// =============================================================
-// DIALOG DOCUMENT CERTIFIÉ (recherche publique → affiche le doc)
+                            // =============================================================
+// DIALOG DOCUMENT CERTIFIÉ
 // =============================================================
 class _CertifiedDocDialog extends StatelessWidget {
   final Map<String, dynamic> res;
@@ -2208,9 +2522,10 @@ class _CertifiedDocDialog extends StatelessWidget {
     try {
       final url = await docs.createDownloadUrl(storagePath: path);
       final resp = await http.get(Uri.parse(url));
-      final name = (res['file_name'] as String?) ?? (res['title'] as String?) ?? 'doc';
-      final file =
-          PlatformFile(name: name, bytes: resp.bodyBytes, size: resp.bodyBytes.length);
+      final name =
+          (res['file_name'] as String?) ?? (res['title'] as String?) ?? 'doc';
+      final file = PlatformFile(
+          name: name, bytes: resp.bodyBytes, size: resp.bodyBytes.length);
       await docs.uploadPickedFileSimple(
         uid: me!.id,
         file: file,
@@ -2224,168 +2539,157 @@ class _CertifiedDocDialog extends StatelessWidget {
     }
   }
 
+  String _dateOf(dynamic v) {
+    final d = DateTime.tryParse((v ?? '').toString());
+    if (d == null) return '—';
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final path = (res['storage_path'] as String?) ?? '';
-    final color = _typeColor(res['mime_type'] as String?, res['doc_type'] as String?);
-    final img = _isImageMime(res['mime_type'] as String?, res['file_name'] as String?);
-    return Dialog(
-      backgroundColor: _V.card,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text((res['owner_name'] as String?) ?? l10n.t('vault_from'),
-                            style: const TextStyle(
-                                color: _V.text,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w800)),
-                        Text((res['owner_thix_id'] as String?) ?? '—',
-                            style:
-                                const TextStyle(color: _V.textMut, fontSize: 9.5)),
-                      ],
-                    ),
+    final mime = res['mime_type'] as String?;
+    final dType = res['doc_type'] as String?;
+    final color = _typeColor(mime, dType);
+    final img = _isImageMime(mime, res['file_name'] as String?);
+    final fallbackIcon = Icon(_typeIcon(mime, dType), color: color, size: 30);
+
+    return _GlassDialog(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          (res['owner_name'] as String?) ??
+                              l10n.t('vault_from'),
+                          style: const TextStyle(
+                              color: _V.text,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800)),
+                      Text((res['owner_thix_id'] as String?) ?? '—',
+                          style: const TextStyle(
+                              color: _V.textMut, fontSize: 9.5)),
+                    ],
                   ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                    decoration: BoxDecoration(
-                        color: _V.ok.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(6)),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.verified_rounded, size: 9, color: _V.ok),
-                        const SizedBox(width: 3),
-                        Text(l10n.t('vault_certified'),
-                            style: const TextStyle(
-                                color: _V.ok,
-                                fontSize: 8,
-                                fontWeight: FontWeight.w900)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Container(
-                height: img ? 200 : 90,
-                decoration: BoxDecoration(
-                    color: _V.cardSoft,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: color.withOpacity(0.35))),
-                clipBehavior: Clip.antiAlias,
-                child: img && path.isNotEmpty
-                    ? FutureBuilder<String>(
-                        future: docs.createDownloadUrl(storagePath: path),
-                        builder: (context, snap) => snap.hasData
-                            ? _CachedImg(
-                                url: snap.data!,
-                                size: 200,
-                                fallback: Icon(
-                                    _typeIcon(res['mime_type'] as String?,
-                                        res['doc_type'] as String?),
-                                    color: color,
-                                    size: 30))
-                            : const Center(
-                                child: SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2, color: _V.gold))))
-                    : Center(
-                        child: Icon(
-                            _typeIcon(res['mime_type'] as String?,
-                                res['doc_type'] as String?),
-                            color: color,
-                            size: 30)),
-              ),
-              const SizedBox(height: 12),
-              Text((res['title'] as String?) ?? '—',
-                  style: const TextStyle(
-                      color: _V.text, fontSize: 13, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 3),
-              Text('${res['doc_type'] ?? '—'} • ${res['generated_doc_id'] ?? '—'}',
-                  style: const TextStyle(color: _V.textMut, fontSize: 9.5)),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  if (res['size_bytes'] != null)
-                    Text(
-                        '${l10n.t('vault_size')}: ${(((res['size_bytes'] as num).toInt()) / 1024).toStringAsFixed(0)} KB',
-                        style: const TextStyle(color: _V.textSec, fontSize: 9.5)),
-                  const SizedBox(width: 10),
-                  Text('${l10n.t('vault_date')}: ${widget_date(res['created_at'])}',
-                      style: const TextStyle(color: _V.textSec, fontSize: 9.5)),
-                ],
-              ),
-              const SizedBox(height: 14),
-              SizedBox(
-                height: 36,
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                      backgroundColor: _V.gold, foregroundColor: _V.bg),
-                  onPressed: path.isEmpty
-                      ? null
-                      : () async {
-                          final url =
-                              await docs.createDownloadUrl(storagePath: path);
-                          if (context.mounted) Navigator.pop(context);
-                          await onOpen(url);
-                        },
-                  icon: const Icon(Icons.open_in_new_rounded, size: 14),
-                  label: Text(l10n.t('vault_open_file'),
-                      style: const TextStyle(
-                          fontSize: 11.5, fontWeight: FontWeight.w900)),
                 ),
-              ),
-              if (me != null) ...[
-                const SizedBox(height: 6),
-                SizedBox(
-                  height: 34,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: _V.ok.withOpacity(0.5)),
-                        foregroundColor: _V.ok),
-                    onPressed: () => _saveToVault(context),
-                    icon: const Icon(Icons.save_rounded, size: 13),
-                    label: Text(l10n.t('vault_save_vault'),
-                        style: const TextStyle(
-                            fontSize: 11, fontWeight: FontWeight.w800)),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                      color: _V.ok.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(6)),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.verified_rounded,
+                          size: 9, color: _V.ok),
+                      const SizedBox(width: 3),
+                      Text(l10n.t('vault_certified'),
+                          style: const TextStyle(
+                              color: _V.ok,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w900)),
+                    ],
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              height: img ? 200 : 90,
+              decoration: BoxDecoration(
+                  color: color.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: color.withOpacity(0.35))),
+              clipBehavior: Clip.antiAlias,
+              child: img && path.isNotEmpty
+                  ? FutureBuilder<String>(
+                      future: docs.createDownloadUrl(storagePath: path),
+                      builder: (context, snap) => snap.hasData
+                          ? _CachedImg(
+                              url: snap.data!,
+                              fallback: Center(child: fallbackIcon))
+                          : _spinner())
+                  : Center(child: fallbackIcon),
+            ),
+            const SizedBox(height: 12),
+            Text((res['title'] as String?) ?? '—',
+                style: const TextStyle(
+                    color: _V.text, fontSize: 13, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 3),
+            Text('${res['doc_type'] ?? '—'} • ${res['generated_doc_id'] ?? '—'}',
+                style: const TextStyle(color: _V.textMut, fontSize: 9.5)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                if (res['size_bytes'] != null) ...[
+                  Text(
+                      '${l10n.t('vault_size')}: ${(((res['size_bytes'] as num).toInt()) / 1024).toStringAsFixed(0)} KB',
+                      style:
+                          const TextStyle(color: _V.textSec, fontSize: 9.5)),
+                  const SizedBox(width: 10),
+                ],
+                Text('${l10n.t('vault_date')}: ${_dateOf(res['created_at'])}',
+                    style: const TextStyle(color: _V.textSec, fontSize: 9.5)),
+              ],
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              height: 36,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                    backgroundColor: _V.primary, foregroundColor: Colors.white),
+                onPressed: path.isEmpty
+                    ? null
+                    : () async {
+                        final url =
+                            await docs.createDownloadUrl(storagePath: path);
+                        if (context.mounted) Navigator.pop(context);
+                        await onOpen(url);
+                      },
+                icon: const Icon(Icons.open_in_new_rounded, size: 14),
+                label: Text(l10n.t('vault_open_file'),
+                    style: const TextStyle(
+                        fontSize: 11.5, fontWeight: FontWeight.w900)),
+              ),
+            ),
+            if (me != null) ...[
               const SizedBox(height: 6),
               SizedBox(
-                height: 32,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text(l10n.t('common_close'),
-                      style: const TextStyle(color: _V.textSec, fontSize: 11)),
+                height: 34,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: _V.ok.withOpacity(0.5)),
+                      foregroundColor: _V.ok),
+                  onPressed: () => _saveToVault(context),
+                  icon: const Icon(Icons.save_rounded, size: 13),
+                  label: Text(l10n.t('vault_save_vault'),
+                      style: const TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w800)),
                 ),
               ),
             ],
-          ),
+            const SizedBox(height: 6),
+            SizedBox(
+              height: 32,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(l10n.t('common_close'),
+                    style: const TextStyle(color: _V.textSec, fontSize: 11)),
+              ),
+            ),
+          ],
         ),
       ),
     );
-  }
-
-  String widget_date(dynamic v) {
-    final d = DateTime.tryParse((v ?? '').toString());
-    if (d == null) return '—';
-    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   }
 }
 
@@ -2434,166 +2738,156 @@ class _UploadSheetState extends State<_UploadSheet> {
   bool get _needsExpiry =>
       _type == 'CIN' || _type == 'Passeport' || _type == 'Permis';
 
-  InputDecoration _dec(String label) => InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(color: _V.textMut, fontSize: 10.5),
-        filled: true,
-        fillColor: _V.cardSoft,
-        border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _V.border)),
-        enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _V.border)),
-        focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _V.gold)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      );
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        decoration: const BoxDecoration(
-            color: _V.card,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
-        padding: const EdgeInsets.all(16),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                      child: Text(l10n.t('vault_new_archive'),
-                          style: const TextStyle(
-                              color: _V.text,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900))),
-                  GestureDetector(
-                      onTap: () => context.pop(),
-                      child: const Icon(Icons.close_rounded,
-                          size: 16, color: _V.textSec)),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(widget.fileName,
-                  style: const TextStyle(
-                      color: _V.gold, fontSize: 10.5, fontWeight: FontWeight.w700)),
-              Text(l10n.t('vault_auto_id'),
-                  style: const TextStyle(color: _V.textMut, fontSize: 9)),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String?>(
-                value: _folderId,
-                dropdownColor: _V.cardSoft,
-                style: const TextStyle(color: _V.text, fontSize: 12),
-                decoration: _dec(l10n.t('vault_dest_folder')),
-                items: [
-                  DropdownMenuItem<String?>(
-                      value: null, child: Text(l10n.t('vault_root'))),
-                  ...widget.folders.map((f) => DropdownMenuItem<String?>(
-                      value: f['id'] as String,
-                      child: Text((f['name'] as String?) ?? '—'))),
-                ],
-                onChanged: (v) => setState(() => _folderId = v),
-              ),
-              const SizedBox(height: 10),
-              DropdownButtonFormField<String>(
-                value: _type,
-                dropdownColor: _V.cardSoft,
-                style: const TextStyle(color: _V.text, fontSize: 12),
-                decoration: _dec(l10n.t('vault_class')),
-                items: [
-                  DropdownMenuItem(
-                      value: 'CIN', child: Text(l10n.t('vault_class_cin'))),
-                  DropdownMenuItem(
-                      value: 'Passeport', child: Text(l10n.t('vault_class_passport'))),
-                  DropdownMenuItem(
-                      value: 'Permis', child: Text(l10n.t('vault_class_license'))),
-                  DropdownMenuItem(
-                      value: 'Diplôme', child: Text(l10n.t('vault_class_diploma'))),
-                  DropdownMenuItem(
-                      value: 'PreuveAdresse',
-                      child: Text(l10n.t('vault_class_address'))),
-                  DropdownMenuItem(
-                      value: 'Autre', child: Text(l10n.t('vault_class_other'))),
-                ],
-                onChanged: (v) => setState(() {
-                  _type = v ?? 'Autre';
-                  if (!_needsExpiry) _expiresAt = null;
-                }),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _titleC,
-                style: const TextStyle(color: _V.text, fontSize: 12),
-                decoration: _dec(l10n.t('vault_label_opt')),
-              ),
-              if (_needsExpiry) ...[
-                const SizedBox(height: 10),
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: _V.border),
-                      padding: const EdgeInsets.symmetric(vertical: 10)),
-                  onPressed: () async {
-                    final now = DateTime.now();
-                    final p = await showDatePicker(
-                      context: context,
-                      initialDate: _expiresAt ?? now,
-                      firstDate: now.subtract(const Duration(days: 365 * 20)),
-                      lastDate: now.add(const Duration(days: 365 * 50)),
-                      builder: (c, ch) => Theme(
-                          data: ThemeData.dark().copyWith(
-                              colorScheme: const ColorScheme.dark(
-                                  primary: _V.gold, surface: _V.card)),
-                          child: ch!),
-                    );
-                    if (p != null) setState(() => _expiresAt = p);
-                  },
-                  icon: const Icon(Icons.event_available_rounded,
-                      size: 14, color: _V.gold),
-                  label: Text(
-                      _expiresAt == null
-                          ? l10n.t('vault_pick_date')
-                          : '${l10n.t('vault_expiry')} : ${_expiresAt!.day.toString().padLeft(2, '0')}/${_expiresAt!.month.toString().padLeft(2, '0')}/${_expiresAt!.year}',
-                      style: const TextStyle(
-                          color: _V.text, fontSize: 11, fontWeight: FontWeight.w700)),
-                ),
+    return _SheetShell(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                    child: Text(l10n.t('vault_new_archive'),
+                        style: const TextStyle(
+                            color: _V.text,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900))),
+                GestureDetector(
+                    onTap: () => context.pop(),
+                    child: const Icon(Icons.close_rounded,
+                        size: 16, color: _V.textSec)),
               ],
-              const SizedBox(height: 14),
-              SizedBox(
-                height: 40,
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                      backgroundColor: _V.gold, foregroundColor: _V.bg),
-                  onPressed: () {
-                    if (_needsExpiry && _expiresAt == null) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text(l10n.t('vault_expiry_required'),
-                              style: const TextStyle(fontSize: 11)),
-                          backgroundColor: _V.dangerBright));
-                      return;
-                    }
-                    context.pop(_UploadPayload(
-                      docType: _type,
-                      title:
-                          _titleC.text.trim().isEmpty ? null : _titleC.text.trim(),
-                      expiresAt: _expiresAt,
-                      folderId: _folderId,
-                    ));
-                  },
-                  icon: const Icon(Icons.cloud_upload_rounded, size: 15),
-                  label: Text(l10n.t('vault_finalize'),
-                      style: const TextStyle(
-                          fontSize: 11.5, fontWeight: FontWeight.w900)),
-                ),
+            ),
+            const SizedBox(height: 4),
+            Text(widget.fileName,
+                style: const TextStyle(
+                    color: _V.primary,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700)),
+            Text(l10n.t('vault_auto_id'),
+                style: const TextStyle(color: _V.textMut, fontSize: 9)),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String?>(
+              value: _folderId,
+              dropdownColor: Colors.white,
+              style: const TextStyle(color: _V.text, fontSize: 12),
+              decoration: _dec(l10n.t('vault_dest_folder')),
+              items: [
+                DropdownMenuItem<String?>(
+                    value: null, child: Text(l10n.t('vault_root'))),
+                ...widget.folders.map((f) => DropdownMenuItem<String?>(
+                    value: f['id'] as String,
+                    child: Text((f['name'] as String?) ?? '—'))),
+              ],
+              onChanged: (v) => setState(() => _folderId = v),
+            ),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              value: _type,
+              dropdownColor: Colors.white,
+              style: const TextStyle(color: _V.text, fontSize: 12),
+              decoration: _dec(l10n.t('vault_class')),
+              items: [
+                DropdownMenuItem(
+                    value: 'CIN', child: Text(l10n.t('vault_class_cin'))),
+                DropdownMenuItem(
+                    value: 'Passeport',
+                    child: Text(l10n.t('vault_class_passport'))),
+                DropdownMenuItem(
+                    value: 'Permis',
+                    child: Text(l10n.t('vault_class_license'))),
+                DropdownMenuItem(
+                    value: 'Diplôme',
+                    child: Text(l10n.t('vault_class_diploma'))),
+                DropdownMenuItem(
+                    value: 'PreuveAdresse',
+                    child: Text(l10n.t('vault_class_address'))),
+                DropdownMenuItem(
+                    value: 'Autre', child: Text(l10n.t('vault_class_other'))),
+              ],
+              onChanged: (v) => setState(() {
+                _type = v ?? 'Autre';
+                if (!_needsExpiry) _expiresAt = null;
+              }),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _titleC,
+              style: const TextStyle(color: _V.text, fontSize: 12),
+              decoration: _dec(l10n.t('vault_label_opt')),
+            ),
+            if (_needsExpiry) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                    backgroundColor: Colors.white.withOpacity(0.55),
+                    side: const BorderSide(color: _V.border),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 11)),
+                onPressed: () async {
+                  final now = DateTime.now();
+                  final p = await showDatePicker(
+                    context: context,
+                    initialDate: _expiresAt ?? now,
+                    firstDate: now.subtract(const Duration(days: 365 * 20)),
+                    lastDate: now.add(const Duration(days: 365 * 50)),
+                    builder: _lightPicker,
+                  );
+                  if (p != null) {
+                    setState(() =>
+                        _expiresAt = DateTime(p.year, p.month, p.day));
+                  }
+                },
+                icon: const Icon(Icons.event_available_rounded,
+                    size: 14, color: _V.primary),
+                label: Text(
+                    _expiresAt == null
+                        ? l10n.t('vault_pick_date')
+                        : '${l10n.t('vault_expiry')} : ${_expiresAt!.day.toString().padLeft(2, '0')}/${_expiresAt!.month.toString().padLeft(2, '0')}/${_expiresAt!.year}',
+                    style: const TextStyle(
+                        color: _V.text,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
               ),
             ],
-          ),
+            const SizedBox(height: 14),
+            SizedBox(
+              height: 40,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                    backgroundColor: _V.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12))),
+                onPressed: () {
+                  if (_needsExpiry && _expiresAt == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(l10n.t('vault_expiry_required'),
+                            style: const TextStyle(
+                                fontSize: 11, color: Colors.white)),
+                        backgroundColor: _V.dangerBright));
+                    return;
+                  }
+                  context.pop(_UploadPayload(
+                    docType: _type,
+                    title: _titleC.text.trim().isEmpty
+                        ? null
+                        : _titleC.text.trim(),
+                    expiresAt: _expiresAt,
+                    folderId: _folderId,
+                  ));
+                },
+                icon: const Icon(Icons.cloud_upload_rounded, size: 15),
+                label: Text(l10n.t('vault_finalize'),
+                    style: const TextStyle(
+                        fontSize: 11.5, fontWeight: FontWeight.w900)),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -2601,7 +2895,7 @@ class _UploadSheetState extends State<_UploadSheet> {
 }
 
 // =============================================================
-// SHEET ENVOI
+// SHEET ENVOI (avec date de disponibilité)
 // =============================================================
 class _SendSheet extends StatefulWidget {
   final List<Map<String, dynamic>> documents;
@@ -2627,6 +2921,7 @@ class _SendSheetState extends State<_SendSheet> {
   final _durC = TextEditingController(text: '10');
   String _unit = 'minutes';
   bool _autoDestruct = false;
+  DateTime? _availableFrom;
   bool _sending = false;
   Timer? _deb;
   String? _verified;
@@ -2649,11 +2944,19 @@ class _SendSheetState extends State<_SendSheet> {
     super.dispose();
   }
 
+  void _err(String m) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(m, style: const TextStyle(fontSize: 11, color: Colors.white)),
+        backgroundColor: _V.dangerBright));
+  }
+
   void _onRecip(String v) {
     _deb?.cancel();
     _deb = Timer(const Duration(milliseconds: 500), () async {
-      final ids =
-          v.split(RegExp(r'[,;\s]+')).map((e) => e.trim()).where((e) => e.isNotEmpty);
+      final ids = v
+          .split(RegExp(r'[,;\s]+'))
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty);
       if (ids.isEmpty) {
         setState(() => _verified = null);
         return;
@@ -2684,245 +2987,303 @@ class _SendSheetState extends State<_SendSheet> {
     }
   }
 
-  InputDecoration _dec(String label) => InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(color: _V.textMut, fontSize: 10.5),
-        filled: true,
-        fillColor: _V.cardSoft,
-        border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _V.border)),
-        enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _V.border)),
-        focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _V.gold)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+  Future<void> _pickAvailable() async {
+    final now = DateTime.now();
+    final d = await showDatePicker(
+      context: context,
+      initialDate: _availableFrom ?? now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365 * 2)),
+      builder: _lightPicker,
+    );
+    if (d == null || !mounted) return;
+    final t = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(
+          _availableFrom ?? now.add(const Duration(hours: 1))),
+      builder: _lightPicker,
+    );
+    if (t == null || !mounted) return;
+    final dt = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+    if (!dt.isAfter(DateTime.now())) {
+      _err('Choisissez une date et une heure futures.');
+      return;
+    }
+    setState(() => _availableFrom = dt);
+  }
+
+  Future<void> _submit() async {
+    final l10n = AppLocalizations.of(context);
+    if (_docId == null) {
+      _err(l10n.t('vault_select_archive'));
+      return;
+    }
+    final recips = _recipC.text
+        .split(RegExp(r'[,;\s]+'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    if (recips.isEmpty) {
+      _err(l10n.t('vault_need_recipient'));
+      return;
+    }
+    setState(() => _sending = true);
+    final sel =
+        widget.documents.firstWhere((d) => d['id'].toString() == _docId);
+    try {
+      final me = context.read<AuthController>().currentUser;
+      await widget.docsService.shareDocument(
+        senderId: me!.id,
+        documentId: _docId!,
+        docId: (sel['generated_doc_id'] as String?) ??
+            (sel['doc_id'] as String?),
+        recipientThixIds: recips,
+        subject: _subjectC.text.trim().isEmpty ? null : _subjectC.text.trim(),
+        body: _bodyC.text.trim().isEmpty ? null : _bodyC.text.trim(),
+        password: _pwC.text.trim().isEmpty ? null : _pwC.text.trim(),
+        availableFrom: _availableFrom,
+        autoDestructIn: _dur(),
       );
+      widget.onDone(true);
+    } catch (_) {
+      if (mounted) setState(() => _sending = false);
+      widget.onDone(false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        constraints:
-            BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
-        decoration: const BoxDecoration(
-            color: _V.card,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
-        padding: const EdgeInsets.all(16),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                      child: Text(l10n.t('vault_send_title'),
-                          style: const TextStyle(
-                              color: _V.text,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900))),
-                  GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: const Icon(Icons.close_rounded,
-                          size: 16, color: _V.textSec)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: _docId,
-                dropdownColor: _V.cardSoft,
-                style: const TextStyle(color: _V.text, fontSize: 12),
-                decoration: _dec(l10n.t('vault_choose_archive')),
-                items: widget.documents.map((d) {
-                  final id = d['id'].toString();
-                  final t = (d['title'] as String?) ?? '—';
-                  return DropdownMenuItem(
-                      value: id,
-                      child: Text(t,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11.5)));
-                }).toList(),
-                onChanged: (v) => setState(() => _docId = v),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _recipC,
-                onChanged: _onRecip,
-                style: const TextStyle(color: _V.text, fontSize: 12),
-                decoration: _dec(l10n.t('vault_recipient')),
-              ),
-              if (_verifying)
-                Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(l10n.t('vault_verifying'),
-                        style: const TextStyle(color: _V.textMut, fontSize: 9.5)))
-              else if (_verified != null)
-                Padding(
+    return _SheetShell(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                    child: Text(l10n.t('vault_send_title'),
+                        style: const TextStyle(
+                            color: _V.text,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900))),
+                GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: const Icon(Icons.close_rounded,
+                        size: 16, color: _V.textSec)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _docId,
+              dropdownColor: Colors.white,
+              isExpanded: true,
+              style: const TextStyle(color: _V.text, fontSize: 12),
+              decoration: _dec(l10n.t('vault_choose_archive')),
+              items: widget.documents.map((d) {
+                final id = d['id'].toString();
+                final t = (d['title'] as String?) ?? '—';
+                return DropdownMenuItem(
+                    value: id,
+                    child: Text(t,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11.5)));
+              }).toList(),
+              onChanged: (v) => setState(() => _docId = v),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _recipC,
+              onChanged: _onRecip,
+              style: const TextStyle(color: _V.text, fontSize: 12),
+              decoration: _dec(l10n.t('vault_recipient')),
+            ),
+            if (_verifying)
+              Padding(
                   padding: const EdgeInsets.only(top: 4),
-                  child: Row(
-                    children: [
-                      Icon(
-                          _verified == 'KO'
-                              ? Icons.error_rounded
-                              : Icons.check_circle_rounded,
-                          size: 12,
-                          color: _verified == 'KO' ? _V.dangerBright : _V.ok),
-                      const SizedBox(width: 5),
-                      Text(
-                          _verified == 'KO'
-                              ? l10n.t('vault_not_found')
-                              : _verified!,
+                  child: Text(l10n.t('vault_verifying'),
+                      style:
+                          const TextStyle(color: _V.textMut, fontSize: 9.5)))
+            else if (_verified != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  children: [
+                    Icon(
+                        _verified == 'KO'
+                            ? Icons.error_rounded
+                            : Icons.check_circle_rounded,
+                        size: 12,
+                        color: _verified == 'KO' ? _V.dangerBright : _V.ok),
+                    const SizedBox(width: 5),
+                    Text(
+                        _verified == 'KO'
+                            ? l10n.t('vault_not_found')
+                            : _verified!,
+                        style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color:
+                                _verified == 'KO' ? _V.dangerBright : _V.ok)),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _subjectC,
+              style: const TextStyle(color: _V.text, fontSize: 12),
+              decoration: _dec(l10n.t('vault_subject')),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _bodyC,
+              maxLines: 3,
+              style: const TextStyle(color: _V.text, fontSize: 12),
+              decoration: _dec(l10n.t('vault_message')),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _pwC,
+              obscureText: true,
+              style: const TextStyle(color: _V.text, fontSize: 12),
+              decoration: _dec(l10n.t('vault_password_opt')),
+            ),
+            const SizedBox(height: 10),
+            // ===== Date de disponibilité =====
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                        backgroundColor: _availableFrom == null
+                            ? Colors.white.withOpacity(0.55)
+                            : _V.primary.withOpacity(0.08),
+                        side: BorderSide(
+                            color: _availableFrom == null
+                                ? _V.border
+                                : _V.primary.withOpacity(0.5)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 12)),
+                    onPressed: _pickAvailable,
+                    icon: Icon(Icons.schedule_rounded,
+                        size: 15,
+                        color: _availableFrom == null
+                            ? _V.textSec
+                            : _V.primary),
+                    label: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                          _availableFrom == null
+                              ? 'Disponibilité immédiate (programmer une date)'
+                              : 'Disponible le ${_fmtDT(_availableFrom!)}',
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: _verified == 'KO' ? _V.dangerBright : _V.ok)),
-                    ],
+                              color: _availableFrom == null
+                                  ? _V.textSec
+                                  : _V.primary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800)),
+                    ),
                   ),
                 ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _subjectC,
-                style: const TextStyle(color: _V.text, fontSize: 12),
-                decoration: _dec(l10n.t('vault_subject')),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _bodyC,
-                maxLines: 3,
-                style: const TextStyle(color: _V.text, fontSize: 12),
-                decoration: _dec(l10n.t('vault_message')),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: _pwC,
-                obscureText: true,
-                style: const TextStyle(color: _V.text, fontSize: 12),
-                decoration: _dec(l10n.t('vault_password_opt')),
-              ),
-              const SizedBox(height: 8),
-              SwitchListTile(
+                if (_availableFrom != null) ...[
+                  const SizedBox(width: 6),
+                  _IconBtn(
+                      icon: Icons.close_rounded,
+                      onTap: () => setState(() => _availableFrom = null)),
+                ],
+              ],
+            ),
+            const SizedBox(height: 6),
+            _Glass(
+              radius: 12,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: SwitchListTile(
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 activeColor: _V.dangerBright,
                 title: Text(l10n.t('vault_autodestruct'),
                     style: const TextStyle(
-                        color: _V.text, fontSize: 11.5, fontWeight: FontWeight.w800)),
+                        color: _V.text,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800)),
                 subtitle: Text(l10n.t('vault_autodestruct_sub'),
                     style: const TextStyle(color: _V.textMut, fontSize: 9.5)),
                 value: _autoDestruct,
                 onChanged: (v) => setState(() => _autoDestruct = v),
               ),
-              if (_autoDestruct)
-                Row(
-                  children: [
-                    Expanded(
-                        flex: 2,
-                        child: TextField(
-                          controller: _durC,
-                          keyboardType: TextInputType.number,
-                          style: const TextStyle(color: _V.text, fontSize: 12),
-                          decoration: _dec(l10n.t('vault_delay')),
-                        )),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 3,
-                      child: DropdownButtonFormField<String>(
-                        value: _unit,
-                        dropdownColor: _V.cardSoft,
+            ),
+            if (_autoDestruct) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                      flex: 2,
+                      child: TextField(
+                        controller: _durC,
+                        keyboardType: TextInputType.number,
                         style: const TextStyle(color: _V.text, fontSize: 12),
-                        decoration: _dec(''),
-                        items: [
-                          DropdownMenuItem(
-                              value: 's', child: Text(l10n.t('vault_seconds'))),
-                          DropdownMenuItem(
-                              value: 'minutes', child: Text(l10n.t('vault_minutes'))),
-                          DropdownMenuItem(
-                              value: 'h', child: Text(l10n.t('vault_hours'))),
-                          DropdownMenuItem(
-                              value: 'd', child: Text(l10n.t('vault_days'))),
-                        ],
-                        onChanged: (v) => setState(() => _unit = v ?? 'minutes'),
-                      ),
+                        decoration: _dec(l10n.t('vault_delay')),
+                      )),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 3,
+                    child: DropdownButtonFormField<String>(
+                      value: _unit,
+                      dropdownColor: Colors.white,
+                      style: const TextStyle(color: _V.text, fontSize: 12),
+                      decoration: _dec(''),
+                      items: [
+                        DropdownMenuItem(
+                            value: 's', child: Text(l10n.t('vault_seconds'))),
+                        DropdownMenuItem(
+                            value: 'minutes',
+                            child: Text(l10n.t('vault_minutes'))),
+                        DropdownMenuItem(
+                            value: 'h', child: Text(l10n.t('vault_hours'))),
+                        DropdownMenuItem(
+                            value: 'd', child: Text(l10n.t('vault_days'))),
+                      ],
+                      onChanged: (v) =>
+                          setState(() => _unit = v ?? 'minutes'),
                     ),
-                  ],
-                ),
-              const SizedBox(height: 14),
-              SizedBox(
-                height: 40,
-                child: FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                      backgroundColor: _V.gold, foregroundColor: _V.bg),
-                  onPressed: _sending
-                      ? null
-                      : () async {
-                          if (_docId == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                content: Text(l10n.t('vault_select_archive'),
-                                    style: const TextStyle(fontSize: 11)),
-                                backgroundColor: _V.dangerBright));
-                            return;
-                          }
-                          final recips = _recipC.text
-                              .split(RegExp(r'[,;\s]+'))
-                              .map((e) => e.trim())
-                              .where((e) => e.isNotEmpty)
-                              .toList();
-                          if (recips.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                content: Text(l10n.t('vault_need_recipient'),
-                                    style: const TextStyle(fontSize: 11)),
-                                backgroundColor: _V.dangerBright));
-                            return;
-                          }
-                          setState(() => _sending = true);
-                          final sel = widget.documents
-                              .firstWhere((d) => d['id'].toString() == _docId);
-                          try {
-                            final me =
-                                context.read<AuthController>().currentUser;
-                            await widget.docsService.shareDocument(
-                              senderId: me!.id,
-                              documentId: _docId!,
-                              docId: (sel['generated_doc_id'] as String?) ??
-                                  (sel['doc_id'] as String?),
-                              recipientThixIds: recips,
-                              subject: _subjectC.text.trim().isEmpty
-                                  ? null
-                                  : _subjectC.text.trim(),
-                              body: _bodyC.text.trim().isEmpty
-                                  ? null
-                                  : _bodyC.text.trim(),
-                              password: _pwC.text.trim().isEmpty
-                                  ? null
-                                  : _pwC.text.trim(),
-                              autoDestructIn: _dur(),
-                            );
-                            widget.onDone(true);
-                          } catch (_) {
-                            setState(() => _sending = false);
-                            widget.onDone(false);
-                          }
-                        },
-                  icon: _sending
-                      ? const SizedBox(
-                          width: 13,
-                          height: 13,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: _V.bg))
-                      : const Icon(Icons.send_rounded, size: 14),
-                  label: Text(
-                      _sending ? l10n.t('vault_sending') : l10n.t('vault_send_btn'),
-                      style: const TextStyle(
-                          fontSize: 11.5, fontWeight: FontWeight.w900)),
-                ),
+                  ),
+                ],
               ),
             ],
-          ),
+            const SizedBox(height: 14),
+            SizedBox(
+              height: 40,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(
+                    backgroundColor: _V.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12))),
+                onPressed: _sending ? null : _submit,
+                icon: _sending
+                    ? const SizedBox(
+                        width: 13,
+                        height: 13,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : Icon(
+                        _availableFrom == null
+                            ? Icons.send_rounded
+                            : Icons.schedule_send_rounded,
+                        size: 14),
+                label: Text(
+                    _sending
+                        ? l10n.t('vault_sending')
+                        : l10n.t('vault_send_btn'),
+                    style: const TextStyle(
+                        fontSize: 11.5, fontWeight: FontWeight.w900)),
+              ),
+            ),
+          ],
         ),
       ),
     );
