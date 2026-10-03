@@ -175,7 +175,7 @@ final unreadProvider = FutureProvider.autoDispose<int>((ref) async {
 });
 
 // ============================================================================
-// PROVIDER "POUR VOUS" (pagination mémoire-safe)
+// PROVIDER "POUR VOUS" — requête directe (même style que shop_detail)
 // ============================================================================
 
 class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
@@ -186,6 +186,19 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
   bool get hasMore => _hasMore;
   bool get isLoadingMore => _isLoadingMore;
 
+  Future<List<Map<String, dynamic>>> _fetchPage(int page) async {
+    final db = ref.read(supabaseClientProvider);
+    // ✅ Identique à shop_detail_page — pas d'embed, pas de double timeout
+    final res = await db
+        .from('products')
+        .select('*')
+        .eq('status', 'active')
+        .order('created_at', ascending: false)
+        .range(page * _kDefaultPageSize, (page + 1) * _kDefaultPageSize - 1);
+
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
   @override
   Future<List<Map<String, dynamic>>> build() async {
     debugPrint('[MarketProvider] 🛒 Building ForYou feed (page 0)');
@@ -194,32 +207,23 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     _isLoadingMore = false;
 
     try {
-      final repo = ref.read(marketRepositoryProvider);
-      final first = await _withRetry(
-        () => repo.fetchProducts(page: 0, limit: _kDefaultPageSize),
-        label: 'forYou.build',
-      );
-
+      final first = await _fetchPage(0);
       final dedup = _dedupProducts(first);
       _page = 1;
       _hasMore = first.length >= _kDefaultPageSize;
-
       debugPrint('[MarketProvider] ✓ Loaded ${dedup.length} products (hasMore=$_hasMore)');
       return dedup;
-    } catch (e) {
-      debugPrint('[MarketProvider] ❌ ForYou build error: $e');
+    } catch (e, st) {
+      debugPrint('[MarketProvider] ❌ ForYou build error: $e\n$st');
       rethrow;
     }
   }
 
   Future<void> loadMore() async {
     if (!_hasMore || _isLoadingMore) return;
-
     final cur = state.valueOrNull;
     if (cur == null || cur.isEmpty) return;
-
     if (cur.length >= _kMaxProductsInMemory) {
-      debugPrint('[MarketProvider] ⚠️ Memory limit reached ($_kMaxProductsInMemory) — stop loading');
       _hasMore = false;
       return;
     }
@@ -228,39 +232,24 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     state = const AsyncLoading<List<Map<String, dynamic>>>().copyWithPrevious(state);
 
     try {
-      final repo = ref.read(marketRepositoryProvider);
-      final more = await _withRetry(
-        () => repo.fetchProducts(page: _page, limit: _kDefaultPageSize),
-        label: 'forYou.loadMore[$_page]',
-      );
-
+      final more = await _fetchPage(_page);
       final combined = _dedupProducts([...cur, ...more]);
       final trimmed = _trimToMax(combined, _kMaxProductsInMemory);
-
-      if (more.length < _kDefaultPageSize) {
-        _hasMore = false;
-      }
-      if (combined.length > _kMaxProductsInMemory) {
-        _hasMore = false;
-        debugPrint('[MarketProvider] ⚠️ Memory cap reached — hasMore=false');
-      }
-
+      if (more.length < _kDefaultPageSize) _hasMore = false;
       _page++;
       state = AsyncData(trimmed);
-
-      debugPrint('[MarketProvider] ✓ Page $_page loaded (total: ${trimmed.length}, hasMore=$_hasMore)');
+      debugPrint('[MarketProvider] ✓ Page \( _page total= \){trimmed.length}');
     } catch (e, st) {
       debugPrint('[MarketProvider] ❌ loadMore error: $e');
-      state = AsyncValue<List<Map<String, dynamic>>>.error(e, st).copyWithPrevious(
-        AsyncData(cur),
-      );
+      state = AsyncValue<List<Map<String, dynamic>>>.error(e, st)
+          .copyWithPrevious(AsyncData(cur));
     } finally {
       _isLoadingMore = false;
     }
   }
 
   Future<void> refresh() async {
-    debugPrint('[MarketProvider] 🔄 Refreshing ForYou feed');
+    debugPrint('[MarketProvider] 🔄 Refreshing ForYou');
     _page = 0;
     _hasMore = true;
     _isLoadingMore = false;
@@ -269,7 +258,6 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
   }
 
   Future<void> reset() async {
-    debugPrint('[MarketProvider] 🔁 Resetting ForYou feed');
     _page = 0;
     _hasMore = true;
     _isLoadingMore = false;
@@ -278,10 +266,10 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
   }
 }
 
-final forYouProvider = AsyncNotifierProvider<ForYouNotifier, List<Map<String, dynamic>>>(
+final forYouProvider =
+    AsyncNotifierProvider<ForYouNotifier, List<Map<String, dynamic>>>(
   ForYouNotifier.new,
 );
-
 // ============================================================================
 // PROVIDER AGRÉGÉ (flash + forYou, dedup, mémoire-safe)
 // ============================================================================
