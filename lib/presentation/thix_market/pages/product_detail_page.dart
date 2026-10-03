@@ -8,7 +8,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:intl/intl.dart';
 import 'package:html/parser.dart' as html_parser;
-
+import '../core/african_countries.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../providers/market_providers.dart';
 import '../cart/cart_provider.dart';
@@ -748,6 +748,25 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                           height: 1.3,
                         ),
                       ),
+                      if ((product['city']?.toString().trim().isNotEmpty ?? false) ||
+    product['country'] != null) ...[
+  const SizedBox(height: 6),
+  Row(
+    children: [
+      const Icon(Icons.location_on_outlined, size: 14, color: ThixPolicy.textMuted),
+      const SizedBox(width: 4),
+      Flexible(
+        child: Text(
+          AfricanCountries.locationLine(
+            city: product['city']?.toString() ?? '',
+            code: product['country']?.toString(),
+          ),
+          style: const TextStyle(fontSize: 12, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600),
+        ),
+      ),
+    ],
+  ),
+],
                       const SizedBox(height: 12),
                       Wrap(
                         spacing: 8,
