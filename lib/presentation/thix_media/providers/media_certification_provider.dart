@@ -4,70 +4,62 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/models/certification_tier.dart';
 
-const Set<String> _kOkStatus = {
-  'approved',
-  'generated',
-  'active',
-  'verified',
-  'paid',
-  'valid',
-};
-
-/// Convertit (tier, status) texte en niveau de certification.
-/// Retourne null si l'utilisateur n'est pas certifié.
+/// Convertit un texte de niveau en CertificationTier avec le même parseur
+/// que le dashboard. Retourne null si gratuit / inconnu.
 CertificationTier? parseCertTier(String? tier, {String? status}) {
-  final t = (tier ?? '').trim().toLowerCase();
-  final s = (status ?? '').trim().toLowerCase();
-
-  switch (t) {
-    case 'standard':
-      return CertificationTier.standard;
-    case 'premium':
-      return CertificationTier.premium;
-    case 'enterprise':
-      return CertificationTier.enterprise;
-    case 'official':
-      return CertificationTier.official;
-  }
-  if (_kOkStatus.contains(s)) return CertificationTier.standard;
-  return null;
+  if (tier == null || tier.trim().isEmpty) return null;
+  final t = CertificationTierX.parse(tier);
+  return t == CertificationTier.free ? null : t;
 }
 
-/// Niveau de certification d'un utilisateur (mis en cache par userId).
-final mediaUserCertTierProvider =
-    FutureProvider.family<CertificationTier?, String>((ref, userId) async {
+bool _statusOk(dynamic raw) {
+  final s = CertificationStatusX.parse(raw);
+  return s == CertificationStatus.approved ||
+      s == CertificationStatus.generated;
+}
+
+/// Niveau de certification réel d'un utilisateur (null = non certifié).
+/// Même source que le dashboard :
+/// - mon compte : rpc_get_my_certification
+/// - autres comptes : colonnes certification_* de profiles
+Future<CertificationTier?> resolveUserCertTier(String userId) async {
   if (userId.trim().isEmpty) return null;
   final client = Supabase.instance.client;
-  String? tier;
-  String? status;
 
-  try {
-    final p = await client
-        .from('profiles')
-        .select('certification_tier, certification_status')
-        .eq('id', userId)
-        .maybeSingle()
-        .timeout(const Duration(seconds: 5));
-    tier = (p?['certification_tier'] as String?)?.trim();
-    status = (p?['certification_status'] as String?)?.trim();
-  } catch (_) {}
+  Map<String, dynamic>? row;
 
-  if ((tier == null || tier.isEmpty) && (status == null || status.isEmpty)) {
+  if (client.auth.currentUser?.id == userId) {
     try {
-      final c = await client
-          .from('certifications')
-          .select('tier, status')
-          .eq('user_id', userId)
-          .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle()
-          .timeout(const Duration(seconds: 3));
-      if (c != null) {
-        tier = (c['tier'] as String?)?.trim();
-        status = (c['status'] as String?)?.trim();
+      final res = await client
+          .rpc('rpc_get_my_certification')
+          .timeout(const Duration(seconds: 5));
+      if (res is List && res.isNotEmpty) {
+        row = Map<String, dynamic>.from(res.first as Map);
       }
     } catch (_) {}
   }
 
-  return parseCertTier(tier, status: status);
+  if (row == null) {
+    try {
+      final p = await client
+          .from('profiles')
+          .select('certification_tier, certification_status')
+          .eq('id', userId)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 5));
+      if (p != null) row = Map<String, dynamic>.from(p);
+    } catch (_) {}
+  }
+
+  if (row == null) return null;
+  if (!_statusOk(row['certification_status'])) return null;
+
+  final tier = CertificationTierX.parse(row['certification_tier']);
+  return tier == CertificationTier.free ? null : tier;
+}
+
+/// Niveau de certification d'un utilisateur (mis en cache par userId).
+final mediaUserCertTierProvider =
+    FutureProvider.family<CertificationTier?, String>((ref, userId) {
+  return resolveUserCertTier(userId);
 });
