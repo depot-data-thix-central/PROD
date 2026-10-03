@@ -1,19 +1,12 @@
 // lib/presentation/thix_market/providers/market_providers.dart
 // ============================================================================
-// MARKET PROVIDERS — Production Enterprise v2
-// ============================================================================
-// Architecture :
-//   - Providers atomiques (banners, flash, featured, shops, unread)
-//   - ForYouNotifier : pagination mémoire-safe avec anti-OOM
-//   - allMarketProductsProvider : agrégation flash + forYou (dedup)
-//   - Helpers : invalidateAllMarketProviders + stableSortProducts
+// MARKET PROVIDERS — Production Enterprise v3
 // ============================================================================
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/market_repository.dart';
 
 // ============================================================================
@@ -22,7 +15,6 @@ import '../data/market_repository.dart';
 const Duration _kRequestTimeout = Duration(seconds: 15);
 const Duration _kRetryDelay = Duration(milliseconds: 500);
 const Duration _kUnreadPollingInterval = Duration(seconds: 30);
-const Duration _kStaticDataTTL = Duration(minutes: 5);
 const int _kMaxProductsInMemory = 500;
 const int _kDefaultPageSize = 20;
 const int _kMaxRetries = 1;
@@ -41,8 +33,6 @@ final marketRepositoryProvider = Provider<MarketRepository>((ref) {
 // ============================================================================
 // HELPERS INTERNES
 // ============================================================================
-
-/// Exécute une Future avec timeout + retry automatique sur TimeoutException.
 Future<T> _withRetry<T>(
   Future<T> Function() fn, {
   String label = 'operation',
@@ -67,7 +57,6 @@ Future<T> _withRetry<T>(
   }
 }
 
-/// Déduplique une liste de produits par ID.
 List<Map<String, dynamic>> _dedupProducts(List<Map<String, dynamic>> items) {
   final seen = <String>{};
   final result = <Map<String, dynamic>>[];
@@ -81,18 +70,15 @@ List<Map<String, dynamic>> _dedupProducts(List<Map<String, dynamic>> items) {
   return result;
 }
 
-/// Limite la taille d'une liste en gardant les plus récents.
 List<Map<String, dynamic>> _trimToMax(List<Map<String, dynamic>> items, int max) {
   if (items.length <= max) return items;
   return items.sublist(items.length - max);
 }
 
 // ============================================================================
-// PROVIDERS SIMPLES (avec retry + TTL + logs)
+// PROVIDERS SIMPLES
 // ============================================================================
-
 final bannersProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  debugPrint('[MarketProvider] 🎨 Loading banners');
   try {
     final repo = ref.watch(marketRepositoryProvider);
     final result = await _withRetry(() => repo.fetchBanners(), label: 'fetchBanners');
@@ -105,7 +91,6 @@ final bannersProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((
 });
 
 final flashSalesProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  debugPrint('[MarketProvider] ⚡ Loading flash sales');
   try {
     final repo = ref.watch(marketRepositoryProvider);
     final result = await _withRetry(
@@ -122,7 +107,6 @@ final flashSalesProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>
 });
 
 final featuredShopsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  debugPrint('[MarketProvider] 🏪 Loading featured shops');
   try {
     final repo = ref.watch(marketRepositoryProvider);
     final result = await _withRetry(
@@ -138,7 +122,6 @@ final featuredShopsProvider = FutureProvider.autoDispose<List<Map<String, dynami
 });
 
 final myShopIdProvider = FutureProvider.autoDispose<String?>((ref) async {
-  debugPrint('[MarketProvider] 🛍️ Loading my shop ID');
   try {
     final repo = ref.watch(marketRepositoryProvider);
     final result = await _withRetry(() => repo.fetchMyShopId(), label: 'fetchMyShopId');
@@ -150,14 +133,12 @@ final myShopIdProvider = FutureProvider.autoDispose<String?>((ref) async {
   }
 });
 
-/// Provider qui se rafraîchit automatiquement toutes les 30 secondes.
 final unreadProvider = FutureProvider.autoDispose<int>((ref) async {
-  debugPrint('[MarketProvider] 🔔 Loading unread count');
-
   Timer? timer;
   ref.onDispose(() => timer?.cancel());
   ref.onCancel(() => timer?.cancel());
   ref.onResume(() {
+    timer?.cancel();
     timer = Timer.periodic(_kUnreadPollingInterval, (_) {
       ref.invalidateSelf();
     });
@@ -175,9 +156,8 @@ final unreadProvider = FutureProvider.autoDispose<int>((ref) async {
 });
 
 // ============================================================================
-// PROVIDER "POUR VOUS" — requête directe (même style que shop_detail)
+// PROVIDER "POUR VOUS"
 // ============================================================================
-
 class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
   int _page = 0;
   bool _hasMore = true;
@@ -188,7 +168,6 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
 
   Future<List<Map<String, dynamic>>> _fetchPage(int page) async {
     final db = ref.read(supabaseClientProvider);
-    // ✅ Identique à shop_detail_page — pas d'embed, pas de double timeout
     final res = await db
         .from('products')
         .select('*')
@@ -219,6 +198,7 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     }
   }
 
+  /// ✅ FIX : ne passe plus l'état en AsyncLoading (ça remplaçait le grid par le skeleton)
   Future<void> loadMore() async {
     if (!_hasMore || _isLoadingMore) return;
     final cur = state.valueOrNull;
@@ -229,8 +209,6 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     }
 
     _isLoadingMore = true;
-    state = const AsyncLoading<List<Map<String, dynamic>>>().copyWithPrevious(state);
-
     try {
       final more = await _fetchPage(_page);
       final combined = _dedupProducts([...cur, ...more]);
@@ -238,11 +216,11 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
       if (more.length < _kDefaultPageSize) _hasMore = false;
       _page++;
       state = AsyncData(trimmed);
-      debugPrint('[MarketProvider] ✓ Page \( _page total= \){trimmed.length}');
-    } catch (e, st) {
+      debugPrint('[MarketProvider] ✓ Page $_page total=${trimmed.length}');
+    } catch (e) {
       debugPrint('[MarketProvider] ❌ loadMore error: $e');
-      state = AsyncValue<List<Map<String, dynamic>>>.error(e, st)
-          .copyWithPrevious(AsyncData(cur));
+      // On garde la liste actuelle intacte
+      state = AsyncData(cur);
     } finally {
       _isLoadingMore = false;
     }
@@ -270,24 +248,23 @@ final forYouProvider =
     AsyncNotifierProvider<ForYouNotifier, List<Map<String, dynamic>>>(
   ForYouNotifier.new,
 );
-// ============================================================================
-// PROVIDER AGRÉGÉ (flash + forYou, dedup, mémoire-safe)
-// ============================================================================
 
+// ============================================================================
+// PROVIDER AGRÉGÉ (flash + forYou, dedup)
+// ============================================================================
 final allMarketProductsProvider = Provider<List<Map<String, dynamic>>>((ref) {
   final flash = ref.watch(flashSalesProvider).valueOrNull ?? const <Map<String, dynamic>>[];
   final forYou = ref.watch(forYouProvider).valueOrNull ?? const <Map<String, dynamic>>[];
+  final featured = ref.watch(featuredProductsProvider).valueOrNull ?? const <Map<String, dynamic>>[];
 
-  final combined = _dedupProducts([...flash, ...forYou]);
+  final combined = _dedupProducts([...flash, ...featured, ...forYou]);
   return _trimToMax(combined, _kMaxProductsInMemory);
 });
 
 // ============================================================================
 // PROVIDER FEATURED PRODUCTS
 // ============================================================================
-
 final featuredProductsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  debugPrint('[MarketProvider] ⭐ Loading featured products');
   try {
     final repo = ref.watch(marketRepositoryProvider);
     final result = await _withRetry(
@@ -299,26 +276,16 @@ final featuredProductsProvider = FutureProvider.autoDispose<List<Map<String, dyn
     return dedup;
   } catch (e) {
     debugPrint('[MarketProvider] ⚠️ Featured fallback to forYou top 6: $e');
-    final forYou = ref.watch(forYouProvider).valueOrNull ?? const [];
+    final forYou = ref.watch(forYouProvider).valueOrNull ?? const <Map<String, dynamic>>[];
     return forYou.take(6).toList();
   }
 });
 
 // ============================================================================
-// ✅ HELPERS EXPORTÉS — À UTILISER DEPUIS TOUTE L'APP
+// HELPERS EXPORTÉS
 // ============================================================================
-
-/// Invalide TOUS les providers market en une seule ligne.
-/// À appeler après toute création/édition/suppression de produit
-/// pour garantir la cohérence de la home.
-///
-/// Usage :
-// ✅ APRÈS
-/// Invalide TOUS les providers market en une seule ligne.
-/// Accepte WidgetRef (widgets ConsumerStatefulWidget).
 void invalidateAllMarketProviders(WidgetRef ref) {
   debugPrint('[MarketProvider] 🧹 Invalidating ALL market providers');
-  ref.invalidate(allMarketProductsProvider);
   ref.invalidate(featuredProductsProvider);
   ref.invalidate(flashSalesProvider);
   ref.invalidate(featuredShopsProvider);
@@ -326,14 +293,6 @@ void invalidateAllMarketProviders(WidgetRef ref) {
   ref.invalidate(bannersProvider);
 }
 
-/// Tri STABLE et prévisible d'une liste de produits.
-/// Ordre de priorité :
-///   1. Flash sales actifs (is_flash_sale=true ET expires_at futur)
-///   2. Featured (is_featured=true)
-///   3. Produits normaux, triés par created_at DESC (récent d'abord)
-///
-/// Usage :
-///   final sorted = stableSortProducts(items);
 List<Map<String, dynamic>> stableSortProducts(List<Map<String, dynamic>> items) {
   if (items.isEmpty) return items;
 
@@ -356,7 +315,6 @@ List<Map<String, dynamic>> stableSortProducts(List<Map<String, dynamic>> items) 
     final sb = score(b);
     if (sa != sb) return sa.compareTo(sb);
 
-    // Tri secondaire : plus récent d'abord
     final aDate = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime(2000);
     final bDate = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime(2000);
     return bDate.compareTo(aDate);
