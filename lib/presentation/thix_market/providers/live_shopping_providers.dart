@@ -2,11 +2,10 @@
 // ============================================================================
 // LIVE SHOPPING PROVIDERS — Realtime + Polling
 // ============================================================================
-// - livePinnedProductsProvider   : Stream Realtime des produits épinglés
-// - liveVoteCandidatesProvider   : Polling 3s des candidats au vote + compteurs
-// - liveFeaturedProductIdProvider : ID du produit actuellement en vedette
+// Compatible Riverpod 2.6.1
 // ============================================================================
 
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -28,18 +27,23 @@ final livePinnedProductsProvider =
 });
 
 /// Polling 3s : candidats au vote + compteurs (via RPC get_live_vote_counts)
+/// ✅ Compatible Riverpod 2.6.1 : Timer annulé automatiquement via ref.onDispose
 final liveVoteCandidatesProvider =
     FutureProvider.autoDispose.family<List<LiveVoteCandidate>, String>(
         (ref, sessionId) async {
   final service = LiveShoppingService();
   final uid = Supabase.instance.client.auth.currentUser?.id;
-  final list = await service.getVoteCandidates(sessionId, uid);
 
-  // Auto-refresh toutes les 3s pour rafraîchir les compteurs
-  Future.delayed(const Duration(seconds: 3), () {
-    if (ref.exists) ref.invalidateSelf();
+  // ✅ CORRECTION : utiliser un Timer + ref.onDispose au lieu de Future.delayed + ref.exists
+  final timer = Timer.periodic(const Duration(seconds: 3), (_) {
+    ref.invalidateSelf();
   });
-  return list;
+
+  ref.onDispose(() {
+    timer.cancel();
+  });
+
+  return service.getVoteCandidates(sessionId, uid);
 });
 
 /// Dérivé : ID du produit actuellement "featured" (pour auto-scroll du carousel viewer)
