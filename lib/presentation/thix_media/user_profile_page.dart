@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 
+import 'providers/media_certification_provider.dart';
 import 'thix_media_page.dart' show MediaConfig, MediaLightPalette, MediaSanitizer;
 import 'widgets/profile_header_widget.dart';
 import 'widgets/profile_videos_grid.dart';
@@ -54,70 +55,23 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
   }
 
   Future<void> _loadCertification() async {
-    final client = Supabase.instance.client;
-    String? tier;
-    String? status;
+    String? tierValue;
+    bool certified = false;
 
     try {
-      final p = await client
-          .from('profiles')
-          .select('certification_tier, certification_status')
-          .eq('id', widget.userId)
-          .maybeSingle()
-          .timeout(const Duration(seconds: 5));
-
-      tier = (p?['certification_tier'] as String?)?.trim();
-      status = (p?['certification_status'] as String?)?.trim().toLowerCase();
-
-      if ((tier == null || tier.isEmpty) && (status == null || status.isEmpty)) {
-        try {
-          final c = await client
-              .from('certifications')
-              .select('tier, status')
-              .eq('user_id', widget.userId)
-              .order('created_at', ascending: false)
-              .limit(1)
-              .maybeSingle()
-              .timeout(const Duration(seconds: 3));
-          if (c != null) {
-            tier = (c['tier'] as String?)?.trim();
-            status = (c['status'] as String?)?.trim().toLowerCase();
-          }
-        } catch (_) {}
-      }
-
-      if ((tier == null || tier.isEmpty) && (status == null || status.isEmpty)) {
-        try {
-          final r = await client
-              .from('certification_requests')
-              .select('tier, status')
-              .eq('user_id', widget.userId)
-              .order('created_at', ascending: false)
-              .limit(1)
-              .maybeSingle()
-              .timeout(const Duration(seconds: 3));
-          if (r != null) {
-            tier = (r['tier'] as String?)?.trim();
-            status = (r['status'] as String?)?.trim().toLowerCase();
-          }
-        } catch (_) {}
+      final tier = await resolveUserCertTier(widget.userId);
+      if (tier != null) {
+        certified = true;
+        tierValue = tier.value;
       }
     } catch (e) {
       _ProfileLogger.error('Cert load failed', {'error': '$e'});
     }
 
     if (!mounted) return;
-
-    const okStatus = {'approved', 'generated', 'active', 'verified', 'paid', 'valid'};
-    final hasTier = tier != null &&
-        tier.isNotEmpty &&
-        tier.toLowerCase() != 'free' &&
-        tier.toLowerCase() != 'none';
-    final isCert = hasTier || (status != null && okStatus.contains(status));
-
     setState(() {
-      _certTier = tier;
-      _isCertified = isCert;
+      _certTier = tierValue;
+      _isCertified = certified;
     });
   }
 
@@ -133,6 +87,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
       ref.invalidate(userProfileDataProvider(widget.userId));
       ref.invalidate(userPostsProvider(widget.userId));
       ref.invalidate(userPrivatePostsProvider(widget.userId));
+      ref.invalidate(mediaUserCertTierProvider(widget.userId));
       await _loadCertification();
     } catch (e) {
       _ProfileLogger.error('Refresh failed', {'error': '$e'});
@@ -241,7 +196,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
                 isFollowing: bundle.isFollowing,
                 isMe: isMe,
                 certTier: _certTier,
-                isCertified: _isCertified,
+                isCertified: _isCertified && _certTier != null,
                 onEditProfile: () {},
               ),
             ),
