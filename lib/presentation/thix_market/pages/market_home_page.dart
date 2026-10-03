@@ -1407,6 +1407,27 @@ class _AutoScrollProductStrip extends StatefulWidget {
   State<_AutoScrollProductStrip> createState() => _AutoScrollProductStripState();
 }
 
+          enum _StripBadge { flash, featured, none }
+
+class _AutoScrollProductStrip extends StatefulWidget {
+  final List<Map<String, dynamic>> products;
+  final _StripBadge badgeType;
+  final String title;
+  final IconData icon;
+  final String? liveLabel;
+
+  const _AutoScrollProductStrip({
+    required this.products,
+    required this.badgeType,
+    required this.title,
+    required this.icon,
+    this.liveLabel,
+  });
+
+  @override
+  State<_AutoScrollProductStrip> createState() => _AutoScrollProductStripState();
+}
+
 class _AutoScrollProductStripState extends State<_AutoScrollProductStrip> {
   final ScrollController _ctrl = ScrollController();
   Timer? _timer;
@@ -1425,10 +1446,8 @@ class _AutoScrollProductStripState extends State<_AutoScrollProductStrip> {
   @override
   void didUpdateWidget(covariant _AutoScrollProductStrip old) {
     super.didUpdateWidget(old);
-    // ✅ Ne relance le timer QUE si on passe de "inactif" à "actif"
     final wasActive = old.products.length > 4;
     final isActiveNow = widget.products.length > 4;
-
     if (!wasActive && isActiveNow) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _start());
     } else if (wasActive && !isActiveNow) {
@@ -1437,17 +1456,16 @@ class _AutoScrollProductStripState extends State<_AutoScrollProductStrip> {
   }
 
   void _start() {
-    void _start() {
-  _timer?.cancel();
-  _timer = Timer.periodic(_tick, (_) {
-    if (!mounted || !_ctrl.hasClients || _paused) return;
-    final position = _ctrl.position;
-    final maxExt = position.maxScrollExtent;
-    if (maxExt <= 0) return;
-    final next = _ctrl.offset + _step;
-    _ctrl.jumpTo(next >= maxExt ? 0 : next);
-  });
-}
+    _timer?.cancel();
+    _timer = Timer.periodic(_tick, (_) {
+      if (!mounted || !_ctrl.hasClients || _paused) return;
+      final position = _ctrl.position;
+      final maxExt = position.maxScrollExtent;
+      if (maxExt <= 0) return;
+      final next = _ctrl.offset + _step;
+      _ctrl.jumpTo(next >= maxExt ? 0 : next);
+    });
+  }
 
   void _pause() => _paused = true;
   void _resumeAfterDelay() => Future.delayed(_kBannerResumeDelay, () {
