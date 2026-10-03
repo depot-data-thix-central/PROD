@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import '../../core/african_countries.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
 // Compatibilité avec l'ancien design system (fallback)
@@ -175,9 +175,14 @@ class ProductCard extends ConsumerWidget {
       product['title']?.toString() ?? product['name']?.toString(),
       maxLength: _ProductCardValidators._kMaxTitleLength,
     );
-    final city = _ProductCardValidators.sanitize(
+    final cityRaw = _ProductCardValidators.sanitize(
       product['city']?.toString() ?? product['location']?.toString() ?? t.cityFallback,
       maxLength: _ProductCardValidators._kMaxCityLength,
+    );
+    // "Lubumbashi, RDC 🇨🇩"
+    final city = AfricanCountries.locationLine(
+      city: cityRaw,
+      code: product['country']?.toString(),
     );
     final id = product['id']?.toString() ?? '';
 
