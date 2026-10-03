@@ -905,7 +905,7 @@ GoRoute(path: '/thix-info/downloads', name: 'thixInfoDownloads',
         GoRoute(
   path: 'flash-sales',
   name: 'marketFlashSales',
-  pageBuilder: (context, state) => const NoTransitionPageChild(
+  pageBuilder: (context, state) => const NoTransitionPage(
     child: FlashSalesPage(), // Votre page dédiée aux offres flash
   ),
 ),
