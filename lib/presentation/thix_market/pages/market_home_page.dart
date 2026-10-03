@@ -1,13 +1,6 @@
 // lib/presentation/thix_market/pages/market_home_page.dart
 // ============================================================================
-// MARKET HOME PAGE — Production Enterprise v2
-// ============================================================================
-// Modifications v2 :
-//   ✅ Suppression du tri aléatoire _smartMix (bug d'ordre)
-//   ✅ Tri STABLE via stableSortProducts (flash actifs → featured → récents)
-//   ✅ Source unique (forYouProvider) pour la grille
-//   ✅ RouteAware : refresh auto au retour depuis publish
-//   ✅ Invalidation complète au pull-to-refresh
+// MARKET HOME PAGE — Production Enterprise v2 (sans duplication)
 // ============================================================================
 
 import 'dart:async';
@@ -30,7 +23,7 @@ import '../widgets/products/product_card.dart';
 import '../widgets/market/flash_sale_timer.dart';
 
 // ============================================================================
-// CONSTANTES & VALIDATEURS
+// CONSTANTES
 // ============================================================================
 const Duration _kBannerAutoPlay = Duration(seconds: 4);
 const Duration _kBannerResumeDelay = Duration(seconds: 2);
@@ -128,18 +121,14 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // ✅ RouteAware : enregistre pour détecter le retour depuis publish
     final route = ModalRoute.of(context);
     if (route != null) {
       _currentRoute = route;
-      // Note : si ton app a un routeObserver global, décommente :
-      // routeObserver.subscribe(this, route);
     }
   }
 
   @override
   void didPopNext() {
-    // ✅ Retour depuis une page pushée (ex: publish) → refresh silencieux
     debugPrint('[Market] 🔙 Returned from pushed route — silent refresh');
     invalidateAllMarketProviders(ref);
     ref.read(forYouProvider.notifier).refresh();
@@ -157,8 +146,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     _scroll.dispose();
     _bannerCtrl.dispose();
     _bannerTimer?.cancel();
-    // Note : si tu utilises routeObserver, décommente :
-    // if (_currentRoute != null) routeObserver.unsubscribe(this);
     debugPrint('[Market] 🏠 Home disposed');
     super.dispose();
   }
@@ -231,8 +218,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     );
   }
 
-  /// ✅ Tri STABLE : flash actifs → featured → récents
-  /// Utilise stableSortProducts exporté depuis market_providers.dart
   List<Map<String, dynamic>> _stableSort(List<Map<String, dynamic>> items) {
     return stableSortProducts(items);
   }
@@ -266,10 +251,8 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     final forYouAsync = ref.watch(forYouProvider);
     final liveSessionsAsync = ref.watch(activeMarketLiveSessionsProvider);
 
-    // ✅ SOURCE UNIQUE : uniquement forYouProvider pour la grille
     final hasMore = ref.read(forYouProvider.notifier).hasMore;
 
-    // Ticker pour refresh flash sales (pas toute la page)
     ref.watch(marketTickerProvider);
 
     featuredAsync.whenData((b) {
@@ -290,7 +273,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
             onRefresh: () async {
               HapticFeedback.mediumImpact();
               debugPrint('[Market] 🔄 Pull-to-refresh');
-              // ✅ INVALIDATION COMPLÈTE ET ORDRONNÉE
               invalidateAllMarketProviders(ref);
               await ref.read(forYouProvider.notifier).refresh();
             },
@@ -1119,7 +1101,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     );
   }
 
-  /// ✅ SOURCE UNIQUE + TRI STABLE
   Widget _buildGrid(
     AsyncValue<List<Map<String, dynamic>>> forYouAsync,
     bool hasMore,
@@ -1137,7 +1118,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
         ),
       ),
       data: (items) {
-        // ✅ Tri stable : flash actifs → featured → récents
         final sorted = _stableSort(items);
         return SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
@@ -1386,28 +1366,8 @@ class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderState
   }
 }
 
+// ✅ UNIQUE DÉCLARATION — pas de doublon
 enum _StripBadge { flash, featured, none }
-
-class _AutoScrollProductStrip extends StatefulWidget {
-  final List<Map<String, dynamic>> products;
-  final _StripBadge badgeType;
-  final String title;
-  final IconData icon;
-  final String? liveLabel;
-
-  const _AutoScrollProductStrip({
-    required this.products,
-    required this.badgeType,
-    required this.title,
-    required this.icon,
-    this.liveLabel,
-  });
-
-  @override
-  State<_AutoScrollProductStrip> createState() => _AutoScrollProductStripState();
-}
-
-          enum _StripBadge { flash, featured, none }
 
 class _AutoScrollProductStrip extends StatefulWidget {
   final List<Map<String, dynamic>> products;
