@@ -528,7 +528,7 @@ class _FilVideoCardState extends State<_FilVideoCard> with SingleTickerProviderS
                             ],
                           ),
                           child: Text(
-                            l10n.t('detail_follow'),
+                            l10n.t('Suivre'),
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 12,
