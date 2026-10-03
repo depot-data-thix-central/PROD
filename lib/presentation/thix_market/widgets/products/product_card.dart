@@ -19,7 +19,6 @@ enum ProductCardVariant { grid, horizontal }
 // ============================================================================
 // PROVIDER BOUTIQUES (1 seule requête pour toutes les cartes)
 // ============================================================================
-/// Map shopId -> {id, name, logo_url}
 final marketShopsMapProvider =
     FutureProvider.autoDispose<Map<String, Map<String, dynamic>>>((ref) async {
   try {
@@ -74,7 +73,6 @@ class _ProductCardValidators {
     return trimmed.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
   }
 
-  /// Parse un prix avec protection contre NaN / Infinity / négatif
   static double parsePrice(dynamic v) {
     if (v == null) return 0;
     double parsed;
@@ -133,7 +131,6 @@ class ProductCard extends ConsumerWidget {
     return null;
   }
 
-  /// Nom de boutique : embed > shop_name > map chargée depuis `shops`
   String _resolveShopName(Map<String, Map<String, dynamic>> shops) {
     String? raw;
     final embedded = product['shop'];
@@ -194,7 +191,70 @@ class ProductCard extends ConsumerWidget {
 
     final isHorizontal = variant == ProductCardVariant.horizontal;
     final borderRadius = isHorizontal ? 12.0 : 10.0;
-    final aspectRatio = isHorizontal ? 4 / 3 : 1.0;
+
+    // ─── Zone image ───
+    final imageArea = ClipRRect(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(borderRadius)),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(
+            color: ThixPolicy.surfaceSoft,
+            child: img == null || img.isEmpty
+                ? const _ImagePlaceholder()
+                : CachedNetworkImage(
+                    imageUrl: img,
+                    fit: BoxFit.cover,
+                    fadeInDuration: const Duration(milliseconds: 200),
+                    fadeOutDuration: const Duration(milliseconds: 150),
+                    placeholder: (context, url) => const _ImageLoading(),
+                    errorWidget: (context, url, error) => const _ImagePlaceholder(),
+                  ),
+          ),
+
+          if (isOut)
+            Container(
+              decoration: BoxDecoration(color: Colors.black.withOpacity(0.45)),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: ThixPolicy.danger,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    t.outOfStock,
+                    style: const TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            ),
+
+          if (!isOut && (isFlashSale || isFeatured || hasDiscount))
+            Positioned(
+              top: 5,
+              left: 5,
+              child: _buildBadge(
+                isFlashSale: isFlashSale,
+                isFeatured: isFeatured,
+                discountPercent: discountPercent,
+                t: t,
+              ),
+            ),
+
+          if (showFavoriteButton && id.isNotEmpty)
+            Positioned(
+              top: 5,
+              right: 5,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                child: WishlistButton(productId: id, size: 15),
+              ),
+            ),
+        ],
+      ),
+    );
 
     final card = Container(
       width: isHorizontal ? (width ?? 138) : null,
@@ -209,75 +269,12 @@ class ProductCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AspectRatio(
-            aspectRatio: aspectRatio,
-            child: ClipRRect(
-              borderRadius: BorderRadius.vertical(top: Radius.circular(borderRadius)),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Image avec placeholder premium + cache
-                  Container(
-                    color: ThixPolicy.surfaceSoft,
-                    child: img == null || img.isEmpty
-                        ? const _ImagePlaceholder()
-                        : CachedNetworkImage(
-                            imageUrl: img,
-                            fit: BoxFit.cover,
-                            fadeInDuration: const Duration(milliseconds: 200),
-                            fadeOutDuration: const Duration(milliseconds: 150),
-                            placeholder: (context, url) => const _ImageLoading(),
-                            errorWidget: (context, url, error) => const _ImagePlaceholder(),
-                          ),
-                  ),
-
-                  // Overlay "Rupture"
-                  if (isOut)
-                    Container(
-                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.45)),
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: ThixPolicy.danger,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            t.outOfStock,
-                            style: const TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  // Badge (flash / featured / discount)
-                  if (!isOut && (isFlashSale || isFeatured || hasDiscount))
-                    Positioned(
-                      top: 5,
-                      left: 5,
-                      child: _buildBadge(
-                        isFlashSale: isFlashSale,
-                        isFeatured: isFeatured,
-                        discountPercent: discountPercent,
-                        t: t,
-                      ),
-                    ),
-
-                  // Bouton favori
-                  if (showFavoriteButton && id.isNotEmpty)
-                    Positioned(
-                      top: 5,
-                      right: 5,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                        child: WishlistButton(productId: id, size: 15),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
+          // ✅ Horizontal (grille home + strips) : l'image remplit tout l'espace restant
+          // Grid (hauteur libre) : ratio carré
+          if (isHorizontal)
+            Expanded(child: imageArea)
+          else
+            AspectRatio(aspectRatio: 1.0, child: imageArea),
 
           // ─── Infos produit ───
           Padding(
@@ -298,7 +295,6 @@ class ProductCard extends ConsumerWidget {
                   ),
                 ),
 
-                // ─── Boutique (cliquable) ───
                 if (showShop && shopName.isNotEmpty) ...[
                   const SizedBox(height: 3),
                   GestureDetector(
@@ -485,9 +481,7 @@ class ProductCard extends ConsumerWidget {
     required MarketStrings t,
   }) {
     final color = isLowStock ? ThixPolicy.warning : ThixPolicy.success;
-    final label = isLowStock
-        ? 'Plus que $stock !'
-        : '$stock ${t.inStock}';
+    final label = isLowStock ? 'Plus que $stock !' : '$stock ${t.inStock}';
 
     return Row(
       mainAxisSize: MainAxisSize.min,
