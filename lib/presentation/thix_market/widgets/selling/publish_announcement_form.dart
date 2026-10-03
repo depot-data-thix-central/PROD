@@ -1,4 +1,13 @@
 // lib/presentation/thix_market/widgets/selling/publish_announcement_form.dart
+// ============================================================================
+// PUBLISH ANNOUNCEMENT FORM — Production Enterprise v2
+// ============================================================================
+// Modifications v2 :
+//   ✅ Converti en ConsumerStatefulWidget pour accès à Riverpod
+//   ✅ Invalidation automatique de TOUS les providers market après succès
+//   ✅ Logs structurés + gestion d'erreur enterprise
+// ============================================================================
+
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -6,6 +15,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
@@ -16,6 +26,7 @@ import 'package:html/parser.dart' as html_parser;
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../../l10n/market_strings.dart';
+import '../../providers/market_providers.dart' show invalidateAllMarketProviders;
 
 // ============================================================================
 // CONSTANTES
@@ -87,7 +98,7 @@ class _AnnouncementValidators {
     return val;
   }
 
-  static String? friendlyError(dynamic e) {
+  static String friendlyError(dynamic e) {
     final msg = e.toString().toLowerCase();
     if (msg.contains('timeout')) return 'Délai dépassé. Vérifiez votre connexion.';
     if (msg.contains('network') || msg.contains('socket')) return 'Erreur réseau. Réessayez.';
@@ -126,9 +137,9 @@ Future<T> _withRetry<T>(
 }
 
 // ============================================================================
-// WIDGET PRINCIPAL
+// WIDGET PRINCIPAL — ConsumerStatefulWidget
 // ============================================================================
-class PublishAnnouncementForm extends StatefulWidget {
+class PublishAnnouncementForm extends ConsumerStatefulWidget {
   final String? shopId;
   final Map<String, dynamic>? editAnnouncement;
   final Function(Map<String, dynamic>)? onSuccess;
@@ -143,10 +154,10 @@ class PublishAnnouncementForm extends StatefulWidget {
   });
 
   @override
-  State<PublishAnnouncementForm> createState() => _PublishAnnouncementFormState();
+  ConsumerState<PublishAnnouncementForm> createState() => _PublishAnnouncementFormState();
 }
 
-class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
+class _PublishAnnouncementFormState extends ConsumerState<PublishAnnouncementForm> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
@@ -158,11 +169,8 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
   final _warrantyController = TextEditingController();
   final _shippingCostController = TextEditingController();
 
-  // Nouvelles images sélectionnées
   List<XFile> _selectedImages = [];
   final Map<String, Uint8List> _imageBytesCache = {};
-
-  // URLs existantes conservées en mode édition
   List<String> _existingImageUrls = [];
 
   String? _category;
@@ -200,11 +208,13 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
   @override
   void initState() {
     super.initState();
-    debugPrint('[PublishForm] 📝 Init (edit=$_isEditMode, shop=${widget.shopId?.substring(0, widget.shopId != null && widget.shopId!.length > 8 ? 8 : 0)})');
+    final shopIdShort = widget.shopId != null && widget.shopId!.length > 8
+        ? widget.shopId!.substring(0, 8)
+        : widget.shopId ?? 'none';
+    debugPrint('[PublishForm] 📝 Init (edit=$_isEditMode, shop=$shopIdShort)');
     _getCurrentLocation();
     if (_isEditMode) _loadEditData();
 
-    // Écouter changements pour onDirty
     _titleController.addListener(_markDirty);
     _descriptionController.addListener(_markDirty);
     _priceController.addListener(_markDirty);
@@ -274,7 +284,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
       _flashEndTime = DateTime.tryParse(data['expires_at'].toString());
     }
 
-    // Charger images existantes
     final existingImages = data['images'];
     if (existingImages is List) {
       _existingImageUrls = existingImages
@@ -329,7 +338,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
       int skippedCount = 0;
 
       for (final img in images) {
-        // Validation extension
         if (!_AnnouncementValidators.isValidExtension(img.name)) {
           debugPrint('[PublishForm] ⚠️ Skipped ${img.name}: invalid extension');
           skippedCount++;
@@ -339,14 +347,12 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
         try {
           Uint8List bytes = await img.readAsBytes();
 
-          // Validation taille
           if (!_AnnouncementValidators.isValidFileSize(bytes.length)) {
             debugPrint('[PublishForm] ⚠️ Skipped ${img.name}: too large (${bytes.length} bytes)');
             skippedCount++;
             continue;
           }
 
-          // Compression additionnelle (mobile seulement)
           if (!kIsWeb) {
             try {
               final compressed = await FlutterImageCompress.compressWithList(
@@ -549,9 +555,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
     }
   }
 
-  // ============================================================
-  // CITY RESOLVER
-  // ============================================================
   String? _resolveCity() {
     if (_city == 'Autre') {
       final custom = _AnnouncementValidators.sanitize(
@@ -575,7 +578,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
       return;
     }
 
-    // Validation : au moins une image (nouvelle ou existante)
     if (_selectedImages.isEmpty && _existingImageUrls.isEmpty) {
       _showError(t.atLeastOneImage);
       return;
@@ -587,7 +589,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
       return;
     }
 
-    // Validation prix
     final price = _AnnouncementValidators.safePrice(_priceController.text);
     if (price == null || price <= 0) {
       _showError('Prix invalide');
@@ -607,7 +608,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
       }
     }
 
-    // Validation stock
     int? stock;
     if (!_isService) {
       stock = _AnnouncementValidators.safeStock(_stockController.text);
@@ -617,7 +617,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
       }
     }
 
-    // Validation flash sale
     if (_placement == 'flash_sale') {
       if (_flashEndTime == null) {
         _showError(t.flashDateRequired);
@@ -635,15 +634,12 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
     List<String> newUrls = [];
 
     try {
-      // 1. Upload nouvelles images
       if (_selectedImages.isNotEmpty) {
         newUrls = await _uploadImages();
       }
 
-      // 2. Combiner images existantes + nouvelles
       final allImageUrls = [..._existingImageUrls, ...newUrls];
 
-      // 3. Sanitize tous les inputs
       final productData = {
         'shop_id': widget.shopId,
         'title': _AnnouncementValidators.sanitize(_titleController.text, maxLength: _kMaxTitleLength),
@@ -673,7 +669,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
         'shipping_cost': _AnnouncementValidators.safePrice(_shippingCostController.text),
       };
 
-      // 4. Submit to DB
       Map<String, dynamic> response;
       if (_isEditMode) {
         response = await _withRetry(
@@ -702,15 +697,20 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
         debugPrint('[PublishForm] ✅ Created ${response['id']}');
       }
 
+      // ✅ INVALIDATION IMMÉDIATE : force le refresh de TOUS les providers market
+      // Garantit que la home affichera le produit dès le retour
+      if (mounted) {
+        invalidateAllMarketProviders(ref);
+        debugPrint('[PublishForm] ✅ All market providers invalidated');
+      }
+
       widget.onSuccess?.call(response);
     } catch (e) {
       debugPrint('[PublishForm] ❌ Submit error: $e');
-      // Cleanup orphans si création a échoué
       if (newUrls.isNotEmpty) {
         await _cleanupOrphans(newUrls);
       }
-      if (mounted) _showError(_AnnouncementValidators.friendlyError(e.toString()) ?? 'Une erreur inconnue est survenue'); 
-
+      if (mounted) _showError(_AnnouncementValidators.friendlyError(e.toString()));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -748,7 +748,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // PLACEMENT
           Text(t.placementTitle, style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
           const SizedBox(height: 12),
           _PlacementOption(
@@ -790,7 +789,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
             groupValue: _placement,
           ),
 
-          // FLASH DATE
           if (_placement == 'flash_sale') ...[
             const SizedBox(height: 16),
             _FlashSaleBanner(
@@ -801,7 +799,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
 
           const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Divider()),
 
-          // PHOTOS
           Text(t.photosTitle, style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
           const SizedBox(height: 4),
           Text(
@@ -818,7 +815,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
                 final totalExisting = _existingImageUrls.length;
                 final totalSelected = _selectedImages.length;
 
-                // Bouton ajouter
                 if (index == totalExisting + totalSelected) {
                   final canAdd = (totalExisting + totalSelected) < _kMaxImages;
                   return Semantics(
@@ -857,7 +853,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
                   );
                 }
 
-                // Images existantes (edit mode)
                 if (index < totalExisting) {
                   return _ImageThumbnail(
                     imageUrl: _existingImageUrls[index],
@@ -866,7 +861,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
                   );
                 }
 
-                // Nouvelles images
                 final newIdx = index - totalExisting;
                 final image = _selectedImages[newIdx];
                 return _ImageThumbnail(
@@ -880,7 +874,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
 
           const SizedBox(height: 24),
 
-          // TITLE
           _InputField(
             controller: _titleController,
             label: t.titleLabel,
@@ -889,7 +882,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
           ),
           const SizedBox(height: 16),
 
-          // DESCRIPTION
           _InputField(
             controller: _descriptionController,
             label: t.descriptionLabel,
@@ -899,7 +891,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
           ),
           const SizedBox(height: 16),
 
-          // PRICE ROW
           Row(
             children: [
               Expanded(
@@ -922,7 +913,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
           ),
           const SizedBox(height: 16),
 
-          // CURRENCY
           _CurrencyDropdown(
             value: _currency,
             onChanged: (v) {
@@ -932,7 +922,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
           ),
           const SizedBox(height: 16),
 
-          // STOCK + BRAND
           Row(
             children: [
               Expanded(
@@ -956,7 +945,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
           ),
           const SizedBox(height: 16),
 
-          // CATEGORY
           _CategoryDropdown(
             value: _category,
             items: _categoryIds.map((id) => DropdownMenuItem(value: id, child: Text(t.categoryName(id)))).toList(),
@@ -968,7 +956,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
           ),
           const SizedBox(height: 16),
 
-          // CONDITION
           _CategoryDropdown(
             value: _condition,
             items: _conditionIds.map((id) => DropdownMenuItem(value: id, child: Text(t.conditionName(id)))).toList(),
@@ -980,7 +967,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
           ),
           const SizedBox(height: 16),
 
-          // CITY
           _CategoryDropdown(
             value: _city,
             items: _cities.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
@@ -1001,7 +987,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
           ],
           const SizedBox(height: 16),
 
-          // SHIPPING TYPE
           _CategoryDropdown(
             value: _shippingType,
             items: _shippingTypeIds.map((id) => DropdownMenuItem(value: id, child: Text(t.shippingTypeName(id)))).toList(),
@@ -1013,7 +998,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
           ),
           const SizedBox(height: 16),
 
-          // SHIPPING COST + WARRANTY
           Row(
             children: [
               Expanded(
@@ -1035,7 +1019,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
           ),
           const SizedBox(height: 12),
 
-          // SWITCHES
           Container(
             decoration: BoxDecoration(
               border: Border.all(color: ThixPolicy.border),
@@ -1076,7 +1059,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
           ),
           const SizedBox(height: 32),
 
-          // UPLOAD PROGRESS
           if (_isUploading) ...[
             Container(
               padding: const EdgeInsets.all(12),
@@ -1102,7 +1084,6 @@ class _PublishAnnouncementFormState extends State<PublishAnnouncementForm> {
             const SizedBox(height: 16),
           ],
 
-          // SUBMIT BUTTON
           Semantics(
             button: true,
             label: isBusy ? 'Envoi en cours' : (_isEditMode ? t.update : t.publish),
@@ -1511,7 +1492,6 @@ class _CurrencyDropdown extends StatelessWidget {
   }
 }
 
-// Transparent pixel pour FadeInImage placeholder
 final Uint8List kTransparentImage = Uint8List.fromList(<int>[
   0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
   0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
