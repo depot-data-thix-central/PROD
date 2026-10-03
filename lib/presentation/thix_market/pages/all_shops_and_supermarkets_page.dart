@@ -164,7 +164,10 @@ class ShopsNotifier extends StateNotifier<AsyncValue<List<Map<String, dynamic>>>
       final client = Supabase.instance.client;
       final qStr = _ShopSanitizer.text(query.search).trim();
 
-      var builder = client
+      // ✅ Utilisation de `dynamic` pour permettre le chaînage
+      // (.eq/.or/.gte retournent PostgrestFilterBuilder,
+      //  .order retourne PostgrestTransformBuilder — incompatibles)
+      dynamic builder = client
           .from('shops')
           .select('id, name, slug, logo_url, cover_url, address, city, '
               'description, rating, followers_count, is_featured, is_verified, '
@@ -189,7 +192,7 @@ class ShopsNotifier extends StateNotifier<AsyncValue<List<Map<String, dynamic>>>
         builder = builder.gte('rating', query.minRating);
       }
 
-      // Tri
+      // ── Tri ──
       switch (query.sort) {
         case _ShopSort.popular:
           builder = builder.order('followers_count', ascending: false);
@@ -216,30 +219,6 @@ class ShopsNotifier extends StateNotifier<AsyncValue<List<Map<String, dynamic>>>
       state = AsyncError(e, st);
     }
   }
-}
-
-final shopsProvider = StateNotifierProvider.family<ShopsNotifier,
-    AsyncValue<List<Map<String, dynamic>>>, _ShopQuery>(
-  (ref, query) => ShopsNotifier(ref, query),
-);
-
-// Provider compteur simple (pour badges dans les tabs)
-final shopsCountProvider = FutureProvider.family<int, ShopKind>((ref, kind) async {
-  try {
-    final res = await _withTimeout(
-      Supabase.instance.client
-          .from('shops')
-          .select('id')
-          .eq('status', 'active')
-          .eq('type', kind == ShopKind.supermarket ? 'supermarket' : 'boutique')
-          .count(CountOption.exact),
-      label: 'count(${kind.name})',
-    );
-    return res.count ?? 0;
-  } catch (_) {
-    return 0;
-  }
-});
 
 // ============================================================================
 // PAGE PRINCIPALE
