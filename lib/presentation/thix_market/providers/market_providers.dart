@@ -1,4 +1,14 @@
 // lib/presentation/thix_market/providers/market_providers.dart
+// ============================================================================
+// MARKET PROVIDERS — Production Enterprise v2
+// ============================================================================
+// Architecture :
+//   - Providers atomiques (banners, flash, featured, shops, unread)
+//   - ForYouNotifier : pagination mémoire-safe avec anti-OOM
+//   - allMarketProductsProvider : agrégation flash + forYou (dedup)
+//   - Helpers : invalidateAllMarketProviders + stableSortProducts
+// ============================================================================
+
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -29,7 +39,7 @@ final marketRepositoryProvider = Provider<MarketRepository>((ref) {
 });
 
 // ============================================================================
-// HELPERS
+// HELPERS INTERNES
 // ============================================================================
 
 /// Exécute une Future avec timeout + retry automatique sur TimeoutException.
@@ -57,7 +67,7 @@ Future<T> _withRetry<T>(
   }
 }
 
-/// Dedup une liste de produits par ID.
+/// Déduplique une liste de produits par ID.
 List<Map<String, dynamic>> _dedupProducts(List<Map<String, dynamic>> items) {
   final seen = <String>{};
   final result = <Map<String, dynamic>>[];
@@ -135,7 +145,6 @@ final myShopIdProvider = FutureProvider.autoDispose<String?>((ref) async {
     debugPrint('[MarketProvider] ✓ My shop ID: ${result ?? "none"}');
     return result;
   } catch (e) {
-    // Non bloquant : l'utilisateur peut ne pas avoir de shop
     debugPrint('[MarketProvider] ⚠️ No shop for current user: $e');
     return null;
   }
@@ -145,7 +154,6 @@ final myShopIdProvider = FutureProvider.autoDispose<String?>((ref) async {
 final unreadProvider = FutureProvider.autoDispose<int>((ref) async {
   debugPrint('[MarketProvider] 🔔 Loading unread count');
 
-  // Auto-refresh périodique
   Timer? timer;
   ref.onDispose(() => timer?.cancel());
   ref.onCancel(() => timer?.cancel());
@@ -162,12 +170,12 @@ final unreadProvider = FutureProvider.autoDispose<int>((ref) async {
     return count;
   } catch (e) {
     debugPrint('[MarketProvider] ❌ Unread error: $e');
-    return 0; // Non bloquant
+    return 0;
   }
 });
 
 // ============================================================================
-// PROVIDER "POUR VOUS" (avec pagination mémoire-safe)
+// PROVIDER "POUR VOUS" (pagination mémoire-safe)
 // ============================================================================
 
 class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
@@ -204,14 +212,12 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     }
   }
 
-  /// Charge la page suivante avec protection anti-OOM.
   Future<void> loadMore() async {
     if (!_hasMore || _isLoadingMore) return;
 
     final cur = state.valueOrNull;
     if (cur == null || cur.isEmpty) return;
 
-    // Garde : déjà à la limite mémoire
     if (cur.length >= _kMaxProductsInMemory) {
       debugPrint('[MarketProvider] ⚠️ Memory limit reached ($_kMaxProductsInMemory) — stop loading');
       _hasMore = false;
@@ -219,8 +225,6 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     }
 
     _isLoadingMore = true;
-
-    // UI : AsyncLoading avec previous data (affiche le contenu + spinner)
     state = const AsyncLoading<List<Map<String, dynamic>>>().copyWithPrevious(state);
 
     try {
@@ -233,7 +237,6 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
       final combined = _dedupProducts([...cur, ...more]);
       final trimmed = _trimToMax(combined, _kMaxProductsInMemory);
 
-      // Détection fin : moins d'éléments que demandé OU trim activé
       if (more.length < _kDefaultPageSize) {
         _hasMore = false;
       }
@@ -248,7 +251,6 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
       debugPrint('[MarketProvider] ✓ Page $_page loaded (total: ${trimmed.length}, hasMore=$_hasMore)');
     } catch (e, st) {
       debugPrint('[MarketProvider] ❌ loadMore error: $e');
-      // Rollback : on conserve l'état précédent avec l'erreur
       state = AsyncValue<List<Map<String, dynamic>>>.error(e, st).copyWithPrevious(
         AsyncData(cur),
       );
@@ -257,7 +259,6 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     }
   }
 
-  /// Refresh complet (pull-to-refresh).
   Future<void> refresh() async {
     debugPrint('[MarketProvider] 🔄 Refreshing ForYou feed');
     _page = 0;
@@ -267,7 +268,6 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
     await future;
   }
 
-  /// Réinitialise et recharge depuis zéro.
   Future<void> reset() async {
     debugPrint('[MarketProvider] 🔁 Resetting ForYou feed');
     _page = 0;
@@ -290,15 +290,12 @@ final allMarketProductsProvider = Provider<List<Map<String, dynamic>>>((ref) {
   final flash = ref.watch(flashSalesProvider).valueOrNull ?? const <Map<String, dynamic>>[];
   final forYou = ref.watch(forYouProvider).valueOrNull ?? const <Map<String, dynamic>>[];
 
-  // Combine + dedup (flash en priorité car plus urgents)
   final combined = _dedupProducts([...flash, ...forYou]);
-
-  // Limite globale pour éviter OOM dans _smartMix de la Home
   return _trimToMax(combined, _kMaxProductsInMemory);
 });
 
 // ============================================================================
-// PROVIDER FEATURED PRODUCTS (si absent)
+// PROVIDER FEATURED PRODUCTS
 // ============================================================================
 
 final featuredProductsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
@@ -313,9 +310,69 @@ final featuredProductsProvider = FutureProvider.autoDispose<List<Map<String, dyn
     debugPrint('[MarketProvider] ✓ Loaded ${dedup.length} featured products');
     return dedup;
   } catch (e) {
-    // Fallback : retourne les 6 premiers du feed
     debugPrint('[MarketProvider] ⚠️ Featured fallback to forYou top 6: $e');
     final forYou = ref.watch(forYouProvider).valueOrNull ?? const [];
     return forYou.take(6).toList();
   }
 });
+
+// ============================================================================
+// ✅ HELPERS EXPORTÉS — À UTILISER DEPUIS TOUTE L'APP
+// ============================================================================
+
+/// Invalide TOUS les providers market en une seule ligne.
+/// À appeler après toute création/édition/suppression de produit
+/// pour garantir la cohérence de la home.
+///
+/// Usage :
+///   invalidateAllMarketProviders(ref);
+void invalidateAllMarketProviders(Ref ref) {
+  debugPrint('[MarketProvider] 🧹 Invalidating ALL market providers');
+  ref.invalidate(allMarketProductsProvider);
+  ref.invalidate(featuredProductsProvider);
+  ref.invalidate(flashSalesProvider);
+  ref.invalidate(featuredShopsProvider);
+  ref.invalidate(forYouProvider);
+  ref.invalidate(bannersProvider);
+  // unreadProvider volontairement non invalidé (polling auto)
+  // myShopIdProvider volontairement non invalidé (rarement modifié)
+}
+
+/// Tri STABLE et prévisible d'une liste de produits.
+/// Ordre de priorité :
+///   1. Flash sales actifs (is_flash_sale=true ET expires_at futur)
+///   2. Featured (is_featured=true)
+///   3. Produits normaux, triés par created_at DESC (récent d'abord)
+///
+/// Usage :
+///   final sorted = stableSortProducts(items);
+List<Map<String, dynamic>> stableSortProducts(List<Map<String, dynamic>> items) {
+  if (items.isEmpty) return items;
+
+  final list = List<Map<String, dynamic>>.from(items);
+  final now = DateTime.now();
+
+  int score(Map<String, dynamic> p) {
+    final isFlash = p['is_flash_sale'] == true;
+    final expiresAt = DateTime.tryParse(p['expires_at']?.toString() ?? '');
+    final flashActive = isFlash && expiresAt != null && expiresAt.isAfter(now);
+    final isFeatured = p['is_featured'] == true;
+
+    if (flashActive) return 0;
+    if (isFeatured) return 1;
+    return 2;
+  }
+
+  list.sort((a, b) {
+    final sa = score(a);
+    final sb = score(b);
+    if (sa != sb) return sa.compareTo(sb);
+
+    // Tri secondaire : plus récent d'abord
+    final aDate = DateTime.tryParse(a['created_at']?.toString() ?? '') ?? DateTime(2000);
+    final bDate = DateTime.tryParse(b['created_at']?.toString() ?? '') ?? DateTime(2000);
+    return bDate.compareTo(aDate);
+  });
+
+  return list;
+}
