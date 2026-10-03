@@ -1,7 +1,7 @@
 // lib/services/supermarket_service.dart
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
-
+import 'dart:typed_data';
 import 'package:thix_id/presentation/thix_market/models/supermarket_models.dart';
 
 class SupermarketService {
@@ -156,7 +156,7 @@ class SupermarketService {
     final path = 'supermarkets/${const Uuid().v4()}-$fileName';
     await _client.storage
         .from('shop_images')
-        .uploadBinary(path, bytes,
+        .uploadBinary(path, Uint8List.fromList(bytes),
             fileOptions: FileOptions(contentType: contentType))
         .timeout(_timeout);
     return _client.storage.from('shop_images').getPublicUrl(path);
