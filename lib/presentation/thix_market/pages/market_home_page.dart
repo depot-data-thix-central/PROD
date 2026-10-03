@@ -1437,18 +1437,17 @@ class _AutoScrollProductStripState extends State<_AutoScrollProductStrip> {
   }
 
   void _start() {
-    _timer?.cancel();
-    _timer = Timer.periodic(_tick, (_) {
-      if (!mounted || !_ctrl.hasClients || _paused) return;
-      // ✅ Garde-fous : éviter les erreurs de scroll
-      final position = _ctrl.position;
-      if (!position.hasContent) return;
-      final maxExt = position.maxScrollExtent;
-      if (maxExt <= 0) return;
-      final next = _ctrl.offset + _step;
-      _ctrl.jumpTo(next >= maxExt ? 0 : next);
-    });
-  }
+    void _start() {
+  _timer?.cancel();
+  _timer = Timer.periodic(_tick, (_) {
+    if (!mounted || !_ctrl.hasClients || _paused) return;
+    final position = _ctrl.position;
+    final maxExt = position.maxScrollExtent;
+    if (maxExt <= 0) return;
+    final next = _ctrl.offset + _step;
+    _ctrl.jumpTo(next >= maxExt ? 0 : next);
+  });
+}
 
   void _pause() => _paused = true;
   void _resumeAfterDelay() => Future.delayed(_kBannerResumeDelay, () {
