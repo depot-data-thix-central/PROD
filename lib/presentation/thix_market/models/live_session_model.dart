@@ -1,3 +1,13 @@
+// lib/presentation/thix_market/models/live_session_model.dart
+// ============================================================================
+// LIVE SESSION MODEL — PROD Enterprise v2
+// ============================================================================
+// Nouveaux champs ajoutés pour le Live Shopping interactif :
+//   - prePinnedProductIds  : produits épinglés automatiquement au démarrage
+//   - allowVoting          : les spectateurs peuvent voter pour le prochain produit
+//   - allowDynamicControl  : l'hôte peut pinner/unpinner en direct
+// ============================================================================
+
 class LiveSessionModel {
   final String id;
   final String shopId;
@@ -7,6 +17,12 @@ class LiveSessionModel {
   final String channelName;
   final String? token;
   final List<String> productIds;
+
+  // ✅ NOUVEAU : contrôle dynamique
+  final List<String> prePinnedProductIds;
+  final bool allowVoting;
+  final bool allowDynamicControl;
+
   final int viewerCount;
   final String status;
   final bool hasAuction;
@@ -26,6 +42,9 @@ class LiveSessionModel {
     required this.channelName,
     this.token,
     required this.productIds,
+    this.prePinnedProductIds = const [], // ✅ NOUVEAU
+    this.allowVoting = true, // ✅ NOUVEAU
+    this.allowDynamicControl = true, // ✅ NOUVEAU
     this.viewerCount = 0,
     required this.status,
     this.hasAuction = false,
@@ -37,6 +56,9 @@ class LiveSessionModel {
     required this.createdAt,
   });
 
+  // ============================================================================
+  // DÉSÉRIALISATION (JSON → Objet)
+  // ============================================================================
   factory LiveSessionModel.fromJson(Map<String, dynamic> json) {
     return LiveSessionModel(
       id: json['id'] as String,
@@ -47,6 +69,13 @@ class LiveSessionModel {
       channelName: json['channel_name'] as String,
       token: json['token'] as String?,
       productIds: List<String>.from(json['products'] ?? []),
+
+      // ✅ NOUVEAU : parsing tolérant (colonnes peuvent manquer en DB legacy)
+      prePinnedProductIds:
+          List<String>.from(json['pre_pinned_products'] ?? const []),
+      allowVoting: json['allow_voting'] as bool? ?? true,
+      allowDynamicControl: json['allow_dynamic_control'] as bool? ?? true,
+
       viewerCount: json['viewer_count'] as int? ?? 0,
       status: json['status'] as String,
       hasAuction: json['has_auction'] as bool? ?? false,
@@ -65,6 +94,9 @@ class LiveSessionModel {
     );
   }
 
+  // ============================================================================
+  // SÉRIALISATION (Objet → JSON)
+  // ============================================================================
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -75,6 +107,12 @@ class LiveSessionModel {
       'channel_name': channelName,
       'token': token,
       'products': productIds,
+
+      // ✅ NOUVEAU
+      'pre_pinned_products': prePinnedProductIds,
+      'allow_voting': allowVoting,
+      'allow_dynamic_control': allowDynamicControl,
+
       'viewer_count': viewerCount,
       'status': status,
       'has_auction': hasAuction,
@@ -87,12 +125,95 @@ class LiveSessionModel {
     };
   }
 
+  // ============================================================================
+  // GETTERS UTILITAIRES
+  // ============================================================================
   bool get isLive => status == 'live';
   bool get isScheduled => status == 'scheduled';
   bool get isEnded => status == 'ended';
-  bool get auctionActive => hasAuction && auctionEndTime != null && auctionEndTime!.isAfter(DateTime.now());
+  bool get auctionActive =>
+      hasAuction && auctionEndTime != null && auctionEndTime!.isAfter(DateTime.now());
+
+  // ✅ NOUVEAU : helpers Live Shopping
+  bool get hasPrePinned => prePinnedProductIds.isNotEmpty;
+  bool get isInteractive => allowVoting || allowDynamicControl;
+
+  /// Produits disponibles pour le pin (catalogue de base)
+  List<String> get catalogProductIds => productIds;
+
+  // ============================================================================
+  // COPYWITH (immutable)
+  // ============================================================================
+  LiveSessionModel copyWith({
+    String? id,
+    String? shopId,
+    String? title,
+    String? description,
+    String? thumbnailUrl,
+    String? channelName,
+    String? token,
+    List<String>? productIds,
+    List<String>? prePinnedProductIds,
+    bool? allowVoting,
+    bool? allowDynamicControl,
+    int? viewerCount,
+    String? status,
+    bool? hasAuction,
+    double? startingPrice,
+    DateTime? auctionEndTime,
+    DateTime? scheduledStart,
+    DateTime? startedAt,
+    DateTime? endedAt,
+    DateTime? createdAt,
+  }) {
+    return LiveSessionModel(
+      id: id ?? this.id,
+      shopId: shopId ?? this.shopId,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      channelName: channelName ?? this.channelName,
+      token: token ?? this.token,
+      productIds: productIds ?? this.productIds,
+      prePinnedProductIds: prePinnedProductIds ?? this.prePinnedProductIds,
+      allowVoting: allowVoting ?? this.allowVoting,
+      allowDynamicControl: allowDynamicControl ?? this.allowDynamicControl,
+      viewerCount: viewerCount ?? this.viewerCount,
+      status: status ?? this.status,
+      hasAuction: hasAuction ?? this.hasAuction,
+      startingPrice: startingPrice ?? this.startingPrice,
+      auctionEndTime: auctionEndTime ?? this.auctionEndTime,
+      scheduledStart: scheduledStart ?? this.scheduledStart,
+      startedAt: startedAt ?? this.startedAt,
+      endedAt: endedAt ?? this.endedAt,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  // ============================================================================
+  // ÉGALITÉ & HASHCODE
+  // ============================================================================
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LiveSessionModel &&
+          runtimeType == other.runtimeType &&
+          id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
+
+  @override
+  String toString() {
+    return 'LiveSessionModel(id: $id, title: $title, status: $status, '
+        'products: ${productIds.length}, prePinned: ${prePinnedProductIds.length}, '
+        'voting: $allowVoting, dynamic: $allowDynamicControl, auction: $hasAuction)';
+  }
 }
 
+// ============================================================================
+// AUCTION BID MODEL (inchangé)
+// ============================================================================
 class AuctionBidModel {
   final String id;
   final String auctionId;
@@ -127,4 +248,7 @@ class AuctionBidModel {
       'created_at': createdAt.toIso8601String(),
     };
   }
+
+  @override
+  String toString() => 'AuctionBidModel(id: $id, amount: $amount)';
 }
