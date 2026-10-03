@@ -999,22 +999,60 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
               for (int i = 0; i < 4; i++) ...[
                 Container(
                   height: 118,
-                  decoration: BoxDecoration(color: _Opp.card, borderRadius: BorderRadius.circular(16), border: Border.all(color: _Opp.line)),
+                  decoration: BoxDecoration(
+                    color: _Opp.card,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: _Opp.line),
+                  ),
                   padding: const EdgeInsets.all(13),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(children: [
-                        Container(width: 44, height: 44, decoration: BoxDecoration(color: _Opp.bg, borderRadius: BorderRadius.circular(11))),
-                        const SizedBox(width: 11),
-                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Container(height: 12, color: _Opp.bg, borderRadius: BorderRadius.circular(4)),
-                          const SizedBox(height: 7),
-                          Container(height: 9, width: 130, color: _Opp.bg, borderRadius: BorderRadius.circular(4)),
-                        ])),
-                      ]),
+                      Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: _Opp.bg,
+                              borderRadius: BorderRadius.circular(11),
+                            ),
+                          ),
+                          const SizedBox(width: 11),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  height: 12,
+                                  decoration: BoxDecoration(
+                                    color: _Opp.bg,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                ),
+                                const SizedBox(height: 7),
+                                Container(
+                                  height: 9,
+                                  width: 130,
+                                  decoration: BoxDecoration(
+                                    color: _Opp.bg,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                       const Spacer(),
-                      Container(height: 8, width: 170, color: _Opp.bg, borderRadius: BorderRadius.circular(4)),
+                      Container(
+                        height: 8,
+                        width: 170,
+                        decoration: BoxDecoration(
+                          color: _Opp.bg,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
                     ],
                   ),
                 ),
