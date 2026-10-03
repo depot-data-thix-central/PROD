@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
+import 'package:thix_id/models/certification_tier.dart';
 
 import 'providers/media_certification_provider.dart';
 import 'thix_media_page.dart' show MediaConfig, MediaLightPalette, MediaSanitizer;
@@ -59,7 +60,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> {
     bool certified = false;
 
     try {
-      final tier = await resolveUserCertTier(widget.userId);
+      final CertificationTier? tier = await resolveUserCertTier(widget.userId);
       if (tier != null) {
         certified = true;
         tierValue = tier.value;
