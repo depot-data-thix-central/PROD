@@ -21,7 +21,7 @@ import 'package:thix_id/l10n/app_localizations.dart';
 import '../providers/market_providers.dart';
 import '../widgets/products/product_card.dart';
 import '../widgets/market/flash_sale_timer.dart';
-
+import 'all_shops_supermarkets_page.dart';
 // ============================================================================
 // CONSTANTES
 // ============================================================================
@@ -826,7 +826,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     );
   }
 
-  Widget _buildSupermarketSection(AppLocalizations l10n) {
+    Widget _buildSupermarketSection(AppLocalizations l10n) {
     final shopsAsync = ref.watch(featuredShopsProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
@@ -835,7 +835,14 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
         children: [
           _buildSectionHeader(
             _MarketValidators.sanitize(l10n.t('market_home_supermarkets'), maxLength: 50),
-            onSeeAll: () => _safeNavigate('marketShops', '/market/shops'),
+            onSeeAll: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AllShopsAndSupermarketsPage(),
+                ),
+              );
+            },
             l10n: l10n,
           ),
           const SizedBox(height: ThixPolicy.s16),
