@@ -21,7 +21,7 @@ import 'package:thix_id/l10n/app_localizations.dart';
 import '../providers/market_providers.dart';
 import '../widgets/products/product_card.dart';
 import '../widgets/market/flash_sale_timer.dart';
-import 'all_shops_supermarkets_page.dart';
+import 'all_shops_and_supermarkets_page.dart';
 // ============================================================================
 // CONSTANTES
 // ============================================================================
@@ -839,7 +839,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => const AllShopsAndSupermarketsPage(),
+                  builder: (context) => AllShopsAndSupermarketsPage(),
                 ),
               );
             },
