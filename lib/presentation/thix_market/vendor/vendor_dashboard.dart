@@ -669,9 +669,25 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
                                 HapticFeedback.mediumImpact();
                                 context.pushNamed('marketCreateShop');
                               },
+                              onCreateSupermarketTap: () {
+                                HapticFeedback.mediumImpact();
+                                context.push('/market/supermarket/create');
+                              },
                             ),
                       const SizedBox(height: 20),
                       if (hasShop) ...[
+                        _SupermarketBanner(
+                          shop: shop!,
+                          onCreateTap: () {
+                            HapticFeedback.mediumImpact();
+                            context.push('/market/supermarket/create');
+                          },
+                          onManageTap: () {
+                            HapticFeedback.selectionClick();
+                            context.push('/market/supermarket/${shop!['id']}');
+                          },
+                        ),
+                        const SizedBox(height: 16),
                         _KpiGrid(
                           ordersCount: orders.length,
                           pending: pending,
@@ -721,7 +737,12 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
 
 class _NoShopHeader extends StatelessWidget {
   final VoidCallback onCreateTap;
-  const _NoShopHeader({required this.onCreateTap});
+  final VoidCallback? onCreateSupermarketTap;
+  
+  const _NoShopHeader({
+    required this.onCreateTap,
+    this.onCreateSupermarketTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -780,6 +801,34 @@ class _NoShopHeader extends StatelessWidget {
               ),
             ),
           ),
+          if (onCreateSupermarketTap != null) ...[
+            const SizedBox(height: 10),
+            Semantics(
+              button: true,
+              label: context.vdT('Créer un supermarché', 'Create a supermarket'),
+              child: SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton.icon(
+                  onPressed: onCreateSupermarketTap,
+                  icon: const Icon(Icons.local_grocery_store_rounded, size: 20),
+                  label: Text(
+                    context.vdT('Créer un supermarché', 'Create a supermarket'),
+                    style: ThixPolicy.labelStyle.copyWith(
+                      fontWeight: ThixPolicy.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: ThixPolicy.primary,
+                    side: const BorderSide(color: ThixPolicy.primary, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -859,6 +908,119 @@ class _ShopHeader extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// BANNIÈRE SUPERMARCHÉ (créer ou gérer)
+// ============================================================================
+class _SupermarketBanner extends StatelessWidget {
+  final Map<String, dynamic> shop;
+  final VoidCallback onCreateTap;
+  final VoidCallback onManageTap;
+
+  const _SupermarketBanner({
+    required this.shop,
+    required this.onCreateTap,
+    required this.onManageTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isSupermarket = shop['type']?.toString() == 'supermarket';
+
+    return Semantics(
+      button: true,
+      label: isSupermarket
+          ? context.vdT('Gérer mon supermarché', 'Manage my supermarket')
+          : context.vdT('Ouvrir mon supermarché', 'Open my supermarket'),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: isSupermarket
+                ? [const Color(0xFF065F46), const Color(0xFF059669)]
+                : [
+                    ThixPolicy.primaryDeep,
+                    ThixPolicy.domainMarket,
+                  ],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: ThixPolicy.shadowSoft(opacity: 0.12),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.18),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                isSupermarket
+                    ? Icons.local_grocery_store_rounded
+                    : Icons.add_business_rounded,
+                color: Colors.white,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isSupermarket
+                        ? context.vdT('Votre supermarché est actif',
+                            'Your supermarket is live')
+                        : context.vdT('Ouvrez votre supermarché',
+                            'Open your supermarket'),
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    isSupermarket
+                        ? context.vdT('Gérez rayons, promos et stocks',
+                            'Manage aisles, promos and stock')
+                        : context.vdT('12 rayons créés automatiquement',
+                            '12 aisles created automatically'),
+                    style: TextStyle(
+                        color: Colors.white.withOpacity(0.85),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton(
+              onPressed: isSupermarket ? onManageTap : onCreateTap,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: ThixPolicy.inkDeep,
+                elevation: 0,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              child: Text(
+                isSupermarket
+                    ? context.vdT('Gérer', 'Manage')
+                    : context.vdT('Créer', 'Create'),
+                style: const TextStyle(
+                    fontWeight: FontWeight.w800, fontSize: 12),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
