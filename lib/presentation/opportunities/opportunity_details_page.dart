@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/opportunity_item.dart';
 import 'package:thix_id/nav.dart';
@@ -30,7 +29,7 @@ class _Opp {
   static const blue = Color(0xFF2563EB);
 }
 
-class OpportunityDetailsPage extends StatelessWidget {
+class OpportunityDetailsPage extends StatefulWidget {
   final String opportunityId;
   final bool applied;
 
@@ -39,6 +38,20 @@ class OpportunityDetailsPage extends StatelessWidget {
     required this.opportunityId,
     required this.applied,
   });
+
+  @override
+  State<OpportunityDetailsPage> createState() => _OpportunityDetailsPageState();
+}
+
+class _OpportunityDetailsPageState extends State<OpportunityDetailsPage> {
+  late final Future<OpportunityItem?> _opportunityFuture;
+  final _service = OpportunityService();
+
+  @override
+  void initState() {
+    super.override,
+    _opportunityFuture = _service.fetchOpportunity(widget.opportunityId);
+  }
 
   String _tr(AppLocalizations l10n, String key, String fb) {
     final v = l10n.t(key);
@@ -59,12 +72,11 @@ class OpportunityDetailsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final service = OpportunityService();
 
     return Scaffold(
       backgroundColor: _Opp.bg,
       body: FutureBuilder<OpportunityItem?>(
-        future: service.fetchOpportunity(opportunityId),
+        future: _opportunityFuture,
         builder: (context, snap) {
           if (snap.connectionState != ConnectionState.done) {
             return const _DetailSkeleton();
@@ -107,7 +119,7 @@ class OpportunityDetailsPage extends StatelessWidget {
                 ],
               ),
               _StickyApply(
-                applied: applied,
+                applied: widget.applied,
                 isClosed: isClosed,
                 onApply: () => _handleApply(context, opp.applyUrl, l10n),
                 onShare: () => _handleShare(context, opp, l10n),
@@ -405,6 +417,10 @@ class OpportunityDetailsPage extends StatelessWidget {
   Future<void> _handleShare(
       BuildContext context, OpportunityItem opp, AppLocalizations l10n) async {
     HapticFeedback.selectionClick();
+    if (opp.applyUrl != null && opp.applyUrl!.isNotEmpty) {
+      await Clipboard.setData(ClipboardData(text: opp.applyUrl!));
+    }
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(_tr(l10n, 'opp_share_ok', 'Lien copié dans le presse-papiers')),
       backgroundColor: _Opp.navy2,
@@ -677,7 +693,7 @@ class _InfoRail extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
+        gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [_Opp.navy, _Opp.navy2],
@@ -1007,7 +1023,7 @@ class _StickyApply extends StatelessWidget {
         padding: EdgeInsets.fromLTRB(18, 14, 18, bottom + 14),
         decoration: BoxDecoration(
           color: _Opp.card,
-          border: Border(top: BorderSide(color: _Opp.line, width: 1)),
+          border: const Border(top: BorderSide(color: _Opp.line, width: 1)),
           boxShadow: [
             BoxShadow(
                 color: _Opp.navy.withOpacity(0.08),
@@ -1111,19 +1127,56 @@ class _DetailSkeleton extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(height: 24, width: 280, color: _Opp.line, borderRadius: BorderRadius.circular(4)),
+                  Container(
+                    height: 24,
+                    width: 280,
+                    decoration: BoxDecoration(
+                      color: _Opp.line,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
                   const SizedBox(height: 10),
-                  Container(height: 14, width: 180, color: _Opp.line, borderRadius: BorderRadius.circular(4)),
+                  Container(
+                    height: 14,
+                    width: 180,
+                    decoration: BoxDecoration(
+                      color: _Opp.line,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
                   const SizedBox(height: 24),
                   Row(
                     children: [
-                      Expanded(child: Container(height: 90, color: _Opp.line, borderRadius: BorderRadius.circular(14))),
+                      Expanded(
+                        child: Container(
+                          height: 90,
+                          decoration: BoxDecoration(
+                            color: _Opp.line,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
                       const SizedBox(width: 10),
-                      Expanded(child: Container(height: 90, color: _Opp.line, borderRadius: BorderRadius.circular(14))),
+                      Expanded(
+                        child: Container(
+                          height: 90,
+                          decoration: BoxDecoration(
+                            color: _Opp.line,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 20),
-                  Container(height: 120, width: double.infinity, color: _Opp.line, borderRadius: BorderRadius.circular(16)),
+                  Container(
+                    height: 120,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: _Opp.line,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
                 ],
               ),
             ),
