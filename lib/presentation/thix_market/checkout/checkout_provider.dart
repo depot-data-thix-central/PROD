@@ -696,6 +696,8 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
           'product_name': prodTitle,
           'product_image': imageUrl.isEmpty ? null : imageUrl,
           'title_snapshot': prodTitle,
+          'shop_id': shopId,          
+          'currency': currency,       
         };
       }).toList();
 
