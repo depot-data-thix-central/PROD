@@ -276,7 +276,9 @@ static const String thixSosIncidents = '/thix-sos/incidents';
   static const String callOngoingName = 'callOngoing';
   static const String callHistoryName = 'callHistory';
   static String callWithUser(String userId) => '/call/$userId';
-
+static const String marketSupermarketManage = '/market/supermarket/:id/manage';
+  static String marketSupermarketManagePath(String id) => '/market/supermarket/$id/manage';
+  
   static const String marketHome = '/market/home';
   static const String marketSearch = '/market/search';
   static const String marketCart = '/market/cart';
