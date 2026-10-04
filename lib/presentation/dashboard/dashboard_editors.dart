@@ -1081,11 +1081,11 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
               // côté serveur.
               TextField(
                 controller: _thixChatDisplayC,
-                readOnly: true,
+                readOnly: false,
                 maxLength: 50,
                 decoration: _inputDecor('THIX CHAT (@handle)', Icons.alternate_email_rounded).copyWith(
-                  suffixIcon: const Icon(Icons.lock_outline_rounded, size: 18, color: ThixPolicy.textMuted),
-                  helperText: l10n.t('editors_thix_chat_readonly_hint'),
+                  
+                  
                 ),
               ),
             ]),
