@@ -565,11 +565,29 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
       // Résolution shop_id + currency
       String? shopId;
       final first = items.first;
-      if (first['product'] is Map && (first['product'] as Map)['shop_id'] != null) {
-        shopId = (first['product'] as Map)['shop_id'].toString();
-      } else if (first['shop_id'] != null) {
+      final product = first['product'];
+
+      if (product is Map) {
+        // 1. shop_id direct sur le produit
+        if (product['shop_id'] != null) {
+          shopId = product['shop_id'].toString();
+        }
+        // 2. shop imbriqué (jointure shops)
+        else if (product['shop'] is Map && (product['shop'] as Map)['id'] != null) {
+          shopId = (product['shop'] as Map)['id'].toString();
+        }
+      }
+
+      // 3. fallback sur l'item du panier
+      if (shopId == null && first['shop_id'] != null) {
         shopId = first['shop_id'].toString();
       }
+
+      // Sécurité : on refuse de créer une commande sans shop_id
+      if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
+        throw Exception('Boutique introuvable pour cette commande. Rechargez le panier.');
+      }
+      
       final currency = _resolveCurrency(items);
       final shippingCost = _CheckoutValidators.safeDouble(state.selectedShipping!['price']);
 
