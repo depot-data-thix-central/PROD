@@ -3,7 +3,6 @@
 // SUPERMARCHÉ — ÉTAGÈRES GONDOLES RÉALISTES (fond clair, enterprise)
 // ============================================================================
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:barcode_widget/barcode_widget.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -15,6 +14,7 @@ import 'package:go_router/go_router.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/presentation/thix_market/models/supermarket_models.dart';
+import 'package:thix_id/presentation/thix_market/models/supermarket_product.dart';
 import 'package:thix_id/presentation/thix_market/providers/supermarket_providers.dart';
 
 import 'department_products_page.dart';
@@ -59,7 +59,7 @@ class SupermarketSpacePage extends ConsumerWidget {
               _LightStorefront(shop: shop, l10n: l10n),
 
               // ── HERO BANNER AUTO-SCROLLING ──
-              SpiverToBoxAdapter(
+              SliverToBoxAdapter(
                 child: _HeroCarousel(
                   products: products,
                   l10n: l10n,
@@ -110,13 +110,11 @@ class SupermarketSpacePage extends ConsumerWidget {
               else
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 14),
-                  sliver: SpiverList(
+                  sliver: SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (ctx, i) {
                         final dept = depts[i];
-                        final deptProducts = products
-                            .where((p) => p.departmentId == dept.id)
-                            .toList();
+                        final deptProducts = products.where((p) => p.departmentId == dept.id).toList();
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 22),
                           child: _GondolaShelf(
@@ -190,7 +188,7 @@ class _LightStorefront extends StatelessWidget {
     final rating = (shop['rating'] as num?)?.toDouble() ?? 0;
     final isOpen = (shop['is_open'] as bool?) ?? true;
 
-    return SpiverAppBar(
+    return SliverAppBar(
       expandedHeight: 210,
       pinned: true,
       backgroundColor: Colors.white,
@@ -229,11 +227,14 @@ class _LightStorefront extends StatelessWidget {
               ),
             ),
             Positioned(
-              left: 16, right: 16, bottom: 12,
+              left: 16,
+              right: 16,
+              bottom: 12,
               child: Row(
                 children: [
                   Container(
-                    width: 54, height: 54,
+                    width: 54,
+                    height: 54,
                     decoration: BoxDecoration(
                       color: Colors.white,
                       shape: BoxShape.circle,
@@ -250,7 +251,9 @@ class _LightStorefront extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                        Text(name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: ThixPolicy.textMain)),
                         const SizedBox(height: 3),
                         Row(children: [
@@ -284,7 +287,7 @@ class _LightStorefront extends StatelessWidget {
 }
 
 // ============================================================================
-// HERO BANNER AUTO-SCROLLING (promos / vedettes / frais / nouveau)
+// HERO BANNER AUTO-SCROLLING (promos / vedettes / frais)
 // ============================================================================
 class _HeroItem {
   final String badge;
@@ -348,10 +351,8 @@ class _HeroCarouselState extends State<_HeroCarousel> {
       items.add(_HeroItem(
         badge: 'PROMO -${p.promoPercent}%',
         title: p.title,
-        subtitle: '${p.price} ${p.currency} → ${p.priceLabel()} ${p.currency}',
-        cta: l10n.t('sm_hero_promo_cta').isEmpty || l10n.t('sm_hero_promo_cta') == 'sm_hero_promo_cta'
-            ? 'J\'en profite'
-            : l10n.t('sm_hero_promo_cta'),
+        subtitle: '${p.priceLabel(p.price)} ${p.currency} → ${p.priceLabel()} ${p.currency}',
+        cta: 'J\'en profite',
         gradient: const [Color(0xFFFFF1F0), Color(0xFFFFE4E1)],
         icon: Icons.local_fire_department_rounded,
         product: p,
@@ -374,9 +375,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
       items.add(_HeroItem(
         badge: 'FRAÎCHEUR',
         title: p.title,
-        subtitle: p.expiryDateTime != null
-            ? 'À consommer avant le ${_fmtDate(p.expiryDateTime!)}'
-            : 'Produit frais du jour',
+        subtitle: p.expiryDate != null ? 'À consommer avant le ${_fmtDate(p.expiryDate!)}' : 'Produit frais du jour',
         cta: 'Voir',
         gradient: const [Color(0xFFE9F7EC), Color(0xFFDFF2E3)],
         icon: Icons.eco_rounded,
@@ -398,7 +397,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
   }
 
   String _fmtDate(DateTime d) =>
-      '\( {d.day.toString().padLeft(2, '0')}/ \){d.month.toString().padLeft(2, '0')}/${d.year}';
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
   void _startTimer() {
     _timer?.cancel();
@@ -450,55 +449,22 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                             children: [
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: item.gradient.last.withOpacity(0.9),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
+                                decoration: BoxDecoration(color: item.gradient.last.withOpacity(0.9), borderRadius: BorderRadius.circular(6)),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(item.icon, size: 11, color: ThixPolicy.textMain),
                                     const SizedBox(width: 4),
-                                    Text(
-                                      item.badge,
-                                      style: const TextStyle(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w900,
-                                        color: ThixPolicy.textMain,
-                                        letterSpacing: 0.6,
-                                      ),
-                                    ),
+                                    Text(item.badge, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: ThixPolicy.textMain, letterSpacing: 0.6)),
                                   ],
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              Text(
-                                item.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w900,
-                                  color: ThixPolicy.textMain,
-                                  height: 1.2,
-                                ),
-                              ),
+                              Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: ThixPolicy.textMain, height: 1.2)),
                               const SizedBox(height: 4),
-                              Text(
-                                item.subtitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary),
-                              ),
+                              Text(item.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary)),
                               const SizedBox(height: 8),
-                              Text(
-                                item.cta,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w900,
-                                  color: ThixPolicy.primary,
-                                ),
-                              ),
+                              Text(item.cta, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: ThixPolicy.primary)),
                             ],
                           ),
                         ),
@@ -509,11 +475,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                           child: Container(
                             width: 96,
                             height: 96,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(14),
-                              boxShadow: ThixPolicy.shadowSoft(opacity: 0.12),
-                            ),
+                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), boxShadow: ThixPolicy.shadowSoft(opacity: 0.12)),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(14),
                               child: CachedNetworkImage(
@@ -541,10 +503,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
               margin: const EdgeInsets.symmetric(horizontal: 3),
               width: active ? 18 : 6,
               height: 6,
-              decoration: BoxDecoration(
-                color: active ? ThixPolicy.primary : ThixPolicy.border,
-                borderRadius: BorderRadius.circular(3),
-              ),
+              decoration: BoxDecoration(color: active ? ThixPolicy.primary : ThixPolicy.border, borderRadius: BorderRadius.circular(3)),
             );
           }),
         ),
@@ -554,7 +513,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 }
 
 // ============================================================================
-// ÉTAGÈRE GONDOLE RÉALISTE (photo : blanc + rails rouges + fond perforé)
+// ÉTAGÈRE GONDOLE RÉALISTE (blanc + rails rouges + fond perforé)
 // ============================================================================
 class _GondolaShelf extends StatelessWidget {
   final SupermarketDepartment dept;
@@ -589,10 +548,7 @@ class _GondolaShelf extends StatelessWidget {
         ),
         child: Column(
           children: [
-            // ── FRONTON (enseigne du rayon) ──
             _GondolaHeader(dept: dept, aisleNumber: aisleNumber, count: products.length),
-
-            // ── CORPS DE L'ÉTAGÈRE ──
             Padding(
               padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
               child: IntrinsicHeight(
@@ -609,16 +565,12 @@ class _GondolaShelf extends StatelessWidget {
                         ),
                         child: Stack(
                           children: [
-                            // Fond perforé
                             Positioned.fill(child: CustomPaint(painter: _PerforatedPainter())),
-                            // Niveaux
                             Column(
                               mainAxisSize: MainAxisSize.min,
                               children: List.generate(_levels, (lvl) {
-                                final levelProducts = _levelProducts(lvl);
                                 return _ShelfLevel(
-                                  slots: levelProducts,
-                                  deptColor: dept.color,
+                                  slots: _levelProducts(lvl),
                                   onProductTap: onProductTap,
                                 );
                               }),
@@ -632,23 +584,13 @@ class _GondolaShelf extends StatelessWidget {
                 ),
               ),
             ),
-
-            // ── PIEDS ──
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Container(
-                    width: 14,
-                    height: 8,
-                    decoration: BoxDecoration(color: _kMeshWire, borderRadius: BorderRadius.circular(2)),
-                  ),
-                  Container(
-                    width: 14,
-                    height: 8,
-                    decoration: BoxDecoration(color: _kMeshWire, borderRadius: BorderRadius.circular(2)),
-                  ),
+                  Container(width: 14, height: 8, decoration: BoxDecoration(color: _kMeshWire, borderRadius: BorderRadius.circular(2))),
+                  Container(width: 14, height: 8, decoration: BoxDecoration(color: _kMeshWire, borderRadius: BorderRadius.circular(2))),
                 ],
               ),
             ),
@@ -688,33 +630,17 @@ class _GondolaHeader extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
             decoration: BoxDecoration(color: dept.color, borderRadius: BorderRadius.circular(6)),
-            child: Text(
-              'ALLÉE $aisleNumber',
-              style: const TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-                letterSpacing: 0.8,
-              ),
-            ),
+            child: Text('ALLÉE $aisleNumber', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.8)),
           ),
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              color: dept.color.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
+            decoration: BoxDecoration(color: dept.color.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
             child: Icon(dept.icon, size: 16, color: dept.color),
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              dept.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: ThixPolicy.textMain),
-            ),
+            child: Text(dept.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: ThixPolicy.textMain)),
           ),
           Text('$count', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: dept.color)),
           const Icon(Icons.chevron_right_rounded, size: 16, color: ThixPolicy.textMuted),
@@ -724,17 +650,13 @@ class _GondolaHeader extends StatelessWidget {
   }
 }
 
-// ── Grillage latéral (mesh) ──
 class _SideMesh extends StatelessWidget {
   final double width;
   const _SideMesh({required this.width});
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      child: CustomPaint(painter: _MeshPainter()),
-    );
+    return SizedBox(width: width, child: CustomPaint(painter: _MeshPainter()));
   }
 }
 
@@ -757,7 +679,6 @@ class _MeshPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// ── Fond perforé (trous du panneau gondole) ──
 class _PerforatedPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -778,31 +699,26 @@ class _PerforatedPainter extends CustomPainter {
 // ============================================================================
 class _ShelfLevel extends StatelessWidget {
   final List<SupermarketProduct?> slots;
-  final Color deptColor;
   final ValueChanged<SupermarketProduct> onProductTap;
 
-  const _ShelfLevel({required this.slots, required this.deptColor, required this.onProductTap});
+  const _ShelfLevel({required this.slots, required this.onProductTap});
 
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // ── PRODUITS POSÉS SUR LA TABLETTE ──
         SizedBox(
           height: 86,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: slots
                 .map<Widget>((p) => Expanded(
-                      child: p == null
-                          ? const SizedBox.shrink()
-                          : _Facing(product: p, onTap: () => onProductTap(p)),
+                      child: p == null ? const SizedBox.shrink() : _Facing(product: p, onTap: () => onProductTap(p)),
                     ))
                 .toList(),
           ),
         ),
-        // ── TABLETTE + RAIL ROUGE + ÉTIQUETTES ──
         _ShelfBoard(slots: slots),
       ],
     );
@@ -819,7 +735,6 @@ class _ShelfBoard extends StatelessWidget {
       height: 24,
       child: Stack(
         children: [
-          // Tablette blanche (dessus avec profondeur)
           Positioned(
             top: 0,
             left: 2,
@@ -827,23 +742,12 @@ class _ShelfBoard extends StatelessWidget {
             height: 9,
             child: Container(
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.white, Color(0xFFEDEFF2)],
-                ),
+                gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.white, Color(0xFFEDEFF2)]),
                 borderRadius: BorderRadius.circular(2),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.10),
-                    blurRadius: 3,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.10), blurRadius: 3, offset: const Offset(0, 2))],
               ),
             ),
           ),
-          // Rail rouge porte-étiquettes
           Positioned(
             bottom: 0,
             left: 0,
@@ -851,23 +755,12 @@ class _ShelfBoard extends StatelessWidget {
             height: 15,
             child: Container(
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [_kRailRed, _kRailRedDark],
-                ),
+                gradient: const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [_kRailRed, _kRailRedDark]),
                 borderRadius: BorderRadius.circular(3),
-                boxShadow: [
-                  BoxShadow(
-                    color: _kRailRed.withOpacity(0.25),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                boxShadow: [BoxShadow(color: _kRailRed.withOpacity(0.25), blurRadius: 4, offset: const Offset(0, 2))],
               ),
             ),
           ),
-          // Étiquettes de prix alignées sous chaque produit
           Positioned(
             bottom: 2,
             left: 0,
@@ -875,11 +768,7 @@ class _ShelfBoard extends StatelessWidget {
             height: 11,
             child: Row(
               children: slots
-                  .map<Widget>((p) => Expanded(
-                        child: p == null
-                            ? const SizedBox.shrink()
-                            : Center(child: _PriceTag(product: p)),
-                      ))
+                  .map<Widget>((p) => Expanded(child: p == null ? const SizedBox.shrink() : Center(child: _PriceTag(product: p))))
                   .toList(),
             ),
           ),
@@ -900,11 +789,7 @@ class _PriceTag extends StatelessWidget {
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(2)),
       child: Text(
         '${product.priceLabel()} ${product.currency}',
-        style: TextStyle(
-          fontSize: 7.5,
-          fontWeight: FontWeight.w900,
-          color: product.onPromo ? _kRailRed : ThixPolicy.textMain,
-        ),
+        style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w900, color: product.onPromo ? _kRailRed : ThixPolicy.textMain),
       ),
     );
   }
@@ -929,7 +814,6 @@ class _Facing extends StatelessWidget {
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // Produits alignés (facings) — effet profondeur
             if (facings > 0)
               Align(
                 alignment: Alignment.bottomCenter,
@@ -963,16 +847,9 @@ class _Facing extends StatelessWidget {
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(color: Colors.grey.withOpacity(0.15)),
                   ),
-                  child: const Center(
-                    child: Text(
-                      'RUPTURE',
-                      style: TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Colors.grey),
-                    ),
-                  ),
+                  child: const Center(child: Text('RUPTURE', style: TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Colors.grey))),
                 ),
               ),
-
-            // Badge promo
             if (product.onPromo)
               Positioned(
                 top: -4,
@@ -980,14 +857,9 @@ class _Facing extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                   decoration: BoxDecoration(color: _kRailRed, borderRadius: BorderRadius.circular(4)),
-                  child: Text(
-                    '-${product.promoPercent}%',
-                    style: const TextStyle(fontSize: 7.5, fontWeight: FontWeight.w900, color: Colors.white),
-                  ),
+                  child: Text('-${product.promoPercent}%', style: const TextStyle(fontSize: 7.5, fontWeight: FontWeight.w900, color: Colors.white)),
                 ),
               ),
-
-            // Badge périssable / expiration
             if (product.isPerishable)
               Positioned(
                 top: -4,
@@ -995,15 +867,11 @@ class _Facing extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                   decoration: BoxDecoration(
-                    color: product.isExpired
-                        ? Colors.grey
-                        : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
+                    color: product.isExpired ? Colors.grey : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    product.isExpired
-                        ? 'EXPIRÉ'
-                        : (product.isFreshSoon ? 'J-${product.daysToExpiry}' : 'FRAIS'),
+                    product.isExpired ? 'EXPIRÉ' : (product.isFreshSoon ? 'J-${product.daysToExpiry}' : 'FRAIS'),
                     style: const TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Colors.white),
                   ),
                 ),
@@ -1027,13 +895,7 @@ class _ProductBox extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(5),
         border: Border.all(color: _kMetalEdge),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(muted ? 0.05 : 0.12),
-            blurRadius: 3,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(muted ? 0.05 : 0.12), blurRadius: 3, offset: const Offset(0, 2))],
       ),
       child: product.hasPhotos
           ? ClipRRect(
@@ -1041,19 +903,16 @@ class _ProductBox extends StatelessWidget {
               child: CachedNetworkImage(
                 imageUrl: product.mainPhoto,
                 fit: BoxFit.cover,
-                errorWidget: (_, __, ___) =>
-                    const Icon(Icons.inventory_2_rounded, size: 18, color: ThixPolicy.textMuted),
+                errorWidget: (_, __, ___) => const Icon(Icons.inventory_2_rounded, size: 18, color: ThixPolicy.textMuted),
               ),
             )
-          : const Center(
-              child: Icon(Icons.inventory_2_rounded, size: 18, color: ThixPolicy.textMuted),
-            ),
+          : const Center(child: Icon(Icons.inventory_2_rounded, size: 18, color: ThixPolicy.textMuted)),
     );
   }
 }
 
 // ============================================================================
-// FICHE PRODUIT RAPIDE (bottom sheet) — 5 photos, code-barres, expiry...
+// FICHE PRODUIT RAPIDE (bottom sheet)
 // ============================================================================
 class _ProductQuickView extends StatelessWidget {
   final SupermarketProduct product;
@@ -1073,71 +932,34 @@ class _ProductQuickView extends StatelessWidget {
       maxChildSize: 0.95,
       expand: false,
       builder: (_, scrollCtrl) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
+        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
         child: ListView(
           controller: scrollCtrl,
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
-              ),
-            ),
+            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 16),
-
-            // ── GALERIE (jusqu'à 5 photos) ──
             _PhotoGallery(photos: product.photos),
             const SizedBox(height: 16),
-
-            // ── TITRE + BADGES ──
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    product.title,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: ThixPolicy.textMain),
-                  ),
-                ),
+                Expanded(child: Text(product.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: ThixPolicy.textMain))),
                 if (product.onPromo)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(color: _kRailRed, borderRadius: BorderRadius.circular(8)),
-                    child: Text(
-                      '-${product.promoPercent}%',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white),
-                    ),
+                    child: Text('-${product.promoPercent}%', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white)),
                   ),
               ],
             ),
             const SizedBox(height: 8),
-
-            // ── PRIX ──
             Row(
               children: [
-                Text(
-                  '${product.priceLabel()} ${product.currency}',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    color: product.onPromo ? _kRailRed : ThixPolicy.primary,
-                  ),
-                ),
+                Text('${product.priceLabel()} ${product.currency}', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: product.onPromo ? _kRailRed : ThixPolicy.primary)),
                 if (product.onPromo) ...[
                   const SizedBox(width: 8),
-                  Text(
-                    '${product.price} ${product.currency}',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: ThixPolicy.textMuted,
-                      decoration: TextDecoration.lineThrough,
-                    ),
-                  ),
+                  Text('${product.priceLabel(product.price)} ${product.currency}', style: const TextStyle(fontSize: 13, color: ThixPolicy.textMuted, decoration: TextDecoration.lineThrough)),
                 ],
                 if (product.unit != null) ...[
                   const SizedBox(width: 8),
@@ -1146,59 +968,28 @@ class _ProductQuickView extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
-
-            // ── INFOS CLÉS ──
-            _InfoGrid(product: product, l10n: l10n),
+            _InfoGrid(product: product),
             const SizedBox(height: 16),
-
-            // ── CODE-BARRES ──
             if (product.barcode != null && product.barcode!.isNotEmpty) ...[
               Container(
                 padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: ThixPolicy.surfaceSoft,
-                  borderRadius: BorderRadius.circular(14),
-                ),
+                decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(14)),
                 child: Column(
                   children: [
-                    BarcodeWidget(
-                      barcode: Barcode.code128(),
-                      data: product.barcode!,
-                      height: 48,
-                      drawText: false,
-                      color: ThixPolicy.textMain,
-                    ),
+                    BarcodeWidget(barcode: Barcode.code128(), data: product.barcode!, height: 48, drawText: false, color: ThixPolicy.textMain),
                     const SizedBox(height: 6),
-                    Text(
-                      product.barcode!,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 2,
-                        color: ThixPolicy.textSecondary,
-                      ),
-                    ),
+                    Text(product.barcode!, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 2, color: ThixPolicy.textSecondary)),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
             ],
-
-            // ── DESCRIPTION ──
             if (product.description != null && product.description!.isNotEmpty) ...[
-              Text(
-                _tr('sm_description', 'Description'),
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: ThixPolicy.textMain),
-              ),
+              Text(_tr('sm_description', 'Description'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: ThixPolicy.textMain)),
               const SizedBox(height: 6),
-              Text(
-                product.description!,
-                style: const TextStyle(fontSize: 13, color: ThixPolicy.textSecondary, height: 1.5),
-              ),
+              Text(product.description!, style: const TextStyle(fontSize: 13, color: ThixPolicy.textSecondary, height: 1.5)),
               const SizedBox(height: 20),
             ],
-
-            // ── CTA ──
             SizedBox(
               height: 50,
               child: ElevatedButton.icon(
@@ -1208,11 +999,7 @@ class _ProductQuickView extends StatelessWidget {
                 },
                 icon: const Icon(Icons.open_in_full_rounded, size: 18),
                 label: Text(_tr('sm_full_sheet', 'Voir la fiche complète')),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ThixPolicy.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
+                style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
               ),
             ),
           ],
@@ -1245,13 +1032,8 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
     if (widget.photos.isEmpty) {
       return Container(
         height: 220,
-        decoration: BoxDecoration(
-          color: ThixPolicy.surfaceSoft,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: const Center(
-          child: Icon(Icons.image_not_supported_outlined, size: 40, color: ThixPolicy.textMuted),
-        ),
+        decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(16)),
+        child: const Center(child: Icon(Icons.image_not_supported_outlined, size: 40, color: ThixPolicy.textMuted)),
       );
     }
     return Column(
@@ -1269,8 +1051,7 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
                 fit: BoxFit.cover,
                 width: double.infinity,
                 placeholder: (_, __) => const Center(child: CircularProgressIndicator()),
-                errorWidget: (_, __, ___) =>
-                    const Center(child: Icon(Icons.broken_image_rounded, color: ThixPolicy.textMuted)),
+                errorWidget: (_, __, ___) => const Center(child: Icon(Icons.broken_image_rounded, color: ThixPolicy.textMuted)),
               ),
             ),
           ),
@@ -1286,10 +1067,7 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
                 margin: const EdgeInsets.symmetric(horizontal: 3),
                 width: active ? 16 : 6,
                 height: 6,
-                decoration: BoxDecoration(
-                  color: active ? ThixPolicy.primary : ThixPolicy.border,
-                  borderRadius: BorderRadius.circular(3),
-                ),
+                decoration: BoxDecoration(color: active ? ThixPolicy.primary : ThixPolicy.border, borderRadius: BorderRadius.circular(3)),
               );
             }),
           ),
@@ -1301,8 +1079,7 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
 
 class _InfoGrid extends StatelessWidget {
   final SupermarketProduct product;
-  final AppLocalizations l10n;
-  const _InfoGrid({required this.product, required this.l10n});
+  const _InfoGrid({required this.product});
 
   @override
   Widget build(BuildContext context) {
@@ -1310,44 +1087,27 @@ class _InfoGrid extends StatelessWidget {
       _InfoCell(
         icon: Icons.inventory_2_rounded,
         label: 'Stock',
-        value: '\( {product.stock} \){product.unit != null ? ' ${product.unit}' : ''}',
+        value: '${product.stock}${product.unit != null ? ' ${product.unit}' : ''}',
         color: product.stock > 0 ? ThixPolicy.success : ThixPolicy.danger,
       ),
-      _InfoCell(
-        icon: Icons.category_outlined,
-        label: 'Unité',
-        value: product.unit ?? 'pcs',
-        color: ThixPolicy.primary,
-      ),
+      _InfoCell(icon: Icons.category_outlined, label: 'Unité', value: product.unit ?? 'pcs', color: ThixPolicy.primary),
       if (product.isPerishable)
         _InfoCell(
           icon: product.isExpired ? Icons.warning_amber_rounded : Icons.event_rounded,
           label: 'Expiration',
-          value: product.expiryDateTime != null
-              ? '\( {product.expiryDateTime!.day.toString().padLeft(2, '0')}/ \){product.expiryDateTime!.month.toString().padLeft(2, '0')}/${product.expiryDateTime!.year}'
+          value: product.expiryDate != null
+              ? '${product.expiryDate!.day.toString().padLeft(2, '0')}/${product.expiryDate!.month.toString().padLeft(2, '0')}/${product.expiryDate!.year}'
               : '—',
-          color: product.isExpired
-              ? ThixPolicy.danger
-              : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
+          color: product.isExpired ? ThixPolicy.danger : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
         ),
       if (product.onPromo)
-        _InfoCell(
-          icon: Icons.local_offer_rounded,
-          label: 'Prix promo',
-          value: '${product.priceLabel()} ${product.currency}',
-          color: _kRailRed,
-        ),
+        _InfoCell(icon: Icons.local_offer_rounded, label: 'Prix promo', value: '${product.priceLabel()} ${product.currency}', color: _kRailRed),
     ];
 
     return Wrap(
       spacing: 10,
       runSpacing: 10,
-      children: cells
-          .map((c) => SizedBox(
-                width: (MediaQuery.of(context).size.width - 60) / 2,
-                child: c,
-              ))
-          .toList(),
+      children: cells.map((c) => SizedBox(width: (MediaQuery.of(context).size.width - 60) / 2, child: c)).toList(),
     );
   }
 }
@@ -1357,22 +1117,13 @@ class _InfoCell extends StatelessWidget {
   final String label;
   final String value;
   final Color color;
-  const _InfoCell({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-  });
+  const _InfoCell({required this.icon, required this.label, required this.value, required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: ThixPolicy.surfaceSoft,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: ThixPolicy.border),
-      ),
+      decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(12), border: Border.all(color: ThixPolicy.border)),
       child: Row(
         children: [
           Icon(icon, size: 18, color: color),
@@ -1381,21 +1132,9 @@ class _InfoCell extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: ThixPolicy.textMuted,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                Text(label, style: const TextStyle(fontSize: 10, color: ThixPolicy.textMuted, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 2),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: color),
-                ),
+                Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: color)),
               ],
             ),
           ),
