@@ -1586,8 +1586,7 @@ class _BillingRow extends StatelessWidget {
     );
   }
 }
-
-// ✅ TILE ROBUSTE : fonctionne même sans jointure produit
+// ✅ TILE ADAPTÉ À LA STRUCTURE RÉELLE DE LA TABLE order_items
 class _OrderItemTile extends StatelessWidget {
   final Map<String, dynamic> item;
   final String currency;
@@ -1597,27 +1596,25 @@ class _OrderItemTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Résolution produit : Map imbriqué OU champs snapshot à la racine
-    final product = (item['product'] is Map) ? (item['product'] as Map) : <String, dynamic>{};
+    // ── Lecture directe des colonnes de order_items ──
     final title = _VoValidators.sanitize(
-      (product['title']?.toString() ??
-              item['title']?.toString() ??
-              item['product_name']?.toString() ??
-              context.voT('Produit', 'Product')),
+      (item['title_snapshot']?.toString() ?? 
+       item['product_name']?.toString() ?? 
+       item['title']?.toString() ?? 
+       context.voT('Produit', 'Product')),
       maxLength: _kMaxTitleLength,
     );
-    final qty = _VoValidators.safeInt(item['quantity'], fallback: 1);
+    
+    final qty = _VoValidators.safeInt(item['quantity'] ?? item['qty'], fallback: 1);
     final price = _VoValidators.safeDouble(item['price']);
     final variant = _VoValidators.sanitize(item['variant']?.toString(), maxLength: 30);
     final color = _VoValidators.sanitize(item['color']?.toString(), maxLength: 30);
-    final imageUrl = _VoValidators.sanitizeUrl(
-      (product['image_url']?.toString() ?? item['product_image']?.toString()),
-    );
+    
+    // Image : directement depuis product_image
+    final imageUrl = _VoValidators.sanitizeUrl(item['product_image']?.toString());
 
-    // Devise : depuis le produit imbriqué → sinon depuis le param parent
-    final itemCurrency = _VoValidators.normalizeCurrency(
-      (product['currency']?.toString() ?? item['currency']?.toString() ?? currency),
-    );
+    // Devise : directement depuis currency
+    final itemCurrency = _VoValidators.normalizeCurrency(item['currency']?.toString() ?? currency);
     final symbol = _VoValidators.currencySymbol(itemCurrency);
     final formattedPrice = _VoValidators.formatAmount(price, locale, isUSD: itemCurrency == 'USD');
     final formattedTotal = _VoValidators.formatAmount(price * qty, locale, isUSD: itemCurrency == 'USD');
