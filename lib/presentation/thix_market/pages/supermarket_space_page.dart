@@ -50,7 +50,7 @@ class SupermarketSpacePage extends ConsumerWidget {
           if (shop == null) return const Center(child: Text('Supermarché introuvable'));
           final depts = deptsAsync.valueOrNull ?? <SupermarketDepartment>[];
           final rawProducts = productsAsync.valueOrNull ?? <SupermarketProduct>[];
-          final products = <SupermarketProduct>[...rawProducts];
+          final products = (rawProducts as List).cast<SupermarketProduct>();
 
           return CustomScrollView(
             physics: const BouncingScrollPhysics(),
