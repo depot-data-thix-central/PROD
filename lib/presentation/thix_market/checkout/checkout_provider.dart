@@ -410,14 +410,15 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
   }
 
   void selectShippingMethod(Map<String, dynamic> method) {
-    final id = method['id']?.toString();
-    if (id == null || !_CheckoutValidators.isValidId(id)) {
-      debugPrint('[CheckoutProvider] ⚠️ Invalid shipping method ID rejected');
-      return;
-    }
-    state = state.copyWith(selectedShipping: method);
-    debugPrint('[CheckoutProvider] 🚚 Shipping selected: ${id.substring(0, 8)}');
+  final id = method['id']?.toString()?.trim();
+  // IDs livraisons = clés métier ('home_delivery', 'pickup'), pas des UUID
+  if (id == null || id.isEmpty || !RegExp(r'^[a-zA-Z0-9_\-]{2,}$').hasMatch(id)) {
+    debugPrint('[CheckoutProvider] ⚠️ Invalid shipping method ID rejected: $id');
+    return;
   }
+  state = state.copyWith(selectedShipping: method);
+  debugPrint('[CheckoutProvider] 🚚 Shipping selected: $id');
+}
 
   void selectPaymentMethod(Map<String, dynamic> method) {
     final id = method['id']?.toString();
@@ -547,8 +548,11 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
     final addressId = state.selectedAddress!['id']?.toString();
     final shippingId = state.selectedShipping!['id']?.toString();
     if (!_CheckoutValidators.isValidId(addressId)) throw Exception('Adresse invalide');
-    if (!_CheckoutValidators.isValidId(shippingId)) throw Exception('Mode livraison invalide');
-
+    if (shippingId == null ||
+    shippingId.isEmpty ||
+    !RegExp(r'^[a-zA-Z0-9_\-]{2,}$').hasMatch(shippingId)) {
+  throw Exception('Mode livraison invalide');
+}
     // Validation stock en batch (1 requête au lieu de N)
     await _validateStockBatch(items);
 
