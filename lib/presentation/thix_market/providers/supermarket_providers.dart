@@ -32,7 +32,6 @@ final supermarketPromosProvider =
   return ref.watch(supermarketServiceProvider).getSupermarketPromos(id);
 });
 
-
 /// Tous les produits actifs du supermarché (pour la gestion des rayons)
 final supermarketAllProductsProvider =
     FutureProvider.family<List<Map<String, dynamic>>, String>((ref, shopId) async {
@@ -46,4 +45,20 @@ final supermarketAllProductsProvider =
       .limit(300)
       .timeout(const Duration(seconds: 12));
   return List<Map<String, dynamic>>.from(res);
+});
+
+/// ── AJOUT : produits riches pour les étagères 3D ──
+final supermarketShelfProductsProvider =
+    FutureProvider.family<List<SupermarketProduct>, String>((ref, shopId) async {
+  final res = await Supabase.instance.client
+      .from('products')
+      .select('*')
+      .eq('shop_id', shopId)
+      .eq('status', 'active')
+      .order('created_at', ascending: false)
+      .limit(300)
+      .timeout(const Duration(seconds: 12));
+  return (res as List)
+      .map((e) => SupermarketProduct.fromJson(Map<String, dynamic>.from(e as Map)))
+      .toList();
 });
