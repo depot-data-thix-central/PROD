@@ -1,4 +1,3 @@
-// lib/presentation/thix_market/models/supermarket_models.dart
 import 'package:flutter/material.dart';
 
 // ============================================================================
@@ -45,6 +44,105 @@ class SupermarketDepartment {
   }
 
   IconData get icon => kDepartmentIcons[iconKey] ?? Icons.shopping_basket_rounded;
+}
+
+// ============================================================================
+// PRODUIT DE SUPERMARCHÉ (Modèle Enrichi)
+// ============================================================================
+class SupermarketProduct {
+  final String id;
+  final String? shopId;
+  final String? departmentId;
+  final String? aisleNumber;
+  final String title;
+  final double price;
+  final double? discountPrice;
+  final String currency;
+  final String? imageUrl;
+  final num stock;
+  final String? barcode;
+  final bool isPerishable;
+  final String? expiryDate;
+  final bool isPromotion;
+  final String? description;
+  final String? unitMeasurement; // ex: kg, g, ml, L
+  final String? brand;
+  final String? origin;
+  final String? nutritionalInfo;
+  final String status;
+
+  const SupermarketProduct({
+    required this.id,
+    this.shopId,
+    this.departmentId,
+    this.aisleNumber,
+    required this.title,
+    required this.price,
+    this.discountPrice,
+    required this.currency,
+    this.imageUrl,
+    this.stock = 0,
+    this.barcode,
+    this.isPerishable = false,
+    this.expiryDate,
+    this.isPromotion = false,
+    this.description,
+    this.unitMeasurement,
+    this.brand,
+    this.origin,
+    this.nutritionalInfo,
+    this.status = 'active',
+  });
+
+  factory SupermarketProduct.fromJson(Map<String, dynamic> j) {
+    return SupermarketProduct(
+      id: j['id']?.toString() ?? '',
+      shopId: j['shop_id']?.toString(),
+      departmentId: j['department_id']?.toString(),
+      aisleNumber: j['aisle_number']?.toString(),
+      title: j['title']?.toString() ?? '',
+      price: (j['price'] as num?)?.toDouble() ?? 0.0,
+      discountPrice: (j['discount_price'] as num?)?.toDouble(),
+      currency: j['currency']?.toString() ?? 'CDF',
+      imageUrl: j['image_url']?.toString(),
+      stock: j['stock'] as num? ?? 0,
+      barcode: j['barcode']?.toString(),
+      isPerishable: j['is_perishable'] == true || j['is_perishable'] == 1,
+      expiryDate: j['expiry_date']?.toString(),
+      isPromotion: j['is_promotion'] == true || j['is_promotion'] == 1,
+      description: j['description']?.toString(),
+      unitMeasurement: j['unit_measurement']?.toString(),
+      brand: j['brand']?.toString(),
+      origin: j['origin']?.toString(),
+      nutritionalInfo: j['nutritional_info']?.toString(),
+      status: j['status']?.toString() ?? 'active',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'shop_id': shopId,
+      'department_id': departmentId,
+      'aisle_number': aisleNumber,
+      'title': title,
+      'price': price,
+      'discount_price': discountPrice,
+      'currency': currency,
+      'image_url': imageUrl,
+      'stock': stock,
+      'barcode': barcode,
+      'is_perishable': isPerishable,
+      'expiry_date': expiryDate,
+      'is_promotion': isPromotion,
+      'description': description,
+      'unit_measurement': unitMeasurement,
+      'brand': brand,
+      'origin': origin,
+      'nutritional_info': nutritionalInfo,
+      'status': status,
+    };
+  }
 }
 
 // ============================================================================
