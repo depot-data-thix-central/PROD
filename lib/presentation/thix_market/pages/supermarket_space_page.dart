@@ -15,7 +15,6 @@ import 'package:go_router/go_router.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/presentation/thix_market/models/supermarket_models.dart';
-import 'package:thix_id/presentation/thix_market/models/supermarket_product.dart';
 import 'package:thix_id/presentation/thix_market/providers/supermarket_providers.dart';
 
 import 'department_products_page.dart';
@@ -262,7 +261,7 @@ class _LightStorefront extends StatelessWidget {
                               child: const Text('OUVERT', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: ThixPolicy.success, letterSpacing: 0.6)),
                             ),
                           const SizedBox(width: 6),
-                          Icon(Icons.place_rounded, size: 11, color: ThixPolicy.textMuted),
+                          const Icon(Icons.place_rounded, size: 11, color: ThixPolicy.textMuted),
                           const SizedBox(width: 3),
                           Expanded(child: Text(city, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary))),
                           if (rating > 0) ...[
@@ -717,7 +716,7 @@ class _ShelfLevel extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: slots
-                .map((p) => Expanded(
+                .map<Widget>((p) => Expanded(
                       child: p == null
                           ? const SizedBox.shrink()
                           : _Facing(product: p, onTap: () => onProductTap(p)),
@@ -777,7 +776,7 @@ class _ShelfBoard extends StatelessWidget {
             bottom: 2, left: 0, right: 0, height: 11,
             child: Row(
               children: slots
-                  .map((p) => Expanded(
+                  .map<Widget>((p) => Expanded(
                         child: p == null
                             ? const SizedBox.shrink()
                             : Center(child: _PriceTag(product: p)),
@@ -992,7 +991,7 @@ class _ProductQuickView extends StatelessWidget {
                 Text('${product.priceLabel()} ${product.currency}', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: product.onPromo ? _kRailRed : ThixPolicy.primary)),
                 if (product.onPromo) ...[
                   const SizedBox(width: 8),
-                  Text('${product.priceLabel(product.price)} ${product.currency}', style: const TextStyle(fontSize: 13, color: ThixPolicy.textMuted, decoration: TextDecoration.lineThrough)),
+                  Text('${product.price} ${product.currency}', style: const TextStyle(fontSize: 13, color: ThixPolicy.textMuted, decoration: TextDecoration.lineThrough)),
                 ],
                 if (product.unit != null) ...[
                   const SizedBox(width: 8),
