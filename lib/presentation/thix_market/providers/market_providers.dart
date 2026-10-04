@@ -169,12 +169,12 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
   Future<List<Map<String, dynamic>>> _fetchPage(int page) async {
     final db = ref.read(supabaseClientProvider);
     final res = await db
-        .from('products')
-        .select('*')
-        .eq('status', 'active')
-        .order('created_at', ascending: false)
-        .range(page * _kDefaultPageSize, (page + 1) * _kDefaultPageSize - 1);
-
+    .from('products')
+    .select('*, shop:shops!inner(id, name, type)')
+    .eq('status', 'active')
+    .neq('shop.type', 'supermarket')
+    .order('created_at', ascending: false)
+    .range(page * _kDefaultPageSize, (page + 1) * _kDefaultPageSize - 1);
     return List<Map<String, dynamic>>.from(res as List);
   }
 
