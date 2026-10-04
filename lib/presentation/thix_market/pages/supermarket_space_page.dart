@@ -363,7 +363,9 @@ class _HeroCarouselState extends State<_HeroCarousel> {
       items.add(_HeroItem(
         badge: 'FRAÎCHEUR',
         title: p.title,
-        subtitle: p.expiryDateTime != null ? 'À consommer avant le ${_fmtDate(p.expiryDateTime!)}' : 'Produit frais du jour',
+        subtitle: p.expiryDateTime != null
+    ? 'À consommer avant le ${_fmtDate(p.expiryDateTime!)}'
+    : 'Produit frais du jour',
         cta: 'Voir',
         gradient: const [Color(0xFFE9F7EC), Color(0xFFDFF2E3)],
         icon: Icons.eco_rounded,
@@ -1132,34 +1134,54 @@ class _InfoGrid extends StatelessWidget {
   final AppLocalizations l10n;
   const _InfoGrid({required this.product, required this.l10n});
 
-  @override
-  Widget build(BuildContext context) {
-    final cells = <Widget>[
-      _InfoCell(icon: Icons.inventory_2_rounded, label: 'Stock', value: '${product.stock}${product.unit != null ? ' ${product.unit}' : ''}', color: product.stock > 0 ? ThixPolicy.success : ThixPolicy.danger),
-      _InfoCell(icon: Icons.category_outlined, label: 'Unité', value: product.unit ?? 'pcs', color: ThixPolicy.primary),
-      if (product.isPerishable)
-  _InfoCell(
-    icon: product.isExpired ? Icons.warning_amber_rounded : Icons.event_rounded,
-    label: 'Expiration',
-    value: product.expiryDateTime != null
-        ? '\( {product.expiryDateTime!.day.toString().padLeft(2, '0')}/ \){product.expiryDateTime!.month.toString().padLeft(2, '0')}/${product.expiryDateTime!.year}'
-        : '—',
-    color: product.isExpired
-        ? ThixPolicy.danger
-        : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
-  ),
-      if (product.onPromo)
-        _InfoCell(icon: Icons.local_offer_rounded, label: 'Prix promo', value: '${product.priceLabel()} ${product.currency}', color: _kRailRed),
-    ];
+@override
+Widget build(BuildContext context) {
+  final cells = <Widget>[
+    _InfoCell(
+      icon: Icons.inventory_2_rounded,
+      label: 'Stock',
+      value: '\( {product.stock} \){product.unit != null ? ' ${product.unit}' : ''}',
+      color: product.stock > 0 ? ThixPolicy.success : ThixPolicy.danger,
+    ),
+    _InfoCell(
+      icon: Icons.category_outlined,
+      label: 'Unité',
+      value: product.unit ?? 'pcs',
+      color: ThixPolicy.primary,
+    ),
+    if (product.isPerishable)
+      _InfoCell(
+        icon: product.isExpired
+            ? Icons.warning_amber_rounded
+            : Icons.event_rounded,
+        label: 'Expiration',
+        value: product.expiryDateTime != null
+            ? '\( {product.expiryDateTime!.day.toString().padLeft(2, '0')}/ \){product.expiryDateTime!.month.toString().padLeft(2, '0')}/${product.expiryDateTime!.year}'
+            : '—',
+        color: product.isExpired
+            ? ThixPolicy.danger
+            : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
+      ),
+    if (product.onPromo)
+      _InfoCell(
+        icon: Icons.local_offer_rounded,
+        label: 'Prix promo',
+        value: '${product.priceLabel()} ${product.currency}',
+        color: _kRailRed,
+      ),
+  ];
 
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: cells
-          .map((c) => SizedBox(width: (MediaQuery.of(context).size.width - 60) / 2, child: c))
-          .toList(),
-    );
-  }
+  return Wrap(
+    spacing: 10,
+    runSpacing: 10,
+    children: cells
+        .map((c) => SizedBox(
+              width: (MediaQuery.of(context).size.width - 60) / 2,
+              child: c,
+            ))
+        .toList(),
+  );
+}
 }
 
 class _InfoCell extends StatelessWidget {
