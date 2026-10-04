@@ -9,7 +9,6 @@ import 'package:intl/intl.dart';
 import 'package:barcode_widget/barcode_widget.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:html/parser.dart' as html_parser;
-import 'package:thix_id/nav.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../providers/shop_provider.dart';
 import '../providers/market_providers.dart';
@@ -248,17 +247,53 @@ class _OrderStatus {
 }
 
 const List<_OrderStatus> _kOrderStatuses = [
-  _OrderStatus(key: 'pending', labelFr: 'En attente', labelEn: 'Pending', icon: Icons.hourglass_top_rounded, color: ThixPolicy.gold),
-  _OrderStatus(key: 'processing', labelFr: 'En préparation', labelEn: 'Processing', icon: Icons.kitchen_rounded, color: ThixPolicy.primary),
-  _OrderStatus(key: 'shipped', labelFr: 'Expédiée', labelEn: 'Shipped', icon: Icons.local_shipping_rounded, color: ThixPolicy.primary),
-  _OrderStatus(key: 'delivered', labelFr: 'Livrée', labelEn: 'Delivered', icon: Icons.check_circle_rounded, color: ThixPolicy.success),
-  _OrderStatus(key: 'cancelled', labelFr: 'Annulée', labelEn: 'Cancelled', icon: Icons.cancel_rounded, color: ThixPolicy.danger),
+  _OrderStatus(
+    key: 'pending',
+    labelFr: 'En attente',
+    labelEn: 'Pending',
+    icon: Icons.hourglass_top_rounded,
+    color: ThixPolicy.gold,
+  ),
+  _OrderStatus(
+    key: 'processing',
+    labelFr: 'En préparation',
+    labelEn: 'Processing',
+    icon: Icons.kitchen_rounded,
+    color: ThixPolicy.primary,
+  ),
+  _OrderStatus(
+    key: 'shipped',
+    labelFr: 'Expédiée',
+    labelEn: 'Shipped',
+    icon: Icons.local_shipping_rounded,
+    color: ThixPolicy.primary,
+  ),
+  _OrderStatus(
+    key: 'delivered',
+    labelFr: 'Livrée',
+    labelEn: 'Delivered',
+    icon: Icons.check_circle_rounded,
+    color: ThixPolicy.success,
+  ),
+  _OrderStatus(
+    key: 'cancelled',
+    labelFr: 'Annulée',
+    labelEn: 'Cancelled',
+    icon: Icons.cancel_rounded,
+    color: ThixPolicy.danger,
+  ),
 ];
 
 _OrderStatus _getOrderStatus(String key) {
   return _kOrderStatuses.firstWhere(
     (s) => s.key == key,
-    orElse: () => const _OrderStatus(key: 'unknown', labelFr: 'Inconnu', labelEn: 'Unknown', icon: Icons.help_outline_rounded, color: ThixPolicy.textMuted),
+    orElse: () => const _OrderStatus(
+      key: 'unknown',
+      labelFr: 'Inconnu',
+      labelEn: 'Unknown',
+      icon: Icons.help_outline_rounded,
+      color: ThixPolicy.textMuted,
+    ),
   );
 }
 
@@ -388,7 +423,9 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
       context: context,
       isScrollControlled: true,
       backgroundColor: ThixPolicy.card,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (ctx) => _QrCodeSheet(
         code: code,
         shortOrderId: short,
@@ -479,7 +516,9 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
       context: context,
       isScrollControlled: true,
       backgroundColor: ThixPolicy.card,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (ctx) => DraggableScrollableSheet(
         initialChildSize: 0.85,
         minChildSize: 0.5,
@@ -560,7 +599,11 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
       appBar: AppBar(
         title: Text(
           context.vdT('Espace vendeur', 'Vendor Dashboard'),
-          style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 18, color: ThixPolicy.textMain),
+          style: ThixPolicy.h3Style.copyWith(
+            fontWeight: ThixPolicy.bold,
+            fontSize: 18,
+            color: ThixPolicy.textMain,
+          ),
         ),
         backgroundColor: ThixPolicy.card,
         elevation: 0,
@@ -580,19 +623,28 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
       ),
       body: shopsAsync.when(
         loading: () => const _SkeletonDashboard(),
-        error: (e, _) => _ErrorState(message: _VdValidators.friendlyError(e), onRetry: _refresh),
+        error: (e, _) => _ErrorState(
+          message: _VdValidators.friendlyError(e),
+          onRetry: _refresh,
+        ),
         data: (shops) {
-          // ── LOGIQUE DE SÉPARATION BOUTIQUE / SUPERMARCHÉ ──
           final hasShop = shops.isNotEmpty;
-          final boutiqueList = shops.where((s) => s['type']?.toString() != 'supermarket').toList();
-          final superList = shops.where((s) => s['type']?.toString() == 'supermarket').toList();
+          final boutiqueList = shops
+              .where((s) => s['type']?.toString() != 'supermarket')
+              .toList();
+          final superList = shops
+              .where((s) => s['type']?.toString() == 'supermarket')
+              .toList();
           final b = boutiqueList.isEmpty ? null : boutiqueList.first;
           final sm = superList.isEmpty ? null : superList.first;
-          final shop = b ?? sm; // boutique prioritaire pour KPIs & réglages
+          final shop = b ?? sm; // boutique prioritaire (KPIs, réglages)
 
           return ordersAsync.when(
             loading: () => const _SkeletonDashboard(),
-            error: (e, _) => _ErrorState(message: _VdValidators.friendlyError(e), onRetry: _refresh),
+            error: (e, _) => _ErrorState(
+              message: _VdValidators.friendlyError(e),
+              onRetry: _refresh,
+            ),
             data: (orders) {
               final products = productsAsync.valueOrNull ?? [];
               final pending = orders.where((o) => o['status'] == 'pending').length;
@@ -608,7 +660,6 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // ── HEADER DOUBLE INTÉGRÉ ──
                       _DualShopHeader(
                         boutique: b,
                         supermarket: sm,
@@ -623,25 +674,28 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
                         onOpenShop: b != null
                             ? () {
                                 HapticFeedback.selectionClick();
-                                context.pushNamed('marketManageShop', pathParameters: {'shopId': b['id'].toString()});
+                                context.pushNamed('marketManageShop',
+                                    pathParameters: {
+                                      'shopId': b['id'].toString()
+                                    });
                               }
                             : null,
                         onOpenSupermarket: sm != null
                             ? () {
                                 HapticFeedback.selectionClick();
-                                context.push('/market/supermarket/${sm['id']}');
+                                context.push(
+                                    '/market/supermarket/${sm['id']}');
                               }
                             : null,
                         onManageSupermarket: sm != null
                             ? () {
                                 HapticFeedback.selectionClick();
-                                context.push('/market/supermarket/${sm['id']}/manage');
+                                context.push(
+                                    '/market/supermarket/${sm['id']}/manage');
                               }
                             : null,
                       ),
                       const SizedBox(height: 20),
-
-                      // ── KPIs (seulement si au moins une entité existe) ──
                       if (hasShop) ...[
                         _KpiGrid(
                           ordersCount: orders.length,
@@ -652,14 +706,14 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
                         ),
                         const SizedBox(height: 24),
                       ],
-
                       _ActionGrid(
                         hasShop: hasShop,
                         shop: shop,
-                        onNeedShop: () => _showInfo(context.vdT('Créez d\'abord une boutique', 'Create a shop first')),
+                        onNeedShop: () => _showInfo(
+                          context.vdT('Créez d\'abord une boutique', 'Create a shop first'),
+                        ),
                       ),
                       const SizedBox(height: 24),
-
                       if (hasShop)
                         _RecentOrders(
                           orders: orders,
@@ -687,7 +741,11 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
 }
 
 // ============================================================================
-// DUAL SHOP HEADER (Boutique + Supermarché côte à côte)
+// COMPOSANTS RÉUTILISABLES
+// ============================================================================
+
+// ============================================================================
+// HEADER DOUBLE : BOUTIQUE (gauche) + SUPERMARCHÉ (droite)
 // ============================================================================
 class _DualShopHeader extends StatelessWidget {
   final Map<String, dynamic>? boutique;
@@ -719,8 +777,12 @@ class _DualShopHeader extends StatelessWidget {
               ? _entityCard(
                   context,
                   icon: Icons.storefront_rounded,
-                  name: _VdValidators.sanitize(boutique!['name']?.toString(), maxLength: 40),
-                  sub: _VdValidators.sanitize(boutique!['city']?.toString(), maxLength: 20),
+                  name: _VdValidators.sanitize(
+                      boutique!['name']?.toString(),
+                      maxLength: 40),
+                  sub: _VdValidators.sanitize(
+                      boutique!['city']?.toString(),
+                      maxLength: 20),
                   colors: const [ThixPolicy.primary, ThixPolicy.inkDeep],
                   actionLabel: context.vdT('Gérer', 'Manage'),
                   onAction: onOpenShop,
@@ -741,8 +803,12 @@ class _DualShopHeader extends StatelessWidget {
                   child: _entityCard(
                     context,
                     icon: Icons.local_grocery_store_rounded,
-                    name: _VdValidators.sanitize(supermarket!['name']?.toString(), maxLength: 40),
-                    sub: _VdValidators.sanitize(supermarket!['city']?.toString(), maxLength: 20),
+                    name: _VdValidators.sanitize(
+                        supermarket!['name']?.toString(),
+                        maxLength: 40),
+                    sub: _VdValidators.sanitize(
+                        supermarket!['city']?.toString(),
+                        maxLength: 20),
                     colors: const [Color(0xFF065F46), Color(0xFF059669)],
                     actionLabel: context.vdT('Gérer', 'Manage'),
                     onAction: onManageSupermarket,
@@ -772,7 +838,8 @@ class _DualShopHeader extends StatelessWidget {
       height: 132,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: colors),
+        gradient: LinearGradient(
+            begin: Alignment.topLeft, end: Alignment.bottomRight, colors: colors),
         borderRadius: BorderRadius.circular(16),
         boxShadow: ThixPolicy.shadowSoft(opacity: 0.1),
       ),
@@ -783,14 +850,32 @@ class _DualShopHeader extends StatelessWidget {
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.18), shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.18),
+                  shape: BoxShape.circle,
+                ),
                 child: Icon(icon, color: Colors.white, size: 18),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(name.isEmpty ? '—' : name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w900)),
-          if (sub.isNotEmpty) Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 10.5)),
+          Text(
+            name.isEmpty ? '—' : name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w900),
+          ),
+          if (sub.isNotEmpty)
+            Text(
+              sub,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: Colors.white.withOpacity(0.75), fontSize: 10.5),
+            ),
           const Spacer(),
           Align(
             alignment: Alignment.centerRight,
@@ -800,10 +885,14 @@ class _DualShopHeader extends StatelessWidget {
                 backgroundColor: Colors.white,
                 foregroundColor: colors.first,
                 elevation: 0,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
               ),
-              child: Text(actionLabel, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+              child: Text(actionLabel,
+                  style: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w900)),
             ),
           ),
         ],
@@ -811,7 +900,12 @@ class _DualShopHeader extends StatelessWidget {
     );
   }
 
-  Widget _createCard(BuildContext context, {required IconData icon, required String label, required VoidCallback onTap}) {
+  Widget _createCard(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
     return Container(
       height: 132,
       padding: const EdgeInsets.all(12),
@@ -825,17 +919,29 @@ class _DualShopHeader extends StatelessWidget {
         children: [
           Icon(icon, color: ThixPolicy.textMuted, size: 26),
           const SizedBox(height: 6),
-          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: ThixPolicy.textMain)),
+          Text(
+            label,
+            style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: ThixPolicy.textMain),
+          ),
           const SizedBox(height: 8),
           OutlinedButton(
             onPressed: onTap,
             style: OutlinedButton.styleFrom(
               foregroundColor: ThixPolicy.primary,
               side: const BorderSide(color: ThixPolicy.primary),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8)),
             ),
-            child: Text(context.vdT('Créer', 'Create'), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)),
+            child: Text(
+              context.vdT('Créer', 'Create'),
+              style: const TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w900),
+            ),
           ),
         ],
       ),
@@ -843,9 +949,6 @@ class _DualShopHeader extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// KPI GRID
-// ============================================================================
 class _KpiGrid extends StatelessWidget {
   final int ordersCount;
   final int pending;
@@ -853,15 +956,41 @@ class _KpiGrid extends StatelessWidget {
   final int productsCount;
   final double rating;
 
-  const _KpiGrid({required this.ordersCount, required this.pending, required this.processing, required this.productsCount, required this.rating});
+  const _KpiGrid({
+    required this.ordersCount,
+    required this.pending,
+    required this.processing,
+    required this.productsCount,
+    required this.rating,
+  });
 
   @override
   Widget build(BuildContext context) {
     final kpis = [
-      {'label': context.vdT('Commandes', 'Orders'), 'value': '$ordersCount', 'icon': Icons.shopping_bag_outlined, 'color': ThixPolicy.primary},
-      {'label': context.vdT('En attente', 'Pending'), 'value': '$pending', 'icon': Icons.pending_actions_rounded, 'color': ThixPolicy.gold},
-      {'label': context.vdT('Produits', 'Products'), 'value': '$productsCount', 'icon': Icons.inventory_2_outlined, 'color': ThixPolicy.success},
-      {'label': context.vdT('Note', 'Rating'), 'value': rating > 0 ? rating.toStringAsFixed(1) : '-', 'icon': Icons.star_rounded, 'color': ThixPolicy.gold},
+      {
+        'label': context.vdT('Commandes', 'Orders'),
+        'value': '$ordersCount',
+        'icon': Icons.shopping_bag_outlined,
+        'color': ThixPolicy.primary,
+      },
+      {
+        'label': context.vdT('En attente', 'Pending'),
+        'value': '$pending',
+        'icon': Icons.pending_actions_rounded,
+        'color': ThixPolicy.gold,
+      },
+      {
+        'label': context.vdT('Produits', 'Products'),
+        'value': '$productsCount',
+        'icon': Icons.inventory_2_outlined,
+        'color': ThixPolicy.success,
+      },
+      {
+        'label': context.vdT('Note', 'Rating'),
+        'value': rating > 0 ? rating.toStringAsFixed(1) : '-',
+        'icon': Icons.star_rounded,
+        'color': ThixPolicy.gold,
+      },
     ];
 
     return Semantics(
@@ -877,17 +1006,44 @@ class _KpiGrid extends StatelessWidget {
           final color = kpi['color'] as Color;
           return Container(
             padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14), boxShadow: ThixPolicy.shadowSoft(opacity: 0.04)),
-            child: Row(children: [
-              Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: Icon(kpi['icon'] as IconData, color: color, size: 22)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Text(kpi['value'] as String, style: ThixPolicy.titleStyle.copyWith(fontSize: 18, fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
-                  Text(kpi['label'] as String, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted)),
-                ]),
-              ),
-            ]),
+            decoration: BoxDecoration(
+              color: ThixPolicy.card,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: ThixPolicy.shadowSoft(opacity: 0.04),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(kpi['icon'] as IconData, color: color, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        kpi['value'] as String,
+                        style: ThixPolicy.titleStyle.copyWith(
+                          fontSize: 18,
+                          fontWeight: ThixPolicy.bold,
+                          color: ThixPolicy.textMain,
+                        ),
+                      ),
+                      Text(
+                        kpi['label'] as String,
+                        style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           );
         }).toList(),
       ),
@@ -895,9 +1051,6 @@ class _KpiGrid extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// ACTION GRID
-// ============================================================================
 class _ActionGrid extends StatelessWidget {
   final bool hasShop;
   final Map<String, dynamic>? shop;
@@ -908,112 +1061,275 @@ class _ActionGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final shopId = shop?['id']?.toString();
+
     final actions = <Map<String, dynamic>>[
-      {'icon': Icons.inventory_2_outlined, 'label': context.vdT('Produits', 'Products'), 'onTap': () => context.pushNamed('marketSell'), 'needShop': true},
-      {'icon': Icons.shopping_bag_outlined, 'label': context.vdT('Commandes', 'Orders'), 'onTap': () { try { context.push('/market/vendor/orders'); } catch (_) { context.pushNamed('marketSell', queryParameters: {'tab': 'orders'}); } }, 'needShop': true},
-      {'icon': Icons.add_box_outlined, 'label': context.vdT('Annonce', 'Listing'), 'onTap': () => context.pushNamed('marketPublishAnnouncement'), 'needShop': true},
-      {'icon': Icons.live_tv_outlined, 'label': context.vdT('Live', 'Live'), 'onTap': () => context.pushNamed('marketCreateLive'), 'needShop': true},
-      {'icon': Icons.bar_chart_rounded, 'label': context.vdT('Stats', 'Stats'), 'onTap': () { if (shopId != null && _VdValidators.isValidId(shopId)) context.push('/market/shop/$shopId/stats'); }, 'needShop': true},
-      {'icon': Icons.local_shipping_outlined, 'label': context.vdT('Livraisons', 'Deliveries'), 'onTap': () => context.pushNamed('deliveryManagement'), 'needShop': true},
-      {'icon': Icons.storefront_outlined, 'label': context.vdT('Boutique', 'Shop'), 'onTap': () { if (shopId != null && _VdValidators.isValidId(shopId)) context.pushNamed('marketManageShop', pathParameters: {'shopId': shopId}); else context.pushNamed('marketCreateShop'); }, 'needShop': false},
-      {'icon': Icons.settings_outlined, 'label': context.vdT('Réglages', 'Settings'), 'onTap': () { if (shopId != null && _VdValidators.isValidId(shopId)) context.pushNamed('marketManageShop', pathParameters: {'shopId': shopId}); }, 'needShop': true},
+      {
+        'icon': Icons.inventory_2_outlined,
+        'label': context.vdT('Produits', 'Products'),
+        'onTap': () => context.pushNamed('marketSell'),
+        'needShop': true,
+      },
+      {
+        'icon': Icons.shopping_bag_outlined,
+        'label': context.vdT('Commandes', 'Orders'),
+        'onTap': () {
+          try {
+            context.push('/market/vendor/orders');
+          } catch (_) {
+            context.pushNamed('marketSell', queryParameters: {'tab': 'orders'});
+          }
+        },
+        'needShop': true,
+      },
+      {
+        'icon': Icons.add_box_outlined,
+        'label': context.vdT('Annonce', 'Listing'),
+        'onTap': () => context.pushNamed('marketPublishAnnouncement'),
+        'needShop': true,
+      },
+      {
+        'icon': Icons.live_tv_outlined,
+        'label': context.vdT('Live', 'Live'),
+        'onTap': () => context.pushNamed('marketCreateLive'),
+        'needShop': true,
+      },
+      {
+        'icon': Icons.bar_chart_rounded,
+        'label': context.vdT('Stats', 'Stats'),
+        'onTap': () {
+          if (shopId != null && _VdValidators.isValidId(shopId)) {
+            context.push('/market/shop/$shopId/stats');
+          }
+        },
+        'needShop': true,
+      },
+      {
+        'icon': Icons.local_shipping_outlined,
+        'label': context.vdT('Livraisons', 'Deliveries'),
+        'onTap': () => context.pushNamed('deliveryManagement'),
+        'needShop': true,
+      },
+      {
+        'icon': Icons.storefront_outlined,
+        'label': context.vdT('Boutique', 'Shop'),
+        'onTap': () {
+          if (shopId != null && _VdValidators.isValidId(shopId)) {
+            context.pushNamed('marketManageShop', pathParameters: {'shopId': shopId});
+          } else {
+            context.pushNamed('marketCreateShop');
+          }
+        },
+        'needShop': false,
+      },
+      {
+        'icon': Icons.settings_outlined,
+        'label': context.vdT('Réglages', 'Settings'),
+        'onTap': () {
+          if (shopId != null && _VdValidators.isValidId(shopId)) {
+            context.pushNamed('marketManageShop', pathParameters: {'shopId': shopId});
+          }
+        },
+        'needShop': true,
+      },
     ];
 
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(context.vdT('Actions rapides', 'Quick actions'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16, color: ThixPolicy.textMain)),
-      const SizedBox(height: 12),
-      GridView.count(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        crossAxisCount: 4,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-        childAspectRatio: 0.95,
-        children: actions.map((a) {
-          final needShop = a['needShop'] == true;
-          final enabled = !needShop || hasShop;
-          return Semantics(
-            button: true,
-            label: a['label'] as String,
-            enabled: enabled,
-            child: InkWell(
-              onTap: () { HapticFeedback.selectionClick(); if (!enabled) { onNeedShop(); return; } (a['onTap'] as VoidCallback)(); },
-              borderRadius: BorderRadius.circular(14),
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 200),
-                opacity: enabled ? 1.0 : 0.5,
-                child: Container(
-                  decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))),
-                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(a['icon'] as IconData, size: 26, color: ThixPolicy.primary),
-                    const SizedBox(height: 6),
-                    Text(a['label'] as String, textAlign: TextAlign.center, style: ThixPolicy.captionStyle.copyWith(fontSize: 11, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.textMain)),
-                  ]),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          context.vdT('Actions rapides', 'Quick actions'),
+          style: ThixPolicy.titleStyle.copyWith(
+            fontWeight: ThixPolicy.bold,
+            fontSize: 16,
+            color: ThixPolicy.textMain,
+          ),
+        ),
+        const SizedBox(height: 12),
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 4,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+          childAspectRatio: 0.95,
+          children: actions.map((a) {
+            final needShop = a['needShop'] == true;
+            final enabled = !needShop || hasShop;
+            return Semantics(
+              button: true,
+              label: a['label'] as String,
+              enabled: enabled,
+              child: InkWell(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  if (!enabled) {
+                    onNeedShop();
+                    return;
+                  }
+                  (a['onTap'] as VoidCallback)();
+                },
+                borderRadius: BorderRadius.circular(14),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: enabled ? 1.0 : 0.5,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: ThixPolicy.card,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(a['icon'] as IconData, size: 26, color: ThixPolicy.primary),
+                        const SizedBox(height: 6),
+                        Text(
+                          a['label'] as String,
+                          textAlign: TextAlign.center,
+                          style: ThixPolicy.captionStyle.copyWith(
+                            fontSize: 11,
+                            fontWeight: ThixPolicy.semiBold,
+                            color: ThixPolicy.textMain,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ),
-          );
-        }).toList(),
-      ),
-    ]);
+            );
+          }).toList(),
+        ),
+      ],
+    );
   }
 }
 
-// ============================================================================
-// RECENT ORDERS
-// ============================================================================
 class _RecentOrders extends StatelessWidget {
   final List<Map<String, dynamic>> orders;
   final ValueChanged<Map<String, dynamic>> onOrderTap;
   final VoidCallback onViewAll;
 
-  const _RecentOrders({required this.orders, required this.onOrderTap, required this.onViewAll});
+  const _RecentOrders({
+    required this.orders,
+    required this.onOrderTap,
+    required this.onViewAll,
+  });
 
   @override
   Widget build(BuildContext context) {
     final recent = orders.take(5).toList();
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text(context.vdT('Dernières commandes', 'Recent orders'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16, color: ThixPolicy.textMain)),
-        Semantics(button: true, label: context.vdT('Voir toutes les commandes', 'View all orders'), child: TextButton(onPressed: onViewAll, child: Text(context.vdT('Voir tout', 'View all'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.semiBold)))),
-      ]),
-      const SizedBox(height: 8),
-      if (recent.isEmpty)
-        Container(width: double.infinity, padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14)), child: Center(child: Text(context.vdT('Aucune commande pour le moment', 'No orders yet'), style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted))))
-      else
-        Container(
-          decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))),
-          child: ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: recent.length,
-            separatorBuilder: (_, __) => Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6)),
-            itemBuilder: (c, i) {
-              final o = recent[i];
-              final id = o['id']?.toString() ?? '';
-              final shortId = _VdValidators.shortId(id);
-              final total = _VdValidators.safeDouble(o['total']);
-              final currency = _VdValidators.normalizeCurrency(o['currency']?.toString());
-              final symbol = _VdValidators.currencySymbol(currency);
-              final formattedTotal = _VdValidators.formatAmount(total, context.localeCode, isUSD: currency == 'USD');
-              final statusKey = (o['status'] ?? 'pending').toString().toLowerCase();
-              final statusConfig = _getOrderStatus(statusKey);
 
-              return Semantics(
-                button: true,
-                label: '${context.vdT('Commande', 'Order')} #$shortId, ${statusConfig.label(context)}, $formattedTotal $symbol',
-                child: ListTile(
-                  onTap: () => onOrderTap(o),
-                  leading: CircleAvatar(backgroundColor: statusConfig.color.withOpacity(0.15), radius: 18, child: Icon(statusConfig.icon, color: statusConfig.color, size: 18)),
-                  title: Text('${context.vdT('Commande', 'Order')} #$shortId', style: ThixPolicy.labelStyle.copyWith(fontSize: 13, fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
-                  subtitle: Text('$formattedTotal $symbol', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary)),
-                  trailing: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: statusConfig.color.withOpacity(0.12), borderRadius: BorderRadius.circular(20)), child: Text(statusConfig.label(context), style: ThixPolicy.captionStyle.copyWith(fontSize: 11, fontWeight: ThixPolicy.bold, color: statusConfig.color))),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              context.vdT('Dernières commandes', 'Recent orders'),
+              style: ThixPolicy.titleStyle.copyWith(
+                fontWeight: ThixPolicy.bold,
+                fontSize: 16,
+                color: ThixPolicy.textMain,
+              ),
+            ),
+            Semantics(
+              button: true,
+              label: context.vdT('Voir toutes les commandes', 'View all orders'),
+              child: TextButton(
+                onPressed: onViewAll,
+                child: Text(
+                  context.vdT('Voir tout', 'View all'),
+                  style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.semiBold),
                 ),
-              );
-            },
-          ),
+              ),
+            ),
+          ],
         ),
-    ]);
+        const SizedBox(height: 8),
+        if (recent.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: ThixPolicy.card,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Center(
+              child: Text(
+                context.vdT('Aucune commande pour le moment', 'No orders yet'),
+                style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted),
+              ),
+            ),
+          )
+        else
+          Container(
+            decoration: BoxDecoration(
+              color: ThixPolicy.card,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
+            ),
+            child: ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: recent.length,
+              separatorBuilder: (_, __) => Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6)),
+              itemBuilder: (c, i) {
+                final o = recent[i];
+                final id = o['id']?.toString() ?? '';
+                final shortId = _VdValidators.shortId(id);
+                final total = _VdValidators.safeDouble(o['total']);
+                final currency = _VdValidators.normalizeCurrency(o['currency']?.toString());
+                final symbol = _VdValidators.currencySymbol(currency);
+                final formattedTotal = _VdValidators.formatAmount(total, context.localeCode, isUSD: currency == 'USD');
+                final statusKey = (o['status'] ?? 'pending').toString().toLowerCase();
+                final statusConfig = _getOrderStatus(statusKey);
+
+                return Semantics(
+                  button: true,
+                  label: '${context.vdT('Commande', 'Order')} #$shortId, ${statusConfig.label(context)}, $formattedTotal $symbol',
+                  child: ListTile(
+                    onTap: () => onOrderTap(o),
+                    leading: CircleAvatar(
+                      backgroundColor: statusConfig.color.withOpacity(0.15),
+                      radius: 18,
+                      child: Icon(statusConfig.icon, color: statusConfig.color, size: 18),
+                    ),
+                    title: Text(
+                      '${context.vdT('Commande', 'Order')} #$shortId',
+                      style: ThixPolicy.labelStyle.copyWith(
+                        fontSize: 13,
+                        fontWeight: ThixPolicy.bold,
+                        color: ThixPolicy.textMain,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '$formattedTotal $symbol',
+                      style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
+                    ),
+                    trailing: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusConfig.color.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        statusConfig.label(context),
+                        style: ThixPolicy.captionStyle.copyWith(
+                          fontSize: 11,
+                          fontWeight: ThixPolicy.bold,
+                          color: statusConfig.color,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
   }
 }
 
@@ -1030,37 +1346,135 @@ class _QrCodeSheet extends StatelessWidget {
   final String copiedLabel;
   final String closeLabel;
 
-  const _QrCodeSheet({required this.code, required this.shortOrderId, required this.titleLabel, required this.orderLabel, required this.instructionLabel, required this.copyLabel, required this.copiedLabel, required this.closeLabel});
+  const _QrCodeSheet({
+    required this.code,
+    required this.shortOrderId,
+    required this.titleLabel,
+    required this.orderLabel,
+    required this.instructionLabel,
+    required this.copyLabel,
+    required this.copiedLabel,
+    required this.closeLabel,
+  });
 
   void _copy(BuildContext context) {
     HapticFeedback.selectionClick();
     Clipboard.setData(ClipboardData(text: code));
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Row(children: [const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Text(copiedLabel)]), backgroundColor: ThixPolicy.success, behavior: SnackBarBehavior.floating));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Text(copiedLabel),
+        ]),
+        backgroundColor: ThixPolicy.success,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.fromLTRB(24, 16, 24, 24 + MediaQuery.of(context).padding.bottom),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2))),
-        const SizedBox(height: 16),
-        Text(titleLabel, style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 18)),
-        const SizedBox(height: 6),
-        Text('$orderLabel #$shortOrderId', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 13)),
-        const SizedBox(height: 8),
-        Text(instructionLabel, textAlign: TextAlign.center, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 12, height: 1.4)),
-        const SizedBox(height: 20),
-        Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(16), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))), child: BarcodeWidget(barcode: Barcode.qrCode(), data: code, width: 200, height: 200, drawText: false, color: ThixPolicy.textMain)),
-        const SizedBox(height: 12),
-        Semantics(label: 'Code: $code', child: SelectableText(code, style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 12, color: ThixPolicy.textMain))),
-        const SizedBox(height: 16),
-        Row(children: [
-          Expanded(child: Semantics(button: true, label: copyLabel, child: OutlinedButton.icon(onPressed: () => _copy(context), icon: const Icon(Icons.copy_rounded, size: 18), label: Text(copyLabel), style: OutlinedButton.styleFrom(minimumSize: const Size(0, 46), foregroundColor: ThixPolicy.textMain, side: BorderSide(color: ThixPolicy.border), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)))))),
-          const SizedBox(width: 12),
-          Expanded(child: Semantics(button: true, label: closeLabel, child: ElevatedButton(onPressed: () { HapticFeedback.selectionClick(); Navigator.pop(context); }, style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white, minimumSize: const Size(0, 46), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: Text(closeLabel, style: const TextStyle(fontWeight: ThixPolicy.bold))))),
-        ]),
-      ]),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            titleLabel,
+            style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 18),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '$orderLabel #$shortOrderId',
+            style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 13),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            instructionLabel,
+            textAlign: TextAlign.center,
+            style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 12, height: 1.4),
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: ThixPolicy.surfaceSoft,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
+            ),
+            child: BarcodeWidget(
+              barcode: Barcode.qrCode(),
+              data: code,
+              width: 200,
+              height: 200,
+              drawText: false,
+              color: ThixPolicy.textMain,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Semantics(
+            label: 'Code: $code',
+            child: SelectableText(
+              code,
+              style: ThixPolicy.labelStyle.copyWith(
+                fontWeight: ThixPolicy.bold,
+                fontSize: 12,
+                color: ThixPolicy.textMain,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: Semantics(
+                  button: true,
+                  label: copyLabel,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _copy(context),
+                    icon: const Icon(Icons.copy_rounded, size: 18),
+                    label: Text(copyLabel),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(0, 46),
+                      foregroundColor: ThixPolicy.textMain,
+                      side: BorderSide(color: ThixPolicy.border),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Semantics(
+                  button: true,
+                  label: closeLabel,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ThixPolicy.primary,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(0, 46),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(closeLabel, style: const TextStyle(fontWeight: ThixPolicy.bold)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1075,7 +1489,13 @@ class _DashboardOrderDetailsSheet extends ConsumerStatefulWidget {
   final void Function(Map<String, dynamic>) onShowQr;
   final Future<void> Function(String) onCancel;
 
-  const _DashboardOrderDetailsSheet({required this.order, required this.scrollController, required this.onUpdateStatus, required this.onShowQr, required this.onCancel});
+  const _DashboardOrderDetailsSheet({
+    required this.order,
+    required this.scrollController,
+    required this.onUpdateStatus,
+    required this.onShowQr,
+    required this.onCancel,
+  });
 
   @override
   ConsumerState<_DashboardOrderDetailsSheet> createState() => _DashboardOrderDetailsSheetState();
@@ -1103,17 +1523,30 @@ class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDeta
         return;
       }
 
+      // Batch load : items + profile en parallèle
       final futures = <Future>[
-        _vdRetry(() => db.from('order_items').select('*, product:products(title, image_url, currency)').eq('order_id', orderId!), label: 'loadOrderItems'),
+        _vdRetry(
+          () => db
+              .from('order_items')
+              .select('*, product:products(title, image_url, currency)')
+              .eq('order_id', orderId!),
+          label: 'loadOrderItems',
+        ),
       ];
 
       if (_VdValidators.isValidId(userId)) {
-        futures.add(_vdRetry(() => db.from('profiles').select().eq('id', userId!).maybeSingle(), label: 'loadCustomerProfile'));
+        futures.add(_vdRetry(
+          () => db.from('profiles').select().eq('id', userId!).maybeSingle(),
+          label: 'loadCustomerProfile',
+        ));
       }
 
       final results = await Future.wait(futures);
+
       _items = (results[0] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      if (results.length > 1 && results[1] != null) _profile = Map<String, dynamic>.from(results[1] as Map);
+      if (results.length > 1 && results[1] != null) {
+        _profile = Map<String, dynamic>.from(results[1] as Map);
+      }
 
       debugPrint('[VendorDashboard] ✓ Loaded ${_items.length} order items');
     } catch (e) {
@@ -1135,93 +1568,260 @@ class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDeta
     final symbol = _VdValidators.currencySymbol(currency);
     final formattedTotal = _VdValidators.formatAmount(total, context.localeCode, isUSD: currency == 'USD');
     final dateStr = o['created_at']?.toString();
-    final formattedDate = dateStr != null ? DateFormat('dd MMM yyyy, HH:mm', context.localeCode).format(DateTime.tryParse(dateStr) ?? DateTime.now()) : '';
+    final formattedDate = dateStr != null
+        ? DateFormat('dd MMM yyyy, HH:mm', context.localeCode).format(DateTime.tryParse(dateStr) ?? DateTime.now())
+        : '';
     final shippingMethod = _VdValidators.sanitize(o['shipping_method']?.toString(), maxLength: 60);
     final shippingAddress = _VdValidators.sanitize(o['shipping_address']?.toString(), maxLength: 200);
 
-    final clientName = _VdValidators.sanitize(_profile?['full_name'] ?? o['customer_name'] ?? _profile?['name'] ?? context.vdT('Client', 'Customer'), maxLength: _kMaxNameLength);
-    final clientPhone = _VdValidators.sanitize(_profile?['phone'] ?? o['customer_phone'] ?? _profile?['phone_number'] ?? context.vdT('Non renseigné', 'Not provided'), maxLength: 20);
-    final clientEmail = _VdValidators.sanitize(_profile?['email'] ?? o['customer_email'] ?? context.vdT('Non renseigné', 'Not provided'), maxLength: 80);
+    final clientName = _VdValidators.sanitize(
+      _profile?['full_name'] ?? o['customer_name'] ?? _profile?['name'] ?? context.vdT('Client', 'Customer'),
+      maxLength: _kMaxNameLength,
+    );
+    final clientPhone = _VdValidators.sanitize(
+      _profile?['phone'] ?? o['customer_phone'] ?? _profile?['phone_number'] ?? context.vdT('Non renseigné', 'Not provided'),
+      maxLength: 20,
+    );
+    final clientEmail = _VdValidators.sanitize(
+      _profile?['email'] ?? o['customer_email'] ?? context.vdT('Non renseigné', 'Not provided'),
+      maxLength: 80,
+    );
 
     return Container(
       padding: EdgeInsets.fromLTRB(20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
-      child: ListView(controller: widget.scrollController, children: [
-        Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)))),
-        const SizedBox(height: 16),
-        Row(children: [
-          Expanded(child: Text('${context.vdT('Détails Commande', 'Order Details')} #$short', style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 18, color: ThixPolicy.textMain))),
-          Semantics(button: true, label: context.vdT('Fermer', 'Close'), child: IconButton(icon: const Icon(Icons.close_rounded, color: ThixPolicy.textMain), onPressed: () => Navigator.pop(context))),
-        ]),
-        if (formattedDate.isNotEmpty) Text('${context.vdT('Commandé le', 'Ordered on')} $formattedDate', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 12)),
-        const SizedBox(height: 20),
+      child: ListView(
+        controller: widget.scrollController,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${context.vdT('Détails Commande', 'Order Details')} #$short',
+                  style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 18, color: ThixPolicy.textMain),
+                ),
+              ),
+              Semantics(
+                button: true,
+                label: context.vdT('Fermer', 'Close'),
+                child: IconButton(
+                  icon: const Icon(Icons.close_rounded, color: ThixPolicy.textMain),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+            ],
+          ),
+          if (formattedDate.isNotEmpty)
+            Text(
+              '${context.vdT('Commandé le', 'Ordered on')} $formattedDate',
+              style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 12),
+            ),
+          const SizedBox(height: 20),
 
-        _SectionTitle(title: context.vdT('Client & Livraison', 'Customer & Delivery')),
-        const SizedBox(height: 8),
-        Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(14), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _InfoRow(icon: Icons.person_outline_rounded, label: context.vdT('Client', 'Customer'), value: clientName), const SizedBox(height: 6),
-          _InfoRow(icon: Icons.phone_outlined, label: context.vdT('Téléphone', 'Phone'), value: clientPhone), const SizedBox(height: 6),
-          _InfoRow(icon: Icons.email_outlined, label: 'Email', value: clientEmail),
-          Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6))),
-          _InfoRow(icon: Icons.local_shipping_outlined, label: context.vdT('Mode', 'Method'), value: shippingMethod.isEmpty ? 'Standard' : shippingMethod), const SizedBox(height: 6),
-          _InfoRow(icon: Icons.location_on_outlined, label: context.vdT('Adresse', 'Address'), value: shippingAddress.isEmpty ? context.vdT('Non spécifiée', 'Not specified') : shippingAddress),
-        ])),
-        const SizedBox(height: 20),
+          // 1. CLIENT & LIVRAISON
+          _SectionTitle(title: context.vdT('Client & Livraison', 'Customer & Delivery')),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: ThixPolicy.surfaceSoft,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _InfoRow(icon: Icons.person_outline_rounded, label: context.vdT('Client', 'Customer'), value: clientName),
+                const SizedBox(height: 6),
+                _InfoRow(icon: Icons.phone_outlined, label: context.vdT('Téléphone', 'Phone'), value: clientPhone),
+                const SizedBox(height: 6),
+                _InfoRow(icon: Icons.email_outlined, label: 'Email', value: clientEmail),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6)),
+                ),
+                _InfoRow(
+                  icon: Icons.local_shipping_outlined,
+                  label: context.vdT('Mode', 'Method'),
+                  value: shippingMethod.isEmpty ? 'Standard' : shippingMethod,
+                ),
+                const SizedBox(height: 6),
+                _InfoRow(
+                  icon: Icons.location_on_outlined,
+                  label: context.vdT('Adresse', 'Address'),
+                  value: shippingAddress.isEmpty ? context.vdT('Non spécifiée', 'Not specified') : shippingAddress,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
 
-        _SectionTitle(title: context.vdT('Articles commandés', 'Order items')),
-        const SizedBox(height: 8),
-        _isLoading
-            ? const _ItemsSkeleton()
-            : _items.isEmpty
-                ? Padding(padding: const EdgeInsets.all(12), child: Text(context.vdT('Aucun article trouvé', 'No items found'), style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 13)))
-                : Column(children: _items.map((item) => _OrderItemTile(item: item, currency: currency, locale: context.localeCode)).toList()),
-        const SizedBox(height: 20),
+          // 2. ARTICLES
+          _SectionTitle(title: context.vdT('Articles commandés', 'Order items')),
+          const SizedBox(height: 8),
+          _isLoading
+              ? const _ItemsSkeleton()
+              : _items.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        context.vdT('Aucun article trouvé', 'No items found'),
+                        style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 13),
+                      ),
+                    )
+                  : Column(
+                      children: _items.map((item) => _OrderItemTile(item: item, currency: currency, locale: context.localeCode)).toList(),
+                    ),
+          const SizedBox(height: 20),
 
-        _SectionTitle(title: context.vdT('Facturation', 'Billing')),
-        const SizedBox(height: 8),
-        Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(14), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))), child: Column(children: [
-          _BillingRow(label: context.vdT('Méthode de paiement', 'Payment method'), value: (o['payment_method']?.toString().toUpperCase() ?? 'N/A')), const SizedBox(height: 6),
-          _BillingRow(label: context.vdT('Statut paiement', 'Payment status'), value: o['payment_status']?.toString() ?? 'N/A', valueColor: ThixPolicy.success),
-          Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6))),
-          _BillingRow(label: context.vdT('Total', 'Total'), value: '$formattedTotal $symbol', isBold: true, valueColor: ThixPolicy.primary),
-        ])),
-        const SizedBox(height: 24),
+          // 3. FACTURATION
+          _SectionTitle(title: context.vdT('Facturation', 'Billing')),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: ThixPolicy.surfaceSoft,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
+            ),
+            child: Column(
+              children: [
+                _BillingRow(
+                  label: context.vdT('Méthode de paiement', 'Payment method'),
+                  value: (o['payment_method']?.toString().toUpperCase() ?? 'N/A'),
+                ),
+                const SizedBox(height: 6),
+                _BillingRow(
+                  label: context.vdT('Statut paiement', 'Payment status'),
+                  value: o['payment_status']?.toString() ?? 'N/A',
+                  valueColor: ThixPolicy.success,
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6)),
+                ),
+                _BillingRow(
+                  label: context.vdT('Total', 'Total'),
+                  value: '$formattedTotal $symbol',
+                  isBold: true,
+                  valueColor: ThixPolicy.primary,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
 
-        _SectionTitle(title: context.vdT('Actions', 'Actions')),
-        const SizedBox(height: 10),
-        if (statusKey == 'pending') _ActionButton(icon: Icons.kitchen_rounded, label: context.vdT('Passer en préparation', 'Mark as processing'), color: ThixPolicy.primary, onTap: () { Navigator.pop(context); widget.onUpdateStatus(orderId, 'processing'); }),
-        if (statusKey == 'pending' || statusKey == 'processing' || statusKey == 'confirmed')
-          Padding(padding: const EdgeInsets.only(bottom: 8), child: _ActionButton(icon: Icons.local_shipping_rounded, label: context.vdT('Marquer comme expédiée', 'Mark as shipped'), color: ThixPolicy.primary, onTap: () { Navigator.pop(context); widget.onUpdateStatus(orderId, 'shipped'); widget.onShowQr({...o, 'status': 'shipped', 'receipt_code': orderId}); })),
-        if (statusKey == 'shipped')
-          Padding(padding: const EdgeInsets.only(bottom: 8), child: _ActionButton(icon: Icons.qr_code_2_rounded, label: context.vdT('Afficher le QR de livraison', 'Show delivery QR'), color: ThixPolicy.primary, onTap: () { Navigator.pop(context); widget.onShowQr(o); })),
-        if (statusKey != 'delivered' && statusKey != 'cancelled')
-          _ActionButton(icon: Icons.cancel_outlined, label: context.vdT('Annuler la commande', 'Cancel order'), color: ThixPolicy.danger, onTap: () { Navigator.pop(context); widget.onCancel(orderId); }),
-      ]),
+          // 4. ACTIONS
+          _SectionTitle(title: context.vdT('Actions', 'Actions')),
+          const SizedBox(height: 10),
+          if (statusKey == 'pending')
+            _ActionButton(
+              icon: Icons.kitchen_rounded,
+              label: context.vdT('Passer en préparation', 'Mark as processing'),
+              color: ThixPolicy.primary,
+              onTap: () {
+                Navigator.pop(context);
+                widget.onUpdateStatus(orderId, 'processing');
+              },
+            ),
+          if (statusKey == 'pending' || statusKey == 'processing' || statusKey == 'confirmed')
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _ActionButton(
+                icon: Icons.local_shipping_rounded,
+                label: context.vdT('Marquer comme expédiée', 'Mark as shipped'),
+                color: ThixPolicy.primary,
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onUpdateStatus(orderId, 'shipped');
+                  widget.onShowQr({...o, 'status': 'shipped', 'receipt_code': orderId});
+                },
+              ),
+            ),
+          if (statusKey == 'shipped')
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _ActionButton(
+                icon: Icons.qr_code_2_rounded,
+                label: context.vdT('Afficher le QR de livraison', 'Show delivery QR'),
+                color: ThixPolicy.primary,
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onShowQr(o);
+                },
+              ),
+            ),
+          if (statusKey != 'delivered' && statusKey != 'cancelled')
+            _ActionButton(
+              icon: Icons.cancel_outlined,
+              label: context.vdT('Annuler la commande', 'Cancel order'),
+              color: ThixPolicy.danger,
+              onTap: () {
+                Navigator.pop(context);
+                widget.onCancel(orderId);
+              },
+            ),
+        ],
+      ),
     );
   }
 }
 
-// ============================================================================
-// WIDGETS AUXILIAIRES
-// ============================================================================
 class _SectionTitle extends StatelessWidget {
   final String title;
   const _SectionTitle({required this.title});
+
   @override
-  Widget build(BuildContext context) => Text(title, style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 15, color: ThixPolicy.textMain));
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: ThixPolicy.titleStyle.copyWith(
+        fontWeight: ThixPolicy.bold,
+        fontSize: 15,
+        color: ThixPolicy.textMain,
+      ),
+    );
+  }
 }
 
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
+
   const _InfoRow({required this.icon, required this.label, required this.value});
+
   @override
-  Widget build(BuildContext context) => Row(children: [
-    Icon(icon, size: 16, color: ThixPolicy.textMuted),
-    const SizedBox(width: 8),
-    Text('$label : ', style: ThixPolicy.captionStyle.copyWith(fontSize: 13, color: ThixPolicy.textMuted)),
-    Expanded(child: Text(value, style: ThixPolicy.captionStyle.copyWith(fontSize: 13, fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain), overflow: TextOverflow.ellipsis)),
-  ]);
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: ThixPolicy.textMuted),
+        const SizedBox(width: 8),
+        Text(
+          '$label : ',
+          style: ThixPolicy.captionStyle.copyWith(fontSize: 13, color: ThixPolicy.textMuted),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: ThixPolicy.captionStyle.copyWith(
+              fontSize: 13,
+              fontWeight: ThixPolicy.bold,
+              color: ThixPolicy.textMain,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _BillingRow extends StatelessWidget {
@@ -1229,29 +1829,58 @@ class _BillingRow extends StatelessWidget {
   final String value;
   final bool isBold;
   final Color? valueColor;
+
   const _BillingRow({required this.label, required this.value, this.isBold = false, this.valueColor});
+
   @override
-  Widget build(BuildContext context) => Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-    Text(label, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 13, fontWeight: isBold ? ThixPolicy.bold : ThixPolicy.regular)),
-    Flexible(child: Text(value, style: ThixPolicy.captionStyle.copyWith(fontWeight: isBold ? ThixPolicy.bold : ThixPolicy.semiBold, fontSize: isBold ? 15 : 13, color: valueColor ?? ThixPolicy.textMain), overflow: TextOverflow.ellipsis)),
-  ]);
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: ThixPolicy.captionStyle.copyWith(
+            color: ThixPolicy.textMuted,
+            fontSize: 13,
+            fontWeight: isBold ? ThixPolicy.bold : ThixPolicy.regular,
+          ),
+        ),
+        Flexible(
+          child: Text(
+            value,
+            style: ThixPolicy.captionStyle.copyWith(
+              fontWeight: isBold ? ThixPolicy.bold : ThixPolicy.semiBold,
+              fontSize: isBold ? 15 : 13,
+              color: valueColor ?? ThixPolicy.textMain,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _OrderItemTile extends StatelessWidget {
   final Map<String, dynamic> item;
   final String currency;
   final String locale;
+
   const _OrderItemTile({required this.item, required this.currency, required this.locale});
 
   @override
   Widget build(BuildContext context) {
     final product = item['product'] as Map? ?? {};
-    final title = _VdValidators.sanitize((product['title'] ?? item['title'] ?? context.vdT('Produit', 'Product')).toString(), maxLength: _kMaxTitleLength);
+    final title = _VdValidators.sanitize(
+      (product['title'] ?? item['title'] ?? context.vdT('Produit', 'Product')).toString(),
+      maxLength: _kMaxTitleLength,
+    );
     final qty = _VdValidators.safeInt(item['quantity'], fallback: 1);
     final price = _VdValidators.safeDouble(item['price']);
     final variant = _VdValidators.sanitize(item['variant']?.toString(), maxLength: 30);
     final color = _VdValidators.sanitize(item['color']?.toString(), maxLength: 30);
     final imageUrl = _VdValidators.sanitizeUrl(product['image_url']?.toString());
+
     final symbol = _VdValidators.currencySymbol(currency);
     final formattedPrice = _VdValidators.formatAmount(price, locale, isUSD: currency == 'USD');
     final formattedTotal = _VdValidators.formatAmount(price * qty, locale, isUSD: currency == 'USD');
@@ -1259,24 +1888,77 @@ class _OrderItemTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(12), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))),
-      child: Row(children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: imageUrl != null
-              ? CachedNetworkImage(imageUrl: imageUrl, width: 50, height: 50, fit: BoxFit.cover, placeholder: (_, __) => Container(width: 50, height: 50, color: ThixPolicy.surfaceSoft, child: const Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))), errorWidget: (_, __, ___) => Container(width: 50, height: 50, color: ThixPolicy.surfaceSoft, child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted, size: 20)))
-              : Container(width: 50, height: 50, color: ThixPolicy.surfaceSoft, child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted, size: 20)),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 13, color: ThixPolicy.textMain), maxLines: 2, overflow: TextOverflow.ellipsis),
-            if (variant.isNotEmpty || color.isNotEmpty) Text([if (variant.isNotEmpty) 'Var: $variant', if (color.isNotEmpty) '${context.vdT('Couleur', 'Color')}: $color'].join(' | '), style: ThixPolicy.captionStyle.copyWith(fontSize: 11, color: ThixPolicy.textMuted)),
-            const SizedBox(height: 4),
-            Text('${context.vdT('Qté', 'Qty')}: $qty × $formattedPrice $symbol = $formattedTotal $symbol', style: ThixPolicy.captionStyle.copyWith(fontSize: 12, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.primary)),
-          ]),
-        ),
-      ]),
+      decoration: BoxDecoration(
+        color: ThixPolicy.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: imageUrl != null
+                ? CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    width: 50,
+                    height: 50,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(
+                      width: 50,
+                      height: 50,
+                      color: ThixPolicy.surfaceSoft,
+                      child: const Center(
+                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                      ),
+                    ),
+                    errorWidget: (_, __, ___) => Container(
+                      width: 50,
+                      height: 50,
+                      color: ThixPolicy.surfaceSoft,
+                      child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted, size: 20),
+                    ),
+                  )
+                : Container(
+                    width: 50,
+                    height: 50,
+                    color: ThixPolicy.surfaceSoft,
+                    child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted, size: 20),
+                  ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: ThixPolicy.labelStyle.copyWith(
+                    fontWeight: ThixPolicy.bold,
+                    fontSize: 13,
+                    color: ThixPolicy.textMain,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (variant.isNotEmpty || color.isNotEmpty)
+                  Text(
+                    [if (variant.isNotEmpty) 'Var: $variant', if (color.isNotEmpty) '${context.vdT('Couleur', 'Color')}: $color'].join(' | '),
+                    style: ThixPolicy.captionStyle.copyWith(fontSize: 11, color: ThixPolicy.textMuted),
+                  ),
+                const SizedBox(height: 4),
+                Text(
+                  '${context.vdT('Qté', 'Qty')}: $qty × $formattedPrice $symbol = $formattedTotal $symbol',
+                  style: ThixPolicy.captionStyle.copyWith(
+                    fontSize: 12,
+                    fontWeight: ThixPolicy.semiBold,
+                    color: ThixPolicy.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1286,22 +1968,35 @@ class _ActionButton extends StatelessWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
+
   const _ActionButton({required this.icon, required this.label, required this.color, required this.onTap});
 
   @override
-  Widget build(BuildContext context) => Semantics(
-        button: true,
-        label: label,
-        child: SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: () { HapticFeedback.mediumImpact(); onTap(); },
-            icon: Icon(icon, size: 18, color: Colors.white),
-            label: Text(label, style: const TextStyle(color: Colors.white)),
-            style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white, minimumSize: const Size(0, 48), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), textStyle: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14, color: Colors.white)),
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: () {
+            HapticFeedback.mediumImpact();
+            onTap();
+          },
+          icon: Icon(icon, size: 18, color: Colors.white),
+          label: Text(label, style: const TextStyle(color: Colors.white)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: color,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(0, 48),
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            textStyle: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14, color: Colors.white),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 // ============================================================================
@@ -1315,15 +2010,90 @@ class _SkeletonDashboard extends StatelessWidget {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       physics: const NeverScrollableScrollPhysics(),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(height: 132, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(16))),
-        const SizedBox(height: 20),
-        GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 1.55, children: List.generate(4, (_) => Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14)), child: Row(children: [Container(width: 42, height: 42, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(12))), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [Container(height: 16, width: 40, color: Colors.grey.shade200), const SizedBox(height: 6), Container(height: 12, width: 70, color: Colors.grey.shade200)]))]))),
-        const SizedBox(height: 24),
-        Container(height: 16, width: 120, color: Colors.grey.shade200),
-        const SizedBox(height: 12),
-        GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 4, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 0.95, children: List.generate(8, (_) => Container(decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14)), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Container(width: 26, height: 26, decoration: BoxDecoration(color: Colors.grey.shade200, shape: BoxShape.circle)), const SizedBox(height: 6), Container(height: 10, width: 40, color: Colors.grey.shade200)])))),
-      ]),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Dual header skeleton
+          Row(
+            children: List.generate(
+              2,
+              (i) => Expanded(
+                child: Container(
+                  height: 132,
+                  margin: EdgeInsets.only(right: i == 0 ? 12 : 0),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [ThixPolicy.primary.withOpacity(0.2), ThixPolicy.inkDeep.withOpacity(0.2)]),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          // KPI grid skeleton
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.55,
+            children: List.generate(
+              4,
+              (_) => Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: ThixPolicy.card,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    Container(width: 42, height: 42, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(12))),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(height: 16, width: 40, color: Colors.grey.shade200),
+                          const SizedBox(height: 6),
+                          Container(height: 12, width: 70, color: Colors.grey.shade200),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          // Actions grid skeleton
+          Container(height: 16, width: 120, color: Colors.grey.shade200),
+          const SizedBox(height: 12),
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 4,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: 0.95,
+            children: List.generate(
+              8,
+              (_) => Container(
+                decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14)),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(width: 26, height: 26, decoration: BoxDecoration(color: Colors.grey.shade200, shape: BoxShape.circle)),
+                    const SizedBox(height: 6),
+                    Container(height: 10, width: 40, color: Colors.grey.shade200),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1333,13 +2103,44 @@ class _ItemsSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(children: List.generate(3, (_) => Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(12)), child: Row(children: [Container(width: 50, height: 50, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(8))), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(height: 13, width: double.infinity, color: Colors.grey.shade200), const SizedBox(height: 6), Container(height: 10, width: 100, color: Colors.grey.shade200), const SizedBox(height: 6), Container(height: 10, width: 140, color: Colors.grey.shade200)]))]))));
+    return Column(
+      children: List.generate(
+        3,
+        (_) => Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: ThixPolicy.card,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Container(width: 50, height: 50, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(8))),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(height: 13, width: double.infinity, color: Colors.grey.shade200),
+                    const SizedBox(height: 6),
+                    Container(height: 10, width: 100, color: Colors.grey.shade200),
+                    const SizedBox(height: 6),
+                    Container(height: 10, width: 140, color: Colors.grey.shade200),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
 class _ErrorState extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
+
   const _ErrorState({required this.message, required this.onRetry});
 
   @override
@@ -1347,24 +2148,49 @@ class _ErrorState extends StatelessWidget {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Container(padding: const EdgeInsets.all(24), decoration: BoxDecoration(color: ThixPolicy.danger.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.error_outline_rounded, size: 56, color: ThixPolicy.danger)),
-          const SizedBox(height: 20),
-          Text(context.vdT('Erreur de chargement', 'Loading error'), style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
-          const SizedBox(height: 8),
-          Text(message, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary), textAlign: TextAlign.center),
-          const SizedBox(height: 24),
-          Semantics(
-            button: true,
-            label: context.vdT('Réessayer', 'Retry'),
-            child: ElevatedButton.icon(
-              onPressed: () { HapticFeedback.mediumImpact(); onRetry(); },
-              icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-              label: Text(context.vdT('Réessayer', 'Retry'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: Colors.white)),
-              style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rFull)), padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(color: ThixPolicy.danger.withOpacity(0.1), shape: BoxShape.circle),
+              child: const Icon(Icons.error_outline_rounded, size: 56, color: ThixPolicy.danger),
             ),
-          ),
-        ]),
+            const SizedBox(height: 20),
+            Text(
+              context.vdT('Erreur de chargement', 'Loading error'),
+              style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            Semantics(
+              button: true,
+              label: context.vdT('Réessayer', 'Retry'),
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  HapticFeedback.mediumImpact();
+                  onRetry();
+                },
+                icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+                label: Text(
+                  context.vdT('Réessayer', 'Retry'),
+                  style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: Colors.white),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ThixPolicy.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rFull)),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
