@@ -1,12 +1,13 @@
-/// Notification Service
-/// - Stream temps réel des notifications (Realtime + fallback polling)
-/// - Pop locale UNIQUEMENT pour les notifications reçues par l'utilisateur connecté
-/// - Ajout / marquage de notifications
+// lib/services/notification_service.dart
+/// Notification Service v2 — architecture SQL-first
+/// - Stream temps réel (Realtime + fallback polling)
+/// - Pop locale DÉLÉGUÉE à PushFcmService + NotifBannerHost (plus de double-pop)
+/// - Exposition complète des nouveaux champs (category, route, priority, actor…)
+/// - Helpers markRead / markAllRead / delete pour le hub
 import 'dart:async';
 import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:thix_id/services/local_notification_service.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
 
 // ============================================================================
@@ -17,10 +18,7 @@ const Duration _kQueryTimeout = Duration(seconds: 15);
 const Duration _kPollingInterval = Duration(seconds: 5);
 const Duration _kMinRetryDelay = Duration(milliseconds: 500);
 const Duration _kMaxRetryDelay = Duration(seconds: 8);
-const Duration _kPopMaxAge = Duration(minutes: 2);
 const int _kMaxRetries = 10;
-const int _kMaxShownPopIds = 100;
-const int _kMaxPopsPerRefresh = 3;
 const int _kMaxNotificationsPerQuery = 50;
 const int _kMinUidLength = 20;
 const int _kMaxUidLength = 64;
@@ -39,8 +37,7 @@ class _Validators {
   static bool isValidUid(String? uid) {
     if (uid == null || uid.isEmpty) return false;
     if (uid.length < _kMinUidLength || uid.length > _kMaxUidLength) return false;
-    final regex = RegExp(r'^[A-Za-z0-9_\-]+$');
-    return regex.hasMatch(uid);
+    return RegExp(r'^[A-Za-z0-9_\-]+$').hasMatch(uid);
   }
 
   static bool isValidNotificationId(String? id) {
@@ -63,13 +60,33 @@ class _Validators {
     return s.length > maxLength ? s.substring(0, maxLength) : s;
   }
 
-  static String sanitizeType(String? type) {
-    return sanitizeString(type, maxLength: _kMaxTypeLength).toLowerCase();
+  static String sanitizeType(String? type) =>
+      sanitizeString(type, maxLength: _kMaxTypeLength).toLowerCase();
+
+  static String sanitizeCategory(String? c) {
+    final v = sanitizeString(c, maxLength: 30).toLowerCase();
+    return v.isEmpty ? 'system' : v;
+  }
+
+  static String? sanitizeRoute(String? r) {
+    if (r == null) return null;
+    final s = sanitizeString(r, maxLength: 200);
+    if (s.isEmpty) return null;
+    // Sécurité : bloquer tout sauf les routes internes relatives
+    if (!s.startsWith('/')) return null;
+    if (s.contains('..') || s.contains('javascript:') || s.contains('://')) return null;
+    return s;
+  }
+
+  static int sanitizePriority(dynamic v) {
+    if (v == null) return 0;
+    final p = (v as num?)?.toInt() ?? 0;
+    return p.clamp(0, 10);
   }
 }
 
 // ============================================================================
-// LRU CACHE
+// LRU CACHE — évite les re-pops si Realtime re-émet
 // ============================================================================
 
 class _LRUCache<K> {
@@ -109,7 +126,9 @@ class NotificationService {
 
   static const String _table = 'notifications';
 
-  final _LRUCache<String> _shownPopIds = _LRUCache<String>(_kMaxShownPopIds);
+  /// Cache des IDs déjà traitées (évite les re-pops sur re-émission Realtime).
+  /// 5000 entrées ≈ plusieurs jours d'historique par utilisateur.
+  final _LRUCache<String> _processedIds = _LRUCache<String>(5000);
 
   // ========================================================================
   // PRIVATE HELPERS
@@ -125,6 +144,8 @@ class NotificationService {
     return false;
   }
 
+  /// ✅ Normalisation étendue avec tous les nouveaux champs SQL.
+  /// C'est cette structure que consomment le Hub et le BannerHost.
   Map<String, dynamic> _normalizeRow(Map<String, dynamic> r) {
     final data = (r['data'] is Map)
         ? Map<String, dynamic>.from(r['data'] as Map)
@@ -140,77 +161,38 @@ class NotificationService {
       maxLength: _kMaxTitleLength,
     );
     final type = _Validators.sanitizeType((r['type'] ?? 'generic').toString());
+    final category = _Validators.sanitizeCategory((r['category'] ?? 'system').toString());
+    final route = _Validators.sanitizeRoute(r['route']?.toString());
+    final priority = _Validators.sanitizePriority(r['priority']);
 
     return <String, dynamic>{
       'id': r['id']?.toString() ?? '',
       'user_id': r['user_id']?.toString() ?? '',
       'sender_id': r['sender_id']?.toString(),
-      'post_id': r['post_id']?.toString(),
+      'actor_id': r['actor_id']?.toString() ?? r['sender_id']?.toString(),
       'type': type,
+      'category': category,
+      'entity_type': r['entity_type']?.toString(),
+      'entity_id': r['entity_id']?.toString(),
       'title': title,
       'body': body,
+      'route': route,
+      'priority': priority,
       'read': read,
+      'read_at': r['read_at']?.toString(),
+      'push_sent': (r['push_sent'] as bool?) ?? false,
       'data': data,
-      'created_at': r['created_at'],
+      'created_at': r['created_at']?.toString(),
     };
-  }
-
-  int _generateLocalNotificationId() {
-    final now = DateTime.now().microsecondsSinceEpoch;
-    return now % 100000;
-  }
-
-  bool _isRecent(Map<String, dynamic> notif) {
-    final raw = notif['created_at'];
-    final created = raw == null ? null : DateTime.tryParse(raw.toString());
-    if (created == null) return false;
-    return DateTime.now().toUtc().difference(created.toUtc()) <= _kPopMaxAge;
-  }
-
-  /// Pop locale pour une notification REÇUE par l'utilisateur connecté.
-  Future<void> _maybeShowPop(Map<String, dynamic> notif) async {
-    final id = notif['id']?.toString();
-    if (id == null || id.isEmpty) {
-      debugPrint('[NotifService] ⚠️ _maybeShowPop: invalid notification ID');
-      return;
-    }
-    if (notif['read'] == true) return;
-    if (_shownPopIds.contains(id)) return;
-
-    // Une notification ancienne (ex. non lue depuis hier) n'ouvre pas de pop
-    if (!_isRecent(notif)) {
-      _shownPopIds.add(id);
-      return;
-    }
-
-    _shownPopIds.add(id);
-
-    try {
-      final title = _Validators.sanitizeString(
-        notif['title']?.toString() ?? 'THIX ID',
-        maxLength: _kMaxTitleLength,
-      );
-      final body = _Validators.sanitizeString(
-        notif['body']?.toString() ?? '',
-        maxLength: _kMaxBodyLength,
-      );
-
-      await LocalNotificationService.instance.show(
-        id: _generateLocalNotificationId(),
-        title: title,
-        body: body,
-        payload: id,
-      );
-      debugPrint('[NotifService] ✓ Pop shown for notification $id');
-    } catch (e) {
-      debugPrint('[NotifService] ❌ Failed to show pop: $e');
-    }
   }
 
   // ========================================================================
   // PUBLIC API : STREAMS
   // ========================================================================
 
+  /// Stream temps réel des notifications (Realtime + fallback polling).
+  /// La pop locale / bannière est gérée par [NotifBannerHost] côté UI
+  /// et par [PushFcmService] côté push — PAS par ce service.
   Stream<List<Map<String, dynamic>>> streamForUser(String uid) {
     if (!_Validators.isValidUid(uid)) {
       debugPrint('[NotifService] ⚠️ Invalid UID, returning empty stream');
@@ -238,7 +220,6 @@ class NotificationService {
 
     Future<void> emitLatest() async {
       if (isCancelled) return;
-
       try {
         final rows = await _client
             .from(_table)
@@ -250,28 +231,21 @@ class NotificationService {
 
         final list = rows.map((e) => _normalizeRow(e)).toList(growable: false);
 
-        debugPrint('[NotifService] ✓ emitLatest: ${list.length} notifications '
+        debugPrint('[NotifService] ✓ emitLatest: ${list.length} notifs '
             'for ${_Validators.maskUid(effectiveUid)}');
 
         if (firstLoad) {
-          // Chargement initial : on mémorise sans afficher de pop
+          // Premier chargement : on peuple le cache pour éviter les re-pops
           firstLoad = false;
           for (final n in list) {
             final id = n['id']?.toString();
-            if (id != null && id.isNotEmpty) _shownPopIds.add(id);
-          }
-        } else {
-          for (final n in list.take(_kMaxPopsPerRefresh)) {
-            unawaited(_maybeShowPop(n));
+            if (id != null && id.isNotEmpty) _processedIds.add(id);
           }
         }
 
-        if (!isCancelled) {
-          controller.add(list);
-        }
+        if (!isCancelled) controller.add(list);
       } on TimeoutException {
-        debugPrint('[NotifService] ⚠️ emitLatest timeout for '
-            '${_Validators.maskUid(effectiveUid)}');
+        debugPrint('[NotifService] ⚠️ emitLatest timeout');
         if (!isCancelled) controller.add(const <Map<String, dynamic>>[]);
       } catch (e) {
         debugPrint('[NotifService] ❌ emitLatest failed: $e');
@@ -282,8 +256,7 @@ class NotificationService {
     void startPolling() {
       if (polling) return;
       polling = true;
-      debugPrint('[NotifService] 🔄 Fallback polling started for '
-          '${_Validators.maskUid(effectiveUid)}');
+      debugPrint('[NotifService] 🔄 Fallback polling for ${_Validators.maskUid(effectiveUid)}');
       pollTimer?.cancel();
       pollTimer = Timer.periodic(_kPollingInterval, (_) => unawaited(emitLatest()));
     }
@@ -292,17 +265,11 @@ class NotificationService {
       onListen: () => unawaited(emitLatest()),
       onCancel: () async {
         isCancelled = true;
-        debugPrint('[NotifService] 🛑 Stream cancelled for '
-            '${_Validators.maskUid(effectiveUid)}');
         retryTimer?.cancel();
         pollTimer?.cancel();
         final ch = channel;
         if (ch != null) {
-          try {
-            await _client.removeChannel(ch);
-          } catch (e) {
-            debugPrint('[NotifService] ⚠️ Failed to remove channel: $e');
-          }
+          try { await _client.removeChannel(ch); } catch (_) {}
         }
       },
     );
@@ -310,12 +277,7 @@ class NotificationService {
     Future<void> subscribeOrRetry() async {
       if (isCancelled || polling) return;
       retryTimer?.cancel();
-
-      try {
-        if (channel != null) await _client.removeChannel(channel!);
-      } catch (e) {
-        debugPrint('[NotifService] ⚠️ Failed to remove old channel: $e');
-      }
+      try { if (channel != null) await _client.removeChannel(channel!); } catch (_) {}
 
       channel = _client.channel('notifications:user:$effectiveUid');
       try {
@@ -329,60 +291,33 @@ class NotificationService {
                 column: 'user_id',
                 value: effectiveUid,
               ),
-              callback: (payload) {
-                debugPrint('[NotifService] ✓ Realtime change detected');
-                unawaited(emitLatest());
-              },
+              callback: (_) => unawaited(emitLatest()),
             )
             .subscribe((status, [err]) {
               if (isCancelled) return;
-
-              debugPrint('[NotifService] ℹ️ Subscribe status: $status');
-
               if (_isPermanentRealtimeError(status, err)) {
-                debugPrint('[NotifService] ❌ Permanent error, starting polling');
-                startPolling();
-                return;
+                startPolling(); return;
               }
-
               final shouldRetry = err != null || status == RealtimeSubscribeStatus.closed;
-              if (!shouldRetry) {
-                debugPrint('[NotifService] ✓ Realtime connected for '
-                    '${_Validators.maskUid(effectiveUid)}');
-                closedRetries = 0;
-                return;
-              }
-
+              if (!shouldRetry) { closedRetries = 0; return; }
               closedRetries = (closedRetries + 1).clamp(1, _kMaxRetries);
               final delayMs = (_kMinRetryDelay.inMilliseconds * (1 << (closedRetries - 1)))
                   .clamp(_kMinRetryDelay.inMilliseconds, _kMaxRetryDelay.inMilliseconds);
-
-              debugPrint('[NotifService] ⏱️ Retry $closedRetries/$_kMaxRetries '
-                  'in ${delayMs}ms');
-
-              if (closedRetries >= _kMaxRetries) {
-                debugPrint('[NotifService] ❌ Max retries reached, '
-                    'fallback to polling');
-                startPolling();
-                return;
-              }
-
+              if (closedRetries >= _kMaxRetries) { startPolling(); return; }
               retryTimer?.cancel();
-              retryTimer = Timer(Duration(milliseconds: delayMs), () {
-                unawaited(subscribeOrRetry());
-              });
+              retryTimer = Timer(Duration(milliseconds: delayMs),
+                  () => unawaited(subscribeOrRetry()));
             });
       } catch (e) {
-        debugPrint('[NotifService] ❌ Realtime wiring failed: $e');
         startPolling();
       }
     }
 
     unawaited(subscribeOrRetry());
-
     return controller.stream;
   }
 
+  /// Stream du nombre de notifications non lues (pour la cloche du header).
   Stream<int> streamUnreadCount(String uid) {
     return streamForUser(uid)
         .map((rows) => rows.where((r) => (r['read'] as bool?) != true).length)
@@ -393,16 +328,19 @@ class NotificationService {
   // PUBLIC API : MUTATIONS
   // ========================================================================
 
-  /// Insère une notification pour [toUid].
-  /// Aucune pop locale ici : le destinataire la reçoit via son propre stream
-  /// (ou le push FCM). Avant, la pop s'affichait sur le téléphone de l'expéditeur.
+  /// ⚠️ Insertion DIRECTE en DB — À ÉVITER sauf pour événements hors-DB.
+  /// Pour 95% des cas, utilise les TRIGGERS SQL (likes, comments, orders…)
+  /// ou la RPC `notify_event` (appels, SOS, live).
   Future<bool> add({
     required String toUid,
     required String type,
     required String title,
     required String body,
+    String category = 'system',
     String? senderId,
     String? postId,
+    String? route,
+    int priority = 0,
     Map<String, dynamic>? data,
   }) async {
     if (!_Validators.isValidUid(toUid)) {
@@ -416,17 +354,19 @@ class NotificationService {
 
     final sanitizedType = _Validators.sanitizeType(type);
     if (sanitizedType.isEmpty) {
-      debugPrint('[NotifService] ⚠️ add: empty type after sanitization');
+      debugPrint('[NotifService] ⚠️ add: empty type');
       return false;
     }
 
     final sanitizedTitle = _Validators.sanitizeString(title, maxLength: _kMaxTitleLength);
     if (sanitizedTitle.isEmpty) {
-      debugPrint('[NotifService] ⚠️ add: empty title after sanitization');
+      debugPrint('[NotifService] ⚠️ add: empty title');
       return false;
     }
 
     final sanitizedBody = _Validators.sanitizeString(body, maxLength: _kMaxBodyLength);
+    final sanitizedCategory = _Validators.sanitizeCategory(category);
+    final sanitizedRoute = _Validators.sanitizeRoute(route);
 
     try {
       await _client
@@ -434,20 +374,24 @@ class NotificationService {
           .insert({
             'user_id': toUid,
             'sender_id': senderId,
+            'actor_id': senderId,
             'post_id': postId,
             'type': sanitizedType,
+            'category': sanitizedCategory,
             'title': sanitizedTitle,
             'body': sanitizedBody,
             'content': sanitizedBody,
+            'route': sanitizedRoute,
+            'priority': priority,
             'is_read': false,
+            'push_sent': false,
             'data': data ?? const <String, dynamic>{},
             'created_at': DateTime.now().toUtc().toIso8601String(),
           })
           .timeout(_kQueryTimeout);
 
       debugPrint('[NotifService] ✓ Notification added: type=$sanitizedType '
-          'to=${_Validators.maskUid(toUid)}');
-
+          'category=$sanitizedCategory to=${_Validators.maskUid(toUid)}');
       return true;
     } on TimeoutException {
       debugPrint('[NotifService] ❌ add: timeout');
@@ -458,29 +402,27 @@ class NotificationService {
     }
   }
 
+  /// Marque une notification comme lue.
   Future<bool> markRead({
     required String uid,
     required String notificationId,
   }) async {
-    if (!_Validators.isValidUid(uid)) {
-      debugPrint('[NotifService] ⚠️ markRead: invalid uid');
-      return false;
-    }
-    if (!_Validators.isValidNotificationId(notificationId)) {
-      debugPrint('[NotifService] ⚠️ markRead: invalid notificationId');
-      return false;
-    }
+    if (!_Validators.isValidUid(uid)) return false;
+    if (!_Validators.isValidNotificationId(notificationId)) return false;
 
     try {
       await _client
           .from(_table)
-          .update({'is_read': true})
+          .update({
+            'is_read': true,
+            'read_at': DateTime.now().toUtc().toIso8601String(),
+          })
           .eq('id', notificationId)
           .eq('user_id', uid)
           .timeout(_kQueryTimeout);
 
-      debugPrint('[NotifService] ✓ Marked as read: '
-          'notification=$notificationId user=${_Validators.maskUid(uid)}');
+      debugPrint('[NotifService] ✓ Marked as read: $notificationId '
+          'user=${_Validators.maskUid(uid)}');
       return true;
     } on TimeoutException {
       debugPrint('[NotifService] ❌ markRead: timeout');
@@ -491,22 +433,20 @@ class NotificationService {
     }
   }
 
+  /// Marque TOUTES les notifications comme lues (hub → "Tout lire").
   Future<bool> markAllRead(String uid) async {
-    if (!_Validators.isValidUid(uid)) {
-      debugPrint('[NotifService] ⚠️ markAllRead: invalid uid');
-      return false;
-    }
-
+    if (!_Validators.isValidUid(uid)) return false;
     try {
       await _client
           .from(_table)
-          .update({'is_read': true})
+          .update({
+            'is_read': true,
+            'read_at': DateTime.now().toUtc().toIso8601String(),
+          })
           .eq('user_id', uid)
           .eq('is_read', false)
           .timeout(_kQueryTimeout);
-
-      debugPrint('[NotifService] ✓ Marked all as read for '
-          '${_Validators.maskUid(uid)}');
+      debugPrint('[NotifService] ✓ Marked all as read: ${_Validators.maskUid(uid)}');
       return true;
     } on TimeoutException {
       debugPrint('[NotifService] ❌ markAllRead: timeout');
@@ -514,6 +454,128 @@ class NotificationService {
     } catch (e) {
       debugPrint('[NotifService] ❌ markAllRead failed: $e');
       return false;
+    }
+  }
+
+  /// Supprime une notification (hub → swipe-to-delete).
+  Future<bool> delete({
+    required String uid,
+    required String notificationId,
+  }) async {
+    if (!_Validators.isValidUid(uid)) return false;
+    if (!_Validators.isValidNotificationId(notificationId)) return false;
+    try {
+      await _client
+          .from(_table)
+          .delete()
+          .eq('id', notificationId)
+          .eq('user_id', uid)
+          .timeout(_kQueryTimeout);
+      debugPrint('[NotifService] ✓ Deleted: $notificationId');
+      return true;
+    } on TimeoutException {
+      debugPrint('[NotifService] ❌ delete: timeout');
+      return false;
+    } catch (e) {
+      debugPrint('[NotifService] ❌ delete failed: $e');
+      return false;
+    }
+  }
+
+  /// Supprime TOUTES les notifications (hub → "Effacer l'historique").
+  Future<bool> deleteAll(String uid) async {
+    if (!_Validators.isValidUid(uid)) return false;
+    try {
+      await _client
+          .from(_table)
+          .delete()
+          .eq('user_id', uid)
+          .timeout(_kQueryTimeout);
+      debugPrint('[NotifService] ✓ Deleted all for ${_Validators.maskUid(uid)}');
+      return true;
+    } on TimeoutException {
+      debugPrint('[NotifService] ❌ deleteAll: timeout');
+      return false;
+    } catch (e) {
+      debugPrint('[NotifService] ❌ deleteAll failed: $e');
+      return false;
+    }
+  }
+
+  /// ✅ Helper : marque comme lue + retourne la route pour deep-link.
+  /// À appeler depuis le hub quand on tape sur une notification.
+  Future<String?> openNotification({
+    required String uid,
+    required String notificationId,
+  }) async {
+    if (!_Validators.isValidUid(uid)) return null;
+    if (!_Validators.isValidNotificationId(notificationId)) return null;
+
+    try {
+      final row = await _client
+          .from(_table)
+          .select('route')
+          .eq('id', notificationId)
+          .eq('user_id', uid)
+          .maybeSingle()
+          .timeout(_kQueryTimeout);
+
+      if (row == null) return null;
+
+      // Marquer comme lue (non-bloquant, best-effort)
+      unawaited(markRead(uid: uid, notificationId: notificationId));
+
+      return _Validators.sanitizeRoute(row['route']?.toString());
+    } catch (e) {
+      debugPrint('[NotifService] ❌ openNotification failed: $e');
+      return null;
+    }
+  }
+
+  /// Marque comme lues toutes les notifications d'une catégorie donnée.
+  /// Utile pour "Voir tout" dans un onglet du hub.
+  Future<bool> markCategoryRead({
+    required String uid,
+    required String category,
+  }) async {
+    if (!_Validators.isValidUid(uid)) return false;
+    final sanitizedCategory = _Validators.sanitizeCategory(category);
+    try {
+      await _client
+          .from(_table)
+          .update({
+            'is_read': true,
+            'read_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('user_id', uid)
+          .eq('is_read', false)
+          .eq('category', sanitizedCategory)
+          .timeout(_kQueryTimeout);
+      debugPrint('[NotifService] ✓ Marked category $sanitizedCategory as read');
+      return true;
+    } on TimeoutException {
+      debugPrint('[NotifService] ❌ markCategoryRead: timeout');
+      return false;
+    } catch (e) {
+      debugPrint('[NotifService] ❌ markCategoryRead failed: $e');
+      return false;
+    }
+  }
+
+  /// Retourne le nombre de notifications non lues (one-shot, non réactif).
+  Future<int> fetchUnreadCount(String uid) async {
+    if (!_Validators.isValidUid(uid)) return 0;
+    try {
+      final res = await _client
+          .from(_table)
+          .select('id', head: true, count: CountOption.exact)
+          .eq('user_id', uid)
+          .eq('is_read', false)
+          .timeout(_kQueryTimeout);
+      return res.count ?? 0;
+    } catch (e) {
+      debugPrint('[NotifService] ❌ fetchUnreadCount failed: $e');
+      return 0;
     }
   }
 }
