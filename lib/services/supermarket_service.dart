@@ -96,7 +96,14 @@ class SupermarketService {
       'aisle_number': aisleNumber,
     }).eq('id', productId).timeout(_timeout);
   }
-
+/// Retire un produit de son rayon
+  Future<void> unassignProduct(String productId) async {
+    await _client
+        .from('products')
+        .update({'department_id': null, 'aisle_number': null})
+        .eq('id', productId)
+        .timeout(_timeout);
+  }
   // ──────────── LECTURES ────────────
   Future<Map<String, dynamic>?> getSupermarket(String id) async {
     final res = await _client
