@@ -684,7 +684,8 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
                           },
                           onManageTap: () {
                             HapticFeedback.selectionClick();
-                            context.push(Routes.marketSupermarketPath(shop!['id']!));
+                            context.push(Routes.marketSupermarketPath(shop['id']));
+
                           },
                         ),
                         const SizedBox(height: 16),
