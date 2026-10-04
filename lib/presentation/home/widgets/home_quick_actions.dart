@@ -12,7 +12,86 @@ const double _kCircleSize = 42.0;
 const double _kIconSize = 18.0;
 const double _kLabelFontSize = 8.5;
 const int _kMaxLabelLength = 12;
-const int _kMaxBadgeDisplay = 9; // Au-delà, affiche "9+"
+const int _kMaxBadgeDisplay = 99; // Au-delà, affiche "99+"
+
+/// Durées et courbes pour les animations de badges critiques
+const Duration _kPulseDuration = Duration(milliseconds: 900);
+const Curve _kPulseCurve = Curves.easeInOut;
+
+// ============================================================================
+// CONFIGURATION DES 4 BOUTONS
+// Mapping action → sections de notifications (peut être multi-sections)
+// ============================================================================
+class _ActionConfig {
+  final IconData icon;
+  final String label;
+  final Color accent;
+  final String semanticsLabel;
+  final List<ThixSection> sections;
+  final bool pulseBadge; // Badge animé si activité critique
+  final bool isDanger;
+
+  const _ActionConfig({
+    required this.icon,
+    required this.label,
+    required this.accent,
+    required this.semanticsLabel,
+    required this.sections,
+    this.pulseBadge = false,
+    this.isDanger = false,
+  });
+
+  int count(SectionBadgeCounts c) {
+    var total = 0;
+    for (final s in sections) {
+      total += c.forSection(s);
+    }
+    return total;
+  }
+}
+
+/// Les 4 configurations des quick actions avec leurs sources de badges
+const _kSonaAction = _ActionConfig(
+  icon: Icons.auto_awesome_rounded,
+  label: 'Sona',
+  accent: ThixPolicy.primaryDeep,
+  semanticsLabel: 'Sona — Assistant IA',
+  sections: [ThixSection.info], // IA, news, docs → info
+);
+
+const _kDocAction = _ActionConfig(
+  icon: Icons.folder_shared_rounded,
+  label: 'Thix doc',
+  accent: ThixPolicy.domainLearning,
+  semanticsLabel: 'Thix doc — Coffre-fort documents',
+  sections: [ThixSection.formations, ThixSection.opportunities], // docs certifiés, opportunités
+);
+
+const _kChatAction = _ActionConfig(
+  icon: Icons.forum_rounded,
+  label: 'Thix chat',
+  accent: ThixPolicy.domainNetwork,
+  semanticsLabel: 'Thix chat — Messagerie',
+  sections: [ThixSection.messages, ThixSection.network], // messages + interactions réseau
+  pulseBadge: true, // Chat = critique, on pulse
+);
+
+const _kSosAction = _ActionConfig(
+  icon: Icons.emergency_rounded,
+  label: 'Thix sos',
+  accent: ThixPolicy.danger,
+  semanticsLabel: 'Thix sos — Urgence',
+  sections: [ThixSection.health], // santé + urgences
+  pulseBadge: true, // SOS = vital, on pulse
+  isDanger: true,
+);
+
+const List<_ActionConfig> _kActions = [
+  _kSonaAction,
+  _kDocAction,
+  _kChatAction,
+  _kSosAction,
+];
 
 // ============================================================================
 // WIDGET PRINCIPAL
@@ -36,10 +115,34 @@ class HomeQuickActions extends StatelessWidget {
     this.badgeCountsStream,
   });
 
+  /// Dispatch central : chaque config → son callback
+  void _dispatch(int index) {
+    HapticFeedback.selectionClick();
+    switch (index) {
+      case 0:
+        debugPrint('[QuickActions] 🤖 Sona tap');
+        onScanTap();
+        break;
+      case 1:
+        debugPrint('[QuickActions] 📁 Documents tap');
+        onDocumentTap();
+        break;
+      case 2:
+        debugPrint('[QuickActions] 💬 Chat tap');
+        onChatTap();
+        break;
+      case 3:
+        HapticFeedback.mediumImpact(); // SOS = feedback plus fort
+        debugPrint('[QuickActions] 🚨 SOS tap');
+        onSecurityTap();
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (badgeCountsStream == null) {
-      return _buildRow(chatBadge: 0, sosBadge: 0);
+      return _buildRow(counts: SectionBadgeCounts.zero);
     }
 
     return StreamBuilder<SectionBadgeCounts>(
@@ -47,85 +150,32 @@ class HomeQuickActions extends StatelessWidget {
       initialData: SectionBadgeCounts.zero,
       builder: (context, snap) {
         final c = snap.data ?? SectionBadgeCounts.zero;
-        return _buildRow(
-          chatBadge: _safeBadge(c.messages),
-          sosBadge: _safeBadge(c.health), 
-        );
+        return _buildRow(counts: c);
       },
     );
   }
 
-  /// Validation stricte du badge (≥ 0, entier)
-  int _safeBadge(int value) {
-    if (value.isNaN || value.isInfinite) return 0;
-    return value < 0 ? 0 : value;
-  }
-
-  Widget _buildRow({
-    required int chatBadge,
-    required int sosBadge,
-  }) {
+  Widget _buildRow({required SectionBadgeCounts counts}) {
     return RepaintBoundary(
       child: Row(
         children: [
-          Expanded(
-            child: _QuickActionItem(
-              icon: Icons.auto_awesome_rounded,
-              label: 'Sona',
-              accent: ThixPolicy.primaryDeep,
-              semanticsLabel: 'Sona',
-              onTap: () {
-                HapticFeedback.selectionClick();
-                debugPrint('[QuickActions] 🤖 Sona tap');
-                onScanTap();
-              },
+          for (int i = 0; i < _kActions.length; i++)
+            Expanded(
+              child: _QuickActionItem(
+                config: _kActions[i],
+                badge: _safeBadge(_kActions[i].count(counts)),
+                onTap: () => _dispatch(i),
+              ),
             ),
-          ),
-          Expanded(
-            child: _QuickActionItem(
-              icon: Icons.folder_shared_rounded,
-              label: 'Thix doc',
-              accent: ThixPolicy.domainLearning,
-              semanticsLabel: 'Thix doc',
-              onTap: () {
-                HapticFeedback.selectionClick();
-                debugPrint('[QuickActions] 📁 Documents tap');
-                onDocumentTap();
-              },
-            ),
-          ),
-          Expanded(
-            child: _QuickActionItem(
-              icon: Icons.forum_rounded,
-              label: 'Thix chat',
-              accent: ThixPolicy.domainNetwork,
-              semanticsLabel: 'Thix chat',
-              onTap: () {
-                HapticFeedback.selectionClick();
-                debugPrint('[QuickActions] 💬 Chat tap');
-                onChatTap();
-              },
-              badge: chatBadge,
-            ),
-          ),
-          Expanded(
-            child: _QuickActionItem(
-              icon: Icons.emergency_rounded,
-              label: 'Thix sos',
-              accent: ThixPolicy.danger,
-              semanticsLabel: 'Thix sos',
-              onTap: () {
-                HapticFeedback.mediumImpact();
-                debugPrint('[QuickActions] 🚨 SOS tap');
-                onSecurityTap();
-              },
-              badge: sosBadge,
-              isDanger: true,
-            ),
-          ),
         ],
       ),
     );
+  }
+
+  /// Validation stricte du badge (≥ 0, entier, sans NaN)
+  int _safeBadge(int value) {
+    if (value.isNaN || value.isInfinite) return 0;
+    return value < 0 ? 0 : value;
   }
 }
 
@@ -133,22 +183,14 @@ class HomeQuickActions extends StatelessWidget {
 // QUICK ACTION ITEM
 // ============================================================================
 class _QuickActionItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color accent;
-  final String semanticsLabel;
-  final VoidCallback onTap;
+  final _ActionConfig config;
   final int badge;
-  final bool isDanger;
+  final VoidCallback onTap;
 
   const _QuickActionItem({
-    required this.icon,
-    required this.label,
-    required this.accent,
-    required this.semanticsLabel,
+    required this.config,
+    required this.badge,
     required this.onTap,
-    this.badge = 0,
-    this.isDanger = false,
   });
 
   String _sanitizeLabel(String input) {
@@ -162,16 +204,18 @@ class _QuickActionItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final safeLabel = _sanitizeLabel(label);
+    final safeLabel = _sanitizeLabel(config.label);
     final displayBadge = badge > _kMaxBadgeDisplay ? '$_kMaxBadgeDisplay+' : '$badge';
     final hasBadge = badge > 0;
 
-    final labelColor = isDanger ? ThixPolicy.danger : ThixPolicy.textMain;
+    final labelColor = config.isDanger ? ThixPolicy.danger : ThixPolicy.textMain;
 
     return RepaintBoundary(
       child: Semantics(
         button: true,
-        label: hasBadge ? '$semanticsLabel, $badge' : semanticsLabel,
+        label: hasBadge
+            ? '${config.semanticsLabel}, $badge notifications'
+            : config.semanticsLabel,
         child: _PressableScale(
           onTap: onTap,
           child: SizedBox(
@@ -182,7 +226,7 @@ class _QuickActionItem extends StatelessWidget {
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    // Cercle solide (pas de BackdropFilter = 10x plus rapide)
+                    // Cercle solide
                     Container(
                       width: _kCircleSize,
                       height: _kCircleSize,
@@ -202,44 +246,18 @@ class _QuickActionItem extends StatelessWidget {
                         ],
                       ),
                       alignment: Alignment.center,
-                      child: Icon(icon, size: _kIconSize, color: accent),
+                      child: Icon(config.icon, size: _kIconSize, color: config.accent),
                     ),
 
-                    // Badge notification
+                    // Badge notification (animé si critique)
                     if (hasBadge)
                       Positioned(
                         top: -2,
                         right: -2,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 1.5,
-                          ),
-                          constraints: const BoxConstraints(
-                            minWidth: 15,
-                            minHeight: 15,
-                          ),
-                          decoration: BoxDecoration(
-                            color: ThixPolicy.danger,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.white, width: 1.2),
-                            boxShadow: [
-                              BoxShadow(
-                                color: ThixPolicy.danger.withOpacity(0.3),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Text(
-                            displayBadge,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 8,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
+                        child: _BadgeWidget(
+                          displayText: displayBadge,
+                          color: config.isDanger ? ThixPolicy.danger : ThixPolicy.primary,
+                          pulse: config.pulseBadge,
                         ),
                       ),
                   ],
@@ -264,6 +282,94 @@ class _QuickActionItem extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ============================================================================
+// BADGE WIDGET — statique ou animé (pulse) selon le contexte
+// ============================================================================
+class _BadgeWidget extends StatefulWidget {
+  final String displayText;
+  final Color color;
+  final bool pulse;
+
+  const _BadgeWidget({
+    required this.displayText,
+    required this.color,
+    this.pulse = false,
+  });
+
+  @override
+  State<_BadgeWidget> createState() => _BadgeWidgetState();
+}
+
+class _BadgeWidgetState extends State<_BadgeWidget>
+    with SingleTickerProviderStateMixin {
+  late AnimationController? _pulseCtrl;
+  late Animation<double>? _pulseAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.pulse) {
+      _pulseCtrl = AnimationController(
+        vsync: this,
+        duration: _kPulseDuration,
+      )..repeat(reverse: true);
+      _pulseAnim = Tween<double>(begin: 1.0, end: 1.18)
+          .animate(CurvedAnimation(parent: _pulseCtrl!, curve: _kPulseCurve));
+    } else {
+      _pulseCtrl = null;
+      _pulseAnim = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget badge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+      constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
+      decoration: BoxDecoration(
+        color: widget.color,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white, width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: widget.color.withOpacity(0.3),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Text(
+        widget.displayText,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 8,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+
+    // Wrapper animé pour les badges critiques (chat, SOS)
+    if (widget.pulse && _pulseAnim != null) {
+      return AnimatedBuilder(
+        animation: _pulseAnim!,
+        builder: (_, __) => Transform.scale(
+          scale: _pulseAnim!.value,
+          child: badge,
+        ),
+      );
+    }
+
+    return badge;
   }
 }
 
