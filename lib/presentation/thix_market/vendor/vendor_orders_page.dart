@@ -1040,8 +1040,11 @@ class _OrderDetailsSheetState extends ConsumerState<_OrderDetailsSheet> {
     final userId = widget.order['user_id']?.toString();
     final addressId = widget.order['address_id']?.toString();
 
-    // ── 1. ARTICLES (avec fallback sans jointure) ──
+    // ════════════════════════════════════════════════════════════════
+    // 1. ARTICLES : fallback 3 niveaux (embed → simple → RPC)
+    // ════════════════════════════════════════════════════════════════
     if (_VoValidators.isValidId(orderId)) {
+      // Niveau 1 : avec jointure produit (cas nominal)
       try {
         final res = await _voRetry(
           () => db
@@ -1052,7 +1055,11 @@ class _OrderDetailsSheetState extends ConsumerState<_OrderDetailsSheet> {
         );
         _items = (res as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
       } catch (e) {
-        debugPrint('[VendorOrders] ⚠️ items+embed failed: $e → fallback select simple');
+        debugPrint('[VendorOrders] ⚠️ items+embed failed: $e');
+      }
+
+      // Niveau 2 : select simple (si RLS bloque l'embed)
+      if (_items.isEmpty) {
         try {
           final res2 = await db
               .from('order_items')
@@ -1060,8 +1067,54 @@ class _OrderDetailsSheetState extends ConsumerState<_OrderDetailsSheet> {
               .eq('order_id', orderId!)
               .timeout(_kRequestTimeout);
           _items = (res2 as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          debugPrint('[VendorOrders] ✓ items via plain select: ${_items.length}');
         } catch (e2) {
-          debugPrint('[VendorOrders] ❌ items fallback failed: $e2');
+          debugPrint('[VendorOrders] ⚠️ items plain select failed: $e2');
+        }
+      }
+
+      // Niveau 3 : RPC SECURITY DEFINER (contourne RLS trop strict)
+      if (_items.isEmpty) {
+        try {
+          final rpcRes = await db
+              .rpc('get_order_items_secure', params: {'p_order_id': orderId})
+              .timeout(_kRequestTimeout);
+          if (rpcRes is List) {
+            _items = rpcRes.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+            debugPrint('[VendorOrders] ✓ items via RPC secure: ${_items.length}');
+          } else if (rpcRes != null && rpcRes.toString() != 'null') {
+            // Cas où le RPC renvoie un jsonb non-list
+            final parsed = rpcRes.toString();
+            if (parsed.startsWith('[')) {
+              try {
+                final list = (rpcRes as dynamic);
+                if (list is List) {
+                  _items = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+                }
+              } catch (_) {}
+            }
+          }
+        } catch (e3) {
+          debugPrint('[VendorOrders] ⚠️ RPC items failed: $e3');
+        }
+      }
+
+      // ── Enrichissement défensif : ajouter currency parent si manquante ──
+      final parentCurrency = widget.order['currency']?.toString();
+      for (final item in _items) {
+        if (parentCurrency != null && parentCurrency.isNotEmpty) {
+          item['currency'] ??= parentCurrency;
+          // Si product absent, créer un Map produit fallback pour le tile
+          if (item['product'] == null || item['product'] is! Map) {
+            item['product'] = {
+              'title': item['product_name'] ?? item['title'] ?? '',
+              'image_url': item['product_image'],
+              'currency': parentCurrency,
+            };
+          } else {
+            final prod = item['product'] as Map;
+            prod['currency'] ??= parentCurrency;
+          }
         }
       }
     }
@@ -1339,7 +1392,11 @@ class _OrderDetailsSheetState extends ConsumerState<_OrderDetailsSheet> {
                     )
                   : Column(
                       children: _items
-                          .map((item) => _OrderItemTile(item: item, currency: currency, locale: context.localeCode))
+                          .map((item) => _OrderItemTile(
+                                item: item,
+                                currency: currency,
+                                locale: context.localeCode,
+                              ))
                           .toList(),
                     ),
           const SizedBox(height: 20),
@@ -1530,6 +1587,7 @@ class _BillingRow extends StatelessWidget {
   }
 }
 
+// ✅ TILE ROBUSTE : fonctionne même sans jointure produit
 class _OrderItemTile extends StatelessWidget {
   final Map<String, dynamic> item;
   final String currency;
@@ -1539,9 +1597,13 @@ class _OrderItemTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final product = item['product'] as Map? ?? {};
+    // Résolution produit : Map imbriqué OU champs snapshot à la racine
+    final product = (item['product'] is Map) ? (item['product'] as Map) : <String, dynamic>{};
     final title = _VoValidators.sanitize(
-      (product['title'] ?? item['title'] ?? item['product_name'] ?? context.voT('Produit', 'Product')).toString(),
+      (product['title']?.toString() ??
+              item['title']?.toString() ??
+              item['product_name']?.toString() ??
+              context.voT('Produit', 'Product')),
       maxLength: _kMaxTitleLength,
     );
     final qty = _VoValidators.safeInt(item['quantity'], fallback: 1);
@@ -1549,12 +1611,16 @@ class _OrderItemTile extends StatelessWidget {
     final variant = _VoValidators.sanitize(item['variant']?.toString(), maxLength: 30);
     final color = _VoValidators.sanitize(item['color']?.toString(), maxLength: 30);
     final imageUrl = _VoValidators.sanitizeUrl(
-      (product['image_url'] ?? item['product_image'])?.toString(),
+      (product['image_url']?.toString() ?? item['product_image']?.toString()),
     );
 
-    final symbol = _VoValidators.currencySymbol(currency);
-    final formattedPrice = _VoValidators.formatAmount(price, locale, isUSD: currency == 'USD');
-    final formattedTotal = _VoValidators.formatAmount(price * qty, locale, isUSD: currency == 'USD');
+    // Devise : depuis le produit imbriqué → sinon depuis le param parent
+    final itemCurrency = _VoValidators.normalizeCurrency(
+      (product['currency']?.toString() ?? item['currency']?.toString() ?? currency),
+    );
+    final symbol = _VoValidators.currencySymbol(itemCurrency);
+    final formattedPrice = _VoValidators.formatAmount(price, locale, isUSD: itemCurrency == 'USD');
+    final formattedTotal = _VoValidators.formatAmount(price * qty, locale, isUSD: itemCurrency == 'USD');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
