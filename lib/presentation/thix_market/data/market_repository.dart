@@ -162,9 +162,10 @@ class MarketRepository {
       // ✅ Même style que shop_detail (qui affiche les produits)
       // Pas d'embed shop:shops — évite les échecs silencieux
       var q = _db
-          .from('products')
-          .select('*')
-          .eq('status', 'active');
+    .from('products')
+    .select('*, shop:shops!inner(id, name, logo_url, city, type)')
+    .eq('status', 'active')
+    .neq('shop.type', 'supermarket'); 
 
       if (flashOnly) q = q.eq('is_flash_sale', true);
       if (featuredOnly) q = q.eq('is_featured', true);
