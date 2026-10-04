@@ -1,28 +1,4 @@
-/// Notification Counters Service (Production Enterprise)
-/// ✅ SÉCURISÉ : Validation UID/section, sanitization, timeout
-/// ✅ ROBUSTE : Retry avec backoff exponentiel, error handling, fallback polling
-/// ✅ OBSERVABLE : Logs structurés avec masquage UID (RGPD)
-/// ✅ BADGE ICÔNE : Synchronisation automatique du badge de l'app (WhatsApp-style)
-///
-/// Service pour calculer et diffuser en temps réel les compteurs de
-/// notifications non lues par section, pour alimenter les badges de
-/// HomeServicesConstellation et de la cloche de notifications du header.
-/// Met aussi à jour le badge numérique sur l'icône de l'application.
-///
-/// **Architecture** :
-/// - Realtime Supabase avec fallback polling (5s)
-/// - Retry avec backoff exponentiel (500ms → 8s max)
-/// - Validation stricte des UIDs et sections
-/// - Logs structurés avec masquage UID (RGPD)
-/// - AppBadgePlus pour le badge de l'icône (iOS + Android OEM)
-///
-/// **Edge cases gérés** :
-/// - UID invalide → Stream vide + log
-/// - Timeout réseau → Fallback polling automatique
-/// - Erreur Supabase → Retry avec backoff exponentiel
-/// - Section inconnue → Ignorée silencieusement
-/// - Types non reconnus → Filtrés automatiquement
-/// - Badge non supporté par le launcher → no-op silencieux
+// lib/services/notification_counters_service.dart
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -65,9 +41,6 @@ enum ThixSection {
   messages,
 }
 
-/// Compteurs de notifications non lues, un champ par section — noms
-/// exacts attendus par HomeServicesConstellation (c.media, c.info, ...)
-/// et par home_header_delegate.dart / notifications_sheet.dart (c.messages).
 class SectionBadgeCounts {
   final int media;
   final int info;
@@ -102,48 +75,25 @@ class SectionBadgeCounts {
   static const zero = SectionBadgeCounts();
 
   int get total =>
-      media +
-      info +
-      events +
-      money +
-      market +
-      reservation +
-      jobs +
-      formations +
-      opportunities +
-      network +
-      health +
-      monPays +
-      messages;
+      media + info + events + money + market + reservation +
+      jobs + formations + opportunities + network +
+      health + monPays + messages;
 
   int forSection(ThixSection section) {
     switch (section) {
-      case ThixSection.media:
-        return media;
-      case ThixSection.info:
-        return info;
-      case ThixSection.events:
-        return events;
-      case ThixSection.money:
-        return money;
-      case ThixSection.market:
-        return market;
-      case ThixSection.reservation:
-        return reservation;
-      case ThixSection.jobs:
-        return jobs;
-      case ThixSection.formations:
-        return formations;
-      case ThixSection.opportunities:
-        return opportunities;
-      case ThixSection.network:
-        return network;
-      case ThixSection.health:
-        return health;
-      case ThixSection.monPays:
-        return monPays;
-      case ThixSection.messages:
-        return messages;
+      case ThixSection.media: return media;
+      case ThixSection.info: return info;
+      case ThixSection.events: return events;
+      case ThixSection.money: return money;
+      case ThixSection.market: return market;
+      case ThixSection.reservation: return reservation;
+      case ThixSection.jobs: return jobs;
+      case ThixSection.formations: return formations;
+      case ThixSection.opportunities: return opportunities;
+      case ThixSection.network: return network;
+      case ThixSection.health: return health;
+      case ThixSection.monPays: return monPays;
+      case ThixSection.messages: return messages;
     }
   }
 }
@@ -155,23 +105,18 @@ class SectionBadgeCounts {
 class _Validators {
   _Validators._();
 
-  /// Valide le format d'un UID Firebase/Supabase
   static bool isValidUid(String? uid) {
     if (uid == null || uid.isEmpty) return false;
     if (uid.length < _kMinUidLength || uid.length > _kMaxUidLength) return false;
-    final regex = RegExp(r'^[A-Za-z0-9_\-]+$');
-    return regex.hasMatch(uid);
+    return RegExp(r'^[A-Za-z0-9_\-]+$').hasMatch(uid);
   }
 
-  /// Masque un UID pour les logs (RGPD)
-  ///
-  /// Exemple : `abc123def456ghi789` → `abc1...789`
+  /// Masque un UID pour les logs (RGPD) — FIX : interpolation propre
   static String maskUid(String uid) {
     if (uid.length <= 8) return '***';
-    return '\( {uid.substring(0, 4)}... \){uid.substring(uid.length - 3)}';
+    return '${uid.substring(0, 4)}...${uid.substring(uid.length - 3)}';
   }
 
-  /// Sanitize un type de notification
   static String sanitizeType(String? type) {
     if (type == null) return '';
     final s = type.trim().toLowerCase();
@@ -196,9 +141,8 @@ class NotificationCountersService {
 
   static const String _table = 'notifications';
 
-  /// Mapping type (colonne `notifications.type`) → section. À étendre
-  /// au fur et à mesure que chaque module commence à créer des
-  /// notifications avec de nouveaux types.
+  /// Mapping type → section. Étendu pour couvrir tous les triggers SQL.
+  /// ⚠️ L'ordre importe peu car on compte chaque LIGNE, pas chaque TYPE.
   static const Map<String, ThixSection> _typeToSection = {
     // Contenu & Médias
     'media': ThixSection.media,
@@ -207,17 +151,26 @@ class NotificationCountersService {
     'info': ThixSection.info,
     'thix_info': ThixSection.info,
     'news': ThixSection.info,
-    'event': ThixSection.events,
-    'evenement': ThixSection.events,
     'doc': ThixSection.info,
     'ia': ThixSection.info,
+    'event': ThixSection.events,
+    'evenement': ThixSection.events,
+    'live_invite': ThixSection.media,
+    'live': ThixSection.media,
+    'live_request': ThixSection.network,
 
     // Économie & Transactions
     'money': ThixSection.money,
     'payment': ThixSection.money,
     'thix_money': ThixSection.money,
+    'payment_received': ThixSection.money,
+    'payout_released': ThixSection.money,
+    'refund_requested': ThixSection.money,
+    'refund_processed': ThixSection.money,
     'market': ThixSection.market,
     'order': ThixSection.market,
+    'order_new': ThixSection.market,
+    'order_status': ThixSection.market,
     'shop': ThixSection.market,
     'reservation': ThixSection.reservation,
     'booking': ThixSection.reservation,
@@ -225,33 +178,50 @@ class NotificationCountersService {
     // Carrière, Éducation & Réseau
     'job': ThixSection.jobs,
     'emploi': ThixSection.jobs,
+    'application_received': ThixSection.jobs,
+    'application_status': ThixSection.jobs,
     'formation': ThixSection.formations,
     'course': ThixSection.formations,
     'certificate': ThixSection.formations,
     'opportunity': ThixSection.opportunities,
 
-    // THIX PRO (réseau)
+    // THIX PRO (réseau social complet)
     'like': ThixSection.network,
-    'follow': ThixSection.network,
-    'connection': ThixSection.network,
     'comment': ThixSection.network,
+    'comment_like': ThixSection.network,
+    'comment_reply': ThixSection.network,
+    'repost': ThixSection.network,
     'post': ThixSection.network,
+    'follow': ThixSection.network,
+    'friend_request': ThixSection.network,
+    'friend_accepted': ThixSection.network,
+    'friend_rejected': ThixSection.network,
+    'connection': ThixSection.network,
     'mention': ThixSection.network,
-    'live_request': ThixSection.network,
-    'live': ThixSection.media,
+    'tag': ThixSection.network,
+    'profile_visit': ThixSection.network,
+
+    // Messages & Appels
+    'chat': ThixSection.messages,
+    'message': ThixSection.messages,
+    'call': ThixSection.messages,
+    'call_missed': ThixSection.messages,
+    'voice_note': ThixSection.messages,
 
     // Vie pratique, Santé & Gouvernement
     'health': ThixSection.health,
     'thix_sante': ThixSection.health,
+    'sos': ThixSection.health,
+    'thix_urgent': ThixSection.health,
+    'sos_ack': ThixSection.health,
     'country': ThixSection.monPays,
     'mon_pays': ThixSection.monPays,
     'civic': ThixSection.monPays,
-    'sos': ThixSection.health,
-    'thix_urgent': ThixSection.health,
 
-    // THIX CHAT
-    'chat': ThixSection.messages,
-    'message': ThixSection.messages,
+    // Système
+    'system': ThixSection.info,
+    'security': ThixSection.info,
+    'generic': ThixSection.info,
   };
 
   // ========================================================================
@@ -259,20 +229,6 @@ class NotificationCountersService {
   // ========================================================================
 
   /// Flux réactif des compteurs par section pour l'utilisateur donné.
-  ///
-  /// **Comportement** :
-  /// - UID invalide → `Stream.value(SectionBadgeCounts.zero)`
-  /// - Erreur réseau → Fallback polling automatique (5s)
-  /// - Realtime Supabase → Mise à jour instantanée
-  /// - Badge de l'icône mis à jour automatiquement à chaque nouveau total
-  ///
-  /// **Usage** :
-  /// ```dart
-  /// final service = NotificationCountersService();
-  /// service.streamCounts(uid).listen((counts) {
-  ///   print('Total: ${counts.total}');
-  /// });
-  /// ```
   Stream<SectionBadgeCounts> streamCounts(String uid) {
     if (!_Validators.isValidUid(uid)) {
       debugPrint('[NotifCounters] ⚠️ Invalid UID, returning zero stream');
@@ -281,19 +237,13 @@ class NotificationCountersService {
     }
 
     debugPrint('[NotifCounters] 🚀 Starting stream for ${_Validators.maskUid(uid)}');
-    return _streamUnreadTypes(uid).map((types) {
-      final counts = _buildCounts(types);
+    return _streamUnreadCounts(uid).map((counts) {
       unawaited(_updateAppIconBadge(counts.total));
       return counts;
     });
   }
 
-  /// Récupération ponctuelle (non réactive) — utile pour un
-  /// pull-to-refresh ou un affichage one-shot.
-  ///
-  /// **Retourne** :
-  /// - `SectionBadgeCounts.zero` si UID invalide ou erreur
-  /// - Compteurs réels sinon
+  /// Récupération ponctuelle (non réactive) — utile pour pull-to-refresh.
   Future<SectionBadgeCounts> fetchCounts(String uid) async {
     if (!_Validators.isValidUid(uid)) {
       debugPrint('[NotifCounters] ⚠️ Invalid UID for fetchCounts');
@@ -302,6 +252,7 @@ class NotificationCountersService {
     }
 
     try {
+      // ✅ FIX : on compte par LIGNE, pas par type dédupliqué
       final rows = await _client
           .from(_table)
           .select('type')
@@ -311,18 +262,15 @@ class NotificationCountersService {
 
       final types = rows
           .map((r) => _Validators.sanitizeType(r['type'] as String?))
-          .where((t) => t.isNotEmpty)
-          .toSet() // Dédupliquer
-          .toList();
+          .toList(); // ← PLUS de .toSet() !
 
-      debugPrint('[NotifCounters] ✓ Fetched ${types.length} unread for '
-          '${_Validators.maskUid(uid)}');
       final counts = _buildCounts(types);
       await _updateAppIconBadge(counts.total);
+      debugPrint('[NotifCounters] ✓ Fetched ${types.length} unread '
+          '(total=${counts.total}) for ${_Validators.maskUid(uid)}');
       return counts;
     } on TimeoutException {
-      debugPrint('[NotifCounters] ❌ fetchCounts timeout for '
-          '${_Validators.maskUid(uid)}');
+      debugPrint('[NotifCounters] ❌ fetchCounts timeout');
       return SectionBadgeCounts.zero;
     } catch (e) {
       debugPrint('[NotifCounters] ❌ fetchCounts failed: $e');
@@ -330,14 +278,7 @@ class NotificationCountersService {
     }
   }
 
-  /// Marque comme lues toutes les notifications non lues d'une section
-  /// donnée — appelé par home_page.dart / notifications_sheet.dart
-  /// quand l'utilisateur tape sur un nœud de la constellation ou ouvre
-  /// le panneau de notifications.
-  ///
-  /// **Retourne** :
-  /// - `true` si succès
-  /// - `false` si erreur ou UID/section invalide
+  /// Marque comme lues toutes les notifications non lues d'une section.
   Future<bool> markSectionSeen({
     required String uid,
     required ThixSection section,
@@ -360,23 +301,23 @@ class NotificationCountersService {
     try {
       await _client
           .from(_table)
-          .update({'is_read': true})
+          .update({
+            'is_read': true,
+            'read_at': DateTime.now().toUtc().toIso8601String(),
+          })
           .eq('user_id', uid)
           .eq('is_read', false)
           .inFilter('type', types)
           .timeout(_kQueryTimeout);
 
       debugPrint('[NotifCounters] ✓ Marked ${types.length} types as read '
-          'for section \( section ( \){_Validators.maskUid(uid)})');
+          'for section ${section.name} (${_Validators.maskUid(uid)})');
 
-      // Recalcule le total et met à jour le badge de l'icône
-      final counts = await fetchCounts(uid);
-      // fetchCounts met déjà à jour le badge
-
+      // fetchCounts met déjà à jour le badge de l'icône
+      await fetchCounts(uid);
       return true;
     } on TimeoutException {
-      debugPrint('[NotifCounters] ❌ markSectionSeen timeout for '
-          'section $section');
+      debugPrint('[NotifCounters] ❌ markSectionSeen timeout');
       return false;
     } catch (e) {
       debugPrint('[NotifCounters] ❌ markSectionSeen failed: $e');
@@ -385,37 +326,24 @@ class NotificationCountersService {
   }
 
   /// Force la mise à jour du badge de l'icône avec un total donné.
-  /// Utile si tu veux forcer un reset depuis l'extérieur.
   Future<void> syncAppIconBadge(int total) => _updateAppIconBadge(total);
 
   // ========================================================================
-  // PRIVATE : BADGE ICÔNE (WhatsApp-style)
+  // PRIVATE : BADGE ICÔNE
   // ========================================================================
 
-  /// Met à jour le badge numérique sur l'icône de l'application.
-  ///
-  /// - `count > 0` → affiche le nombre
-  /// - `count == 0` → retire le badge
-  /// - Non supporté par le launcher → no-op silencieux
   Future<void> _updateAppIconBadge(int count) async {
     try {
       final supported = await AppBadgePlus.isSupported();
       if (!supported) {
-        if (kDebugMode) {
-          debugPrint('[NotifCounters] ℹ️ App badge not supported by this launcher');
-        }
+        if (kDebugMode) debugPrint('[NotifCounters] ℹ️ App badge not supported');
         return;
       }
-
       final safeCount = count < 0 ? 0 : count;
       await AppBadgePlus.updateBadge(safeCount);
-
-      if (kDebugMode) {
-        debugPrint('[NotifCounters] 🔢 App icon badge → $safeCount');
-      }
+      if (kDebugMode) debugPrint('[NotifCounters] 🔢 Badge → $safeCount');
     } catch (e) {
-      // Ne jamais faire planter l'app pour un badge
-      debugPrint('[NotifCounters] ⚠️ Failed to update app icon badge: $e');
+      debugPrint('[NotifCounters] ⚠️ Badge update failed: $e');
     }
   }
 
@@ -423,9 +351,10 @@ class NotificationCountersService {
   // PRIVATE : STREAM BAS NIVEAU
   // ========================================================================
 
-  /// Flux bas niveau : types non lus, avec fallback polling
-  Stream<List<String>> _streamUnreadTypes(String uid) {
-    late final StreamController<List<String>> controller;
+  /// ✅ FIX : retourne directement les SectionBadgeCounts au lieu
+  /// de List<String> dédupliqué — on compte chaque notification.
+  Stream<SectionBadgeCounts> _streamUnreadCounts(String uid) {
+    late final StreamController<SectionBadgeCounts> controller;
     RealtimeChannel? channel;
     var closedRetries = 0;
     Timer? retryTimer;
@@ -435,7 +364,6 @@ class NotificationCountersService {
 
     Future<void> emitLatest() async {
       if (isCancelled) return;
-
       try {
         final rows = await _client
             .from(_table)
@@ -446,47 +374,34 @@ class NotificationCountersService {
 
         final types = rows
             .map((r) => _Validators.sanitizeType(r['type'] as String?))
-            .where((t) => t.isNotEmpty)
-            .toSet() // Dédupliquer
-            .toList();
+            .toList(); // pas de dédup
 
-        if (!isCancelled) {
-          controller.add(types);
-        }
+        if (!isCancelled) controller.add(_buildCounts(types));
       } on TimeoutException {
-        debugPrint('[NotifCounters] ⚠️ emitLatest timeout for '
-            '${_Validators.maskUid(uid)}');
-        if (!isCancelled) controller.add(const <String>[]);
+        debugPrint('[NotifCounters] ⚠️ emitLatest timeout');
+        if (!isCancelled) controller.add(SectionBadgeCounts.zero);
       } catch (e) {
         debugPrint('[NotifCounters] ❌ emitLatest failed: $e');
-        if (!isCancelled) controller.add(const <String>[]);
+        if (!isCancelled) controller.add(SectionBadgeCounts.zero);
       }
     }
 
     void startPolling() {
       if (polling) return;
       polling = true;
-      debugPrint('[NotifCounters] 🔄 Fallback polling started for '
-          '${_Validators.maskUid(uid)}');
+      debugPrint('[NotifCounters] 🔄 Fallback polling for ${_Validators.maskUid(uid)}');
       pollTimer?.cancel();
       pollTimer = Timer.periodic(_kPollingInterval, (_) => unawaited(emitLatest()));
     }
 
-    controller = StreamController<List<String>>.broadcast(
+    controller = StreamController<SectionBadgeCounts>.broadcast(
       onListen: () => unawaited(emitLatest()),
       onCancel: () async {
         isCancelled = true;
-        debugPrint('[NotifCounters] 🛑 Stream cancelled for '
-            '${_Validators.maskUid(uid)}');
         retryTimer?.cancel();
         pollTimer?.cancel();
-        final ch = channel;
-        if (ch != null) {
-          try {
-            await _client.removeChannel(ch);
-          } catch (e) {
-            debugPrint('[NotifCounters] ⚠️ Failed to remove channel: $e');
-          }
+        if (channel != null) {
+          try { await _client.removeChannel(channel!); } catch (_) {}
         }
       },
     );
@@ -494,12 +409,7 @@ class NotificationCountersService {
     Future<void> subscribeOrRetry() async {
       if (isCancelled || polling) return;
       retryTimer?.cancel();
-
-      try {
-        if (channel != null) await _client.removeChannel(channel!);
-      } catch (e) {
-        debugPrint('[NotifCounters] ⚠️ Failed to remove old channel: $e');
-      }
+      try { if (channel != null) await _client.removeChannel(channel!); } catch (_) {}
 
       channel = _client.channel('notification_counters:$uid');
       try {
@@ -513,52 +423,31 @@ class NotificationCountersService {
                 column: 'user_id',
                 value: uid,
               ),
-              callback: (payload) => unawaited(emitLatest()),
+              callback: (_) => unawaited(emitLatest()),
             )
             .subscribe((status, [err]) {
               if (isCancelled) return;
-
               if (status == RealtimeSubscribeStatus.channelError) {
-                debugPrint('[NotifCounters] ❌ Channel error, starting polling');
-                startPolling();
-                return;
+                startPolling(); return;
               }
-
               final shouldRetry = err != null || status == RealtimeSubscribeStatus.closed;
               if (!shouldRetry) {
-                debugPrint('[NotifCounters] ✓ Realtime connected for '
-                    '${_Validators.maskUid(uid)}');
-                closedRetries = 0;
-                return;
+                closedRetries = 0; return;
               }
-
               closedRetries = (closedRetries + 1).clamp(1, _kMaxRetries);
               final delayMs = (_kMinRetryDelay.inMilliseconds * (1 << (closedRetries - 1)))
                   .clamp(_kMinRetryDelay.inMilliseconds, _kMaxRetryDelay.inMilliseconds);
-
-              debugPrint('[NotifCounters] ⏱️ Retry $closedRetries/$_kMaxRetries '
-                  'in ${delayMs}ms');
-
-              if (closedRetries >= _kMaxRetries) {
-                debugPrint('[NotifCounters] ❌ Max retries reached, '
-                    'fallback to polling');
-                startPolling();
-                return;
-              }
-
+              if (closedRetries >= _kMaxRetries) { startPolling(); return; }
               retryTimer?.cancel();
-              retryTimer = Timer(Duration(milliseconds: delayMs), () {
-                unawaited(subscribeOrRetry());
-              });
+              retryTimer = Timer(Duration(milliseconds: delayMs),
+                  () => unawaited(subscribeOrRetry()));
             });
       } catch (e) {
-        debugPrint('[NotifCounters] ❌ Realtime wiring failed: $e');
         startPolling();
       }
     }
 
     unawaited(subscribeOrRetry());
-
     return controller.stream;
   }
 
@@ -573,10 +462,9 @@ class NotificationCountersService {
     final tally = <ThixSection, int>{};
     for (final type in types) {
       final section = _typeToSection[type];
-      if (section == null) continue;
+      if (section == null) continue; // types inconnus ignorés silencieusement
       tally[section] = (tally[section] ?? 0) + 1;
     }
-
     return SectionBadgeCounts(
       media: tally[ThixSection.media] ?? 0,
       info: tally[ThixSection.info] ?? 0,
