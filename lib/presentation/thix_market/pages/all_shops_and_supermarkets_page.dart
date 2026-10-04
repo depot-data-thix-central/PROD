@@ -322,12 +322,19 @@ class _AllShopsAndSupermarketsPageState
     });
   }
 
-  void _openShop(Map<String, dynamic> shop) {
+    void _openShop(Map<String, dynamic> shop) {
     HapticFeedback.selectionClick();
     final id = shop['id']?.toString() ?? '';
+    final type = shop['type']?.toString() ?? '';
     if (id.isEmpty) return;
-    context.push('/market/shop/$id');
+
+    if (type == 'supermarket') {
+      context.push('/market/supermarket/$id');
+    } else {
+      context.push('/market/shop/$id');
+    }
   }
+
 
   void _showFiltersSheet() {
     HapticFeedback.mediumImpact();
