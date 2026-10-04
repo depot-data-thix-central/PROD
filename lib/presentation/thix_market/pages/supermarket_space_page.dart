@@ -1138,14 +1138,16 @@ class _InfoGrid extends StatelessWidget {
       _InfoCell(icon: Icons.inventory_2_rounded, label: 'Stock', value: '${product.stock}${product.unit != null ? ' ${product.unit}' : ''}', color: product.stock > 0 ? ThixPolicy.success : ThixPolicy.danger),
       _InfoCell(icon: Icons.category_outlined, label: 'Unité', value: product.unit ?? 'pcs', color: ThixPolicy.primary),
       if (product.isPerishable)
-        _InfoCell(
-          icon: product.isExpired ? Icons.warning_amber_rounded : Icons.event_rounded,
-          label: 'Expiration',
-          value: product.expiryDateTime != null
-    ? '\( {product.expiryDateTime!.day.toString().padLeft(2, '0')}/ \){product.expiryDateTime!.month.toString().padLeft(2, '0')}/${product.expiryDateTime!.year}'
-    : '—',
-          color: product.isExpired ? ThixPolicy.danger : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
-        ),
+  _InfoCell(
+    icon: product.isExpired ? Icons.warning_amber_rounded : Icons.event_rounded,
+    label: 'Expiration',
+    value: product.expiryDateTime != null
+        ? '\( {product.expiryDateTime!.day.toString().padLeft(2, '0')}/ \){product.expiryDateTime!.month.toString().padLeft(2, '0')}/${product.expiryDateTime!.year}'
+        : '—',
+    color: product.isExpired
+        ? ThixPolicy.danger
+        : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
+  ),
       if (product.onPromo)
         _InfoCell(icon: Icons.local_offer_rounded, label: 'Prix promo', value: '${product.priceLabel()} ${product.currency}', color: _kRailRed),
     ];
