@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:barcode_widget/barcode_widget.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:html/parser.dart' as html_parser;
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../providers/market_providers.dart';
@@ -44,23 +45,20 @@ final vendorAllOrdersProvider =
 
     if (shopIds.isEmpty) return [];
 
-    // 1. On prépare la requête de base AVEC le filtre inFilter
     var query = db
         .from('orders')
         .select(
           'id, total, status, payment_status, payout_status, payment_method, '
-          'currency, created_at, user_id, receipt_code, refund_requested, '
+          'currency, created_at, user_id, address_id, receipt_code, refund_requested, '
           'refund_reason, received_at, shipping_method, shipping_address, '
           'customer_name, customer_phone, customer_email',
         )
         .inFilter('shop_id', shopIds);
 
-    // 2. On ajoute le filtre eq() AVANT de faire le tri
     if (statusFilter != null && statusFilter.isNotEmpty && statusFilter != 'all') {
       query = query.eq('status', statusFilter);
     }
 
-    // 3. On ajoute l'ordre et la limite, et on exécute la requête
     final res = await _voRetry(
       () => query.order('created_at', ascending: false).limit(100),
       label: 'fetchVendorOrders[${statusFilter ?? 'all'}]',
@@ -72,7 +70,6 @@ final vendorAllOrdersProvider =
     return [];
   }
 });
-
 
 // ============================================================================
 // VALIDATEURS
@@ -108,13 +105,15 @@ class _VoValidators {
   static double safeDouble(dynamic v, {double fallback = 0.0}) {
     if (v == null) return fallback;
     final parsed = (v as num?)?.toDouble() ?? fallback;
-    return parsed < 0 || parsed.isNaN || parsed.isInfinite ? fallback : parsed;
+    if (parsed < 0 || parsed.isNaN || parsed.isInfinite) return fallback;
+    return parsed;
   }
 
   static int safeInt(dynamic v, {int fallback = 0}) {
     if (v == null) return fallback;
     final parsed = (v as num?)?.toInt() ?? fallback;
-    return parsed < 0 ? fallback : parsed;
+    if (parsed < 0) return fallback;
+    return parsed;
   }
 
   static String shortId(String? id) {
@@ -197,6 +196,16 @@ Future<T> _voRetry<T>(
       rethrow;
     }
   }
+}
+
+/// Premier champ non-vide parmi [keys] dans [m]
+String _pick(Map<String, dynamic>? m, List<String> keys) {
+  if (m == null) return '';
+  for (final k in keys) {
+    final v = m[k]?.toString().trim() ?? '';
+    if (v.isNotEmpty) return v;
+  }
+  return '';
 }
 
 // ============================================================================
@@ -284,9 +293,6 @@ class _VendorOrdersPageState extends ConsumerState<VendorOrdersPage> {
     super.dispose();
   }
 
-  // ============================================================
-  // REFRESH
-  // ============================================================
   Future<void> _refresh() async {
     HapticFeedback.mediumImpact();
     debugPrint('[VendorOrders] 🔄 Refresh triggered (filter=$_filter)');
@@ -294,9 +300,6 @@ class _VendorOrdersPageState extends ConsumerState<VendorOrdersPage> {
     await ref.read(vendorAllOrdersProvider(_filter).future);
   }
 
-  // ============================================================
-  // UPDATE STATUS
-  // ============================================================
   Future<void> _updateStatus(String orderId, String newStatus) async {
     if (!_VoValidators.isValidId(orderId)) {
       _showError(context.voT('Identifiant invalide', 'Invalid ID'));
@@ -353,9 +356,6 @@ class _VendorOrdersPageState extends ConsumerState<VendorOrdersPage> {
     }
   }
 
-  // ============================================================
-  // CONFIRMATIONS
-  // ============================================================
   Future<bool> _confirmAction({
     required String title,
     required String content,
@@ -418,9 +418,6 @@ class _VendorOrdersPageState extends ConsumerState<VendorOrdersPage> {
     if (ok && mounted) await _updateStatus(orderId, 'cancelled');
   }
 
-  // ============================================================
-  // QR SHEET
-  // ============================================================
   void _showQrSheet(Map<String, dynamic> order) {
     final orderId = order['id']?.toString() ?? '';
     final code = (order['receipt_code'] ?? orderId).toString();
@@ -451,9 +448,6 @@ class _VendorOrdersPageState extends ConsumerState<VendorOrdersPage> {
     );
   }
 
-  // ============================================================
-  // ORDER DETAILS SHEET
-  // ============================================================
   void _showOrderDetails(Map<String, dynamic> order) {
     HapticFeedback.selectionClick();
     showModalBottomSheet(
@@ -480,9 +474,6 @@ class _VendorOrdersPageState extends ConsumerState<VendorOrdersPage> {
     );
   }
 
-  // ============================================================
-  // FEEDBACK
-  // ============================================================
   void _showError(String message) {
     if (!mounted) return;
     HapticFeedback.lightImpact();
@@ -514,9 +505,6 @@ class _VendorOrdersPageState extends ConsumerState<VendorOrdersPage> {
     );
   }
 
-  // ============================================================
-  // BUILD
-  // ============================================================
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(vendorAllOrdersProvider(_filter));
@@ -1010,7 +998,7 @@ class _QrCodeSheet extends StatelessWidget {
 }
 
 // ============================================================================
-// ORDER DETAILS SHEET
+// ORDER DETAILS SHEET — ✅ INFOS CLIENT COMPLÈTES
 // ============================================================================
 class _OrderDetailsSheet extends ConsumerStatefulWidget {
   final Map<String, dynamic> order;
@@ -1037,6 +1025,7 @@ class _OrderDetailsSheetState extends ConsumerState<_OrderDetailsSheet> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _items = [];
   Map<String, dynamic>? _profile;
+  Map<String, dynamic>? _address;
 
   @override
   void initState() {
@@ -1044,47 +1033,106 @@ class _OrderDetailsSheetState extends ConsumerState<_OrderDetailsSheet> {
     _loadExtraData();
   }
 
+  // ✅ Chargements INDÉPENDANTS : un échec ne tue plus les autres
   Future<void> _loadExtraData() async {
-    try {
-      final db = ref.read(supabaseClientProvider);
-      final orderId = widget.order['id']?.toString();
-      final userId = widget.order['user_id']?.toString();
+    final db = ref.read(supabaseClientProvider);
+    final orderId = widget.order['id']?.toString();
+    final userId = widget.order['user_id']?.toString();
+    final addressId = widget.order['address_id']?.toString();
 
-      if (!_VoValidators.isValidId(orderId)) {
-        if (mounted) setState(() => _isLoading = false);
-        return;
-      }
-
-      final futures = <Future>[
-        _voRetry(
+    // ── 1. ARTICLES (avec fallback sans jointure) ──
+    if (_VoValidators.isValidId(orderId)) {
+      try {
+        final res = await _voRetry(
           () => db
               .from('order_items')
               .select('*, product:products(title, image_url, currency)')
               .eq('order_id', orderId!),
           label: 'loadOrderItems',
-        ),
-      ];
-
-      if (_VoValidators.isValidId(userId)) {
-        futures.add(_voRetry(
-          () => db.from('profiles').select().eq('id', userId!).maybeSingle(),
-          label: 'loadCustomerProfile',
-        ));
+        );
+        _items = (res as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      } catch (e) {
+        debugPrint('[VendorOrders] ⚠️ items+embed failed: $e → fallback select simple');
+        try {
+          final res2 = await db
+              .from('order_items')
+              .select('*')
+              .eq('order_id', orderId!)
+              .timeout(_kRequestTimeout);
+          _items = (res2 as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        } catch (e2) {
+          debugPrint('[VendorOrders] ❌ items fallback failed: $e2');
+        }
       }
-
-      final results = await Future.wait(futures);
-
-      _items = (results[0] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      if (results.length > 1 && results[1] != null) {
-        _profile = Map<String, dynamic>.from(results[1] as Map);
-      }
-
-      debugPrint('[VendorOrders] ✓ Loaded ${_items.length} order items');
-    } catch (e) {
-      debugPrint('[VendorOrders] ❌ Load extra data error: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
+
+    // ── 2. PROFIL CLIENT : table `users` d'abord, puis `profiles` ──
+    if (_VoValidators.isValidId(userId)) {
+      try {
+        final u = await db
+            .from('users')
+            .select('*')
+            .eq('id', userId!)
+            .maybeSingle()
+            .timeout(_kRequestTimeout);
+        if (u != null) _profile = Map<String, dynamic>.from(u as Map);
+      } catch (e) {
+        debugPrint('[VendorOrders] ⚠️ users fetch failed: $e');
+      }
+      if (_profile == null) {
+        try {
+          final p = await db
+              .from('profiles')
+              .select('*')
+              .eq('id', userId!)
+              .maybeSingle()
+              .timeout(_kRequestTimeout);
+          if (p != null) _profile = Map<String, dynamic>.from(p as Map);
+        } catch (e) {
+          debugPrint('[VendorOrders] ⚠️ profiles fetch failed: $e');
+        }
+      }
+    }
+
+    // ── 3. ADRESSE DE LIVRAISON complète ──
+    if (_VoValidators.isValidId(addressId)) {
+      try {
+        final a = await db
+            .from('addresses')
+            .select('*')
+            .eq('id', addressId!)
+            .maybeSingle()
+            .timeout(_kRequestTimeout);
+        if (a != null) _address = Map<String, dynamic>.from(a as Map);
+      } catch (e) {
+        debugPrint('[VendorOrders] ⚠️ address fetch failed: $e');
+      }
+    }
+
+    debugPrint('[VendorOrders] ✓ details: items=${_items.length}, profile=${_profile != null}, address=${_address != null}');
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  String _shippingLabel(String raw, BuildContext context) {
+    switch (raw) {
+      case 'pickup':
+        return context.voT('Retrait en boutique', 'Store pickup');
+      case 'home_delivery':
+        return context.voT('Livraison à domicile', 'Home delivery');
+      case 'express':
+        return context.voT('Livraison express', 'Express delivery');
+      default:
+        return raw.isEmpty ? context.voT('Standard', 'Standard') : raw;
+    }
+  }
+
+  Future<void> _callPhone(String phone) async {
+    final clean = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    if (clean.isEmpty) return;
+    HapticFeedback.selectionClick();
+    try {
+      await launchUrl(Uri(scheme: 'tel', path: clean));
+    } catch (_) {}
   }
 
   @override
@@ -1104,20 +1152,37 @@ class _OrderDetailsSheetState extends ConsumerState<_OrderDetailsSheet> {
         : '';
 
     final shippingMethod = _VoValidators.sanitize(o['shipping_method']?.toString(), maxLength: 60);
-    final shippingAddress = _VoValidators.sanitize(o['shipping_address']?.toString(), maxLength: 200);
+
+    // ── Résolution défensive des infos client (ordre → adresse → profil) ──
+    final notProvided = context.voT('Non renseigné', 'Not provided');
 
     final clientName = _VoValidators.sanitize(
-      _profile?['full_name'] ?? o['customer_name'] ?? _profile?['name'] ?? context.voT('Client', 'Customer'),
+      _pick(o, ['customer_name']).isNotEmpty
+          ? _pick(o, ['customer_name'])
+          : _pick(_address, ['receiver_name', 'full_name', 'name', 'client_name']).isNotEmpty
+              ? _pick(_address, ['receiver_name', 'full_name', 'name', 'client_name'])
+              : _pick(_profile, ['full_name', 'name', 'display_name']),
       maxLength: _kMaxNameLength,
     );
-    final clientPhone = _VoValidators.sanitize(
-      _profile?['phone'] ?? o['customer_phone'] ?? _profile?['phone_number'] ?? context.voT('Non renseigné', 'Not provided'),
-      maxLength: 20,
-    );
-    final clientEmail = _VoValidators.sanitize(
-      _profile?['email'] ?? o['customer_email'] ?? context.voT('Non renseigné', 'Not provided'),
-      maxLength: 80,
-    );
+
+    final clientPhone = _pick(o, ['customer_phone']).isNotEmpty
+        ? _pick(o, ['customer_phone'])
+        : _pick(_address, ['phone', 'phone_number', 'telephone', 'receiver_phone']).isNotEmpty
+            ? _pick(_address, ['phone', 'phone_number', 'telephone', 'receiver_phone'])
+            : _pick(_profile, ['phone', 'phone_number', 'telephone']);
+
+    final clientEmail = _pick(o, ['customer_email']).isNotEmpty
+        ? _pick(o, ['customer_email'])
+        : _pick(_profile, ['email', 'email_address']);
+
+    final addressFromOrder = _pick(o, ['shipping_address']);
+    final addressParts = <String>[
+      _pick(_address, ['address', 'line1', 'street', 'avenue', 'quartier', 'commune_name']),
+      _pick(_address, ['city', 'commune', 'province', 'region']),
+      _pick(_address, ['country']),
+    ]..removeWhere((s) => s.isEmpty);
+    final addressFull = addressFromOrder.isNotEmpty ? addressFromOrder : addressParts.join(', ');
+    final addressLabel = _pick(_address, ['label', 'type', 'title']);
 
     return Container(
       padding: EdgeInsets.fromLTRB(20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
@@ -1157,6 +1222,7 @@ class _OrderDetailsSheetState extends ConsumerState<_OrderDetailsSheet> {
             ),
           const SizedBox(height: 20),
 
+          // ══ 1. CLIENT & LIVRAISON (complet) ══
           _SectionTitle(title: context.voT('Client & Livraison', 'Customer & Delivery')),
           const SizedBox(height: 8),
           Container(
@@ -1169,11 +1235,32 @@ class _OrderDetailsSheetState extends ConsumerState<_OrderDetailsSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _InfoRow(icon: Icons.person_outline_rounded, label: context.voT('Client', 'Customer'), value: clientName),
+                _InfoRow(
+                  icon: Icons.person_outline_rounded,
+                  label: context.voT('Client', 'Customer'),
+                  value: clientName.isEmpty ? notProvided : clientName,
+                ),
                 const SizedBox(height: 6),
-                _InfoRow(icon: Icons.phone_outlined, label: context.voT('Téléphone', 'Phone'), value: clientPhone),
+                _InfoRow(
+                  icon: Icons.phone_outlined,
+                  label: context.voT('Téléphone', 'Phone'),
+                  value: clientPhone.isEmpty ? notProvided : clientPhone,
+                  trailing: clientPhone.isNotEmpty
+                      ? IconButton(
+                          tooltip: context.voT('Appeler', 'Call'),
+                          onPressed: () => _callPhone(clientPhone),
+                          icon: const Icon(Icons.call_rounded, size: 16, color: ThixPolicy.success),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        )
+                      : null,
+                ),
                 const SizedBox(height: 6),
-                _InfoRow(icon: Icons.email_outlined, label: 'Email', value: clientEmail),
+                _InfoRow(
+                  icon: Icons.email_outlined,
+                  label: 'Email',
+                  value: clientEmail.isEmpty ? notProvided : clientEmail,
+                ),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6)),
@@ -1181,19 +1268,63 @@ class _OrderDetailsSheetState extends ConsumerState<_OrderDetailsSheet> {
                 _InfoRow(
                   icon: Icons.local_shipping_outlined,
                   label: context.voT('Mode', 'Method'),
-                  value: shippingMethod.isEmpty ? 'Standard' : shippingMethod,
+                  value: _shippingLabel(shippingMethod, context),
                 ),
-                const SizedBox(height: 6),
-                _InfoRow(
-                  icon: Icons.location_on_outlined,
-                  label: context.voT('Adresse', 'Address'),
-                  value: shippingAddress.isEmpty ? context.voT('Non spécifiée', 'Not specified') : shippingAddress,
+                const SizedBox(height: 8),
+                // ── Adresse multi-lignes ──
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Icon(Icons.location_on_outlined, size: 16, color: ThixPolicy.textMuted),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (addressLabel.isNotEmpty) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: ThixPolicy.primary.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                addressLabel.toUpperCase(),
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w900,
+                                  color: ThixPolicy.primary,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                          ],
+                          Text(
+                            addressFull.isEmpty
+                                ? context.voT('Non spécifiée', 'Not specified')
+                                : addressFull,
+                            style: ThixPolicy.captionStyle.copyWith(
+                              fontSize: 13,
+                              fontWeight: ThixPolicy.bold,
+                              color: ThixPolicy.textMain,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
           const SizedBox(height: 20),
 
+          // ══ 2. ARTICLES ══
           _SectionTitle(title: context.voT('Articles commandés', 'Order items')),
           const SizedBox(height: 8),
           _isLoading
@@ -1213,6 +1344,7 @@ class _OrderDetailsSheetState extends ConsumerState<_OrderDetailsSheet> {
                     ),
           const SizedBox(height: 20),
 
+          // ══ 3. FACTURATION ══
           _SectionTitle(title: context.voT('Facturation', 'Billing')),
           const SizedBox(height: 8),
           Container(
@@ -1249,6 +1381,7 @@ class _OrderDetailsSheetState extends ConsumerState<_OrderDetailsSheet> {
           ),
           const SizedBox(height: 24),
 
+          // ══ 4. ACTIONS ══
           _SectionTitle(title: context.voT('Actions', 'Actions')),
           const SizedBox(height: 10),
           if (statusKey == 'pending')
@@ -1329,8 +1462,9 @@ class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
+  final Widget? trailing;
 
-  const _InfoRow({required this.icon, required this.label, required this.value});
+  const _InfoRow({required this.icon, required this.label, required this.value, this.trailing});
 
   @override
   Widget build(BuildContext context) {
@@ -1353,6 +1487,7 @@ class _InfoRow extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
         ),
+        if (trailing != null) trailing!,
       ],
     );
   }
@@ -1406,14 +1541,16 @@ class _OrderItemTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final product = item['product'] as Map? ?? {};
     final title = _VoValidators.sanitize(
-      (product['title'] ?? item['title'] ?? context.voT('Produit', 'Product')).toString(),
+      (product['title'] ?? item['title'] ?? item['product_name'] ?? context.voT('Produit', 'Product')).toString(),
       maxLength: _kMaxTitleLength,
     );
     final qty = _VoValidators.safeInt(item['quantity'], fallback: 1);
     final price = _VoValidators.safeDouble(item['price']);
     final variant = _VoValidators.sanitize(item['variant']?.toString(), maxLength: 30);
     final color = _VoValidators.sanitize(item['color']?.toString(), maxLength: 30);
-    final imageUrl = _VoValidators.sanitizeUrl(product['image_url']?.toString());
+    final imageUrl = _VoValidators.sanitizeUrl(
+      (product['image_url'] ?? item['product_image'])?.toString(),
+    );
 
     final symbol = _VoValidators.currencySymbol(currency);
     final formattedPrice = _VoValidators.formatAmount(price, locale, isUSD: currency == 'USD');
@@ -1431,7 +1568,7 @@ class _OrderItemTile extends StatelessWidget {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: imageUrl != null
+            child: imageUrl != null && imageUrl.isNotEmpty
                 ? CachedNetworkImage(
                     imageUrl: imageUrl,
                     width: 50,
