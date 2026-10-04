@@ -562,31 +562,51 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
     bool stockDecremented = false;
 
     try {
-      // Résolution shop_id + currency
-      String? shopId;
-      final first = items.first;
-      final product = first['product'];
+      // Résolution shop_id (robuste : depuis item OU depuis DB)
+String? shopId;
+final first = items.first;
+final product = first['product'];
 
-      if (product is Map) {
-        // 1. shop_id direct sur le produit
-        if (product['shop_id'] != null) {
-          shopId = product['shop_id'].toString();
-        }
-        // 2. shop imbriqué (jointure shops)
-        else if (product['shop'] is Map && (product['shop'] as Map)['id'] != null) {
-          shopId = (product['shop'] as Map)['id'].toString();
-        }
-      }
+if (product is Map) {
+  if (product['shop_id'] != null) {
+    shopId = product['shop_id'].toString();
+  } else if (product['shop'] is Map && (product['shop'] as Map)['id'] != null) {
+    shopId = (product['shop'] as Map)['id'].toString();
+  }
+}
+if (shopId == null && first['shop_id'] != null) {
+  shopId = first['shop_id'].toString();
+}
 
-      // 3. fallback sur l'item du panier
-      if (shopId == null && first['shop_id'] != null) {
-        shopId = first['shop_id'].toString();
-      }
+// Fallback : récupérer shop_id depuis le produit en DB
+if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
+  final productId = first['product_id']?.toString() ??
+      (product is Map ? product['id']?.toString() : null);
 
-      // Sécurité : on refuse de créer une commande sans shop_id
-      if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
-        throw Exception('Boutique introuvable pour cette commande. Rechargez le panier.');
+  if (productId != null && _CheckoutValidators.isValidId(productId)) {
+    try {
+      final prod = await _withRetry(
+        () => db
+            .from('products')
+            .select('shop_id, shop:shops(id)')
+            .eq('id', productId)
+            .maybeSingle(),
+        label: 'fetchProductShopId',
+      );
+      if (prod != null) {
+        final map = Map<String, dynamic>.from(prod as Map);
+        shopId = map['shop_id']?.toString() ??
+            (map['shop'] is Map ? (map['shop'] as Map)['id']?.toString() : null);
       }
+    } catch (e) {
+      debugPrint('[CheckoutProvider] ⚠️ fetchProductShopId failed: $e');
+    }
+  }
+}
+
+if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
+  throw Exception('Boutique introuvable pour cette commande. Rechargez le panier.');
+}
       
       final currency = _resolveCurrency(items);
       final shippingCost = _CheckoutValidators.safeDouble(state.selectedShipping!['price']);
