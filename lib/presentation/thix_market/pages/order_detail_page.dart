@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:html/parser.dart' as html_parser;
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -29,17 +31,25 @@ class _Validators {
     return t;
   }
 
-  static String money(num amount, String cur) => cur == '\$' ? '\$${amount.toStringAsFixed(2)}' : '${amount.toInt()} $cur';
+  static String money(num amount, String cur) =>
+      cur == '\$' ? '\$${amount.toStringAsFixed(2)}' : '${amount.toInt()} $cur';
+
   static String currency(dynamic c) {
     final v = (c ?? 'CDF').toString().toUpperCase().trim();
     if (v == 'XOF' || v == 'CDF' || v == 'FCFA' || v == 'FC') return 'FC';
     if (v == 'USD' || v == '\$') return '\$';
     return v;
   }
+
+  static int safeInt(dynamic v, {int fallback = 1}) {
+    if (v == null) return fallback;
+    final parsed = (v as num?)?.toInt() ?? fallback;
+    return parsed < 0 ? fallback : parsed;
+  }
 }
 
 // ============================================================================
-// PROVIDER — order + items + shop en parallèle
+// PROVIDER — order + items (fallback 3 niveaux) + shop
 // ============================================================================
 final orderDetailProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>?, String>((ref, orderId) async {
@@ -55,30 +65,68 @@ final orderDetailProvider =
 
   if (order == null) return null;
 
-  final itemsFuture = db
-      .from('order_items')
-      .select('*, product:products(id, title, image_url, currency)')
-      .eq('order_id', orderId)
-      .timeout(_kTimeout)
-      .then((r) => List<Map<String, dynamic>>.from(r))
-      .catchError((_) => <Map<String, dynamic>>[]);
+  // ═══ ITEMS : 3 niveaux de fallback (même logique que vendeur) ═══
+  List<Map<String, dynamic>> items = [];
 
-  final shopFuture = order['shop_id'] != null
-      ? db
+  // Niveau 1 : avec jointure produit
+  try {
+    final r = await db
+        .from('order_items')
+        .select('*, product:products(id, title, image_url, currency)')
+        .eq('order_id', orderId)
+        .timeout(_kTimeout);
+    items = List<Map<String, dynamic>>.from(r);
+  } catch (e) {
+    debugPrint('[OrderDetail] ⚠️ items+embed failed: $e');
+  }
+
+  // Niveau 2 : select simple
+  if (items.isEmpty) {
+    try {
+      final r = await db
+          .from('order_items')
+          .select('*')
+          .eq('order_id', orderId)
+          .timeout(_kTimeout);
+      items = List<Map<String, dynamic>>.from(r);
+      debugPrint('[OrderDetail] ✓ items via plain select: ${items.length}');
+    } catch (e) {
+      debugPrint('[OrderDetail] ⚠️ items plain failed: $e');
+    }
+  }
+
+  // Niveau 3 : RPC SECURITY DEFINER
+  if (items.isEmpty) {
+    try {
+      final rpcRes = await db
+          .rpc('get_order_items_secure', params: {'p_order_id': orderId})
+          .timeout(_kTimeout);
+      if (rpcRes is List) {
+        items = rpcRes.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        debugPrint('[OrderDetail] ✓ items via RPC: ${items.length}');
+      }
+    } catch (e) {
+      debugPrint('[OrderDetail] ⚠️ RPC items failed: $e');
+    }
+  }
+
+  // Shop
+  Map<String, dynamic>? shop;
+  if (order['shop_id'] != null) {
+    try {
+      shop = await db
           .from('shops')
           .select('id, name, logo_url, city, is_verified, phone')
           .eq('id', order['shop_id'])
           .maybeSingle()
-          .timeout(_kTimeout)
-          .catchError((_) => null)
-      : Future.value(null);
-
-  final results = await Future.wait([itemsFuture, shopFuture]);
+          .timeout(_kTimeout);
+    } catch (_) {}
+  }
 
   return {
     ...order,
-    'items': results[0],
-    'shop': results[1],
+    'items': items,
+    'shop': shop,
   };
 });
 
@@ -116,10 +164,32 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
     return i < 0 ? 0 : i;
   }
 
-  // ─── CONFIRMER RÉCEPTION (code du livreur) ───
-  Future<void> _confirmReception(Map<String, dynamic> order, AppLocalizations l10n) async {
-    final codeCtrl = TextEditingController();
+  // ─── SCAN QR POUR CONFIRMER RÉCEPTION ───
+  Future<void> _scanQrForReception(Map<String, dynamic> order, AppLocalizations l10n) async {
+    String? scannedCode;
 
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _QrScanDialog(
+        title: l10n.t('order_detail_confirm_reception'),
+        hint: l10n.t('order_detail_scan_hint'),
+      ),
+    );
+
+    if (result == null || result.trim().isEmpty) {
+      // Fallback : saisie manuelle
+      await _manualCodeEntry(order, l10n);
+      return;
+    }
+
+    scannedCode = result.trim().toUpperCase();
+    await _runAction('confirm_reception', order, extra: scannedCode, l10n: l10n);
+  }
+
+  // ─── SAISIE MANUELLE (fallback) ───
+  Future<void> _manualCodeEntry(Map<String, dynamic> order, AppLocalizations l10n) async {
+    final codeCtrl = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -127,21 +197,21 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: Row(
           children: [
-            const Icon(Icons.qr_code_scanner_rounded, color: ThixPolicy.success, size: 24),
+            const Icon(Icons.keyboard_rounded, color: ThixPolicy.primary, size: 24),
             const SizedBox(width: 12),
-            Expanded(child: Text(l10n.t('order_detail_confirm_reception'), style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.w800, fontSize: 16))),
+            Expanded(child: Text(l10n.t('order_detail_manual_entry'), style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.w800, fontSize: 16))),
           ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(l10n.t('order_detail_confirm_desc'), style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary, height: 1.4)),
+            Text(l10n.t('order_detail_manual_desc'), style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary, height: 1.4)),
             const SizedBox(height: 20),
             TextField(
               controller: codeCtrl,
               autofocus: true,
-              maxLength: 12,
+              maxLength: 30,
               textCapitalization: TextCapitalization.characters,
               decoration: InputDecoration(
                 hintText: l10n.t('order_detail_code_hint'),
@@ -165,10 +235,12 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
         ],
       ),
     );
-
-    if (ok != true || codeCtrl.text.trim().isEmpty) return;
-    codeCtrl.dispose();
+    if (ok != true || codeCtrl.text.trim().isEmpty) {
+      codeCtrl.dispose();
+      return;
+    }
     await _runAction('confirm_reception', order, extra: codeCtrl.text.trim().toUpperCase(), l10n: l10n);
+    codeCtrl.dispose();
   }
 
   // ─── RÉCLAMER REMBOURSEMENT ───
@@ -248,7 +320,7 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
     detailsCtrl.dispose();
   }
 
-  // ─── ACTION CENTRALISÉE (RPC + fallback) ───
+  // ─── ACTION CENTRALISÉE ───
   Future<void> _runAction(String action, Map<String, dynamic> order, {String? extra, String? details, required AppLocalizations l10n}) async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -269,6 +341,7 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
             'status': 'delivered',
             'payout_status': 'released',
             'delivered_at': DateTime.now().toUtc().toIso8601String(),
+            'reception_code': extra,
           }).eq('id', id).timeout(_kTimeout);
         }
         _snack(l10n.t('order_detail_success_reception'), ThixPolicy.success);
@@ -284,6 +357,7 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
             'status': 'refund_requested',
             'refund_reason': extra,
             'refund_details': details,
+            'refund_requested': true,
           }).eq('id', id).timeout(_kTimeout);
         }
         _snack(l10n.t('order_detail_success_refund'), ThixPolicy.success);
@@ -306,7 +380,15 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
     );
   }
 
-  // Un conteneur épuré réutilisable
+  Future<void> _callShop(String? phone) async {
+    if (phone == null || phone.isEmpty) return;
+    final clean = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    if (clean.isEmpty) return;
+    try {
+      await launchUrl(Uri(scheme: 'tel', path: clean));
+    } catch (_) {}
+  }
+
   Widget _sleekSection({required Widget child}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -377,7 +459,7 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
     final shop = order['shop'] as Map?;
     final cur = _Validators.currency(order['currency']);
     final total = ((order['total'] ?? order['total_amount'] ?? 0) as num);
-    final deliveryFee = ((order['delivery_fee'] ?? 0) as num);
+    final deliveryFee = ((order['shipping_cost'] ?? order['delivery_fee'] ?? 0) as num);
     final subtotal = total - deliveryFee;
     final step = _stepIndex(status);
     final canConfirm = status == 'shipped' || status == 'processing';
@@ -387,31 +469,45 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
       physics: const BouncingScrollPhysics(),
       children: [
-        // ─── TIMELINE STATUT ───
         _sleekSection(child: _timeline(step, status, l10n)),
-
-        // ─── BOUTIQUE ───
         _sleekSection(child: _shopCard(shop, l10n)),
-
-        // ─── ARTICLES ───
         _sleekSection(child: _itemsCard(items, subtotal, deliveryFee, total, cur, l10n)),
-
-        // ─── ADRESSE ───
         _sleekSection(child: _addressCard(order, l10n)),
 
-        // ─── ACTIONS ───
         if (canConfirm) ...[
           const SizedBox(height: 8),
+          // ─── BOUTON PRINCIPAL : SCANNER QR ───
           ElevatedButton.icon(
-            onPressed: _busy ? null : () => _confirmReception(order, l10n),
-            icon: _busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.qr_code_scanner_rounded, size: 20),
-            label: Text(l10n.t('order_detail_confirm_reception_btn'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+            onPressed: _busy ? null : () => _scanQrForReception(order, l10n),
+            icon: _busy
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.qr_code_scanner_rounded, size: 22),
+            label: Text(
+              l10n.t('order_detail_scan_qr_btn'),
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: ThixPolicy.success,
               foregroundColor: Colors.white,
               elevation: 0,
               padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)), // Pill shape
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // ─── BOUTON SECONDAIRE : SAISIE MANUELLE ───
+          OutlinedButton.icon(
+            onPressed: _busy ? null : () => _manualCodeEntry(order, l10n),
+            icon: const Icon(Icons.keyboard_rounded, size: 18),
+            label: Text(
+              l10n.t('order_detail_manual_btn'),
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: ThixPolicy.textMain,
+              side: BorderSide(color: ThixPolicy.border.withValues(alpha: 0.5)),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
             ),
           ),
           Padding(
@@ -423,6 +519,7 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
             ),
           ),
         ],
+
         if (canRefund) ...[
           OutlinedButton.icon(
             onPressed: _busy ? null : () => _requestRefund(order, l10n),
@@ -437,7 +534,7 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
           ),
           const SizedBox(height: 16),
         ],
-        
+
         OutlinedButton.icon(
           onPressed: () { HapticFeedback.selectionClick(); context.pop(); },
           icon: const Icon(Icons.receipt_long_rounded, size: 18),
@@ -504,7 +601,7 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
               if (!isLast)
                 Container(
                   width: 16, height: 2,
-                  margin: const EdgeInsets.only(bottom: 20), // Alignement optique
+                  margin: const EdgeInsets.only(bottom: 20),
                   color: i < step ? ThixPolicy.success : ThixPolicy.surfaceSoft,
                 ),
             ],
@@ -517,7 +614,8 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
   Widget _shopCard(Map? shop, AppLocalizations l10n) {
     final name = _Validators.sanitize(shop?['name']?.toString() ?? l10n.t('order_detail_shop_fallback'), maxLength: 60);
     final logo = _Validators.sanitizeUrl(shop?['logo_url']?.toString());
-    
+    final phone = shop?['phone']?.toString();
+
     return Row(
       children: [
         Container(
@@ -526,7 +624,7 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
             color: ThixPolicy.surfaceSoft,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: ThixPolicy.border.withValues(alpha: 0.4)),
-            image: logo != null ? DecorationImage(image: CachedNetworkImageProvider(logo), fit: BoxFit.cover) : null
+            image: logo != null ? DecorationImage(image: CachedNetworkImageProvider(logo), fit: BoxFit.cover) : null,
           ),
           child: logo == null ? const Icon(Icons.storefront_rounded, size: 24, color: ThixPolicy.textMuted) : null,
         ),
@@ -542,48 +640,91 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
             ],
           ),
         ),
+        if (phone != null && phone.isNotEmpty)
+          IconButton(
+            icon: const Icon(Icons.call_rounded, color: ThixPolicy.success, size: 22),
+            tooltip: l10n.t('common_call'),
+            onPressed: () => _callShop(phone),
+          ),
       ],
     );
   }
 
+  // ✅ Tile adaptée à la structure réelle de order_items
   Widget _itemsCard(List<Map<String, dynamic>> items, num subtotal, num fee, num total, String cur, AppLocalizations l10n) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(l10n.t('order_detail_items_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.w800, fontSize: 16)),
         const SizedBox(height: 16),
-        ...items.map((it) {
-          final img = _Validators.sanitizeUrl((it['product_image'] ?? it['product']?['image_url'] ?? '').toString());
-          final name = _Validators.sanitize((it['product_name'] ?? it['title_snapshot'] ?? it['product']?['title'] ?? l10n.t('order_detail_product_fallback')).toString(), maxLength: 80);
-          final qty = it['quantity'] ?? 1;
-          final price = (it['price'] as num?) ?? 0;
-          
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: img == null
-                      ? Container(width: 64, height: 64, color: ThixPolicy.surfaceSoft, child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted))
-                      : CachedNetworkImage(imageUrl: img, width: 64, height: 64, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(width: 64, height: 64, color: ThixPolicy.surfaceSoft, child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted))),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: ThixPolicy.bodyStyle.copyWith(fontWeight: FontWeight.w700, height: 1.2)),
-                      const SizedBox(height: 4),
-                      Text('${l10n.t('order_detail_qty')}: $qty  •  ${_Validators.money(price, cur)}/u', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
-                ),
-                Text(_Validators.money(price * (qty as num), cur), style: ThixPolicy.labelStyle.copyWith(fontWeight: FontWeight.w900, fontSize: 15)),
-              ],
+        if (items.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: Text(
+                l10n.t('order_detail_no_items'),
+                style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted),
+              ),
             ),
-          );
-        }),
+          )
+        else
+          ...items.map((it) {
+            // Lecture directe des colonnes (fallback vers jointure si présente)
+            final product = (it['product'] is Map) ? (it['product'] as Map) : <String, dynamic>{};
+            final img = _Validators.sanitizeUrl(
+              it['product_image']?.toString() ?? product['image_url']?.toString() ?? '',
+            );
+            final name = _Validators.sanitize(
+              (it['title_snapshot']?.toString() ??
+                      it['product_name']?.toString() ??
+                      product['title']?.toString() ??
+                      it['title']?.toString() ??
+                      l10n.t('order_detail_product_fallback')),
+              maxLength: 80,
+            );
+            final qty = _Validators.safeInt(it['quantity'] ?? it['qty']);
+            final price = (it['price'] ?? it['unit_price'] ?? 0) as num;
+            final itemCur = _Validators.currency(it['currency'] ?? product['currency'] ?? cur);
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: img == null
+                        ? Container(width: 64, height: 64, color: ThixPolicy.surfaceSoft, child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted))
+                        : CachedNetworkImage(
+                            imageUrl: img,
+                            width: 64,
+                            height: 64,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => Container(
+                              width: 64,
+                              height: 64,
+                              color: ThixPolicy.surfaceSoft,
+                              child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted),
+                            ),
+                          ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: ThixPolicy.bodyStyle.copyWith(fontWeight: FontWeight.w700, height: 1.2)),
+                        const SizedBox(height: 4),
+                        Text('${l10n.t('order_detail_qty')}: $qty  •  ${_Validators.money(price, itemCur)}/u',
+                            style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                  Text(_Validators.money(price * qty, itemCur),
+                      style: ThixPolicy.labelStyle.copyWith(fontWeight: FontWeight.w900, fontSize: 15)),
+                ],
+              ),
+            );
+          }),
         Divider(color: ThixPolicy.border.withValues(alpha: 0.3), height: 32),
         _totalRow(l10n.t('order_detail_subtotal'), _Validators.money(subtotal, cur), false),
         const SizedBox(height: 8),
@@ -605,9 +746,24 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
   }
 
   Widget _addressCard(Map<String, dynamic> order, AppLocalizations l10n) {
-    final name = _Validators.sanitize(order['customer_name']?.toString() ?? order['recipient_name']?.toString() ?? '', maxLength: 60);
-    final addr = _Validators.sanitize(order['address']?.toString() ?? order['delivery_address']?.toString() ?? '', maxLength: 150);
-    final phone = _Validators.sanitize(order['phone']?.toString() ?? order['customer_phone']?.toString() ?? '', maxLength: 20);
+    final name = _Validators.sanitize(
+      order['customer_name']?.toString() ??
+          order['recipient_name']?.toString() ??
+          order['shipping_name']?.toString() ?? '',
+      maxLength: 60,
+    );
+    final addr = _Validators.sanitize(
+      order['shipping_address']?.toString() ??
+          order['address']?.toString() ??
+          order['delivery_address']?.toString() ?? '',
+      maxLength: 200,
+    );
+    final phone = _Validators.sanitize(
+      order['customer_phone']?.toString() ??
+          order['shipping_phone']?.toString() ??
+          order['phone']?.toString() ?? '',
+      maxLength: 20,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -635,11 +791,183 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
             children: [
               const Icon(Icons.phone_rounded, size: 16, color: ThixPolicy.textMuted),
               const SizedBox(width: 8),
-              Text(phone, style: ThixPolicy.bodySmallStyle.copyWith(fontWeight: FontWeight.w600)),
+              Expanded(child: Text(phone, style: ThixPolicy.bodySmallStyle.copyWith(fontWeight: FontWeight.w600))),
+              IconButton(
+                icon: const Icon(Icons.call_rounded, size: 16, color: ThixPolicy.success),
+                onPressed: () => _callShop(phone),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
             ],
           ),
         ],
       ],
     );
   }
+}
+
+// ============================================================================
+// DIALOGUE DE SCAN QR
+// ============================================================================
+class _QrScanDialog extends StatefulWidget {
+  final String title;
+  final String hint;
+  const _QrScanDialog({required this.title, required this.hint});
+
+  @override
+  State<_QrScanDialog> createState() => _QrScanDialogState();
+}
+
+class _QrScanDialogState extends State<_QrScanDialog> {
+  final MobileScannerController _controller = MobileScannerController(
+    detectionSpeed: DetectionSpeed.normal,
+    facing: CameraFacing.back,
+  );
+  bool _scanned = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_scanned) return;
+    final List<Barcode> barcodes = capture.barcodes;
+    if (barcodes.isEmpty) return;
+    final code = barcodes.first.rawValue;
+    if (code == null || code.trim().isEmpty) return;
+
+    _scanned = true;
+    HapticFeedback.mediumImpact();
+    _controller.stop();
+    Navigator.pop(context, code.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.black,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.qr_code_scanner_rounded, color: ThixPolicy.primary, size: 24),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            // Scanner
+            SizedBox(
+              height: 320,
+              width: double.infinity,
+              child: Stack(
+                children: [
+                  MobileScanner(
+                    controller: _controller,
+                    onDetect: _onDetect,
+                  ),
+                  // Cadre de visée
+                  Center(
+                    child: Container(
+                      width: 220,
+                      height: 220,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: ThixPolicy.success, width: 3),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                  // Ligne animée de scan
+                  Center(
+                    child: SizedBox(
+                      width: 220,
+                      height: 220,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween(begin: 0.0, end: 1.0),
+                          duration: const Duration(seconds: 2),
+                          builder: (ctx, val, child) => CustomPaint(
+                            painter: _ScanLinePainter(progress: val),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Footer
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline_rounded, color: ThixPolicy.primary, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      widget.hint,
+                      style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, height: 1.3),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Peintre pour la ligne de scan animée
+class _ScanLinePainter extends CustomPainter {
+  final double progress;
+  _ScanLinePainter({required this.progress});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = ThixPolicy.success.withValues(alpha: 0.8)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    final y = size.height * ((progress * 2) % 2 < 1 ? (progress * 2) % 1 : 1 - ((progress * 2) % 1));
+    canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+
+    // Glow
+    final glow = Paint()
+      ..color = ThixPolicy.success.withValues(alpha: 0.2)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+    canvas.drawLine(Offset(0, y), Offset(size.width, y), glow);
+  }
+
+  @override
+  bool shouldRepaint(_ScanLinePainter old) => old.progress != progress;
 }
