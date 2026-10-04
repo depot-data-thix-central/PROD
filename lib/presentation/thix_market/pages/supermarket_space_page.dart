@@ -1251,7 +1251,7 @@ class _ProductUnit extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(shadowOpacity),
-            blurRadius: 4 - depth,
+            blurRadius: (4 - depth).toDouble(),
             offset: Offset(0, 2 - depth * 0.5),
           ),
         ],
