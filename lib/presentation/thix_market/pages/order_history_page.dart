@@ -594,7 +594,10 @@ class _OrderHistoryPageState extends ConsumerState<OrderHistoryPage> {
                   InkWell(
                     onTap: () {
                       HapticFeedback.selectionClick();
-                      context.push('/market/orders/$id');
+                      context.pushNamed(
+  'marketOrderDetail',
+  pathParameters: {'orderId': id.toString()},
+);
                     },
                     borderRadius: BorderRadius.circular(10),
                     child: Container(
