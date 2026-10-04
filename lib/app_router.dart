@@ -923,10 +923,14 @@ GoRoute(path: '/thix-info/downloads', name: 'thixInfoDownloads',
         builder: (c, s) => SupermarketManagePage(
             supermarketId: s.pathParameters['id']!),
       ),
-      GoRoute(
+            GoRoute(
         path: 'supermarket/:id',
         name: 'supermarketSpace',
-        builder: (c, s) =>
+        builder: (c, s) => SupermarketSpacePage(
+          supermarketId: s.pathParameters['id']!,
+        ),
+      ),
+
             
 
         ]),
