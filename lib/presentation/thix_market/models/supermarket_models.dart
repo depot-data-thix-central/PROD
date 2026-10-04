@@ -62,7 +62,7 @@ class SupermarketProduct {
   final num stock;
   final String? barcode;
   final bool isPerishable;
-  final String? expiryDate;
+  final String? expiryDate; // raw string from API (ex: "2026-10-15")
   final bool isPromotion;
   final String? description;
   final String? unitMeasurement; // ex: kg, g, ml, L
@@ -143,6 +143,64 @@ class SupermarketProduct {
       'status': status,
     };
   }
+
+  // ────────────────────────────────────────────────────────────
+  // HELPERS CALCULÉS (utilisés par supermarket_space_page.dart)
+  // ────────────────────────────────────────────────────────────
+
+  /// Alias pratique pour l'UI
+  bool get onPromo => isPromotion && discountPrice != null && discountPrice! < price;
+
+  /// Pourcentage de réduction (0–99)
+  int get promoPercent {
+    if (!onPromo || price <= 0) return 0;
+    return ((1 - (discountPrice! / price)) * 100).round().clamp(0, 99);
+  }
+
+  /// Prix affiché (promo si dispo, sinon prix normal)
+  String priceLabel() {
+    final p = onPromo ? discountPrice! : price;
+    return p % 1 == 0 ? p.toInt().toString() : p.toStringAsFixed(0);
+  }
+
+  /// Alias pour unitMeasurement
+  String? get unit => unitMeasurement;
+
+  // ── Photos ──
+  bool get hasPhotos => imageUrl != null && imageUrl!.isNotEmpty;
+  String get mainPhoto => imageUrl ?? '';
+  List<String> get photos => hasPhotos ? [imageUrl!] : const [];
+
+  // ── Date d'expiration ──
+  /// Parse la string API en DateTime (accepte "2026-10-15", "2026-10-15T00:00:00", etc.)
+  DateTime? get expiryDateTime {
+    if (expiryDate == null || expiryDate!.isEmpty) return null;
+    return DateTime.tryParse(expiryDate!);
+  }
+
+  bool get isExpired {
+    final d = expiryDateTime;
+    if (d == null) return false;
+    final today = DateTime.now();
+    return DateTime(d.year, d.month, d.day)
+        .isBefore(DateTime(today.year, today.month, today.day));
+  }
+
+  int get daysToExpiry {
+    final d = expiryDateTime;
+    if (d == null) return 999;
+    final today = DateTime.now();
+    return DateTime(d.year, d.month, d.day)
+        .difference(DateTime(today.year, today.month, today.day))
+        .inDays;
+  }
+
+  /// Frais bientôt (≤ 3 jours restants)
+  bool get isFreshSoon => isPerishable && !isExpired && daysToExpiry <= 3;
+
+  // ── Champs absents côté API pour l'instant → valeurs par défaut sûres ──
+  bool get isFeatured => false;
+  double get rating => 0.0;
 }
 
 // ============================================================================
