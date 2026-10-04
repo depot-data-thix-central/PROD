@@ -9,7 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:barcode_widget/barcode_widget.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:html/parser.dart' as html_parser;
-
+import 'package:thix_id/nav.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../providers/shop_provider.dart';
 import '../providers/market_providers.dart';
