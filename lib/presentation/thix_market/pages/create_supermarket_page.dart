@@ -1,4 +1,13 @@
 // lib/presentation/thix_market/pages/create_supermarket_page.dart
+// ============================================================================
+// CREATE SUPERMARKET PAGE — Production Enterprise
+// ============================================================================
+// Corrections :
+//   ✅ Helper _smTr() pour i18n avec fallback (t() n'accepte pas `fallback:`)
+//   ✅ Uint8List pour uploadImage
+//   ✅ Validation + feedback UX + logs
+// ============================================================================
+
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -12,8 +21,21 @@ import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/presentation/thix_market/models/supermarket_models.dart';
 import 'package:thix_id/services/supermarket_service.dart';
 
-import 'supermarket_space_page.dart';
+// ============================================================================
+// I18N HELPER (fallback local, indépendant de AppLocalizations.t)
+// ============================================================================
+String _smTr(AppLocalizations l10n, String key, String fallback) {
+  try {
+    final v = l10n.t(key);
+    return (v.isEmpty || v == key) ? fallback : v;
+  } catch (_) {
+    return fallback;
+  }
+}
 
+// ============================================================================
+// PAGE
+// ============================================================================
 class CreateSupermarketPage extends ConsumerStatefulWidget {
   const CreateSupermarketPage({super.key});
 
@@ -49,17 +71,36 @@ class _CreateSupermarketPageState extends ConsumerState<CreateSupermarketPage> {
 
   Future<void> _pickImage(bool isLogo) async {
     final picker = ImagePicker();
-    final file = await picker.pickImage(
-        source: ImageSource.gallery, maxWidth: 1024, imageQuality: 85);
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
-    setState(() {
-      if (isLogo) {
-        _logoBytes = bytes;
-      } else {
-        _coverBytes = bytes;
+    try {
+      final file = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        imageQuality: 85,
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.length > 5 * 1024 * 1024) {
+        _showError('Image trop volumineuse (max 5 Mo)');
+        return;
       }
-    });
+      setState(() {
+        if (isLogo) {
+          _logoBytes = bytes;
+        } else {
+          _coverBytes = bytes;
+        }
+      });
+    } catch (e) {
+      debugPrint('[CreateSupermarket] ❌ Pick image error: $e');
+      _showError('Impossible de charger l\'image');
+    }
+  }
+
+  void _showError(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: ThixPolicy.danger),
+    );
   }
 
   Future<void> _submit() async {
@@ -80,16 +121,14 @@ class _CreateSupermarketPageState extends ConsumerState<CreateSupermarketPage> {
       final id = await _service.createSupermarket(
         name: _nameCtrl.text.trim(),
         city: _city!,
-        address: _addressCtrl.text.trim().isEmpty
-            ? null
-            : _addressCtrl.text.trim(),
+        address:
+            _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
         description:
             _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
         logoUrl: logoUrl,
         coverUrl: coverUrl,
       );
 
-      // Rayons par défaut (12 allées)
       await _service.createDefaultDepartments(id);
 
       if (!mounted) return;
@@ -101,10 +140,9 @@ class _CreateSupermarketPageState extends ConsumerState<CreateSupermarketPage> {
       );
       context.pushReplacement('/market/supermarket/$id');
     } catch (e) {
+      debugPrint('[CreateSupermarket] ❌ Submit error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur : $e'), backgroundColor: ThixPolicy.danger),
-      );
+      _showError('Erreur : $e');
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -118,20 +156,21 @@ class _CreateSupermarketPageState extends ConsumerState<CreateSupermarketPage> {
       appBar: AppBar(
         backgroundColor: ThixPolicy.primaryDeep,
         foregroundColor: Colors.white,
-        title: Text(l10n.t('sm_create_title', fallback: 'Créer un supermarché')),
+        title: Text(_smTr(l10n, 'sm_create_title', 'Créer un supermarché')),
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // ── Images ─
+            // ── Images ──
             Row(
               children: [
                 _imagePicker(
                   bytes: _logoBytes,
                   isLogo: true,
-                  label: l10n.t('sm_logo', fallback: 'Logo'),
+                  label: _smTr(l10n, 'sm_logo', 'Logo'),
                   icon: Icons.storefront_rounded,
                 ),
                 const SizedBox(width: 12),
@@ -139,7 +178,7 @@ class _CreateSupermarketPageState extends ConsumerState<CreateSupermarketPage> {
                   child: _imagePicker(
                     bytes: _coverBytes,
                     isLogo: false,
-                    label: l10n.t('sm_cover', fallback: 'Devanture'),
+                    label: _smTr(l10n, 'sm_cover', 'Devanture'),
                     icon: Icons.photo_size_select_actual_rounded,
                   ),
                 ),
@@ -150,15 +189,17 @@ class _CreateSupermarketPageState extends ConsumerState<CreateSupermarketPage> {
             // ── Nom ──
             TextFormField(
               controller: _nameCtrl,
+              textCapitalization: TextCapitalization.words,
               decoration: InputDecoration(
-                labelText: l10n.t('sm_name', fallback: 'Nom du supermarché *'),
+                labelText:
+                    _smTr(l10n, 'sm_name', 'Nom du supermarché *'),
                 filled: true,
                 fillColor: ThixPolicy.card,
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12)),
               ),
               validator: (v) =>
-                  (v == null || v.trim().length < 3) ? 'Nom requis' : null,
+                  (v == null || v.trim().length < 3) ? 'Nom requis (3+ car.)' : null,
             ),
             const SizedBox(height: 14),
 
@@ -166,7 +207,7 @@ class _CreateSupermarketPageState extends ConsumerState<CreateSupermarketPage> {
             DropdownButtonFormField<String>(
               value: _city,
               decoration: InputDecoration(
-                labelText: l10n.t('sm_city', fallback: 'Ville *'),
+                labelText: _smTr(l10n, 'sm_city', 'Ville *'),
                 filled: true,
                 fillColor: ThixPolicy.card,
                 border: OutlineInputBorder(
@@ -179,11 +220,11 @@ class _CreateSupermarketPageState extends ConsumerState<CreateSupermarketPage> {
             ),
             const SizedBox(height: 14),
 
-            // ── Adresse ─
+            // ── Adresse ──
             TextFormField(
               controller: _addressCtrl,
               decoration: InputDecoration(
-                labelText: l10n.t('sm_address', fallback: 'Adresse'),
+                labelText: _smTr(l10n, 'sm_address', 'Adresse'),
                 filled: true,
                 fillColor: ThixPolicy.card,
                 border: OutlineInputBorder(
@@ -196,8 +237,9 @@ class _CreateSupermarketPageState extends ConsumerState<CreateSupermarketPage> {
             TextFormField(
               controller: _descCtrl,
               maxLines: 3,
+              maxLength: 500,
               decoration: InputDecoration(
-                labelText: l10n.t('sm_desc', fallback: 'Description'),
+                labelText: _smTr(l10n, 'sm_desc', 'Description'),
                 filled: true,
                 fillColor: ThixPolicy.card,
                 border: OutlineInputBorder(
@@ -223,13 +265,15 @@ class _CreateSupermarketPageState extends ConsumerState<CreateSupermarketPage> {
                       const Icon(Icons.grid_view_rounded,
                           size: 16, color: ThixPolicy.primary),
                       const SizedBox(width: 6),
-                      Text(
-                        l10n.t('sm_default_depts',
-                            fallback: '12 rayons créés automatiquement'),
-                        style: const TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w800,
-                            color: ThixPolicy.primary),
+                      Expanded(
+                        child: Text(
+                          _smTr(l10n, 'sm_default_depts',
+                              '12 rayons créés automatiquement'),
+                          style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800,
+                              color: ThixPolicy.primary),
+                        ),
                       ),
                     ],
                   ),
@@ -237,24 +281,24 @@ class _CreateSupermarketPageState extends ConsumerState<CreateSupermarketPage> {
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
-                    children: kDefaultDepartments
-                        .map((d) => Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                    color: Color(
-                                        0xFF000000 | int.parse(d.colorHex.replaceAll('#', ''), radix: 16))
-                                    .withOpacity(0.4)),
-                              ),
-                              child: Text(d.label,
-                                  style: const TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700)),
-                            ))
-                        .toList(),
+                    children: kDefaultDepartments.map((d) {
+                      final c = Color(0xFF000000 |
+                          int.parse(
+                              d.colorHex.replaceAll('#', ''),
+                              radix: 16));
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: c.withOpacity(0.4)),
+                        ),
+                        child: Text(d.label,
+                            style: const TextStyle(
+                                fontSize: 10, fontWeight: FontWeight.w700)),
+                      );
+                    }).toList(),
                   ),
                 ],
               ),
@@ -278,12 +322,17 @@ class _CreateSupermarketPageState extends ConsumerState<CreateSupermarketPage> {
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : Text(l10n.t('sm_create_btn',
-                        fallback: 'Créer le supermarché'),
-                        style: const TextStyle(fontWeight: FontWeight.w800)),
+                            strokeWidth: 2, color: Colors.white),
+                      )
+                    : Text(
+                        _smTr(l10n, 'sm_create_btn',
+                            'Créer le supermarché'),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800, fontSize: 15),
+                      ),
               ),
             ),
+            const SizedBox(height: 32),
           ],
         ),
       ),
@@ -300,7 +349,7 @@ class _CreateSupermarketPageState extends ConsumerState<CreateSupermarketPage> {
       child: GestureDetector(
         onTap: () => _pickImage(isLogo),
         child: Container(
-          height: isLogo ? 100 : 100,
+          height: 100,
           decoration: BoxDecoration(
             color: ThixPolicy.card,
             borderRadius: BorderRadius.circular(14),
