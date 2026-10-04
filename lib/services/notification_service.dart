@@ -572,7 +572,7 @@ class NotificationService {
           .eq('user_id', uid)
           .eq('is_read', false)
           .timeout(_kQueryTimeout);
-      return res.count ?? 0;
+      return res;
     } catch (e) {
       debugPrint('[NotifService] ❌ fetchUnreadCount failed: $e');
       return 0;
