@@ -10,13 +10,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/presentation/thix_market/models/supermarket_models.dart';
+import 'package:thix_id/presentation/thix_market/models/supermarket_product.dart';
 import 'package:thix_id/presentation/thix_market/providers/supermarket_providers.dart';
+
 import 'department_products_page.dart';
 
-// Couleurs gondole (référentiel magasin réel)
 const Color _kRailRed = Color(0xFFD93025);
 const Color _kRailRedDark = Color(0xFFB3261E);
 const Color _kMetalWhite = Color(0xFFFAFAFA);
@@ -48,14 +50,14 @@ class SupermarketSpacePage extends ConsumerWidget {
         data: (shop) {
           if (shop == null) return const Center(child: Text('Supermarché introuvable'));
           final depts = deptsAsync.valueOrNull ?? const <SupermarketDepartment>[];
-          final products = productsAsync.valueOrNull ?? const <SupermarketProduct>[];
+          final rawProducts = productsAsync.valueOrNull ?? const <SupermarketProduct>[];
+          final products = List<SupermarketProduct>.from(rawProducts);
 
           return CustomScrollView(
             physics: const BouncingScrollPhysics(),
             slivers: [
               _LightStorefront(shop: shop, l10n: l10n),
 
-              // ── HERO BANNER AUTO-SCROLLING ──
               SliverToBoxAdapter(
                 child: _HeroCarousel(
                   products: products,
@@ -64,7 +66,6 @@ class SupermarketSpacePage extends ConsumerWidget {
                 ),
               ),
 
-              // ── TITRE RAYONS ──
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 24, 20, 10),
@@ -99,7 +100,6 @@ class SupermarketSpacePage extends ConsumerWidget {
                 ),
               ),
 
-              // ── ÉTAGÈRES GONDOLES ──
               if (depts.isEmpty && productsAsync.isLoading)
                 const SliverToBoxAdapter(
                   child: Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator())),
@@ -117,7 +117,7 @@ class SupermarketSpacePage extends ConsumerWidget {
                           child: _GondolaShelf(
                             dept: dept,
                             aisleNumber: i + 1,
-                            products: deptProducts,
+                            products: List<SupermarketProduct>.from(deptProducts),
                             l10n: l10n,
                             onProductTap: (p) => _openQuickView(context, p, l10n),
                             onOpenAisle: () {
@@ -284,7 +284,7 @@ class _LightStorefront extends StatelessWidget {
 }
 
 // ============================================================================
-// HERO BANNER AUTO-SCROLLING (promos / vedettes / frais)
+// HERO BANNER AUTO-SCROLLING
 // ============================================================================
 class _HeroItem {
   final String badge;
@@ -337,18 +337,41 @@ class _HeroCarouselState extends State<_HeroCarousel> {
     if (oldWidget.products != widget.products) _buildItems();
   }
 
+  String _formatPrice(SupermarketProduct p) {
+    final price = p.price;
+    if (price >= 1000) return '${(price / 1000).toStringAsFixed(price % 1000 == 0 ? 0 : 1)}k';
+    return price.toStringAsFixed(0);
+  }
+
+  String _formatExpiryDate(dynamic expiryDate) {
+    if (expiryDate == null) return '';
+    final dateStr = expiryDate.toString();
+    try {
+      final date = DateTime.parse(dateStr);
+      return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+    } catch (_) {
+      return dateStr;
+    }
+  }
+
   void _buildItems() {
-    final l10n = widget.l10n;
     final items = <_HeroItem>[];
     final promos = widget.products.where((p) => p.onPromo).toList();
     final featured = widget.products.where((p) => p.isFeatured || p.rating >= 4.5).toList();
     final fresh = widget.products.where((p) => p.isPerishable && !p.isExpired).toList();
 
     for (final p in promos.take(3)) {
+      final oldPrice = _formatPrice(SupermarketProduct(
+        id: p.id,
+        title: p.title,
+        price: p.price,
+        currency: p.currency,
+        stock: p.stock,
+      ));
       items.add(_HeroItem(
         badge: 'PROMO -${p.promoPercent}%',
         title: p.title,
-        subtitle: '${p.priceLabel(p.price)} ${p.currency} → ${p.priceLabel()} ${p.currency}',
+        subtitle: '$oldPrice ${p.currency} → ${p.priceLabel()} ${p.currency}',
         cta: 'J\'en profite',
         gradient: const [Color(0xFFFFF1F0), Color(0xFFFFE4E1)],
         icon: Icons.local_fire_department_rounded,
@@ -372,7 +395,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
       items.add(_HeroItem(
         badge: 'FRAÎCHEUR',
         title: p.title,
-        subtitle: p.expiryDate != null ? 'À consommer avant le ${_fmtDate(p.expiryDate!)}' : 'Produit frais du jour',
+        subtitle: p.expiryDate != null ? 'À consommer avant le ${_formatExpiryDate(p.expiryDate)}' : 'Produit frais du jour',
         cta: 'Voir',
         gradient: const [Color(0xFFE9F7EC), Color(0xFFDFF2E3)],
         icon: Icons.eco_rounded,
@@ -392,9 +415,6 @@ class _HeroCarouselState extends State<_HeroCarousel> {
     }
     setState(() => _items = items);
   }
-
-  String _fmtDate(DateTime d) =>
-      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
   void _startTimer() {
     _timer?.cancel();
@@ -510,7 +530,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 }
 
 // ============================================================================
-// ÉTAGÈRE GONDOLE RÉALISTE (blanc + rails rouges + fond perforé)
+// ÉTAGÈRE GONDOLE RÉALISTE
 // ============================================================================
 class _GondolaShelf extends StatelessWidget {
   final SupermarketDepartment dept;
@@ -691,9 +711,6 @@ class _PerforatedPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// ============================================================================
-// NIVEAU D'ÉTAGÈRE : produits + tablette + rail rouge + étiquettes
-// ============================================================================
 class _ShelfLevel extends StatelessWidget {
   final List<SupermarketProduct?> slots;
   final ValueChanged<SupermarketProduct> onProductTap;
@@ -792,9 +809,6 @@ class _PriceTag extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// FACING PRODUIT (photo réelle + badges + répétition selon stock)
-// ============================================================================
 class _Facing extends StatelessWidget {
   final SupermarketProduct product;
   final VoidCallback onTap;
@@ -802,7 +816,8 @@ class _Facing extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final facings = product.stock <= 0 ? 0 : product.stock.clamp(1, 3);
+    final stockInt = product.stock is int ? product.stock as int : (product.stock as num).toInt();
+    final facings = stockInt <= 0 ? 0 : stockInt.clamp(1, 3).toInt();
 
     return GestureDetector(
       onTap: onTap,
@@ -909,7 +924,7 @@ class _ProductBox extends StatelessWidget {
 }
 
 // ============================================================================
-// FICHE PRODUIT RAPIDE (bottom sheet)
+// FICHE PRODUIT RAPIDE
 // ============================================================================
 class _ProductQuickView extends StatelessWidget {
   final SupermarketProduct product;
@@ -919,6 +934,23 @@ class _ProductQuickView extends StatelessWidget {
   String _tr(String key, String fb) {
     final v = l10n.t(key);
     return (v.isEmpty || v == key) ? fb : v;
+  }
+
+  String _formatExpiryDate(dynamic expiryDate) {
+    if (expiryDate == null) return '—';
+    final dateStr = expiryDate.toString();
+    try {
+      final date = DateTime.parse(dateStr);
+      return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+    } catch (_) {
+      return dateStr;
+    }
+  }
+
+  String _formatPrice(SupermarketProduct p) {
+    final price = p.price;
+    if (price >= 1000) return '${(price / 1000).toStringAsFixed(price % 1000 == 0 ? 0 : 1)}k';
+    return price.toStringAsFixed(0);
   }
 
   @override
@@ -956,7 +988,7 @@ class _ProductQuickView extends StatelessWidget {
                 Text('${product.priceLabel()} ${product.currency}', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: product.onPromo ? _kRailRed : ThixPolicy.primary)),
                 if (product.onPromo) ...[
                   const SizedBox(width: 8),
-                  Text('${product.priceLabel(product.price)} ${product.currency}', style: const TextStyle(fontSize: 13, color: ThixPolicy.textMuted, decoration: TextDecoration.lineThrough)),
+                  Text('${_formatPrice(product)} ${product.currency}', style: const TextStyle(fontSize: 13, color: ThixPolicy.textMuted, decoration: TextDecoration.lineThrough)),
                 ],
                 if (product.unit != null) ...[
                   const SizedBox(width: 8),
@@ -1078,6 +1110,17 @@ class _InfoGrid extends StatelessWidget {
   final SupermarketProduct product;
   const _InfoGrid({required this.product});
 
+  String _formatExpiryDate(dynamic expiryDate) {
+    if (expiryDate == null) return '—';
+    final dateStr = expiryDate.toString();
+    try {
+      final date = DateTime.parse(dateStr);
+      return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+    } catch (_) {
+      return dateStr;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cells = <Widget>[
@@ -1092,9 +1135,7 @@ class _InfoGrid extends StatelessWidget {
         _InfoCell(
           icon: product.isExpired ? Icons.warning_amber_rounded : Icons.event_rounded,
           label: 'Expiration',
-          value: product.expiryDate != null
-              ? '${product.expiryDate!.day.toString().padLeft(2, '0')}/${product.expiryDate!.month.toString().padLeft(2, '0')}/${product.expiryDate!.year}'
-              : '—',
+          value: _formatExpiryDate(product.expiryDate),
           color: product.isExpired ? ThixPolicy.danger : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
         ),
       if (product.onPromo)
