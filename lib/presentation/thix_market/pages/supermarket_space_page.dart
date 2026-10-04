@@ -363,7 +363,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
       items.add(_HeroItem(
         badge: 'FRAÎCHEUR',
         title: p.title,
-        subtitle: p.expiryDate != null ? 'À consommer avant le ${_fmtDate(p.expiryDate!)}' : 'Produit frais du jour',
+        subtitle: p.expiryDateTime != null ? 'À consommer avant le ${_fmtDate(p.expiryDateTime!)}' : 'Produit frais du jour',
         cta: 'Voir',
         gradient: const [Color(0xFFE9F7EC), Color(0xFFDFF2E3)],
         icon: Icons.eco_rounded,
@@ -1141,7 +1141,9 @@ class _InfoGrid extends StatelessWidget {
         _InfoCell(
           icon: product.isExpired ? Icons.warning_amber_rounded : Icons.event_rounded,
           label: 'Expiration',
-          value: product.expiryDate != null ? '${product.expiryDate!.day.toString().padLeft(2, '0')}/${product.expiryDate!.month.toString().padLeft(2, '0')}/${product.expiryDate!.year}' : '—',
+          value: product.expiryDateTime != null
+    ? '\( {product.expiryDateTime!.day.toString().padLeft(2, '0')}/ \){product.expiryDateTime!.month.toString().padLeft(2, '0')}/${product.expiryDateTime!.year}'
+    : '—',
           color: product.isExpired ? ThixPolicy.danger : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
         ),
       if (product.onPromo)
