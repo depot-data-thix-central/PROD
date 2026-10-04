@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:barcode_widget/barcode_widget.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:html/parser.dart' as html_parser;
+import 'package:url_launcher/url_launcher.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../providers/shop_provider.dart';
 import '../providers/market_providers.dart';
@@ -50,7 +51,7 @@ final vendorOrdersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) as
           .from('orders')
           .select(
             'id, total, status, payment_status, payout_status, payment_method, '
-            'currency, created_at, user_id, receipt_code, refund_requested, '
+            'currency, created_at, user_id, address_id, receipt_code, refund_requested, '
             'refund_reason, received_at, shipping_method, shipping_address, '
             'customer_name, customer_phone, customer_email',
           )
@@ -226,6 +227,16 @@ Future<T> _vdRetry<T>(
   }
 }
 
+/// Premier champ non-vide parmi [keys] dans [m]
+String _pick(Map<String, dynamic>? m, List<String> keys) {
+  if (m == null) return '';
+  for (final k in keys) {
+    final v = m[k]?.toString().trim() ?? '';
+    if (v.isNotEmpty) return v;
+  }
+  return '';
+}
+
 // ============================================================================
 // STATUS CONFIGURATION
 // ============================================================================
@@ -352,9 +363,6 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
     }
   }
 
-  // ============================================================
-  // UPDATE STATUS
-  // ============================================================
   Future<void> _updateStatus(String orderId, String newStatus) async {
     if (!_VdValidators.isValidId(orderId)) {
       _showError(context.vdT('Identifiant invalide', 'Invalid ID'));
@@ -410,9 +418,6 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
     }
   }
 
-  // ============================================================
-  // QR SHEET
-  // ============================================================
   void _showQrSheet(Map<String, dynamic> order) {
     final orderId = order['id']?.toString() ?? '';
     final code = (order['receipt_code'] ?? orderId).toString();
@@ -443,9 +448,6 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
     );
   }
 
-  // ============================================================
-  // CONFIRMATIONS
-  // ============================================================
   Future<bool> _confirmAction({
     required String title,
     required String content,
@@ -508,9 +510,6 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
     if (ok && mounted) await _updateStatus(orderId, 'cancelled');
   }
 
-  // ============================================================
-  // ORDER DETAILS SHEET
-  // ============================================================
   void _showOrderDetails(Map<String, dynamic> order) {
     HapticFeedback.selectionClick();
     showModalBottomSheet(
@@ -536,9 +535,6 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
     );
   }
 
-  // ============================================================
-  // FEEDBACK
-  // ============================================================
   void _showError(String message) {
     if (!mounted) return;
     HapticFeedback.lightImpact();
@@ -586,9 +582,6 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
     );
   }
 
-  // ============================================================
-  // BUILD
-  // ============================================================
   @override
   Widget build(BuildContext context) {
     final shopsAsync = ref.watch(myShopsProvider);
@@ -638,7 +631,7 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
               .toList();
           final b = boutiqueList.isEmpty ? null : boutiqueList.first;
           final sm = superList.isEmpty ? null : superList.first;
-          final shop = b ?? sm; // boutique prioritaire (KPIs, réglages)
+          final shop = b ?? sm;
 
           return ordersAsync.when(
             loading: () => const _SkeletonDashboard(),
@@ -742,10 +735,6 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
 }
 
 // ============================================================================
-// COMPOSANTS RÉUTILISABLES
-// ============================================================================
-
-// ============================================================================
 // HEADER DOUBLE : BOUTIQUE (gauche) + SUPERMARCHÉ (droite)
 // ============================================================================
 class _DualShopHeader extends StatelessWidget {
@@ -769,14 +758,11 @@ class _DualShopHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ FIX écran blanc : hauteur bornée (le Row stretch dans un scroll
-    // provoquait "BoxConstraints forces an infinite height")
     return SizedBox(
       height: _kShopCardHeight,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ── GAUCHE : BOUTIQUE ──
           Expanded(
             child: boutique != null
                 ? _entityCard(
@@ -800,7 +786,6 @@ class _DualShopHeader extends StatelessWidget {
                   ),
           ),
           const SizedBox(width: 12),
-          // ── DROITE : SUPERMARCHÉ ──
           Expanded(
             child: supermarket != null
                 ? GestureDetector(
@@ -1503,10 +1488,12 @@ class _DashboardOrderDetailsSheet extends ConsumerStatefulWidget {
   ConsumerState<_DashboardOrderDetailsSheet> createState() => _DashboardOrderDetailsSheetState();
 }
 
+// ✅ Chargements INDÉPENDANTS + fallback 3 niveaux pour les articles
 class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDetailsSheet> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _items = [];
   Map<String, dynamic>? _profile;
+  Map<String, dynamic>? _address;
 
   @override
   void initState() {
@@ -1515,47 +1502,107 @@ class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDeta
   }
 
   Future<void> _loadExtraData() async {
-    try {
-      final db = ref.read(supabaseClientProvider);
-      final orderId = widget.order['id']?.toString();
-      final userId = widget.order['user_id']?.toString();
+    final db = ref.read(supabaseClientProvider);
+    final orderId = widget.order['id']?.toString();
+    final userId = widget.order['user_id']?.toString();
+    final addressId = widget.order['address_id']?.toString();
 
-      if (!_VdValidators.isValidId(orderId)) {
-        if (mounted) setState(() => _isLoading = false);
-        return;
-      }
-
-      // Batch load : items + profile en parallèle
-      final futures = <Future>[
-        _vdRetry(
+    // ── 1. ARTICLES : embed → simple → RPC ──
+    if (_VdValidators.isValidId(orderId)) {
+      try {
+        final res = await _vdRetry(
           () => db
               .from('order_items')
               .select('*, product:products(title, image_url, currency)')
               .eq('order_id', orderId!),
           label: 'loadOrderItems',
-        ),
-      ];
-
-      if (_VdValidators.isValidId(userId)) {
-        futures.add(_vdRetry(
-          () => db.from('profiles').select().eq('id', userId!).maybeSingle(),
-          label: 'loadCustomerProfile',
-        ));
+        );
+        _items = (res as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      } catch (e) {
+        debugPrint('[VendorDashboard] ⚠️ items+embed failed: $e');
       }
 
-      final results = await Future.wait(futures);
-
-      _items = (results[0] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      if (results.length > 1 && results[1] != null) {
-        _profile = Map<String, dynamic>.from(results[1] as Map);
+      if (_items.isEmpty) {
+        try {
+          final res2 = await db
+              .from('order_items')
+              .select('*')
+              .eq('order_id', orderId!)
+              .timeout(_kRequestTimeout);
+          _items = (res2 as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          debugPrint('[VendorDashboard] ✓ items via plain select: ${_items.length}');
+        } catch (e2) {
+          debugPrint('[VendorDashboard] ⚠️ items plain failed: $e2');
+        }
       }
 
-      debugPrint('[VendorDashboard] ✓ Loaded ${_items.length} order items');
-    } catch (e) {
-      debugPrint('[VendorDashboard] ❌ Load extra data error: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (_items.isEmpty) {
+        try {
+          final rpcRes = await db
+              .rpc('get_order_items_secure', params: {'p_order_id': orderId})
+              .timeout(_kRequestTimeout);
+          if (rpcRes is List) {
+            _items = rpcRes.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+            debugPrint('[VendorDashboard] ✓ items via RPC secure: ${_items.length}');
+          }
+        } catch (e3) {
+          debugPrint('[VendorDashboard] ⚠️ RPC items failed: $e3');
+        }
+      }
     }
+
+    // ── 2. PROFIL CLIENT : users → profiles ──
+    if (_VdValidators.isValidId(userId)) {
+      try {
+        final u = await db.from('users').select('*').eq('id', userId!).maybeSingle().timeout(_kRequestTimeout);
+        if (u != null) _profile = Map<String, dynamic>.from(u as Map);
+      } catch (e) {
+        debugPrint('[VendorDashboard] ⚠️ users fetch failed: $e');
+      }
+      if (_profile == null) {
+        try {
+          final p = await db.from('profiles').select('*').eq('id', userId!).maybeSingle().timeout(_kRequestTimeout);
+          if (p != null) _profile = Map<String, dynamic>.from(p as Map);
+        } catch (e) {
+          debugPrint('[VendorDashboard] ⚠️ profiles fetch failed: $e');
+        }
+      }
+    }
+
+    // ── 3. ADRESSE ──
+    if (_VdValidators.isValidId(addressId)) {
+      try {
+        final a = await db.from('addresses').select('*').eq('id', addressId!).maybeSingle().timeout(_kRequestTimeout);
+        if (a != null) _address = Map<String, dynamic>.from(a as Map);
+      } catch (e) {
+        debugPrint('[VendorDashboard] ⚠️ address fetch failed: $e');
+      }
+    }
+
+    debugPrint('[VendorDashboard] ✓ details: items=${_items.length}, profile=${_profile != null}, address=${_address != null}');
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  String _shippingLabel(String raw, BuildContext context) {
+    switch (raw) {
+      case 'pickup':
+        return context.vdT('Retrait en boutique', 'Store pickup');
+      case 'home_delivery':
+        return context.vdT('Livraison à domicile', 'Home delivery');
+      case 'express':
+        return context.vdT('Livraison express', 'Express delivery');
+      default:
+        return raw.isEmpty ? context.vdT('Standard', 'Standard') : raw;
+    }
+  }
+
+  Future<void> _callPhone(String phone) async {
+    final clean = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    if (clean.isEmpty) return;
+    HapticFeedback.selectionClick();
+    try {
+      await launchUrl(Uri(scheme: 'tel', path: clean));
+    } catch (_) {}
   }
 
   @override
@@ -1573,20 +1620,34 @@ class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDeta
         ? DateFormat('dd MMM yyyy, HH:mm', context.localeCode).format(DateTime.tryParse(dateStr) ?? DateTime.now())
         : '';
     final shippingMethod = _VdValidators.sanitize(o['shipping_method']?.toString(), maxLength: 60);
-    final shippingAddress = _VdValidators.sanitize(o['shipping_address']?.toString(), maxLength: 200);
 
+    final notProvided = context.vdT('Non renseigné', 'Not provided');
+
+    // ── Résolution défensive : ordre → adresse → profil ──
     final clientName = _VdValidators.sanitize(
-      (_profile?['full_name'] ?? o['customer_name'] ?? _profile?['name'] ?? context.vdT('Client', 'Customer')).toString(),
+      _pick(o, ['customer_name']).isNotEmpty
+          ? _pick(o, ['customer_name'])
+          : _pick(_address, ['receiver_name', 'full_name', 'name', 'client_name']).isNotEmpty
+              ? _pick(_address, ['receiver_name', 'full_name', 'name', 'client_name'])
+              : _pick(_profile, ['full_name', 'name', 'display_name']),
       maxLength: _kMaxNameLength,
     );
-    final clientPhone = _VdValidators.sanitize(
-      (_profile?['phone'] ?? o['customer_phone'] ?? _profile?['phone_number'] ?? context.vdT('Non renseigné', 'Not provided')).toString(),
-      maxLength: 20,
-    );
-    final clientEmail = _VdValidators.sanitize(
-      (_profile?['email'] ?? o['customer_email'] ?? context.vdT('Non renseigné', 'Not provided')).toString(),
-      maxLength: 80,
-    );
+    final clientPhone = _pick(o, ['customer_phone']).isNotEmpty
+        ? _pick(o, ['customer_phone'])
+        : _pick(_address, ['phone', 'phone_number', 'telephone', 'receiver_phone']).isNotEmpty
+            ? _pick(_address, ['phone', 'phone_number', 'telephone', 'receiver_phone'])
+            : _pick(_profile, ['phone', 'phone_number', 'telephone']);
+    final clientEmail = _pick(o, ['customer_email']).isNotEmpty
+        ? _pick(o, ['customer_email'])
+        : _pick(_profile, ['email', 'email_address']);
+
+    final addressFromOrder = _pick(o, ['shipping_address']);
+    final addressParts = <String>[
+      _pick(_address, ['address', 'line1', 'street', 'avenue', 'quartier', 'commune_name']),
+      _pick(_address, ['city', 'commune', 'province', 'region']),
+      _pick(_address, ['country']),
+    ]..removeWhere((s) => s.isEmpty);
+    final addressFull = addressFromOrder.isNotEmpty ? addressFromOrder : addressParts.join(', ');
 
     return Container(
       padding: EdgeInsets.fromLTRB(20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
@@ -1639,25 +1700,42 @@ class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDeta
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _InfoRow(icon: Icons.person_outline_rounded, label: context.vdT('Client', 'Customer'), value: clientName),
+                _InfoRow(icon: Icons.person_outline_rounded, label: context.vdT('Client', 'Customer'), value: clientName.isEmpty ? notProvided : clientName),
                 const SizedBox(height: 6),
-                _InfoRow(icon: Icons.phone_outlined, label: context.vdT('Téléphone', 'Phone'), value: clientPhone),
+                _InfoRow(
+                  icon: Icons.phone_outlined,
+                  label: context.vdT('Téléphone', 'Phone'),
+                  value: clientPhone.isEmpty ? notProvided : clientPhone,
+                  trailing: clientPhone.isNotEmpty
+                      ? IconButton(
+                          tooltip: context.vdT('Appeler', 'Call'),
+                          onPressed: () => _callPhone(clientPhone),
+                          icon: const Icon(Icons.call_rounded, size: 16, color: ThixPolicy.success),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        )
+                      : null,
+                ),
                 const SizedBox(height: 6),
-                _InfoRow(icon: Icons.email_outlined, label: 'Email', value: clientEmail),
+                _InfoRow(icon: Icons.email_outlined, label: 'Email', value: clientEmail.isEmpty ? notProvided : clientEmail),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6)),
                 ),
-                _InfoRow(
-                  icon: Icons.local_shipping_outlined,
-                  label: context.vdT('Mode', 'Method'),
-                  value: shippingMethod.isEmpty ? 'Standard' : shippingMethod,
-                ),
+                _InfoRow(icon: Icons.local_shipping_outlined, label: context.vdT('Mode', 'Method'), value: _shippingLabel(shippingMethod, context)),
                 const SizedBox(height: 6),
-                _InfoRow(
-                  icon: Icons.location_on_outlined,
-                  label: context.vdT('Adresse', 'Address'),
-                  value: shippingAddress.isEmpty ? context.vdT('Non spécifiée', 'Not specified') : shippingAddress,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(padding: EdgeInsets.only(top: 2), child: Icon(Icons.location_on_outlined, size: 16, color: ThixPolicy.textMuted)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        addressFull.isEmpty ? context.vdT('Non spécifiée', 'Not specified') : addressFull,
+                        style: ThixPolicy.captionStyle.copyWith(fontSize: 13, fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain, height: 1.4),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1694,26 +1772,14 @@ class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDeta
             ),
             child: Column(
               children: [
-                _BillingRow(
-                  label: context.vdT('Méthode de paiement', 'Payment method'),
-                  value: (o['payment_method']?.toString().toUpperCase() ?? 'N/A'),
-                ),
+                _BillingRow(label: context.vdT('Méthode de paiement', 'Payment method'), value: (o['payment_method']?.toString().toUpperCase() ?? 'N/A')),
                 const SizedBox(height: 6),
-                _BillingRow(
-                  label: context.vdT('Statut paiement', 'Payment status'),
-                  value: o['payment_status']?.toString() ?? 'N/A',
-                  valueColor: ThixPolicy.success,
-                ),
+                _BillingRow(label: context.vdT('Statut paiement', 'Payment status'), value: o['payment_status']?.toString() ?? 'N/A', valueColor: ThixPolicy.success),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6)),
                 ),
-                _BillingRow(
-                  label: context.vdT('Total', 'Total'),
-                  value: '$formattedTotal $symbol',
-                  isBold: true,
-                  valueColor: ThixPolicy.primary,
-                ),
+                _BillingRow(label: context.vdT('Total', 'Total'), value: '$formattedTotal $symbol', isBold: true, valueColor: ThixPolicy.primary),
               ],
             ),
           ),
@@ -1799,8 +1865,9 @@ class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
+  final Widget? trailing;
 
-  const _InfoRow({required this.icon, required this.label, required this.value});
+  const _InfoRow({required this.icon, required this.label, required this.value, this.trailing});
 
   @override
   Widget build(BuildContext context) {
@@ -1808,21 +1875,15 @@ class _InfoRow extends StatelessWidget {
       children: [
         Icon(icon, size: 16, color: ThixPolicy.textMuted),
         const SizedBox(width: 8),
-        Text(
-          '$label : ',
-          style: ThixPolicy.captionStyle.copyWith(fontSize: 13, color: ThixPolicy.textMuted),
-        ),
+        Text('$label : ', style: ThixPolicy.captionStyle.copyWith(fontSize: 13, color: ThixPolicy.textMuted)),
         Expanded(
           child: Text(
             value,
-            style: ThixPolicy.captionStyle.copyWith(
-              fontSize: 13,
-              fontWeight: ThixPolicy.bold,
-              color: ThixPolicy.textMain,
-            ),
+            style: ThixPolicy.captionStyle.copyWith(fontSize: 13, fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain),
             overflow: TextOverflow.ellipsis,
           ),
         ),
+        if (trailing != null) trailing!,
       ],
     );
   }
@@ -1874,20 +1935,29 @@ class _OrderItemTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final product = item['product'] as Map? ?? {};
+    final product = (item['product'] is Map) ? (item['product'] as Map) : <String, dynamic>{};
     final title = _VdValidators.sanitize(
-      (product['title'] ?? item['title'] ?? context.vdT('Produit', 'Product')).toString(),
+      (item['title_snapshot']?.toString() ??
+              item['product_name']?.toString() ??
+              product['title']?.toString() ??
+              item['title']?.toString() ??
+              context.vdT('Produit', 'Product')),
       maxLength: _kMaxTitleLength,
     );
-    final qty = _VdValidators.safeInt(item['quantity'], fallback: 1);
-    final price = _VdValidators.safeDouble(item['price']);
+    final qty = _VdValidators.safeInt(item['quantity'] ?? item['qty'], fallback: 1);
+    final price = _VdValidators.safeDouble(item['price'] ?? item['unit_price']);
     final variant = _VdValidators.sanitize(item['variant']?.toString(), maxLength: 30);
     final color = _VdValidators.sanitize(item['color']?.toString(), maxLength: 30);
-    final imageUrl = _VdValidators.sanitizeUrl(product['image_url']?.toString());
+    final imageUrl = _VdValidators.sanitizeUrl(
+      item['product_image']?.toString() ?? product['image_url']?.toString(),
+    );
 
-    final symbol = _VdValidators.currencySymbol(currency);
-    final formattedPrice = _VdValidators.formatAmount(price, locale, isUSD: currency == 'USD');
-    final formattedTotal = _VdValidators.formatAmount(price * qty, locale, isUSD: currency == 'USD');
+    final itemCurrency = _VdValidators.normalizeCurrency(
+      item['currency']?.toString() ?? product['currency']?.toString() ?? currency,
+    );
+    final symbol = _VdValidators.currencySymbol(itemCurrency);
+    final formattedPrice = _VdValidators.formatAmount(price, locale, isUSD: itemCurrency == 'USD');
+    final formattedTotal = _VdValidators.formatAmount(price * qty, locale, isUSD: itemCurrency == 'USD');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1901,7 +1971,7 @@ class _OrderItemTile extends StatelessWidget {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: imageUrl != null
+            child: imageUrl != null && imageUrl.isNotEmpty
                 ? CachedNetworkImage(
                     imageUrl: imageUrl,
                     width: 50,
@@ -1911,9 +1981,7 @@ class _OrderItemTile extends StatelessWidget {
                       width: 50,
                       height: 50,
                       color: ThixPolicy.surfaceSoft,
-                      child: const Center(
-                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                      ),
+                      child: const Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
                     ),
                     errorWidget: (_, __, ___) => Container(
                       width: 50,
@@ -1934,16 +2002,7 @@ class _OrderItemTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: ThixPolicy.labelStyle.copyWith(
-                    fontWeight: ThixPolicy.bold,
-                    fontSize: 13,
-                    color: ThixPolicy.textMain,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                Text(title, style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 13, color: ThixPolicy.textMain), maxLines: 2, overflow: TextOverflow.ellipsis),
                 if (variant.isNotEmpty || color.isNotEmpty)
                   Text(
                     [if (variant.isNotEmpty) 'Var: $variant', if (color.isNotEmpty) '${context.vdT('Couleur', 'Color')}: $color'].join(' | '),
@@ -1952,11 +2011,7 @@ class _OrderItemTile extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '${context.vdT('Qté', 'Qty')}: $qty × $formattedPrice $symbol = $formattedTotal $symbol',
-                  style: ThixPolicy.captionStyle.copyWith(
-                    fontSize: 12,
-                    fontWeight: ThixPolicy.semiBold,
-                    color: ThixPolicy.primary,
-                  ),
+                  style: ThixPolicy.captionStyle.copyWith(fontSize: 12, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.primary),
                 ),
               ],
             ),
@@ -2017,7 +2072,6 @@ class _SkeletonDashboard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Dual header skeleton
           SizedBox(
             height: _kShopCardHeight,
             child: Row(
@@ -2036,7 +2090,6 @@ class _SkeletonDashboard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          // KPI grid skeleton
           GridView.count(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -2073,7 +2126,6 @@ class _SkeletonDashboard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          // Actions grid skeleton
           Container(height: 16, width: 120, color: Colors.grey.shade200),
           const SizedBox(height: 12),
           GridView.count(
