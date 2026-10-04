@@ -10,6 +10,7 @@
 //  • Header : overline "THIX HUB" (titre "Services" supprimé).
 //  • Services suspendus (reservation / sante / wallet) → "Bientôt à disposition".
 //  • Thix Media devient "Thidia" (icône smart_display).
+//  • Badges intelligents : pulse adaptatif selon criticité de la section.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import 'dart:math';
@@ -27,9 +28,14 @@ const int _kCount = 12;
 const double _kStep = pi * 2 / _kCount;
 const double _kNodeSize = 46.0;
 const double _kHubSize = 122.0;
+const int _kMaxBadgeDisplay = 99;
 
 /// 🔒 Services temporairement suspendus → message "Bientôt à disposition".
 const Set<String> _kSuspended = {'thixSante', 'thixMoney'};
+
+/// Durées d'animation des badges
+const Duration _kBadgePulseDuration = Duration(milliseconds: 900);
+const Duration _kHubPulseDuration = Duration(milliseconds: 1400);
 
 String _tr(AppLocalizations l10n, String key, String fallback) {
   final v = l10n.t(key);
@@ -47,16 +53,20 @@ double _angDist(double a, double b) {
 class _ServiceNodeData {
   final String key;
   final IconData icon;
-  final String label; // Libellé complet affiché (ex: "Thix Wallet", "Thidia")
+  final String label;
   final int? badge;
   final Color color;
+  final ThixSection section;
+  final bool pulseBadge; // Badge animé si section critique
 
   const _ServiceNodeData({
     required this.key,
     required this.icon,
     required this.label,
     required this.color,
+    required this.section,
     this.badge,
+    this.pulseBadge = false,
   });
 }
 
@@ -99,7 +109,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
   static const Color _colorLearning = ThixPolicy.domainLearning;
   static const Color _colorEvent = ThixPolicy.warning;
 
-  double _angle = -pi / 2 - (7 * _kStep); // nœud 0 en focale au démarrage
+  double _angle = -pi / 2 - (7 * _kStep);
   double _radius = 140;
   int _focus = 7;
   bool _interacted = false;
@@ -134,7 +144,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
     final f = _computeFocus();
     if (f != _focus) {
       setState(() => _focus = f);
-      HapticFeedback.selectionClick(); // tick magnétique à chaque cran
+      HapticFeedback.selectionClick();
     }
   }
 
@@ -240,22 +250,118 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
     widget.onProfileTap();
   }
 
+  /// ✅ Les 12 services avec leur section et flag pulse
   List<_ServiceNodeData> _nodes(AppLocalizations l10n) {
     final c = widget.counts;
     return [
-      _ServiceNodeData(key: 'thixMoney', icon: Icons.account_balance_wallet_rounded, label: 'Thix ${l10n.t('svc_money')}', badge: c.money, color: _colorMoney),
-      _ServiceNodeData(key: 'thixMarket', icon: Icons.storefront_rounded, label: 'Thix ${l10n.t('svc_market')}', badge: c.market, color: _colorMarket),
-      // ⭐ Thix Media devient THIDIA
-      _ServiceNodeData(key: 'thixMedia', icon: Icons.smart_display_rounded, label: 'Thidia', badge: c.media, color: _colorNetwork),
-      _ServiceNodeData(key: 'reservation', icon: Icons.confirmation_number_rounded, label: 'Thix ${l10n.t('svc_booking')}', badge: c.reservation, color: _colorPrimary),
-      _ServiceNodeData(key: 'emplois', icon: Icons.work_rounded, label: 'Thix ${l10n.t('svc_jobs')}', badge: c.jobs, color: _colorCorporate),
-      _ServiceNodeData(key: 'formations', icon: Icons.school_rounded, label: 'Thix ${l10n.t('svc_learning')}', badge: c.formations, color: _colorLearning),
-      _ServiceNodeData(key: 'opportunites', icon: Icons.lightbulb_rounded, label: 'Thix ${l10n.t('svc_opps')}', badge: c.opportunities, color: _colorMoney),
-      _ServiceNodeData(key: 'reseauPro', icon: Icons.groups_rounded, label: 'Thix ${l10n.t('svc_pro')}', badge: c.network, color: _colorNetwork),
-      _ServiceNodeData(key: 'monPays', icon: Icons.flag_rounded, label: 'Thix ${l10n.t('svc_country')}', badge: c.monPays, color: _colorCorporate),
-      _ServiceNodeData(key: 'thixInfo', icon: Icons.newspaper_rounded, label: 'Thix ${l10n.t('svc_news')}', badge: c.info, color: _colorPrimary),
-      _ServiceNodeData(key: 'evenements', icon: Icons.event_rounded, label: 'Thix ${l10n.t('svc_event')}', badge: c.events, color: _colorEvent),
-      _ServiceNodeData(key: 'thixSante', icon: Icons.local_hospital_rounded, label: 'Thix ${l10n.t('svc_health')}', badge: c.health, color: _colorHealth),
+      _ServiceNodeData(
+        key: 'thixMoney',
+        icon: Icons.account_balance_wallet_rounded,
+        label: 'Thix ${l10n.t('svc_money')}',
+        badge: c.money,
+        color: _colorMoney,
+        section: ThixSection.money,
+        pulseBadge: true, // 💰 Transactions = urgence financière
+      ),
+      _ServiceNodeData(
+        key: 'thixMarket',
+        icon: Icons.storefront_rounded,
+        label: 'Thix ${l10n.t('svc_market')}',
+        badge: c.market,
+        color: _colorMarket,
+        section: ThixSection.market,
+        pulseBadge: true, // 🛒 Commandes = action requise
+      ),
+      _ServiceNodeData(
+        key: 'thixMedia',
+        icon: Icons.smart_display_rounded,
+        label: 'Thidia',
+        badge: c.media,
+        color: _colorNetwork,
+        section: ThixSection.media,
+        pulseBadge: false,
+      ),
+      _ServiceNodeData(
+        key: 'reservation',
+        icon: Icons.confirmation_number_rounded,
+        label: 'Thix ${l10n.t('svc_booking')}',
+        badge: c.reservation,
+        color: _colorPrimary,
+        section: ThixSection.reservation,
+        pulseBadge: false,
+      ),
+      _ServiceNodeData(
+        key: 'emplois',
+        icon: Icons.work_rounded,
+        label: 'Thix ${l10n.t('svc_jobs')}',
+        badge: c.jobs,
+        color: _colorCorporate,
+        section: ThixSection.jobs,
+        pulseBadge: false,
+      ),
+      _ServiceNodeData(
+        key: 'formations',
+        icon: Icons.school_rounded,
+        label: 'Thix ${l10n.t('svc_learning')}',
+        badge: c.formations,
+        color: _colorLearning,
+        section: ThixSection.formations,
+        pulseBadge: false,
+      ),
+      _ServiceNodeData(
+        key: 'opportunites',
+        icon: Icons.lightbulb_rounded,
+        label: 'Thix ${l10n.t('svc_opps')}',
+        badge: c.opportunities,
+        color: _colorMoney,
+        section: ThixSection.opportunities,
+        pulseBadge: false,
+      ),
+      _ServiceNodeData(
+        key: 'reseauPro',
+        icon: Icons.groups_rounded,
+        label: 'Thix ${l10n.t('svc_pro')}',
+        badge: c.network,
+        color: _colorNetwork,
+        section: ThixSection.network,
+        pulseBadge: true, // 👥 Interactions sociales = engagement
+      ),
+      _ServiceNodeData(
+        key: 'monPays',
+        icon: Icons.flag_rounded,
+        label: 'Thix ${l10n.t('svc_country')}',
+        badge: c.monPays,
+        color: _colorCorporate,
+        section: ThixSection.monPays,
+        pulseBadge: false,
+      ),
+      _ServiceNodeData(
+        key: 'thixInfo',
+        icon: Icons.newspaper_rounded,
+        label: 'Thix ${l10n.t('svc_news')}',
+        badge: c.info,
+        color: _colorPrimary,
+        section: ThixSection.info,
+        pulseBadge: false,
+      ),
+      _ServiceNodeData(
+        key: 'evenements',
+        icon: Icons.event_rounded,
+        label: 'Thix ${l10n.t('svc_event')}',
+        badge: c.events,
+        color: _colorEvent,
+        section: ThixSection.events,
+        pulseBadge: false,
+      ),
+      _ServiceNodeData(
+        key: 'thixSante',
+        icon: Icons.local_hospital_rounded,
+        label: 'Thix ${l10n.t('svc_health')}',
+        badge: c.health,
+        color: _colorHealth,
+        section: ThixSection.health,
+        pulseBadge: true, // 🚨 Santé = CRITIQUE
+      ),
     ];
   }
 
@@ -364,7 +470,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
     final a = _base(i) + _angle;
     final dx = center + cos(a) * _radius;
     final dy = center + sin(a) * _radius;
-    final t = 1 - (_angDist(a, -pi / 2) / pi); // 1 = focale, 0 = opposé
+    final t = 1 - (_angDist(a, -pi / 2) / pi);
     final scale = 0.78 + 0.34 * t;
     final opacity = 0.45 + 0.55 * t;
     final active = i == _focus;
@@ -419,8 +525,18 @@ class _OrbitNode extends StatelessWidget {
           ),
           child: Icon(node.icon, color: node.color, size: 20),
         ),
+        // ✅ Badge intelligent avec pulse conditionnel
         if (node.badge != null && node.badge! > 0)
-          Positioned(top: -3, right: -3, child: _Badge(count: node.badge!)),
+          Positioned(
+            top: -3,
+            right: -3,
+            child: _SmartBadge(
+              count: node.badge!,
+              section: node.section,
+              color: node.color,
+              pulse: node.pulseBadge,
+            ),
+          ),
       ],
     );
   }
@@ -440,61 +556,78 @@ class _OrbitHub extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasBadge = node.badge != null && node.badge! > 0;
+
     return Semantics(
       button: true,
       label: 'Ouvrir ${node.label}',
       child: GestureDetector(
         onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [node.color, ThixPolicy.primaryDeep],
-            ),
-            border: Border.all(color: Colors.white, width: 3),
-            boxShadow: [
-              BoxShadow(
-                color: node.color.withOpacity(0.35),
-                blurRadius: 22,
-                offset: const Offset(0, 8),
+        child: _HubPulseWrapper(
+          active: hasBadge && node.pulseBadge,
+          color: node.color,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [node.color, ThixPolicy.primaryDeep],
               ),
-            ],
-          ),
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(node.icon, color: Colors.white, size: 27),
-                    const SizedBox(height: 5),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Text(
-                        node.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
+              border: Border.all(color: Colors.white, width: 3),
+              boxShadow: [
+                BoxShadow(
+                  color: node.color.withOpacity(0.35),
+                  blurRadius: 22,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(node.icon, color: Colors.white, size: 27),
+                      const SizedBox(height: 5),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: Text(
+                          node.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              if (node.badge != null && node.badge! > 0)
-                Positioned(top: 4, right: 4, child: _Badge(count: node.badge!)),
-            ],
+                // ✅ Badge du hub central avec pulse
+                if (hasBadge)
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: _SmartBadge(
+                      count: node.badge!,
+                      section: node.section,
+                      color: node.color,
+                      pulse: node.pulseBadge,
+                      size: _SmartBadgeSize.large,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -502,7 +635,84 @@ class _OrbitHub extends StatelessWidget {
   }
 }
 
-// ── PEINTRE DÉCORATIF (orbite pointillée + arc de focale) ───────────────────
+// ── WRAPPER PULSE POUR LE HUB ────────────────────────────────────────────────
+class _HubPulseWrapper extends StatefulWidget {
+  final Widget child;
+  final bool active;
+  final Color color;
+
+  const _HubPulseWrapper({
+    required this.child,
+    required this.active,
+    required this.color,
+  });
+
+  @override
+  State<_HubPulseWrapper> createState() => _HubPulseWrapperState();
+}
+
+class _HubPulseWrapperState extends State<_HubPulseWrapper>
+    with SingleTickerProviderStateMixin {
+  late AnimationController? _ctrl;
+  late Animation<double>? _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.active) {
+      _ctrl = AnimationController(
+        vsync: this,
+        duration: _kHubPulseDuration,
+      )..repeat(reverse: true);
+      _anim = Tween<double>(begin: 1.0, end: 1.05)
+          .animate(CurvedAnimation(parent: _ctrl!, curve: Curves.easeInOut));
+    } else {
+      _ctrl = null;
+      _anim = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.active || _anim == null) return widget.child;
+
+    return AnimatedBuilder(
+      animation: _anim!,
+      builder: (_, __) => Transform.scale(
+        scale: _anim!.value,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // Halo pulsant derrière le hub
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: widget.color.withOpacity(0.3 * _anim!.value),
+                      blurRadius: 30 * _anim!.value,
+                      spreadRadius: 2 * _anim!.value,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            widget.child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── PEINTRE DÉCORATIF ────────────────────────────────────────────────────────
 class _OrbitPainter extends CustomPainter {
   final double radius;
   final double hubRadius;
@@ -528,7 +738,6 @@ class _OrbitPainter extends CustomPainter {
       canvas.drawArc(orbit, a, 0.045, false, dash);
     }
 
-    // Arc lumineux au sommet (zone focale)
     final hl = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 3
@@ -536,7 +745,6 @@ class _OrbitPainter extends CustomPainter {
       ..color = accent.withOpacity(0.45);
     canvas.drawArc(orbit, -pi / 2 - 0.42, 0.84, false, hl);
 
-    // Anneau interne discret autour du hub
     final inner = Rect.fromCircle(center: c, radius: hubRadius + 14);
     final dashLight = Paint()
       ..style = PaintingStyle.stroke
@@ -581,36 +789,128 @@ class _OrbitDots extends StatelessWidget {
   }
 }
 
-// ── BADGE ───────────────────────────────────────────────────────────────────
-class _Badge extends StatelessWidget {
+// ── SMART BADGE ──────────────────────────────────────────────────────────────
+/// Badge intelligent avec :
+/// - Limite 99+ pour les compteurs élevés
+/// - Pulse adaptatif selon criticité de la section
+/// - Couleur adaptative (pas toujours danger)
+enum _SmartBadgeSize { small, large }
+
+class _SmartBadge extends StatefulWidget {
   final int count;
-  const _Badge({required this.count});
+  final ThixSection section;
+  final Color color;
+  final bool pulse;
+  final _SmartBadgeSize size;
+
+  const _SmartBadge({
+    required this.count,
+    required this.section,
+    required this.color,
+    this.pulse = false,
+    this.size = _SmartBadgeSize.small,
+  });
+
+  @override
+  State<_SmartBadge> createState() => _SmartBadgeState();
+}
+
+class _SmartBadgeState extends State<_SmartBadge>
+    with SingleTickerProviderStateMixin {
+  late AnimationController? _pulseCtrl;
+  late Animation<double>? _pulseAnim;
+
+  /// Couleur adaptative selon la section
+  Color get _badgeColor {
+    switch (widget.section) {
+      case ThixSection.health:
+        return ThixPolicy.danger; // 🚨 Rouge urgence
+      case ThixSection.money:
+        return ThixPolicy.gold; // 💰 Or finance
+      case ThixSection.market:
+        return ThixPolicy.warning; // 🛒 Orange action
+      case ThixSection.messages:
+        return ThixPolicy.primary; // 💬 Bleu communication
+      default:
+        return widget.color; // Couleur du service par défaut
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.pulse) {
+      _pulseCtrl = AnimationController(
+        vsync: this,
+        duration: _kBadgePulseDuration,
+      )..repeat(reverse: true);
+      _pulseAnim = Tween<double>(begin: 1.0, end: 1.2)
+          .animate(CurvedAnimation(parent: _pulseCtrl!, curve: Curves.easeInOut));
+    } else {
+      _pulseCtrl = null;
+      _pulseAnim = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl?.dispose();
+    super.dispose();
+  }
+
+  String get _displayText {
+    if (widget.count > _kMaxBadgeDisplay) return '$_kMaxBadgeDisplay+';
+    return '${widget.count}';
+  }
+
+  double get _minSize => widget.size == _SmartBadgeSize.large ? 20 : 16;
+  double get _fontSize => widget.size == _SmartBadgeSize.large ? 9 : 8;
+  double get _borderWidth => widget.size == _SmartBadgeSize.large ? 2 : 1.5;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final badge = Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: ThixPolicy.danger,
+        color: _badgeColor,
         shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 1.5),
+        border: Border.all(color: Colors.white, width: _borderWidth),
+        boxShadow: [
+          BoxShadow(
+            color: _badgeColor.withOpacity(0.4),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+      constraints: BoxConstraints(minWidth: _minSize, minHeight: _minSize),
       child: Center(
         child: Text(
-          '$count',
-          style: const TextStyle(
+          _displayText,
+          style: TextStyle(
             color: Colors.white,
-            fontSize: 8,
-            fontWeight: FontWeight.bold,
+            fontSize: _fontSize,
+            fontWeight: FontWeight.w900,
           ),
         ),
       ),
     );
+
+    if (widget.pulse && _pulseAnim != null) {
+      return AnimatedBuilder(
+        animation: _pulseAnim!,
+        builder: (_, __) => Transform.scale(
+          scale: _pulseAnim!.value,
+          child: badge,
+        ),
+      );
+    }
+
+    return badge;
   }
 }
 
-// ── HEADER COMPACT : "THIX HUB" + profil (titre supprimé) ───────────────────
+// ── HEADER COMPACT : "THIX HUB" + profil ─────────────────────────────────────
 class _OrbitHeader extends StatelessWidget {
   final String? avatarUrl;
   final VoidCallback onTap;
@@ -677,4 +977,3 @@ class _OrbitHeader extends StatelessWidget {
     );
   }
 }
- 
