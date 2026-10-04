@@ -1,10 +1,11 @@
 // lib/presentation/thix_market/pages/supermarket_space_page.dart
 // ============================================================================
-// SUPERMARCHÉ 3D IMMERSIF — Expérience nouvelle génération
+// SUPERMARCHÉ — ÉTAGÈRES GONDOLES RÉALISTES (fond clair, enterprise)
 // ============================================================================
+import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
+import 'package:barcode_widget/barcode_widget.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,41 +15,22 @@ import 'package:go_router/go_router.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/presentation/thix_market/models/supermarket_models.dart';
+import 'package:thix_id/presentation/thix_market/models/supermarket_product.dart';
 import 'package:thix_id/presentation/thix_market/providers/supermarket_providers.dart';
-import 'package:thix_id/presentation/thix_market/widgets/products/product_card.dart';
 
 import 'department_products_page.dart';
 
-class SupermarketSpacePage extends ConsumerStatefulWidget {
+// Couleurs gondole (référentiel magasin réel)
+const Color _kRailRed = Color(0xFFD93025);
+const Color _kRailRedDark = Color(0xFFB3261E);
+const Color _kMetalWhite = Color(0xFFFAFAFA);
+const Color _kMetalEdge = Color(0xFFE3E6EA);
+const Color _kMeshWire = Color(0xFFC9CED6);
+const Color _kPerfDot = Color(0xFFDDE1E6);
+
+class SupermarketSpacePage extends ConsumerWidget {
   final String supermarketId;
   const SupermarketSpacePage({super.key, required this.supermarketId});
-
-  @override
-  ConsumerState<SupermarketSpacePage> createState() =>
-      _SupermarketSpacePageState();
-}
-
-class _SupermarketSpacePageState extends ConsumerState<SupermarketSpacePage>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _entranceCtrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _entranceCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    );
-    Future.delayed(const Duration(milliseconds: 200), () {
-      if (mounted) _entranceCtrl.forward();
-    });
-  }
-
-  @override
-  void dispose() {
-    _entranceCtrl.dispose();
-    super.dispose();
-  }
 
   String _tr(AppLocalizations l10n, String key, String fb) {
     final v = l10n.t(key);
@@ -56,361 +38,149 @@ class _SupermarketSpacePageState extends ConsumerState<SupermarketSpacePage>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final shopAsync = ref.watch(supermarketDetailsProvider(widget.supermarketId));
-    final deptsAsync = ref.watch(departmentsProvider(widget.supermarketId));
-    final promosAsync = ref.watch(supermarketPromosProvider(widget.supermarketId));
-    final allProductsAsync = ref.watch(
-      supermarketAllProductsProvider(widget.supermarketId),
-    );
+    final shopAsync = ref.watch(supermarketDetailsProvider(supermarketId));
+    final deptsAsync = ref.watch(departmentsProvider(supermarketId));
+    final productsAsync = ref.watch(supermarketShelfProductsProvider(supermarketId));
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E1A),
+      backgroundColor: ThixPolicy.surfaceSoft,
       body: shopAsync.when(
-        loading: () => const _LoadingEntrance(),
-        error: (e, _) => Center(
-          child: Text('$e', style: const TextStyle(color: Colors.white)),
-        ),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('$e')),
         data: (shop) {
-          if (shop == null) {
-            return const Center(
-              child: Text(
-                'Supermarché introuvable',
-                style: TextStyle(color: Colors.white),
+          if (shop == null) return const Center(child: Text('Supermarché introuvable'));
+          final depts = deptsAsync.valueOrNull ?? const <SupermarketDepartment>[];
+          final products = productsAsync.valueOrNull ?? const <SupermarketProduct>[];
+
+          return CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              _LightStorefront(shop: shop, l10n: l10n),
+
+              // ── HERO BANNER AUTO-SCROLLING ──
+              SliverToBoxAdapter(
+                child: _HeroCarousel(
+                  products: products,
+                  l10n: l10n,
+                  onProductTap: (p) => _openQuickView(context, p, l10n),
+                ),
               ),
-            );
-          }
-          return Stack(
-            children: [
-              // Fond atmosphérique
-              Positioned.fill(
-                child: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Color(0xFF1A1F2E),
-                        Color(0xFF0A0E1A),
-                      ],
-                    ),
+
+              // ── TITRE RAYONS ──
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 10),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: ThixPolicy.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.storefront_rounded, size: 18, color: ThixPolicy.primary),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _tr(l10n, 'sm_aisles_title', 'Nos rayons'),
+                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: ThixPolicy.textMain, letterSpacing: -0.3),
+                            ),
+                            Text(
+                              _tr(l10n, 'sm_aisles_subtitle', 'Étagères en temps réel avec stock'),
+                              style: const TextStyle(fontSize: 11, color: ThixPolicy.textMuted),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              CustomScrollView(
-                physics: const BouncingScrollPhysics(),
-                slivers: [
-                  _ImmersiveStorefront(shop: shop, l10n: l10n),
 
-                  // ── TITRE : PLAN 3D DU MAGASIN ──
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: ThixPolicy.primary.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(
-                              Icons.view_in_ar_rounded,
-                              size: 18,
-                              color: ThixPolicy.primary,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _tr(l10n, 'sm_aisles_title', 'Plan du supermarché'),
-                                  style: const TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.white,
-                                    letterSpacing: -0.3,
-                                  ),
-                                ),
-                                Text(
-                                  _tr(
-                                    l10n,
-                                    'sm_aisles_subtitle',
-                                    'Explorez nos rayons en 3D',
-                                  ),
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.white54,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  // ── GRILLE 3D DES RAYONS ──
-                  deptsAsync.when(
-                    loading: () => const SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.all(40),
-                        child: Center(
-                          child: CircularProgressIndicator(color: Colors.white),
-                        ),
-                      ),
-                    ),
-                    error: (e, _) => SliverToBoxAdapter(
-                      child: Center(
-                        child: Text('$e', style: const TextStyle(color: Colors.white)),
-                      ),
-                    ),
-                    data: (depts) {
-                      if (depts.isEmpty) {
-                        return const SliverToBoxAdapter(
-                          child: Padding(
-                            padding: EdgeInsets.all(40),
-                            child: Center(
-                              child: Text(
-                                'Aucun rayon disponible',
-                                style: TextStyle(color: Colors.white54),
-                              ),
-                            ),
-                          ),
-                        );
-                      }
-
-                      // Récupérer les produits pour afficher le stock
-                      final allProducts = allProductsAsync.valueOrNull ?? [];
-
-                      return SliverPadding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (ctx, i) {
-                              final dept = depts[i];
-                              final deptProducts = allProducts
-                                  .where((p) => p['department_id'] == dept.id)
-                                  .toList();
-
-                              return AnimatedBuilder(
-                                animation: _entranceCtrl,
-                                builder: (ctx, child) {
-                                  final delay = i * 0.06;
-                                  final progress = ((_entranceCtrl.value - delay) / 0.3)
-                                      .clamp(0.0, 1.0);
-                                  final curve = Curves.easeOutCubic.transform(progress);
-
-                                  return Transform.translate(
-                                    offset: Offset(0, 60 * (1 - curve)),
-                                    child: Opacity(
-                                      opacity: curve,
-                                      child: child,
-                                    ),
-                                  );
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.only(bottom: 16),
-                                  child: _Aisle3D(
-                                    dept: dept,
+              // ── ÉTAGÈRES GONDOLES ──
+              if (depts.isEmpty && productsAsync.isLoading)
+                const SliverToBoxAdapter(
+                  child: Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator())),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (ctx, i) {
+                        final dept = depts[i];
+                        final deptProducts = products
+                            .where((p) => p.departmentId == dept.id)
+                            .toList();
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 22),
+                          child: _GondolaShelf(
+                            dept: dept,
+                            aisleNumber: i + 1,
+                            products: deptProducts,
+                            l10n: l10n,
+                            onProductTap: (p) => _openQuickView(context, p, l10n),
+                            onOpenAisle: () {
+                              HapticFeedback.selectionClick();
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => DepartmentProductsPage(
+                                    departmentId: dept.id,
+                                    departmentName: dept.name,
                                     aisleNumber: i + 1,
-                                    products: deptProducts,
-                                    onTap: () {
-                                      HapticFeedback.mediumImpact();
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => DepartmentProductsPage(
-                                            departmentId: dept.id,
-                                            departmentName: dept.name,
-                                            aisleNumber: i + 1,
-                                            accentColor: dept.color,
-                                          ),
-                                        ),
-                                      );
-                                    },
+                                    accentColor: dept.color,
                                   ),
                                 ),
                               );
                             },
-                            childCount: depts.length,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-
-                  // ── PROMOS DU JOUR ──
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: ThixPolicy.danger.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(
-                              Icons.local_fire_department_rounded,
-                              size: 18,
-                              color: ThixPolicy.danger,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _tr(l10n, 'sm_promos', 'Promos du jour'),
-                                  style: const TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.white,
-                                    letterSpacing: -0.3,
-                                  ),
-                                ),
-                                Text(
-                                  _tr(l10n, 'sm_promos_subtitle', 'Offres limitées'),
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.white54,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  promosAsync.when(
-                    loading: () => const SliverToBoxAdapter(child: SizedBox(height: 60)),
-                    error: (_, __) => const SliverToBoxAdapter(child: SizedBox.shrink()),
-                    data: (promos) {
-                      if (promos.isEmpty) {
-                        return SliverToBoxAdapter(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Text(
-                              _tr(l10n, 'sm_no_promos', 'Aucune promo aujourd\'hui.'),
-                              style: const TextStyle(color: Colors.white38),
-                            ),
                           ),
                         );
-                      }
-                      return SliverToBoxAdapter(
-                        child: SizedBox(
-                          height: 240,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            itemCount: promos.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 12),
-                            itemBuilder: (_, i) => SizedBox(
-                              width: 160,
-                              child: ProductCard(
-                                product: promos[i],
-                                isFlashSale: true,
-                                onTap: (_) => context.push(
-                                  '/market/product/${promos[i]['id']}',
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
+                      },
+                      childCount: depts.length,
+                    ),
                   ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 120)),
-                ],
-              ),
-
-              // ── BOUTON PANIER FLOTTANT ──
-              Positioned(
-                right: 16,
-                bottom: 24,
-                child: _FloatingCartButton(l10n: l10n),
-              ),
+                ),
+              const SliverToBoxAdapter(child: SizedBox(height: 110)),
             ],
           );
         },
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.push('/market/cart'),
+        backgroundColor: ThixPolicy.primary,
+        foregroundColor: Colors.white,
+        elevation: 4,
+        icon: const Icon(Icons.shopping_cart_rounded, size: 20),
+        label: Text(_tr(l10n, 'sm_cart', 'Panier')),
+      ),
+    );
+  }
+
+  void _openQuickView(BuildContext context, SupermarketProduct p, AppLocalizations l10n) {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ProductQuickView(product: p, l10n: l10n),
     );
   }
 }
 
 // ============================================================================
-// LOADING IMMERSIF
+// DEVANTURE CLAIRE
 // ============================================================================
-class _LoadingEntrance extends StatelessWidget {
-  const _LoadingEntrance();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF1A1F2E), Color(0xFF0A0E1A)],
-        ),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: ThixPolicy.primary.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.storefront_rounded,
-                size: 40,
-                color: ThixPolicy.primary,
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Ouverture du magasin...',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 12),
-            const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(
-                strokeWidth: 2.5,
-                color: ThixPolicy.primary,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// DEVANTURE IMMERSIVE (header sombre premium)
-// ============================================================================
-class _ImmersiveStorefront extends StatelessWidget {
+class _LightStorefront extends StatelessWidget {
   final Map<String, dynamic> shop;
   final AppLocalizations l10n;
-  const _ImmersiveStorefront({required this.shop, required this.l10n});
+  const _LightStorefront({required this.shop, required this.l10n});
 
   @override
   Widget build(BuildContext context) {
@@ -418,25 +188,22 @@ class _ImmersiveStorefront extends StatelessWidget {
     final logo = shop['logo_url']?.toString();
     final name = shop['name']?.toString() ?? '';
     final city = shop['city']?.toString() ?? '';
-    final address = shop['address']?.toString() ?? '';
     final rating = (shop['rating'] as num?)?.toDouble() ?? 0;
     final isOpen = (shop['is_open'] as bool?) ?? true;
 
     return SliverAppBar(
-      expandedHeight: 280,
+      expandedHeight: 210,
       pinned: true,
-      backgroundColor: const Color(0xFF0A0E1A),
+      backgroundColor: Colors.white,
+      foregroundColor: ThixPolicy.textMain,
+      elevation: 0,
       leading: Padding(
         padding: const EdgeInsets.all(8),
         child: GestureDetector(
           onTap: () => Navigator.pop(context),
           child: Container(
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.5),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white24),
-            ),
-            child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 16),
+            decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: ThixPolicy.shadowSoft()),
+            child: const Icon(Icons.arrow_back_ios_new_rounded, color: ThixPolicy.textMain, size: 16),
           ),
         ),
       ),
@@ -444,182 +211,66 @@ class _ImmersiveStorefront extends StatelessWidget {
         background: Stack(
           fit: StackFit.expand,
           children: [
-            // Image de couverture avec effet cinematic
             if (cover != null && cover.isNotEmpty)
-              CachedNetworkImage(
-                imageUrl: cover,
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => _DefaultStorefrontCover(),
-              )
+              CachedNetworkImage(imageUrl: cover, fit: BoxFit.cover)
             else
-              const _DefaultStorefrontCover(),
-
-            // Overlay sombre en dégradé
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(colors: [Color(0xFFE8F0FE), Color(0xFFF6F7FB)]),
+                ),
+              ),
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withOpacity(0.3),
-                    Colors.black.withOpacity(0.1),
-                    Colors.black.withOpacity(0.6),
-                    const Color(0xFF0A0E1A),
-                  ],
-                  stops: const [0, 0.3, 0.7, 1],
+                  colors: [Colors.transparent, Colors.white.withOpacity(0.6), ThixPolicy.surfaceSoft],
+                  stops: const [0.35, 0.75, 1],
                 ),
               ),
             ),
-
-            // Grain cinématique subtil
-            Positioned.fill(
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 0.3, sigmaY: 0.3),
-                child: Container(color: Colors.transparent),
-              ),
-            ),
-
-            // Infos du magasin en bas
             Positioned(
-              left: 16,
-              right: 16,
-              bottom: 20,
+              left: 16, right: 16, bottom: 12,
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  // Logo
                   Container(
-                    width: 64,
-                    height: 64,
+                    width: 54, height: 54,
                     decoration: BoxDecoration(
                       color: Colors.white,
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 3),
-                      boxShadow: [
-                        BoxShadow(
-                          color: ThixPolicy.primary.withOpacity(0.5),
-                          blurRadius: 20,
-                          spreadRadius: 2,
-                        ),
-                      ],
+                      boxShadow: ThixPolicy.shadowSoft(),
                     ),
                     child: logo != null && logo.isNotEmpty
-                        ? ClipOval(
-                            child: CachedNetworkImage(imageUrl: logo, fit: BoxFit.cover),
-                          )
-                        : const Icon(
-                            Icons.storefront_rounded,
-                            color: ThixPolicy.primaryDeep,
-                            size: 30,
-                          ),
+                        ? ClipOval(child: CachedNetworkImage(imageUrl: logo, fit: BoxFit.cover))
+                        : const Icon(Icons.storefront_rounded, color: ThixPolicy.primary, size: 24),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.white,
-                                  letterSpacing: -0.4,
-                                ),
-                              ),
+                        Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: ThixPolicy.textMain)),
+                        const SizedBox(height: 3),
+                        Row(children: [
+                          if (isOpen)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(color: ThixPolicy.success.withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
+                              child: const Text('OUVERT', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: ThixPolicy.success, letterSpacing: 0.6)),
                             ),
-                            if (isOpen) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: ThixPolicy.success.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: ThixPolicy.success.withOpacity(0.5),
-                                  ),
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.circle, color: ThixPolicy.success, size: 6),
-                                    SizedBox(width: 3),
-                                    Text(
-                                      'OUVERT',
-                                      style: TextStyle(
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.w900,
-                                        color: ThixPolicy.success,
-                                        letterSpacing: 0.5,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
+                          const SizedBox(width: 6),
+                          Icon(Icons.place_rounded, size: 11, color: ThixPolicy.textMuted),
+                          const SizedBox(width: 3),
+                          Expanded(child: Text(city, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary))),
+                          if (rating > 0) ...[
+                            const Icon(Icons.star_rounded, size: 12, color: ThixPolicy.gold),
+                            const SizedBox(width: 2),
+                            Text(rating.toStringAsFixed(1), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: ThixPolicy.gold)),
                           ],
-                        ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            const Icon(Icons.place_rounded, size: 11, color: Colors.white70),
-                            const SizedBox(width: 3),
-                            Expanded(
-                              child: Text(
-                                address.isNotEmpty ? '$city · $address' : city,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (rating > 0) ...[
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              const Icon(Icons.star_rounded, size: 13, color: ThixPolicy.gold),
-                              const SizedBox(width: 3),
-                              Text(
-                                rating.toStringAsFixed(1),
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w800,
-                                  color: ThixPolicy.gold,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                width: 3,
-                                height: 3,
-                                decoration: const BoxDecoration(
-                                  color: Colors.white38,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Livraison 30min',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.white70,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                        ]),
                       ],
                     ),
                   ),
@@ -633,47 +284,411 @@ class _ImmersiveStorefront extends StatelessWidget {
   }
 }
 
-class _DefaultStorefrontCover extends StatelessWidget {
-  const _DefaultStorefrontCover();
+// ============================================================================
+// HERO BANNER AUTO-SCROLLING (promos / vedettes / frais / nouveau)
+// ============================================================================
+class _HeroItem {
+  final String badge;
+  final String title;
+  final String subtitle;
+  final String cta;
+  final List<Color> gradient;
+  final IconData icon;
+  final SupermarketProduct? product;
+  final VoidCallback? onTap;
+
+  _HeroItem({required this.badge, required this.title, required this.subtitle, required this.cta, required this.gradient, required this.icon, this.product, this.onTap});
+}
+
+class _HeroCarousel extends StatefulWidget {
+  final List<SupermarketProduct> products;
+  final AppLocalizations l10n;
+  final ValueChanged<SupermarketProduct> onProductTap;
+  const _HeroCarousel({required this.products, required this.l10n, required this.onProductTap});
+
+  @override
+  State<_HeroCarousel> createState() => _HeroCarouselState();
+}
+
+class _HeroCarouselState extends State<_HeroCarousel> {
+  final PageController _ctrl = PageController();
+  Timer? _timer;
+  int _index = 0;
+  List<_HeroItem> _items = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _buildItems();
+    _startTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HeroCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.products != widget.products) _buildItems();
+  }
+
+  void _buildItems() {
+    final l10n = widget.l10n;
+    final items = <_HeroItem>[];
+    final promos = widget.products.where((p) => p.onPromo).toList();
+    final featured = widget.products.where((p) => p.isFeatured || p.rating >= 4.5).toList();
+    final fresh = widget.products.where((p) => p.isPerishable && !p.isExpired).toList();
+
+    for (final p in promos.take(3)) {
+      items.add(_HeroItem(
+        badge: 'PROMO -${p.promoPercent}%',
+        title: p.title,
+        subtitle: '${p.priceLabel(p.price)} ${p.currency} → ${p.priceLabel()} ${p.currency}',
+        cta: l10n.t('sm_hero_promo_cta').isEmpty || l10n.t('sm_hero_promo_cta') == 'sm_hero_promo_cta' ? 'J\'en profite' : l10n.t('sm_hero_promo_cta'),
+        gradient: const [Color(0xFFFFF1F0), Color(0xFFFFE4E1)],
+        icon: Icons.local_fire_department_rounded,
+        product: p,
+        onTap: () => widget.onProductTap(p),
+      ));
+    }
+    for (final p in featured.take(2)) {
+      items.add(_HeroItem(
+        badge: 'VEDETTE',
+        title: p.title,
+        subtitle: '${p.priceLabel()} ${p.currency} • ★ ${p.rating.toStringAsFixed(1)}',
+        cta: 'Découvrir',
+        gradient: const [Color(0xFFE8F0FE), Color(0xFFDCE7FB)],
+        icon: Icons.star_rounded,
+        product: p,
+        onTap: () => widget.onProductTap(p),
+      ));
+    }
+    for (final p in fresh.take(2)) {
+      items.add(_HeroItem(
+        badge: 'FRAÎCHEUR',
+        title: p.title,
+        subtitle: p.expiryDate != null ? 'À consommer avant le ${_fmtDate(p.expiryDate!)}' : 'Produit frais du jour',
+        cta: 'Voir',
+        gradient: const [Color(0xFFE9F7EC), Color(0xFFDFF2E3)],
+        icon: Icons.eco_rounded,
+        product: p,
+        onTap: () => widget.onProductTap(p),
+      ));
+    }
+    if (items.isEmpty) {
+      items.add(_HeroItem(
+        badge: 'BIENVENUE',
+        title: 'Votre supermarché en ligne',
+        subtitle: 'Parcourez nos rayons comme en magasin',
+        cta: 'Explorer',
+        gradient: const [Color(0xFFE8F0FE), Color(0xFFF6F7FB)],
+        icon: Icons.storefront_rounded,
+      ));
+    }
+    setState(() => _items = items);
+  }
+
+  String _fmtDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || _items.isEmpty || !_ctrl.hasClients) return;
+      final next = (_index + 1) % _items.length;
+      _ctrl.animateToPage(next, duration: const Duration(milliseconds: 450), curve: Curves.easeInOut);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_items.isEmpty) return const SizedBox.shrink();
+    return Column(
+      children: [
+        SizedBox(
+          height: 150,
+          child: PageView.builder(
+            controller: _ctrl,
+            itemCount: _items.length,
+            onPageChanged: (i) => setState(() => _index = i),
+            itemBuilder: (_, i) {
+              final item = _items[i];
+              return GestureDetector(
+                onTap: item.onTap,
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: item.gradient),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Colors.white),
+                    boxShadow: ThixPolicy.shadowSoft(opacity: 0.08),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(color: item.gradient.last.withOpacity(0.9), borderRadius: BorderRadius.circular(6)),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(item.icon, size: 11, color: ThixPolicy.textMain),
+                                    const SizedBox(width: 4),
+                                    Text(item.badge, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: ThixPolicy.textMain, letterSpacing: 0.6)),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: ThixPolicy.textMain, height: 1.2)),
+                              const SizedBox(height: 4),
+                              Text(item.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary)),
+                              const SizedBox(height: 8),
+                              Text(item.cta, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: ThixPolicy.primary)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (item.product != null && item.product!.hasPhotos)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 16),
+                          child: Container(
+                            width: 96, height: 96,
+                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), boxShadow: ThixPolicy.shadowSoft(opacity: 0.12)),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: CachedNetworkImage(imageUrl: item.product!.mainPhoto, fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) => Icon(item.icon, color: ThixPolicy.textMuted)),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(_items.length, (i) {
+            final active = i == _index;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width: active ? 18 : 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: active ? ThixPolicy.primary : ThixPolicy.border,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            );
+          }),
+        ),
+      ],
+    );
+  }
+}
+
+// ============================================================================
+// ÉTAGÈRE GONDOLE RÉALISTE (photo : blanc + rails rouges + fond perforé)
+// ============================================================================
+class _GondolaShelf extends StatelessWidget {
+  final SupermarketDepartment dept;
+  final int aisleNumber;
+  final List<SupermarketProduct> products;
+  final AppLocalizations l10n;
+  final ValueChanged<SupermarketProduct> onProductTap;
+  final VoidCallback onOpenAisle;
+
+  static const int _cols = 4;
+  static const int _levels = 4;
+
+  const _GondolaShelf({
+    required this.dept,
+    required this.aisleNumber,
+    required this.products,
+    required this.l10n,
+    required this.onProductTap,
+    required this.onOpenAisle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onOpenAisle,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _kMetalEdge),
+          boxShadow: ThixPolicy.shadowSoft(opacity: 0.07),
+        ),
+        child: Column(
+          children: [
+            // ── FRONTON (enseigne du rayon) ──
+            _GondolaHeader(dept: dept, aisleNumber: aisleNumber, count: products.length),
+
+            // ── CORPS DE L'ÉTAGÈRE ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const _SideMesh(width: 12),
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: _kMetalWhite,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: _kMetalEdge),
+                        ),
+                        child: Stack(
+                          children: [
+                            // Fond perforé
+                            Positioned.fill(child: CustomPaint(painter: _PerforatedPainter())),
+                            // Niveaux
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: List.generate(_levels, (lvl) {
+                                final levelProducts = _levelProducts(lvl);
+                                return _ShelfLevel(
+                                  slots: levelProducts,
+                                  deptColor: dept.color,
+                                  onProductTap: onProductTap,
+                                );
+                              }),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const _SideMesh(width: 12),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── PIEDS ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(width: 14, height: 8, decoration: BoxDecoration(color: _kMeshWire, borderRadius: BorderRadius.circular(2))),
+                  Container(width: 14, height: 8, decoration: BoxDecoration(color: _kMeshWire, borderRadius: BorderRadius.circular(2))),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<SupermarketProduct?> _levelProducts(int lvl) {
+    final slots = <SupermarketProduct?>[];
+    for (var c = 0; c < _cols; c++) {
+      final idx = lvl * _cols + c;
+      slots.add(idx < products.length ? products[idx] : null);
+    }
+    return slots;
+  }
+}
+
+class _GondolaHeader extends StatelessWidget {
+  final SupermarketDepartment dept;
+  final int aisleNumber;
+  final int count;
+  const _GondolaHeader({required this.dept, required this.aisleNumber, required this.count});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            ThixPolicy.primaryDeep,
-            const Color(0xFF1E40AF),
-            ThixPolicy.domainMarket,
-          ],
-        ),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
-      child: Stack(
+      child: Row(
         children: [
-          Positioned.fill(
-            child: CustomPaint(painter: _StorefrontPatternPainter()),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(color: dept.color, borderRadius: BorderRadius.circular(6)),
+            child: Text('ALLÉE $aisleNumber', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.8)),
           ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(color: dept.color.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
+            child: Icon(dept.icon, size: 16, color: dept.color),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(dept.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: ThixPolicy.textMain)),
+          ),
+          Text('$count', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: dept.color)),
+          const Icon(Icons.chevron_right_rounded, size: 16, color: ThixPolicy.textMuted),
         ],
       ),
     );
   }
 }
 
-class _StorefrontPatternPainter extends CustomPainter {
+// ── Grillage latéral (mesh) ──
+class _SideMesh extends StatelessWidget {
+  final double width;
+  const _SideMesh({required this.width});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      child: CustomPaint(painter: _MeshPainter()),
+    );
+  }
+}
+
+class _MeshPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white.withOpacity(0.05)
+      ..color = _kMeshWire
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-
-    for (var i = 0; i < size.width; i += 40) {
-      canvas.drawLine(Offset(i.toDouble(), 0), Offset(i.toDouble(), size.height), paint);
+      ..strokeWidth = 0.8;
+    for (var y = 0.0; y <= size.height; y += 7) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
     }
-    for (var i = 0; i < size.height; i += 40) {
-      canvas.drawLine(Offset(0, i.toDouble()), Offset(size.width, i.toDouble()), paint);
+    for (var x = 0.0; x <= size.width; x += 6) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ── Fond perforé (trous du panneau gondole) ──
+class _PerforatedPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = _kPerfDot;
+    for (var y = 6.0; y < size.height; y += 9) {
+      for (var x = 6.0; x < size.width; x += 9) {
+        canvas.drawCircle(Offset(x, y), 1.0, paint);
+      }
     }
   }
 
@@ -682,195 +697,207 @@ class _StorefrontPatternPainter extends CustomPainter {
 }
 
 // ============================================================================
-// ALLÉE 3D COMPLÈTE (étagère + enseigne + effets)
+// NIVEAU D'ÉTAGÈRE : produits + tablette + rail rouge + étiquettes
 // ============================================================================
-class _Aisle3D extends StatelessWidget {
-  final SupermarketDepartment dept;
-  final int aisleNumber;
-  final List<Map<String, dynamic>> products;
-  final VoidCallback onTap;
+class _ShelfLevel extends StatelessWidget {
+  final List<SupermarketProduct?> slots;
+  final Color deptColor;
+  final ValueChanged<SupermarketProduct> onProductTap;
 
-  const _Aisle3D({
-    required this.dept,
-    required this.aisleNumber,
-    required this.products,
-    required this.onTap,
-  });
+  const _ShelfLevel({required this.slots, required this.deptColor, required this.onProductTap});
 
   @override
   Widget build(BuildContext context) {
-    final isFresh = dept.iconKey == 'produce' || dept.iconKey == 'dairy';
-    final isFrozen = dept.iconKey == 'frozen';
-    final isBakery = dept.iconKey == 'bakery';
-    final isButcher = dept.iconKey == 'butcher';
-
-    // Prendre les 6 premiers produits pour remplir l'étagère
-    final displayProducts = products.take(6).toList();
-    final totalStock = products.fold<int>(
-      0,
-      (sum, p) => sum + ((p['stock'] as num?)?.toInt() ?? 0),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // ── PRODUITS POSÉS SUR LA TABLETTE ──
+        SizedBox(
+          height: 86,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: slots
+                .map((p) => Expanded(
+                      child: p == null
+                          ? const SizedBox.shrink()
+                          : _Facing(product: p, onTap: () => onProductTap(p)),
+                    ))
+                .toList(),
+          ),
+        ),
+        // ── TABLETTE + RAIL ROUGE + ÉTIQUETTES ──
+        _ShelfBoard(slots: slots),
+      ],
     );
+  }
+}
+
+class _ShelfBoard extends StatelessWidget {
+  final List<SupermarketProduct?> slots;
+  const _ShelfBoard({required this.slots});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 24,
+      child: Stack(
+        children: [
+          // Tablette blanche (dessus avec profondeur)
+          Positioned(
+            top: 0, left: 2, right: 2, height: 9,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.white, Color(0xFFEDEFF2)],
+                ),
+                borderRadius: BorderRadius.circular(2),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.10), blurRadius: 3, offset: const Offset(0, 2))],
+              ),
+            ),
+          ),
+          // Rail rouge porte-étiquettes
+          Positioned(
+            bottom: 0, left: 0, right: 0, height: 15,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [_kRailRed, _kRailRedDark],
+                ),
+                borderRadius: BorderRadius.circular(3),
+                boxShadow: [BoxShadow(color: _kRailRed.withOpacity(0.25), blurRadius: 4, offset: const Offset(0, 2))],
+              ),
+            ),
+          ),
+          // Étiquettes de prix alignées sous chaque produit
+          Positioned(
+            bottom: 2, left: 0, right: 0, height: 11,
+            child: Row(
+              children: slots
+                  .map((p) => Expanded(
+                        child: p == null
+                            ? const SizedBox.shrink()
+                            : Center(child: _PriceTag(product: p)),
+                      ))
+                  .toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PriceTag extends StatelessWidget {
+  final SupermarketProduct product;
+  const _PriceTag({required this.product});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(2)),
+      child: Text(
+        '${product.priceLabel()} ${product.currency}',
+        style: TextStyle(
+          fontSize: 7.5,
+          fontWeight: FontWeight.w900,
+          color: product.onPromo ? _kRailRed : ThixPolicy.textMain,
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// FACING PRODUIT (photo réelle + badges + répétition selon stock)
+// ============================================================================
+class _Facing extends StatelessWidget {
+  final SupermarketProduct product;
+  final VoidCallback onTap;
+  const _Facing({required this.product, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final facings = product.stock <= 0 ? 0 : product.stock.clamp(1, 3);
 
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 2),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            // ── ENSEIGNE NÉON DU RAYON ──
-            _NeonSign(
-              aisleNumber: aisleNumber,
-              dept: dept,
-              productCount: products.length,
-            ),
-            const SizedBox(height: 10),
-
-            // ── ÉTAGÈRE 3D ──
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF1F2937),
-                    const Color(0xFF111827),
-                  ],
+            // Produits alignés (facings) — effet profondeur
+            if (facings > 0)
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: SizedBox(
+                  height: 74,
+                  child: Stack(
+                    children: List.generate(facings, (i) {
+                      final behind = i > 0;
+                      return Positioned(
+                        left: i * 5.0,
+                        right: (facings - 1 - i) * 2.0,
+                        bottom: 0,
+                        top: behind ? 3.0 : 0,
+                        child: Opacity(
+                          opacity: behind ? 0.55 : 1.0,
+                          child: _ProductBox(product: product, muted: behind),
+                        ),
+                      );
+                    }),
+                  ),
                 ),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: dept.color.withOpacity(0.3),
-                  width: 1,
+              )
+            else
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: Container(
+                  height: 40,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.grey.withOpacity(0.15)),
+                  ),
+                  child: const Center(
+                    child: Text('RUPTURE', style: TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Colors.grey)),
+                  ),
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: dept.color.withOpacity(0.15),
-                    blurRadius: 20,
-                    offset: const Offset(0, 10),
-                  ),
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.5),
-                    blurRadius: 30,
-                    offset: const Offset(0, 15),
-                  ),
-                ],
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header de l'étagère
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: dept.color.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: dept.color.withOpacity(0.3)),
-                        ),
-                        child: Icon(dept.icon, color: dept.color, size: 22),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              dept.name,
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                letterSpacing: -0.2,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Row(
-                              children: [
-                                Text(
-                                  '${products.length} produits',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.white54,
-                                  ),
-                                ),
-                                if (totalStock > 0) ...[
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    width: 3,
-                                    height: 3,
-                                    decoration: const BoxDecoration(
-                                      color: Colors.white24,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Stock: $totalStock',
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.white54,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: dept.color.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Explorer',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                color: dept.color,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.arrow_forward_rounded,
-                              size: 12,
-                              color: dept.color,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
 
-                  // ── ÉTAGÈRE 3D AVEC PRODUITS ──
-                  Stack(
-                    children: [
-                      // Étagère avec perspective
-                      _Shelf3D(
-                        color: dept.color,
-                        isFresh: isFresh,
-                        isFrozen: isFrozen,
-                        isBakery: isBakery,
-                        isButcher: isButcher,
-                        products: displayProducts,
-                      ),
-
-                      // Effets spéciaux par type de rayon
-                      if (isFresh) const _FreshCondensationEffect(),
-                      if (isFrozen) const _FrozenMistEffect(),
-                      if (isBakery) const _WarmGlowEffect(),
-                    ],
-                  ),
-                ],
+            // Badge promo
+            if (product.onPromo)
+              Positioned(
+                top: -4, left: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(color: _kRailRed, borderRadius: BorderRadius.circular(4)),
+                  child: Text('-${product.promoPercent}%', style: const TextStyle(fontSize: 7.5, fontWeight: FontWeight.w900, color: Colors.white)),
+                ),
               ),
-            ),
+
+            // Badge périssable / expiration
+            if (product.isPerishable)
+              Positioned(
+                top: -4, right: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: product.isExpired ? Colors.grey : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    product.isExpired ? 'EXPIRÉ' : (product.isFreshSoon ? 'J-${product.daysToExpiry}' : 'FRAIS'),
+                    style: const TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Colors.white),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -878,501 +905,41 @@ class _Aisle3D extends StatelessWidget {
   }
 }
 
-// ============================================================================
-// ENSEIGNE NÉON LUMINEUSE
-// ============================================================================
-class _NeonSign extends StatelessWidget {
-  final int aisleNumber;
-  final SupermarketDepartment dept;
-  final int productCount;
-
-  const _NeonSign({
-    required this.aisleNumber,
-    required this.dept,
-    required this.productCount,
-  });
+class _ProductBox extends StatelessWidget {
+  final SupermarketProduct product;
+  final bool muted;
+  const _ProductBox({required this.product, this.muted = false});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.4),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: dept.color.withOpacity(0.5), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: dept.color.withOpacity(0.4),
-            blurRadius: 12,
-            spreadRadius: 1,
-          ),
-          BoxShadow(
-            color: dept.color.withOpacity(0.2),
-            blurRadius: 24,
-            spreadRadius: 2,
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: dept.color,
-              borderRadius: BorderRadius.circular(6),
-              boxShadow: [
-                BoxShadow(
-                  color: dept.color.withOpacity(0.8),
-                  blurRadius: 8,
-                ),
-              ],
-            ),
-            child: Text(
-              'ALLÉE $aisleNumber',
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-                letterSpacing: 1,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            dept.name.toUpperCase(),
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: dept.color,
-              letterSpacing: 0.5,
-              shadows: [
-                Shadow(color: dept.color.withOpacity(0.8), blurRadius: 8),
-              ],
-            ),
-          ),
-          if (productCount > 0) ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                '$productCount',
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white70,
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// ÉTAGÈRE 3D AVEC PERSPECTIVE
-// ============================================================================
-class _Shelf3D extends StatelessWidget {
-  final Color color;
-  final bool isFresh;
-  final bool isFrozen;
-  final bool isBakery;
-  final bool isButcher;
-  final List<Map<String, dynamic>> products;
-
-  const _Shelf3D({
-    required this.color,
-    required this.isFresh,
-    required this.isFrozen,
-    required this.isBakery,
-    required this.isButcher,
-    required this.products,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Déterminer la couleur de fond selon le type de rayon
-    final shelfBg = isFrozen
-        ? const Color(0xFF0C1929)
-        : isBakery
-            ? const Color(0xFF2D1810)
-            : isButcher
-                ? const Color(0xFF1F0F0F)
-                : isFresh
-                    ? const Color(0xFF0F1F14)
-                    : const Color(0xFF1A1A1A);
-
-    // Lumière d'ambiance
-    final ambientLight = isBakery
-        ? const Color(0xFFFFD28A).withOpacity(0.15)
-        : isButcher
-            ? const Color(0xFFFF6B6B).withOpacity(0.1)
-            : isFresh
-                ? const Color(0xFF90EE90).withOpacity(0.1)
-                : isFrozen
-                    ? const Color(0xFFADD8E6).withOpacity(0.15)
-                    : Colors.white.withOpacity(0.05);
-
-    return Container(
-      height: 140,
-      decoration: BoxDecoration(
-        color: shelfBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withOpacity(0.2)),
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            ambientLight,
-            Colors.transparent,
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.4),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-            spreadRadius: -2,
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          // Étagères horizontales (3 niveaux)
-          CustomPaint(
-            size: const Size(double.infinity, 140),
-            painter: _ShelfLinesPainter(color: color.withOpacity(0.3)),
-          ),
-
-          // Produits sur les étagères
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Row(
-              children: [
-                // Produits affichés (max 6 visibles)
-                ...List.generate(
-                  products.length.clamp(0, 6),
-                  (i) => Expanded(
-                    child: _ProductOnShelf(
-                      product: products[i],
-                      accentColor: color,
-                      index: i,
-                    ),
-                  ),
-                ),
-                // Espace vide si moins de 6 produits
-                ...List.generate(
-                  (6 - products.length).clamp(0, 6),
-                  (_) => const Expanded(child: SizedBox()),
-                ),
-              ],
-            ),
-          ),
-
-          // Reflet brillant en haut
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: 2,
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.transparent,
-                    Colors.white.withOpacity(0.2),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ShelfLinesPainter extends CustomPainter {
-  final Color color;
-  _ShelfLinesPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-
-    // 3 étagères horizontales
-    final y1 = size.height * 0.33;
-    final y2 = size.height * 0.66;
-
-    canvas.drawLine(Offset(0, y1), Offset(size.width, y1), paint);
-    canvas.drawLine(Offset(0, y2), Offset(size.width, y2), paint);
-
-    // Montants verticaux
-    final vPaint = Paint()
-      ..color = color.withOpacity(0.5)
-      ..strokeWidth = 1;
-
-    for (var x = 0.0; x <= size.width; x += size.width / 6) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), vPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-// ============================================================================
-// PRODUIT SUR ÉTAGÈRE (avec stock visible)
-// ============================================================================
-class _ProductOnShelf extends StatelessWidget {
-  final Map<String, dynamic> product;
-  final Color accentColor;
-  final int index;
-
-  const _ProductOnShelf({
-    required this.product,
-    required this.accentColor,
-    required this.index,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final imageUrl = product['image_url']?.toString();
-    final stock = (product['stock'] as num?)?.toInt() ?? 0;
-    final title = product['title']?.toString() ?? '';
-    final price = (product['price'] as num?)?.toDouble() ?? 0;
-    final discountPrice = (product['discount_price'] as num?)?.toDouble();
-
-    // Nombre d'unités visibles (max 4 par produit)
-    final visibleUnits = stock.clamp(0, 4);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 3),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          // Stack de produits (représentation visuelle du stock)
-          Expanded(
-            child: Stack(
-              alignment: Alignment.bottomCenter,
-              children: [
-                // Produits empilés (effet 3D)
-                ...List.generate(visibleUnits, (i) {
-                  final offset = i * 2.0;
-                  final scale = 1.0 - (i * 0.03);
-                  return Positioned(
-                    left: offset,
-                    right: offset,
-                    bottom: offset,
-                    child: Transform.scale(
-                      scale: scale,
-                      child: _ProductUnit(
-                        imageUrl: imageUrl,
-                        accentColor: accentColor,
-                        depth: i,
-                      ),
-                    ),
-                  );
-                }),
-
-                // Si aucun stock, afficher "RUPTURE"
-                if (visibleUnits == 0)
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: ThixPolicy.danger.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: ThixPolicy.danger.withOpacity(0.5)),
-                    ),
-                    child: const Icon(
-                      Icons.remove_shopping_cart_rounded,
-                      size: 16,
-                      color: ThixPolicy.danger,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 4),
-          // Prix
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.6),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              discountPrice != null
-                  ? '${discountPrice.toStringAsFixed(0)}'
-                  : '${price.toStringAsFixed(0)}',
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w900,
-                color: discountPrice != null ? ThixPolicy.danger : Colors.white,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ProductUnit extends StatelessWidget {
-  final String? imageUrl;
-  final Color accentColor;
-  final int depth;
-
-  const _ProductUnit({
-    required this.imageUrl,
-    required this.accentColor,
-    required this.depth,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final shadowOpacity = (0.3 - depth * 0.08).clamp(0.05, 0.3);
-
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: accentColor.withOpacity(0.3)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(shadowOpacity),
-            blurRadius: (4 - depth).toDouble(),
-            offset: Offset(0, 2 - depth * 0.5),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: _kMetalEdge),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(muted ? 0.05 : 0.12), blurRadius: 3, offset: const Offset(0, 2))],
       ),
-      child: imageUrl != null && imageUrl!.isNotEmpty
+      child: product.hasPhotos
           ? ClipRRect(
-              borderRadius: BorderRadius.circular(5),
+              borderRadius: BorderRadius.circular(4),
               child: CachedNetworkImage(
-                imageUrl: imageUrl!,
+                imageUrl: product.mainPhoto,
                 fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => Icon(
-                  Icons.inventory_2_rounded,
-                  color: accentColor,
-                  size: 18,
-                ),
+                errorWidget: (_, __, ___) => const Icon(Icons.inventory_2_rounded, size: 18, color: ThixPolicy.textMuted),
               ),
             )
-          : Icon(
-              Icons.inventory_2_rounded,
-              color: accentColor,
-              size: 18,
-            ),
+          : const Center(child: Icon(Icons.inventory_2_rounded, size: 18, color: ThixPolicy.textMuted)),
     );
   }
 }
 
 // ============================================================================
-// EFFETS VISUELS SPÉCIAUX
+// FICHE PRODUIT RAPIDE (bottom sheet) — 5 photos, code-barres, expiry...
 // ============================================================================
-
-// Condensation pour rayon frais
-class _FreshCondensationEffect extends StatelessWidget {
-  const _FreshCondensationEffect();
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned.fill(
-      child: IgnorePointer(
-        child: CustomPaint(painter: _CondensationPainter()),
-      ),
-    );
-  }
-}
-
-class _CondensationPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final random = math.Random(42); // Seed fixe pour stabilité
-    final paint = Paint()..color = Colors.white.withOpacity(0.15);
-
-    // Gouttelettes de condensation
-    for (var i = 0; i < 30; i++) {
-      final x = random.nextDouble() * size.width;
-      final y = random.nextDouble() * size.height * 0.3;
-      final radius = 1.0 + random.nextDouble() * 2.0;
-      canvas.drawCircle(Offset(x, y), radius, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-// Brume pour surgelés
-class _FrozenMistEffect extends StatelessWidget {
-  const _FrozenMistEffect();
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned.fill(
-      child: IgnorePointer(
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.white.withOpacity(0.12),
-                Colors.transparent,
-              ],
-            ),
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// Lueur chaude pour boulangerie
-class _WarmGlowEffect extends StatelessWidget {
-  const _WarmGlowEffect();
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned.fill(
-      child: IgnorePointer(
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              center: Alignment.topCenter,
-              radius: 1.2,
-              colors: [
-                const Color(0xFFFFD28A).withOpacity(0.15),
-                Colors.transparent,
-              ],
-            ),
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// BOUTON PANIER FLOTTANT
-// ============================================================================
-class _FloatingCartButton extends StatelessWidget {
+class _ProductQuickView extends StatelessWidget {
+  final SupermarketProduct product;
   final AppLocalizations l10n;
-  const _FloatingCartButton({required this.l10n});
+  const _ProductQuickView({required this.product, required this.l10n});
 
   String _tr(String key, String fb) {
     final v = l10n.t(key);
@@ -1381,55 +948,248 @@ class _FloatingCartButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => context.push('/market/cart'),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [ThixPolicy.primary, Color(0xFF1E40AF)],
-          ),
-          borderRadius: BorderRadius.circular(30),
-          boxShadow: [
-            BoxShadow(
-              color: ThixPolicy.primary.withOpacity(0.5),
-              blurRadius: 20,
-              spreadRadius: 2,
-            ),
-            BoxShadow(
-              color: Colors.black.withOpacity(0.3),
-              blurRadius: 15,
-              offset: const Offset(0, 8),
-            ),
-          ],
+    return DraggableScrollableSheet(
+      initialChildSize: 0.82,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (_, scrollCtrl) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
+        child: ListView(
+          controller: scrollCtrl,
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
           children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.shopping_cart_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
+            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 16),
+
+            // ── GALERIE (jusqu'à 5 photos) ──
+            _PhotoGallery(photos: product.photos),
+            const SizedBox(height: 16),
+
+            // ── TITRE + BADGES ──
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(product.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: ThixPolicy.textMain)),
+                ),
+                if (product.onPromo)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(color: _kRailRed, borderRadius: BorderRadius.circular(8)),
+                    child: Text('-${product.promoPercent}%', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white)),
+                  ),
+              ],
             ),
-            const SizedBox(width: 10),
-            Text(
-              _tr('sm_cart', 'Panier'),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.3,
+            const SizedBox(height: 8),
+
+            // ── PRIX ──
+            Row(
+              children: [
+                Text('${product.priceLabel()} ${product.currency}', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: product.onPromo ? _kRailRed : ThixPolicy.primary)),
+                if (product.onPromo) ...[
+                  const SizedBox(width: 8),
+                  Text('${product.priceLabel(product.price)} ${product.currency}', style: const TextStyle(fontSize: 13, color: ThixPolicy.textMuted, decoration: TextDecoration.lineThrough)),
+                ],
+                if (product.unit != null) ...[
+                  const SizedBox(width: 8),
+                  Text('/ ${product.unit}', style: const TextStyle(fontSize: 12, color: ThixPolicy.textMuted)),
+                ],
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // ── INFOS CLÉS ──
+            _InfoGrid(product: product, l10n: l10n),
+            const SizedBox(height: 16),
+
+            // ── CODE-BARRES ──
+            if (product.barcode != null && product.barcode!.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(14)),
+                child: Column(
+                  children: [
+                    BarcodeWidget(
+                      barcode: Barcode.code128(),
+                      data: product.barcode!,
+                      height: 48,
+                      drawText: false,
+                      color: ThixPolicy.textMain,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(product.barcode!, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 2, color: ThixPolicy.textSecondary)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // ── DESCRIPTION ──
+            if (product.description != null && product.description!.isNotEmpty) ...[
+              Text(_tr('sm_description', 'Description'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: ThixPolicy.textMain)),
+              const SizedBox(height: 6),
+              Text(product.description!, style: const TextStyle(fontSize: 13, color: ThixPolicy.textSecondary, height: 1.5)),
+              const SizedBox(height: 20),
+            ],
+
+            // ── CTA ──
+            SizedBox(
+              height: 50,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  context.push('/market/product/${product.id}');
+                },
+                icon: const Icon(Icons.open_in_full_rounded, size: 18),
+                label: Text(_tr('sm_full_sheet', 'Voir la fiche complète')),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ThixPolicy.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _PhotoGallery extends StatefulWidget {
+  final List<String> photos;
+  const _PhotoGallery({required this.photos});
+
+  @override
+  State<_PhotoGallery> createState() => _PhotoGalleryState();
+}
+
+class _PhotoGalleryState extends State<_PhotoGallery> {
+  final PageController _ctrl = PageController();
+  int _i = 0;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.photos.isEmpty) {
+      return Container(
+        height: 220,
+        decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(16)),
+        child: const Center(child: Icon(Icons.image_not_supported_outlined, size: 40, color: ThixPolicy.textMuted)),
+      );
+    }
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: SizedBox(
+            height: 220,
+            child: PageView.builder(
+              controller: _ctrl,
+              itemCount: widget.photos.length,
+              onPageChanged: (i) => setState(() => _i = i),
+              itemBuilder: (_, i) => CachedNetworkImage(
+                imageUrl: widget.photos[i],
+                fit: BoxFit.cover,
+                width: double.infinity,
+                placeholder: (_, __) => const Center(child: CircularProgressIndicator()),
+                errorWidget: (_, __, ___) => const Center(child: Icon(Icons.broken_image_rounded, color: ThixPolicy.textMuted)),
+              ),
+            ),
+          ),
+        ),
+        if (widget.photos.length > 1) ...[
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(widget.photos.length, (i) {
+              final active = i == _i;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: active ? 16 : 6,
+                height: 6,
+                decoration: BoxDecoration(color: active ? ThixPolicy.primary : ThixPolicy.border, borderRadius: BorderRadius.circular(3)),
+              );
+            }),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _InfoGrid extends StatelessWidget {
+  final SupermarketProduct product;
+  final AppLocalizations l10n;
+  const _InfoGrid({required this.product, required this.l10n});
+
+  @override
+  Widget build(BuildContext context) {
+    final cells = <Widget>[
+      _InfoCell(icon: Icons.inventory_2_rounded, label: 'Stock', value: '${product.stock}${product.unit != null ? ' ${product.unit}' : ''}', color: product.stock > 0 ? ThixPolicy.success : ThixPolicy.danger),
+      _InfoCell(icon: Icons.category_outlined, label: 'Unité', value: product.unit ?? 'pcs', color: ThixPolicy.primary),
+      if (product.isPerishable)
+        _InfoCell(
+          icon: product.isExpired ? Icons.warning_amber_rounded : Icons.event_rounded,
+          label: 'Expiration',
+          value: product.expiryDate != null ? '${product.expiryDate!.day.toString().padLeft(2, '0')}/${product.expiryDate!.month.toString().padLeft(2, '0')}/${product.expiryDate!.year}' : '—',
+          color: product.isExpired ? ThixPolicy.danger : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
+        ),
+      if (product.onPromo)
+        _InfoCell(icon: Icons.local_offer_rounded, label: 'Prix promo', value: '${product.priceLabel()} ${product.currency}', color: _kRailRed),
+    ];
+
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: cells
+          .map((c) => SizedBox(width: (MediaQuery.of(context).size.width - 60) / 2, child: c))
+          .toList(),
+    );
+  }
+}
+
+class _InfoCell extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+  const _InfoCell({required this.icon, required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ThixPolicy.surfaceSoft,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: ThixPolicy.border),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(fontSize: 10, color: ThixPolicy.textMuted, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: color)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
