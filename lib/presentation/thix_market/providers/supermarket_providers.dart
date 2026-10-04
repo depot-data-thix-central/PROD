@@ -47,9 +47,9 @@ final supermarketAllProductsProvider =
   return List<Map<String, dynamic>>.from(res);
 });
 
-/// ── AJOUT : produits riches pour les étagères 3D ──
+//// ── PRODUITS RICHES POUR LES ÉTAGÈRES 3D ──
 final supermarketShelfProductsProvider =
-    FutureProvider.family<List<SupermarketProduct>, String>((ref, shopId) async {
+    FutureProvider.family<List<Map<String, dynamic>>, String>((ref, shopId) async {
   final res = await Supabase.instance.client
       .from('products')
       .select('*')
@@ -58,7 +58,5 @@ final supermarketShelfProductsProvider =
       .order('created_at', ascending: false)
       .limit(300)
       .timeout(const Duration(seconds: 12));
-  return (res as List)
-      .map((e) => SupermarketProduct.fromJson(Map<String, dynamic>.from(e as Map)))
-      .toList();
+  return List<Map<String, dynamic>>.from(res);
 });
