@@ -613,14 +613,16 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
         maxLength: 200,
       );
       final snapAddress = _CheckoutValidators.sanitize(
-        [
-          pickAddr(['address', 'line1', 'street', 'avenue', 'quartier', 'description']),
-          pickAddr(['city', 'commune']),
-          pickAddr(['region', 'province']),
-          pickAddr(['country']),
-        ].where((s) => s.isNotEmpty).join(', '),
-        maxLength: 500,
-      );
+  [
+    pickAddr(['address_line', 'address', 'line1', 'street', 'avenue']),
+    pickAddr(['commune', 'quartier']),
+    pickAddr(['city']),
+    pickAddr(['landmark', 'point_de_reperre', 'point_de_repere']),
+    pickAddr(['region', 'province']),
+    pickAddr(['country']),
+  ].where((s) => s.isNotEmpty).join(', '),
+  maxLength: 500,
+);
       final snapLabel = _CheckoutValidators.sanitize(
         pickAddr(['label', 'type', 'title']),
         maxLength: 40,
