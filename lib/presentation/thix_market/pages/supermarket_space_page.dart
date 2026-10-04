@@ -59,7 +59,7 @@ class SupermarketSpacePage extends ConsumerWidget {
               _LightStorefront(shop: shop, l10n: l10n),
 
               // ── HERO BANNER AUTO-SCROLLING ──
-              SliverToBoxAdapter(
+              SpiverToBoxAdapter(
                 child: _HeroCarousel(
                   products: products,
                   l10n: l10n,
@@ -110,7 +110,7 @@ class SupermarketSpacePage extends ConsumerWidget {
               else
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 14),
-                  sliver: SliverList(
+                  sliver: SpiverList(
                     delegate: SliverChildBuilderDelegate(
                       (ctx, i) {
                         final dept = depts[i];
@@ -190,7 +190,7 @@ class _LightStorefront extends StatelessWidget {
     final rating = (shop['rating'] as num?)?.toDouble() ?? 0;
     final isOpen = (shop['is_open'] as bool?) ?? true;
 
-    return SliverAppBar(
+    return SpiverAppBar(
       expandedHeight: 210,
       pinned: true,
       backgroundColor: Colors.white,
@@ -296,7 +296,16 @@ class _HeroItem {
   final SupermarketProduct? product;
   final VoidCallback? onTap;
 
-  _HeroItem({required this.badge, required this.title, required this.subtitle, required this.cta, required this.gradient, required this.icon, this.product, this.onTap});
+  _HeroItem({
+    required this.badge,
+    required this.title,
+    required this.subtitle,
+    required this.cta,
+    required this.gradient,
+    required this.icon,
+    this.product,
+    this.onTap,
+  });
 }
 
 class _HeroCarousel extends StatefulWidget {
@@ -340,7 +349,9 @@ class _HeroCarouselState extends State<_HeroCarousel> {
         badge: 'PROMO -${p.promoPercent}%',
         title: p.title,
         subtitle: '${p.price} ${p.currency} → ${p.priceLabel()} ${p.currency}',
-        cta: l10n.t('sm_hero_promo_cta').isEmpty || l10n.t('sm_hero_promo_cta') == 'sm_hero_promo_cta' ? 'J\'en profite' : l10n.t('sm_hero_promo_cta'),
+        cta: l10n.t('sm_hero_promo_cta').isEmpty || l10n.t('sm_hero_promo_cta') == 'sm_hero_promo_cta'
+            ? 'J\'en profite'
+            : l10n.t('sm_hero_promo_cta'),
         gradient: const [Color(0xFFFFF1F0), Color(0xFFFFE4E1)],
         icon: Icons.local_fire_department_rounded,
         product: p,
@@ -364,8 +375,8 @@ class _HeroCarouselState extends State<_HeroCarousel> {
         badge: 'FRAÎCHEUR',
         title: p.title,
         subtitle: p.expiryDateTime != null
-    ? 'À consommer avant le ${_fmtDate(p.expiryDateTime!)}'
-    : 'Produit frais du jour',
+            ? 'À consommer avant le ${_fmtDate(p.expiryDateTime!)}'
+            : 'Produit frais du jour',
         cta: 'Voir',
         gradient: const [Color(0xFFE9F7EC), Color(0xFFDFF2E3)],
         icon: Icons.eco_rounded,
@@ -386,7 +397,8 @@ class _HeroCarouselState extends State<_HeroCarousel> {
     setState(() => _items = items);
   }
 
-  String _fmtDate(DateTime d) => '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  String _fmtDate(DateTime d) =>
+      '\( {d.day.toString().padLeft(2, '0')}/ \){d.month.toString().padLeft(2, '0')}/${d.year}';
 
   void _startTimer() {
     _timer?.cancel();
@@ -438,22 +450,55 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                             children: [
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(color: item.gradient.last.withOpacity(0.9), borderRadius: BorderRadius.circular(6)),
+                                decoration: BoxDecoration(
+                                  color: item.gradient.last.withOpacity(0.9),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(item.icon, size: 11, color: ThixPolicy.textMain),
                                     const SizedBox(width: 4),
-                                    Text(item.badge, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: ThixPolicy.textMain, letterSpacing: 0.6)),
+                                    Text(
+                                      item.badge,
+                                      style: const TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w900,
+                                        color: ThixPolicy.textMain,
+                                        letterSpacing: 0.6,
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: ThixPolicy.textMain, height: 1.2)),
+                              Text(
+                                item.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w900,
+                                  color: ThixPolicy.textMain,
+                                  height: 1.2,
+                                ),
+                              ),
                               const SizedBox(height: 4),
-                              Text(item.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary)),
+                              Text(
+                                item.subtitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary),
+                              ),
                               const SizedBox(height: 8),
-                              Text(item.cta, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: ThixPolicy.primary)),
+                              Text(
+                                item.cta,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  color: ThixPolicy.primary,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -462,12 +507,20 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                         Padding(
                           padding: const EdgeInsets.only(right: 16),
                           child: Container(
-                            width: 96, height: 96,
-                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), boxShadow: ThixPolicy.shadowSoft(opacity: 0.12)),
+                            width: 96,
+                            height: 96,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: ThixPolicy.shadowSoft(opacity: 0.12),
+                            ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(14),
-                              child: CachedNetworkImage(imageUrl: item.product!.mainPhoto, fit: BoxFit.cover,
-                                  errorWidget: (_, __, ___) => Icon(item.icon, color: ThixPolicy.textMuted)),
+                              child: CachedNetworkImage(
+                                imageUrl: item.product!.mainPhoto,
+                                fit: BoxFit.cover,
+                                errorWidget: (_, __, ___) => Icon(item.icon, color: ThixPolicy.textMuted),
+                              ),
                             ),
                           ),
                         ),
@@ -586,8 +639,16 @@ class _GondolaShelf extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Container(width: 14, height: 8, decoration: BoxDecoration(color: _kMeshWire, borderRadius: BorderRadius.circular(2))),
-                  Container(width: 14, height: 8, decoration: BoxDecoration(color: _kMeshWire, borderRadius: BorderRadius.circular(2))),
+                  Container(
+                    width: 14,
+                    height: 8,
+                    decoration: BoxDecoration(color: _kMeshWire, borderRadius: BorderRadius.circular(2)),
+                  ),
+                  Container(
+                    width: 14,
+                    height: 8,
+                    decoration: BoxDecoration(color: _kMeshWire, borderRadius: BorderRadius.circular(2)),
+                  ),
                 ],
               ),
             ),
@@ -627,18 +688,33 @@ class _GondolaHeader extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
             decoration: BoxDecoration(color: dept.color, borderRadius: BorderRadius.circular(6)),
-            child: Text('ALLÉE $aisleNumber', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.8)),
+            child: Text(
+              'ALLÉE $aisleNumber',
+              style: const TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+                letterSpacing: 0.8,
+              ),
+            ),
           ),
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(color: dept.color.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(
+              color: dept.color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
             child: Icon(dept.icon, size: 16, color: dept.color),
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(dept.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: ThixPolicy.textMain)),
+            child: Text(
+              dept.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: ThixPolicy.textMain),
+            ),
           ),
           Text('$count', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: dept.color)),
           const Icon(Icons.chevron_right_rounded, size: 16, color: ThixPolicy.textMuted),
@@ -745,7 +821,10 @@ class _ShelfBoard extends StatelessWidget {
         children: [
           // Tablette blanche (dessus avec profondeur)
           Positioned(
-            top: 0, left: 2, right: 2, height: 9,
+            top: 0,
+            left: 2,
+            right: 2,
+            height: 9,
             child: Container(
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
@@ -754,13 +833,22 @@ class _ShelfBoard extends StatelessWidget {
                   colors: [Colors.white, Color(0xFFEDEFF2)],
                 ),
                 borderRadius: BorderRadius.circular(2),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.10), blurRadius: 3, offset: const Offset(0, 2))],
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.10),
+                    blurRadius: 3,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
             ),
           ),
           // Rail rouge porte-étiquettes
           Positioned(
-            bottom: 0, left: 0, right: 0, height: 15,
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 15,
             child: Container(
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
@@ -769,13 +857,22 @@ class _ShelfBoard extends StatelessWidget {
                   colors: [_kRailRed, _kRailRedDark],
                 ),
                 borderRadius: BorderRadius.circular(3),
-                boxShadow: [BoxShadow(color: _kRailRed.withOpacity(0.25), blurRadius: 4, offset: const Offset(0, 2))],
+                boxShadow: [
+                  BoxShadow(
+                    color: _kRailRed.withOpacity(0.25),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
             ),
           ),
           // Étiquettes de prix alignées sous chaque produit
           Positioned(
-            bottom: 2, left: 0, right: 0, height: 11,
+            bottom: 2,
+            left: 0,
+            right: 0,
+            height: 11,
             child: Row(
               children: slots
                   .map<Widget>((p) => Expanded(
@@ -867,7 +964,10 @@ class _Facing extends StatelessWidget {
                     border: Border.all(color: Colors.grey.withOpacity(0.15)),
                   ),
                   child: const Center(
-                    child: Text('RUPTURE', style: TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Colors.grey)),
+                    child: Text(
+                      'RUPTURE',
+                      style: TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Colors.grey),
+                    ),
                   ),
                 ),
               ),
@@ -875,26 +975,35 @@ class _Facing extends StatelessWidget {
             // Badge promo
             if (product.onPromo)
               Positioned(
-                top: -4, left: 0,
+                top: -4,
+                left: 0,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                   decoration: BoxDecoration(color: _kRailRed, borderRadius: BorderRadius.circular(4)),
-                  child: Text('-${product.promoPercent}%', style: const TextStyle(fontSize: 7.5, fontWeight: FontWeight.w900, color: Colors.white)),
+                  child: Text(
+                    '-${product.promoPercent}%',
+                    style: const TextStyle(fontSize: 7.5, fontWeight: FontWeight.w900, color: Colors.white),
+                  ),
                 ),
               ),
 
             // Badge périssable / expiration
             if (product.isPerishable)
               Positioned(
-                top: -4, right: 0,
+                top: -4,
+                right: 0,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                   decoration: BoxDecoration(
-                    color: product.isExpired ? Colors.grey : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
+                    color: product.isExpired
+                        ? Colors.grey
+                        : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    product.isExpired ? 'EXPIRÉ' : (product.isFreshSoon ? 'J-${product.daysToExpiry}' : 'FRAIS'),
+                    product.isExpired
+                        ? 'EXPIRÉ'
+                        : (product.isFreshSoon ? 'J-${product.daysToExpiry}' : 'FRAIS'),
                     style: const TextStyle(fontSize: 7, fontWeight: FontWeight.w900, color: Colors.white),
                   ),
                 ),
@@ -918,7 +1027,13 @@ class _ProductBox extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(5),
         border: Border.all(color: _kMetalEdge),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(muted ? 0.05 : 0.12), blurRadius: 3, offset: const Offset(0, 2))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(muted ? 0.05 : 0.12),
+            blurRadius: 3,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: product.hasPhotos
           ? ClipRRect(
@@ -926,10 +1041,13 @@ class _ProductBox extends StatelessWidget {
               child: CachedNetworkImage(
                 imageUrl: product.mainPhoto,
                 fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => const Icon(Icons.inventory_2_rounded, size: 18, color: ThixPolicy.textMuted),
+                errorWidget: (_, __, ___) =>
+                    const Icon(Icons.inventory_2_rounded, size: 18, color: ThixPolicy.textMuted),
               ),
             )
-          : const Center(child: Icon(Icons.inventory_2_rounded, size: 18, color: ThixPolicy.textMuted)),
+          : const Center(
+              child: Icon(Icons.inventory_2_rounded, size: 18, color: ThixPolicy.textMuted),
+            ),
     );
   }
 }
@@ -963,7 +1081,13 @@ class _ProductQuickView extends StatelessWidget {
           controller: scrollCtrl,
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
           children: [
-            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)))),
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
             const SizedBox(height: 16),
 
             // ── GALERIE (jusqu'à 5 photos) ──
@@ -975,13 +1099,19 @@ class _ProductQuickView extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: Text(product.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: ThixPolicy.textMain)),
+                  child: Text(
+                    product.title,
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: ThixPolicy.textMain),
+                  ),
                 ),
                 if (product.onPromo)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(color: _kRailRed, borderRadius: BorderRadius.circular(8)),
-                    child: Text('-${product.promoPercent}%', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white)),
+                    child: Text(
+                      '-${product.promoPercent}%',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white),
+                    ),
                   ),
               ],
             ),
@@ -990,10 +1120,24 @@ class _ProductQuickView extends StatelessWidget {
             // ── PRIX ──
             Row(
               children: [
-                Text('${product.priceLabel()} ${product.currency}', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: product.onPromo ? _kRailRed : ThixPolicy.primary)),
+                Text(
+                  '${product.priceLabel()} ${product.currency}',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: product.onPromo ? _kRailRed : ThixPolicy.primary,
+                  ),
+                ),
                 if (product.onPromo) ...[
                   const SizedBox(width: 8),
-                  Text('${product.price} ${product.currency}', style: const TextStyle(fontSize: 13, color: ThixPolicy.textMuted, decoration: TextDecoration.lineThrough)),
+                  Text(
+                    '${product.price} ${product.currency}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: ThixPolicy.textMuted,
+                      decoration: TextDecoration.lineThrough,
+                    ),
+                  ),
                 ],
                 if (product.unit != null) ...[
                   const SizedBox(width: 8),
@@ -1011,7 +1155,10 @@ class _ProductQuickView extends StatelessWidget {
             if (product.barcode != null && product.barcode!.isNotEmpty) ...[
               Container(
                 padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(14)),
+                decoration: BoxDecoration(
+                  color: ThixPolicy.surfaceSoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
                 child: Column(
                   children: [
                     BarcodeWidget(
@@ -1022,7 +1169,15 @@ class _ProductQuickView extends StatelessWidget {
                       color: ThixPolicy.textMain,
                     ),
                     const SizedBox(height: 6),
-                    Text(product.barcode!, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 2, color: ThixPolicy.textSecondary)),
+                    Text(
+                      product.barcode!,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 2,
+                        color: ThixPolicy.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -1031,9 +1186,15 @@ class _ProductQuickView extends StatelessWidget {
 
             // ── DESCRIPTION ──
             if (product.description != null && product.description!.isNotEmpty) ...[
-              Text(_tr('sm_description', 'Description'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: ThixPolicy.textMain)),
+              Text(
+                _tr('sm_description', 'Description'),
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: ThixPolicy.textMain),
+              ),
               const SizedBox(height: 6),
-              Text(product.description!, style: const TextStyle(fontSize: 13, color: ThixPolicy.textSecondary, height: 1.5)),
+              Text(
+                product.description!,
+                style: const TextStyle(fontSize: 13, color: ThixPolicy.textSecondary, height: 1.5),
+              ),
               const SizedBox(height: 20),
             ],
 
@@ -1084,8 +1245,13 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
     if (widget.photos.isEmpty) {
       return Container(
         height: 220,
-        decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(16)),
-        child: const Center(child: Icon(Icons.image_not_supported_outlined, size: 40, color: ThixPolicy.textMuted)),
+        decoration: BoxDecoration(
+          color: ThixPolicy.surfaceSoft,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const Center(
+          child: Icon(Icons.image_not_supported_outlined, size: 40, color: ThixPolicy.textMuted),
+        ),
       );
     }
     return Column(
@@ -1103,7 +1269,8 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
                 fit: BoxFit.cover,
                 width: double.infinity,
                 placeholder: (_, __) => const Center(child: CircularProgressIndicator()),
-                errorWidget: (_, __, ___) => const Center(child: Icon(Icons.broken_image_rounded, color: ThixPolicy.textMuted)),
+                errorWidget: (_, __, ___) =>
+                    const Center(child: Icon(Icons.broken_image_rounded, color: ThixPolicy.textMuted)),
               ),
             ),
           ),
@@ -1119,7 +1286,10 @@ class _PhotoGalleryState extends State<_PhotoGallery> {
                 margin: const EdgeInsets.symmetric(horizontal: 3),
                 width: active ? 16 : 6,
                 height: 6,
-                decoration: BoxDecoration(color: active ? ThixPolicy.primary : ThixPolicy.border, borderRadius: BorderRadius.circular(3)),
+                decoration: BoxDecoration(
+                  color: active ? ThixPolicy.primary : ThixPolicy.border,
+                  borderRadius: BorderRadius.circular(3),
+                ),
               );
             }),
           ),
@@ -1134,54 +1304,52 @@ class _InfoGrid extends StatelessWidget {
   final AppLocalizations l10n;
   const _InfoGrid({required this.product, required this.l10n});
 
-@override
-Widget build(BuildContext context) {
-  final cells = <Widget>[
-    _InfoCell(
-      icon: Icons.inventory_2_rounded,
-      label: 'Stock',
-      value: '\( {product.stock} \){product.unit != null ? ' ${product.unit}' : ''}',
-      color: product.stock > 0 ? ThixPolicy.success : ThixPolicy.danger,
-    ),
-    _InfoCell(
-      icon: Icons.category_outlined,
-      label: 'Unité',
-      value: product.unit ?? 'pcs',
-      color: ThixPolicy.primary,
-    ),
-    if (product.isPerishable)
+  @override
+  Widget build(BuildContext context) {
+    final cells = <Widget>[
       _InfoCell(
-        icon: product.isExpired
-            ? Icons.warning_amber_rounded
-            : Icons.event_rounded,
-        label: 'Expiration',
-        value: product.expiryDateTime != null
-            ? '\( {product.expiryDateTime!.day.toString().padLeft(2, '0')}/ \){product.expiryDateTime!.month.toString().padLeft(2, '0')}/${product.expiryDateTime!.year}'
-            : '—',
-        color: product.isExpired
-            ? ThixPolicy.danger
-            : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
+        icon: Icons.inventory_2_rounded,
+        label: 'Stock',
+        value: '\( {product.stock} \){product.unit != null ? ' ${product.unit}' : ''}',
+        color: product.stock > 0 ? ThixPolicy.success : ThixPolicy.danger,
       ),
-    if (product.onPromo)
       _InfoCell(
-        icon: Icons.local_offer_rounded,
-        label: 'Prix promo',
-        value: '${product.priceLabel()} ${product.currency}',
-        color: _kRailRed,
+        icon: Icons.category_outlined,
+        label: 'Unité',
+        value: product.unit ?? 'pcs',
+        color: ThixPolicy.primary,
       ),
-  ];
+      if (product.isPerishable)
+        _InfoCell(
+          icon: product.isExpired ? Icons.warning_amber_rounded : Icons.event_rounded,
+          label: 'Expiration',
+          value: product.expiryDateTime != null
+              ? '\( {product.expiryDateTime!.day.toString().padLeft(2, '0')}/ \){product.expiryDateTime!.month.toString().padLeft(2, '0')}/${product.expiryDateTime!.year}'
+              : '—',
+          color: product.isExpired
+              ? ThixPolicy.danger
+              : (product.isFreshSoon ? Colors.orange : ThixPolicy.success),
+        ),
+      if (product.onPromo)
+        _InfoCell(
+          icon: Icons.local_offer_rounded,
+          label: 'Prix promo',
+          value: '${product.priceLabel()} ${product.currency}',
+          color: _kRailRed,
+        ),
+    ];
 
-  return Wrap(
-    spacing: 10,
-    runSpacing: 10,
-    children: cells
-        .map((c) => SizedBox(
-              width: (MediaQuery.of(context).size.width - 60) / 2,
-              child: c,
-            ))
-        .toList(),
-  );
-}
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: cells
+          .map((c) => SizedBox(
+                width: (MediaQuery.of(context).size.width - 60) / 2,
+                child: c,
+              ))
+          .toList(),
+    );
+  }
 }
 
 class _InfoCell extends StatelessWidget {
@@ -1189,7 +1357,12 @@ class _InfoCell extends StatelessWidget {
   final String label;
   final String value;
   final Color color;
-  const _InfoCell({required this.icon, required this.label, required this.value, required this.color});
+  const _InfoCell({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1208,9 +1381,21 @@ class _InfoCell extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: const TextStyle(fontSize: 10, color: ThixPolicy.textMuted, fontWeight: FontWeight.w700)),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: ThixPolicy.textMuted,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: color)),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: color),
+                ),
               ],
             ),
           ),
