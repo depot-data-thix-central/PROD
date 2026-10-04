@@ -913,17 +913,18 @@ GoRoute(path: '/thix-info/downloads', name: 'thixInfoDownloads',
   ),
 ),
           GoRoute(
-  path: '/market/supermarket/create',
+  path: 'supermarket/create',
   name: 'createSupermarket',
   builder: (c, s) => const CreateSupermarketPage(),
 ),
 GoRoute(
-  path: '/market/supermarket/:id',
+  path: 'supermarket/:id',
   name: 'supermarketSpace',
   builder: (c, s) => SupermarketSpacePage(
     supermarketId: s.pathParameters['id']!,
   ),
 ),
+
         ]),
         
 
