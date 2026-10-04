@@ -1,10 +1,10 @@
 // lib/presentation/thix_market/pages/supermarket_manage_page.dart
 // ============================================================================
-// GESTION DES RAYONS — côté vendeur (Production Enterprise v2)
+// GESTION DES RAYONS — côté vendeur (Production Enterprise v3)
 // ----------------------------------------------------------------------------
 //  • Sélection d'une allée → ajout / retrait de produits existants
 //  • ✅ Création de produit (nom, prix, devise, stock, code-barres,
-//       date d'expiration, promo, photos) assigné automatiquement au rayon
+//       date d'expiration, promo, photos, **unité de mesure**)
 //  • ✅ Modification d'un produit
 //  • ✅ Badges stock faible / promo / expiration
 // ============================================================================
@@ -44,6 +44,25 @@ const int _kMaxDescLength = 1000;
 const int _kLowStock = 5;
 const int _kExpirySoonDays = 7;
 const String _kBucket = 'product_images';
+
+// ============================================================================
+// UNITÉS DE MESURE (référentiel supermarché)
+// ============================================================================
+const List<Map<String, String>> _kUnits = [
+  {'value': 'pcs', 'label': 'Pièce (pcs)'},
+  {'value': 'kg', 'label': 'Kilogramme (kg)'},
+  {'value': 'g', 'label': 'Gramme (g)'},
+  {'value': 'L', 'label': 'Litre (L)'},
+  {'value': 'mL', 'label': 'Millilitre (mL)'},
+  {'value': 'sachet', 'label': 'Sachet'},
+  {'value': 'paquet', 'label': 'Paquet'},
+  {'value': 'boîte', 'label': 'Boîte'},
+  {'value': 'bouteille', 'label': 'Bouteille'},
+  {'value': 'carton', 'label': 'Carton'},
+  {'value': 'douzaine', 'label': 'Douzaine'},
+  {'value': 'm', 'label': 'Mètre (m)'},
+  {'value': 'cm', 'label': 'Centimètre (cm)'},
+];
 
 // ============================================================================
 // VALIDATEURS
@@ -142,6 +161,17 @@ class _V {
     var s = e.toString().replaceAll('\n', ' ').trim();
     if (s.length > 160) s = '${s.substring(0, 160)}…';
     return s;
+  }
+
+  /// Retourne le libellé lisible d'une unité (fallback sur la valeur)
+  static String unitLabel(String? value) {
+    if (value == null || value.isEmpty) return '';
+    final match = _kUnits.firstWhere(
+      (u) => u['value'] == value,
+      orElse: () => const {'value': '', 'label': ''},
+    );
+    final label = match['label'] ?? '';
+    return label.isEmpty ? value : label;
   }
 }
 
@@ -625,7 +655,6 @@ class _SupermarketManagePageState extends ConsumerState<SupermarketManagePage> {
                   ),
                   const SizedBox(height: 10),
 
-                  // Créer un nouveau produit
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
@@ -788,6 +817,9 @@ class _ProductRow extends StatelessWidget {
     final stock = _V.toNum(product['stock'])?.toInt();
     final barcode = _V.sanitize(product['barcode']?.toString(), maxLength: 20);
     final imageUrl = product['image_url']?.toString();
+    // ── Unité de mesure (nouveau) ──
+    final unitRaw = product['unit']?.toString() ?? product['unit_of_measure']?.toString();
+    final unitLabel = _V.unitLabel(unitRaw);
 
     final expiry = DateTime.tryParse(product['expiry_date']?.toString() ?? '');
 
@@ -847,6 +879,17 @@ class _ProductRow extends StatelessWidget {
                           fontWeight: FontWeight.w800,
                           color: hasPromo ? ThixPolicy.danger : accent),
                     ),
+                    // ── Affichage unité après le prix ──
+                    if (unitLabel.isNotEmpty) ...[
+                      const SizedBox(width: 4),
+                      Text(
+                        '/ $unitLabel',
+                        style: const TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: ThixPolicy.textSecondary),
+                      ),
+                    ],
                     if (hasPromo) ...[
                       const SizedBox(width: 6),
                       Text(
@@ -1004,6 +1047,8 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
   final ImagePicker _picker = ImagePicker();
 
   String _currency = 'CDF';
+  // ── NOUVEAU : unité de mesure ──
+  String _unit = 'pcs';
   bool _hasPromo = false;
   bool _perishable = false;
   DateTime? _expiry;
@@ -1031,6 +1076,16 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
       _barcode.text = p['barcode']?.toString() ?? '';
       _description.text = p['description']?.toString() ?? '';
       _currency = (p['currency']?.toString().toUpperCase() == 'USD') ? 'USD' : 'CDF';
+
+      // ── Restauration unité ──
+      final savedUnit = (p['unit']?.toString() ?? p['unit_of_measure']?.toString() ?? '').trim();
+      if (savedUnit.isNotEmpty) {
+        final match = _kUnits.firstWhere(
+          (u) => u['value'] == savedUnit,
+          orElse: () => const {'value': '', 'label': ''},
+        );
+        _unit = match['value']!.isNotEmpty ? match['value']! : savedUnit;
+      }
 
       final dp = _V.toNum(p['discount_price']);
       final price = _V.toNum(p['price']);
@@ -1281,7 +1336,7 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
     bool saved = false;
 
     try {
-      // 1. Code-barres unique dans ce supermarché
+      // 1. Code-barres unique
       if (barcode.isNotEmpty) {
         try {
           var q = _db
@@ -1297,7 +1352,6 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
             return;
           }
         } catch (e) {
-          // Colonne absente ou réseau : on ne bloque pas, l'enregistrement le dira
           debugPrint('[ProductForm] ⚠️ barcode check skipped: $e');
         }
       }
@@ -1314,6 +1368,8 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
         'discount_price': _hasPromo ? promo : null,
         'stock': stock,
         'currency': _currency,
+        // ── NOUVEAU : unité de mesure ──
+        'unit': _unit,
         'images': allUrls,
         'image_url': allUrls.first,
         'updated_at': DateTime.now().toIso8601String(),
@@ -1340,7 +1396,6 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
             .timeout(_kDbTimeout);
         saved = true;
       } else {
-        // Ville / pays hérités du supermarché
         try {
           final shop = await _db
               .from('shops')
@@ -1374,7 +1429,6 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
         productId = res['id'].toString();
         saved = true;
 
-        // 4. Assignation au rayon courant
         try {
           await widget.service.assignProductToDepartment(
               productId, widget.department.id, widget.aisleNumber);
@@ -1619,33 +1673,62 @@ class _ProductFormSheetState extends State<_ProductFormSheet> {
               ),
               const SizedBox(height: 14),
 
-              // ── Stock + code-barres ──
+              // ── NOUVEAU : Unité de mesure + Stock ──
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: TextFormField(
-                      controller: _stock,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: _deco('Quantité en stock *'),
-                      validator: (v) =>
-                          _V.parseInt(v) == null ? 'Quantité obligatoire' : null,
+                    child: DropdownButtonFormField<String>(
+                      value: _kUnits.any((u) => u['value'] == _unit) ? _unit : 'pcs',
+                      isExpanded: true,
+                      decoration: _deco('Unité de mesure *'),
+                      items: _kUnits
+                          .map((u) => DropdownMenuItem<String>(
+                                value: u['value'],
+                                child: Text(u['label'] ?? '',
+                                    style: const TextStyle(fontSize: 13)),
+                              ))
+                          .toList(),
+                      onChanged: busy
+                          ? null
+                          : (v) => setState(() => _unit = v ?? 'pcs'),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: TextFormField(
-                      controller: _barcode,
-                      maxLength: 14,
+                      controller: _stock,
                       keyboardType: TextInputType.number,
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: _deco('Code-barres', hint: 'Optionnel'),
+                      decoration: _deco('Quantité *'),
+                      validator: (v) =>
+                          _V.parseInt(v) == null ? 'Quantité obligatoire' : null,
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 6),
+              // ── Hint : le prix est par unité ──
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 8),
+                child: Text(
+                  'Le prix affiché sera par ${_V.unitLabel(_unit).toLowerCase()}',
+                  style: const TextStyle(
+                      fontSize: 11,
+                      color: ThixPolicy.textMuted,
+                      fontStyle: FontStyle.italic),
+                ),
+              ),
+
+              // ── Code-barres ──
+              TextFormField(
+                controller: _barcode,
+                maxLength: 14,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: _deco('Code-barres', hint: 'Optionnel — 8 à 14 chiffres'),
+              ),
+              const SizedBox(height: 8),
 
               // ── Périssable + expiration ──
               _switchCard(
