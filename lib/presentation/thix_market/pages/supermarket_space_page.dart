@@ -340,7 +340,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
       items.add(_HeroItem(
         badge: 'PROMO -${p.promoPercent}%',
         title: p.title,
-        subtitle: '${p.priceLabel(p.price)} ${p.currency} → ${p.priceLabel()} ${p.currency}',
+        subtitle: '${p.price} ${p.currency} → ${p.priceLabel()} ${p.currency}',
         cta: l10n.t('sm_hero_promo_cta').isEmpty || l10n.t('sm_hero_promo_cta') == 'sm_hero_promo_cta' ? 'J\'en profite' : l10n.t('sm_hero_promo_cta'),
         gradient: const [Color(0xFFFFF1F0), Color(0xFFFFE4E1)],
         icon: Icons.local_fire_department_rounded,
