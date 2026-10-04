@@ -568,7 +568,7 @@ class NotificationService {
     try {
       final res = await _client
           .from(_table)
-          .select('id', head: true, count: CountOption.exact)
+          .count(CountOption.exact)
           .eq('user_id', uid)
           .eq('is_read', false)
           .timeout(_kQueryTimeout);
