@@ -680,11 +680,11 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
                           shop: shop!,
                           onCreateTap: () {
                             HapticFeedback.mediumImpact();
-                            context.push(Routes.marketSupermarketCreate);
+                            context.push(AppRoutes.marketSupermarketCreate);
                           },
                           onManageTap: () {
                             HapticFeedback.selectionClick();
-                            context.push(Routes.marketSupermarketPath(shop['id']));
+                            context.push(AppRoutes.marketSupermarketPath(shop['id']));
 
                           },
                         ),
