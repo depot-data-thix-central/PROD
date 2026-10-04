@@ -14,7 +14,6 @@ import 'package:go_router/go_router.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/presentation/thix_market/models/supermarket_models.dart';
-import 'package:thix_id/presentation/thix_market/models/supermarket_product.dart';
 import 'package:thix_id/presentation/thix_market/providers/supermarket_providers.dart';
 
 import 'department_products_page.dart';
@@ -49,9 +48,9 @@ class SupermarketSpacePage extends ConsumerWidget {
         error: (e, _) => Center(child: Text('$e')),
         data: (shop) {
           if (shop == null) return const Center(child: Text('Supermarché introuvable'));
-          final depts = deptsAsync.valueOrNull ?? const <SupermarketDepartment>[];
-          final rawProducts = productsAsync.valueOrNull ?? const <SupermarketProduct>[];
-          final products = List<SupermarketProduct>.from(rawProducts);
+          final depts = deptsAsync.valueOrNull ?? <SupermarketDepartment>[];
+          final rawProducts = productsAsync.valueOrNull ?? <SupermarketProduct>[];
+          final products = <SupermarketProduct>[...rawProducts];
 
           return CustomScrollView(
             physics: const BouncingScrollPhysics(),
@@ -111,13 +110,16 @@ class SupermarketSpacePage extends ConsumerWidget {
                     delegate: SliverChildBuilderDelegate(
                       (ctx, i) {
                         final dept = depts[i];
-                        final deptProducts = products.where((p) => p.departmentId == dept.id).toList();
+                        final deptProducts = <SupermarketProduct>[
+                          for (final p in products)
+                            if (p.departmentId == dept.id) p,
+                        ];
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 22),
                           child: _GondolaShelf(
                             dept: dept,
                             aisleNumber: i + 1,
-                            products: List<SupermarketProduct>.from(deptProducts),
+                            products: deptProducts,
                             l10n: l10n,
                             onProductTap: (p) => _openQuickView(context, p, l10n),
                             onOpenAisle: () {
@@ -337,8 +339,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
     if (oldWidget.products != widget.products) _buildItems();
   }
 
-  String _formatPrice(SupermarketProduct p) {
-    final price = p.price;
+  String _formatPrice(double price) {
     if (price >= 1000) return '${(price / 1000).toStringAsFixed(price % 1000 == 0 ? 0 : 1)}k';
     return price.toStringAsFixed(0);
   }
@@ -356,22 +357,15 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 
   void _buildItems() {
     final items = <_HeroItem>[];
-    final promos = widget.products.where((p) => p.onPromo).toList();
-    final featured = widget.products.where((p) => p.isFeatured || p.rating >= 4.5).toList();
-    final fresh = widget.products.where((p) => p.isPerishable && !p.isExpired).toList();
+    final promos = <SupermarketProduct>[for (final p in widget.products) if (p.onPromo) p];
+    final featured = <SupermarketProduct>[for (final p in widget.products) if (p.isFeatured || p.rating >= 4.5) p];
+    final fresh = <SupermarketProduct>[for (final p in widget.products) if (p.isPerishable && !p.isExpired) p];
 
     for (final p in promos.take(3)) {
-      final oldPrice = _formatPrice(SupermarketProduct(
-        id: p.id,
-        title: p.title,
-        price: p.price,
-        currency: p.currency,
-        stock: p.stock,
-      ));
       items.add(_HeroItem(
         badge: 'PROMO -${p.promoPercent}%',
         title: p.title,
-        subtitle: '$oldPrice ${p.currency} → ${p.priceLabel()} ${p.currency}',
+        subtitle: '${_formatPrice(p.price)} ${p.currency} → ${p.priceLabel()} ${p.currency}',
         cta: 'J\'en profite',
         gradient: const [Color(0xFFFFF1F0), Color(0xFFFFE4E1)],
         icon: Icons.local_fire_department_rounded,
@@ -947,12 +941,6 @@ class _ProductQuickView extends StatelessWidget {
     }
   }
 
-  String _formatPrice(SupermarketProduct p) {
-    final price = p.price;
-    if (price >= 1000) return '${(price / 1000).toStringAsFixed(price % 1000 == 0 ? 0 : 1)}k';
-    return price.toStringAsFixed(0);
-  }
-
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
@@ -988,7 +976,7 @@ class _ProductQuickView extends StatelessWidget {
                 Text('${product.priceLabel()} ${product.currency}', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: product.onPromo ? _kRailRed : ThixPolicy.primary)),
                 if (product.onPromo) ...[
                   const SizedBox(width: 8),
-                  Text('${_formatPrice(product)} ${product.currency}', style: const TextStyle(fontSize: 13, color: ThixPolicy.textMuted, decoration: TextDecoration.lineThrough)),
+                  Text('${product.price} ${product.currency}', style: const TextStyle(fontSize: 13, color: ThixPolicy.textMuted, decoration: TextDecoration.lineThrough)),
                 ],
                 if (product.unit != null) ...[
                   const SizedBox(width: 8),
