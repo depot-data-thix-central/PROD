@@ -22,6 +22,7 @@ const int _kMaxRetries = 1;
 const int _kMaxOrderIdDisplay = 8;
 const int _kMaxNameLength = 60;
 const int _kMaxTitleLength = 80;
+const double _kShopCardHeight = 132;
 
 // ============================================================================
 // PROVIDERS
@@ -768,60 +769,65 @@ class _DualShopHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // ── GAUCHE : BOUTIQUE ──
-        Expanded(
-          child: boutique != null
-              ? _entityCard(
-                  context,
-                  icon: Icons.storefront_rounded,
-                  name: _VdValidators.sanitize(
-                      boutique!['name']?.toString(),
-                      maxLength: 40),
-                  sub: _VdValidators.sanitize(
-                      boutique!['city']?.toString(),
-                      maxLength: 20),
-                  colors: const [ThixPolicy.primary, ThixPolicy.inkDeep],
-                  actionLabel: context.vdT('Gérer', 'Manage'),
-                  onAction: onOpenShop,
-                )
-              : _createCard(
-                  context,
-                  icon: Icons.add_business_rounded,
-                  label: context.vdT('Boutique', 'Shop'),
-                  onTap: onCreateShop,
-                ),
-        ),
-        const SizedBox(width: 12),
-        // ── DROITE : SUPERMARCHÉ ──
-        Expanded(
-          child: supermarket != null
-              ? GestureDetector(
-                  onTap: onOpenSupermarket,
-                  child: _entityCard(
+    // ✅ FIX écran blanc : hauteur bornée (le Row stretch dans un scroll
+    // provoquait "BoxConstraints forces an infinite height")
+    return SizedBox(
+      height: _kShopCardHeight,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── GAUCHE : BOUTIQUE ──
+          Expanded(
+            child: boutique != null
+                ? _entityCard(
                     context,
-                    icon: Icons.local_grocery_store_rounded,
+                    icon: Icons.storefront_rounded,
                     name: _VdValidators.sanitize(
-                        supermarket!['name']?.toString(),
+                        boutique!['name']?.toString(),
                         maxLength: 40),
                     sub: _VdValidators.sanitize(
-                        supermarket!['city']?.toString(),
+                        boutique!['city']?.toString(),
                         maxLength: 20),
-                    colors: const [Color(0xFF065F46), Color(0xFF059669)],
+                    colors: const [ThixPolicy.primary, ThixPolicy.inkDeep],
                     actionLabel: context.vdT('Gérer', 'Manage'),
-                    onAction: onManageSupermarket,
+                    onAction: onOpenShop,
+                  )
+                : _createCard(
+                    context,
+                    icon: Icons.add_business_rounded,
+                    label: context.vdT('Boutique', 'Shop'),
+                    onTap: onCreateShop,
                   ),
-                )
-              : _createCard(
-                  context,
-                  icon: Icons.local_grocery_store_rounded,
-                  label: context.vdT('Supermarché', 'Supermarket'),
-                  onTap: onCreateSupermarket,
-                ),
-        ),
-      ],
+          ),
+          const SizedBox(width: 12),
+          // ── DROITE : SUPERMARCHÉ ──
+          Expanded(
+            child: supermarket != null
+                ? GestureDetector(
+                    onTap: onOpenSupermarket,
+                    child: _entityCard(
+                      context,
+                      icon: Icons.local_grocery_store_rounded,
+                      name: _VdValidators.sanitize(
+                          supermarket!['name']?.toString(),
+                          maxLength: 40),
+                      sub: _VdValidators.sanitize(
+                          supermarket!['city']?.toString(),
+                          maxLength: 20),
+                      colors: const [Color(0xFF065F46), Color(0xFF059669)],
+                      actionLabel: context.vdT('Gérer', 'Manage'),
+                      onAction: onManageSupermarket,
+                    ),
+                  )
+                : _createCard(
+                    context,
+                    icon: Icons.local_grocery_store_rounded,
+                    label: context.vdT('Supermarché', 'Supermarket'),
+                    onTap: onCreateSupermarket,
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -835,7 +841,6 @@ class _DualShopHeader extends StatelessWidget {
     VoidCallback? onAction,
   }) {
     return Container(
-      height: 132,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -846,17 +851,13 @@ class _DualShopHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.18),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: Colors.white, size: 18),
-              ),
-            ],
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.18),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: Colors.white, size: 18),
           ),
           const SizedBox(height: 8),
           Text(
@@ -885,6 +886,7 @@ class _DualShopHeader extends StatelessWidget {
                 backgroundColor: Colors.white,
                 foregroundColor: colors.first,
                 elevation: 0,
+                minimumSize: const Size(0, 30),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 shape: RoundedRectangleBorder(
@@ -907,7 +909,6 @@ class _DualShopHeader extends StatelessWidget {
     required VoidCallback onTap,
   }) {
     return Container(
-      height: 132,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: ThixPolicy.card,
@@ -932,6 +933,7 @@ class _DualShopHeader extends StatelessWidget {
             style: OutlinedButton.styleFrom(
               foregroundColor: ThixPolicy.primary,
               side: const BorderSide(color: ThixPolicy.primary),
+              minimumSize: const Size(0, 30),
               padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               shape: RoundedRectangleBorder(
@@ -1562,7 +1564,6 @@ class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDeta
     final orderId = o['id']?.toString() ?? '';
     final short = _VdValidators.shortId(orderId);
     final statusKey = (o['status'] ?? 'pending').toString().toLowerCase();
-    final statusConfig = _getOrderStatus(statusKey);
     final total = _VdValidators.safeDouble(o['total']);
     final currency = _VdValidators.normalizeCurrency(o['currency']?.toString());
     final symbol = _VdValidators.currencySymbol(currency);
@@ -1575,15 +1576,15 @@ class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDeta
     final shippingAddress = _VdValidators.sanitize(o['shipping_address']?.toString(), maxLength: 200);
 
     final clientName = _VdValidators.sanitize(
-      _profile?['full_name'] ?? o['customer_name'] ?? _profile?['name'] ?? context.vdT('Client', 'Customer'),
+      (_profile?['full_name'] ?? o['customer_name'] ?? _profile?['name'] ?? context.vdT('Client', 'Customer')).toString(),
       maxLength: _kMaxNameLength,
     );
     final clientPhone = _VdValidators.sanitize(
-      _profile?['phone'] ?? o['customer_phone'] ?? _profile?['phone_number'] ?? context.vdT('Non renseigné', 'Not provided'),
+      (_profile?['phone'] ?? o['customer_phone'] ?? _profile?['phone_number'] ?? context.vdT('Non renseigné', 'Not provided')).toString(),
       maxLength: 20,
     );
     final clientEmail = _VdValidators.sanitize(
-      _profile?['email'] ?? o['customer_email'] ?? context.vdT('Non renseigné', 'Not provided'),
+      (_profile?['email'] ?? o['customer_email'] ?? context.vdT('Non renseigné', 'Not provided')).toString(),
       maxLength: 80,
     );
 
@@ -1722,14 +1723,17 @@ class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDeta
           _SectionTitle(title: context.vdT('Actions', 'Actions')),
           const SizedBox(height: 10),
           if (statusKey == 'pending')
-            _ActionButton(
-              icon: Icons.kitchen_rounded,
-              label: context.vdT('Passer en préparation', 'Mark as processing'),
-              color: ThixPolicy.primary,
-              onTap: () {
-                Navigator.pop(context);
-                widget.onUpdateStatus(orderId, 'processing');
-              },
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _ActionButton(
+                icon: Icons.kitchen_rounded,
+                label: context.vdT('Passer en préparation', 'Mark as processing'),
+                color: ThixPolicy.primary,
+                onTap: () {
+                  Navigator.pop(context);
+                  widget.onUpdateStatus(orderId, 'processing');
+                },
+              ),
             ),
           if (statusKey == 'pending' || statusKey == 'processing' || statusKey == 'confirmed')
             Padding(
@@ -2014,16 +2018,18 @@ class _SkeletonDashboard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Dual header skeleton
-          Row(
-            children: List.generate(
-              2,
-              (i) => Expanded(
-                child: Container(
-                  height: 132,
-                  margin: EdgeInsets.only(right: i == 0 ? 12 : 0),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [ThixPolicy.primary.withOpacity(0.2), ThixPolicy.inkDeep.withOpacity(0.2)]),
-                    borderRadius: BorderRadius.circular(16),
+          SizedBox(
+            height: _kShopCardHeight,
+            child: Row(
+              children: List.generate(
+                2,
+                (i) => Expanded(
+                  child: Container(
+                    margin: EdgeInsets.only(right: i == 0 ? 12 : 0),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [ThixPolicy.primary.withOpacity(0.2), ThixPolicy.inkDeep.withOpacity(0.2)]),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                 ),
               ),
