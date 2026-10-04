@@ -66,9 +66,8 @@ class _CheckoutValidators {
     return c.isEmpty ? 'CDF' : c;
   }
 
-  /// Génère un receipt_code court et non-prévisible (6 chars alphanumériques)
   static String generateReceiptCode(String orderId) {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Pas de 0, O, I, 1 (confusion)
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final rand = Random.secure();
     final code = List.generate(6, (_) => chars[rand.nextInt(chars.length)]).join();
     return '${orderId.substring(0, 8).toUpperCase()}-$code';
@@ -198,7 +197,6 @@ class CheckoutState {
   }
 }
 
-// Sentinel pour permettre `copyWith(field: null)` explicite
 const Object _sentinel = Object();
 
 // ============================================================================
@@ -208,7 +206,6 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
   CheckoutNotifier(this.ref) : super(const CheckoutState());
   final Ref ref;
 
-  // ========== NAVIGATION ==========
   static const List<String> _validSteps = [
     'address',
     'shipping',
@@ -256,7 +253,6 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
     }
   }
 
-  // ========== CHARGEMENT ==========
   Future<void> loadCheckoutData() async {
     final db = ref.read(supabaseClientProvider);
     final userId = db.auth.currentUser?.id;
@@ -278,7 +274,6 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
       final addresses = results[0] as List<Map<String, dynamic>>;
       final userInfo = results[1] as Map<String, dynamic>;
 
-      // Sélection adresse : défaut > première
       Map<String, dynamic>? selAddr = state.selectedAddress;
       final defaultId = userInfo['default_address_id']?.toString();
 
@@ -332,7 +327,6 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
   Future<Map<String, dynamic>> _loadUserInfo(String userId) async {
     final db = ref.read(supabaseClientProvider);
     try {
-      // Sélection large qui couvre les deux schémas possibles (name / full_name)
       final r = await _withRetry(
         () => db
             .from('users')
@@ -343,7 +337,6 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
       );
 
       if (r != null) {
-        // Normaliser full_name
         final fullName = r['full_name']?.toString() ?? r['name']?.toString();
         return {
           'id': r['id']?.toString() ?? userId,
@@ -365,7 +358,6 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
     };
   }
 
-  // ========== SÉLECTIONS (avec validation IDs) ==========
   void selectAddress(Map<String, dynamic> address) {
     final id = address['id']?.toString();
     if (id == null || !_CheckoutValidators.isValidId(id)) {
@@ -410,15 +402,14 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
   }
 
   void selectShippingMethod(Map<String, dynamic> method) {
-  final id = method['id']?.toString()?.trim();
-  // IDs livraisons = clés métier ('home_delivery', 'pickup'), pas des UUID
-  if (id == null || id.isEmpty || !RegExp(r'^[a-zA-Z0-9_\-]{2,}$').hasMatch(id)) {
-    debugPrint('[CheckoutProvider] ⚠️ Invalid shipping method ID rejected: $id');
-    return;
+    final id = method['id']?.toString()?.trim();
+    if (id == null || id.isEmpty || !RegExp(r'^[a-zA-Z0-9_\-]{2,}$').hasMatch(id)) {
+      debugPrint('[CheckoutProvider] ⚠️ Invalid shipping method ID rejected: $id');
+      return;
+    }
+    state = state.copyWith(selectedShipping: method);
+    debugPrint('[CheckoutProvider] 🚚 Shipping selected: $id');
   }
-  state = state.copyWith(selectedShipping: method);
-  debugPrint('[CheckoutProvider] 🚚 Shipping selected: $id');
-}
 
   void selectPaymentMethod(Map<String, dynamic> method) {
     final id = method['id']?.toString();
@@ -430,9 +421,7 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
     debugPrint('[CheckoutProvider] 💳 Payment selected: $id');
   }
 
-  // ========== DEVISE ==========
   String _resolveCurrency(List<Map<String, dynamic>> items) {
-    // 1. Priorité au panier (source de vérité)
     try {
       final cartCurrency = ref.read(cartProvider.notifier).currencySymbol;
       final normalized = _CheckoutValidators.normalizeCurrency(cartCurrency);
@@ -441,7 +430,6 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
       }
     } catch (_) {}
 
-    // 2. Fallback : premier item avec currency valide
     for (final item in items) {
       final product = item['product'];
       final raw = (product is Map ? product['currency'] : null) ?? item['currency'];
@@ -453,13 +441,11 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
     return 'CDF';
   }
 
-  // ========== VALIDATION STOCK EN BATCH ==========
   Future<List<_StockValidationResult>> _validateStockBatch(
     List<Map<String, dynamic>> items,
   ) async {
     final db = ref.read(supabaseClientProvider);
 
-    // Extraire tous les IDs et quantités
     final Map<String, int> productQuantities = {};
     for (final item in items) {
       final productId = item['product_id']?.toString() ??
@@ -475,7 +461,6 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
       throw Exception('Panier vide');
     }
 
-    // Batch fetch : 1 requête au lieu de N
     final productIds = productQuantities.keys.toList();
     final products = await _withRetry(
       () => db
@@ -492,7 +477,6 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
       if (id != null) productsMap[id] = map;
     }
 
-    // Valider chaque produit
     final results = <_StockValidationResult>[];
     for (final entry in productQuantities.entries) {
       final productId = entry.key;
@@ -527,7 +511,6 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
     return results;
   }
 
-  // ========== CRÉATION COMMANDE ==========
   Future<Map<String, dynamic>> createOrderOnly({
     required double total,
     required List<Map<String, dynamic>> items,
@@ -535,7 +518,6 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
     final db = ref.read(supabaseClientProvider);
     final userId = db.auth.currentUser?.id;
 
-    // Validations pré-requêtes
     if (userId == null) throw Exception('Non connecté');
     if (state.selectedAddress == null) throw Exception('Adresse requise');
     if (state.selectedShipping == null) throw Exception('Mode livraison requis');
@@ -549,11 +531,11 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
     final shippingId = state.selectedShipping!['id']?.toString();
     if (!_CheckoutValidators.isValidId(addressId)) throw Exception('Adresse invalide');
     if (shippingId == null ||
-    shippingId.isEmpty ||
-    !RegExp(r'^[a-zA-Z0-9_\-]{2,}$').hasMatch(shippingId)) {
-  throw Exception('Mode livraison invalide');
-}
-    // Validation stock en batch (1 requête au lieu de N)
+        shippingId.isEmpty ||
+        !RegExp(r'^[a-zA-Z0-9_\-]{2,}$').hasMatch(shippingId)) {
+      throw Exception('Mode livraison invalide');
+    }
+
     await _validateStockBatch(items);
 
     state = state.copyWith(isProcessing: true, error: null);
@@ -562,56 +544,94 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
     bool stockDecremented = false;
 
     try {
-      // Résolution shop_id (robuste : depuis item OU depuis DB)
-String? shopId;
-final first = items.first;
-final product = first['product'];
+      // ── Résolution shop_id ──
+      String? shopId;
+      final first = items.first;
+      final product = first['product'];
 
-if (product is Map) {
-  if (product['shop_id'] != null) {
-    shopId = product['shop_id'].toString();
-  } else if (product['shop'] is Map && (product['shop'] as Map)['id'] != null) {
-    shopId = (product['shop'] as Map)['id'].toString();
-  }
-}
-if (shopId == null && first['shop_id'] != null) {
-  shopId = first['shop_id'].toString();
-}
-
-// Fallback : récupérer shop_id depuis le produit en DB
-if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
-  final productId = first['product_id']?.toString() ??
-      (product is Map ? product['id']?.toString() : null);
-
-  if (productId != null && _CheckoutValidators.isValidId(productId)) {
-    try {
-      final prod = await _withRetry(
-        () => db
-            .from('products')
-            .select('shop_id, shop:shops(id)')
-            .eq('id', productId)
-            .maybeSingle(),
-        label: 'fetchProductShopId',
-      );
-      if (prod != null) {
-        final map = Map<String, dynamic>.from(prod as Map);
-        shopId = map['shop_id']?.toString() ??
-            (map['shop'] is Map ? (map['shop'] as Map)['id']?.toString() : null);
+      if (product is Map) {
+        if (product['shop_id'] != null) {
+          shopId = product['shop_id'].toString();
+        } else if (product['shop'] is Map && (product['shop'] as Map)['id'] != null) {
+          shopId = (product['shop'] as Map)['id'].toString();
+        }
       }
-    } catch (e) {
-      debugPrint('[CheckoutProvider] ⚠️ fetchProductShopId failed: $e');
-    }
-  }
-}
+      if (shopId == null && first['shop_id'] != null) {
+        shopId = first['shop_id'].toString();
+      }
+      if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
+        final productId = first['product_id']?.toString() ??
+            (product is Map ? product['id']?.toString() : null);
+        if (productId != null && _CheckoutValidators.isValidId(productId)) {
+          try {
+            final prod = await _withRetry(
+              () => db.from('products').select('shop_id, shop:shops(id)').eq('id', productId).maybeSingle(),
+              label: 'fetchProductShopId',
+            );
+            if (prod != null) {
+              final map = Map<String, dynamic>.from(prod as Map);
+              shopId = map['shop_id']?.toString() ??
+                  (map['shop'] is Map ? (map['shop'] as Map)['id']?.toString() : null);
+            }
+          } catch (e) {
+            debugPrint('[CheckoutProvider] ⚠️ fetchProductShopId failed: $e');
+          }
+        }
+      }
+      if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
+        throw Exception('Boutique introuvable pour cette commande. Rechargez le panier.');
+      }
 
-if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
-  throw Exception('Boutique introuvable pour cette commande. Rechargez le panier.');
-}
-      
+      // ══════════════════════════════════════════════════════════════════════
+      // 🆕 SNAPSHOT CLIENT : fige les infos client au moment de la commande
+      // pour que le vendeur les voie TOUJOURS, même sans jointure.
+      // ══════════════════════════════════════════════════════════════════════
+      final addr = state.selectedAddress ?? const <String, dynamic>{};
+
+      String pickAddr(List<String> keys) {
+        for (final k in keys) {
+          final v = addr[k]?.toString().trim() ?? '';
+          if (v.isNotEmpty) return v;
+        }
+        return '';
+      }
+
+      final snapName = _CheckoutValidators.sanitize(
+        pickAddr(['receiver_name', 'full_name', 'name']).isNotEmpty
+            ? pickAddr(['receiver_name', 'full_name', 'name'])
+            : (state.userInfo['full_name']?.toString() ?? ''),
+        maxLength: 100,
+      );
+      final snapPhone = _CheckoutValidators.sanitize(
+        pickAddr(['phone', 'phone_number']).isNotEmpty
+            ? pickAddr(['phone', 'phone_number'])
+            : (state.userInfo['phone']?.toString() ?? ''),
+        maxLength: 30,
+      );
+      final snapEmail = _CheckoutValidators.sanitize(
+        state.userInfo['email']?.toString() ?? '',
+        maxLength: 200,
+      );
+      final snapAddress = _CheckoutValidators.sanitize(
+        [
+          pickAddr(['address', 'line1', 'street', 'avenue', 'quartier', 'description']),
+          pickAddr(['city', 'commune']),
+          pickAddr(['region', 'province']),
+          pickAddr(['country']),
+        ].where((s) => s.isNotEmpty).join(', '),
+        maxLength: 500,
+      );
+      final snapLabel = _CheckoutValidators.sanitize(
+        pickAddr(['label', 'type', 'title']),
+        maxLength: 40,
+      );
+
+      debugPrint('[CheckoutProvider] 📋 Snapshot: name="$snapName", phone="$snapPhone", email="$snapEmail"');
+      // ══════════════════════════════════════════════════════════════════════
+
       final currency = _resolveCurrency(items);
       final shippingCost = _CheckoutValidators.safeDouble(state.selectedShipping!['price']);
 
-      // 1. Créer l'order
       final orderData = {
         'user_id': userId,
         'shop_id': shopId,
@@ -625,6 +645,12 @@ if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
         'payout_status': 'held',
         'refund_requested': false,
         'created_at': DateTime.now().toIso8601String(),
+        // 🆕 Snapshot client intégrée à la commande
+        'customer_name': snapName.isEmpty ? null : snapName,
+        'customer_phone': snapPhone.isEmpty ? null : snapPhone,
+        'customer_email': snapEmail.isEmpty ? null : snapEmail,
+        'shipping_address': snapAddress.isEmpty ? null : snapAddress,
+        'shipping_address_label': snapLabel.isEmpty ? null : snapLabel,
       };
 
       final orderRes = await _withRetry(
@@ -635,7 +661,6 @@ if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
       orderId = orderMap['id'].toString();
       debugPrint('[CheckoutProvider] ✓ Order created: ${orderId.substring(0, 8)}');
 
-      // 2. Receipt code non-prévisible
       final receiptCode = _CheckoutValidators.generateReceiptCode(orderId);
       try {
         await _withRetry(
@@ -647,7 +672,6 @@ if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
         debugPrint('[CheckoutProvider] ⚠️ Receipt code update failed: $e');
       }
 
-      // 3. Batch insert order_items
       final orderItems = items.map((item) {
         final product = item['product'];
         final productId = item['product_id']?.toString() ??
@@ -679,7 +703,6 @@ if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
       );
       debugPrint('[CheckoutProvider] ✓ ${orderItems.length} order_items inserted');
 
-      // 4. Décrémenter stock en parallèle (via RPC si disponible, fallback update)
       await _decrementStockBatch(db, items);
       stockDecremented = true;
 
@@ -689,7 +712,6 @@ if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
     } catch (e) {
       debugPrint('[CheckoutProvider] ❌ createOrderOnly error: $e');
 
-      // Rollback : si stock décrémenté mais order_items échoués, tenter restaurer stock
       if (stockDecremented && orderId != null) {
         debugPrint('[CheckoutProvider] 🔄 Attempting rollback for order $orderId');
         await _rollbackOrder(db, orderId, items);
@@ -700,12 +722,10 @@ if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
     }
   }
 
-  /// Décrémente le stock en batch via RPC (atomique) ou fallback update individuel
   Future<void> _decrementStockBatch(
     dynamic db,
     List<Map<String, dynamic>> items,
   ) async {
-    // Regrouper quantités par produit
     final Map<String, int> quantities = {};
     for (final item in items) {
       final productId = item['product_id']?.toString() ??
@@ -715,7 +735,6 @@ if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
       quantities[productId] = (quantities[productId] ?? 0) + qty;
     }
 
-    // Tenter RPC atomique d'abord
     for (final entry in quantities.entries) {
       try {
         await _withRetry(
@@ -727,7 +746,6 @@ if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
         );
       } catch (rpcError) {
         debugPrint('[CheckoutProvider] ⚠️ RPC decrement failed for ${entry.key}, fallback to update: $rpcError');
-        // Fallback : update manuel (non-atomique mais mieux que rien)
         try {
           final prod = await db.from('products').select('stock').eq('id', entry.key).maybeSingle();
           if (prod != null) {
@@ -740,13 +758,11 @@ if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
           }
         } catch (fallbackError) {
           debugPrint('[CheckoutProvider] ❌ Stock decrement fallback failed: $fallbackError');
-          // Non-bloquant : l'order est créé, le stock sera resync plus tard
         }
       }
     }
   }
 
-  /// Rollback : supprime l'order et restaure le stock si possible
   Future<void> _rollbackOrder(
     dynamic db,
     String orderId,
@@ -760,7 +776,6 @@ if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
     }
   }
 
-  // ========== PROCESS ORDER + PAIEMENT ==========
   Future<Map<String, dynamic>> processOrder({
     required double total,
     required List<Map<String, dynamic>> items,
@@ -768,12 +783,10 @@ if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
   }) async {
     debugPrint('[CheckoutProvider] 💰 Processing order (${items.length} items, total: $total)');
 
-    // 1. Créer la commande (avec rollback si échec)
     final order = await createOrderOnly(total: total, items: items);
     final orderId = order['id'].toString();
     final currency = order['currency']?.toString() ?? _resolveCurrency(items);
 
-    // 2. Initier le paiement
     final paymentService = MarketPaymentService(ref.read(supabaseClientProvider));
     final method = state.selectedPayment!['id'] as String;
 
@@ -789,11 +802,10 @@ if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
         ),
         label: 'initiatePayment',
         timeout: _kPaymentTimeout,
-        maxRetries: 0, // Pas de retry sur paiement (risque de double charge)
+        maxRetries: 0,
       );
     } catch (e) {
       debugPrint('[CheckoutProvider] ❌ Payment initiation error: $e');
-      // Rollback order si paiement n'a pas pu être initié
       await _rollbackOrder(ref.read(supabaseClientProvider), orderId, items);
       state = state.copyWith(
         isProcessing: false,
@@ -814,7 +826,6 @@ if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
       throw Exception(result['error'] ?? 'Paiement échoué');
     }
 
-    // 3. Mettre à jour payment_status (order status reste "pending" jusqu'au scan client)
     final paymentStatus = result['payment_status']?.toString() ?? 'awaiting_payment';
     try {
       await _withRetry(
@@ -828,10 +839,8 @@ if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
       );
     } catch (e) {
       debugPrint('[CheckoutProvider] ⚠️ Payment status update failed: $e');
-      // Non-bloquant : le webhook du PSP mettra à jour plus tard
     }
 
-    // 4. Paiement immédiat (cash / thix) → vider panier
     if (result['needs_waiting'] != true) {
       try {
         await ref.read(cartProvider.notifier).clearCart();
@@ -861,9 +870,6 @@ if (shopId == null || !_CheckoutValidators.isValidId(shopId)) {
   }
 }
 
-// ============================================================================
-// PROVIDER
-// ============================================================================
 final checkoutProvider =
     StateNotifierProvider<CheckoutNotifier, CheckoutState>(
   (ref) => CheckoutNotifier(ref),
