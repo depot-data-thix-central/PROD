@@ -10,11 +10,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// bannersProvider, ce qui corrige le souci de connexion.
 final featuredProductsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   final res = await Supabase.instance.client
-      .from('products')
-      .select()
-      .eq('is_featured', true)
-      .eq('status', 'active')
-      .order('updated_at', ascending: false)
-      .limit(12);
+    .from('products')
+    .select('*, shop:shops!inner(type)')
+    .eq('is_featured', true)
+    .eq('status', 'active')
+    .neq('shop.type', 'supermarket')
+    .order('updated_at', ascending: false)
+    .limit(12);
   return List<Map<String, dynamic>>.from(res as List);
 });
