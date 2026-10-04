@@ -126,7 +126,7 @@ import 'package:thix_id/presentation/thix_market/vendor/vendor_orders_page.dart'
 import 'package:thix_id/presentation/thix_market/pages/flash_sales_page.dart';
 import 'package:thix_id/presentation/thix_market/pages/create_supermarket_page.dart';
 import 'package:thix_id/presentation/thix_market/pages/supermarket_space_page.dart';
-
+import 'package:thix_id/presentation/thix_market/pages/supermarket_manage_page.dart';
 // === THIX SANTE ===
 import 'package:thix_id/presentation/thix_sante/patient/patient_dashboard_page.dart';
 import 'package:thix_id/presentation/thix_sante/patient/screens/mon_medecin_traitant_page.dart';
@@ -913,17 +913,21 @@ GoRoute(path: '/thix-info/downloads', name: 'thixInfoDownloads',
   ),
 ),
           GoRoute(
-  path: 'supermarket/create',
-  name: 'createSupermarket',
-  builder: (c, s) => const CreateSupermarketPage(),
-),
-GoRoute(
-  path: 'supermarket/:id',
-  name: 'supermarketSpace',
-  builder: (c, s) => SupermarketSpacePage(
-    supermarketId: s.pathParameters['id']!,
-  ),
-),
+        path: 'supermarket/create',
+        name: 'createSupermarket',
+        builder: (c, s) => const CreateSupermarketPage(),
+      ),
+      GoRoute(
+        path: 'supermarket/:id/manage',
+        name: 'supermarketManage',
+        builder: (c, s) => SupermarketManagePage(
+            supermarketId: s.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: 'supermarket/:id',
+        name: 'supermarketSpace',
+        builder: (c, s) =>
+            
 
         ]),
         
