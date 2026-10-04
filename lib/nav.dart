@@ -262,7 +262,10 @@ static const String thixSosIncidents = '/thix-sos/incidents';
       '/thix-recherche/detail/$id';
   static String thixRechercheSignalerPath(String id) =>
       '/thix-recherche/signaler/$id';
-  
+  // THIX MARKET — SUPERMARCHÉS (rayons)
+  static const String marketSupermarketCreate = '/market/supermarket/create';
+  static const String marketSupermarket = '/market/supermarket/:id';
+  static String marketSupermarketPath(String id) => '/market/supermarket/$id';
   static const String call = '/call';
   static const String callIncoming = '/call/incoming';
   static const String callOutgoing = '/call/outgoing';
