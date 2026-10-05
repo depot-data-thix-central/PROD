@@ -60,10 +60,10 @@
     <!-- Notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     
-    <!-- ✅ AJOUTÉ : Permission pour notifications plein écran (appels entrants) -->
+    <!-- Permission pour notifications plein écran (appels entrants) -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     
-    <!-- ✅ AJOUTÉ : Permission pour wake lock (notifications en arrière-plan) -->
+    <!-- Permission pour wake lock (notifications en arrière-plan) -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Système -->
@@ -80,7 +80,7 @@
         android:supportsRtl="true"
         android:hardwareAccelerated="true">
 
-        <!-- ✅ AJOUTÉ : Métadonnées Firebase Messaging -->
+        <!-- Métadonnées Firebase Messaging -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="thix_id_default" />
@@ -102,20 +102,37 @@
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
 
+            <!-- Lancement principal -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- ✅ AJOUTÉ : Intent filter pour les notifications Firebase -->
+            <!-- Intent filter pour les notifications Firebase -->
             <intent-filter>
                 <action android:name="FLUTTER_NOTIFICATION_CLICK" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
+            <!-- ✅ AJOUTÉ : Custom Scheme Deep Linking (ex: thix://profile/123) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="thix" />
+            </intent-filter>
+
+            <!-- ✅ AJOUTÉ : App Links HTTPS Auto-Vérifiés (ex: https://thix.app/profile/123) -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="thix.app" />
+            </intent-filter>
+
         </activity>
 
-        <!-- ✅ AJOUTÉ : Service Firebase Messaging pour notifications en arrière-plan -->
+        <!-- Service Firebase Messaging pour notifications en arrière-plan -->
         <service
             android:name="com.google.firebase.messaging.FirebaseMessagingService"
             android:exported="false">
@@ -129,15 +146,7 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- Impeller activé (test) : Skia a un historique de bugs connus
-             avec la composition hybride des Platform Views (mécanisme
-             utilisé par AgoraVideoView) sur certains GPU Android — texture
-             qui ne se redimensionne pas correctement au premier rendu.
-             Si ce test résout le problème, garder à true. Si ça provoque
-             d'autres soucis (crash au démarrage, nouveau rendu cassé),
-             repasser à false et tester useFlutterTexture: true à la place
-             dans les AgoraVideoView (live_prep_screen.dart,
-             live_broadcast_screen.dart) plutôt que ce flag global. -->
+        <!-- Impeller activé -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="true" />
@@ -146,7 +155,6 @@
 
     <!-- Intégrations externes -->
     <queries>
-
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
@@ -155,7 +163,6 @@
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
-
     </queries>
 
 </manifest>
