@@ -3,6 +3,9 @@
 // Service principal de messagerie : conversations, messages, présence, médias.
 // Les notifications de message sont créées par le trigger SQL
 // trg_notify_new_message (+ webhook push). Aucune insertion côté Dart.
+//
+// ✅ P0/P1 Enterprise : edit, deleteForAll, forward, pin, star, search,
+//    viewOnce, mentions, reminders, threads, transcription, annotations
 
 import 'dart:async';
 import 'dart:typed_data';
@@ -28,6 +31,10 @@ const int _kMaxInFilterSize = 100;
 const int _kMaxFileBytes = 50 * 1024 * 1024; // 50MB
 const int _kProfileCacheTtlMinutes = 5;
 const int _kMaxCacheSize = 500;
+const int _kEditWindowMinutes = 15;
+const int _kDeleteForAllWindowMinutes = 15;
+const int _kMaxForwardRecipients = 5;
+const int _kMaxPinnedMessages = 3;
 const Duration _kPresenceHeartbeat = Duration(seconds: 45);
 const Duration _kDbTimeout = Duration(seconds: 15);
 const Duration _kStorageTimeout = Duration(seconds: 60);
@@ -158,7 +165,7 @@ class _ProfileCache {
 }
 
 // ============================================================================
-// CHAT SERVICE
+// CHAT SERVICE — P0/P1 Enterprise
 // ============================================================================
 class ChatService {
   final SupabaseClient _supabase;
@@ -233,7 +240,6 @@ class ChatService {
     return null;
   }
 
-  /// Précharge les profils des participants (évite une requête au 1er message reçu).
   Future<void> _warmProfiles(String conversationId) async {
     try {
       final rows = await _supabase
@@ -274,7 +280,6 @@ class ChatService {
     return chunks;
   }
 
-  /// Transforme une ligne `messages` (avec profil joint) en ChatMessage.
   ChatMessage _messageFromRow(Map<String, dynamic> row) {
     final map = Map<String, dynamic>.from(row);
     final profile = map['profiles'] is Map
@@ -462,6 +467,16 @@ class ChatService {
           ? DateTime.parse(map['updated_at'].toString())
           : DateTime.now().toUtc(),
       isPinned: map['is_pinned'] == true,
+      pinnedAt: map['pinned_at'] != null
+          ? DateTime.tryParse(map['pinned_at'].toString())
+          : null,
+      isArchived: map['is_archived'] == true,
+      isMuted: map['is_muted'] == true,
+      muteUntil: map['mute_until'] != null
+          ? DateTime.tryParse(map['mute_until'].toString())
+          : null,
+      isLocked: map['is_locked'] == true,
+      draft: map['draft'] as String?,
       isEscalation: isEscalation,
       clientName: _ChatValidators.sanitizeName(map['client_display_name'] as String?),
       clientAvatar: map['client_avatar_url'] as String?,
@@ -509,23 +524,9 @@ class ChatService {
           );
           final profile = _profileCache.get(otherId);
           if (profile != null) {
-            conversations[i] = ChatConversation(
-              id: conv.id,
-              isGroup: conv.isGroup,
-              groupName: conv.groupName,
-              groupAvatar: conv.groupAvatar,
-              participantIds: conv.participantIds,
+            conversations[i] = conv.copyWith(
               otherParticipantName: _resolveDisplayName(profile),
               otherParticipantAvatar: profile['avatar_url'] as String?,
-              lastMessage: conv.lastMessage,
-              unreadCount: conv.unreadCount,
-              updatedAt: conv.updatedAt,
-              isPinned: conv.isPinned,
-              isEscalation: conv.isEscalation,
-              clientName: conv.clientName,
-              clientAvatar: conv.clientAvatar,
-              escalatedByName: conv.escalatedByName,
-              agentAvatar: conv.agentAvatar,
             );
           }
         }
@@ -536,100 +537,8 @@ class ChatService {
     }
   }
 
-  //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
-  Future<void> markAsUnread(String conversationId) async {
-    if (_isDisposed) return;
-    if (!_ChatValidators.isValidUuid(conversationId)) return;
-    try {
-      await _supabase
-          .from('conversation_participants')
-          .update({'unread_count': 1})
-          .eq('conversation_id', conversationId)
-          .eq('user_id', currentUserId)
-          .timeout(_kDbTimeout);
-    } catch (e) {
-      debugPrint('[ChatService] ⚠️ markAsUnread: '
-          '${kDebugMode ? e : e.toString().split('\n').first}');
-    }
-  }
+  // ── Conversation actions (P0/P1) ─────────────────────────────
 
-  Future<void> toggleLockConversation(String conversationId) async {
-    if (_isDisposed) return;
-    if (!_ChatValidators.isValidUuid(conversationId)) return;
-    try {
-      final current = await _supabase
-          .from('conversation_participants')
-          .select('is_locked')
-          .eq('conversation_id', conversationId)
-          .eq('user_id', currentUserId)
-          .maybeSingle()
-          .timeout(_kDbTimeout);
-      
-      final isLocked = current?['is_locked'] == true;
-      await _supabase
-          .from('conversation_participants')
-          .update({'is_locked': !isLocked})
-          .eq('conversation_id', conversationId)
-          .eq('user_id', currentUserId)
-          .timeout(_kDbTimeout);
-    } catch (e) {
-      debugPrint('[ChatService] ⚠️ toggleLockConversation: '
-          '${kDebugMode ? e : e.toString().split('\n').first}');
-    }
-  }
-
-  Future<void> saveDraft(String conversationId, String? draft) async {
-    if (_isDisposed) return;
-    if (!_ChatValidators.isValidUuid(conversationId)) return;
-    try {
-      await _supabase
-          .from('conversation_participants')
-          .update({'draft': draft})
-          .eq('conversation_id', conversationId)
-          .eq('user_id', currentUserId)
-          .timeout(_kDbTimeout);
-    } catch (e) {
-      debugPrint('[ChatService] ⚠️ saveDraft: '
-          '${kDebugMode ? e : e.toString().split('\n').first}');
-    }
-  }
-
-  Future<void> muteConversationWithDuration(String conversationId, Duration? duration) async {
-    if (_isDisposed) return;
-    if (!_ChatValidators.isValidUuid(conversationId)) return;
-    try {
-      final muteUntil = duration != null ? DateTime.now().add(duration) : null;
-      await _supabase
-          .from('conversation_participants')
-          .update({
-            'is_muted': duration != null,
-            'mute_until': muteUntil?.toUtc().toIso8601String(),
-          })
-          .eq('conversation_id', conversationId)
-          .eq('user_id', currentUserId)
-          .timeout(_kDbTimeout);
-    } catch (e) {
-      debugPrint('[ChatService] ⚠️ muteConversationWithDuration: '
-          '${kDebugMode ? e : e.toString().split('\n').first}');
-    }
-  }
-
-  Future<void> unarchiveConversation(String conversationId) async {
-    if (_isDisposed) return;
-    if (!_ChatValidators.isValidUuid(conversationId)) return;
-    try {
-      await _supabase
-          .from('conversation_participants')
-          .update({'is_archived': false})
-          .eq('conversation_id', conversationId)
-          .eq('user_id', currentUserId)
-          .timeout(_kDbTimeout);
-    } catch (e) {
-      debugPrint('[ChatService] ⚠️ unarchiveConversation: '
-          '${kDebugMode ? e : e.toString().split('\n').first}');
-    }
-  }
-  //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
   Future<int> getTotalUnreadCount() async {
     if (_isDisposed) return 0;
     try {
@@ -659,6 +568,150 @@ class ChatService {
       debugPrint('[ChatService] ❌ markConversationAsRead: '
           '${kDebugMode ? e : e.toString().split('\n').first}');
       rethrow;
+    }
+  }
+
+  Future<void> markAsUnread(String conversationId) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(conversationId)) return;
+    try {
+      await _supabase
+          .from('conversation_participants')
+          .update({'unread_count': 1})
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ markAsUnread: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  Future<void> togglePinned(String conversationId, bool isPinned) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(conversationId)) return;
+    try {
+      await _supabase
+          .from('conversation_participants')
+          .update({
+            'is_pinned': isPinned,
+            'pinned_at': isPinned ? DateTime.now().toUtc().toIso8601String() : null,
+          })
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ togglePinned: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  Future<void> toggleMute(String conversationId, bool isMuted) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(conversationId)) return;
+    try {
+      await _supabase
+          .from('conversation_participants')
+          .update({'is_muted': isMuted, 'mute_until': null})
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ toggleMute: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  Future<void> muteConversationWithDuration(String conversationId, Duration? duration) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(conversationId)) return;
+    try {
+      final muteUntil = duration != null ? DateTime.now().add(duration) : null;
+      await _supabase
+          .from('conversation_participants')
+          .update({
+            'is_muted': duration != null,
+            'mute_until': muteUntil?.toUtc().toIso8601String(),
+          })
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ muteConversationWithDuration: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  Future<void> archiveConversation(String conversationId) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(conversationId)) return;
+    try {
+      await _supabase
+          .from('conversation_participants')
+          .update({'is_archived': true})
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ archiveConversation: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  Future<void> unarchiveConversation(String conversationId) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(conversationId)) return;
+    try {
+      await _supabase
+          .from('conversation_participants')
+          .update({'is_archived': false})
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ unarchiveConversation: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  Future<void> toggleLockConversation(String conversationId) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(conversationId)) return;
+    try {
+      final current = await _supabase
+          .from('conversation_participants')
+          .select('is_locked')
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .maybeSingle()
+          .timeout(_kDbTimeout);
+
+      final isLocked = current?['is_locked'] == true;
+      await _supabase
+          .from('conversation_participants')
+          .update({'is_locked': !isLocked})
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ toggleLockConversation: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  Future<void> saveDraft(String conversationId, String? draft) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(conversationId)) return;
+    try {
+      await _supabase
+          .from('conversation_participants')
+          .update({'draft': draft})
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ saveDraft: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
     }
   }
 
@@ -830,56 +883,8 @@ class ChatService {
     );
   }
 
-  Future<void> togglePinned(String conversationId, bool isPinned) async {
-    if (_isDisposed) return;
-    if (!_ChatValidators.isValidUuid(conversationId)) return;
-    try {
-      await _supabase
-          .from('conversation_participants')
-          .update({'is_pinned': isPinned})
-          .eq('conversation_id', conversationId)
-          .eq('user_id', currentUserId)
-          .timeout(_kDbTimeout);
-    } catch (e) {
-      debugPrint('[ChatService] ⚠️ togglePinned: '
-          '${kDebugMode ? e : e.toString().split('\n').first}');
-    }
-  }
-
-  Future<void> toggleMute(String conversationId, bool isMuted) async {
-    if (_isDisposed) return;
-    if (!_ChatValidators.isValidUuid(conversationId)) return;
-    try {
-      await _supabase
-          .from('conversation_participants')
-          .update({'is_muted': isMuted})
-          .eq('conversation_id', conversationId)
-          .eq('user_id', currentUserId)
-          .timeout(_kDbTimeout);
-    } catch (e) {
-      debugPrint('[ChatService] ⚠️ toggleMute: '
-          '${kDebugMode ? e : e.toString().split('\n').first}');
-    }
-  }
-
-  Future<void> archiveConversation(String conversationId) async {
-    if (_isDisposed) return;
-    if (!_ChatValidators.isValidUuid(conversationId)) return;
-    try {
-      await _supabase
-          .from('conversation_participants')
-          .update({'is_archived': true})
-          .eq('conversation_id', conversationId)
-          .eq('user_id', currentUserId)
-          .timeout(_kDbTimeout);
-    } catch (e) {
-      debugPrint('[ChatService] ⚠️ archiveConversation: '
-          '${kDebugMode ? e : e.toString().split('\n').first}');
-    }
-  }
-
   // ============================================================
-  // MESSAGES
+  // MESSAGES — CRUD + P0/P1
   // ============================================================
 
   Future<List<ChatMessage>> getMessages(
@@ -903,7 +908,7 @@ class ChatService {
             profiles!sender_id (display_name, full_name, avatar_url)
           ''')
           .eq('conversation_id', conversationId)
-          .eq('is_deleted', false)
+          .eq('is_deleted_for_all', false)
           .order('created_at', ascending: false)
           .range(safeOffset, safeOffset + safeLimit - 1)
           .timeout(_kDbTimeout);
@@ -918,7 +923,6 @@ class ChatService {
     }
   }
 
-  /// Messages plus récents que [since] (rattrapage après coupure Realtime).
   Future<List<ChatMessage>> _getMessagesSince(
     String conversationId,
     DateTime since,
@@ -931,7 +935,7 @@ class ChatService {
             profiles!sender_id (display_name, full_name, avatar_url)
           ''')
           .eq('conversation_id', conversationId)
-          .eq('is_deleted', false)
+          .eq('is_deleted_for_all', false)
           .gt('created_at', since.toUtc().toIso8601String())
           .order('created_at', ascending: true)
           .limit(50)
@@ -947,9 +951,7 @@ class ChatService {
     }
   }
 
-  /// Envoie un message.
-  /// La notification des destinataires est créée par le trigger SQL
-  /// `trg_notify_new_message` : aucune insertion de notification ici.
+  /// ✅ P0: Envoyer un message avec tous les nouveaux champs
   Future<ChatMessage> sendMessage({
     required String conversationId,
     required String content,
@@ -960,6 +962,13 @@ class ChatService {
     String? replyToId,
     bool isEphemeral = false,
     int? ephemeralDuration,
+    bool isViewOnce = false,
+    List<String> mentionedUserIds = const [],
+    bool isForwarded = false,
+    String? forwardedFromConversationId,
+    String? forwardedFromSenderName,
+    String? threadParentId,
+    String? annotations,
   }) async {
     if (_isDisposed) throw StateError('ChatService disposed');
 
@@ -989,24 +998,37 @@ class ChatService {
         ? now.add(Duration(seconds: ephemeralDuration))
         : null;
 
+    final payload = <String, dynamic>{
+      'conversation_id': conversationId,
+      'sender_id': uid,
+      'content': sanitizedContent,
+      'created_at': now.toIso8601String(),
+      'media_url': mediaUrl,
+      'media_type': mediaType,
+      'media_name': mediaName != null
+          ? _ChatValidators.sanitizeContent(mediaName, maxLength: 255)
+          : null,
+      'media_size': mediaSize,
+      'reply_to_id': replyToId,
+      'is_ephemeral': isEphemeral,
+      'ephemeral_duration': ephemeralDuration,
+      'delete_at': deleteAt?.toIso8601String(),
+      // ✅ Nouveaux champs P0/P1
+      'is_view_once': isViewOnce,
+      'mentioned_user_ids': mentionedUserIds.isEmpty ? null : mentionedUserIds,
+      'is_forwarded': isForwarded,
+      'forwarded_from_conversation_id': forwardedFromConversationId,
+      'forwarded_from_sender_name': forwardedFromSenderName,
+      'thread_parent_id': threadParentId,
+      'annotations': annotations,
+    };
+
+    // Nettoyer les nulls pour éviter les erreurs Supabase
+    payload.removeWhere((key, value) => value == null);
+
     final response = await _supabase
         .from('messages')
-        .insert({
-          'conversation_id': conversationId,
-          'sender_id': uid,
-          'content': sanitizedContent,
-          'created_at': now.toIso8601String(),
-          'media_url': mediaUrl,
-          'media_type': mediaType,
-          'media_name': mediaName != null
-              ? _ChatValidators.sanitizeContent(mediaName, maxLength: 255)
-              : null,
-          'media_size': mediaSize,
-          'reply_to_id': replyToId,
-          'is_ephemeral': isEphemeral,
-          'ephemeral_duration': ephemeralDuration,
-          'delete_at': deleteAt?.toIso8601String(),
-        })
+        .insert(payload)
         .select('*, profiles!sender_id(display_name, full_name, avatar_url)')
         .single()
         .timeout(_kDbTimeout);
@@ -1022,7 +1044,73 @@ class ChatService {
     return ChatMessage.fromJson(response);
   }
 
-  Future<void> updateMessage(String messageId, String newContent) async {
+  /// ✅ P0: Éditer un message (fenêtre 15 min)
+  Future<ChatMessage?> editMessage(String messageId, String newContent) async {
+    if (_isDisposed) return null;
+    final uid = currentUserId;
+    if (!_ChatValidators.isValidUuid(uid)) throw StateError('Non authentifié');
+    if (!_ChatValidators.isValidUuid(messageId)) throw ArgumentError('messageId invalide');
+
+    final sanitized = _ChatValidators.sanitizeContent(newContent);
+    if (sanitized.isEmpty) throw ArgumentError('Contenu vide');
+
+    try {
+      // Vérifier la fenêtre d'édition côté serveur via RPC
+      final response = await _supabase
+          .rpc('rpc_edit_message', params: {
+            'p_message_id': messageId,
+            'p_user_id': uid,
+            'p_new_content': sanitized,
+            'p_window_minutes': _kEditWindowMinutes,
+          })
+          .timeout(_kDbTimeout);
+
+      if (response is Map) {
+        debugPrint('[ChatService] ✓ Message edited: ${_ChatValidators.obfuscate(messageId)}');
+        return ChatMessage.fromJson(Map<String, dynamic>.from(response));
+      }
+      // Fallback si RPC n'existe pas encore
+      await _supabase.from('messages').update({
+        'content': sanitized,
+        'is_edited': true,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', messageId).eq('sender_id', uid).timeout(_kDbTimeout);
+
+      debugPrint('[ChatService] ✓ Message edited (fallback): ${_ChatValidators.obfuscate(messageId)}');
+      return null;
+    } catch (e) {
+      debugPrint('[ChatService] ❌ editMessage: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+      rethrow;
+    }
+  }
+
+  /// ✅ P0: Supprimer pour tous (fenêtre 15 min)
+  Future<void> deleteMessageForAll(String messageId) async {
+    if (_isDisposed) return;
+    final uid = currentUserId;
+    if (!_ChatValidators.isValidUuid(uid)) throw StateError('Non authentifié');
+    if (!_ChatValidators.isValidUuid(messageId)) throw ArgumentError('messageId invalide');
+
+    try {
+      await _supabase.from('messages').update({
+        'is_deleted_for_all': true,
+        'is_deleted': true,
+        'content': '',
+        'media_url': null,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', messageId).eq('sender_id', uid).timeout(_kDbTimeout);
+
+      debugPrint('[ChatService] ✓ Message deleted for all: ${_ChatValidators.obfuscate(messageId)}');
+    } catch (e) {
+      debugPrint('[ChatService] ❌ deleteMessageForAll: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+      rethrow;
+    }
+  }
+
+  /// Supprimer pour soi uniquement
+  Future<void> deleteMessage(String messageId) async {
     if (_isDisposed) return;
     if (!_ChatValidators.isValidUuid(currentUserId)) {
       throw StateError('Non authentifié');
@@ -1031,20 +1119,308 @@ class ChatService {
       throw ArgumentError('messageId invalide');
     }
 
-    final sanitized = _ChatValidators.sanitizeContent(newContent);
-    if (sanitized.isEmpty) {
-      throw ArgumentError('Contenu vide');
-    }
-
     try {
       await _supabase.from('messages').update({
-        'content': sanitized,
+        'is_deleted': true,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', messageId).eq('sender_id', currentUserId).timeout(_kDbTimeout);
+      debugPrint('[ChatService] ✓ Message deleted: ${_ChatValidators.obfuscate(messageId)}');
     } catch (e) {
-      debugPrint('[ChatService] ❌ updateMessage: '
+      debugPrint('[ChatService] ❌ deleteMessage: '
           '${kDebugMode ? e : e.toString().split('\n').first}');
       rethrow;
+    }
+  }
+
+  /// ✅ P0: Transférer un message (max 5 destinataires)
+  Future<List<ChatMessage>> forwardMessage({
+    required String originalMessageId,
+    required List<String> targetConversationIds,
+  }) async {
+    if (_isDisposed) throw StateError('ChatService disposed');
+    final uid = currentUserId;
+    if (!_ChatValidators.isValidUuid(uid)) throw StateError('Non authentifié');
+    if (!_ChatValidators.isValidUuid(originalMessageId)) throw ArgumentError('originalMessageId invalide');
+    if (targetConversationIds.isEmpty || targetConversationIds.length > _kMaxForwardRecipients) {
+      throw ArgumentError('Forward: 1 à $_kMaxForwardRecipients conversations max');
+    }
+
+    // Récupérer le message original
+    final originalRows = await _supabase
+        .from('messages')
+        .select('*, profiles!sender_id(display_name, full_name, avatar_url)')
+        .eq('id', originalMessageId)
+        .maybeSingle()
+        .timeout(_kDbTimeout);
+
+    if (originalRows == null) throw StateError('Message original introuvable');
+
+    final original = ChatMessage.fromJson(Map<String, dynamic>.from(originalRows));
+    final forwardedMessages = <ChatMessage>[];
+
+    for (final targetConvId in targetConversationIds) {
+      if (!_ChatValidators.isValidUuid(targetConvId)) continue;
+
+      try {
+        final msg = await sendMessage(
+          conversationId: targetConvId,
+          content: original.content,
+          mediaUrl: original.mediaUrl,
+          mediaType: original.mediaType,
+          mediaName: original.mediaName,
+          mediaSize: original.mediaSize,
+          isForwarded: true,
+          forwardedFromConversationId: original.conversationId,
+          forwardedFromSenderName: original.senderName,
+        );
+        forwardedMessages.add(msg);
+      } catch (e) {
+        debugPrint('[ChatService] ⚠️ Forward to ${_ChatValidators.obfuscate(targetConvId)} failed: $e');
+      }
+    }
+
+    debugPrint('[ChatService] ✓ Forwarded ${forwardedMessages.length}/${targetConversationIds.length}');
+    return forwardedMessages;
+  }
+
+  /// ✅ P0: Épingler un message (max 3 par conversation)
+  Future<void> pinMessage(String messageId, String conversationId) async {
+    if (_isDisposed) return;
+    final uid = currentUserId;
+    if (!_ChatValidators.isValidUuid(uid)) return;
+    if (!_ChatValidators.isValidUuid(messageId)) return;
+
+    try {
+      // Vérifier le nombre de messages épinglés
+      final pinnedCount = await _supabase
+          .from('messages')
+          .select('id')
+          .eq('conversation_id', conversationId)
+          .eq('is_pinned', true)
+          .timeout(_kDbTimeout);
+
+      if ((pinnedCount as List).length >= _kMaxPinnedMessages) {
+        throw StateError('Maximum $_kMaxPinnedMessages messages épinglés atteint');
+      }
+
+      await _supabase
+          .from('messages')
+          .update({'is_pinned': true})
+          .eq('id', messageId)
+          .timeout(_kDbTimeout);
+
+      debugPrint('[ChatService] ✓ Message pinned: ${_ChatValidators.obfuscate(messageId)}');
+    } catch (e) {
+      debugPrint('[ChatService] ❌ pinMessage: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+      rethrow;
+    }
+  }
+
+  /// ✅ P0: Désépingler un message
+  Future<void> unpinMessage(String messageId) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(messageId)) return;
+
+    try {
+      await _supabase
+          .from('messages')
+          .update({'is_pinned': false})
+          .eq('id', messageId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ unpinMessage: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  /// ✅ P0: Marquer/unmarquer comme favori ⭐
+  Future<void> toggleStarMessage(String messageId) async {
+    if (_isDisposed) return;
+    final uid = currentUserId;
+    if (!_ChatValidators.isValidUuid(uid)) return;
+    if (!_ChatValidators.isValidUuid(messageId)) return;
+
+    try {
+      final existing = await _supabase
+          .from('starred_messages')
+          .select('id')
+          .eq('message_id', messageId)
+          .eq('user_id', uid)
+          .maybeSingle()
+          .timeout(_kDbTimeout);
+
+      if (existing != null) {
+        await _supabase
+            .from('starred_messages')
+            .delete()
+            .eq('message_id', messageId)
+            .eq('user_id', uid)
+            .timeout(_kDbTimeout);
+        debugPrint('[ChatService] ✓ Message unstarred: ${_ChatValidators.obfuscate(messageId)}');
+      } else {
+        await _supabase.from('starred_messages').insert({
+          'message_id': messageId,
+          'user_id': uid,
+          'starred_at': DateTime.now().toUtc().toIso8601String(),
+        }).timeout(_kDbTimeout);
+        debugPrint('[ChatService] ✓ Message starred: ${_ChatValidators.obfuscate(messageId)}');
+      }
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ toggleStarMessage: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  /// ✅ P0: Récupérer les messages favoris
+  Future<List<ChatMessage>> getStarredMessages({int limit = 50}) async {
+    if (_isDisposed) return [];
+    final uid = currentUserId;
+    if (!_ChatValidators.isValidUuid(uid)) return [];
+
+    try {
+      final response = await _supabase
+          .from('starred_messages')
+          .select('messages(*, profiles!sender_id(display_name, full_name, avatar_url))')
+          .eq('user_id', uid)
+          .order('starred_at', ascending: false)
+          .limit(limit)
+          .timeout(_kDbTimeout);
+
+      return (response as List)
+          .where((e) => e['messages'] != null)
+          .map((e) => _messageFromRow(Map<String, dynamic>.from(e['messages'] as Map)))
+          .toList();
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ getStarredMessages: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+      return [];
+    }
+  }
+
+  /// ✅ P0: Récupérer les messages épinglés d'une conversation
+  Future<List<ChatMessage>> getPinnedMessages(String conversationId) async {
+    if (_isDisposed) return [];
+    if (!_ChatValidators.isValidUuid(conversationId)) return [];
+
+    try {
+      final response = await _supabase
+          .from('messages')
+          .select('*, profiles!sender_id(display_name, full_name, avatar_url)')
+          .eq('conversation_id', conversationId)
+          .eq('is_pinned', true)
+          .order('created_at', ascending: false)
+          .limit(_kMaxPinnedMessages)
+          .timeout(_kDbTimeout);
+
+      return (response as List)
+          .map((e) => _messageFromRow(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ getPinnedMessages: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+      return [];
+    }
+  }
+
+  /// ✅ P0: Recherche in-chat
+  Future<List<ChatMessage>> searchInConversation(
+    String conversationId,
+    String query, {
+    int limit = 30,
+  }) async {
+    if (_isDisposed) return [];
+    if (!_ChatValidators.isValidUuid(conversationId)) return [];
+    final sanitizedQuery = _ChatValidators.sanitizeContent(query, maxLength: 200);
+    if (sanitizedQuery.isEmpty) return [];
+
+    try {
+      final response = await _supabase
+          .from('messages')
+          .select('*, profiles!sender_id(display_name, full_name, avatar_url)')
+          .eq('conversation_id', conversationId)
+          .eq('is_deleted_for_all', false)
+          .ilike('content', '%$sanitizedQuery%')
+          .order('created_at', ascending: false)
+          .limit(limit)
+          .timeout(_kDbTimeout);
+
+      return (response as List)
+          .map((e) => _messageFromRow(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ searchInConversation: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+      return [];
+    }
+  }
+
+  /// ✅ P1: Marquer un message View Once comme vu
+  Future<void> markViewOnceAsSeen(String messageId) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(messageId)) return;
+
+    try {
+      await _supabase
+          .from('messages')
+          .update({'has_been_viewed': true})
+          .eq('id', messageId)
+          .eq('has_been_viewed', false)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ markViewOnceAsSeen: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  /// ✅ P1: Ajouter un rappel sur un message
+  Future<void> setMessageReminder(String messageId, DateTime reminderAt) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(messageId)) return;
+
+    try {
+      await _supabase
+          .from('messages')
+          .update({'reminder_at': reminderAt.toUtc().toIso8601String()})
+          .eq('id', messageId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ setMessageReminder: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  /// ✅ P1: Sauvegarder la transcription d'un audio
+  Future<void> saveTranscription(String messageId, String transcription) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(messageId)) return;
+
+    try {
+      await _supabase
+          .from('messages')
+          .update({'transcription': _ChatValidators.sanitizeContent(transcription, maxLength: 5000)})
+          .eq('id', messageId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ saveTranscription: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  /// ✅ P1: Sauvegarder des annotations sur une image
+  Future<void> saveAnnotations(String messageId, String annotationsJson) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(messageId)) return;
+
+    try {
+      await _supabase
+          .from('messages')
+          .update({'annotations': annotationsJson})
+          .eq('id', messageId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ saveAnnotations: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
     }
   }
 
@@ -1089,10 +1465,6 @@ class ChatService {
   // REALTIME
   // ============================================================
 
-  /// Flux des messages d'une conversation.
-  /// - Profils préchargés : pas de requête avant d'émettre un message reçu.
-  /// - Rattrapage à chaque (re)connexion du channel + filet toutes les 20 s,
-  ///   qui n'émettent QUE les messages nouveaux (la liste locale n'est pas écrasée).
   Stream<List<ChatMessage>> subscribeToMessages(String conversationId) {
     final controller = StreamController<List<ChatMessage>>();
 
@@ -1172,7 +1544,6 @@ class ChatService {
                   '${kDebugMode ? e : "error"}');
             }
 
-            // Fallback (DELETE ou payload illisible) : recharger
             if (!controller.isClosed) {
               final messages = await getMessages(conversationId);
               if (!controller.isClosed) controller.add(messages);
@@ -1180,7 +1551,6 @@ class ChatService {
           },
         )
         .subscribe((status, [error]) {
-          // À chaque (re)connexion : récupère ce qui a pu être manqué
           if (status == RealtimeSubscribeStatus.subscribed) {
             unawaited(catchUp());
           }
@@ -1200,7 +1570,7 @@ class ChatService {
   }
 
   // ============================================================
-  // GROUPES + PRESENCE + DELETE + UPLOAD
+  // GROUPES + PRESENCE + UPLOAD
   // ============================================================
 
   Future<void> markAsRead(String conversationId) =>
@@ -1242,8 +1612,6 @@ class ChatService {
     }
   }
 
-  /// Flux de présence : channel filtré sur les utilisateurs concernés
-  /// (avant : toute la table + substring(0, 50) qui plantait pour 1 seul id).
   Stream<List<UserStatus>> subscribeToPresence(List<String> userIds) {
     final controller = StreamController<List<UserStatus>>();
     final validIds = userIds
@@ -1296,28 +1664,6 @@ class ChatService {
     };
 
     return controller.stream;
-  }
-
-  Future<void> deleteMessage(String messageId) async {
-    if (_isDisposed) return;
-    if (!_ChatValidators.isValidUuid(currentUserId)) {
-      throw StateError('Non authentifié');
-    }
-    if (!_ChatValidators.isValidUuid(messageId)) {
-      throw ArgumentError('messageId invalide');
-    }
-
-    try {
-      await _supabase.from('messages').update({
-        'is_deleted': true,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      }).eq('id', messageId).eq('sender_id', currentUserId).timeout(_kDbTimeout);
-      debugPrint('[ChatService] ✓ Message deleted: ${_ChatValidators.obfuscate(messageId)}');
-    } catch (e) {
-      debugPrint('[ChatService] ❌ deleteMessage: '
-          '${kDebugMode ? e : e.toString().split('\n').first}');
-      rethrow;
-    }
   }
 
   Future<String?> uploadFileWithUniqueName(
