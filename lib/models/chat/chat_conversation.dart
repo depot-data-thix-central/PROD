@@ -1,4 +1,3 @@
-// lib/models/chat/chat_conversation.dart
 import 'chat_message.dart';
 
 class ChatConversation {
@@ -12,14 +11,22 @@ class ChatConversation {
   final ChatMessage? lastMessage;
   final int unreadCount;
   final DateTime updatedAt;
+  
+  // ✅ NOUVEAUTÉS P0/P1
   final bool isPinned;
+  final DateTime? pinnedAt;
+  final bool isArchived;
+  final bool isMuted;
+  final DateTime? muteUntil;
+  final bool isLocked;
+  final String? draft;
 
   /// Escalade
   final bool isEscalation;
   final String? clientName;
   final String? clientAvatar;
-  final String? escalatedByName; // nom de l'agent qui a escaladé
-  final String? agentAvatar;     // photo de l'agent
+  final String? escalatedByName;
+  final String? agentAvatar;
 
   ChatConversation({
     required this.id,
@@ -33,6 +40,12 @@ class ChatConversation {
     this.unreadCount = 0,
     required this.updatedAt,
     this.isPinned = false,
+    this.pinnedAt,
+    this.isArchived = false,
+    this.isMuted = false,
+    this.muteUntil,
+    this.isLocked = false,
+    this.draft,
     this.isEscalation = false,
     this.clientName,
     this.clientAvatar,
@@ -40,7 +53,6 @@ class ChatConversation {
     this.agentAvatar,
   });
 
-  /// Titre liste : client si escalade, sinon groupe / autre participant
   String get displayName {
     if (isEscalation && (clientName?.isNotEmpty ?? false)) {
       return clientName!;
@@ -57,12 +69,23 @@ class ChatConversation {
     return otherParticipantAvatar;
   }
 
-  /// Alias pratiques pour l'UI escalade
   String get agentName => escalatedByName ?? 'Agent';
   String? get escalationClientName => clientName;
   String? get escalationClientAvatar => clientAvatar;
   String? get escalationAgentName => escalatedByName;
   String? get escalationAgentAvatar => agentAvatar;
+
+  /// Vérifie si la conversation est actuellement en sourdine
+  bool get isCurrentlyMuted {
+    if (!isMuted || muteUntil == null) return false;
+    return muteUntil!.isAfter(DateTime.now());
+  }
+
+  /// Temps restant de sourdine (null si pas de sourdine)
+  Duration? get muteRemaining {
+    if (!isCurrentlyMuted) return null;
+    return muteUntil!.difference(DateTime.now());
+  }
 
   ChatConversation copyWith({
     String? id,
@@ -76,6 +99,12 @@ class ChatConversation {
     int? unreadCount,
     DateTime? updatedAt,
     bool? isPinned,
+    DateTime? pinnedAt,
+    bool? isArchived,
+    bool? isMuted,
+    DateTime? muteUntil,
+    bool? isLocked,
+    String? draft,
     bool? isEscalation,
     String? clientName,
     String? clientAvatar,
@@ -89,12 +118,17 @@ class ChatConversation {
       groupAvatar: groupAvatar ?? this.groupAvatar,
       participantIds: participantIds ?? this.participantIds,
       otherParticipantName: otherParticipantName ?? this.otherParticipantName,
-      otherParticipantAvatar:
-          otherParticipantAvatar ?? this.otherParticipantAvatar,
+      otherParticipantAvatar: otherParticipantAvatar ?? this.otherParticipantAvatar,
       lastMessage: lastMessage ?? this.lastMessage,
       unreadCount: unreadCount ?? this.unreadCount,
       updatedAt: updatedAt ?? this.updatedAt,
       isPinned: isPinned ?? this.isPinned,
+      pinnedAt: pinnedAt ?? this.pinnedAt,
+      isArchived: isArchived ?? this.isArchived,
+      isMuted: isMuted ?? this.isMuted,
+      muteUntil: muteUntil ?? this.muteUntil,
+      isLocked: isLocked ?? this.isLocked,
+      draft: draft ?? this.draft,
       isEscalation: isEscalation ?? this.isEscalation,
       clientName: clientName ?? this.clientName,
       clientAvatar: clientAvatar ?? this.clientAvatar,
@@ -111,7 +145,6 @@ class ChatConversation {
       );
     } else if (json['last_message_preview'] != null &&
         (json['last_message_preview'] as String).isNotEmpty) {
-      // Fallback RPC qui renvoie un aperçu plat
       lastMsg = ChatMessage(
         id: json['last_message_id']?.toString() ?? '',
         conversationId: json['id']?.toString() ?? '',
@@ -133,8 +166,7 @@ class ChatConversation {
       groupAvatar: json['group_avatar'] as String?,
       participantIds: (json['participant_ids'] as List?)
               ?.map((e) => e.toString())
-              .toList() ??
-          [],
+              .toList() ?? [],
       otherParticipantName: json['other_participant_name'] as String? ??
           json['other_display_name'] as String?,
       otherParticipantAvatar: json['other_participant_avatar'] as String? ??
@@ -145,6 +177,16 @@ class ChatConversation {
           ? DateTime.parse(json['updated_at'].toString())
           : DateTime.now().toUtc(),
       isPinned: json['is_pinned'] == true,
+      pinnedAt: json['pinned_at'] != null
+          ? DateTime.parse(json['pinned_at'].toString())
+          : null,
+      isArchived: json['is_archived'] == true,
+      isMuted: json['is_muted'] == true,
+      muteUntil: json['mute_until'] != null
+          ? DateTime.parse(json['mute_until'].toString())
+          : null,
+      isLocked: json['is_locked'] == true,
+      draft: json['draft'] as String?,
       isEscalation: json['is_escalation'] == true,
       clientName: json['client_display_name'] as String? ??
           json['client_name'] as String?,
@@ -160,26 +202,32 @@ class ChatConversation {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'is_group': isGroup,
-        'group_name': groupName,
-        'group_avatar': groupAvatar,
-        'participant_ids': participantIds,
-        'other_participant_name': otherParticipantName,
-        'other_participant_avatar': otherParticipantAvatar,
-        'unread_count': unreadCount,
-        'updated_at': updatedAt.toIso8601String(),
-        'is_pinned': isPinned,
-        'is_escalation': isEscalation,
-        'client_display_name': clientName,
-        'client_avatar_url': clientAvatar,
-        'escalated_by_name': escalatedByName,
-        'agent_avatar_url': agentAvatar,
-        'last_message_preview': lastMessage?.content,
-        'last_message_id': lastMessage?.id,
-        'last_message_sender_id': lastMessage?.senderId,
-        'last_message_at': lastMessage?.createdAt.toIso8601String(),
-        'last_message_is_read': lastMessage?.isRead,
-        'last_message_is_delivered': lastMessage?.isDelivered,
-      };
+    'id': id,
+    'is_group': isGroup,
+    'group_name': groupName,
+    'group_avatar': groupAvatar,
+    'participant_ids': participantIds,
+    'other_participant_name': otherParticipantName,
+    'other_participant_avatar': otherParticipantAvatar,
+    'unread_count': unreadCount,
+    'updated_at': updatedAt.toIso8601String(),
+    'is_pinned': isPinned,
+    'pinned_at': pinnedAt?.toIso8601String(),
+    'is_archived': isArchived,
+    'is_muted': isMuted,
+    'mute_until': muteUntil?.toIso8601String(),
+    'is_locked': isLocked,
+    'draft': draft,
+    'is_escalation': isEscalation,
+    'client_display_name': clientName,
+    'client_avatar_url': clientAvatar,
+    'escalated_by_name': escalatedByName,
+    'agent_avatar_url': agentAvatar,
+    'last_message_preview': lastMessage?.content,
+    'last_message_id': lastMessage?.id,
+    'last_message_sender_id': lastMessage?.senderId,
+    'last_message_at': lastMessage?.createdAt.toIso8601String(),
+    'last_message_is_read': lastMessage?.isRead,
+    'last_message_is_delivered': lastMessage?.isDelivered,
+  };
 }
