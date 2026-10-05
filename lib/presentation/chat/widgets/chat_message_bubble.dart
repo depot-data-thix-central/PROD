@@ -158,6 +158,7 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
   bool _isDecrypted = false;
   bool _isUnlocking = false;
   String? _decrypted;
+  bool _swipeHapticTriggered = false;
 
   static const _quickReactions = ['❤️', '😂', '🔥', '👍', '😮', '😢'];
 
