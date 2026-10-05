@@ -40,6 +40,8 @@ import 'package:thix_id/services/push_notification_service.dart';
 import 'package:thix_id/presentation/chat/call/global_call_listener.dart';
 import 'package:thix_id/presentation/common/global_notification_listener.dart';
 import 'package:thix_id/presentation/thix_sos/widgets/global_sos_listener.dart';
+import 'package:thix_id/services/notifications/app_badge_sync_service.dart';
+import 'package:thix_id/presentation/notifications/widgets/notif_banner_listener.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
 
@@ -133,6 +135,14 @@ Future<void> main() async {
           _log('✓ Firebase OK');
         } catch (e) {
           _log('⚠️ Firebase: $e');
+        }
+
+        // ✅ NOUVEAU : Initialiser le service de badge (notifications locales pour le compteur)
+        try {
+          await AppBadgeSyncService.init().timeout(_kInitTimeout);
+          _log('✓ Badge sync OK');
+        } catch (e) {
+          _log('⚠️ Badge sync: $e');
         }
       } else {
         _log('ℹ️ Web: Firebase push skipped');
@@ -405,11 +415,13 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
           // ✅ Support RTL automatique pour l'Arabe
           return Directionality(
             textDirection: localeController.textDirection,
-            child: GlobalNotificationListener(
-              child: GlobalSosListener(
-                child: GlobalCallListener(
-                  navigatorKey: rootNavigatorKey,
-                  child: child ?? const SizedBox.shrink(),
+            child: NotifBannerListener(
+              child: GlobalNotificationListener(
+                child: GlobalSosListener(
+                  child: GlobalCallListener(
+                    navigatorKey: rootNavigatorKey,
+                    child: child ?? const SizedBox.shrink(),
+                  ),
                 ),
               ),
             ),
