@@ -36,11 +36,10 @@ Future<bool> authenticate({
     }
 
     try {
-      // ✅ API compatible local_auth 1.x et 2.x
+      // ✅ API minimale compatible local_auth 1.x / 2.x / 3.x
+      // Un seul paramètre requis : localizedReason
       final result = await _auth.authenticate(
         localizedReason: reason,
-        biometricOnly: false,
-        stickyAuth: true,
       );
       debugPrint('[Biometric] ${result ? "✓ Success" : "✗ Cancelled/Failed"}');
       return result;
