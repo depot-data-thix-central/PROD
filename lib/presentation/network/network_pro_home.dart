@@ -279,7 +279,8 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
   }
 
   Future<void> _openCreateStory() async {
-    final ok = await showDialog<bool>(context: context, builder: (_) =>  CreateStoryDialog());
+    final ok = await CreateStoryDialog.show(context);
+
     if (ok == true && mounted) {
       HapticFeedback.mediumImpact();
       await _loadStories();
