@@ -271,16 +271,33 @@ class TriggerSosNotifier extends StateNotifier<AsyncValue<SosIncident?>> {
       final lat = pos?.lat;
       final lng = pos?.lng;
 
-      // Récupérer le nom de la victime (utilisateur connecté)
-      final userAsync = _ref.read(currentUserProvider);
-      final user = userAsync.valueOrNull;
-      final victimName = user?.fullName ?? user?.firstName ?? 'Une personne';
+      // ✅ FIX : Récupérer le nom de la victime via Supabase directement
+      String victimName = 'Une personne';
+      try {
+        final user = Supabase.instance.client.auth.currentUser;
+        if (user != null) {
+          // Essayer de récupérer le profil complet
+          final profileRes = await Supabase.instance.client
+              .from('profiles')
+              .select('full_name, first_name')
+              .eq('id', user.id)
+              .maybeSingle();
+          
+          if (profileRes != null) {
+            victimName = (profileRes['full_name'] as String?) ?? 
+                        (profileRes['first_name'] as String?) ?? 
+                        'Une personne';
+          }
+        }
+      } catch (e) {
+        debugPrint('[SosProviders] ⚠️ Could not fetch victim name: $e');
+      }
 
       // Collecter tous les UIDs des secouristes (cercles 1+2+3)
       final rescuerUids = <String>{};
       for (final contact in contacts) {
-        // Essayer userId d'abord, puis thixId si disponible
-        final uid = contact.Id ?? contact.thixId;
+        // ✅ FIX : Utiliser userId ou thixId selon ce qui est disponible
+        final uid = contact.userId ?? contact.thixId;
         if (uid != null && uid.isNotEmpty) {
           rescuerUids.add(uid);
         }
