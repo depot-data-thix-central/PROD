@@ -222,6 +222,12 @@ class NotificationCountersService {
     'system': ThixSection.info,
     'security': ThixSection.info,
     'generic': ThixSection.info,
+    'media_like': ThixSection.media,
+    'media_comment': ThixSection.media,
+    'media_reply': ThixSection.media,
+    'doc_shared': ThixSection.info,
+    'doc_opened': ThixSection.info,
+    'doc_screenshot': ThixSection.info,
   };
 
   // ========================================================================
