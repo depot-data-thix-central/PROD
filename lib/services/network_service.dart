@@ -1315,13 +1315,28 @@ class NetworkService extends ChangeNotifier {
 
   Future<String?> uploadAudioBytes(Uint8List bytes, {String bucket = 'audio_uploads'}) async {
     if (currentUserId.isEmpty) throw Exception('Non authentifié');
-    if (!_NetworkValidators.validateFileSize(bytes.length, maxSizeMB: _maxAudioSizeMB)) throw Exception('Audio trop volumineux (max ${_maxAudioSizeMB}MB)');
+    if (!_NetworkValidators.validateFileSize(bytes.length, maxSizeMB: _maxAudioSizeMB)) {
+      throw Exception('Audio trop volumineux (max ${_maxAudioSizeMB}MB)');
+    }
     try {
       final name = '${DateTime.now().millisecondsSinceEpoch}.m4a';
       final path = '$currentUserId/$name';
-      await _supabase.storage.from(bucket).uploadBinary(path, bytes, fileOptions: const FileOptions(contentType: 'audio/x-m4a', upsert: true)).timeout(const Duration(seconds: 30));
+      
+      // ✅ MIME standard pour .m4a (AAC audio)
+      await _supabase.storage.from(bucket).uploadBinary(
+        path,
+        bytes,
+        fileOptions: const FileOptions(
+          contentType: 'audio/mp4',  // ✅ Corrigé : était audio/x-m4a
+          upsert: true,
+          cacheControl: '31536000',
+        ),
+      ).timeout(const Duration(seconds: 30));
+      
       return _supabase.storage.from(bucket).getPublicUrl(path);
-    } catch (e) { throw Exception(e.toString()); }
+    } catch (e) {
+      throw Exception('Upload audio failed: ${e.toString()}');
+    }
   }
 
   // ─────────────────────────────────────────────────────────────
