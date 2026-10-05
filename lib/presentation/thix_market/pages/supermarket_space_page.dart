@@ -54,7 +54,7 @@ const double _kHeroH = 108;
 const int _kCols = 3;
 const int _kFloorSize = 4;
 const Duration _kDbTimeout = Duration(seconds: 15);
-
+const double _kCeilH = 44; 
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -760,6 +760,16 @@ class _SupermarketSpacePageState extends ConsumerState<SupermarketSpacePage>
                           ),
                         ),
                       ),
+                                            // Plafond + spots PAR-DESSUS les étagères (non cliquable)
+                      const Positioned.fill(
+                        child: IgnorePointer(
+                          child: RepaintBoundary(
+                            child: CustomPaint(painter: _CeilingPainter()),
+                          ),
+                        ),
+                      ),
+
+                      
                       Positioned(
                         left: 12,
                         right: 12,
@@ -1790,8 +1800,73 @@ class _BackdropPainter extends CustomPainter {
       canvas.drawCircle(Offset(cx, cy + 9), 3.2, Paint()..color = Colors.white);
 
       canvas.drawOval(
+class _BackdropPainter extends CustomPainter {
+  const _BackdropPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final horizon = h * 0.80;
+
+    // ── Mur (derrière les étagères) ──
+    final wallRect = Rect.fromLTWH(0, 0, w, horizon);
+    canvas.drawRect(
+      wallRect,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFE9EFF8), Color(0xFFD3DDEA)],
+        ).createShader(wallRect),
+    );
+
+    // Joints des panneaux muraux
+    final seam = Paint()
+      ..color = Colors.white.withOpacity(0.35)
+      ..strokeWidth = 1;
+    for (var i = 1; i < 4; i++) {
+      canvas.drawLine(Offset(w * i / 4, _kCeilH), Offset(w * i / 4, horizon), seam);
+    }
+
+    // Plinthe
+    canvas.drawRect(
+      Rect.fromLTWH(0, horizon - 6, w, 6),
+      Paint()..color = const Color(0xFFB7C3D3),
+    );
+
+    // ── Sol ──
+    final floorRect = Rect.fromLTWH(0, horizon, w, h - horizon);
+    canvas.drawRect(
+      floorRect,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFD9E0EA), Color(0xFFBFC9D7)],
+        ).createShader(floorRect),
+    );
+
+    canvas.save();
+    canvas.clipRect(floorRect);
+    final line = Paint()
+      ..color = Colors.white.withOpacity(0.55)
+      ..strokeWidth = 1;
+    final vp = Offset(w / 2, horizon - (h - horizon) * 1.2);
+    for (var i = -6; i <= 6; i++) {
+      canvas.drawLine(vp, Offset(w / 2 + i * w * 0.22, h), line);
+    }
+    for (var k = 1; k <= 6; k++) {
+      final y = horizon + (h - horizon) * math.pow(k / 6, 2).toDouble();
+      canvas.drawLine(Offset(0, y), Offset(w, y), line);
+    }
+    canvas.restore();
+
+    // Flaques de lumière au sol (sous chaque spot)
+    for (final fx in const [0.14, 0.38, 0.62, 0.86]) {
+      canvas.drawOval(
         Rect.fromCenter(
-          center: Offset(cx, horizon + (h - horizon) * 0.38),
+          center: Offset(w * fx, horizon + (h - horizon) * 0.38),
           width: w * 0.30,
           height: (h - horizon) * 0.46,
         ),
@@ -1804,30 +1879,114 @@ class _BackdropPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _PerfPainter extends CustomPainter {
-  const _PerfPainter();
+/// Plafond + rail + spots : dessiné PAR-DESSUS les étagères.
+class _CeilingPainter extends CustomPainter {
+  const _CeilingPainter();
 
   @override
   void paint(Canvas canvas, Size size) {
-    final pts = <Offset>[];
-    for (var y = 6.0; y < size.height; y += 9) {
-      for (var x = 6.0; x < size.width; x += 9) {
-        pts.add(Offset(x, y));
-      }
-    }
-    canvas.drawPoints(
-      PointMode.points,
-      pts,
+    final w = size.width;
+    final h = size.height;
+
+    // Plafond opaque (les produits glissent dessous quand on défile)
+    final ceilRect = Rect.fromLTWH(0, 0, w, _kCeilH);
+    canvas.drawRect(
+      ceilRect,
       Paint()
-        ..color = _kPerfDot
-        ..strokeWidth = 2
-        ..strokeCap = StrokeCap.round,
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFB8C4D3), Color(0xFFE6ECF4)],
+        ).createShader(ceilRect),
     );
+    final tile = Paint()
+      ..color = const Color(0xFF90A4AE).withOpacity(0.18)
+      ..strokeWidth = 1;
+    for (var i = 1; i < 6; i++) {
+      canvas.drawLine(Offset(w * i / 6, 0), Offset(w * i / 6, _kCeilH), tile);
+    }
+    canvas.drawRect(
+      Rect.fromLTWH(0, _kCeilH - 2, w, 2),
+      Paint()..color = const Color(0xFFAFBCCB),
+    );
+
+    // Ombre douce sous le plafond, sur le haut des étagères
+    final shRect = Rect.fromLTWH(0, _kCeilH, w, 20);
+    canvas.drawRect(
+      shRect,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.black.withOpacity(0.12), Colors.black.withOpacity(0.0)],
+        ).createShader(shRect),
+    );
+
+    // Rail de projecteurs
+    final railY = _kCeilH * 0.38;
+    canvas.drawRect(
+      Rect.fromLTWH(0, railY, w, 4),
+      Paint()..color = const Color(0xFF78909C),
+    );
+
+    // Spots
+    for (final fx in const [0.14, 0.38, 0.62, 0.86]) {
+      final cx = w * fx;
+      final cy = railY + 4;
+
+      // Cône de lumière sur les étagères
+      final coneBottom = h * 0.60;
+      final coneRect = Rect.fromLTWH(cx - w * 0.16, cy, w * 0.32, coneBottom - cy);
+      final cone = Path()
+        ..moveTo(cx - 6, cy + 8)
+        ..lineTo(cx + 6, cy + 8)
+        ..lineTo(cx + w * 0.16, coneBottom)
+        ..lineTo(cx - w * 0.16, coneBottom)
+        ..close();
+      canvas.drawPath(
+        cone,
+        Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.white.withOpacity(0.26), Colors.white.withOpacity(0.0)],
+          ).createShader(coneRect),
+      );
+
+      // Tige + corps du projecteur
+      canvas.drawRect(
+        Rect.fromLTWH(cx - 1.5, cy, 3, 5),
+        Paint()..color = const Color(0xFF546E7A),
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(cx, cy + 9), width: 16, height: 9),
+          const Radius.circular(3),
+        ),
+        Paint()..color = const Color(0xFF37474F),
+      );
+
+      // Halo + lentille allumée
+      final glowC = Offset(cx, cy + 14);
+      canvas.drawCircle(
+        glowC,
+        18,
+        Paint()
+          ..shader = RadialGradient(
+            colors: [Colors.white.withOpacity(0.9), Colors.white.withOpacity(0.0)],
+          ).createShader(Rect.fromCircle(center: glowC, radius: 18)),
+      );
+      canvas.drawOval(
+        Rect.fromCenter(center: Offset(cx, cy + 13.5), width: 10, height: 4),
+        Paint()..color = Colors.white,
+      );
+    }
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+  
 
 class _MeshPainter extends CustomPainter {
   const _MeshPainter();
@@ -1983,8 +2142,8 @@ class _AislePageState extends State<_AislePage> {
 
     return ListView.builder(
       controller: _scroll,
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(2, 0, 2, 130),
+            physics: const ClampingScrollPhysics(), 
+      padding: const EdgeInsets.fromLTRB(2, _kCeilH, 2, 130), 
       itemCount: total,
       itemBuilder: (ctx, i) {
         if (i == 0) {
@@ -2054,14 +2213,34 @@ class _AisleSign extends StatelessWidget {
       height: _kSignH,
       child: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 46),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(width: 2, height: 14, color: const Color(0xFF90A4AE)),
-                Container(width: 2, height: 14, color: const Color(0xFF90A4AE)),
-              ],
+                    // Rail de fixation mural (le panneau est collé au mur)
+          SizedBox(
+            height: 14,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFFB0BEC5), Color(0xFF78909C)],
+                ),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(5)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  for (var i = 0; i < 2; i++)
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF455A64),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
           Expanded(
