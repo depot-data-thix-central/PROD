@@ -8,11 +8,11 @@
 //  Timeouts sur toutes les initialisations
 //
 // CORRECTIONS APPORTÉES :
-// ✅ Utilisation de ref.watch() au lieu de ref.read() pour écouter les changements de locale
-// ✅ Support RTL automatique pour l'Arabe via Directionality
-// ✅ localeListResolutionCallback pour meilleur fallback
-// ✅ Rebuild automatique de MaterialApp lors du changement de langue
-// ✅ CORRECTIF ANR OFFLINE : le catch de runZonedGuarded ne relance plus runApp()
+//  Utilisation de ref.watch() au lieu de ref.read() pour écouter les changements de locale
+//  Support RTL automatique pour l'Arabe via Directionality
+// localeListResolutionCallback pour meilleur fallback
+//  Rebuild automatique de MaterialApp lors du changement de langue
+//  CORRECTIF ANR OFFLINE : le catch de runZonedGuarded ne relance plus runApp()
 //    si l'app a déjà démarré — évite le double arbre de widgets / blocage UI
 //    quand une erreur réseau (ex. AuthRetryableFetchException lors du refresh
 //    token en mode offline) remonte hors des try/catch internes.
@@ -37,10 +37,10 @@ import 'package:thix_id/supabase/supabase_config.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/services/local_notification_service.dart';
 import 'package:thix_id/services/push_notification_service.dart';
-import 'package:thix_id/presentation/chat/call/global_call_listener.dart';
-import 'package:thix_id/presentation/thix_sos/widgets/global_sos_listener.dart';
 import 'package:thix_id/services/notifications/app_badge_sync_service.dart';
 import 'package:thix_id/presentation/notifications/widgets/notif_banner_listener.dart';
+import 'package:thix_id/presentation/chat/call/global_call_listener.dart';
+import 'package:thix_id/presentation/thix_sos/widgets/global_sos_listener.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
 
@@ -80,8 +80,6 @@ Future<void> main() async {
       } catch (e) {
         _log('⚠️ Offline cache: $e');
       }
-
-      
 
       //  Erreurs de build affichées À L'ÉCRAN (rouge) au lieu d'écran gris
       ErrorWidget.builder = (details) => Material(
@@ -125,7 +123,6 @@ Future<void> main() async {
 
       // WEB : FCM n'existe pas sur Web → skip
       if (!kIsWeb) {
-        
         try {
           await Firebase.initializeApp().timeout(_kInitTimeout);
           FirebaseMessaging.onBackgroundMessage(
@@ -190,7 +187,6 @@ Future<void> main() async {
           // INJECTION : le provider reçoit la vraie instance
           overrides: [
             localeControllerProvider.overrideWith((ref) => _localeController),
-
           ],
           child: const ThixApp(),
         ),
@@ -415,12 +411,10 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
           return Directionality(
             textDirection: localeController.textDirection,
             child: NotifBannerListener(
-              
-                child: GlobalSosListener(
-                  child: GlobalCallListener(
-                    navigatorKey: rootNavigatorKey,
-                    child: child ?? const SizedBox.shrink(),
-                  ),
+              child: GlobalSosListener(
+                child: GlobalCallListener(
+                  navigatorKey: rootNavigatorKey,
+                  child: child ?? const SizedBox.shrink(),
                 ),
               ),
             ),
