@@ -431,60 +431,60 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
 
   /// Recherche de hashtags : table post_hashtags, fallback parsing des posts récents.
   Future<List<_HashtagSuggestion>> _searchHashtags(String q) async {
-    final db = Supabase.instance.client;
-    final results = <String, int>{};
+  final db = Supabase.instance.client;
+  final results = <String, int>{};
 
-    // 1) Table dédiée (si elle existe avec ces colonnes)
-    try {
-      final res = await db
-          .from('post_hashtags')
-          .select('*')
-          .limit(200)
-          .timeout(_suggestTimeout);
-      for (final row in res as List) {
-        final m = Map<String, dynamic>.from(row as Map);
-        final tag = (m['tag'] ?? m['hashtag'] ?? m['name'])?.toString().toLowerCase();
-        if (tag == null) continue;
-        if (q.isEmpty || tag.startsWith(q.toLowerCase())) {
-          final count = (m['count'] ?? m['posts_count'] ?? m['usage_count'] as num?)?.toInt() ?? 1;
-          results[tag] = (results[tag] ?? 0) + count;
-        }
+  // 1) Table dédiée
+  try {
+    final res = await db
+        .from('post_hashtags')
+        .select('*')
+        .limit(200)
+        .timeout(_suggestTimeout);
+    for (final row in res as List) {
+      final m = Map<String, dynamic>.from(row as Map);
+      final tag = (m['tag'] ?? m['hashtag'] ?? m['name'])?.toString().toLowerCase();
+      if (tag == null) continue;
+      if (q.isEmpty || tag.startsWith(q.toLowerCase())) {
+        final count = (m['count'] ?? m['posts_count'] ?? m['usage_count'] as num?)?.toInt() ?? 1;
+        results[tag] = (results[tag] ?? 0) + count;  // ✅ count est déjà int
       }
-      if (results.isNotEmpty) {
-        final list = results.entries.map((e) => _HashtagSuggestion(e.key, e.value)).toList()
-          ..sort((a, b) => b.count.compareTo(a.count));
-        return list;
-      }
-    } catch (e) {
-      debugPrint('[Hashtags] table error: $e');
     }
-
-    // 2) Fallback : parser les posts récents
-    try {
-      final res = await db
-          .from('posts')
-          .select('content')
-          .order('created_at', ascending: false)
-          .limit(150)
-          .timeout(_suggestTimeout);
-      final pattern = RegExp(r'#([A-Za-z0-9_]{2,30})');
-      for (final row in res as List) {
-        final content = (row as Map)['content']?.toString() ?? '';
-        for (final m in pattern.allMatches(content)) {
-          final tag = m.group(1)!.toLowerCase();
-          if (q.isEmpty || tag.startsWith(q.toLowerCase())) {
-            results[tag] = (results[tag] ?? 0) + 1;
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('[Hashtags] fallback error: $e');
+    if (results.isNotEmpty) {
+      final list = results.entries.map((e) => _HashtagSuggestion(e.key, e.value)).toList()
+        ..sort((a, b) => b.count.compareTo(a.count));
+      return list;
     }
-
-    final list = results.entries.map((e) => _HashtagSuggestion(e.key, e.value)).toList()
-      ..sort((a, b) => b.count.compareTo(a.count));
-    return list;
+  } catch (e) {
+    debugPrint('[Hashtags] table error: $e');
   }
+
+  // 2) Fallback : parser les posts récents
+  try {
+    final res = await db
+        .from('posts')
+        .select('content')
+        .order('created_at', ascending: false)
+        .limit(150)
+        .timeout(_suggestTimeout);
+    final pattern = RegExp(r'#([A-Za-z0-9_]{2,30})');
+    for (final row in res as List) {
+      final content = (row as Map)['content']?.toString() ?? '';
+      for (final m in pattern.allMatches(content)) {
+        final tag = m.group(1)!.toLowerCase();
+        if (q.isEmpty || tag.startsWith(q.toLowerCase())) {
+          results[tag] = (results[tag] ?? 0) + 1;  // ✅ +1 est déjà int
+        }
+      }
+    }
+  } catch (e) {
+    debugPrint('[Hashtags] fallback error: $e');
+  }
+
+  final list = results.entries.map((e) => _HashtagSuggestion(e.key, e.value)).toList()
+    ..sort((a, b) => b.count.compareTo(a.count));
+  return list;
+}
 
   void _applyMention(Map<String, dynamic> user) {
     final token = _token;
