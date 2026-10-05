@@ -38,7 +38,6 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/services/local_notification_service.dart';
 import 'package:thix_id/services/push_notification_service.dart';
 import 'package:thix_id/presentation/chat/call/global_call_listener.dart';
-import 'package:thix_id/presentation/common/global_notification_listener.dart';
 import 'package:thix_id/presentation/thix_sos/widgets/global_sos_listener.dart';
 import 'package:thix_id/services/notifications/app_badge_sync_service.dart';
 import 'package:thix_id/presentation/notifications/widgets/notif_banner_listener.dart';
@@ -416,7 +415,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
           return Directionality(
             textDirection: localeController.textDirection,
             child: NotifBannerListener(
-              child: GlobalNotificationListener(
+              
                 child: GlobalSosListener(
                   child: GlobalCallListener(
                     navigatorKey: rootNavigatorKey,
