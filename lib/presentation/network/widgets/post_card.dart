@@ -2,20 +2,24 @@
 //
 // PostCard — Production Enterprise (THIX PRO / THIX ID)
 //
-// ✅ CORRECTIONS APPLIQUÉES:
-// - Cache Optimiste: Les Likes, Saves et Reposts ne redeviennent plus gris au scroll !
-// - Vérité serveur pour le like (post_likes) si le cache optimiste n'a pas l'info.
-// - Suppression des 'const' incorrects sur les widgets dynamiques
-// - Typage explicite <String, dynamic> pour toutes les Maps
+// ✅ NOUVEAUTÉS (cette version) :
+// - Pin profil : bouton 📌 pour épingler sur le profil du propriétaire
+// - Save feedback : snackbar "Enregistré" / "Retiré"
+// - Link preview riche : image OG style WhatsApp + favicon + domaine
+// - Partage style X : sheet avec recherche contacts THIX + apps externes
+// - Deep-links : thix.app/post/ID et thix:// ouvrent l'app
+// - Alignement sondage/challenge : pleine largeur alignée à gauche
+//
+// ✅ CONSERVÉ :
+// - Cache optimiste (Likes, Saves, Reposts)
+// - Vérité serveur pour le like (post_likes)
+// - Typage explicite <String, dynamic>
 // - Vérification mounted après chaque await
 // - Protection _isDisposed dans le Notifier
 // - Gestion propre des StreamSubscription (AudioPlayer)
-//
-// ✅ NOUVEAU (cette version) :
-// - _OriginalPostEmbed : charge et affiche le post original d'un repost
-//   (auteur, texte, média), avec fallback "post indisponible".
-// - _FullScreenVideoPlayer : vrai lecteur vidéo plein écran (video_player).
-// - Un repost n'affiche plus un contenu parasite "true".
+// - _OriginalPostEmbed pour les reposts
+// - _FullScreenVideoPlayer plein écran
+// - Détection ghost repost (contenu "true")
 
 import 'dart:async';
 import 'dart:collection';
@@ -44,21 +48,21 @@ import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/models/network_post.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
+import 'package:thix_id/presentation/network/widgets/post_share_sheet.dart';
 
 // ============================================================================
-// PALETTE MONOCHROME — alignée sur network_pro_home.dart (_Mono)
+// PALETTE MONOCHROME
 // ============================================================================
 class _Mono {
   _Mono._();
-  static const Color accent = Color(0xFF3F3F46); // gris ardoise foncé
-  static const Color accentDeep = Color(0xFF18181B); // gris quasi-noir
-  static const Color accentSoft = Color(0xFF71717A); // gris moyen
+  static const Color accent = Color(0xFF3F3F46);
+  static const Color accentDeep = Color(0xFF18181B);
+  static const Color accentSoft = Color(0xFF71717A);
 }
 
 // ============================================================================
 // CONSTANTES
 // ============================================================================
-
 class _PostCardConfig {
   _PostCardConfig._();
 
@@ -104,7 +108,6 @@ class _PostCardConfig {
 // ============================================================================
 // LOGGING
 // ============================================================================
-
 class _PostCardLogger {
   static const _tag = 'PostCard';
 
@@ -126,7 +129,6 @@ class _PostCardLogger {
 // ============================================================================
 // VALIDATEURS / SÉCURITÉ
 // ============================================================================
-
 class _PostCardValidators {
   _PostCardValidators._();
 
@@ -192,7 +194,6 @@ class _PostCardValidators {
 // ============================================================================
 // HELPERS
 // ============================================================================
-
 final RegExp _kRichContentRegex = RegExp(
   r'\{c:(#[0-9A-Fa-f]{6,8})\}([\s\S]*?)\{c\}|'
   r'\*\*([\s\S]+?)\*\*|'
@@ -226,7 +227,6 @@ String? _safeImageUrl(String? url) {
   return _PostCardValidators.isValidUrl(url) ? url : null;
 }
 
-/// Un repost simple ne doit jamais afficher un contenu parasite "true".
 bool _isGhostRepostContent(NetworkPost post) {
   return post.isRepostCard && post.content.trim().toLowerCase() == 'true';
 }
@@ -234,7 +234,6 @@ bool _isGhostRepostContent(NetworkPost post) {
 // ============================================================================
 // CACHE LRU & OPTIMISTE
 // ============================================================================
-
 class _CacheEntry<T> {
   final T value;
   final DateTime timestamp;
@@ -279,12 +278,10 @@ class _PostCardCache {
 }
 
 // ============================================================================
-// POST ORIGINAL D'UN REPOST (chargé une fois, gardé en mémoire)
+// POST ORIGINAL D'UN REPOST
 // ============================================================================
-
 final _originalPostProvider =
     FutureProvider.autoDispose.family<NetworkPost?, String>((ref, postId) async {
-  // Évite de recharger l'original à chaque scroll
   ref.keepAlive();
   try {
     return await ref
@@ -300,7 +297,6 @@ final _originalPostProvider =
 // ============================================================================
 // STATE NOTIFIER
 // ============================================================================
-
 final postItemProvider = StateNotifierProvider.autoDispose<PostItemNotifier, NetworkPost>(
   (ref) => throw UnimplementedError('postItemProvider doit être surchargé par PostCard'),
 );
@@ -469,7 +465,6 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
 // ============================================================================
 // POST ORIGINAL (embed d'un repost)
 // ============================================================================
-
 class _OriginalPostEmbed extends ConsumerWidget {
   final String postId;
   const _OriginalPostEmbed({required this.postId});
@@ -694,7 +689,6 @@ class _OriginalPostEmbed extends ConsumerWidget {
 // ============================================================================
 // GALERIE & LECTEUR VIDÉO PLEIN ÉCRAN
 // ============================================================================
-
 class _FullScreenGallery extends StatelessWidget {
   final List<String> imageUrls;
   final int initialIndex;
@@ -938,7 +932,6 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
 // ============================================================================
 // COMPOSANT PRINCIPAL
 // ============================================================================
-
 class PostCard extends ConsumerStatefulWidget {
   final NetworkPost post;
   final String currentProfileId;
@@ -1196,6 +1189,45 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     return null;
   }
 
+  // ✅ NOUVEAU : Helpers pour le partage
+  String _shareExcerpt(NetworkPost post) {
+    final c = _PostCardValidators.sanitize(post.content, maxLength: 140);
+    return c.isEmpty ? 'Découvrez ce post sur THIX Hub' : c;
+  }
+
+  String? _shareImage(NetworkPost post) =>
+      post.imageUrls.isNotEmpty ? _safeImageUrl(post.imageUrls.first) : null;
+
+  // ✅ NOUVEAU : Toggle pin profil
+  Future<void> _togglePin(NetworkPost post, WidgetRef ref, AppLocalizations l10n) async {
+    if (!_isAuthenticated) return;
+    HapticFeedback.selectionClick();
+    final wasPinned = post.isPinned;
+    try {
+      final service = ref.read(networkServiceProvider);
+      if (wasPinned) {
+        await service.unpinPost(post.id).timeout(_PostCardConfig.networkTimeout);
+      } else {
+        await service.pinPost(post.id).timeout(_PostCardConfig.networkTimeout);
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(wasPinned ? 'Post désépinglé' : 'Post épinglé sur votre profil'),
+        backgroundColor: ThixPolicy.success,
+        behavior: SnackBarBehavior.floating,
+      ));
+      widget.onRefresh?.call();
+    } catch (e) {
+      _PostCardLogger.error('togglePin failed', {'postId': post.id});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur : ${e.toString().split('\n').first}'),
+          backgroundColor: ThixPolicy.danger,
+        ));
+      }
+    }
+  }
+
   Widget _buildPostContent(NetworkPost post, AppLocalizations l10n) {
     if (post.content.isEmpty) return const SizedBox.shrink();
 
@@ -1260,7 +1292,10 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         if (firstUrl != null)
           Padding(
             padding: const EdgeInsets.only(top: 12),
-            child: _PremiumLinkPreview(url: firstUrl),
+            child: _PremiumLinkPreview(
+              url: firstUrl,
+              fallbackImage: post.imageUrls.isNotEmpty ? _safeImageUrl(post.imageUrls.first) : null,
+            ),
           ),
       ],
     );
@@ -2104,14 +2139,22 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
             semanticsLabel: l10n.t('post_impressions_label'),
           ),
           const SizedBox(width: 20),
+          // ✅ NOUVEAU : Bouton SHARE avec PostShareSheet
           _ActionBtn(
             icon: Icons.send_outlined,
             label: '',
             color: ThixPolicy.textSecondary.withValues(alpha: 0.8),
-            onTap: widget.onShare,
+            onTap: widget.onShare ??
+                () => PostShareSheet.show(
+                      context,
+                      postId: post.id,
+                      postExcerpt: _shareExcerpt(post),
+                      imageUrl: _shareImage(post),
+                    ),
             semanticsLabel: l10n.t('post_share'),
           ),
           const SizedBox(width: 20),
+          // ✅ NOUVEAU : Bouton SAVE avec feedback
           _ActionBtn(
             icon: post.isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
             label: '',
@@ -2119,8 +2162,14 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
             onTap: () {
               if (!_isAuthenticated) return;
               HapticFeedback.selectionClick();
+              final was = post.isSaved;
               ref.read(postItemProvider.notifier).toggleSave();
               widget.onSave?.call();
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(was ? 'Retiré des enregistrements' : 'Enregistré'),
+                behavior: SnackBarBehavior.floating,
+                duration: const Duration(seconds: 1),
+              ));
             },
             semanticsLabel: post.isSaved ? l10n.t('post_unsave') : l10n.t('post_save'),
           ),
@@ -2141,6 +2190,17 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                 color: ThixPolicy.danger,
                 onTap: () => _deletePost(post, ref, l10n),
                 semanticsLabel: l10n.t('post_delete')),
+          ],
+          // ✅ NOUVEAU : Bouton PIN pour le propriétaire
+          if (isOwner) ...[
+            const SizedBox(width: 20),
+            _ActionBtn(
+              icon: post.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+              label: '',
+              color: post.isPinned ? ThixPolicy.gold : ThixPolicy.textSecondary.withValues(alpha: 0.8),
+              onTap: () => _togglePin(post, ref, l10n),
+              semanticsLabel: post.isPinned ? 'Désépingler' : 'Épingler sur le profil',
+            ),
           ],
           if (!isOwner) ...[
             const SizedBox(width: 20),
@@ -2214,7 +2274,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           final isFollowingDB = ref.watch(followStatusProvider(post.userId)).valueOrNull;
           final isFollowing = isFollowingDB ?? _isFollowingLocal;
 
-          // Un repost simple n'affiche pas le texte parasite "true"
           final showContent = post.content.isNotEmpty && !_isGhostRepostContent(post);
 
           WidgetsBinding.instance.addPostFrameCallback((_) => _registerImpression(post.id));
@@ -2272,12 +2331,19 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                                 RepaintBoundary(
                                     child: _PremiumAudioPlayer(audioUrl: post.audioUrls.first, duration: post.audioDurationSeconds)),
                               ],
+                              // ✅ NOUVEAU : Alignement sondage/challenge
                               if (post.postType == 'poll' && _PostCardValidators.isValidPollData(post.pollData)) ...[
                                 const SizedBox(height: 12),
-                                _buildPollWidget(post, l10n),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: SizedBox(width: double.infinity, child: _buildPollWidget(post, l10n)),
+                                ),
                               ] else if (post.postType == 'challenge') ...[
                                 const SizedBox(height: 12),
-                                _buildChallengeWidget(post, l10n),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: SizedBox(width: double.infinity, child: _buildChallengeWidget(post, l10n)),
+                                ),
                               ],
                               const SizedBox(height: 16),
                               if (likesCount > 0)
@@ -2303,7 +2369,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
 // ============================================================================
 // WIDGETS AUXILIAIRES
 // ============================================================================
-
 class _ActionBtn extends StatelessWidget {
   const _ActionBtn({
     required this.icon,
@@ -2540,9 +2605,11 @@ class _WaveformPainter extends CustomPainter {
   bool shouldRepaint(covariant _WaveformPainter oldDelegate) => oldDelegate.progress != progress;
 }
 
+// ✅ NOUVEAU : Link preview riche style WhatsApp
 class _PremiumLinkPreview extends StatefulWidget {
   final String url;
-  const _PremiumLinkPreview({required this.url});
+  final String? fallbackImage;
+  const _PremiumLinkPreview({required this.url, this.fallbackImage});
 
   @override
   State<_PremiumLinkPreview> createState() => _PremiumLinkPreviewState();
@@ -2573,17 +2640,15 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
       if (mounted) setState(() { _isLoading = false; _networkFailed = true; });
       return;
     }
-
     final cached = _PostCardCache.instance.getLinkPreview(widget.url);
     if (cached != null) {
       if (mounted) setState(() { _previewData = cached; _isLoading = false; });
       return;
     }
-
     try {
       final response = await Supabase.instance.client.functions
-          .invoke('link-preview', body: <String, dynamic>{'url': widget.url}).timeout(_PostCardConfig.linkPreviewTimeout);
-
+          .invoke('link-preview', body: <String, dynamic>{'url': widget.url})
+          .timeout(_PostCardConfig.linkPreviewTimeout);
       if (response.data is Map) {
         final data = Map<String, dynamic>.from(response.data as Map);
         _PostCardCache.instance.setLinkPreview(widget.url, data);
@@ -2604,15 +2669,11 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
 
     final title = _PostCardValidators.sanitize(_previewData?['title']?.toString() ?? '');
     final description = _PostCardValidators.sanitize(_previewData?['description']?.toString() ?? '');
-    final ogImage = _safeImageUrl(_previewData?['image']?.toString());
+    final ogImage = _safeImageUrl(_previewData?['image']?.toString()) ?? _safeImageUrl(widget.fallbackImage);
     final hasOgImage = ogImage != null;
-    final hasRealArticleData = title.isNotEmpty || hasOgImage;
+    final hasRealData = title.isNotEmpty || hasOgImage;
 
-    if (!hasRealArticleData && _isRedirectDomain) {
-      return _buildRedirectFallback();
-    }
-
-    final displayImage = hasOgImage ? ogImage : _faviconUrl;
+    if (!hasRealData && _isRedirectDomain) return _buildRedirectFallback();
 
     return GestureDetector(
       onTap: () async {
@@ -2630,46 +2691,46 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            hasOgImage
-                ? CachedNetworkImage(
-                    imageUrl: displayImage,
-                    height: 160,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(
-                      height: 160,
-                      color: Colors.white.withValues(alpha: 0.4),
-                      child: const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _Mono.accent))),
-                    ),
-                    errorWidget: (_, __, ___) => _buildFaviconBanner(),
-                  )
-                : _buildFaviconBanner(),
+            if (hasOgImage)
+              CachedNetworkImage(
+                imageUrl: ogImage,
+                height: 180,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => Container(height: 180, color: Colors.white.withValues(alpha: 0.4)),
+                errorWidget: (_, __, ___) => _buildFaviconBanner(),
+              )
+            else
+              _buildFaviconBanner(),
             Padding(
               padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(children: [
-                    const Icon(Icons.link_rounded, size: 12, color: _Mono.accent),
-                    const SizedBox(width: 4),
-                    Text(_domain.toUpperCase(),
-                        style: ThixPolicy.captionStyle.copyWith(color: _Mono.accent, fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 0.5)),
-                  ]),
-                  if (title.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain, fontWeight: FontWeight.bold, fontSize: 14, height: 1.2)),
-                  ] else if (_networkFailed || _previewData == null) ...[
-                    const SizedBox(height: 6),
+                  if (title.isNotEmpty)
+                    Text(title, maxLines: 3, overflow: TextOverflow.ellipsis,
+                        style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain, fontWeight: FontWeight.bold, fontSize: 15, height: 1.25))
+                  else
                     Text(AppLocalizations.of(context).t('external_link'),
-                        style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain, fontWeight: FontWeight.bold, fontSize: 14, height: 1.2)),
-                  ],
+                        style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain, fontWeight: FontWeight.bold, fontSize: 15)),
                   if (description.isNotEmpty) ...[
                     const SizedBox(height: 6),
-                    Text(description, maxLines: 2, overflow: TextOverflow.ellipsis, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 12, height: 1.3)),
-                  ] else ...[
-                    const SizedBox(height: 6),
-                    Text(widget.url, maxLines: 1, overflow: TextOverflow.ellipsis, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 12, height: 1.3)),
+                    Text(description, maxLines: 3, overflow: TextOverflow.ellipsis,
+                        style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 12.5, height: 1.35)),
                   ],
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Icon(Icons.link_rounded, size: 14, color: ThixPolicy.textSecondary),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(_domain, maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+                      ),
+                      CachedNetworkImage(imageUrl: _faviconUrl, width: 18, height: 18, fit: BoxFit.contain,
+                          errorWidget: (_, __, ___) => const Icon(Icons.public_rounded, size: 16, color: ThixPolicy.textMuted)),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -2695,12 +2756,8 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
         child: Row(
           children: [
             Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: _Mono.accent.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
+              width: 36, height: 36,
+              decoration: BoxDecoration(color: _Mono.accent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
               child: const Icon(Icons.open_in_new_rounded, size: 17, color: _Mono.accent),
             ),
             const SizedBox(width: 10),
@@ -2735,10 +2792,7 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.8), borderRadius: BorderRadius.circular(12)),
           child: CachedNetworkImage(
-            imageUrl: _faviconUrl,
-            width: 40,
-            height: 40,
-            fit: BoxFit.contain,
+            imageUrl: _faviconUrl, width: 40, height: 40, fit: BoxFit.contain,
             placeholder: (_, __) => const SizedBox(width: 40, height: 40, child: Icon(Icons.link_rounded, color: _Mono.accent, size: 24)),
             errorWidget: (_, __, ___) => const Icon(Icons.link_rounded, color: _Mono.accent, size: 28),
           ),
