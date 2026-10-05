@@ -684,12 +684,13 @@ class _ProfilePageState extends ConsumerState<ProfilePage> {
                 version: QrVersions.auto,
                 size: 220,
                 backgroundColor: Colors.white,
+                // ✅ CORRECTION : utilise 'circle' qui existe dans toutes les versions
                 eyeStyle: const QrEyeStyle(
-                  eyeShape: QrEyeShape.roundedRect,
+                  eyeShape: QrEyeShape.circle,
                   color: ThixPolicy.primary,
                 ),
                 dataModuleStyle: const QrDataModuleStyle(
-                  dataModuleShape: QrDataModuleShape.roundedRect,
+                  dataModuleShape: QrDataModuleShape.circle,
                   color: ThixPolicy.textMain,
                 ),
               ),
