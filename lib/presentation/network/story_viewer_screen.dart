@@ -533,12 +533,22 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
 
   // ── CONTENU MÉDIA (IMAGE, AUDIO, TEXTE) ──
   Widget _buildMediaContent(String? mediaUrl, String text, Color? bgColor, String mediaType) {
-    if (mediaType != 'audio' && mediaUrl != null && mediaUrl.isNotEmpty) {
+    // ✅ DEBUG : log pour diagnostiquer si bgColor est bien passé
+    debugPrint('[StoryView] mediaType=$mediaType url=${mediaUrl?.isNotEmpty == true ? "ok" : "empty"} '
+        'bgColor=${bgColor?.toARGB32().toRadixString(16) ?? "null"} '
+        'textLen=${text.length}');
+
+    final hasImage = mediaType != 'audio' && mediaUrl != null && mediaUrl.isNotEmpty;
+    final hasText = text.isNotEmpty;
+    final hasBg = bgColor != null;
+
+    // ── CAS 1 : IMAGE (avec ou sans texte) ──
+    if (hasImage) {
       return InteractiveViewer(
         minScale: 1.0,
         maxScale: 3.0,
         child: CachedNetworkImage(
-          imageUrl: mediaUrl,
+          imageUrl: mediaUrl!,
           fit: BoxFit.contain,
           placeholder: (context, url) => Container(
             color: bgColor ?? Colors.black,
@@ -550,24 +560,22 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
               ),
             ),
           ),
-          errorWidget: (context, url, error) => Container(
-            color: bgColor ?? Colors.black,
-            child: const Center(child: Icon(Icons.broken_image_outlined, color: Colors.white, size: 60)),
-          ),
+          errorWidget: (context, url, error) => _buildTextFallback(text, bgColor),
         ),
       );
     }
 
+    // ── CAS 2 : AUDIO ──
     if (mediaType == 'audio') {
       return Container(
         decoration: BoxDecoration(
-          gradient: bgColor != null
-              ? LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [bgColor, bgColor.withOpacity(0.6)],
-                )
-              : const LinearGradient(colors: [Color(0xFF1A1F2E), Color(0xFF0A0E1A)]),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: hasBg
+                ? [bgColor!, bgColor.withOpacity(0.6)]
+                : const [Color(0xFF1A1F2E), Color(0xFF0A0E1A)],
+          ),
         ),
         child: Center(
           child: Column(
@@ -583,19 +591,28 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                 child: const Icon(Icons.headphones_rounded, color: ThixPolicy.gold, size: 54),
               ),
               const SizedBox(height: 16),
-              const Text('Message vocal', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
-              if (text.isNotEmpty) ...[
+              const Text(
+                'Message vocal',
+                style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800),
+              ),
+              if (hasText) ...[
                 const SizedBox(height: 24),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 32),
                   child: Text(
                     text,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600, height: 1.4),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                      shadows: [Shadow(blurRadius: 10, color: Colors.black54, offset: Offset(0, 2))],
+                    ),
                   ),
                 ),
               ],
-              if (mediaUrl != null)
+              if (mediaUrl != null && mediaUrl.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 24),
                   child: _InlineStoryAudio(url: mediaUrl),
@@ -606,107 +623,48 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
       );
     }
 
-    if (text.isNotEmpty) {
-      return Container(
-        color: bgColor ?? Colors.black,
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              text,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                height: 1.4,
-                shadows: [Shadow(blurRadius: 8, color: Colors.black, offset: Offset(0, 2))],
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ),
-      );
-    }
+    // ── CAS 3 : TEXTE SEUL ou FALLBACK ──
+    return _buildTextFallback(text, bgColor);
+  }
+
+  /// ✅ MÉTHODE UNIFIÉE pour le fallback (texte seul ou erreur image)
+  /// Gère correctement le bgColor avec ombres adaptées au fond clair/sombre
+  Widget _buildTextFallback(String text, Color? bgColor) {
+    final hasText = text.isNotEmpty;
+    
+    // Détection si le fond est clair pour adapter le style du texte
+    final bool isLightBg = bgColor != null && bgColor.computeLuminance() > 0.5;
+    final Color textColor = isLightBg ? Colors.black : Colors.white;
+    final Color shadowColor = isLightBg ? Colors.black26 : Colors.black;
 
     return Container(
       color: bgColor ?? Colors.black,
-      child: const Center(child: Icon(Icons.image_not_supported_outlined, color: Colors.white54, size: 60)),
-    );
-  }
-
-  // ── PROGRESS BARS ──
-  Widget _buildProgressBars() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      child: Row(
-        children: List.generate(_stories.length, (i) {
-          return Expanded(
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              height: 3,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(3),
-              ),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: FractionallySizedBox(
-                  widthFactor: i < _current ? 1.0 : i == _current ? _progress : 0.0,
-                  child: Container(
-                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(3)),
+      child: hasText
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  text,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    height: 1.4,
+                    shadows: [
+                      Shadow(
+                        blurRadius: isLightBg ? 4 : 10,
+                        color: shadowColor,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
                 ),
               ),
+            )
+          : const Center(
+              child: Icon(Icons.image_not_supported_outlined, color: Colors.white54, size: 60),
             ),
-          );
-        }),
-      ),
-    );
-  }
-
-  // ── HEADER ──
-  Widget _buildHeader(String name, String? avatar, DateTime? createdAt) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: Colors.grey.shade800,
-            child: ClipOval(
-              child: avatar != null
-                  ? CachedNetworkImage(
-                      imageUrl: avatar,
-                      width: 36,
-                      height: 36,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => const Icon(Icons.person, size: 18, color: Colors.white),
-                    )
-                  : const Icon(Icons.person, size: 18, color: Colors.white),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (createdAt != null)
-                  Text(_getTimeAgo(createdAt), style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11)),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
-      ),
     );
   }
 
