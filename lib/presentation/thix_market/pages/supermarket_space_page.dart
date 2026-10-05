@@ -1800,7 +1800,7 @@ class _BackdropPainter extends CustomPainter {
       canvas.drawCircle(Offset(cx, cy + 9), 3.2, Paint()..color = Colors.white);
 
       canvas.drawOval(
-class _BackdropPainter extends CustomPainter {
+ _BackdropPainter extends CustomPainter {
   const _BackdropPainter();
 
   @override
