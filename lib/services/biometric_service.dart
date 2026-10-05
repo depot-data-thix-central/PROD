@@ -27,8 +27,7 @@ class BiometricService {
   }
 
   /// Authentifie l'utilisateur via biométrie (empreinte / Face ID)
-  /// Retourne true si succès, false si annulé ou échec.
-  Future<bool> authenticate({
+Future<bool> authenticate({
     String reason = 'Authentifiez-vous pour accéder à cette conversation',
   }) async {
     if (!await isAvailable()) {
@@ -37,11 +36,10 @@ class BiometricService {
     }
 
     try {
-      // ✅ API local_auth >= 2.x (sans paramètre options)
+      // ✅ API compatible local_auth 1.x et 2.x
       final result = await _auth.authenticate(
         localizedReason: reason,
         biometricOnly: false,
-        useErrorDialogs: true,
         stickyAuth: true,
       );
       debugPrint('[Biometric] ${result ? "✓ Success" : "✗ Cancelled/Failed"}');
