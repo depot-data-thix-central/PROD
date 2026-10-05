@@ -229,11 +229,15 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
         direction: DismissDirection.startToEnd,
         confirmDismiss: (_) async => false, // On gère manuellement
         onUpdate: (details) {
-          // Feedback haptique au seuil de 30%
-          if (details.progress > 0.3 && details.previousProgress <= 0.3) {
-            HapticFeedback.selectionClick();
-          }
-        },
+      // Feedback haptique unique au seuil de 30% via un flag local
+      // DismissUpdateDetails ne fournit que progress et direction
+      if (details.progress > 0.3 && !_swipeHapticTriggered) {
+        _swipeHapticTriggered = true;
+        HapticFeedback.selectionClick();
+      } else if (details.progress <= 0.3) {
+        _swipeHapticTriggered = false;
+      }
+    },
         onDismissed: (_) {
           widget.onReply?.call();
         },
