@@ -58,7 +58,8 @@ class AppBadgeSyncService {
     // iOS + certains OEM Android
     try {
       if (safe == 0) {
-        await AppBadgePlus.clearBadge();
+        // ✅ FIX : updateBadge(0) au lieu de clearBadge()
+        await AppBadgePlus.updateBadge(0);
       } else {
         await AppBadgePlus.updateBadge(safe);
       }
@@ -72,29 +73,6 @@ class AppBadgeSyncService {
         if (safe == 0) {
           await _plugin.cancel(_kSummaryId);
         } else {
-          await _plugin.show(
-            _kSummaryId,
-            'THIX Hub',
-            safe == 1 ? '1 notification non lue' : '$safe notifications non lues',
-            const NotificationDetails(
-              android: AndroidNotificationDetails(
-                _kChannelId,
-                'Compteur THIX',
-                channelDescription:
-                    'Maintient le badge chiffré sur l\'icône de l\'application',
-                importance: Importance.low,
-                priority: Priority.low,
-                silent: true,
-                playSound: false,
-                enableVibration: false,
-                onlyAlertOnce: true,
-                showWhen: false,
-                number: 1 == 0 ? null : null, // placeholder rempli ci-dessous
-              ),
-            ),
-            payload: 'badge_summary',
-          );
-          // Re-show avec le vrai number (certains launchers lisent l'extra)
           await _plugin.show(
             _kSummaryId,
             'THIX Hub',
