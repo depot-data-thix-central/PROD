@@ -1,7 +1,7 @@
 // lib/main.dart
 //
 // THIX ID CENTRAL — Point d'entrée (Production Enterprise)
-// Corrections Web release (dart2js minification type check fix)
+// Corrections Web release (dart2js build fix)
 
 import 'dart:async';
 
@@ -139,7 +139,7 @@ Future<void> main() async {
         await _localeController.init().timeout(_kInitTimeout);
         _log('✓ Locale OK: ${_localeController.locale.languageCode}');
       } catch (e) {
-        _log('⚠️️ Locale: $e');
+        _log('⚠️ Locale: $e');
       }
 
       try {
@@ -247,10 +247,9 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
     try {
       final localeController = ref.read(localeControllerProvider);
       
-      // ✅ Sécurisation de extraRefreshListenable pour éviter les crashs de type Listenable
       final List<Listenable> listenables = [_auth];
       if (localeController is Listenable) {
-        listenables.add(localeController as Listenable);
+        listenables.add(localeController);
       }
 
       _router = AppRouter.create(
@@ -287,7 +286,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
         _log('✓ Push unregistered');
       }
     } catch (e) {
-      _log('⚠️️ Push: $e');
+      _log('⚠️ Push: $e');
     }
   }
 
@@ -319,17 +318,11 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
         app_provider.ChangeNotifierProvider<AuthController>.value(
           value: _auth,
         ),
-        // ✅ SÉCURISATION PROVIDER LEGACY :
-        // Si LocaleController dérive de ChangeNotifier, on utilise ChangeNotifierProvider,
-        // sinon un Provider simple pour éviter l'erreur "not a subtype of ChangeNotifier".
-        if (localeController is ChangeNotifier)
-          app_provider.ChangeNotifierProvider<LocaleController>.value(
-            value: localeController as ChangeNotifier,
-          )
-        else
-          app_provider.Provider<LocaleController>.value(
-            value: localeController,
-          ),
+        // ✅ CORRECTIF TYPE CHECK (dart2js) :
+        // Provider universel compatible avec tout type de LocaleController
+        app_provider.Provider<LocaleController>.value(
+          value: localeController,
+        ),
         app_provider.Provider<ProfileService>(
           create: (_) => ProfileService(),
         ),
