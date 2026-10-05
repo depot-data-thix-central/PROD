@@ -155,7 +155,7 @@ class CreatePostPage extends ConsumerStatefulWidget {
   ConsumerState<CreatePostPage> createState() => _CreatePostPageState();
 }
 
-class _CreatePostPageState extends ConsumerState<CreatePostPage> {
+class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProviderStateMixin {
   final _contentController = TextEditingController();
   final _contentFocusNode = FocusNode();
 
