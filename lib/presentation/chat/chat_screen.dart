@@ -1129,7 +1129,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final customTimeCtrl = TextEditingController();
     HapticFeedback.selectionClick();
 
-    // ✅ CORRECTION : Utilisation de Map au lieu de Records pour compatibilité
+    // ✅ FIX: Utiliser une List<Map> au lieu des Records Dart 3 (e.$1, e.$2)
+    // pour compatibilité avec analyzer 3.4.0
     final List<Map<String, dynamic>> durationOptions = [
       {'label': l10n.t('chat_disabled'), 'value': null},
       {'label': l10n.t('chat_seconds_10'), 'value': 10},
