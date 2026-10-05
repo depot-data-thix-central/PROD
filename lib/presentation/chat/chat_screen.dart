@@ -1173,6 +1173,62 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                         title: Text(label),
                         trailing: selected ? const Icon(Icons.check_circle, color: ThixPolicy.primary) : null,
                         onTap: () {
+  void _showEphemeralTimerDialog() {
+    final l10n = AppLocalizations.of(context);
+    bool showCustomInput = false;
+    final customTimeCtrl = TextEditingController();
+    HapticFeedback.selectionClick();
+
+    // List<Map> compatible analyzer 3.4.0
+    final List<Map<String, dynamic>> durationOptions = [
+      {'label': l10n.t('chat_disabled'), 'value': null},
+      {'label': l10n.t('chat_seconds_10'), 'value': 10},
+      {'label': l10n.t('chat_minute_1'), 'value': 60},
+      {'label': l10n.t('chat_hour_1'), 'value': 3600},
+      {'label': l10n.t('chat_hours_24'), 'value': 86400},
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              decoration: BoxDecoration(
+                color: ThixPolicy.card,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+                border: Border(top: BorderSide(color: ThixPolicy.border)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: ThixPolicy.border,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    l10n.t('chat_ephemeral_message'),
+                    style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 12),
+                  if (!showCustomInput) ...[
+                    ...durationOptions.map((e) {
+                      final String label = e['label'] as String;
+                      final int? value = e['value'] as int?;
+                      final selected = _ephemeralDuration == value;
+                      return ListTile(
+                        title: Text(label),
+                        trailing: selected ? const Icon(Icons.check_circle, color: ThixPolicy.primary) : null,
+                        onTap: () {
                           setState(() {
                             _ephemeralDuration = value;
                             _isEphemeral = value != null;
@@ -1240,6 +1296,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       ),
     );
   }
+
 
   void _showPasswordProtectDialog() {
     final l10n = AppLocalizations.of(context);
