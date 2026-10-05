@@ -1,6 +1,6 @@
 // lib/presentation/network/story_viewer_screen.dart
 // ============================================================================
-// STORY VIEWER — Plein écran avec Like ❤️ + Vu par 👁️ + Audio + Fond coloré
+// STORY VIEWER — Plein écran avec Like ❤️ + Vu par 👁️ + Audio + Fond coloré + Suppression
 // ============================================================================
 import 'dart:async';
 import 'dart:math' as math;
@@ -207,10 +207,13 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _markViewed() async {
     if (_stories.isEmpty || _current >= _stories.length) return;
-    final storyId = _stories[_current]['id']?.toString();
+    final story = _stories[_current];
+    final storyId = story['id']?.toString();
     if (storyId == null) return;
     final viewerId = _viewerId;
     if (viewerId == null) return;
+    // ✅ Ne pas compter le créateur dans ses propres vues
+    if (story['user_id']?.toString() == viewerId) return;
 
     try {
       await Supabase.instance.client
@@ -219,14 +222,14 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
           .eq('id', storyId)
           .timeout(_requestTimeout);
 
-      await Supabase.instance.client
-          .from('story_views')
-          .upsert({
-            'story_id': storyId,
-            'viewer_id': viewerId,
-            'viewed_at': DateTime.now().toUtc().toIso8601String(),
-          }, onConflict: 'story_id,viewer_id')
-          .timeout(_requestTimeout);
+      await Supabase.instance.client.from('story_views').upsert(
+        {
+          'story_id': storyId,
+          'viewer_id': viewerId,
+          'viewed_at': DateTime.now().toUtc().toIso8601String(),
+        },
+        onConflict: 'story_id,viewer_id',
+      ).timeout(_requestTimeout);
     } catch (e) {
       debugPrint('[Story] Mark viewed error: $e');
     }
@@ -310,6 +313,69 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
       ctrl.dispose();
       _heartAnims.remove(storyId);
     });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // SUPPRESSION
+  // ════════════════════════════════════════════════════════════════════════
+  Future<void> _deleteStory(String storyId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Supprimer la story ?'),
+        content: const Text('Cette action est irréversible.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    final supa = Supabase.instance.client;
+    final uid = supa.auth.currentUser?.id;
+
+    try {
+      // 1) Supprime les dépendances d'abord (filet de sécurité si CASCADE absent)
+      try { await supa.from('story_views').delete().eq('story_id', storyId).timeout(_requestTimeout); } catch (_) {}
+      try { await supa.from('story_likes').delete().eq('story_id', storyId).timeout(_requestTimeout); } catch (_) {}
+
+      // 2) Supprime la story (avec garde owner côté client)
+      await supa
+          .from('stories')
+          .delete()
+          .eq('id', storyId)
+          .eq('user_id', uid ?? '')
+          .timeout(_requestTimeout);
+
+      if (!mounted) return;
+
+      // 3) Retire de la liste locale + navigation
+      setState(() {
+        _stories.removeWhere((s) => s['id']?.toString() == storyId);
+        if (_current >= _stories.length) _current = math.max(0, _stories.length - 1);
+      });
+
+      if (_stories.isEmpty) {
+        Navigator.pop(context);
+      } else {
+        _startTimer();
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Story supprimée'), backgroundColor: ThixPolicy.success),
+      );
+    } catch (e) {
+      debugPrint('[Story] delete error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Suppression impossible : ${e.toString().split('\n').first}'), backgroundColor: ThixPolicy.danger),
+        );
+      }
+    }
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -677,7 +743,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     );
   }
 
-  // ── HEADER ──
+  // ── HEADER (avec bouton poubelle pour créateur) ──
   Widget _buildHeader(String name, String? avatar, DateTime? createdAt) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -714,6 +780,13 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
               ],
             ),
           ),
+          // ✅ Bouton poubelle (créateur uniquement)
+          if (_isCreator)
+            IconButton(
+              style: IconButton.styleFrom(backgroundColor: Colors.black45),
+              icon: const Icon(Icons.delete_outline_rounded, color: Colors.white, size: 22),
+              onPressed: () => _deleteStory(_stories[_current]['id'].toString()),
+            ),
           IconButton(
             icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
             onPressed: () => Navigator.pop(context),
@@ -970,7 +1043,7 @@ class _InlineStoryAudioState extends State<_InlineStoryAudio> {
 }
 
 // ============================================================================
-// SHEET "VU PAR"
+// SHEET "VU PAR" (agnostique au schéma)
 // ============================================================================
 class _ViewersSheet extends StatefulWidget {
   final String storyId;
@@ -990,18 +1063,56 @@ class _ViewersSheetState extends State<_ViewersSheet> {
     _loadViewers();
   }
 
+  /// ✅ Agnostique au schéma : charge viewer_id + viewed_at, puis profils séparément
   Future<void> _loadViewers() async {
     try {
       final supa = Supabase.instance.client;
+
+      // 1) Récupère les vues (colonne viewer_id uniquement)
       final res = await supa
           .from('story_views')
-          .select('viewed_at, viewer:viewer_id(display_name, photo_url, avatar_url, username)')
+          .select('viewer_id, viewed_at')
           .eq('story_id', widget.storyId)
           .order('viewed_at', ascending: false)
           .timeout(const Duration(seconds: 10));
 
-      final list = (res as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      if (mounted) setState(() { _viewers = list; _loading = false; });
+      final rows = (res as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+
+      // 2) Extraction des viewer_ids uniques
+      final ids = <String>{};
+      for (final r in rows) {
+        final vid = r['viewer_id']?.toString();
+        if (vid != null && vid.isNotEmpty) ids.add(vid);
+      }
+
+      // 3) Chargement des profils
+      final profiles = <String, Map<String, dynamic>>{};
+      if (ids.isNotEmpty) {
+        final pres = await supa
+            .from('profiles')
+            .select('id, display_name, username, avatar_url, photo_url')
+            .inFilter('id', ids.toList())
+            .timeout(const Duration(seconds: 10));
+        for (final p in pres as List) {
+          final m = Map<String, dynamic>.from(p as Map);
+          profiles[m['id'].toString()] = m;
+        }
+      }
+
+      // 4) Assemblage
+      if (mounted) {
+        setState(() {
+          _viewers = rows
+              .where((r) => r['viewer_id'] != null)
+              .map((r) => {
+                    'viewer_id': r['viewer_id'],
+                    'viewed_at': r['viewed_at'],
+                    'viewer': profiles[r['viewer_id'].toString()],
+                  })
+              .toList();
+          _loading = false;
+        });
+      }
     } catch (e) {
       debugPrint('[Viewers] load: $e');
       if (mounted) setState(() { _loading = false; _error = 'Erreur de chargement'; });
