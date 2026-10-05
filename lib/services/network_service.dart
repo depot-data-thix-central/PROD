@@ -983,9 +983,18 @@ class NetworkService extends ChangeNotifier {
   }
 
   Future<void> markStoryAsViewed(String storyId) async {
-    await _supabase.from('story_views').upsert({'story_id': storyId, 'user_id': currentUserId}, onConflict: 'story_id,user_id', ignoreDuplicates: true).timeout(_requestTimeout);
+    final uid = currentUserId;
+    if (uid.isEmpty) return;
+    await _supabase.from('story_views').upsert(
+      {
+        'story_id': storyId,
+        'viewer_id': uid,   // ✅ était 'user_id'
+        'viewed_at': DateTime.now().toUtc().toIso8601String(),
+      },
+      onConflict: 'story_id,viewer_id',   // ✅ était 'story_id,user_id'
+      ignoreDuplicates: true,
+    ).timeout(_requestTimeout);
   }
-
   Future<List<Highlight>> getUserHighlights(String userId) async {
     try {
       final res = await _supabase.from('story_highlights').select().eq('user_id', userId).order('created_at', ascending: false).timeout(_requestTimeout);
