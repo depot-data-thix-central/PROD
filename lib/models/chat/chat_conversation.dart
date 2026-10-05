@@ -12,7 +12,7 @@ class ChatConversation {
   final int unreadCount;
   final DateTime updatedAt;
   
-  // ✅ NOUVEAUTÉS P0/P1
+  // ✅ Fonctionnalités P0/P1
   final bool isPinned;
   final DateTime? pinnedAt;
   final bool isArchived;
@@ -85,6 +85,16 @@ class ChatConversation {
   Duration? get muteRemaining {
     if (!isCurrentlyMuted) return null;
     return muteUntil!.difference(DateTime.now());
+  }
+
+  /// Formatte le temps restant de sourdine
+  String get muteRemainingText {
+    final remaining = muteRemaining;
+    if (remaining == null) return '';
+    if (remaining.inDays > 0) return '${remaining.inDays}j';
+    if (remaining.inHours > 0) return '${remaining.inHours}h';
+    if (remaining.inMinutes > 0) return '${remaining.inMinutes}min';
+    return '< 1min';
   }
 
   ChatConversation copyWith({
