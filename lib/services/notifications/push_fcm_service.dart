@@ -1,3 +1,4 @@
+// lib/services/notifications/push_fcm_service.dart
 import 'dart:async';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -5,12 +6,22 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// FCM : enregistrement token, push foreground/background, deep-link, badge.
+/// ✅ SÉCURISÉ WEB : aucune instance Firebase/LocalNotif créée sur Web.
 class PushFcmService {
   PushFcmService._();
   static final PushFcmService instance = PushFcmService._();
 
-  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
-  final FlutterLocalNotificationsPlugin _local = FlutterLocalNotificationsPlugin();
+  // ✅ LAZY : créés uniquement au premier usage (jamais sur Web)
+  FirebaseMessaging? _fcmInstance;
+  FlutterLocalNotificationsPlugin? _localInstance;
+
+  FirebaseMessaging get _fcm => _fcmInstance ??= FirebaseMessaging.instance;
+  FlutterLocalNotificationsPlugin get _local =>
+      _localInstance ??= FlutterLocalNotificationsPlugin();
+
+  /// Web non supporté → toutes les méthodes deviennent no-op
+  bool get _supported => !kIsWeb;
+
   final StreamController<Map<String, dynamic>> _foregroundCtrl =
       StreamController<Map<String, dynamic>>.broadcast();
 
@@ -18,7 +29,10 @@ class PushFcmService {
   Stream<Map<String, dynamic>> get foregroundStream => _foregroundCtrl.stream;
 
   Future<void> init({required Future<void> Function(String? route) onOpenRoute}) async {
-    if (kIsWeb) return;
+    if (!_supported) {
+      debugPrint('[PushFcm] ℹ️ Web: push disabled');
+      return;
+    }
     try {
       await _fcm.requestPermission(alert: true, badge: true, sound: true);
 
@@ -33,7 +47,8 @@ class PushFcmService {
       );
 
       const channel = AndroidNotificationChannel(
-        'thix_notifications', 'Notifications THIX',
+        'thix_notifications',
+        'Notifications THIX',
         description: 'Toutes les notifications THIX',
         importance: Importance.high,
       );
@@ -57,9 +72,13 @@ class PushFcmService {
           data['title'] as String? ?? 'THIX',
           data['body'] as String? ?? '',
           const NotificationDetails(
-            android: AndroidNotificationDetails('thix_notifications', 'Notifications THIX',
-                channelDescription: 'Toutes les notifications THIX',
-                importance: Importance.high, priority: Priority.high),
+            android: AndroidNotificationDetails(
+              'thix_notifications',
+              'Notifications THIX',
+              channelDescription: 'Toutes les notifications THIX',
+              importance: Importance.high,
+              priority: Priority.high,
+            ),
           ),
           payload: data['route'] as String?,
         );
@@ -69,12 +88,15 @@ class PushFcmService {
       FirebaseMessaging.onMessageOpenedApp.listen((m) => onOpenRoute(m.data['route'] as String?));
       final initial = await _fcm.getInitialMessage();
       if (initial != null) await onOpenRoute(initial.data['route'] as String?);
+
+      debugPrint('[PushFcm] ✓ initialized');
     } catch (e) {
       debugPrint('[PushFcm] ❌ init: $e');
     }
   }
 
   Future<void> _registerToken(String token) async {
+    if (!_supported) return;
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) return;
     try {
@@ -91,13 +113,16 @@ class PushFcmService {
 
   /// À appeler au logout pour ne plus pousser vers cet appareil.
   Future<void> unregister() async {
+    if (!_supported) return;
     final uid = Supabase.instance.client.auth.currentUser?.id;
     final token = await _fcm.getToken();
     if (uid == null || token == null) return;
     try {
       await Supabase.instance.client
-          .from('device_tokens').delete()
-          .eq('user_id', uid).eq('token', token);
+          .from('device_tokens')
+          .delete()
+          .eq('user_id', uid)
+          .eq('token', token);
     } catch (_) {}
   }
 }
