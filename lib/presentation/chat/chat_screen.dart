@@ -1128,43 +1128,115 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     bool showCustomInput = false;
     final customTimeCtrl = TextEditingController();
     HapticFeedback.selectionClick();
+
+    // ✅ CORRECTION : Utilisation de Map au lieu de Records pour compatibilité
+    final List<Map<String, dynamic>> durationOptions = [
+      {'label': l10n.t('chat_disabled'), 'value': null},
+      {'label': l10n.t('chat_seconds_10'), 'value': 10},
+      {'label': l10n.t('chat_minute_1'), 'value': 60},
+      {'label': l10n.t('chat_hour_1'), 'value': 3600},
+      {'label': l10n.t('chat_hours_24'), 'value': 86400},
+    ];
+
     showModalBottomSheet(
-      context: context, backgroundColor: Colors.transparent, isScrollControlled: true,
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setModalState) {
-        return Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-            decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: const BorderRadius.vertical(top: Radius.circular(22)), border: Border(top: BorderSide(color: ThixPolicy.border))),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
-              const SizedBox(height: 16),
-              Text(l10n.t('chat_ephemeral_message'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16)),
-              const SizedBox(height: 12),
-              if (!showCustomInput) ...[
-                ...[(l10n.t('chat_disabled'), null), (l10n.t('chat_seconds_10'), 10), (l10n.t('chat_minute_1'), 60), (l10n.t('chat_hour_1'), 3600), (l10n.t('chat_hours_24'), 86400)].map((e) {
-                  final selected = _ephemeralDuration == e.$2;
-                  return ListTile(title: Text(e.$1), trailing: selected ? const Icon(Icons.check_circle, color: ThixPolicy.primary) : null,
-                    onTap: () { setState(() { _ephemeralDuration = e.$2; _isEphemeral = e.$2 != null; }); Navigator.pop(ctx); });
-                }),
-                ListTile(title: Text(l10n.t('chat_custom_time'), style: TextStyle(color: ThixPolicy.primary, fontWeight: FontWeight.w600)),
-                  leading: const Icon(Icons.timer_outlined, color: ThixPolicy.primary), onTap: () => setModalState(() => showCustomInput = true)),
-              ] else ...[
-                Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(children: [
-                    Expanded(child: TextField(controller: customTimeCtrl, keyboardType: TextInputType.number, autofocus: true,
-                      decoration: InputDecoration(labelText: l10n.t('chat_duration_seconds'), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), contentPadding: const EdgeInsets.symmetric(horizontal: 16)))),
-                    const SizedBox(width: 12),
-                    ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16)),
-                      onPressed: () { final val = int.tryParse(customTimeCtrl.text.trim()); if (val != null && val > 0) { setState(() { _ephemeralDuration = val; _isEphemeral = true; }); Navigator.pop(ctx); } else { _showWarning(l10n.t('chat_invalid_number')); } },
-                      child: Text(l10n.t('chat_validate'), style: const TextStyle(color: Colors.white))),
-                  ])),
-                TextButton(onPressed: () => setModalState(() => showCustomInput = false), child: Text(l10n.t('common_back'), style: TextStyle(color: ThixPolicy.textSecondary))),
-              ],
-            ]),
-          ),
-        );
-      }),
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              decoration: BoxDecoration(
+                color: ThixPolicy.card,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+                border: Border(top: BorderSide(color: ThixPolicy.border)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
+                  const SizedBox(height: 16),
+                  Text(
+                    l10n.t('chat_ephemeral_message'),
+                    style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 12),
+                  if (!showCustomInput) ...[
+                    ...durationOptions.map((e) {
+                      final String label = e['label'] as String;
+                      final int? value = e['value'] as int?;
+                      final selected = _ephemeralDuration == value;
+                      return ListTile(
+                        title: Text(label),
+                        trailing: selected ? const Icon(Icons.check_circle, color: ThixPolicy.primary) : null,
+                        onTap: () {
+                          setState(() {
+                            _ephemeralDuration = value;
+                            _isEphemeral = value != null;
+                          });
+                          Navigator.pop(ctx);
+                        },
+                      );
+                    }),
+                    ListTile(
+                      title: Text(l10n.t('chat_custom_time'), style: TextStyle(color: ThixPolicy.primary, fontWeight: FontWeight.w600)),
+                      leading: const Icon(Icons.timer_outlined, color: ThixPolicy.primary),
+                      onTap: () => setModalState(() => showCustomInput = true),
+                    ),
+                  ] else ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: customTimeCtrl,
+                              keyboardType: TextInputType.number,
+                              autofocus: true,
+                              decoration: InputDecoration(
+                                labelText: l10n.t('chat_duration_seconds'),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: ThixPolicy.primary,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                            ),
+                            onPressed: () {
+                              final val = int.tryParse(customTimeCtrl.text.trim());
+                              if (val != null && val > 0) {
+                                setState(() {
+                                  _ephemeralDuration = val;
+                                  _isEphemeral = true;
+                                });
+                                Navigator.pop(ctx);
+                              } else {
+                                _showWarning(l10n.t('chat_invalid_number'));
+                              }
+                            },
+                            child: Text(l10n.t('chat_validate'), style: const TextStyle(color: Colors.white)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => setModalState(() => showCustomInput = false),
+                      child: Text(l10n.t('common_back'), style: TextStyle(color: ThixPolicy.textSecondary)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 
