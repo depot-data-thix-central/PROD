@@ -1,12 +1,9 @@
 // lib/presentation/network/story_viewer_screen.dart
 // ============================================================================
-// STORY VIEWER — Plein écran avec Like ❤️ + Vu par 👁️
-// • Like animé (cœur qui pop) + persistance DB
-// • "Vu par" (uniquement pour le créateur) → sheet liste viewers
-// • Support fond coloré (stories texte)
-// • Progress bars, pause, next/prev, swipe-down to close
+// STORY VIEWER — Plein écran avec Like ❤️ + Vu par 👁️ + Audio + Fond coloré
 // ============================================================================
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -17,7 +14,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
 // ============================================================================
-// VALIDATEURS ET ASSAINISSEURS
+// VALIDATEURS
 // ============================================================================
 class _StoryValidators {
   _StoryValidators._();
@@ -52,6 +49,12 @@ class _StoryValidators {
     } catch (_) {
       return null;
     }
+  }
+
+  static String fmtDuration(int seconds) {
+    final m = (seconds ~/ 60).toString().padLeft(2, '0');
+    final s = (seconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 }
 
@@ -92,9 +95,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
   static const int _timerIntervalMs = 50;
 
   String? get _viewerId => Supabase.instance.client.auth.currentUser?.id;
-
   bool get _isCreator {
-    if (_stories.isEmpty || _current >= _stories.length) return false;
+    if (_stories.isEmpty) return false;
     return _stories[_current]['user_id']?.toString() == _viewerId;
   }
 
@@ -112,12 +114,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     for (final c in _heartAnims.values) {
       c.dispose();
     }
-    _heartAnims.clear();
     super.dispose();
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // CHARGEMENT DE LA STORY ET DES DONNÉES
+  // LOAD
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _load() async {
     final supa = Supabase.instance.client;
@@ -162,7 +163,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // GESTION DU TIMER
+  // TIMER
   // ════════════════════════════════════════════════════════════════════════
   void _startTimer() {
     _timer?.cancel();
@@ -187,9 +188,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
   }
 
   void _resumeTimer() {
-    if (_isPaused) {
-      setState(() => _isPaused = false);
-    }
+    if (_isPaused) setState(() => _isPaused = false);
   }
 
   void _preloadNext() {
@@ -204,13 +203,14 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // VUES ET LIKES
+  // VIEWED + LIKES
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _markViewed() async {
     if (_stories.isEmpty || _current >= _stories.length) return;
     final storyId = _stories[_current]['id']?.toString();
+    if (storyId == null) return;
     final viewerId = _viewerId;
-    if (storyId == null || viewerId == null) return;
+    if (viewerId == null) return;
 
     try {
       await Supabase.instance.client
@@ -242,25 +242,14 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     try {
       final supa = Supabase.instance.client;
 
-      final counts = await supa
-          .from('story_likes')
-          .select('story_id')
-          .inFilter('story_id', ids)
-          .timeout(_requestTimeout);
-
+      final counts = await supa.from('story_likes').select('story_id').inFilter('story_id', ids).timeout(_requestTimeout);
       final countMap = <String, int>{};
       for (final row in counts as List) {
         final id = (row as Map)['story_id']?.toString();
         if (id != null) countMap[id] = (countMap[id] ?? 0) + 1;
       }
 
-      final myLikes = await supa
-          .from('story_likes')
-          .select('story_id')
-          .eq('user_id', viewerId)
-          .inFilter('story_id', ids)
-          .timeout(_requestTimeout);
-
+      final myLikes = await supa.from('story_likes').select('story_id').eq('user_id', viewerId).inFilter('story_id', ids).timeout(_requestTimeout);
       final likedSet = <String>{};
       for (final row in myLikes as List) {
         final id = (row as Map)['story_id']?.toString();
@@ -274,7 +263,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
         }
       });
     } catch (e) {
-      debugPrint('[Story] Load like state error: $e');
+      debugPrint('[Story] Load like state: $e');
     }
   }
 
@@ -293,10 +282,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     });
 
     HapticFeedback.mediumImpact();
-
-    if (!wasLiked) {
-      _playHeartPop(storyId);
-    }
+    if (!wasLiked) _playHeartPop(storyId);
 
     try {
       final supa = Supabase.instance.client;
@@ -310,29 +296,19 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
       }
     } catch (e) {
       debugPrint('[Story] Toggle like error: $e');
-      if (mounted) {
-        setState(() {
-          _likeState[storyId] = {'liked': wasLiked, 'count': (state['count'] as int)};
-        });
-      }
+      setState(() {
+        _likeState[storyId] = {'liked': wasLiked, 'count': state['count'] as int};
+      });
     }
   }
 
   void _playHeartPop(String storyId) {
-    _heartAnims[storyId]?.dispose();
-
     final ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
     _heartAnims[storyId] = ctrl;
-
-    ctrl.addListener(() {
-      if (mounted) setState(() {});
-    });
-
+    ctrl.addListener(() { if (mounted) setState(() {}); });
     ctrl.forward().then((_) {
-      if (mounted && _heartAnims[storyId] == ctrl) {
-        ctrl.dispose();
-        _heartAnims.remove(storyId);
-      }
+      ctrl.dispose();
+      _heartAnims.remove(storyId);
     });
   }
 
@@ -399,7 +375,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // VU PAR (Sheet des spectateurs)
+  // VU PAR (sheet)
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _openViewersSheet() async {
     if (!_isCreator || _stories.isEmpty) return;
@@ -407,20 +383,16 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     if (storyId == null) return;
 
     HapticFeedback.lightImpact();
-    _pauseTimer();
-
-    await showModalBottomSheet(
+    showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (ctx) => _ViewersSheet(storyId: storyId),
     );
-
-    _resumeTimer();
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // RENDU UI PRINCIPAL
+  // BUILD
   // ════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
@@ -465,18 +437,14 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
           offset: Offset(0, _dragOffset),
           child: Stack(
             children: [
-              // CONTENU MEDIA
+              // ── MEDIA ──
               Positioned.fill(child: _buildMediaContent(mediaUrl, text, bgColor, mediaType)),
 
-              // ANIMATION CŒUR POP
+              // ── CŒUR POP ──
               if (heartAnim != null)
-                Positioned.fill(
-                  child: Center(
-                    child: _AnimatedHeartPop(progress: heartAnim.value),
-                  ),
-                ),
+                Positioned.fill(child: Center(child: _AnimatedHeartPop(progress: heartAnim.value))),
 
-              // BARRES DE PROGRESSION + HEADER
+              // ── PROGRESS + HEADER ──
               SafeArea(
                 child: Column(
                   children: [
@@ -487,7 +455,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                 ),
               ),
 
-              // TEXTE SUPERPOSÉ
+              // ── TEXTE OVERLAY (si média + texte) ──
               if (text.isNotEmpty && mediaUrl != null && mediaType != 'audio')
                 Positioned(
                   bottom: 100,
@@ -507,7 +475,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                   ),
                 ),
 
-              // BARRE DU BAS : LIKE + VU PAR + ACTION
+              // ── BOTTOM BAR (like + vu par + reply) ──
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -515,7 +483,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                 child: _buildBottomBar(liked, likeCount),
               ),
 
-              // INDICATEUR DE PAUSE
+              // ── PAUSE ──
               if (_isPaused)
                 Center(
                   child: Container(
@@ -531,18 +499,18 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     );
   }
 
-  // ── CONTENU MÉDIA (IMAGE, AUDIO, TEXTE) ──
-  Widget _buildMediaContent(String? mediaUrl, String text, Color? bgColor, String mediaType) {
-    // ✅ DEBUG : log pour diagnostiquer si bgColor est bien passé
-    debugPrint('[StoryView] mediaType=$mediaType url=${mediaUrl?.isNotEmpty == true ? "ok" : "empty"} '
-        'bgColor=${bgColor?.toARGB32().toRadixString(16) ?? "null"} '
-        'textLen=${text.length}');
+  // ════════════════════════════════════════════════════════════════════════
+  // BUILDERS (tous définis ci-dessous)
+  // ════════════════════════════════════════════════════════════════════════
 
+  // ── CONTENU MÉDIA (image / audio / texte) ──
+  Widget _buildMediaContent(String? mediaUrl, String text, Color? bgColor, String mediaType) {
     final hasImage = mediaType != 'audio' && mediaUrl != null && mediaUrl.isNotEmpty;
     final hasText = text.isNotEmpty;
     final hasBg = bgColor != null;
+    final bool isLightBg = hasBg && bgColor.computeLuminance() > 0.5;
 
-    // ── CAS 1 : IMAGE (avec ou sans texte) ──
+    // ── IMAGE ──
     if (hasImage) {
       return InteractiveViewer(
         minScale: 1.0,
@@ -552,20 +520,14 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
           fit: BoxFit.contain,
           placeholder: (context, url) => Container(
             color: bgColor ?? Colors.black,
-            child: const Center(
-              child: SizedBox(
-                width: 40,
-                height: 40,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-              ),
-            ),
+            child: const Center(child: SizedBox(width: 40, height: 40, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))),
           ),
           errorWidget: (context, url, error) => _buildTextFallback(text, bgColor),
         ),
       );
     }
 
-    // ── CAS 2 : AUDIO ──
+    // ── AUDIO ──
     if (mediaType == 'audio') {
       return Container(
         decoration: BoxDecoration(
@@ -591,9 +553,13 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                 child: const Icon(Icons.headphones_rounded, color: ThixPolicy.gold, size: 54),
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'Message vocal',
-                style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800),
+                style: TextStyle(
+                  color: isLightBg ? Colors.black : Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               if (hasText) ...[
                 const SizedBox(height: 24),
@@ -602,12 +568,18 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                   child: Text(
                     text,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: isLightBg ? Colors.black87 : Colors.white,
                       fontSize: 20,
                       fontWeight: FontWeight.w600,
                       height: 1.4,
-                      shadows: [Shadow(blurRadius: 10, color: Colors.black54, offset: Offset(0, 2))],
+                      shadows: [
+                        Shadow(
+                          blurRadius: isLightBg ? 4 : 10,
+                          color: isLightBg ? Colors.white24 : Colors.black54,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -615,7 +587,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
               if (mediaUrl != null && mediaUrl.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 24),
-                  child: _InlineStoryAudio(url: mediaUrl),
+                  child: _InlineStoryAudio(url: mediaUrl, isLightBg: isLightBg),
                 ),
             ],
           ),
@@ -623,22 +595,29 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
       );
     }
 
-    // ── CAS 3 : TEXTE SEUL ou FALLBACK ──
+    // ── TEXTE SEUL ──
     return _buildTextFallback(text, bgColor);
   }
 
-  /// ✅ MÉTHODE UNIFIÉE pour le fallback (texte seul ou erreur image)
-  /// Gère correctement le bgColor avec ombres adaptées au fond clair/sombre
+  // ── FALLBACK TEXTE ──
   Widget _buildTextFallback(String text, Color? bgColor) {
     final hasText = text.isNotEmpty;
-    
-    // Détection si le fond est clair pour adapter le style du texte
-    final bool isLightBg = bgColor != null && bgColor.computeLuminance() > 0.5;
+    final hasBg = bgColor != null;
+    final bool isLightBg = hasBg && bgColor.computeLuminance() > 0.5;
     final Color textColor = isLightBg ? Colors.black : Colors.white;
-    final Color shadowColor = isLightBg ? Colors.black26 : Colors.black;
+    final Color shadowColor = isLightBg ? Colors.black12 : Colors.black;
 
     return Container(
       color: bgColor ?? Colors.black,
+      decoration: bgColor == null
+          ? const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFF1B3B7A), Color(0xFF0B1B3D)],
+              ),
+            )
+          : null,
       child: hasText
           ? Center(
               child: Padding(
@@ -652,23 +631,99 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                     fontWeight: FontWeight.bold,
                     height: 1.4,
                     shadows: [
-                      Shadow(
-                        blurRadius: isLightBg ? 4 : 10,
-                        color: shadowColor,
-                        offset: const Offset(0, 2),
-                      ),
+                      Shadow(blurRadius: isLightBg ? 4 : 10, color: shadowColor, offset: const Offset(0, 2)),
                     ],
                   ),
                 ),
               ),
             )
-          : const Center(
-              child: Icon(Icons.image_not_supported_outlined, color: Colors.white54, size: 60),
+          : Center(
+              child: Icon(
+                Icons.image_not_supported_outlined,
+                color: isLightBg ? Colors.black45 : Colors.white54,
+                size: 60,
+              ),
             ),
     );
   }
 
-  // ── BARRE INFÉRIEURE ──
+  // ── PROGRESS BARS ──
+  Widget _buildProgressBars() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      child: Row(
+        children: List.generate(_stories.length, (i) {
+          return Expanded(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              height: 3,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(
+                  widthFactor: i < _current ? 1.0 : i == _current ? _progress : 0.0,
+                  child: Container(
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(3)),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  // ── HEADER ──
+  Widget _buildHeader(String name, String? avatar, DateTime? createdAt) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: Colors.grey.shade800,
+            child: ClipOval(
+              child: avatar != null
+                  ? CachedNetworkImage(
+                      imageUrl: avatar,
+                      width: 36,
+                      height: 36,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => const Icon(Icons.person, size: 18, color: Colors.white),
+                    )
+                  : const Icon(Icons.person, size: 18, color: Colors.white),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (createdAt != null)
+                  Text(_getTimeAgo(createdAt), style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11)),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── BOTTOM BAR (Like + Reply + Vu par) ──
   Widget _buildBottomBar(bool liked, int likeCount) {
     return Container(
       padding: EdgeInsets.fromLTRB(16, 10, 16, MediaQuery.of(context).padding.bottom + 14),
@@ -681,16 +736,30 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
       ),
       child: Row(
         children: [
-          _BottomAction(
-            icon: liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-            color: liked ? ThixPolicy.danger : Colors.white,
-            label: likeCount > 0 ? '$likeCount' : '',
+          // ❤️ LIKE
+          GestureDetector(
             onTap: _toggleLike,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  color: liked ? ThixPolicy.danger : Colors.white,
+                  size: 28,
+                ),
+                if (likeCount > 0) ...[
+                  const SizedBox(width: 4),
+                  Text(
+                    '$likeCount',
+                    style: TextStyle(color: liked ? ThixPolicy.danger : Colors.white, fontSize: 14, fontWeight: FontWeight.w800),
+                  ),
+                ],
+              ],
+            ),
           ),
           const SizedBox(width: 16),
-          _BottomAction(
-            icon: Icons.send_rounded,
-            color: Colors.white,
+          // 💬 REPLY
+          GestureDetector(
             onTap: () {
               HapticFeedback.selectionClick();
               ScaffoldMessenger.of(context).showSnackBar(
@@ -698,18 +767,27 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                   content: Text('Messages privés bientôt disponibles'),
                   backgroundColor: Colors.black87,
                   behavior: SnackBarBehavior.floating,
-                  duration: Duration(seconds: 2),
                 ),
               );
             },
+            child: const Icon(Icons.send_rounded, color: Colors.white, size: 26),
           ),
           const Spacer(),
+          // 👁️ VU PAR (créateur uniquement)
           if (_isCreator)
-            _BottomAction(
-              icon: Icons.visibility_rounded,
-              color: Colors.white,
-              label: _getViewCount().toString(),
+            GestureDetector(
               onTap: _openViewersSheet,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.visibility_rounded, color: Colors.white, size: 26),
+                  const SizedBox(width: 4),
+                  Text(
+                    _getViewCount().toString(),
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800),
+                  ),
+                ],
+              ),
             ),
         ],
       ),
@@ -717,13 +795,14 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
   }
 
   int _getViewCount() {
-    if (_stories.isEmpty || _current >= _stories.length) return 0;
+    if (_stories.isEmpty) return 0;
     final views = _stories[_current]['views_count'];
     if (views is num) return views.toInt();
+    if (views is int) return views;
     return 0;
   }
 
-  // ── ÉCRANS D'ÉTAT (CHARGEMENT / EXPIRÉ) ──
+  // ── LOADING ──
   Widget _buildLoadingScreen() {
     return Scaffold(
       backgroundColor: Colors.black,
@@ -738,13 +817,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                 gradient: LinearGradient(colors: [ThixPolicy.gold, Color(0xFFFFA500)]),
                 shape: BoxShape.circle,
               ),
-              child: const Center(
-                child: SizedBox(
-                  width: 30,
-                  height: 30,
-                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                ),
-              ),
+              child: const Center(child: SizedBox(width: 30, height: 30, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))),
             ),
             const SizedBox(height: 16),
             const Text('Chargement de la story...', style: TextStyle(color: Colors.white70, fontSize: 14)),
@@ -754,6 +827,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     );
   }
 
+  // ── EXPIRÉE ──
   Widget _buildExpiredScreen() {
     return Scaffold(
       backgroundColor: Colors.black,
@@ -783,36 +857,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
 }
 
 // ============================================================================
-// BOUTONS D'ACTION (LIKE / VUES / MESSAGE)
-// ============================================================================
-class _BottomAction extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String? label;
-  final VoidCallback onTap;
-
-  const _BottomAction({required this.icon, required this.color, this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 28),
-          if (label != null && label!.isNotEmpty) ...[
-            const SizedBox(width: 4),
-            Text(label!, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w800)),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// ANIMATION DU CŒUR
+// CŒUR POP ANIMATION
 // ============================================================================
 class _AnimatedHeartPop extends StatelessWidget {
   final double progress;
@@ -829,29 +874,107 @@ class _AnimatedHeartPop extends StatelessWidget {
       scale = 1.4 - ((progress - 0.3) / 0.7) * 0.3;
       opacity = 1.0 - ((progress - 0.3) / 0.7);
     }
-
     return Transform.scale(
       scale: scale,
       child: Opacity(
         opacity: opacity.clamp(0.0, 1.0),
-        child: const Icon(
-          Icons.favorite_rounded,
-          color: ThixPolicy.danger,
-          size: 140,
-          shadows: [Shadow(color: Colors.black54, blurRadius: 12)],
-        ),
+        child: const Icon(Icons.favorite_rounded, color: ThixPolicy.danger, size: 140, shadows: [Shadow(color: Colors.black54, blurRadius: 12)]),
       ),
     );
   }
 }
 
 // ============================================================================
-// BOTTOM SHEET : "VU PAR"
+// LECTEUR AUDIO INLINE
+// ============================================================================
+class _InlineStoryAudio extends StatefulWidget {
+  final String url;
+  final bool isLightBg;
+  const _InlineStoryAudio({required this.url, required this.isLightBg});
+  @override
+  State<_InlineStoryAudio> createState() => _InlineStoryAudioState();
+}
+
+class _InlineStoryAudioState extends State<_InlineStoryAudio> {
+  final AudioPlayer _player = AudioPlayer();
+  bool _isPlaying = false;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      await _player.setSourceUrl(widget.url);
+      _player.onPlayerStateChanged.listen((s) {
+        if (mounted) setState(() => _isPlaying = s == PlayerState.playing);
+      });
+      _player.onPositionChanged.listen((p) {
+        if (mounted) setState(() => _position = p);
+      });
+      _player.onDurationChanged.listen((d) {
+        if (mounted) setState(() => _duration = d);
+      });
+    } catch (e) {
+      debugPrint('[StoryAudio] init: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  String _fmt(Duration d) =>
+      '${d.inMinutes.toString().padLeft(2, '0')}:${d.inSeconds.remainder(60).toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final bgColor = widget.isLightBg ? Colors.black.withOpacity(0.15) : Colors.white12;
+    final fgColor = widget.isLightBg ? Colors.black87 : Colors.white;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(24)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: () async {
+              if (_isPlaying) {
+                await _player.pause();
+              } else {
+                await _player.resume();
+              }
+            },
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: const BoxDecoration(color: ThixPolicy.gold, shape: BoxShape.circle),
+              child: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.black, size: 20),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            '${_fmt(_position)} / ${_fmt(_duration)}',
+            style: TextStyle(color: fgColor, fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// SHEET "VU PAR"
 // ============================================================================
 class _ViewersSheet extends StatefulWidget {
   final String storyId;
   const _ViewersSheet({required this.storyId});
-
   @override
   State<_ViewersSheet> createState() => _ViewersSheetState();
 }
@@ -878,47 +1001,36 @@ class _ViewersSheetState extends State<_ViewersSheet> {
           .timeout(const Duration(seconds: 10));
 
       final list = (res as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-
-      if (mounted) {
-        setState(() {
-          _viewers = list;
-          _loading = false;
-        });
-      }
+      if (mounted) setState(() { _viewers = list; _loading = false; });
     } catch (e) {
-      debugPrint('[Viewers] Load error: $e');
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = 'Erreur de chargement des vues';
-        });
-      }
+      debugPrint('[Viewers] load: $e');
+      if (mounted) setState(() { _loading = false; _error = 'Erreur de chargement'; });
     }
+  }
+
+  String _timeAgo(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'À l\'instant';
+    if (diff.inMinutes < 60) return 'il y a ${diff.inMinutes} min';
+    if (diff.inHours < 24) return 'il y a ${diff.inHours} h';
+    return 'il y a ${diff.inDays} j';
   }
 
   @override
   Widget build(BuildContext context) {
-    final top = MediaQuery.of(context).padding.top;
     return Container(
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
       decoration: const BoxDecoration(
-        color: ThixPolicy.card,
+        color: Color(0xFF141821),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
-            padding: EdgeInsets.fromLTRB(16, top + 12, 16, 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
-                ),
-              ],
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Center(
+              child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
             ),
           ),
           Padding(
@@ -927,11 +1039,12 @@ class _ViewersSheetState extends State<_ViewersSheet> {
               children: [
                 const Icon(Icons.visibility_rounded, color: ThixPolicy.primary, size: 22),
                 const SizedBox(width: 10),
-                Text('Vu par (${_viewers.length})', style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16)),
+                Text('Vu par (${_viewers.length})',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
               ],
             ),
           ),
-          const Divider(height: 1),
+          const Divider(height: 1, color: Colors.white12),
           Flexible(
             child: _loading
                 ? const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(color: ThixPolicy.primary)))
@@ -940,14 +1053,11 @@ class _ViewersSheetState extends State<_ViewersSheet> {
                     : _viewers.isEmpty
                         ? const Padding(
                             padding: EdgeInsets.all(32),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.visibility_off_rounded, size: 40, color: ThixPolicy.textMuted),
-                                SizedBox(height: 8),
-                                Text('Personne n\'a encore vu cette story', style: TextStyle(color: ThixPolicy.textMuted)),
-                              ],
-                            ),
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(Icons.visibility_off_rounded, size: 40, color: Colors.white38),
+                              SizedBox(height: 8),
+                              Text('Personne n\'a vu cette story', style: TextStyle(color: Colors.white54)),
+                            ]),
                           )
                         : ListView.builder(
                             shrinkWrap: true,
@@ -955,25 +1065,23 @@ class _ViewersSheetState extends State<_ViewersSheet> {
                             itemBuilder: (context, i) {
                               final v = _viewers[i];
                               final viewer = v['viewer'] as Map?;
-                              final name = _StoryValidators.sanitize(
-                                viewer?['display_name']?.toString() ?? viewer?['username']?.toString() ?? 'Utilisateur',
-                              );
-                              final avatar = _StoryValidators.sanitizeUrl(viewer?['photo_url']?.toString() ?? viewer?['avatar_url']?.toString());
+                              final name = (viewer?['display_name'] ?? viewer?['username'] ?? 'Utilisateur').toString();
+                              final avatar = viewer?['photo_url']?.toString() ?? viewer?['avatar_url']?.toString();
                               DateTime? viewedAt;
-                              try {
-                                viewedAt = DateTime.parse(v['viewed_at'].toString());
-                              } catch (_) {}
+                              try { viewedAt = DateTime.parse(v['viewed_at'].toString()); } catch (_) {}
 
                               return ListTile(
                                 leading: CircleAvatar(
                                   radius: 22,
-                                  backgroundColor: ThixPolicy.surfaceSoft,
-                                  backgroundImage: avatar != null ? CachedNetworkImageProvider(avatar) : null,
-                                  child: avatar == null ? const Icon(Icons.person, size: 18, color: ThixPolicy.textMuted) : null,
+                                  backgroundColor: Colors.white12,
+                                  backgroundImage: (avatar != null && avatar.isNotEmpty) ? CachedNetworkImageProvider(avatar) : null,
+                                  child: avatar == null || avatar.isEmpty
+                                      ? const Icon(Icons.person, size: 18, color: Colors.white54)
+                                      : null,
                                 ),
-                                title: Text(name, style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.semiBold)),
+                                title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                                 subtitle: viewedAt != null
-                                    ? Text(_timeAgo(viewedAt), style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted))
+                                    ? Text(_timeAgo(viewedAt), style: const TextStyle(color: Colors.white54, fontSize: 12))
                                     : null,
                               );
                             },
@@ -984,109 +1092,4 @@ class _ViewersSheetState extends State<_ViewersSheet> {
       ),
     );
   }
-
-  String _timeAgo(DateTime dt) {
-    final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 1) return 'À l\'instant';
-    if (diff.inMinutes < 60) return 'il y a ${diff.inMinutes} min';
-    if (diff.inHours < 24) return 'il y a ${diff.inHours} h';
-    return 'il y a ${diff.inDays} j';
-  }
-}
-
-// ============================================================================
-// LECTEUR AUDIO INLINE (POUR STORIES AUDIO)
-// ============================================================================
-class _InlineStoryAudio extends StatefulWidget {
-  final String url;
-  const _InlineStoryAudio({required this.url});
-
-  @override
-  State<_InlineStoryAudio> createState() => _InlineStoryAudioState();
-}
-
-class _InlineStoryAudioState extends State<_InlineStoryAudio> {
-  AudioPlayer? _player;
-  bool _isPlaying = false;
-  Duration _position = Duration.zero;
-  Duration _duration = Duration.zero;
-
-  StreamSubscription? _stateSub;
-  StreamSubscription? _posSub;
-  StreamSubscription? _durSub;
-
-  @override
-  void initState() {
-    super.initState();
-    _initAudio();
-  }
-
-  Future<void> _initAudio() async {
-    try {
-      _player = AudioPlayer();
-      await _player!.setSource(UrlSource(widget.url));
-
-      _stateSub = _player!.onPlayerStateChanged.listen((state) {
-        if (mounted) {
-          setState(() => _isPlaying = state == PlayerState.playing);
-        }
-      });
-
-      _posSub = _player!.onPositionChanged.listen((pos) {
-        if (mounted) {
-          setState(() => _position = pos);
-        }
-      });
-
-      _durSub = _player!.onDurationChanged.listen((dur) {
-        if (mounted) {
-          setState(() => _duration = dur);
-        }
-      });
-    } catch (e) {
-      debugPrint('[StoryAudio] Player init error: $e');
-    }
-  }
-
-  @override
-  void dispose() {
-    _stateSub?.cancel();
-    _posSub?.cancel();
-    _durSub?.cancel();
-    _player?.stop();
-    _player?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(24)),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          GestureDetector(
-            onTap: () async {
-              if (_player == null) return;
-              if (_isPlaying) {
-                await _player!.pause();
-              } else {
-                await _player!.resume();
-              }
-            },
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              decoration: const BoxDecoration(color: ThixPolicy.gold, shape: BoxShape.circle),
-              child: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.black, size: 20),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Text('${_fmt(_position)} / ${_fmt(_duration)}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
-        ],
-      ),
-    );
-  }
-
-  String _fmt(Duration d) => '${d.inMinutes.toString().padLeft(2, '0')}:${d.inSeconds.remainder(60).toString().padLeft(2, '0')}';
 }
