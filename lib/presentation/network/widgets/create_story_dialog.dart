@@ -1,4 +1,11 @@
 // lib/presentation/network/widgets/create_story_dialog.dart
+// ============================================================================
+// CRÉATEUR DE STORY — PLEIN ÉCRAN (design moderne type Instagram)
+// • 3 modes : Texte (fonds colorés) • Photo • Audio (max 60 s)
+// • Audio RÉPARÉ : upload storage direct avec contentType audio/mp4
+// • Pré-écoute audio avant publication (play/pause/seek + re-record)
+// • Rollback storage en cas d'échec
+// ============================================================================
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
@@ -15,6 +22,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:html/parser.dart' as html_parser;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import 'package:thix_id/features/network/data/network_service_provider.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
@@ -27,13 +35,11 @@ class _StoryValidators {
 
   static const int maxTextLength = 300;
   static const int maxImageSizeMB = 10;
-  static const int maxVideoSizeMB = 50;
   static const int maxAudioSizeMB = 20;
   static const int maxAudioDurationSeconds = 60;
   static const Duration uploadTimeout = Duration(seconds: 30);
 
   static const Set<String> allowedImageExts = {'jpg', 'jpeg', 'png', 'webp', 'heic'};
-  static const Set<String> allowedVideoExts = {'mp4', 'mov', 'webm', 'm4v'};
 
   static String sanitizeText(String? input, {int maxLength = maxTextLength}) {
     if (input == null || input.trim().isEmpty) return '';
@@ -60,6 +66,12 @@ class _StoryValidators {
     if (bytes.length >= 8 && bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70) return null;
     return 'Format de fichier non reconnu';
   }
+
+  static String fmtDuration(int seconds) {
+    final m = (seconds ~/ 60).toString().padLeft(2, '0');
+    final s = (seconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
 }
 
 Future<Uint8List> _compressImageAsync(Uint8List bytes) async {
@@ -75,31 +87,53 @@ Future<Uint8List> _compressImageAsync(Uint8List bytes) async {
 }
 
 // ============================================================================
-// DIALOG
+// POINT D'ENTRÉE (compatibilité ancien code)
 // ============================================================================
-class CreateStoryDialog extends ConsumerStatefulWidget {
-  const CreateStoryDialog({super.key});
-  @override
-  ConsumerState<CreateStoryDialog> createState() => _CreateStoryDialogState();
+class CreateStoryDialog {
+  /// ✅ Ouvre le créateur de story PLEIN ÉCRAN.
+  /// Remplace : showDialog(context, builder: (_) => const CreateStoryDialog())
+  static Future<bool?> show(BuildContext context) {
+    return Navigator.of(context).push<bool>(
+      MaterialPageRoute(fullscreenDialog: true, builder: (_) => const CreateStoryPage()),
+    );
+  }
 }
 
-class _CreateStoryDialogState extends ConsumerState<CreateStoryDialog> {
-  final _textController = TextEditingController();
-  Uint8List? _mediaBytes;
-  String? _mediaExt;
-  String? _mediaType;
-  bool _isUploading = false;
-  bool _isRecording = false;
-  final int _duration = 24;
-  final _picker = ImagePicker();
+// ============================================================================
+// PAGE PLEIN ÉCRAN
+// ============================================================================
+enum _StoryMode { text, photo, audio }
 
-  final AudioRecorder _audioRecorder = AudioRecorder();
+class CreateStoryPage extends ConsumerStatefulWidget {
+  const CreateStoryPage({super.key});
+  @override
+  ConsumerState<CreateStoryPage> createState() => _CreateStoryPageState();
+}
+
+class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
+    with SingleTickerProviderStateMixin {
+  final _textController = TextEditingController();
+
+  _StoryMode _mode = _StoryMode.text;
+
+  // Photo
+  Uint8List? _imageBytes;
+  String? _imageExt;
+
+  // Audio
+  final AudioRecorder _recorder = AudioRecorder();
   Timer? _recordTimer;
   int _recordDuration = 0;
-  String? _localAudioPath;
+  bool _isRecording = false;
+  Uint8List? _audioBytes;
+  String? _audioPath;
 
-  Color _selectedBgColor = Colors.transparent;
-  final List<Color> _bgColors = const [
+  // UI
+  bool _isUploading = false;
+  Color _bgColor = Colors.transparent;
+  late final AnimationController _pulseCtrl;
+
+  static const List<Color> _bgColors = [
     Colors.transparent,
     Color(0xFF00A4FF),
     ThixPolicy.danger,
@@ -110,22 +144,32 @@ class _CreateStoryDialogState extends ConsumerState<CreateStoryDialog> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
+      ..repeat(reverse: true);
+  }
+
+  @override
   void dispose() {
-    _textController.dispose();
-    _audioRecorder.dispose();
     _recordTimer?.cancel();
+    _pulseCtrl.dispose();
+    _recorder.dispose();
+    _textController.dispose();
     super.dispose();
   }
 
-  bool get _hasBgColor => _selectedBgColor != Colors.transparent;
-  bool get _canHaveBgColor => _mediaBytes == null && _textController.text.length <= 150;
-  bool get _hasContent => _textController.text.trim().isNotEmpty || _mediaBytes != null;
+  bool get _hasBgColor => _bgColor != Colors.transparent;
+  bool get _hasContent =>
+      _textController.text.trim().isNotEmpty || _imageBytes != null || _audioBytes != null;
 
   String _colorToHex(Color c) => '#${c.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
 
-  // ─── PICKERS ───
+  // ════════════════════════════════════════════════════════════════════════
+  // PHOTO
+  // ════════════════════════════════════════════════════════════════════════
   Future<void> _pickImage() async {
-    if (_isUploading) return;
+    if (_isUploading || _isRecording) return;
     try {
       final result = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
       final f = result?.files.first;
@@ -141,10 +185,11 @@ class _CreateStoryDialogState extends ConsumerState<CreateStoryDialog> {
       if (mime != null) return _showError(mime);
 
       setState(() {
-        _mediaBytes = f.bytes;
-        _mediaExt = f.extension ?? 'jpg';
-        _mediaType = 'image';
-        _selectedBgColor = Colors.transparent;
+        _mode = _StoryMode.photo;
+        _imageBytes = f.bytes;
+        _imageExt = f.extension ?? 'jpg';
+        _audioBytes = null;
+        _audioPath = null;
       });
       HapticFeedback.lightImpact();
     } catch (e) {
@@ -153,119 +198,120 @@ class _CreateStoryDialogState extends ConsumerState<CreateStoryDialog> {
     }
   }
 
-  Future<void> _pickVideo() async {
-    if (_isUploading) return;
-    try {
-      final result = await FilePicker.platform.pickFiles(type: FileType.video, withData: !kIsWeb);
-      final f = result?.files.first;
-      if (f == null) return;
-      if (kIsWeb && f.bytes == null) return _showError('Vidéo trop lourde pour le Web');
-      if (f.bytes == null) return _showError('Impossible de lire la vidéo');
-
-      if (!_StoryValidators.validateFileSize(f.bytes!.length, _StoryValidators.maxVideoSizeMB)) {
-        return _showError('Vidéo trop volumineuse (max ${_StoryValidators.maxVideoSizeMB}MB)');
-      }
-      if (!_StoryValidators.validateFileExtension(f.name, _StoryValidators.allowedVideoExts)) {
-        return _showError('Format vidéo non supporté');
-      }
-
-      setState(() {
-        _mediaBytes = f.bytes;
-        _mediaExt = f.extension ?? 'mp4';
-        _mediaType = 'video';
-        _selectedBgColor = Colors.transparent;
+  void _clearImage() => setState(() {
+        _imageBytes = null;
+        _imageExt = null;
+        _mode = _StoryMode.text;
       });
-      HapticFeedback.lightImpact();
-    } catch (e) {
-      debugPrint('[Story] pickVideo: $e');
-      _showError('Erreur vidéo');
-    }
-  }
 
-  Future<void> _recordShortVideo() async {
-    if (_isUploading || kIsWeb) return;
-    final ok = await _checkPermission(Permission.camera,
-        'Pour enregistrer une story vidéo, THIX ID a besoin d\'accéder à votre caméra.');
-    if (!ok) return;
-
-    try {
-      final video = await _picker.pickVideo(source: ImageSource.camera, maxDuration: const Duration(seconds: 45));
-      if (video == null) return;
-      final bytes = await video.readAsBytes();
-      if (!_StoryValidators.validateFileSize(bytes.length, _StoryValidators.maxVideoSizeMB)) {
-        return _showError('Vidéo trop volumineuse');
-      }
-      setState(() {
-        _mediaBytes = bytes;
-        _mediaExt = 'mp4';
-        _mediaType = 'video';
-        _selectedBgColor = Colors.transparent;
-      });
-    } catch (e) {
-      debugPrint('[Story] camera: $e');
-      _showError('Caméra indisponible');
-    }
-  }
-
+  // ════════════════════════════════════════════════════════════════════════
+  // AUDIO — ENREGISTREMENT RÉPARÉ
+  // ════════════════════════════════════════════════════════════════════════
   Future<void> _startRecording() async {
     if (_isUploading || _isRecording) return;
-    final ok = await _checkPermission(Permission.microphone,
-        'Pour enregistrer un message vocal, THIX ID a besoin d\'accéder à votre microphone.');
+
+    final ok = await _checkPermission(
+      Permission.microphone,
+      'Pour enregistrer un message vocal dans votre story, THIX ID a besoin d\'accéder à votre microphone.',
+    );
     if (!ok) return;
 
     try {
+      // ✅ Vérifie dispo avant de démarrer
+      if (await _recorder.hasPermission() != true) {
+        return _showError('Permission microphone refusée');
+      }
+
+      final ts = DateTime.now().millisecondsSinceEpoch;
       final path = kIsWeb
-          ? 'story_audio_${DateTime.now().millisecondsSinceEpoch}.m4a'
-          : p.join((await getTemporaryDirectory()).path, 'story_audio_${DateTime.now().millisecondsSinceEpoch}.m4a');
+          ? 'story_audio_$ts.m4a'
+          : p.join((await getTemporaryDirectory()).path, 'story_audio_$ts.m4a');
 
-      await _audioRecorder.start(const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000), path: path);
+      await _recorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000, sampleRate: 44100),
+        path: path,
+      );
+
       if (!mounted) return;
-
       setState(() {
         _isRecording = true;
         _recordDuration = 0;
-        _mediaBytes = null;
-        _localAudioPath = null;
+        _audioBytes = null;
+        _audioPath = null;
+        _mode = _StoryMode.audio;
       });
 
+      _recordTimer?.cancel();
       _recordTimer = Timer.periodic(const Duration(seconds: 1), (t) {
         if (!mounted) return t.cancel();
         setState(() => _recordDuration++);
         if (_recordDuration >= _StoryValidators.maxAudioDurationSeconds) {
           _stopRecording();
+          _showError('Durée maximale atteinte (60 s)');
         }
       });
       HapticFeedback.mediumImpact();
     } catch (e) {
-      debugPrint('[Story] record: $e');
-      _showError('Enregistrement impossible');
+      debugPrint('[Story] record start: $e');
+      if (mounted) setState(() => _isRecording = false);
+      _showError('Enregistrement impossible : $e');
     }
   }
 
   Future<void> _stopRecording() async {
     _recordTimer?.cancel();
     try {
-      final path = await _audioRecorder.stop();
+      final path = await _recorder.stop();
       if (!mounted) return;
       setState(() => _isRecording = false);
-      if (path != null) {
-        final bytes = await XFile(path).readAsBytes();
-        if (!_StoryValidators.validateFileSize(bytes.length, _StoryValidators.maxAudioSizeMB)) {
-          return _showError('Audio trop volumineux');
-        }
-        setState(() {
-          _mediaBytes = bytes;
-          _mediaType = 'audio';
-          _mediaExt = 'm4a';
-          _localAudioPath = path;
-        });
+
+      if (path == null || path.isEmpty) {
+        return _showError('Enregistrement vide');
       }
+
+      final bytes = await XFile(path).readAsBytes();
+      if (bytes.isEmpty) return _showError('Enregistrement vide');
+
+      if (!_StoryValidators.validateFileSize(bytes.length, _StoryValidators.maxAudioSizeMB)) {
+        return _showError('Audio trop volumineux (max ${_StoryValidators.maxAudioSizeMB}MB)');
+      }
+
+      setState(() {
+        _audioBytes = bytes;
+        _audioPath = path;
+        _mode = _StoryMode.audio;
+        _imageBytes = null;
+      });
+      HapticFeedback.mediumImpact();
     } catch (e) {
-      debugPrint('[Story] stopRecord: $e');
-      _showError('Erreur enregistrement');
+      debugPrint('[Story] record stop: $e');
+      if (mounted) setState(() => _isRecording = false);
+      _showError('Erreur à l\'arrêt de l\'enregistrement');
     }
   }
 
+  void _cancelRecording() async {
+    _recordTimer?.cancel();
+    try {
+      await _recorder.stop();
+    } catch (_) {}
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _recordDuration = 0;
+      });
+    }
+  }
+
+  void _clearAudio() => setState(() {
+        _audioBytes = null;
+        _audioPath = null;
+        _mode = _StoryMode.text;
+      });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // PERMISSIONS
+  // ════════════════════════════════════════════════════════════════════════
   Future<bool> _checkPermission(Permission permission, String message) async {
     if (kIsWeb) return true;
     var status = await permission.status;
@@ -312,39 +358,60 @@ class _CreateStoryDialogState extends ConsumerState<CreateStoryDialog> {
     return (await permission.request()).isGranted;
   }
 
-  // ─── PUBLICATION ───
+  // ════════════════════════════════════════════════════════════════════════
+  // PUBLICATION
+  // ════════════════════════════════════════════════════════════════════════
   Future<void> _createStory() async {
     if (_isUploading || _isRecording) return;
 
     final text = _textController.text.trim();
-    if (text.isEmpty && _mediaBytes == null) {
-      return _showError('Ajoutez du texte ou un média');
-    }
+    if (!_hasContent) return _showError('Ajoutez du texte, une photo ou un audio');
 
     setState(() => _isUploading = true);
     String? uploadedUrl;
+    String? uploadedPath; // pour rollback storage direct
 
     try {
       final service = ref.read(networkServiceProvider);
       String? mediaUrl;
+      String mediaType = 'text';
 
-      if (_mediaBytes != null) {
-        var uploadBytes = _mediaBytes!;
-        if (_mediaType == 'image' && !kIsWeb) {
-          uploadBytes = await _compressImageAsync(_mediaBytes!);
-        }
+      // ── PHOTO ──
+      if (_mode == _StoryMode.photo && _imageBytes != null) {
+        final compressed = await _compressImageAsync(_imageBytes!);
         mediaUrl = await service
-            .uploadImageBytes(uploadBytes, fileExtension: _mediaExt ?? 'jpg', bucket: 'stories')
+            .uploadImageBytes(compressed, fileExtension: _imageExt ?? 'jpg', bucket: 'stories')
             .timeout(_StoryValidators.uploadTimeout);
         uploadedUrl = mediaUrl;
+        mediaType = 'image';
+      }
+
+      // ── AUDIO : ✅ upload storage DIRECT avec bon contentType ──
+      if (_mode == _StoryMode.audio && _audioBytes != null) {
+        uploadedPath = 'audio/${const Uuid().v4()}.m4a';
+        await Supabase.instance.client.storage
+            .from('stories')
+            .uploadBinary(
+              uploadedPath!,
+              _audioBytes!,
+              fileOptions: const FileOptions(
+                contentType: 'audio/mp4', // ✅ m4a/AAC = audio/mp4
+                cacheControl: '31536000',
+                upsert: false,
+              ),
+            )
+            .timeout(_StoryValidators.uploadTimeout);
+        mediaUrl = Supabase.instance.client.storage.from('stories').getPublicUrl(uploadedPath!);
+        uploadedUrl = mediaUrl;
+        mediaType = 'audio';
       }
 
       await service.createStory(
         mediaUrl,
         text: _StoryValidators.sanitizeText(text),
-        duration: _duration,
-        mediaType: _mediaType ?? (_hasBgColor ? 'text' : 'image'),
-        bgColor: _hasBgColor ? _colorToHex(_selectedBgColor) : null,   // ✅ FOND ENVOYÉ
+        duration: 24,
+        mediaType: mediaType,
+        bgColor: (_mode == _StoryMode.text && _hasBgColor) ? _colorToHex(_bgColor) : null,
       );
 
       if (!mounted) return;
@@ -353,16 +420,18 @@ class _CreateStoryDialogState extends ConsumerState<CreateStoryDialog> {
     } catch (e) {
       debugPrint('[Story] create: $e');
 
-      // Rollback storage si l'insert a échoué
-      if (uploadedUrl != null) {
-        try {
+      // Rollback storage
+      try {
+        if (uploadedPath != null) {
+          await Supabase.instance.client.storage.from('stories').remove([uploadedPath]);
+        } else if (uploadedUrl != null) {
           final uri = Uri.parse(uploadedUrl);
           final path = uri.path.replaceFirst('/storage/v1/object/public/', '');
           final bucket = path.split('/').first;
           await Supabase.instance.client.storage.from(bucket).remove([path.replaceFirst('$bucket/', '')]);
-        } catch (clean) {
-          debugPrint('[Story] cleanup: $clean');
         }
+      } catch (clean) {
+        debugPrint('[Story] cleanup: $clean');
       }
       _showError('Erreur de publication');
     } finally {
@@ -380,222 +449,252 @@ class _CreateStoryDialogState extends ConsumerState<CreateStoryDialog> {
     ));
   }
 
-  // ─── BUILD ───
+  // ════════════════════════════════════════════════════════════════════════
+  // BUILD — DESIGN PLEIN ÉCRAN
+  // ════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rXl)),
-      backgroundColor: ThixPolicy.card,
-      insetPadding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s24, vertical: ThixPolicy.s24),
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 440, maxHeight: 560),   // ✅ COMPACT
-        padding: const EdgeInsets.all(ThixPolicy.s16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _header(),
-            const SizedBox(height: ThixPolicy.s12),
-            _contentArea(),
-            const SizedBox(height: ThixPolicy.s10),
-            if (_mediaBytes != null) _mediaPreview(),
-            if (_canHaveBgColor) _colorRow(),
-            const SizedBox(height: ThixPolicy.s12),
-            _actionRow(),
-            const SizedBox(height: ThixPolicy.s12),
-            _publishButton(),
-          ],
-        ),
-      ),
-    );
-  }
+    final top = MediaQuery.of(context).padding.top;
 
-  Widget _header() {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(ThixPolicy.s6),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [ThixPolicy.primary, Color(0xFF6366F1)]),
-            borderRadius: BorderRadius.circular(ThixPolicy.rXs),
-          ),
-          child: const Icon(Icons.auto_awesome_rounded, color: ThixPolicy.onBrand, size: 16),
-        ),
-        const SizedBox(width: ThixPolicy.s8),
-        Expanded(
-          child: Text('Créer une Story', style: ThixPolicy.h3Style.copyWith(fontSize: 16)),
-        ),
-        InkWell(
-          onTap: _isUploading ? null : () => Navigator.pop(context),
-          borderRadius: BorderRadius.circular(ThixPolicy.rFull),
-          child: Container(
-            padding: const EdgeInsets.all(ThixPolicy.s6),
-            decoration: BoxDecoration(color: ThixPolicy.surface, shape: BoxShape.circle),
-            child: const Icon(Icons.close_rounded, color: ThixPolicy.textMain, size: 16),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// ✅ Zone de saisie : fond coloré SANS boîte blanche (filled: false)
-  Widget _contentArea() {
-    return Flexible(
-      child: Container(
-        width: double.infinity,
-        constraints: const BoxConstraints(minHeight: 110, maxHeight: 200),
-        padding: _hasBgColor
-            ? const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s20)
-            : const EdgeInsets.all(ThixPolicy.s12),
-        decoration: BoxDecoration(
-          color: _hasBgColor ? _selectedBgColor : ThixPolicy.surface,
-          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          border: _hasBgColor ? null : Border.all(color: ThixPolicy.border),
-        ),
-        alignment: _hasBgColor ? Alignment.center : Alignment.topLeft,
-        child: TextField(
-          controller: _textController,
-          maxLines: null,
-          maxLength: _StoryValidators.maxTextLength,
-          keyboardType: TextInputType.multiline,
-          textAlign: _hasBgColor ? TextAlign.center : TextAlign.start,
-          onChanged: (_) => setState(() {}),
-          style: (_hasBgColor ? ThixPolicy.h2Style : ThixPolicy.bodyStyle).copyWith(
-            color: _hasBgColor ? Colors.white : ThixPolicy.textMain,   // ✅ texte lisible
-          ),
-          decoration: InputDecoration(
-            border: InputBorder.none,
-            enabledBorder: InputBorder.none,
-            focusedBorder: InputBorder.none,
-            filled: false,                                  // ✅ TUE le fill blanc du thème
-            fillColor: Colors.transparent,
-            isCollapsed: true,
-            counterText: '',
-            hintText: _hasBgColor ? 'Votre message…' : 'Quoi de neuf ?',
-            hintStyle: ThixPolicy.bodySmallStyle.copyWith(
-              color: _hasBgColor ? Colors.white70 : ThixPolicy.textSecondary,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _mediaPreview() {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: ThixPolicy.s8),
-      child: Row(
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
         children: [
-          Container(
-            height: 56,
-            width: 56,
-            decoration: BoxDecoration(
-              color: ThixPolicy.inkDeep,
-              borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-              image: _mediaType == 'image'
-                  ? DecorationImage(image: MemoryImage(_mediaBytes!), fit: BoxFit.cover)
-                  : null,
+          // ── FOND / APERÇU ──
+          Positioned.fill(child: _previewBackground()),
+
+          // ── TEXTE CENTRÉ ──
+          if (_mode != _StoryMode.audio)
+            Positioned.fill(
+              top: top + 70,
+              bottom: 190,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: TextField(
+                    controller: _textController,
+                    maxLines: null,
+                    maxLength: _StoryValidators.maxTextLength,
+                    textAlign: TextAlign.center,
+                    onChanged: (_) => setState(() {}),
+                    style: TextStyle(
+                      color: _mode == _StoryMode.photo ? Colors.white : (_hasBgColor ? Colors.white : ThixPolicy.textMain),
+                      fontSize: _hasBgColor || _mode == _StoryMode.photo ? 26 : 20,
+                      fontWeight: FontWeight.w800,
+                      height: 1.35,
+                      shadows: _mode == _StoryMode.photo
+                          ? const [Shadow(color: Colors.black54, blurRadius: 8)]
+                          : null,
+                    ),
+                    decoration: InputDecoration(
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
+                      counterText: '',
+                      hintText: 'Quoi de neuf ?',
+                      hintStyle: TextStyle(
+                        color: _mode == _StoryMode.photo
+                            ? Colors.white70
+                            : (_hasBgColor ? Colors.white70 : ThixPolicy.textSecondary),
+                        fontSize: _hasBgColor || _mode == _StoryMode.photo ? 26 : 20,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
-            child: _mediaType == 'video'
-                ? const Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 26)
-                : _mediaType == 'audio'
-                    ? const Icon(Icons.mic_rounded, color: Colors.white, size: 22)
-                    : null,
-          ),
-          const SizedBox(width: ThixPolicy.s8),
-          Expanded(
-            child: Text(
-              '${_mediaType == 'image' ? 'Image' : _mediaType == 'video' ? 'Vidéo' : 'Audio'} • ${(_mediaBytes!.length / (1024 * 1024)).toStringAsFixed(1)} MB',
-              style: ThixPolicy.captionStyle,
+
+          // ── BARRE HAUTE ──
+          Positioned(
+            top: top + 8,
+            left: 16,
+            right: 16,
+            child: Row(
+              children: [
+                _glassBtn(
+                  icon: Icons.close_rounded,
+                  onTap: _isUploading ? null : () => Navigator.pop(context, false),
+                ),
+                const Spacer(),
+                // Bouton publier
+                GestureDetector(
+                  onTap: (_isUploading || _isRecording || !_hasContent) ? null : _createStory,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                    decoration: BoxDecoration(
+                      gradient: (_isUploading || _isRecording || !_hasContent)
+                          ? null
+                          : const LinearGradient(colors: [ThixPolicy.primary, Color(0xFF6366F1)]),
+                      color: (_isUploading || _isRecording || !_hasContent) ? Colors.white24 : null,
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    child: _isUploading
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('Publier', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
+                  ),
+                ),
+              ],
             ),
           ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.cancel_rounded, color: ThixPolicy.textSecondary, size: 20),
-            onPressed: () => setState(() {
-              _mediaBytes = null;
-              _mediaType = null;
-              _localAudioPath = null;
-            }),
+
+          // ── PANNEAU BAS ──
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _bottomPanel(),
           ),
         ],
       ),
     );
   }
 
-  /// ✅ Pastilles compactes (28px)
-  Widget _colorRow() {
-    return SizedBox(
-      height: 32,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: _bgColors.map((c) {
-          final sel = _selectedBgColor == c;
-          return GestureDetector(
-            onTap: () {
-              HapticFeedback.selectionClick();
-              setState(() => _selectedBgColor = c);
-            },
-            child: Container(
-              width: 28,
-              height: 28,
-              margin: const EdgeInsets.only(right: ThixPolicy.s8),
-              decoration: BoxDecoration(
-                color: c == Colors.transparent ? ThixPolicy.surface : c,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: sel ? ThixPolicy.textMain : ThixPolicy.borderStrong,
-                  width: sel ? 2.2 : 1.2,
-                ),
-              ),
-              child: c == Colors.transparent
-                  ? const Icon(Icons.format_color_reset_rounded, size: 14, color: ThixPolicy.textSecondary)
-                  : null,
-            ),
-          );
-        }).toList(),
+  Widget _glassBtn({required IconData icon, VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(9),
+        decoration: BoxDecoration(color: Colors.black.withOpacity(0.35), shape: BoxShape.circle),
+        child: Icon(icon, color: Colors.white, size: 20),
       ),
     );
   }
 
-  /// ✅ Boutons média compacts
-  Widget _actionRow() {
-    return Row(
+  // ── Fond d'aperçu ──
+  Widget _previewBackground() {
+    if (_mode == _StoryMode.photo && _imageBytes != null) {
+      return Image.memory(_imageBytes!, fit: BoxFit.cover, width: double.infinity, height: double.infinity);
+    }
+    if (_mode == _StoryMode.audio) {
+      return Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF1A1F2E), Color(0xFF0A0E1A)],
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(26),
+                decoration: BoxDecoration(
+                  color: ThixPolicy.gold.withOpacity(0.15),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: ThixPolicy.gold.withOpacity(0.4), width: 2),
+                ),
+                child: const Icon(_isRecording ? Icons.mic_rounded : Icons.headphones_rounded, color: ThixPolicy.gold, size: 54),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _isRecording ? 'Enregistrement...' : 'Message vocal',
+                style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _isRecording
+                    ? _StoryValidators.fmtDuration(_recordDuration)
+                    : _StoryValidators.fmtDuration(_recordDuration),
+                style: const TextStyle(color: Colors.white70, fontSize: 26, fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    // Texte
+    if (_hasBgColor) return Container(color: _bgColor);
+    return Container(color: ThixPolicy.surfaceSoft);
+  }
+
+  // ── Panneau bas contextuel ──
+  Widget _bottomPanel() {
+    return Container(
+      padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).padding.bottom + 16),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.55),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: _isRecording ? _recordingPanel() : (_mode == _StoryMode.audio && _audioBytes != null) ? _audioPreviewPanel() : _defaultPanel(),
+    );
+  }
+
+  // ── Panneau par défaut : couleurs + 3 actions ──
+  Widget _defaultPanel() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        _mediaBtn(Icons.image_rounded, ThixPolicy.success, 'Photo', _pickImage),
-        const SizedBox(width: ThixPolicy.s8),
-        _mediaBtn(Icons.folder_shared_rounded, ThixPolicy.warning, 'Vidéo', _pickVideo),
-        const SizedBox(width: ThixPolicy.s8),
-        _mediaBtn(Icons.videocam_rounded, ThixPolicy.danger, 'Caméra', _recordShortVideo),
-        const SizedBox(width: ThixPolicy.s8),
-        _mediaBtn(
-          _isRecording ? Icons.stop_circle_rounded : Icons.mic_rounded,
-          ThixPolicy.gold,
-          _isRecording ? 'Stop' : 'Audio',
-          _isRecording ? _stopRecording : _startRecording,
+        // Couleurs (uniquement mode texte)
+        if (_mode == _StoryMode.text) ...[
+          SizedBox(
+            height: 34,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: _bgColors.map((c) {
+                final sel = _bgColor == c;
+                return GestureDetector(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() => _bgColor = c);
+                  },
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    margin: const EdgeInsets.only(right: 10),
+                    decoration: BoxDecoration(
+                      color: c == Colors.transparent ? Colors.white10 : c,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: sel ? Colors.white : Colors.white38, width: sel ? 2.4 : 1.2),
+                    ),
+                    child: c == Colors.transparent ? const Icon(Icons.format_color_reset_rounded, size: 14, color: Colors.white70) : null,
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+        Row(
+          children: [
+            _actionTile(Icons.image_rounded, 'Photo', ThixPolicy.success, _pickImage),
+            const SizedBox(width: 10),
+            _actionTile(Icons.mic_rounded, 'Audio', ThixPolicy.gold, _startRecording),
+            const SizedBox(width: 10),
+            _actionTile(Icons.format_size_rounded, 'Texte', ThixPolicy.primary, () {
+              setState(() {
+                _mode = _StoryMode.text;
+                _imageBytes = null;
+                _audioBytes = null;
+                _audioPath = null;
+              });
+            }),
+          ],
         ),
       ],
     );
   }
 
-  Widget _mediaBtn(IconData icon, Color color, String label, VoidCallback onTap) {
+  Widget _actionTile(IconData icon, String label, Color color, VoidCallback onTap) {
     return Expanded(
-      child: InkWell(
+      child: GestureDetector(
         onTap: (_isUploading || _isRecording) ? null : onTap,
-        borderRadius: BorderRadius.circular(ThixPolicy.rSm),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: ThixPolicy.s8),
+          padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-            border: Border.all(color: color.withOpacity(0.25)),
+            color: color.withOpacity(0.16),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withOpacity(0.4)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(height: ThixPolicy.s2),
-              Text(label, style: ThixPolicy.microStyle.copyWith(fontWeight: ThixPolicy.semiBold)),
+              Icon(icon, color: color, size: 22),
+              const SizedBox(height: 4),
+              Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800)),
             ],
           ),
         ),
@@ -603,24 +702,225 @@ class _CreateStoryDialogState extends ConsumerState<CreateStoryDialog> {
     );
   }
 
-  Widget _publishButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: ThixPolicy.buttonHeight,                       // ✅ 48px standard
-      child: ElevatedButton(
-        onPressed: (_isUploading || _isRecording || !_hasContent) ? null : _createStory,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: ThixPolicy.gold,
-          foregroundColor: ThixPolicy.inkDeep,
-          disabledBackgroundColor: ThixPolicy.surfaceStrong,
-          disabledForegroundColor: ThixPolicy.textDisabled,
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
+  // ── Panneau d'enregistrement ──
+  Widget _recordingPanel() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Barre de progression 60 s
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: _recordDuration / _StoryValidators.maxAudioDurationSeconds,
+            minHeight: 6,
+            backgroundColor: Colors.white24,
+            valueColor: const AlwaysStoppedAnimation(ThixPolicy.danger),
+          ),
         ),
-        child: _isUploading
-            ? const SizedBox(width: 20, height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.inkDeep))
-            : Text('PUBLIER LA STORY', style: ThixPolicy.buttonText.copyWith(color: ThixPolicy.inkDeep)),
+        const SizedBox(height: 14),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Mic pulsant
+            AnimatedBuilder(
+              animation: _pulseCtrl,
+              builder: (_, __) => Transform.scale(
+                scale: 1 + (_pulseCtrl.value * 0.12),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: ThixPolicy.danger, shape: BoxShape.circle),
+                  child: const Icon(Icons.mic_rounded, color: Colors.white, size: 28),
+                ),
+              ),
+            ),
+            const SizedBox(width: 20),
+            Text(
+              _StoryValidators.fmtDuration(_recordDuration),
+              style: const TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(width: 6),
+            const Text('/ 01:00', style: TextStyle(color: Colors.white54, fontSize: 14, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _cancelRecording,
+                icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                label: const Text('Annuler'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white70,
+                  side: const BorderSide(color: Colors.white38),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _stopRecording,
+                icon: const Icon(Icons.stop_rounded, size: 18),
+                label: const Text('Stopper'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ThixPolicy.danger,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ── Panneau de pré-écoute audio ──
+  Widget _audioPreviewPanel() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _StoryAudioPreview(
+          path: _audioPath!,
+          bytes: _audioBytes!,
+          onRetake: _startRecording,
+          onRemove: _clearAudio,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            _actionTile(Icons.mic_rounded, 'Réenregistrer', ThixPolicy.gold, _startRecording),
+            const SizedBox(width: 10),
+            _actionTile(Icons.image_rounded, 'Photo', ThixPolicy.success, _pickImage),
+            const SizedBox(width: 10),
+            _actionTile(Icons.delete_outline_rounded, 'Supprimer', ThixPolicy.danger, _clearAudio),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// ============================================================================
+// PRÉ-ÉCOUTE AUDIO (play / pause / seek / durée)
+// ============================================================================
+class _StoryAudioPreview extends StatefulWidget {
+  final String path;
+  final Uint8List bytes;
+  final VoidCallback onRetake;
+  final VoidCallback onRemove;
+
+  const _StoryAudioPreview({
+    required this.path,
+    required this.bytes,
+    required this.onRetake,
+    required this.onRemove,
+  });
+
+  @override
+  State<_StoryAudioPreview> createState() => _StoryAudioPreviewState();
+}
+
+class _StoryAudioPreviewState extends State<_StoryAudioPreview> {
+  final AudioPlayer _player = AudioPlayer();
+  bool _isPlaying = false;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      if (kIsWeb) {
+        await _player.setSourceUrl(widget.path);
+      } else {
+        await _player.setSourceDeviceFile(widget.path);
+      }
+      _player.onPlayerStateChanged.listen((s) {
+        if (mounted) setState(() => _isPlaying = s == PlayerState.playing);
+      });
+      _player.onPositionChanged.listen((p) {
+        if (mounted) setState(() => _position = p);
+      });
+      _player.onDurationChanged.listen((d) {
+        if (mounted) setState(() => _duration = d);
+      });
+      _player.onPlayerComplete.listen((_) {
+        if (mounted) setState(() => _position = Duration.zero);
+      });
+    } catch (e) {
+      debugPrint('[StoryPreview] init: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  String _fmt(Duration d) => '${d.inMinutes.toString().padLeft(2, '0')}:${d.inSeconds.remainder(60).toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final total = _duration.inMilliseconds > 0 ? _duration : Duration(seconds: widget.bytes.length ~/ 16000);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white12,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white24),
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () async {
+              if (_isPlaying) {
+                await _player.pause();
+              } else {
+                await _player.resume();
+              }
+            },
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: const BoxDecoration(color: ThixPolicy.gold, shape: BoxShape.circle),
+              child: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.black, size: 24),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Pré-écoute', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)),
+                SliderTheme(
+                  data: SliderThemeData(
+                    trackHeight: 3,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    activeTrackColor: ThixPolicy.gold,
+                    inactiveTrackColor: Colors.white24,
+                    thumbColor: ThixPolicy.gold,
+                  ),
+                  child: Slider(
+                    min: 0,
+                    max: total.inMilliseconds.toDouble() > 0 ? total.inMilliseconds.toDouble() : 1,
+                    value: _position.inMilliseconds.toDouble().clamp(0, total.inMilliseconds.toDouble() > 0 ? total.inMilliseconds.toDouble() : 1),
+                    onChanged: (v) => _player.seek(Duration(milliseconds: v.toInt())),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text('${_fmt(_position)} / ${_fmt(total)}', style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w700)),
+        ],
       ),
     );
   }
