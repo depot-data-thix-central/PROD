@@ -7,17 +7,17 @@
 // • Progress bars, pause, next/prev, swipe-down to close
 // ============================================================================
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:html/parser.dart' as html_parser;
+import 'package:audioplayers/audioplayers.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
 // ============================================================================
-// VALIDATEURS
+// VALIDATEURS ET ASSAINISSEURS
 // ============================================================================
 class _StoryValidators {
   _StoryValidators._();
@@ -92,8 +92,9 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
   static const int _timerIntervalMs = 50;
 
   String? get _viewerId => Supabase.instance.client.auth.currentUser?.id;
+
   bool get _isCreator {
-    if (_stories.isEmpty) return false;
+    if (_stories.isEmpty || _current >= _stories.length) return false;
     return _stories[_current]['user_id']?.toString() == _viewerId;
   }
 
@@ -111,11 +112,12 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     for (final c in _heartAnims.values) {
       c.dispose();
     }
+    _heartAnims.clear();
     super.dispose();
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // LOAD
+  // CHARGEMENT DE LA STORY ET DES DONNÉES
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _load() async {
     final supa = Supabase.instance.client;
@@ -160,7 +162,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // TIMER
+  // GESTION DU TIMER
   // ════════════════════════════════════════════════════════════════════════
   void _startTimer() {
     _timer?.cancel();
@@ -202,14 +204,13 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // VIEWED + LIKE STATE
+  // VUES ET LIKES
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _markViewed() async {
     if (_stories.isEmpty || _current >= _stories.length) return;
     final storyId = _stories[_current]['id']?.toString();
-    if (storyId == null) return;
     final viewerId = _viewerId;
-    if (viewerId == null) return;
+    if (storyId == null || viewerId == null) return;
 
     try {
       await Supabase.instance.client
@@ -241,7 +242,6 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     try {
       final supa = Supabase.instance.client;
 
-      // Compter likes par story
       final counts = await supa
           .from('story_likes')
           .select('story_id')
@@ -254,7 +254,6 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
         if (id != null) countMap[id] = (countMap[id] ?? 0) + 1;
       }
 
-      // Mes likes
       final myLikes = await supa
           .from('story_likes')
           .select('story_id')
@@ -275,7 +274,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
         }
       });
     } catch (e) {
-      debugPrint('[Story] Load like state: $e');
+      debugPrint('[Story] Load like state error: $e');
     }
   }
 
@@ -295,7 +294,6 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
 
     HapticFeedback.mediumImpact();
 
-    // Animation cœur qui pop
     if (!wasLiked) {
       _playHeartPop(storyId);
     }
@@ -312,20 +310,29 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
       }
     } catch (e) {
       debugPrint('[Story] Toggle like error: $e');
-      // Rollback
-      setState(() {
-        _likeState[storyId] = {'liked': wasLiked, 'count': (state['count'] as int)};
-      });
+      if (mounted) {
+        setState(() {
+          _likeState[storyId] = {'liked': wasLiked, 'count': (state['count'] as int)};
+        });
+      }
     }
   }
 
   void _playHeartPop(String storyId) {
+    _heartAnims[storyId]?.dispose();
+
     final ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
     _heartAnims[storyId] = ctrl;
-    ctrl.addListener(() { if (mounted) setState(() {}); });
+
+    ctrl.addListener(() {
+      if (mounted) setState(() {});
+    });
+
     ctrl.forward().then((_) {
-      ctrl.dispose();
-      _heartAnims.remove(storyId);
+      if (mounted && _heartAnims[storyId] == ctrl) {
+        ctrl.dispose();
+        _heartAnims.remove(storyId);
+      }
     });
   }
 
@@ -392,7 +399,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // VU PAR (sheet liste viewers)
+  // VU PAR (Sheet des spectateurs)
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _openViewersSheet() async {
     if (!_isCreator || _stories.isEmpty) return;
@@ -400,17 +407,20 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     if (storyId == null) return;
 
     HapticFeedback.lightImpact();
+    _pauseTimer();
 
-    showModalBottomSheet(
+    await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (ctx) => _ViewersSheet(storyId: storyId),
     );
+
+    _resumeTimer();
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // BUILD
+  // RENDU UI PRINCIPAL
   // ════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
@@ -455,10 +465,10 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
           offset: Offset(0, _dragOffset),
           child: Stack(
             children: [
-              // MEDIA
+              // CONTENU MEDIA
               Positioned.fill(child: _buildMediaContent(mediaUrl, text, bgColor, mediaType)),
 
-              // ❤️ HEART POP ANIMATION
+              // ANIMATION CŒUR POP
               if (heartAnim != null)
                 Positioned.fill(
                   child: Center(
@@ -466,7 +476,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                   ),
                 ),
 
-              // PROGRESS + HEADER
+              // BARRES DE PROGRESSION + HEADER
               SafeArea(
                 child: Column(
                   children: [
@@ -477,7 +487,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                 ),
               ),
 
-              // TEXTE SUPERPOSÉ (si média + texte)
+              // TEXTE SUPERPOSÉ
               if (text.isNotEmpty && mediaUrl != null && mediaType != 'audio')
                 Positioned(
                   bottom: 100,
@@ -497,7 +507,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                   ),
                 ),
 
-              // BOTTOM BAR — LIKE + VU PAR + RÉPONDRE
+              // BARRE DU BAS : LIKE + VU PAR + ACTION
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -505,7 +515,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                 child: _buildBottomBar(liked, likeCount),
               ),
 
-              // INDICATEUR PAUSE
+              // INDICATEUR DE PAUSE
               if (_isPaused)
                 Center(
                   child: Container(
@@ -521,9 +531,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     );
   }
 
-  // ── MEDIA CONTENT (support image / video placeholder / audio / texte) ──
+  // ── CONTENU MÉDIA (IMAGE, AUDIO, TEXTE) ──
   Widget _buildMediaContent(String? mediaUrl, String text, Color? bgColor, String mediaType) {
-    // Image
     if (mediaType != 'audio' && mediaUrl != null && mediaUrl.isNotEmpty) {
       return InteractiveViewer(
         minScale: 1.0,
@@ -533,7 +542,13 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
           fit: BoxFit.contain,
           placeholder: (context, url) => Container(
             color: bgColor ?? Colors.black,
-            child: const Center(child: SizedBox(width: 40, height: 40, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))),
+            child: const Center(
+              child: SizedBox(
+                width: 40,
+                height: 40,
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+              ),
+            ),
           ),
           errorWidget: (context, url, error) => Container(
             color: bgColor ?? Colors.black,
@@ -543,12 +558,15 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
       );
     }
 
-    // Audio
     if (mediaType == 'audio') {
       return Container(
         decoration: BoxDecoration(
           gradient: bgColor != null
-              ? LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [bgColor, bgColor.withOpacity(0.6)])
+              ? LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [bgColor, bgColor.withOpacity(0.6)],
+                )
               : const LinearGradient(colors: [Color(0xFF1A1F2E), Color(0xFF0A0E1A)]),
         ),
         child: Center(
@@ -570,9 +588,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                 const SizedBox(height: 24),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Text(text,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600, height: 1.4)),
+                  child: Text(
+                    text,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600, height: 1.4),
+                  ),
                 ),
               ],
               if (mediaUrl != null)
@@ -586,7 +606,6 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
       );
     }
 
-    // Texte seul (avec fond coloré ou noir)
     if (text.isNotEmpty) {
       return Container(
         color: bgColor ?? Colors.black,
@@ -671,10 +690,12 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
+                Text(
+                  name,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 if (createdAt != null)
                   Text(_getTimeAgo(createdAt), style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11)),
               ],
@@ -689,7 +710,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     );
   }
 
-  // ── BOTTOM BAR : LIKE + VU PAR + RÉPONDRE ──
+  // ── BARRE INFÉRIEURE ──
   Widget _buildBottomBar(bool liked, int likeCount) {
     return Container(
       padding: EdgeInsets.fromLTRB(16, 10, 16, MediaQuery.of(context).padding.bottom + 14),
@@ -702,7 +723,6 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
       ),
       child: Row(
         children: [
-          // ❤️ LIKE
           _BottomAction(
             icon: liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
             color: liked ? ThixPolicy.danger : Colors.white,
@@ -710,24 +730,22 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
             onTap: _toggleLike,
           ),
           const SizedBox(width: 16),
-          // 💬 RÉPONDRE (placeholder)
           _BottomAction(
             icon: Icons.send_rounded,
             color: Colors.white,
             onTap: () {
               HapticFeedback.selectionClick();
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: const Text('Messages privés bientôt disponibles'),
+                const SnackBar(
+                  content: Text('Messages privés bientôt disponibles'),
                   backgroundColor: Colors.black87,
                   behavior: SnackBarBehavior.floating,
-                  duration: const Duration(seconds: 2),
+                  duration: Duration(seconds: 2),
                 ),
               );
             },
           ),
           const Spacer(),
-          // 👁️ VU PAR (uniquement créateur)
           if (_isCreator)
             _BottomAction(
               icon: Icons.visibility_rounded,
@@ -741,14 +759,13 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
   }
 
   int _getViewCount() {
-    if (_stories.isEmpty) return 0;
+    if (_stories.isEmpty || _current >= _stories.length) return 0;
     final views = _stories[_current]['views_count'];
     if (views is num) return views.toInt();
-    if (views is int) return views;
     return 0;
   }
 
-  // ── LOADING ──
+  // ── ÉCRANS D'ÉTAT (CHARGEMENT / EXPIRÉ) ──
   Widget _buildLoadingScreen() {
     return Scaffold(
       backgroundColor: Colors.black,
@@ -764,7 +781,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                 shape: BoxShape.circle,
               ),
               child: const Center(
-                child: SizedBox(width: 30, height: 30, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                child: SizedBox(
+                  width: 30,
+                  height: 30,
+                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -775,7 +796,6 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     );
   }
 
-  // ── EXPIRÉE ──
   Widget _buildExpiredScreen() {
     return Scaffold(
       backgroundColor: Colors.black,
@@ -805,7 +825,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
 }
 
 // ============================================================================
-// BOUTON D'ACTION EN BAS (like, vu par, envoyer)
+// BOUTONS D'ACTION (LIKE / VUES / MESSAGE)
 // ============================================================================
 class _BottomAction extends StatelessWidget {
   final IconData icon;
@@ -834,23 +854,21 @@ class _BottomAction extends StatelessWidget {
 }
 
 // ============================================================================
-// CŒUR POP ANIMATION (double-tap style)
+// ANIMATION DU CŒUR
 // ============================================================================
 class _AnimatedHeartPop extends StatelessWidget {
-  final double progress; // 0 → 1
+  final double progress;
   const _AnimatedHeartPop({required this.progress});
 
   @override
   Widget build(BuildContext context) {
-    // Scale: 0 → 1.4 → 1.1
-    // Opacity: 0 → 1 → 0
     double scale;
     double opacity;
     if (progress < 0.3) {
-      scale = 0.5 + (progress / 0.3) * 0.9; // 0.5 → 1.4
+      scale = 0.5 + (progress / 0.3) * 0.9;
       opacity = progress / 0.3;
     } else {
-      scale = 1.4 - ((progress - 0.3) / 0.7) * 0.3; // 1.4 → 1.1
+      scale = 1.4 - ((progress - 0.3) / 0.7) * 0.3;
       opacity = 1.0 - ((progress - 0.3) / 0.7);
     }
 
@@ -858,15 +876,19 @@ class _AnimatedHeartPop extends StatelessWidget {
       scale: scale,
       child: Opacity(
         opacity: opacity.clamp(0.0, 1.0),
-        child: const Icon(Icons.favorite_rounded, color: ThixPolicy.danger, size: 140,
-            shadows: [Shadow(color: Colors.black54, blurRadius: 12)]),
+        child: const Icon(
+          Icons.favorite_rounded,
+          color: ThixPolicy.danger,
+          size: 140,
+          shadows: [Shadow(color: Colors.black54, blurRadius: 12)],
+        ),
       ),
     );
   }
 }
 
 // ============================================================================
-// SHEET "VU PAR" (liste des viewers)
+// BOTTOM SHEET : "VU PAR"
 // ============================================================================
 class _ViewersSheet extends StatefulWidget {
   final String storyId;
@@ -906,8 +928,13 @@ class _ViewersSheetState extends State<_ViewersSheet> {
         });
       }
     } catch (e) {
-      debugPrint('[Viewers] load error: $e');
-      if (mounted) setState(() { _loading = false; _error = 'Erreur de chargement'; });
+      debugPrint('[Viewers] Load error: $e');
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = 'Erreur de chargement des vues';
+        });
+      }
     }
   }
 
@@ -926,9 +953,12 @@ class _ViewersSheetState extends State<_ViewersSheet> {
           Padding(
             padding: EdgeInsets.fromLTRB(16, top + 12, 16, 8),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
                 ),
               ],
             ),
@@ -948,15 +978,18 @@ class _ViewersSheetState extends State<_ViewersSheet> {
             child: _loading
                 ? const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(color: ThixPolicy.primary)))
                 : _error != null
-                    ? Padding(padding: const EdgeInsets.all(24), child: Text(_error!, style: TextStyle(color: ThixPolicy.danger)))
+                    ? Padding(padding: const EdgeInsets.all(24), child: Text(_error!, style: const TextStyle(color: ThixPolicy.danger)))
                     : _viewers.isEmpty
                         ? const Padding(
                             padding: EdgeInsets.all(32),
-                            child: Column(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(Icons.visibility_off_rounded, size: 40, color: ThixPolicy.textMuted),
-                              SizedBox(height: 8),
-                              Text('Personne n\'a vu cette story', style: TextStyle(color: ThixPolicy.textMuted)),
-                            ]),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.visibility_off_rounded, size: 40, color: ThixPolicy.textMuted),
+                                SizedBox(height: 8),
+                                Text('Personne n\'a encore vu cette story', style: TextStyle(color: ThixPolicy.textMuted)),
+                              ],
+                            ),
                           )
                         : ListView.builder(
                             shrinkWrap: true,
@@ -964,10 +997,14 @@ class _ViewersSheetState extends State<_ViewersSheet> {
                             itemBuilder: (context, i) {
                               final v = _viewers[i];
                               final viewer = v['viewer'] as Map?;
-                              final name = _StoryValidators.sanitize(viewer?['display_name']?.toString() ?? viewer?['username']?.toString() ?? 'Utilisateur');
+                              final name = _StoryValidators.sanitize(
+                                viewer?['display_name']?.toString() ?? viewer?['username']?.toString() ?? 'Utilisateur',
+                              );
                               final avatar = _StoryValidators.sanitizeUrl(viewer?['photo_url']?.toString() ?? viewer?['avatar_url']?.toString());
                               DateTime? viewedAt;
-                              try { viewedAt = DateTime.parse(v['viewed_at'].toString()); } catch (_) {}
+                              try {
+                                viewedAt = DateTime.parse(v['viewed_at'].toString());
+                              } catch (_) {}
 
                               return ListTile(
                                 leading: CircleAvatar(
@@ -977,7 +1014,9 @@ class _ViewersSheetState extends State<_ViewersSheet> {
                                   child: avatar == null ? const Icon(Icons.person, size: 18, color: ThixPolicy.textMuted) : null,
                                 ),
                                 title: Text(name, style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.semiBold)),
-                                subtitle: viewedAt != null ? Text(_timeAgo(viewedAt), style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted)) : null,
+                                subtitle: viewedAt != null
+                                    ? Text(_timeAgo(viewedAt), style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted))
+                                    : null,
                               );
                             },
                           ),
@@ -998,58 +1037,66 @@ class _ViewersSheetState extends State<_ViewersSheet> {
 }
 
 // ============================================================================
-// LECTEUR AUDIO INLINE (pour stories audio)
+// LECTEUR AUDIO INLINE (POUR STORIES AUDIO)
 // ============================================================================
 class _InlineStoryAudio extends StatefulWidget {
   final String url;
   const _InlineStoryAudio({required this.url});
+
   @override
   State<_InlineStoryAudio> createState() => _InlineStoryAudioState();
 }
 
 class _InlineStoryAudioState extends State<_InlineStoryAudio> {
-  late final _player = _createPlayer();
+  AudioPlayer? _player;
   bool _isPlaying = false;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
 
-  // Audioplayers import
-  static dynamic _createPlayer() {
-    // Lazy load pour éviter crash si le package n'est pas dispo
-    try {
-      final pkg = _playerPkg;
-      return pkg.create();
-    } catch (_) {
-      return null;
-    }
-  }
+  StreamSubscription? _stateSub;
+  StreamSubscription? _posSub;
+  StreamSubscription? _durSub;
 
   @override
   void initState() {
     super.initState();
-    _init();
+    _initAudio();
   }
 
-  Future<void> _init() async {
+  Future<void> _initAudio() async {
     try {
-      await _player.setSourceUrl(widget.url);
-      _player.onPlayerStateChanged.listen((s) {
-        if (mounted) setState(() => _isPlaying = s.toString().contains('playing'));
+      _player = AudioPlayer();
+      await _player!.setSource(UrlSource(widget.url));
+
+      _stateSub = _player!.onPlayerStateChanged.listen((state) {
+        if (mounted) {
+          setState(() => _isPlaying = state == PlayerState.playing);
+        }
       });
-      _player.onPositionChanged.listen((p) {
-        if (mounted) setState(() => _position = p);
+
+      _posSub = _player!.onPositionChanged.listen((pos) {
+        if (mounted) {
+          setState(() => _position = pos);
+        }
       });
-      _player.onDurationChanged.listen((d) {
-        if (mounted) setState(() => _duration = d);
+
+      _durSub = _player!.onDurationChanged.listen((dur) {
+        if (mounted) {
+          setState(() => _duration = dur);
+        }
       });
     } catch (e) {
-      debugPrint('[StoryAudio] init: $e');
+      debugPrint('[StoryAudio] Player init error: $e');
     }
   }
 
   @override
   void dispose() {
-    try { _player.dispose(); } catch (_) {}
+    _stateSub?.cancel();
+    _posSub?.cancel();
+    _durSub?.cancel();
+    _player?.stop();
+    _player?.dispose();
     super.dispose();
   }
 
@@ -1063,8 +1110,12 @@ class _InlineStoryAudioState extends State<_InlineStoryAudio> {
         children: [
           GestureDetector(
             onTap: () async {
-              if (_isPlaying) await _player.pause();
-              else await _player.resume();
+              if (_player == null) return;
+              if (_isPlaying) {
+                await _player!.pause();
+              } else {
+                await _player!.resume();
+              }
             },
             child: Container(
               padding: const EdgeInsets.all(10),
@@ -1080,70 +1131,4 @@ class _InlineStoryAudioState extends State<_InlineStoryAudio> {
   }
 
   String _fmt(Duration d) => '${d.inMinutes.toString().padLeft(2, '0')}:${d.inSeconds.remainder(60).toString().padLeft(2, '0')}';
-}
-
-// Helpers pour audioplayers (évite import direct si absent)
-class _playerPkg {
-  static dynamic create() {
-    // Utilisation dynamique pour éviter erreurs compile
-    return _AudioPlayerWrapper();
-  }
-}
-
-class _AudioPlayerWrapper {
-  final dynamic _impl;
-  _AudioPlayerWrapper() : _impl = _tryCreate();
-
-  static dynamic _tryCreate() {
-    try {
-      // ignore: avoid_dynamic_calls
-      return _resolveAudioPlayer();
-    } catch (_) {
-      return null;
-    }
-  }
-
-  // Lazy via réflexion : si audioplayers n'est pas dans pubspec, renvoie null
-  static dynamic _resolveAudioPlayer() {
-    // Utilise directement le package si dispo
-    try {
-      // Import dynamique évité — on utilise AudioPlayer directement
-      return _DirectAudioPlayer();
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> setSourceUrl(String url) async {
-    try { await _impl?.setSourceUrl(url); } catch (_) {}
-  }
-  Stream<dynamic> get onPlayerStateChanged => _impl?.onPlayerStateChanged ?? const Stream.empty();
-  Stream<dynamic> get onPositionChanged => _impl?.onPositionChanged ?? const Stream.empty();
-  Stream<dynamic> get onDurationChanged => _impl?.onDurationChanged ?? const Stream.empty();
-  Future<void> pause() async { try { await _impl?.pause(); } catch (_) {} }
-  Future<void> resume() async { try { await _impl?.resume(); } catch (_) {} }
-  void dispose() { try { _impl?.dispose(); } catch (_) {} }
-}
-
-class _DirectAudioPlayer {
-  // Utilise directement le package audioplayers
-  final dynamic _ap;
-  _DirectAudioPlayer() : _ap = _make();
-
-  static dynamic _make() {
-    try {
-      // ignore: avoid_dynamic_calls
-      return AudioPlayer();
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> setSourceUrl(String url) async => await _ap?.setSourceUrl(url);
-  Stream<dynamic> get onPlayerStateChanged => _ap?.onPlayerStateChanged ?? const Stream.empty();
-  Stream<dynamic> get onPositionChanged => _ap?.onPositionChanged ?? const Stream.empty();
-  Stream<dynamic> get onDurationChanged => _ap?.onDurationChanged ?? const Stream.empty();
-  Future<void> pause() async => await _ap?.pause();
-  Future<void> resume() async => await _ap?.resume();
-  void dispose() => _ap?.dispose();
 }
