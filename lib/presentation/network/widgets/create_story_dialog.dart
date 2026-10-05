@@ -587,7 +587,7 @@ class _CreateStoryPageState extends ConsumerState<CreateStoryPage>
                   shape: BoxShape.circle,
                   border: Border.all(color: ThixPolicy.gold.withOpacity(0.4), width: 2),
                 ),
-                child: const Icon(_isRecording ? Icons.mic_rounded : Icons.headphones_rounded, color: ThixPolicy.gold, size: 54),
+                child: Icon(_isRecording ? Icons.mic_rounded : Icons.headphones_rounded, color: ThixPolicy.gold, size: 54),
               ),
               const SizedBox(height: 16),
               Text(
