@@ -895,6 +895,55 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     }
   }
 
+  // ── BULK DELETE via Provider (pas Supabase direct) ──────────
+  Future<void> bulkDelete() async {
+    if (_isDisposed || state.selectedIds.isEmpty) return;
+
+    final idsToDelete = state.selectedIds.toList();
+    debugPrint('[ChatList] 🗑️ Bulk deleting ${idsToDelete.length} conversations');
+
+    final previousAll = List<ChatConversation>.from(state.all);
+    
+    // Optimistic update : retirer immédiatement de la liste
+    final filtered = state.all.where((c) => !state.selectedIds.contains(c.id)).toList();
+    state = state.copyWith(
+      all: filtered,
+      selectedIds: {},
+      isSelectionMode: false,
+    );
+    _indexedAll = filtered.map((c) => _IndexedConversation(c)).toList();
+    _applyFilter();
+
+    int successCount = 0;
+    for (final id in idsToDelete) {
+      try {
+        await _client
+            .from('conversation_participants')
+            .delete()
+            .eq('conversation_id', id)
+            .eq('user_id', _currentUserId!)
+            .timeout(_kDbTimeout);
+        successCount++;
+      } catch (e) {
+        debugPrint('[ChatList] ❌ Delete ${_obfuscate(id)}: $e');
+      }
+    }
+
+    if (successCount < idsToDelete.length) {
+      debugPrint('[ChatList] ⚠️ Some deletions failed, reloading');
+      await loadInitial(silent: true);
+    }
+  }
+
+  /// Récupère le nom d'une conversation par ID (pour les confirmations)
+  String? getConversationName(String convId) {
+    try {
+      return state.all.firstWhere((c) => c.id == convId).displayName;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ── DRAFT ────────────────────────────────────────────────────────────
 
   void saveDraft(String convId, String? draft) {
