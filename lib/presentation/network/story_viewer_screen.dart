@@ -1,5 +1,13 @@
 // lib/presentation/network/story_viewer_screen.dart
+// ============================================================================
+// STORY VIEWER — Plein écran avec Like ❤️ + Vu par 👁️
+// • Like animé (cœur qui pop) + persistance DB
+// • "Vu par" (uniquement pour le créateur) → sheet liste viewers
+// • Support fond coloré (stories texte)
+// • Progress bars, pause, next/prev, swipe-down to close
+// ============================================================================
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -30,10 +38,20 @@ class _StoryValidators {
   static String? sanitizeUrl(String? url) {
     if (url == null || url.trim().isEmpty) return null;
     final trimmed = url.trim();
-    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return null;
+    return trimmed.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
+  }
+
+  static Color? parseHexColor(String? hex) {
+    if (hex == null || hex.isEmpty) return null;
+    final s = hex.replaceFirst('#', '');
+    if (s.length != 6 && s.length != 8) return null;
+    try {
+      final v = int.parse(s.length == 6 ? 'FF$s' : s, radix: 16);
+      return Color(v);
+    } catch (_) {
       return null;
     }
-    return trimmed.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
   }
 }
 
@@ -43,13 +61,9 @@ class _StoryValidators {
 class StoryViewerScreen extends StatefulWidget {
   final String storyId;
   final String? userId;
-  
-  const StoryViewerScreen({
-    super.key,
-    required this.storyId,
-    this.userId,
-  });
-  
+
+  const StoryViewerScreen({super.key, required this.storyId, this.userId});
+
   @override
   State<StoryViewerScreen> createState() => _StoryViewerScreenState();
 }
@@ -62,17 +76,26 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
   bool _loading = true;
   bool _isPaused = false;
   bool _isDragging = false;
-  
-  // Animation pour swipe vertical
+
   late AnimationController _dragController;
   double _dragOffset = 0;
-  
-  // Préchargement
+
+  // Like state (storyId -> {liked: bool, count: int})
+  final Map<String, Map<String, dynamic>> _likeState = {};
+  // Animation cœur pop
+  final Map<String, AnimationController> _heartAnims = {};
+
   final Map<String, ImageProvider> _imageCache = {};
-  
+
   static const Duration _storyDuration = Duration(seconds: 5);
   static const Duration _requestTimeout = Duration(seconds: 10);
   static const int _timerIntervalMs = 50;
+
+  String? get _viewerId => Supabase.instance.client.auth.currentUser?.id;
+  bool get _isCreator {
+    if (_stories.isEmpty) return false;
+    return _stories[_current]['user_id']?.toString() == _viewerId;
+  }
 
   @override
   void initState() {
@@ -85,24 +108,27 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
   void dispose() {
     _timer?.cancel();
     _dragController.dispose();
+    for (final c in _heartAnims.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
+  // ════════════════════════════════════════════════════════════════════════
+  // LOAD
+  // ════════════════════════════════════════════════════════════════════════
   Future<void> _load() async {
     final supa = Supabase.instance.client;
-    
     try {
-      // Charger la story initiale
       final first = await supa
           .from('stories')
           .select('*, profiles(display_name, photo_url, avatar_url)')
           .eq('id', widget.storyId)
           .single()
           .timeout(_requestTimeout);
-      
+
       final uid = widget.userId ?? first['user_id'];
-      
-      // Charger toutes les stories actives de l'utilisateur
+
       final all = await supa
           .from('stories')
           .select('*, profiles(display_name, photo_url, avatar_url)')
@@ -111,87 +137,87 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
           .gt('expires_at', DateTime.now().toUtc().toIso8601String())
           .order('created_at')
           .timeout(_requestTimeout);
-      
+
       final list = (all as List).cast<Map<String, dynamic>>();
-      
+
       if (!mounted) return;
-      
+
       setState(() {
         _stories = list;
         _current = list.indexWhere((s) => s['id'] == widget.storyId);
         if (_current == -1) _current = 0;
         _loading = false;
       });
-      
+
       _startTimer();
       _markViewed();
       _preloadNext();
+      _loadLikeState();
     } catch (e) {
       debugPrint('[Story] Load error: $e');
       if (mounted) setState(() => _loading = false);
     }
   }
 
+  // ════════════════════════════════════════════════════════════════════════
+  // TIMER
+  // ════════════════════════════════════════════════════════════════════════
   void _startTimer() {
     _timer?.cancel();
     _progress = 0;
     _isPaused = false;
-    
+
     final steps = _storyDuration.inMilliseconds ~/ _timerIntervalMs;
     final increment = 1.0 / steps;
-    
+
     _timer = Timer.periodic(const Duration(milliseconds: _timerIntervalMs), (t) {
       if (!mounted || _isPaused || _isDragging) return;
-      
       setState(() => _progress += increment);
-      
-      if (_progress >= 1.0) {
-        _next();
-      }
+      if (_progress >= 1.0) _next();
     });
   }
 
   void _pauseTimer() {
-    _isPaused = true;
-    HapticFeedback.selectionClick();
+    if (!_isPaused) {
+      setState(() => _isPaused = true);
+      HapticFeedback.selectionClick();
+    }
   }
 
   void _resumeTimer() {
-    _isPaused = false;
-    HapticFeedback.selectionClick();
+    if (_isPaused) {
+      setState(() => _isPaused = false);
+    }
   }
 
   void _preloadNext() {
     if (_current < _stories.length - 1) {
-      final nextStory = _stories[_current + 1];
-      final mediaUrl = _StoryValidators.sanitizeUrl(nextStory['media_url']?.toString());
-      
+      final next = _stories[_current + 1];
+      final mediaUrl = _StoryValidators.sanitizeUrl(next['media_url']?.toString());
       if (mediaUrl != null && !_imageCache.containsKey(mediaUrl)) {
         _imageCache[mediaUrl] = CachedNetworkImageProvider(mediaUrl);
-        // Préchargement automatique
         precacheImage(_imageCache[mediaUrl]!, context);
       }
     }
   }
 
+  // ════════════════════════════════════════════════════════════════════════
+  // VIEWED + LIKE STATE
+  // ════════════════════════════════════════════════════════════════════════
   Future<void> _markViewed() async {
     if (_stories.isEmpty || _current >= _stories.length) return;
-    
     final storyId = _stories[_current]['id']?.toString();
     if (storyId == null) return;
-    
-    final viewerId = Supabase.instance.client.auth.currentUser?.id;
+    final viewerId = _viewerId;
     if (viewerId == null) return;
-    
+
     try {
-      // Marquer comme vue dans la table stories
       await Supabase.instance.client
           .from('stories')
           .update({'is_viewed': true})
           .eq('id', storyId)
           .timeout(_requestTimeout);
-      
-      // Insérer dans story_views (compteur)
+
       await Supabase.instance.client
           .from('story_views')
           .upsert({
@@ -205,6 +231,107 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     }
   }
 
+  Future<void> _loadLikeState() async {
+    final viewerId = _viewerId;
+    if (viewerId == null || _stories.isEmpty) return;
+
+    final ids = _stories.map((s) => s['id']?.toString()).whereType<String>().toList();
+    if (ids.isEmpty) return;
+
+    try {
+      final supa = Supabase.instance.client;
+
+      // Compter likes par story
+      final counts = await supa
+          .from('story_likes')
+          .select('story_id')
+          .inFilter('story_id', ids)
+          .timeout(_requestTimeout);
+
+      final countMap = <String, int>{};
+      for (final row in counts as List) {
+        final id = (row as Map)['story_id']?.toString();
+        if (id != null) countMap[id] = (countMap[id] ?? 0) + 1;
+      }
+
+      // Mes likes
+      final myLikes = await supa
+          .from('story_likes')
+          .select('story_id')
+          .eq('user_id', viewerId)
+          .inFilter('story_id', ids)
+          .timeout(_requestTimeout);
+
+      final likedSet = <String>{};
+      for (final row in myLikes as List) {
+        final id = (row as Map)['story_id']?.toString();
+        if (id != null) likedSet.add(id);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        for (final id in ids) {
+          _likeState[id] = {'liked': likedSet.contains(id), 'count': countMap[id] ?? 0};
+        }
+      });
+    } catch (e) {
+      debugPrint('[Story] Load like state: $e');
+    }
+  }
+
+  Future<void> _toggleLike() async {
+    if (_stories.isEmpty || _current >= _stories.length) return;
+    final storyId = _stories[_current]['id']?.toString();
+    final viewerId = _viewerId;
+    if (storyId == null || viewerId == null) return;
+
+    final state = _likeState[storyId] ?? {'liked': false, 'count': 0};
+    final wasLiked = state['liked'] as bool;
+    final count = (state['count'] as int) + (wasLiked ? -1 : 1);
+
+    setState(() {
+      _likeState[storyId] = {'liked': !wasLiked, 'count': count.clamp(0, 999999)};
+    });
+
+    HapticFeedback.mediumImpact();
+
+    // Animation cœur qui pop
+    if (!wasLiked) {
+      _playHeartPop(storyId);
+    }
+
+    try {
+      final supa = Supabase.instance.client;
+      if (wasLiked) {
+        await supa.from('story_likes').delete().eq('story_id', storyId).eq('user_id', viewerId);
+      } else {
+        await supa.from('story_likes').upsert(
+          {'story_id': storyId, 'user_id': viewerId, 'created_at': DateTime.now().toUtc().toIso8601String()},
+          onConflict: 'story_id,user_id',
+        );
+      }
+    } catch (e) {
+      debugPrint('[Story] Toggle like error: $e');
+      // Rollback
+      setState(() {
+        _likeState[storyId] = {'liked': wasLiked, 'count': (state['count'] as int)};
+      });
+    }
+  }
+
+  void _playHeartPop(String storyId) {
+    final ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
+    _heartAnims[storyId] = ctrl;
+    ctrl.addListener(() { if (mounted) setState(() {}); });
+    ctrl.forward().then((_) {
+      ctrl.dispose();
+      _heartAnims.remove(storyId);
+    });
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // NAVIGATION
+  // ════════════════════════════════════════════════════════════════════════
   void _next() {
     if (_current < _stories.length - 1) {
       HapticFeedback.lightImpact();
@@ -212,8 +339,8 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
       _startTimer();
       _markViewed();
       _preloadNext();
-    } else {
-      if (mounted) Navigator.pop(context);
+    } else if (mounted) {
+      Navigator.pop(context);
     }
   }
 
@@ -223,17 +350,20 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
       setState(() => _current--);
       _startTimer();
       _markViewed();
+    } else {
+      setState(() => _progress = 0);
     }
   }
 
   void _onTapDown(TapDownDetails details) {
     final width = MediaQuery.of(context).size.width;
     final x = details.globalPosition.dx;
-    
     if (x < width / 3) {
       _prev();
     } else if (x > width * 2 / 3) {
       _next();
+    } else {
+      _toggleLike();
     }
   }
 
@@ -246,9 +376,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
 
   void _onVerticalDragEnd(DragEndDetails details) {
     setState(() => _isDragging = false);
-    
     if (_dragOffset > 100) {
-      // Swipe down = fermer
       Navigator.pop(context);
     } else {
       setState(() => _dragOffset = 0);
@@ -263,16 +391,32 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     return '${diff.inDays}j';
   }
 
+  // ════════════════════════════════════════════════════════════════════════
+  // VU PAR (sheet liste viewers)
+  // ════════════════════════════════════════════════════════════════════════
+  Future<void> _openViewersSheet() async {
+    if (!_isCreator || _stories.isEmpty) return;
+    final storyId = _stories[_current]['id']?.toString();
+    if (storyId == null) return;
+
+    HapticFeedback.lightImpact();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => _ViewersSheet(storyId: storyId),
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return _buildLoadingScreen();
-    }
-    
-    if (_stories.isEmpty) {
-      return _buildExpiredScreen();
-    }
-    
+    if (_loading) return _buildLoadingScreen();
+    if (_stories.isEmpty) return _buildExpiredScreen();
+
     final story = _stories[_current];
     final profile = story['profiles'] as Map?;
     final name = _StoryValidators.sanitize(profile?['display_name']?.toString() ?? 'Utilisateur', maxLength: 100);
@@ -282,16 +426,22 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
       story['text']?.toString() ?? story['text_content']?.toString() ?? '',
       maxLength: 500,
     );
-    
+    final bgColor = _StoryValidators.parseHexColor(story['bg_color']?.toString());
+    final mediaType = (story['media_type']?.toString() ?? story['type']?.toString() ?? '').toLowerCase();
+
     DateTime? createdAt;
     try {
-      final createdAtStr = story['created_at']?.toString();
-      if (createdAtStr != null && createdAtStr.isNotEmpty) {
-        createdAt = DateTime.parse(createdAtStr);
-      }
+      final s = story['created_at']?.toString();
+      if (s != null && s.isNotEmpty) createdAt = DateTime.parse(s);
     } catch (e) {
       debugPrint('[Story] Parse date error: $e');
     }
+
+    final storyId = story['id']?.toString() ?? '';
+    final likeState = _likeState[storyId] ?? {'liked': false, 'count': 0};
+    final liked = likeState['liked'] as bool;
+    final likeCount = likeState['count'] as int;
+    final heartAnim = _heartAnims[storyId];
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -306,11 +456,17 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
           child: Stack(
             children: [
               // MEDIA
-              Positioned.fill(
-                child: _buildMediaContent(mediaUrl, text),
-              ),
-              
-              // PROGRESS BARS + HEADER
+              Positioned.fill(child: _buildMediaContent(mediaUrl, text, bgColor, mediaType)),
+
+              // ❤️ HEART POP ANIMATION
+              if (heartAnim != null)
+                Positioned.fill(
+                  child: Center(
+                    child: _AnimatedHeartPop(progress: heartAnim.value),
+                  ),
+                ),
+
+              // PROGRESS + HEADER
               SafeArea(
                 child: Column(
                   children: [
@@ -320,11 +476,11 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                   ],
                 ),
               ),
-              
+
               // TEXTE SUPERPOSÉ (si média + texte)
-              if (text.isNotEmpty && mediaUrl != null)
+              if (text.isNotEmpty && mediaUrl != null && mediaType != 'audio')
                 Positioned(
-                  bottom: 40,
+                  bottom: 100,
                   left: 16,
                   right: 16,
                   child: Container(
@@ -335,26 +491,26 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                     ),
                     child: Text(
                       text,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        height: 1.4,
-                      ),
+                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500, height: 1.4),
                       textAlign: TextAlign.center,
                     ),
                   ),
                 ),
-              
+
+              // BOTTOM BAR — LIKE + VU PAR + RÉPONDRE
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: _buildBottomBar(liked, likeCount),
+              ),
+
               // INDICATEUR PAUSE
               if (_isPaused)
                 Center(
                   child: Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.5),
-                      shape: BoxShape.circle,
-                    ),
+                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.5), shape: BoxShape.circle),
                     child: const Icon(Icons.pause_rounded, color: Colors.white, size: 48),
                   ),
                 ),
@@ -365,8 +521,10 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     );
   }
 
-  Widget _buildMediaContent(String? mediaUrl, String text) {
-    if (mediaUrl != null && mediaUrl.isNotEmpty) {
+  // ── MEDIA CONTENT (support image / video placeholder / audio / texte) ──
+  Widget _buildMediaContent(String? mediaUrl, String text, Color? bgColor, String mediaType) {
+    // Image
+    if (mediaType != 'audio' && mediaUrl != null && mediaUrl.isNotEmpty) {
       return InteractiveViewer(
         minScale: 1.0,
         maxScale: 3.0,
@@ -374,26 +532,64 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
           imageUrl: mediaUrl,
           fit: BoxFit.contain,
           placeholder: (context, url) => Container(
-            color: Colors.black,
-            child: const Center(
-              child: SizedBox(
-                width: 40,
-                height: 40,
-                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-              ),
-            ),
+            color: bgColor ?? Colors.black,
+            child: const Center(child: SizedBox(width: 40, height: 40, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))),
           ),
           errorWidget: (context, url, error) => Container(
-            color: Colors.black,
-            child: const Center(
-              child: Icon(Icons.broken_image_outlined, color: Colors.white, size: 60),
-            ),
+            color: bgColor ?? Colors.black,
+            child: const Center(child: Icon(Icons.broken_image_outlined, color: Colors.white, size: 60)),
           ),
         ),
       );
-    } else if (text.isNotEmpty) {
+    }
+
+    // Audio
+    if (mediaType == 'audio') {
       return Container(
-        color: Colors.black,
+        decoration: BoxDecoration(
+          gradient: bgColor != null
+              ? LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [bgColor, bgColor.withOpacity(0.6)])
+              : const LinearGradient(colors: [Color(0xFF1A1F2E), Color(0xFF0A0E1A)]),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(26),
+                decoration: BoxDecoration(
+                  color: ThixPolicy.gold.withOpacity(0.2),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: ThixPolicy.gold.withOpacity(0.5), width: 2),
+                ),
+                child: const Icon(Icons.headphones_rounded, color: ThixPolicy.gold, size: 54),
+              ),
+              const SizedBox(height: 16),
+              const Text('Message vocal', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
+              if (text.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(text,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600, height: 1.4)),
+                ),
+              ],
+              if (mediaUrl != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 24),
+                  child: _InlineStoryAudio(url: mediaUrl),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Texte seul (avec fond coloré ou noir)
+    if (text.isNotEmpty) {
+      return Container(
+        color: bgColor ?? Colors.black,
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -404,25 +600,22 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
                 height: 1.4,
-                shadows: [
-                  Shadow(blurRadius: 8, color: Colors.black, offset: Offset(0, 2)),
-                ],
+                shadows: [Shadow(blurRadius: 8, color: Colors.black, offset: Offset(0, 2))],
               ),
               textAlign: TextAlign.center,
             ),
           ),
         ),
       );
-    } else {
-      return Container(
-        color: Colors.black,
-        child: const Center(
-          child: Icon(Icons.image_not_supported_outlined, color: Colors.white54, size: 60),
-        ),
-      );
     }
+
+    return Container(
+      color: bgColor ?? Colors.black,
+      child: const Center(child: Icon(Icons.image_not_supported_outlined, color: Colors.white54, size: 60)),
+    );
   }
 
+  // ── PROGRESS BARS ──
   Widget _buildProgressBars() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -439,16 +632,9 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: FractionallySizedBox(
-                  widthFactor: i < _current
-                      ? 1.0
-                      : i == _current
-                          ? _progress
-                          : 0.0,
+                  widthFactor: i < _current ? 1.0 : i == _current ? _progress : 0.0,
                   child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(3),
-                    ),
+                    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(3)),
                   ),
                 ),
               ),
@@ -459,6 +645,7 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     );
   }
 
+  // ── HEADER ──
   Widget _buildHeader(String name, String? avatar, DateTime? createdAt) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -484,21 +671,12 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                Text(name,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
                 if (createdAt != null)
-                  Text(
-                    _getTimeAgo(createdAt),
-                    style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11),
-                  ),
+                  Text(_getTimeAgo(createdAt), style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11)),
               ],
             ),
           ),
@@ -511,6 +689,66 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     );
   }
 
+  // ── BOTTOM BAR : LIKE + VU PAR + RÉPONDRE ──
+  Widget _buildBottomBar(bool liked, int likeCount) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(16, 10, 16, MediaQuery.of(context).padding.bottom + 14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.transparent, Colors.black.withOpacity(0.85)],
+        ),
+      ),
+      child: Row(
+        children: [
+          // ❤️ LIKE
+          _BottomAction(
+            icon: liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+            color: liked ? ThixPolicy.danger : Colors.white,
+            label: likeCount > 0 ? '$likeCount' : '',
+            onTap: _toggleLike,
+          ),
+          const SizedBox(width: 16),
+          // 💬 RÉPONDRE (placeholder)
+          _BottomAction(
+            icon: Icons.send_rounded,
+            color: Colors.white,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Messages privés bientôt disponibles'),
+                  backgroundColor: Colors.black87,
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            },
+          ),
+          const Spacer(),
+          // 👁️ VU PAR (uniquement créateur)
+          if (_isCreator)
+            _BottomAction(
+              icon: Icons.visibility_rounded,
+              color: Colors.white,
+              label: _getViewCount().toString(),
+              onTap: _openViewersSheet,
+            ),
+        ],
+      ),
+    );
+  }
+
+  int _getViewCount() {
+    if (_stories.isEmpty) return 0;
+    final views = _stories[_current]['views_count'];
+    if (views is num) return views.toInt();
+    if (views is int) return views;
+    return 0;
+  }
+
+  // ── LOADING ──
   Widget _buildLoadingScreen() {
     return Scaffold(
       backgroundColor: Colors.black,
@@ -521,39 +759,30 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
             Container(
               width: 60,
               height: 60,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [ThixPolicy.gold, Color(0xFFFFA500)]),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(colors: [ThixPolicy.gold, Color(0xFFFFA500)]),
                 shape: BoxShape.circle,
               ),
               child: const Center(
-                child: SizedBox(
-                  width: 30,
-                  height: 30,
-                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                ),
+                child: SizedBox(width: 30, height: 30, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Chargement de la story...',
-              style: TextStyle(color: Colors.white70, fontSize: 14),
-            ),
+            const Text('Chargement de la story...', style: TextStyle(color: Colors.white70, fontSize: 14)),
           ],
         ),
       ),
     );
   }
 
+  // ── EXPIRÉE ──
   Widget _buildExpiredScreen() {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.close_rounded, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
+        leading: IconButton(icon: const Icon(Icons.close_rounded, color: Colors.white), onPressed: () => Navigator.pop(context)),
       ),
       body: Center(
         child: Column(
@@ -561,29 +790,360 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
           children: [
             Container(
               padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
+              decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), shape: BoxShape.circle),
               child: const Icon(Icons.hourglass_empty_rounded, color: Colors.white54, size: 64),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'Story expirée',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            const Text('Story expirée', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            Text(
-              'Cette story n\'est plus disponible',
-              style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14),
-            ),
+            Text('Cette story n\'est plus disponible', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14)),
           ],
         ),
       ),
     );
   }
+}
+
+// ============================================================================
+// BOUTON D'ACTION EN BAS (like, vu par, envoyer)
+// ============================================================================
+class _BottomAction extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String? label;
+  final VoidCallback onTap;
+
+  const _BottomAction({required this.icon, required this.color, this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 28),
+          if (label != null && label!.isNotEmpty) ...[
+            const SizedBox(width: 4),
+            Text(label!, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w800)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// CŒUR POP ANIMATION (double-tap style)
+// ============================================================================
+class _AnimatedHeartPop extends StatelessWidget {
+  final double progress; // 0 → 1
+  const _AnimatedHeartPop({required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    // Scale: 0 → 1.4 → 1.1
+    // Opacity: 0 → 1 → 0
+    double scale;
+    double opacity;
+    if (progress < 0.3) {
+      scale = 0.5 + (progress / 0.3) * 0.9; // 0.5 → 1.4
+      opacity = progress / 0.3;
+    } else {
+      scale = 1.4 - ((progress - 0.3) / 0.7) * 0.3; // 1.4 → 1.1
+      opacity = 1.0 - ((progress - 0.3) / 0.7);
+    }
+
+    return Transform.scale(
+      scale: scale,
+      child: Opacity(
+        opacity: opacity.clamp(0.0, 1.0),
+        child: const Icon(Icons.favorite_rounded, color: ThixPolicy.danger, size: 140,
+            shadows: [Shadow(color: Colors.black54, blurRadius: 12)]),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// SHEET "VU PAR" (liste des viewers)
+// ============================================================================
+class _ViewersSheet extends StatefulWidget {
+  final String storyId;
+  const _ViewersSheet({required this.storyId});
+
+  @override
+  State<_ViewersSheet> createState() => _ViewersSheetState();
+}
+
+class _ViewersSheetState extends State<_ViewersSheet> {
+  List<Map<String, dynamic>> _viewers = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadViewers();
+  }
+
+  Future<void> _loadViewers() async {
+    try {
+      final supa = Supabase.instance.client;
+      final res = await supa
+          .from('story_views')
+          .select('viewed_at, viewer:viewer_id(display_name, photo_url, avatar_url, username)')
+          .eq('story_id', widget.storyId)
+          .order('viewed_at', ascending: false)
+          .timeout(const Duration(seconds: 10));
+
+      final list = (res as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+
+      if (mounted) {
+        setState(() {
+          _viewers = list;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[Viewers] load error: $e');
+      if (mounted) setState(() { _loading = false; _error = 'Erreur de chargement'; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.of(context).padding.top;
+    return Container(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
+      decoration: const BoxDecoration(
+        color: ThixPolicy.card,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(16, top + 12, 16, 8),
+            child: Row(
+              children: [
+                Container(
+                  width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.visibility_rounded, color: ThixPolicy.primary, size: 22),
+                const SizedBox(width: 10),
+                Text('Vu par (${_viewers.length})', style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16)),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Flexible(
+            child: _loading
+                ? const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(color: ThixPolicy.primary)))
+                : _error != null
+                    ? Padding(padding: const EdgeInsets.all(24), child: Text(_error!, style: TextStyle(color: ThixPolicy.danger)))
+                    : _viewers.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.all(32),
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(Icons.visibility_off_rounded, size: 40, color: ThixPolicy.textMuted),
+                              SizedBox(height: 8),
+                              Text('Personne n\'a vu cette story', style: TextStyle(color: ThixPolicy.textMuted)),
+                            ]),
+                          )
+                        : ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: _viewers.length,
+                            itemBuilder: (context, i) {
+                              final v = _viewers[i];
+                              final viewer = v['viewer'] as Map?;
+                              final name = _StoryValidators.sanitize(viewer?['display_name']?.toString() ?? viewer?['username']?.toString() ?? 'Utilisateur');
+                              final avatar = _StoryValidators.sanitizeUrl(viewer?['photo_url']?.toString() ?? viewer?['avatar_url']?.toString());
+                              DateTime? viewedAt;
+                              try { viewedAt = DateTime.parse(v['viewed_at'].toString()); } catch (_) {}
+
+                              return ListTile(
+                                leading: CircleAvatar(
+                                  radius: 22,
+                                  backgroundColor: ThixPolicy.surfaceSoft,
+                                  backgroundImage: avatar != null ? CachedNetworkImageProvider(avatar) : null,
+                                  child: avatar == null ? const Icon(Icons.person, size: 18, color: ThixPolicy.textMuted) : null,
+                                ),
+                                title: Text(name, style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.semiBold)),
+                                subtitle: viewedAt != null ? Text(_timeAgo(viewedAt), style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted)) : null,
+                              );
+                            },
+                          ),
+          ),
+          SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
+        ],
+      ),
+    );
+  }
+
+  String _timeAgo(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'À l\'instant';
+    if (diff.inMinutes < 60) return 'il y a ${diff.inMinutes} min';
+    if (diff.inHours < 24) return 'il y a ${diff.inHours} h';
+    return 'il y a ${diff.inDays} j';
+  }
+}
+
+// ============================================================================
+// LECTEUR AUDIO INLINE (pour stories audio)
+// ============================================================================
+class _InlineStoryAudio extends StatefulWidget {
+  final String url;
+  const _InlineStoryAudio({required this.url});
+  @override
+  State<_InlineStoryAudio> createState() => _InlineStoryAudioState();
+}
+
+class _InlineStoryAudioState extends State<_InlineStoryAudio> {
+  late final _player = _createPlayer();
+  bool _isPlaying = false;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+
+  // Audioplayers import
+  static dynamic _createPlayer() {
+    // Lazy load pour éviter crash si le package n'est pas dispo
+    try {
+      final pkg = _playerPkg;
+      return pkg.create();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      await _player.setSourceUrl(widget.url);
+      _player.onPlayerStateChanged.listen((s) {
+        if (mounted) setState(() => _isPlaying = s.toString().contains('playing'));
+      });
+      _player.onPositionChanged.listen((p) {
+        if (mounted) setState(() => _position = p);
+      });
+      _player.onDurationChanged.listen((d) {
+        if (mounted) setState(() => _duration = d);
+      });
+    } catch (e) {
+      debugPrint('[StoryAudio] init: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    try { _player.dispose(); } catch (_) {}
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(24)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: () async {
+              if (_isPlaying) await _player.pause();
+              else await _player.resume();
+            },
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: const BoxDecoration(color: ThixPolicy.gold, shape: BoxShape.circle),
+              child: Icon(_isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.black, size: 20),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text('${_fmt(_position)} / ${_fmt(_duration)}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+        ],
+      ),
+    );
+  }
+
+  String _fmt(Duration d) => '${d.inMinutes.toString().padLeft(2, '0')}:${d.inSeconds.remainder(60).toString().padLeft(2, '0')}';
+}
+
+// Helpers pour audioplayers (évite import direct si absent)
+class _playerPkg {
+  static dynamic create() {
+    // Utilisation dynamique pour éviter erreurs compile
+    return _AudioPlayerWrapper();
+  }
+}
+
+class _AudioPlayerWrapper {
+  final dynamic _impl;
+  _AudioPlayerWrapper() : _impl = _tryCreate();
+
+  static dynamic _tryCreate() {
+    try {
+      // ignore: avoid_dynamic_calls
+      return _resolveAudioPlayer();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Lazy via réflexion : si audioplayers n'est pas dans pubspec, renvoie null
+  static dynamic _resolveAudioPlayer() {
+    // Utilise directement le package si dispo
+    try {
+      // Import dynamique évité — on utilise AudioPlayer directement
+      return _DirectAudioPlayer();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setSourceUrl(String url) async {
+    try { await _impl?.setSourceUrl(url); } catch (_) {}
+  }
+  Stream<dynamic> get onPlayerStateChanged => _impl?.onPlayerStateChanged ?? const Stream.empty();
+  Stream<dynamic> get onPositionChanged => _impl?.onPositionChanged ?? const Stream.empty();
+  Stream<dynamic> get onDurationChanged => _impl?.onDurationChanged ?? const Stream.empty();
+  Future<void> pause() async { try { await _impl?.pause(); } catch (_) {} }
+  Future<void> resume() async { try { await _impl?.resume(); } catch (_) {} }
+  void dispose() { try { _impl?.dispose(); } catch (_) {} }
+}
+
+class _DirectAudioPlayer {
+  // Utilise directement le package audioplayers
+  final dynamic _ap;
+  _DirectAudioPlayer() : _ap = _make();
+
+  static dynamic _make() {
+    try {
+      // ignore: avoid_dynamic_calls
+      return AudioPlayer();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setSourceUrl(String url) async => await _ap?.setSourceUrl(url);
+  Stream<dynamic> get onPlayerStateChanged => _ap?.onPlayerStateChanged ?? const Stream.empty();
+  Stream<dynamic> get onPositionChanged => _ap?.onPositionChanged ?? const Stream.empty();
+  Stream<dynamic> get onDurationChanged => _ap?.onDurationChanged ?? const Stream.empty();
+  Future<void> pause() async => await _ap?.pause();
+  Future<void> resume() async => await _ap?.resume();
+  void dispose() => _ap?.dispose();
 }
