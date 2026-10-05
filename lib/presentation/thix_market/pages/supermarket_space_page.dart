@@ -1,12 +1,12 @@
 // lib/presentation/thix_market/pages/supermarket_space_page.dart
 // ============================================================================
-// SUPERMARCHÉ 3D — Production Enterprise v4
+// SUPERMARCHÉ 3D — Production Enterprise v5
 // ----------------------------------------------------------------------------
 //  • Entrée par portes vitrées coulissantes
 //  • Barre du haut "HUD" (nom, détails, position) + fiche magasin
 //  • Bannière hero des promotions (auto-défilement, repliable)
+//  • Étagères collées au mur, plafond + spots visibles au-dessus
 //  • Allées en pseudo-3D (perspective Matrix4 — léger pour le CPU/GPU)
-//  • Plafond, rail de projecteurs, spots lumineux
 //  • Étages + ascenseur, mini-plan, recherche "téléportation"
 //  • Rayons Frais / Surgelés / Boissons avec portes vitrées qui s'ouvrent
 //  • Produits déjà affichés + bouton Panier
@@ -51,10 +51,11 @@ const double _kSignH = 96;
 const double _kDoorH = 28 + _kLevelH * 2 + 3 + 6;
 const double _kDoorGap = 14;
 const double _kHeroH = 108;
+const double _kCeilH = 44; // hauteur du plafond (spots visibles ici)
 const int _kCols = 3;
 const int _kFloorSize = 4;
 const Duration _kDbTimeout = Duration(seconds: 15);
-const double _kCeilH = 44; 
+
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -743,11 +744,13 @@ class _SupermarketSpacePageState extends ConsumerState<SupermarketSpacePage>
                 Expanded(
                   child: Stack(
                     children: [
+                      // 1) Mur + sol
                       const Positioned.fill(
                         child: RepaintBoundary(
                           child: CustomPaint(painter: _BackdropPainter()),
                         ),
                       ),
+                      // 2) Étagères collées au mur
                       Positioned.fill(
                         child: AnimatedOpacity(
                           opacity: _hidden ? 0 : 1,
@@ -760,7 +763,7 @@ class _SupermarketSpacePageState extends ConsumerState<SupermarketSpacePage>
                           ),
                         ),
                       ),
-                                            // Plafond + spots PAR-DESSUS les étagères (non cliquable)
+                      // 3) Plafond + spots PAR-DESSUS les étagères (non cliquable)
                       const Positioned.fill(
                         child: IgnorePointer(
                           child: RepaintBoundary(
@@ -768,8 +771,7 @@ class _SupermarketSpacePageState extends ConsumerState<SupermarketSpacePage>
                           ),
                         ),
                       ),
-
-                      
+                      // 4) HUD
                       Positioned(
                         left: 12,
                         right: 12,
@@ -794,6 +796,7 @@ class _SupermarketSpacePageState extends ConsumerState<SupermarketSpacePage>
                           onCart: () => context.push('/market/cart'),
                         ),
                       ),
+                      // 5) Résultats de recherche
                       if (panelOpen)
                         Positioned.fill(
                           child: _ResultsPanel(
@@ -1675,132 +1678,9 @@ class _GlassDoor extends StatelessWidget {
 }
 
 // ============================================================================
-// FOND DU MAGASIN : plafond, spots, mur, sol (dessiné une seule fois)
+// FOND DU MAGASIN : mur + sol (dessiné une seule fois)
 // ============================================================================
 class _BackdropPainter extends CustomPainter {
-  const _BackdropPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final horizon = h * 0.80;
-    final ceilH = math.min(46.0, h * 0.09);
-
-    // ── Mur ──
-    final wallRect = Rect.fromLTWH(0, ceilH, w, horizon - ceilH);
-    canvas.drawRect(
-      wallRect,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFFF1F5FB), Color(0xFFDDE5F0)],
-        ).createShader(wallRect),
-    );
-
-    // ── Sol ──
-    final floorRect = Rect.fromLTWH(0, horizon, w, h - horizon);
-    canvas.drawRect(
-      floorRect,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFFD9E0EA), Color(0xFFBFC9D7)],
-        ).createShader(floorRect),
-    );
-
-    canvas.save();
-    canvas.clipRect(floorRect);
-    final line = Paint()
-      ..color = Colors.white.withOpacity(0.55)
-      ..strokeWidth = 1;
-    final vp = Offset(w / 2, horizon - (h - horizon) * 1.2);
-    for (var i = -6; i <= 6; i++) {
-      canvas.drawLine(vp, Offset(w / 2 + i * w * 0.22, h), line);
-    }
-    for (var k = 1; k <= 6; k++) {
-      final y = horizon + (h - horizon) * math.pow(k / 6, 2).toDouble();
-      canvas.drawLine(Offset(0, y), Offset(w, y), line);
-    }
-    canvas.restore();
-
-    // ── Plafond ──
-    final ceilRect = Rect.fromLTWH(0, 0, w, ceilH);
-    canvas.drawRect(
-      ceilRect,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFFC3CEDC), Color(0xFFE9EEF5)],
-        ).createShader(ceilRect),
-    );
-    final tile = Paint()
-      ..color = const Color(0xFF90A4AE).withOpacity(0.18)
-      ..strokeWidth = 1;
-    for (var i = 1; i < 6; i++) {
-      canvas.drawLine(Offset(w * i / 6, 0), Offset(w * i / 6, ceilH), tile);
-    }
-    canvas.drawLine(
-      Offset(0, ceilH),
-      Offset(w, ceilH),
-      Paint()
-        ..color = const Color(0xFFAFBCCB)
-        ..strokeWidth = 1.5,
-    );
-
-    // ── Rail de projecteurs ──
-    final railY = ceilH * 0.42;
-    canvas.drawRect(
-      Rect.fromLTWH(0, railY, w, 3),
-      Paint()..color = const Color(0xFF90A4AE),
-    );
-
-    // ── Spots : cône de lumière + halo + flaque au sol ──
-    for (final fx in const [0.14, 0.38, 0.62, 0.86]) {
-      final cx = w * fx;
-      final cy = railY + 1.5;
-
-      final coneRect = Rect.fromLTWH(cx - w * 0.17, cy, w * 0.34, horizon - cy);
-      final cone = Path()
-        ..moveTo(cx - 5, cy + 4)
-        ..lineTo(cx + 5, cy + 4)
-        ..lineTo(cx + w * 0.17, horizon)
-        ..lineTo(cx - w * 0.17, horizon)
-        ..close();
-      canvas.drawPath(
-        cone,
-        Paint()
-          ..shader = LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.white.withOpacity(0.42), Colors.white.withOpacity(0.0)],
-          ).createShader(coneRect),
-      );
-
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromCenter(center: Offset(cx, cy + 5), width: 14, height: 8),
-          const Radius.circular(3),
-        ),
-        Paint()..color = const Color(0xFF546E7A),
-      );
-
-      final glowC = Offset(cx, cy + 10);
-      canvas.drawCircle(
-        glowC,
-        15,
-        Paint()
-          ..shader = RadialGradient(
-            colors: [Colors.white.withOpacity(0.95), Colors.white.withOpacity(0.0)],
-          ).createShader(Rect.fromCircle(center: glowC, radius: 15)),
-      );
-      canvas.drawCircle(Offset(cx, cy + 9), 3.2, Paint()..color = Colors.white);
-
-      canvas.drawOval(
- _BackdropPainter extends CustomPainter {
   const _BackdropPainter();
 
   @override
@@ -1986,7 +1866,31 @@ class _CeilingPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
-  
+
+class _PerfPainter extends CustomPainter {
+  const _PerfPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final pts = <Offset>[];
+    for (var y = 6.0; y < size.height; y += 9) {
+      for (var x = 6.0; x < size.width; x += 9) {
+        pts.add(Offset(x, y));
+      }
+    }
+    canvas.drawPoints(
+      PointMode.points,
+      pts,
+      Paint()
+        ..color = _kPerfDot
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
 
 class _MeshPainter extends CustomPainter {
   const _MeshPainter();
@@ -2142,8 +2046,8 @@ class _AislePageState extends State<_AislePage> {
 
     return ListView.builder(
       controller: _scroll,
-            physics: const ClampingScrollPhysics(), 
-      padding: const EdgeInsets.fromLTRB(2, _kCeilH, 2, 130), 
+      physics: const ClampingScrollPhysics(), // plus de vide au-dessus du panneau
+      padding: const EdgeInsets.fromLTRB(2, _kCeilH, 2, 130), // collé sous le plafond
       itemCount: total,
       itemBuilder: (ctx, i) {
         if (i == 0) {
@@ -2191,7 +2095,7 @@ class _AislePageState extends State<_AislePage> {
 }
 
 // ============================================================================
-// PANNEAU SUSPENDU
+// PANNEAU D'ALLÉE (fixé sur rail mural)
 // ============================================================================
 class _AisleSign extends StatelessWidget {
   final SupermarketDepartment dept;
@@ -2213,7 +2117,7 @@ class _AisleSign extends StatelessWidget {
       height: _kSignH,
       child: Column(
         children: [
-                    // Rail de fixation mural (le panneau est collé au mur)
+          // Rail de fixation mural (le panneau est collé au mur)
           SizedBox(
             height: 14,
             child: Container(
