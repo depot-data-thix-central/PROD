@@ -1,4 +1,15 @@
 // lib/presentation/chat/chat_list_page.dart
+//
+// ChatListPage — Design moderne enterprise avec fonctionnalités P0/P1 :
+// - Épingler (max 3) avec tri automatique
+// - Archiver avec section dédiée
+// - Sourdine (8h, 1 semaine, Toujours) avec badge 🔇
+// - Verrouillage biométrique 🔒
+// - Brouillons en rouge italique 📝
+// - Sélection multiple (bulk actions)
+// - Menu contextuel au long press
+// - Nav bar flottante moderne
+
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -42,6 +53,7 @@ const int _kLoadMoreThrottleMs = 500;
 const int _kMaxChatNameLength = 80;
 const int _kMaxPreviewLength = 140;
 const int _kMaxAgentNameLength = 60;
+const int _kMaxPinned = 3;
 
 // ============================================================================
 // VALIDATORS
@@ -84,7 +96,6 @@ class _ListValidators {
     return s[0].toUpperCase();
   }
 
-  /// Détecte si un message est chiffré (préfixe ENCv1 ou base64 long)
   static bool isEncrypted(String? raw) {
     if (raw == null || raw.isEmpty) return false;
     final t = raw.trim();
@@ -161,8 +172,9 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
   final _scroll = ScrollController();
   int _selectedNav = 1;
   DateTime? _lastLoadMore;
+  bool _showArchived = false;
 
-  static const List<String> _filterKeys = ['all', 'unread', 'teams', 'personal'];
+  static const List<String> _filterKeys = ['all', 'unread', 'teams', 'personal', 'pinned', 'archived'];
 
   @override
   void initState() {
@@ -201,7 +213,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     }
   }
 
-  /// Rafraîchit TOUS les compteurs en parallèle
   void _refreshAllCounters() {
     unawaited(ref.read(notificationCountersProvider.notifier).refresh().catchError(
           (e) => debugPrint('[ChatList] ⚠️ Counters refresh error: $e'),
@@ -209,17 +220,13 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     unawaited(ref.read(chatListProvider.notifier).refresh(silent: true).catchError(
           (e) => debugPrint('[ChatList] ⚠️ List refresh error: $e'),
         ));
-    unawaited(ref.read(statusProvider.notifier).refresh().catchError(
-          (_) {},
-        ));
+    unawaited(ref.read(statusProvider.notifier).refresh().catchError((_) {}));
   }
 
-  /// Ouvre une conversation et refresh les compteurs au retour
   Future<void> _openConversation(ChatConversation conv) async {
     HapticFeedback.mediumImpact();
     debugPrint('[ChatList] 💬 Opening conversation: ${conv.id}');
 
-    // Marquer comme lu AVANT d'ouvrir (compteur retombe immédiatement)
     await ref.read(chatListProvider.notifier).markAsRead(conv.id);
 
     if (!mounted) return;
@@ -234,14 +241,12 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
       ),
     );
 
-    // Au retour : refresh silencieux des compteurs et de la liste
     if (mounted) {
       debugPrint('[ChatList] 🔄 Returned from conversation — refreshing counters');
       _refreshAllCounters();
     }
   }
 
-  /// Navigation vers les sections avec gestion des compteurs
   void _navigateTo(int idx) {
     HapticFeedback.lightImpact();
     final countersNotifier = ref.read(notificationCountersProvider.notifier);
@@ -249,7 +254,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     switch (idx) {
       case 0:
         countersNotifier.clearNewConnections();
-        debugPrint('[ChatList] 🌐 Navigate to connections (cleared newConnections)');
+        debugPrint('[ChatList] 🌐 Navigate to connections');
         context.pushNamed('connections').then((_) {
           if (mounted) _refreshAllCounters();
         });
@@ -259,7 +264,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
         break;
       case 2:
         countersNotifier.clearMissedCalls();
-        debugPrint('[ChatList] 📞 Navigate to call history (cleared missedCalls)');
+        debugPrint('[ChatList] 📞 Navigate to call history');
         Navigator.push(context, MaterialPageRoute(builder: (_) => const CallHistoryPage())).then((_) {
           if (mounted) _refreshAllCounters();
         });
@@ -271,16 +276,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
         });
         break;
     }
-  }
-
-  /// Gestion du retour Android
-  Future<bool> _onWillPop() async {
-    if (_selectedNav != 1) {
-      setState(() => _selectedNav = 1);
-      return false;
-    }
-    context.go('/');
-    return false;
   }
 
   void _openNotifications(int pending) {
@@ -489,7 +484,14 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     );
   }
 
-  String _formatPreview(String? raw, AppLocalizations l10n) {
+  String _formatPreview(ChatConversation conv, AppLocalizations l10n) {
+    // ✅ Brouillon prioritaire
+    if ((conv.draft?.trim().isNotEmpty ?? false)) {
+      final draftText = _ListValidators.sanitize(conv.draft, maxLength: 100);
+      return 'Brouillon: $draftText';
+    }
+
+    final raw = conv.lastMessage?.content;
     if (raw == null || raw.isEmpty) return l10n.t('chatlist_new_conversation');
     if (_ListValidators.isEncrypted(raw)) return '🔒 ${l10n.t('chatlist_protected_message')}';
     if (_ListValidators.isImageFile(raw)) return '📷 ${l10n.t('chatlist_photo')}';
@@ -498,20 +500,414 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     return _ListValidators.sanitize(raw, maxLength: _kMaxPreviewLength);
   }
 
-  Widget _buildReadReceipt(ChatMessage? msg, String currentUserId) {
-    if (msg == null || msg.senderId != currentUserId) return const SizedBox.shrink();
-    return ListMessageStatusLights(
-      isDelivered: msg.isDelivered,
-      isRead: msg.isRead,
+  // ── MENU CONTEXTUEL (long press) ──────────────────────────────────
+  void _showContextMenu(ChatConversation conv) {
+    HapticFeedback.mediumImpact();
+    final l10n = AppLocalizations.of(context);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Container(
+        padding: EdgeInsets.fromLTRB(
+          ThixPolicy.s20,
+          ThixPolicy.s12,
+          ThixPolicy.s20,
+          ThixPolicy.s32 + MediaQuery.of(ctx).padding.bottom,
+        ),
+        decoration: BoxDecoration(
+          color: ThixPolicy.card,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(ThixPolicy.rXl)),
+          border: Border(top: BorderSide(color: ThixPolicy.border)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: ThixPolicy.s20),
+            
+            // Titre avec avatar
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: ThixPolicy.surfaceSoft,
+                  backgroundImage: conv.displayAvatar != null ? CachedNetworkImageProvider(conv.displayAvatar!) : null,
+                  child: conv.displayAvatar == null
+                      ? Text(_ListValidators.safeInitial(conv.displayName), style: ThixPolicy.h3Style)
+                      : null,
+                ),
+                const SizedBox(width: ThixPolicy.s12),
+                Expanded(
+                  child: Text(
+                    _ListValidators.sanitize(conv.displayName, maxLength: 40),
+                    style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: ThixPolicy.s20),
+            const Divider(height: 1),
+            const SizedBox(height: ThixPolicy.s8),
+
+            // ✅ Épingler/Désépingler
+            _contextMenuItem(
+              icon: conv.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+              label: conv.isPinned ? 'Désépingler' : 'Épingler',
+              subtitle: conv.isPinned ? 'Retirer du haut de la liste' : 'Maintenir en haut (max $_kMaxPinned)',
+              color: ThixPolicy.gold,
+              enabled: !conv.isPinned ? ref.read(chatListProvider).canPin : true,
+              onTap: () {
+                Navigator.pop(ctx);
+                ref.read(chatListProvider.notifier).togglePin(conv.id);
+              },
+            ),
+
+            // ✅ Archiver/Désarchiver
+            _contextMenuItem(
+              icon: conv.isArchived ? Icons.unarchive_rounded : Icons.archive_outlined,
+              label: conv.isArchived ? 'Désarchiver' : 'Archiver',
+              subtitle: conv.isArchived ? 'Remettre dans la liste principale' : 'Masquer de la liste principale',
+              color: ThixPolicy.primary,
+              onTap: () {
+                Navigator.pop(ctx);
+                ref.read(chatListProvider.notifier).toggleArchive(conv.id);
+              },
+            ),
+
+            // ✅ Sourdine
+            _contextMenuItem(
+              icon: conv.isCurrentlyMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+              label: conv.isCurrentlyMuted ? 'Réactiver les notifications' : 'Mettre en sourdine',
+              subtitle: conv.isCurrentlyMuted
+                  ? 'Temps restant: ${conv.muteRemainingText}'
+                  : 'Choisir une durée',
+              color: conv.isCurrentlyMuted ? ThixPolicy.success : ThixPolicy.warning,
+              onTap: () {
+                Navigator.pop(ctx);
+                if (conv.isCurrentlyMuted) {
+                  ref.read(chatListProvider.notifier).toggleMute(conv.id);
+                } else {
+                  _showMuteDurationPicker(conv.id);
+                }
+              },
+            ),
+
+            // ✅ Verrouiller
+            _contextMenuItem(
+              icon: conv.isLocked ? Icons.lock_rounded : Icons.lock_outline_rounded,
+              label: conv.isLocked ? 'Déverrouiller' : 'Verrouiller la discussion',
+              subtitle: conv.isLocked ? 'Accès libre' : 'Nécessite une authentification',
+              color: ThixPolicy.danger,
+              onTap: () async {
+                Navigator.pop(ctx);
+                if (!conv.isLocked) {
+                  // TODO: Vérifier biométrie avant verrouillage
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Verrouiller la discussion ?'),
+                      content: const Text('Cette conversation nécessitera une authentification (empreinte/Face ID) pour être ouverte.'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+                        ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Verrouiller')),
+                      ],
+                    ),
+                  );
+                  if (confirmed != true) return;
+                }
+                ref.read(chatListProvider.notifier).toggleLock(conv.id);
+              },
+            ),
+
+            // ✅ Marquer comme non lu
+            if (conv.unreadCount == 0)
+              _contextMenuItem(
+                icon: Icons.mark_unread_chat_alt_rounded,
+                label: 'Marquer comme non lu',
+                subtitle: 'Ajouter un badge non lu',
+                color: ThixPolicy.primary,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  ref.read(chatListProvider.notifier).markAsUnread(conv.id);
+                },
+              ),
+
+            const Divider(height: 1),
+
+            // ❌ Supprimer
+            _contextMenuItem(
+              icon: Icons.delete_outline_rounded,
+              label: 'Supprimer la discussion',
+              subtitle: 'Action irréversible',
+              color: ThixPolicy.danger,
+              onTap: () async {
+                Navigator.pop(ctx);
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    backgroundColor: ThixPolicy.card,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
+                    title: Text(l10n.t('chatlist_delete_title'), style: ThixPolicy.titleStyle),
+                    content: Text(l10n.t('chatlist_delete_message'), style: ThixPolicy.bodyStyle),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: Text(l10n.t('common_cancel')),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.danger),
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: Text(l10n.t('common_delete'), style: const TextStyle(color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  try {
+                    await _listRetry(
+                      () => Supabase.instance.client
+                          .from('conversation_participants')
+                          .delete()
+                          .eq('conversation_id', conv.id)
+                          .eq('user_id', Supabase.instance.client.auth.currentUser!.id),
+                      label: 'deleteConversation',
+                    );
+                    ref.read(chatListProvider.notifier).refresh(silent: true);
+                    _refreshAllCounters();
+                    if (mounted) _showSuccess(l10n.t('chatlist_deleted'));
+                  } catch (e) {
+                    if (mounted) _showError(_ListValidators.friendlyError(e));
+                  }
+                }
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 
+  Widget _contextMenuItem({
+    required IconData icon,
+    required String label,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+    bool enabled = true,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+        child: Opacity(
+          opacity: enabled ? 1.0 : 0.4,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                  ),
+                  child: Icon(icon, color: color, size: 22),
+                ),
+                const SizedBox(width: ThixPolicy.s12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: ThixPolicy.titleStyle.copyWith(
+                          fontSize: 15,
+                          fontWeight: ThixPolicy.bold,
+                          color: enabled ? ThixPolicy.textMain : ThixPolicy.textMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: ThixPolicy.captionStyle.copyWith(
+                          fontSize: 12,
+                          color: ThixPolicy.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── PICKER DURÉE SOURDINE ──────────────────────────────────
+  void _showMuteDurationPicker(String convId) {
+    final l10n = AppLocalizations.of(context);
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: EdgeInsets.fromLTRB(
+          ThixPolicy.s20,
+          ThixPolicy.s12,
+          ThixPolicy.s20,
+          ThixPolicy.s32 + MediaQuery.of(ctx).padding.bottom,
+        ),
+        decoration: BoxDecoration(
+          color: ThixPolicy.card,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(ThixPolicy.rXl)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: ThixPolicy.s20),
+            Text(
+              'Mettre en sourdine',
+              style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16),
+            ),
+            const SizedBox(height: ThixPolicy.s20),
+            _muteOption(ctx, '8 heures', const Duration(hours: 8), convId),
+            _muteOption(ctx, '1 semaine', const Duration(days: 7), convId),
+            _muteOption(ctx, 'Toujours', null, convId),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _muteOption(BuildContext ctx, String label, Duration? duration, String convId) {
+    return ListTile(
+      title: Text(label, style: ThixPolicy.titleStyle),
+      leading: Icon(Icons.timer_outlined, color: ThixPolicy.primary),
+      onTap: () {
+        Navigator.pop(ctx);
+        ref.read(chatListProvider.notifier).toggleMute(convId, duration: duration);
+        _showSuccess('Conversation mise en sourdine');
+      },
+    );
+  }
+
+  // ── BULK ACTIONS BAR ──────────────────────────────────
+  Widget _buildBulkActionsBar(AppLocalizations l10n) {
+    final state = ref.watch(chatListProvider);
+    final notifier = ref.read(chatListProvider.notifier);
+
+    return Positioned(
+      bottom: 100,
+      left: 16,
+      right: 16,
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: ThixPolicy.card,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: ThixPolicy.border),
+            boxShadow: ThixPolicy.shadowSoft(opacity: 0.1),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${state.selectedIds.length} sélectionné${state.selectedIds.length > 1 ? 's' : ''}',
+                  style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.archive_outlined),
+                tooltip: 'Archiver',
+                onPressed: () async {
+                  await notifier.bulkArchive();
+                  _showSuccess('Conversations archivées');
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.done_all_rounded),
+                tooltip: 'Marquer comme lu',
+                onPressed: () async {
+                  await notifier.bulkMarkAsRead();
+                  _showSuccess('Marqué comme lu');
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: ThixPolicy.danger),
+                tooltip: 'Supprimer',
+                onPressed: () async {
+                  await notifier.bulkDelete();
+                  _showSuccess('Conversations supprimées');
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded),
+                tooltip: 'Annuler',
+                onPressed: () => notifier.exitSelectionMode(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(message)),
+        ]),
+        backgroundColor: ThixPolicy.success,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(message)),
+        ]),
+        backgroundColor: ThixPolicy.danger,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  // ── BUILD ──────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final state = ref.watch(chatListProvider);
     final counters = ref.watch(notificationCountersProvider);
-    final notifier = ref.read(chatListProvider.notifier);
 
     final currentUser = ref.watch(authControllerProvider).value;
     final currentUserName = _ListValidators.sanitize(currentUser?.displayName ?? '', maxLength: _kMaxChatNameLength);
@@ -523,7 +919,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     final seenUserIds = <String>{};
     final onlineContacts = <ChatConversation>[];
 
-        for (final c in state.filtered) {
+    for (final c in state.filtered) {
       if (c.isGroup) continue;
       final otherUserId = c.participantIds.firstWhere((id) => id != currentUserId, orElse: () => '');
       if (otherUserId.isNotEmpty && onlineUserIds.onlineUserIds.contains(otherUserId)) {
@@ -533,21 +929,24 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
       }
     }
 
-
     return PopScope(
-      canPop: _selectedNav == 1,
+      canPop: _selectedNav == 1 && !state.isSelectionMode,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _selectedNav != 1) {
-          setState(() => _selectedNav = 1);
-        } else if (!didPop) {
-          context.go('/');
+        if (!didPop) {
+          if (state.isSelectionMode) {
+            ref.read(chatListProvider.notifier).exitSelectionMode();
+          } else if (_selectedNav != 1) {
+            setState(() => _selectedNav = 1);
+          } else {
+            context.go('/');
+          }
         }
       },
       child: Scaffold(
         backgroundColor: ThixPolicy.surfaceSoft,
         body: Stack(
           children: [
-            // Orbs décoratifs (sans BackdropFilter)
+            // Orbs décoratifs
             Positioned(
               top: -100,
               right: -50,
@@ -612,28 +1011,27 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
                                       ),
                                     ),
                                     Row(
-  children: [
-    _iconButtonGlass(
-      l10n: l10n, // ✅ Nommé correctement
-      icon: Icons.swap_vert_rounded,
-      semanticsLabel: l10n.t('chatlist_escalations'),
-      badge: state.pendingEscalations > 0,
-      onTap: () {
-        HapticFeedback.selectionClick();
-        context.pushNamed('chatEscalationReceived');
-      },
-    ),
-    const SizedBox(width: ThixPolicy.s12),
-    _iconButtonGlass(
-      l10n: l10n, // ✅ Nommé correctement
-      icon: Icons.notifications_none_rounded,
-      semanticsLabel: l10n.t('chatlist_notifications'),
-      badge: state.pendingEscalations > 0,
-      onTap: () => _openNotifications(state.pendingEscalations),
-    ),
-  ],
-),
-
+                                      children: [
+                                        _iconButtonGlass(
+                                          l10n: l10n,
+                                          icon: Icons.swap_vert_rounded,
+                                          semanticsLabel: l10n.t('chatlist_escalations'),
+                                          badge: state.pendingEscalations > 0,
+                                          onTap: () {
+                                            HapticFeedback.selectionClick();
+                                            context.pushNamed('chatEscalationReceived');
+                                          },
+                                        ),
+                                        const SizedBox(width: ThixPolicy.s12),
+                                        _iconButtonGlass(
+                                          l10n: l10n,
+                                          icon: Icons.notifications_none_rounded,
+                                          semanticsLabel: l10n.t('chatlist_notifications'),
+                                          badge: state.pendingEscalations > 0,
+                                          onTap: () => _openNotifications(state.pendingEscalations),
+                                        ),
+                                      ],
+                                    ),
                                   ],
                                 ),
                               ),
@@ -715,13 +1113,17 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
                               ),
                             ),
 
-                          const SliverToBoxAdapter(child: SizedBox(height: 140)),
+                          const SliverToBoxAdapter(child: SizedBox(height: 180)),
                         ],
                       ),
                     ),
                   ),
 
-            _buildGlassBottomNav(l10n, state.totalUnread, counters),
+            // ✅ Bulk actions bar (mode sélection)
+            if (state.isSelectionMode) _buildBulkActionsBar(l10n),
+
+            // ✅ Nav bar flottante moderne
+            if (!state.isSelectionMode) _buildGlassBottomNav(l10n, state.totalUnread, counters),
           ],
         ),
       ),
@@ -929,6 +1331,8 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
       l10n.t('chatlist_filter_unread'),
       l10n.t('chatlist_filter_teams'),
       l10n.t('chatlist_filter_personal'),
+      '📌 Épinglés',
+      '📁 Archivés',
     ];
 
     return SizedBox(
@@ -986,6 +1390,8 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     Set<String> onlineUserIds,
     AppLocalizations l10n,
   ) {
+    final state = ref.watch(chatListProvider);
+
     if (list.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 80),
@@ -1002,7 +1408,9 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
             ),
             const SizedBox(height: ThixPolicy.s16),
             Text(
-              l10n.t('chatlist_no_conversation'),
+              state.filterIndex == ChatFilter.archived
+                  ? 'Aucune conversation archivée'
+                  : l10n.t('chatlist_no_conversation'),
               style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textSecondary),
             ),
           ],
@@ -1020,6 +1428,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
         final last = conv.lastMessage;
         final t = last?.createdAt ?? conv.updatedAt;
         final unread = conv.unreadCount > 0;
+        final isSelected = state.selectedIds.contains(conv.id);
 
         final otherUserId = conv.participantIds.firstWhere((id) => id != currentUserId, orElse: () => '');
         final isOnline = onlineUserIds.contains(otherUserId);
@@ -1036,108 +1445,38 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
           }
         }
 
-        return Dismissible(
-          key: ValueKey(conv.id),
-          direction: DismissDirection.endToStart,
-          background: Container(
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            color: ThixPolicy.danger.withOpacity(0.9),
-            child: const Icon(Icons.delete_outline_rounded, color: Colors.white, size: 28),
-          ),
-          confirmDismiss: (direction) async {
-            HapticFeedback.lightImpact();
-            return await showDialog<bool>(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                backgroundColor: ThixPolicy.card,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(ThixPolicy.rLg),
-                  side: BorderSide(color: ThixPolicy.border),
-                ),
-                title: Text(l10n.t('chatlist_delete_title'), style: ThixPolicy.titleStyle),
-                content: Text(l10n.t('chatlist_delete_message'), style: ThixPolicy.bodyStyle),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: Text(l10n.t('common_cancel'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary)),
-                  ),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.danger, elevation: 0),
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: Text(l10n.t('common_delete'), style: ThixPolicy.labelStyle.copyWith(color: Colors.white)),
-                  ),
-                ],
-              ),
-            );
-          },
-          onDismissed: (direction) async {
-            debugPrint('[ChatList] 🗑️ Deleting conversation: ${conv.id}');
-            try {
-              await _listRetry(
-                () => Supabase.instance.client
-                    .from('conversation_participants')
-                    .delete()
-                    .eq('conversation_id', conv.id)
-                    .eq('user_id', currentUserId),
-                label: 'deleteConversation',
-              );
-              ref.read(chatListProvider.notifier).refresh(silent: true);
-              _refreshAllCounters();
-              if (mounted) _showSuccess(l10n.t('chatlist_deleted'));
-              debugPrint('[ChatList] ✓ Conversation deleted');
-            } catch (e) {
-              debugPrint('[ChatList] ❌ Delete error: $e');
-              if (mounted) _showError(_ListValidators.friendlyError(e));
+        return _ConversationTile(
+          conv: conv,
+          chatName: chatName,
+          chatAvatar: chatAvatar,
+          isOnline: isOnline,
+          unread: unread,
+          isSelected: isSelected,
+          currentUserId: currentUserId,
+          otherUserId: otherUserId,
+          lastMessage: last,
+          timeText: _fmt(t, l10n),
+          previewText: _formatPreview(conv, l10n),
+          hasDraft: conv.draft?.trim().isNotEmpty ?? false,
+          l10n: l10n,
+          onTap: () {
+            if (state.isSelectionMode) {
+              ref.read(chatListProvider.notifier).toggleSelection(conv.id);
+            } else {
+              _openConversation(conv);
             }
           },
-          child: _ConversationTile(
-            conv: conv,
-            chatName: chatName,
-            chatAvatar: chatAvatar,
-            isOnline: isOnline,
-            unread: unread,
-            currentUserId: currentUserId,
-            otherUserId: otherUserId,
-            lastMessage: last,
-            timeText: _fmt(t, l10n),
-            previewText: _formatPreview(last?.content, l10n),
-            l10n: l10n,
-            onTap: () => _openConversation(conv),
-          ),
+          onLongPress: () {
+            if (!state.isSelectionMode) {
+              ref.read(chatListProvider.notifier).enterSelectionMode();
+              ref.read(chatListProvider.notifier).toggleSelection(conv.id);
+            } else {
+              ref.read(chatListProvider.notifier).toggleSelection(conv.id);
+            }
+          },
+          onContextMenu: () => _showContextMenu(conv),
         );
       },
-    );
-  }
-
-  void _showSuccess(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(children: [
-          const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(message)),
-        ]),
-        backgroundColor: ThixPolicy.success,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  void _showError(String message) {
-    if (!mounted) return;
-    HapticFeedback.lightImpact();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(message)),
-        ]),
-        backgroundColor: ThixPolicy.danger,
-        behavior: SnackBarBehavior.floating,
-      ),
     );
   }
 
@@ -1278,27 +1617,26 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
   }
 
   String _fmt(DateTime d, AppLocalizations l10n) {
-  final localDate = d.toLocal();
-  final now = DateTime.now();
-  final day = DateTime(localDate.year, localDate.month, localDate.day);
-  final today = DateTime(now.year, now.month, now.day);
+    final localDate = d.toLocal();
+    final now = DateTime.now();
+    final day = DateTime(localDate.year, localDate.month, localDate.day);
+    final today = DateTime(now.year, now.month, now.day);
 
-  if (day == today) return DateFormat('HH:mm').format(localDate);
-  if (day == today.subtract(const Duration(days: 1))) return l10n.t('chatlist_yesterday');
-  if (now.difference(localDate).inDays < 7) {
-    try {
-      // Utilisation de Localizations.localeOf(context).languageCode à la place de l10n.localeName
-      return DateFormat('EEEE', Localizations.localeOf(context).languageCode).format(localDate);
-    } catch (_) {
-      return DateFormat('EEEE', 'fr_FR').format(localDate);
+    if (day == today) return DateFormat('HH:mm').format(localDate);
+    if (day == today.subtract(const Duration(days: 1))) return l10n.t('chatlist_yesterday');
+    if (now.difference(localDate).inDays < 7) {
+      try {
+        return DateFormat('EEEE', Localizations.localeOf(context).languageCode).format(localDate);
+      } catch (_) {
+        return DateFormat('EEEE', 'fr_FR').format(localDate);
+      }
     }
-  }
-  return DateFormat('dd/MM/yy').format(localDate);
+    return DateFormat('dd/MM/yy').format(localDate);
   }
 }
 
 // ============================================================================
-// CONVERSATION TILE (composant extrait)
+// CONVERSATION TILE (avec badges P0/P1)
 // ============================================================================
 class _ConversationTile extends StatelessWidget {
   final ChatConversation conv;
@@ -1306,6 +1644,8 @@ class _ConversationTile extends StatelessWidget {
   final String? chatAvatar;
   final bool isOnline;
   final bool unread;
+  final bool isSelected;
+  final bool hasDraft;
   final String currentUserId;
   final String otherUserId;
   final ChatMessage? lastMessage;
@@ -1313,6 +1653,8 @@ class _ConversationTile extends StatelessWidget {
   final String previewText;
   final AppLocalizations l10n;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
+  final VoidCallback onContextMenu;
 
   const _ConversationTile({
     required this.conv,
@@ -1320,6 +1662,8 @@ class _ConversationTile extends StatelessWidget {
     required this.chatAvatar,
     required this.isOnline,
     required this.unread,
+    required this.isSelected,
+    required this.hasDraft,
     required this.currentUserId,
     required this.otherUserId,
     required this.lastMessage,
@@ -1327,6 +1671,8 @@ class _ConversationTile extends StatelessWidget {
     required this.previewText,
     required this.l10n,
     required this.onTap,
+    required this.onLongPress,
+    required this.onContextMenu,
   });
 
   @override
@@ -1335,60 +1681,87 @@ class _ConversationTile extends StatelessWidget {
       button: true,
       label: '$chatName. ${unread ? "${conv.unreadCount} non lu. " : ""}$previewText',
       child: Material(
-        color: Colors.transparent,
+        color: isSelected ? ThixPolicy.primary.withOpacity(0.1) : Colors.transparent,
         child: InkWell(
-          onTap: () {
-            HapticFeedback.selectionClick();
-            onTap();
-          },
-          child: Padding(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: Container(
             padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20, vertical: 12),
+            decoration: BoxDecoration(
+              border: Border(
+                left: BorderSide(
+                  color: conv.isPinned ? ThixPolicy.gold : Colors.transparent,
+                  width: 3,
+                ),
+              ),
+            ),
             child: Row(
               children: [
-                if (conv.isEscalation)
-                  _EscalationAvatars(
-                    clientName: _ListValidators.sanitize(conv.clientName ?? chatName, maxLength: 40),
-                    clientAvatar: _ListValidators.sanitizeUrl(conv.clientAvatar ?? chatAvatar),
-                    agentName: _ListValidators.sanitize(conv.agentName ?? l10n.t('chatlist_agent'), maxLength: 40),
-                    agentAvatar: _ListValidators.sanitizeUrl(conv.agentAvatar),
-                  )
-                else
-                  Stack(
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: ThixPolicy.card, width: 1.5),
-                          boxShadow: ThixPolicy.shadowSoft(opacity: 0.03),
-                        ),
-                        child: CircleAvatar(
-                          radius: 26,
-                          backgroundColor: ThixPolicy.surface,
-                          backgroundImage: chatAvatar != null ? CachedNetworkImageProvider(chatAvatar!) : null,
-                          child: chatAvatar == null
-                              ? Text(
-                                  _ListValidators.safeInitial(chatName),
-                                  style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.textSecondary),
-                                )
-                              : null,
-                        ),
-                      ),
-                      if (!conv.isGroup && isOnline)
-                        Positioned(
-                          right: 0,
-                          bottom: 0,
-                          child: Container(
-                            width: 14,
-                            height: 14,
+                // Avatar avec indicateur sélection
+                Stack(
+                  children: [
+                    if (conv.isEscalation)
+                      _EscalationAvatars(
+                        clientName: _ListValidators.sanitize(conv.clientName ?? chatName, maxLength: 40),
+                        clientAvatar: _ListValidators.sanitizeUrl(conv.clientAvatar ?? chatAvatar),
+                        agentName: _ListValidators.sanitize(conv.agentName ?? l10n.t('chatlist_agent'), maxLength: 40),
+                        agentAvatar: _ListValidators.sanitizeUrl(conv.agentAvatar),
+                      )
+                    else
+                      Stack(
+                        children: [
+                          Container(
                             decoration: BoxDecoration(
-                              color: ThixPolicy.success,
                               shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2.5),
+                              border: Border.all(color: ThixPolicy.card, width: 1.5),
+                              boxShadow: ThixPolicy.shadowSoft(opacity: 0.03),
+                            ),
+                            child: CircleAvatar(
+                              radius: 26,
+                              backgroundColor: ThixPolicy.surface,
+                              backgroundImage: chatAvatar != null ? CachedNetworkImageProvider(chatAvatar!) : null,
+                              child: chatAvatar == null
+                                  ? Text(
+                                      _ListValidators.safeInitial(chatName),
+                                      style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.textSecondary),
+                                    )
+                                  : null,
                             ),
                           ),
+                          if (!conv.isGroup && isOnline)
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: Container(
+                                width: 14,
+                                height: 14,
+                                decoration: BoxDecoration(
+                                  color: ThixPolicy.success,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 2.5),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    // ✅ Checkbox sélection
+                    if (isSelected)
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: ThixPolicy.primary,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                          ),
+                          child: const Icon(Icons.check, size: 14, color: Colors.white),
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
+                ),
                 const SizedBox(width: ThixPolicy.s16),
                 Expanded(
                   child: Column(
@@ -1469,6 +1842,19 @@ class _ConversationTile extends StatelessWidget {
                                       const SizedBox(width: 4),
                                       const Icon(Icons.groups_rounded, size: 14, color: ThixPolicy.textSecondary),
                                     ],
+                                    // ✅ BADGES P0/P1
+                                    if (conv.isPinned) ...[
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.push_pin_rounded, size: 14, color: ThixPolicy.gold),
+                                    ],
+                                    if (conv.isCurrentlyMuted) ...[
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.volume_off_rounded, size: 14, color: ThixPolicy.warning),
+                                    ],
+                                    if (conv.isLocked) ...[
+                                      const SizedBox(width: 4),
+                                      const Icon(Icons.lock_rounded, size: 14, color: ThixPolicy.danger),
+                                    ],
                                   ],
                                 );
                               },
@@ -1481,6 +1867,13 @@ class _ConversationTile extends StatelessWidget {
                               fontWeight: unread ? ThixPolicy.bold : ThixPolicy.medium,
                               color: unread ? ThixPolicy.primary : ThixPolicy.textSecondary,
                             ),
+                          ),
+                          // ✅ Menu contextuel (3 points)
+                          IconButton(
+                            icon: const Icon(Icons.more_vert_rounded, size: 18, color: ThixPolicy.textSecondary),
+                            onPressed: onContextMenu,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                           ),
                         ],
                       ),
@@ -1503,8 +1896,11 @@ class _ConversationTile extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: ThixPolicy.bodySmallStyle.copyWith(
-                                fontWeight: unread ? ThixPolicy.semiBold : ThixPolicy.regular,
-                                color: unread ? ThixPolicy.textMain : ThixPolicy.textSecondary,
+                                fontWeight: hasDraft ? ThixPolicy.bold : (unread ? ThixPolicy.semiBold : ThixPolicy.regular),
+                                color: hasDraft
+                                    ? ThixPolicy.danger
+                                    : (unread ? ThixPolicy.textMain : ThixPolicy.textSecondary),
+                                fontStyle: hasDraft ? FontStyle.italic : FontStyle.normal,
                               ),
                             ),
                           ),
@@ -1556,7 +1952,6 @@ class ListMessageStatusLights extends StatelessWidget {
     this.isRead = false,
   });
 
-  /// Factory qui vérifie si le message est de l'utilisateur courant
   factory ListMessageStatusLights.fromMessage(ChatMessage? msg, String currentUserId) {
     if (msg == null || msg.senderId != currentUserId) {
       return const ListMessageStatusLights(isDelivered: false, isRead: false);
