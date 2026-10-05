@@ -536,6 +536,100 @@ class ChatService {
     }
   }
 
+  //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
+  Future<void> markAsUnread(String conversationId) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(conversationId)) return;
+    try {
+      await _supabase
+          .from('conversation_participants')
+          .update({'unread_count': 1})
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ markAsUnread: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  Future<void> toggleLockConversation(String conversationId) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(conversationId)) return;
+    try {
+      final current = await _supabase
+          .from('conversation_participants')
+          .select('is_locked')
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .maybeSingle()
+          .timeout(_kDbTimeout);
+      
+      final isLocked = current?['is_locked'] == true;
+      await _supabase
+          .from('conversation_participants')
+          .update({'is_locked': !isLocked})
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ toggleLockConversation: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  Future<void> saveDraft(String conversationId, String? draft) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(conversationId)) return;
+    try {
+      await _supabase
+          .from('conversation_participants')
+          .update({'draft': draft})
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ saveDraft: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  Future<void> muteConversationWithDuration(String conversationId, Duration? duration) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(conversationId)) return;
+    try {
+      final muteUntil = duration != null ? DateTime.now().add(duration) : null;
+      await _supabase
+          .from('conversation_participants')
+          .update({
+            'is_muted': duration != null,
+            'mute_until': muteUntil?.toUtc().toIso8601String(),
+          })
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ muteConversationWithDuration: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+
+  Future<void> unarchiveConversation(String conversationId) async {
+    if (_isDisposed) return;
+    if (!_ChatValidators.isValidUuid(conversationId)) return;
+    try {
+      await _supabase
+          .from('conversation_participants')
+          .update({'is_archived': false})
+          .eq('conversation_id', conversationId)
+          .eq('user_id', currentUserId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ unarchiveConversation: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+    }
+  }
+  //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
   Future<int> getTotalUnreadCount() async {
     if (_isDisposed) return 0;
     try {
