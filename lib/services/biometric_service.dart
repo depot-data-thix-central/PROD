@@ -37,13 +37,12 @@ class BiometricService {
     }
 
     try {
+      // ✅ API local_auth >= 2.x (sans paramètre options)
       final result = await _auth.authenticate(
         localizedReason: reason,
-        options: const AuthenticationOptions(
-          biometricOnly: false,
-          useErrorDialogs: true,
-          stickyAuth: true,
-        ),
+        biometricOnly: false,
+        useErrorDialogs: true,
+        stickyAuth: true,
       );
       debugPrint('[Biometric] ${result ? "✓ Success" : "✗ Cancelled/Failed"}');
       return result;
