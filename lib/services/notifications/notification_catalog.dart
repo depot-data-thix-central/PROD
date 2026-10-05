@@ -28,6 +28,12 @@ const Map<String, NotifMeta> kNotifCatalog = {
   'sos': NotifMeta(Icons.sos_rounded, Color(0xFFDC2626), 'health'),
   'news': NotifMeta(Icons.newspaper_rounded, Color(0xFF2563EB), 'info'),
   'system': NotifMeta(Icons.notifications_rounded, Color(0xFF64748B), 'system'),
+  'media_like': NotifMeta(Icons.favorite_rounded, Color(0xFF7C3AED), 'media'),
+  'media_comment': NotifMeta(Icons.mode_comment_rounded, Color(0xFF7C3AED), 'media'),
+  'media_reply': NotifMeta(Icons.reply_rounded, Color(0xFF9333EA), 'media'),
+  'doc_shared': NotifMeta(Icons.lock_open_rounded, Color(0xFF0D9488), 'info'),
+  'doc_opened': NotifMeta(Icons.visibility_rounded, Color(0xFF0891B2), 'info'),
+  'doc_screenshot': NotifMeta(Icons.screenshot_rounded, Color(0xFFD97706), 'info'),
 };
 
 NotifMeta notifMeta(String? type) =>
