@@ -446,8 +446,13 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
       final tag = (m['tag'] ?? m['hashtag'] ?? m['name'])?.toString().toLowerCase();
       if (tag == null) continue;
       if (q.isEmpty || tag.startsWith(q.toLowerCase())) {
-        final count = (m['count'] ?? m['posts_count'] ?? m['usage_count'] as num?)?.toInt() ?? 1;
-        results[tag] = (results[tag] ?? 0) + count;  // ✅ count est déjà int
+        // Extraction et typage explicite en int
+        final rawCount = m['count'] ?? m['posts_count'] ?? m['usage_count'];
+        final int count = (rawCount is num) 
+            ? rawCount.toInt() 
+            : (int.tryParse(rawCount?.toString() ?? '') ?? 1);
+
+        results[tag] = (results[tag] ?? 0) + count;
       }
     }
     if (results.isNotEmpty) {
@@ -473,7 +478,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
       for (final m in pattern.allMatches(content)) {
         final tag = m.group(1)!.toLowerCase();
         if (q.isEmpty || tag.startsWith(q.toLowerCase())) {
-          results[tag] = (results[tag] ?? 0) + 1;  // ✅ +1 est déjà int
+          results[tag] = (results[tag] ?? 0) + 1;
         }
       }
     }
@@ -485,6 +490,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
     ..sort((a, b) => b.count.compareTo(a.count));
   return list;
 }
+
 
   void _applyMention(Map<String, dynamic> user) {
     final token = _token;
