@@ -280,7 +280,7 @@ class TriggerSosNotifier extends StateNotifier<AsyncValue<SosIncident?>> {
       final rescuerUids = <String>{};
       for (final contact in contacts) {
         // Essayer userId d'abord, puis thixId si disponible
-        final uid = contact.userId ?? contact.thixId;
+        final uid = contact.Id ?? contact.thixId;
         if (uid != null && uid.isNotEmpty) {
           rescuerUids.add(uid);
         }
