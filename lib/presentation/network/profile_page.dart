@@ -25,6 +25,10 @@
 // - Grid/List toggle
 // - Infinite scroll
 
+// lib/presentation/network/profile_page.dart
+// ============================================================================
+// PROFILE PAGE — Production Enterprise (THIX PRO / THIX ID)
+// ============================================================================
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -35,7 +39,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:html/parser.dart' as html_parser';
+import 'package:html/parser.dart' as html_parser;  // ✅ CORRIGÉ (pas de guillemet final)
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -48,6 +52,7 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
 import 'package:thix_id/services/deep_link_service.dart';
+
 
 // ============================================================================
 // VALIDATEURS
