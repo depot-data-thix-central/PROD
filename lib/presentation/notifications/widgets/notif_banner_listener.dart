@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:collection';
 
+import 'package:flutter/foundation.dart'; // ✅ AJOUT : accès à kIsWeb
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -60,8 +61,11 @@ class _NotifBannerListenerState extends State<NotifBannerListener> {
     // 2) Flux notifications → bannière in-app
     _notifSub = NotificationService().streamForUser(uid).listen(_onList);
 
-    // 3) Push foreground → bannière in-app
-    _pushSub = PushFcmService.instance.foregroundStream.listen(_onPush);
+    // 3) ✅ Push foreground → bannière in-app (MOBILE UNIQUEMENT)
+    // Sur Web : Firebase n'est jamais initialisé, donc on skip
+    if (!kIsWeb) {
+      _pushSub = PushFcmService.instance.foregroundStream.listen(_onPush);
+    }
   }
 
   void _unsubscribe() {
