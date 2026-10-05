@@ -339,21 +339,27 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
     final uid = supa.auth.currentUser?.id;
 
     try {
-      // 1) Supprime les dépendances d'abord (filet de sécurité si CASCADE absent)
-      try { await supa.from('story_views').delete().eq('story_id', storyId).timeout(_requestTimeout); } catch (_) {}
-      try { await supa.from('story_likes').delete().eq('story_id', storyId).timeout(_requestTimeout); } catch (_) {}
-
-      // 2) Supprime la story (avec garde owner côté client)
-      await supa
-          .from('stories')
-          .delete()
-          .eq('id', storyId)
-          .eq('user_id', uid ?? '')
-          .timeout(_requestTimeout);
+      // ✅ 1) Via RPC serveur (sécurisée, contourne RLS)
+      try {
+        await supa
+            .rpc('delete_story', params: {'p_story_id': storyId})
+            .timeout(_requestTimeout);
+      } catch (rpcError) {
+        debugPrint('[Story] RPC delete failed, fallback direct: $rpcError');
+        // ✅ 2) Fallback : suppression directe
+        try { await supa.from('story_views').delete().eq('story_id', storyId).timeout(_requestTimeout); } catch (_) {}
+        try { await supa.from('story_likes').delete().eq('story_id', storyId).timeout(_requestTimeout); } catch (_) {}
+        await supa
+            .from('stories')
+            .delete()
+            .eq('id', storyId)
+            .eq('user_id', uid ?? '')
+            .timeout(_requestTimeout);
+      }
 
       if (!mounted) return;
 
-      // 3) Retire de la liste locale + navigation
+      // 3) Liste locale + navigation
       setState(() {
         _stories.removeWhere((s) => s['id']?.toString() == storyId);
         if (_current >= _stories.length) _current = math.max(0, _stories.length - 1);
@@ -372,7 +378,10 @@ class _StoryViewerScreenState extends State<StoryViewerScreen> with TickerProvid
       debugPrint('[Story] delete error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Suppression impossible : ${e.toString().split('\n').first}'), backgroundColor: ThixPolicy.danger),
+          SnackBar(
+            content: Text('Suppression impossible : ${e.toString().split('\n').first}'),
+            backgroundColor: ThixPolicy.danger,
+          ),
         );
       }
     }
