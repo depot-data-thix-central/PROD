@@ -545,7 +545,7 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
     );
   }
 
-// ── CONTENU MÉDIA (image / audio / texte) ──
+  // ── CONTENU MÉDIA (image / audio / texte) ──
   Widget _buildMediaContent(String url, String text, Color? bgColor, String mediaType) {
     final hasText = text.isNotEmpty;
     final hasBg = bgColor != null;
@@ -689,6 +689,7 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
             ),
     );
   }
+}
 
 // ============================================================================
 // BOTTOM BAR (Like + Répondre)
