@@ -478,7 +478,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
       ),
       actions: [
         GestureDetector(
-          onTap: () => showDialog(context: context, builder: (_) => const CreatePostDialog()),
+          onTap: () => showDialog(context: context, builder: (_) => CreatePostDialog()),
           child: Container(
             width: 34,
             height: 34,
@@ -935,7 +935,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome> with AutomaticK
                         child: GestureDetector(
                           onTap: () {
                             HapticFeedback.mediumImpact();
-                            showDialog(context: context, builder: (_) => const CreatePostDialog());
+                            showDialog(context: context, builder: (_) => CreatePostDialog());
                           },
                           child: Container(
                             width: 36, // Bouton central réduit
