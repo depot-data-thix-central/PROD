@@ -1,5 +1,6 @@
 // lib/presentation/network/widgets/post_share_sheet.dart
 // Sheet de partage style X : recherche + contacts THIX + apps externes
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
