@@ -151,14 +151,14 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
   Future<void> _markViewed(NetworkStory s) async {
     try {
       final uid = Supabase.instance.client.auth.currentUser?.id;
-      if (uid == null || uid == s.userId) return;
+      if (uid == null || uid == s.userId) return; // ✅ créateur exclu
       await Supabase.instance.client.from('story_views').upsert(
         {
           'story_id': s.id,
-          'viewer_id': uid,
+          'viewer_id': uid,   // ✅ était 'user_id'
           'viewed_at': DateTime.now().toUtc().toIso8601String(),
         },
-        onConflict: 'story_id,viewer_id',
+        onConflict: 'story_id,viewer_id',   // ✅ était 'story_id,user_id'
         ignoreDuplicates: true,
       );
     } catch (_) {}
