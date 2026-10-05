@@ -5,7 +5,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
-
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/sos_models.dart';
 import '../services/sos_service.dart';
 import '../services/sos_protocol_orchestrator.dart';
@@ -297,7 +297,7 @@ class TriggerSosNotifier extends StateNotifier<AsyncValue<SosIncident?>> {
       final rescuerUids = <String>{};
       for (final contact in contacts) {
         // ✅ FIX : Utiliser userId ou thixId selon ce qui est disponible
-        final uid = contact.userId ?? contact.thixId;
+        final uid = contact.id ?? contact.thixId; 
         if (uid != null && uid.isNotEmpty) {
           rescuerUids.add(uid);
         }
