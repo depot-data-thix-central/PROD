@@ -10,6 +10,8 @@ import '../models/sos_models.dart';
 import '../services/sos_service.dart';
 import '../services/sos_protocol_orchestrator.dart';
 import '../services/sos_escalation_controller.dart';
+import 'package:thix_id/services/notifications/notif_emitter.dart';
+import 'package:thix_id/providers/auth_provider.dart';
 
 const Duration _kTriggerTimeout = Duration(seconds: 12);
 const Duration _kHeartbeatTimeout = Duration(seconds: 12);
@@ -211,7 +213,7 @@ class TriggerSosNotifier extends StateNotifier<AsyncValue<SosIncident?>> {
       _safeInvalidate(activeSosProvider);
       _safeInvalidate(sosHistoryProvider);
 
-      // Protocole (chat + appels + SOS_STARTED) : NE PAS await.
+      // Protocole (chat + appels + SOS_STARTED + notifications) : NE PAS await.
       unawaited(_runProtocol(incident));
       return incident;
     } catch (e, st) {
@@ -234,6 +236,9 @@ class TriggerSosNotifier extends StateNotifier<AsyncValue<SosIncident?>> {
         'calls=${result.answeredOrRinging}/${result.calls.length}',
       );
 
+      // ✅ NOUVEAU : Notifier tous les secouristes des 3 cercles
+      await _notifyRescuers(incident);
+
       try {
         _ref.read(sosEscalationProvider).start(
               incident.id,
@@ -245,6 +250,76 @@ class TriggerSosNotifier extends StateNotifier<AsyncValue<SosIncident?>> {
       _safeInvalidate(activeSosProvider);
     } catch (e) {
       debugPrint('[SosProviders] protocol background: $e');
+    }
+  }
+
+  /// ✅ Émet les notifications SOS vers tous les secouristes (cercles 1+2+3)
+  Future<void> _notifyRescuers(SosIncident incident) async {
+    try {
+      // Récupérer les contacts/secouristes depuis le provider
+      final contactsAsync = _ref.read(sosContactsProvider);
+      final contacts = contactsAsync.valueOrNull;
+      
+      if (contacts == null || contacts.isEmpty) {
+        debugPrint('[SosProviders] ⚠️ No contacts loaded, skipping SOS notifications');
+        return;
+      }
+
+      // Récupérer la position GPS de la victime
+      final posAsync = _ref.read(sosUserPositionProvider);
+      final pos = posAsync.valueOrNull;
+      final lat = pos?.lat;
+      final lng = pos?.lng;
+
+      // Récupérer le nom de la victime (utilisateur connecté)
+      final userAsync = _ref.read(currentUserProvider);
+      final user = userAsync.valueOrNull;
+      final victimName = user?.fullName ?? user?.firstName ?? 'Une personne';
+
+      // Collecter tous les UIDs des secouristes (cercles 1+2+3)
+      final rescuerUids = <String>{};
+      for (final contact in contacts) {
+        // Essayer userId d'abord, puis thixId si disponible
+        final uid = contact.userId ?? contact.thixId;
+        if (uid != null && uid.isNotEmpty) {
+          rescuerUids.add(uid);
+        }
+      }
+
+      if (rescuerUids.isEmpty) {
+        debugPrint('[SosProviders] ⚠️ No rescuer UIDs found in contacts');
+        return;
+      }
+
+      debugPrint('[SosProviders] 🚨 Sending SOS notifications to ${rescuerUids.length} rescuers');
+
+      // Émettre une notification pour chaque secouriste (en parallèle)
+      final notifications = rescuerUids.map((uid) => NotifEmitter.custom(
+        recipientUid: uid,
+        category: 'health',
+        type: 'sos',
+        title: '🚨 ALERTE SOS',
+        body: '$victimName a déclenché une alerte',
+        route: '/sos/alert/${incident.id}',
+        priority: 10,
+        data: {
+          'alert_id': incident.id,
+          'victim_id': incident.victimId ?? '',
+          'victim_name': victimName,
+          if (lat != null && lng != null) ...{
+            'lat': lat,
+            'lng': lng,
+          },
+        },
+      ));
+
+      // Envoyer toutes les notifications en parallèle (fire-and-forget)
+      await Future.wait(notifications);
+
+      debugPrint('[SosProviders] ✓ SOS notifications sent to ${rescuerUids.length} rescuers');
+    } catch (e) {
+      debugPrint('[SosProviders] ❌ SOS notifications error: $e');
+      // Ne pas bloquer le protocole si les notifications échouent
     }
   }
 
