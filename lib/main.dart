@@ -1,21 +1,8 @@
 // lib/main.dart
 //
 // THIX ID CENTRAL — Point d'entrée (Production Enterprise)
-//  localeControllerProvider injecté via ProviderScope (fix UnimplementedError)
-//  Coexistence Provider (legacy listeners) + Riverpod
-//  Erreurs UI visibles (plus jamais d'écran gris silencieux)
-// Gardes kIsWeb (Firebase/push non supportés sur Web)
-//  Timeouts sur toutes les initialisations
-//
-// CORRECTIONS APPORTÉES :
-//  Utilisation de ref.watch() au lieu de ref.read() pour écouter les changements de locale
-//  Support RTL automatique pour l'Arabe via Directionality
-// localeListResolutionCallback pour meilleur fallback
-//  Rebuild automatique de MaterialApp lors du changement de langue
-//  CORRECTIF ANR OFFLINE : le catch de runZonedGuarded ne relance plus runApp()
-//    si l'app a déjà démarré — évite le double arbre de widgets / blocage UI
-//    quand une erreur réseau (ex. AuthRetryableFetchException lors du refresh
-//    token en mode offline) remonte hors des try/catch internes.
+// Corrections Web release (dart2js minification type check fix)
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -43,8 +30,6 @@ import 'package:thix_id/presentation/chat/call/global_call_listener.dart';
 import 'package:thix_id/presentation/thix_sos/widgets/global_sos_listener.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
-
-// 🛡️ IMPORT AJOUTÉ POUR LE SUIVI DES CRASHS (PROD)
 import 'package:thix_id/core/security/security_reporter.dart';
 
 // ============================================================================
@@ -55,13 +40,7 @@ const Duration _kInitTimeout = Duration(seconds: 10);
 
 void _log(String message) => debugPrint('[MAIN] $message');
 
-//  Instance GLOBALE créée AVANT runApp, injectée dans Riverpod
 late final LocaleController _localeController;
-
-// ⚠️ CORRECTIF : flag pour savoir si l'app a déjà été lancée avec succès.
-// Empêche le catch global de runZonedGuarded de relancer un second runApp()
-// par-dessus l'app déjà en cours d'exécution (cause du blocage UI/ANR
-// observé en mode offline lors d'erreurs de refresh token non catchables).
 bool _appLaunched = false;
 
 // ============================================================================
@@ -81,7 +60,6 @@ Future<void> main() async {
         _log('⚠️ Offline cache: $e');
       }
 
-      //  Erreurs de build affichées À L'ÉCRAN (rouge) au lieu d'écran gris
       ErrorWidget.builder = (details) => Material(
         color: const Color(0xFF0A2F5C),
         child: SafeArea(
@@ -99,7 +77,6 @@ Future<void> main() async {
         ),
       );
 
-      // ✅ CORRECTIF : Filtre intelligent des erreurs réseau/auth
       FlutterError.onError = (details) {
         final msg = details.exceptionAsString().toLowerCase();
         final isNetworkAuthError = msg.contains('authretryablefetchexception') ||
@@ -109,11 +86,10 @@ Future<void> main() async {
 
         if (isNetworkAuthError) {
           _log('⚠️ FlutterError network/stream ignored: ${details.exception}');
-          return; // on ne présente pas l'erreur rouge pour ces cas
+          return;
         }
 
         FlutterError.presentError(details);
-        // 🛡️ AJOUT : traque des crashs de l'application
         SecurityReporter.reportClientError(
           source: 'flutter_error',
           message: '${details.exception}',
@@ -121,7 +97,6 @@ Future<void> main() async {
         _log('❌ FlutterError: ${details.exception}');
       };
 
-      // WEB : FCM n'existe pas sur Web → skip
       if (!kIsWeb) {
         try {
           await Firebase.initializeApp().timeout(_kInitTimeout);
@@ -133,7 +108,6 @@ Future<void> main() async {
           _log('⚠️ Firebase: $e');
         }
 
-        // ✅ NOUVEAU : Initialiser le service de badge (notifications locales pour le compteur)
         try {
           await AppBadgeSyncService.init().timeout(_kInitTimeout);
           _log('✓ Badge sync OK');
@@ -160,13 +134,12 @@ Future<void> main() async {
         _log('⚠️ LocalNotif: $e');
       }
 
-      //  CRÉÉ AVANT runApp (c'est ça qui fixe l'UnimplementedError)
       _localeController = LocaleController();
       try {
         await _localeController.init().timeout(_kInitTimeout);
         _log('✓ Locale OK: ${_localeController.locale.languageCode}');
       } catch (e) {
-        _log('⚠️ Locale: $e');
+        _log('⚠️️ Locale: $e');
       }
 
       try {
@@ -176,15 +149,10 @@ Future<void> main() async {
         _log('⚠️ Auth: $e');
       }
 
-      // ⚠️ CORRECTIF : on marque l'app comme lancée AVANT runApp,
-      // pour que toute erreur survenant pendant ou après runApp()
-      // (y compris pendant le build initial) soit traitée comme
-      // "post-lancement" par le catch ci-dessous.
       _appLaunched = true;
 
       runApp(
         ProviderScope(
-          // INJECTION : le provider reçoit la vraie instance
           overrides: [
             localeControllerProvider.overrideWith((ref) => _localeController),
           ],
@@ -194,16 +162,12 @@ Future<void> main() async {
       _log('✓ runApp called');
     },
     (error, stack) {
-      // 🛡️ AJOUT : traque des erreurs non interceptées
       SecurityReporter.reportClientError(
         source: 'zone_error',
         message: '$error',
       );
       _log('❌ Uncaught (appLaunched=$_appLaunched): $error');
 
-      // ✅ CORRECTIF FORT : une fois l'app lancée, on ignore complètement
-      // les erreurs réseau de refresh token (cas typique après inactivité / offline).
-      // Ça évite l'ANR "Thix Hub isn't responding" et l'écran rouge inutile.
       final errorStr = error.toString().toLowerCase();
       final isNetworkAuthError = errorStr.contains('authretryablefetchexception') ||
           errorStr.contains('socketexception') ||
@@ -214,10 +178,9 @@ Future<void> main() async {
 
       if (_appLaunched && isNetworkAuthError) {
         _log('⚠️ Network/Auth error ignored (app already running, likely offline)');
-        return; // ← ne fait rien, pas de runApp, pas d'écran d'erreur
+        return;
       }
 
-      // Seulement si l'app n'a JAMAIS réussi à démarrer
       if (!_appLaunched) {
         runApp(MaterialApp(
           home: Scaffold(
@@ -259,47 +222,40 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     _auth = AuthController.instance;
-    
-    // ✅ Observer les changements de locale système
     WidgetsBinding.instance.addObserver(this);
-    
     _init();
   }
 
   @override
   void didChangeLocales(List<Locale>? locales) {
-    // ✅ Quand la langue du système change, rafraîchir si on utilise le système
     final localeController = ref.read(localeControllerProvider);
     if (locales != null && locales.isNotEmpty) {
       localeController.refreshSystemLocale(locales);
     }
   }
 
-  // ✅ CORRECTIF : Ajout de la gestion du cycle de vie
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     _log('Lifecycle: $state');
-
-    // Quand l'app revient au premier plan après inactivité
     if (state == AppLifecycleState.resumed) {
-      // On laisse AuthController gérer (il a déjà des fallbacks offline).
-      // L'important est de ne PAS forcer un refresh token ici.
-      // Si tu as un ConnectivityService, tu peux checker ici et passer
-      // un flag offline à AuthController.
-      _log('App resumed → session handled by AuthController (offline-safe)');
+      _log('App resumed → session handled by AuthController');
     }
   }
 
   Future<void> _init() async {
-    // Router (les controllers sont déjà initialisés dans main)
     try {
-      // ✅ LIRE le LocaleController depuis le provider (pas de ref.read dans initState)
       final localeController = ref.read(localeControllerProvider);
       
+      // ✅ Sécurisation de extraRefreshListenable pour éviter les crashs de type Listenable
+      final List<Listenable> listenables = [_auth];
+      if (localeController is Listenable) {
+        listenables.add(localeController as Listenable);
+      }
+
       _router = AppRouter.create(
         _auth,
-        extraRefreshListenable: Listenable.merge([_auth, localeController]),
+        extraRefreshListenable: Listenable.merge(listenables),
         navigatorKey: rootNavigatorKey,
       );
       _log('✓ Router OK');
@@ -307,7 +263,6 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
       _log('❌ Router: $e');
     }
 
-    // Sync push ↔ auth
     _auth.addListener(_syncPush);
     _syncPush();
 
@@ -316,9 +271,8 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
     }
   }
 
-  /// Enregistre / retire le token FCM selon l'état de connexion.
   Future<void> _syncPush() async {
-    if (kIsWeb) return; //  push non géré sur Web
+    if (kIsWeb) return;
 
     final isAuthenticated = _auth.isAuthenticated;
 
@@ -333,7 +287,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
         _log('✓ Push unregistered');
       }
     } catch (e) {
-      _log('⚠️ Push: $e');
+      _log('⚠️️ Push: $e');
     }
   }
 
@@ -346,7 +300,6 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ CRUCIAL : ref.watch() déclenche un rebuild quand la locale change
     final localeController = ref.watch(localeControllerProvider);
 
     if (!_ready || _router == null) {
@@ -362,15 +315,21 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
     }
 
     return app_provider.MultiProvider(
-      //  COMPAT : les 3 listeners globaux legacy utilisent package:provider
       providers: [
         app_provider.ChangeNotifierProvider<AuthController>.value(
           value: _auth,
         ),
-        // ✅ LocaleController est maintenant écouté par Provider aussi
-        app_provider.ChangeNotifierProvider<LocaleController>.value(
-          value: localeController,
-        ),
+        // ✅ SÉCURISATION PROVIDER LEGACY :
+        // Si LocaleController dérive de ChangeNotifier, on utilise ChangeNotifierProvider,
+        // sinon un Provider simple pour éviter l'erreur "not a subtype of ChangeNotifier".
+        if (localeController is ChangeNotifier)
+          app_provider.ChangeNotifierProvider<LocaleController>.value(
+            value: localeController as ChangeNotifier,
+          )
+        else
+          app_provider.Provider<LocaleController>.value(
+            value: localeController,
+          ),
         app_provider.Provider<ProfileService>(
           create: (_) => ProfileService(),
         ),
@@ -382,7 +341,6 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
         darkTheme: ThixPolicy.darkTheme(),
         themeMode: ThemeMode.system,
         routerConfig: _router!,
-        // ✅ Utilise la locale du controller écouté
         locale: localeController.locale,
         supportedLocales: LocaleController.supportedLocales,
         localizationsDelegates: const [
@@ -391,11 +349,9 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        // ✅ Fallback intelligent pour la résolution de locale
         localeListResolutionCallback: (locales, supportedLocales) {
           if (locales != null && locales.isNotEmpty) {
             for (final locale in locales) {
-              // Chercher d'abord une correspondance exacte
               for (final supportedLocale in supportedLocales) {
                 if (supportedLocale.languageCode == locale.languageCode) {
                   return supportedLocale;
@@ -403,11 +359,9 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
               }
             }
           }
-          // Fallback : première locale supportée (français)
           return supportedLocales.first;
         },
         builder: (context, child) {
-          // ✅ Support RTL automatique pour l'Arabe
           return Directionality(
             textDirection: localeController.textDirection,
             child: NotifBannerListener(
