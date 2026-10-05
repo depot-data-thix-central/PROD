@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
-
+import 'package:thix_id/services/notifications/app_badge_sync_service.dart';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -339,18 +339,8 @@ class NotificationCountersService {
   // ========================================================================
 
   Future<void> _updateAppIconBadge(int count) async {
-    try {
-      final supported = await AppBadgePlus.isSupported();
-      if (!supported) {
-        if (kDebugMode) debugPrint('[NotifCounters] ℹ️ App badge not supported');
-        return;
-      }
-      final safeCount = count < 0 ? 0 : count;
-      await AppBadgePlus.updateBadge(safeCount);
-      if (kDebugMode) debugPrint('[NotifCounters] 🔢 Badge → $safeCount');
-    } catch (e) {
-      debugPrint('[NotifCounters] ⚠️ Badge update failed: $e');
-    }
+    // Délègue au service global (iOS + Android launchers)
+    await AppBadgeSyncService.sync(count);
   }
 
   // ========================================================================
