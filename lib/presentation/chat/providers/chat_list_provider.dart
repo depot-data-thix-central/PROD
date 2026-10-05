@@ -1008,28 +1008,7 @@ class ChatListNotifier extends StateNotifier<ChatListState> {
     state = state.copyWith(selectedIds: {});
   }
 
-  Future<void> bulkDelete() async {
-    if (_isDisposed || state.selectedIds.isEmpty) return;
-
-    final idsToDelete = state.selectedIds.toList();
-    debugPrint('[ChatList] 🗑️ Bulk deleting ${idsToDelete.length} conversations');
-
-    for (final id in idsToDelete) {
-      try {
-        await _client
-            .from('conversation_participants')
-            .delete()
-            .eq('conversation_id', id)
-            .eq('user_id', _currentUserId!)
-            .timeout(_kDbTimeout);
-      } catch (e) {
-        debugPrint('[ChatList] ❌ Bulk delete error for ${_obfuscate(id)}: $e');
-      }
-    }
-
-    await loadInitial(silent: true);
-    exitSelectionMode();
-  }
+  
 
   Future<void> bulkArchive() async {
     if (_isDisposed || state.selectedIds.isEmpty) return;
