@@ -545,37 +545,30 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
     );
   }
 
-  // ── CONTENU MÉDIA (image / audio / texte) ──
+// ── CONTENU MÉDIA (image / audio / texte) ──
   Widget _buildMediaContent(String url, String text, Color? bgColor, String mediaType) {
-    // ── Image ──
-    if (url.isNotEmpty && mediaType != 'audio') {
-      return Image.network(
-        url,
-        fit: BoxFit.contain,
-        color: bgColor,
-        colorBlendMode: bgColor != null ? BlendMode.srcOver : BlendMode.src,
-        loadingBuilder: (_, child, progress) {
-          if (progress == null) return child;
-          return Container(
-            color: bgColor ?? const Color(0xFF0B1B3D),
-            child: const Center(child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
-          );
-        },
-        errorBuilder: (_, __, ___) => _textFallback(text, bgColor),
-      );
-    }
+    final hasText = text.isNotEmpty;
+    final hasBg = bgColor != null;
+    final isAudio = mediaType == 'audio' ||
+        url.toLowerCase().endsWith('.m4a') ||
+        url.toLowerCase().endsWith('.mp3');
 
-    // ── Audio ──
-    if (mediaType == 'audio') {
+    // ── DEBUG : vérifie que bgColor est bien passé ──
+    debugPrint('[StoryView] id=${widget.stories[_currentIndex].id} '
+        'mediaType=$mediaType url=${url.isEmpty ? "<empty>" : "ok"} '
+        'bgColor=${bgColor?.toARGB32().toRadixString(16)} text="${text.substring(0, text.length.clamp(0, 30))}"');
+
+    // ── CAS 1 : AUDIO — fond dégradé + lecteur ──
+    if (isAudio) {
       return Container(
         decoration: BoxDecoration(
-          gradient: bgColor != null
-              ? LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [bgColor, bgColor.withOpacity(0.6)],
-                )
-              : const LinearGradient(colors: [Color(0xFF1A1F2E), Color(0xFF0A0E1A)]),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: hasBg
+                ? [bgColor!, bgColor.withOpacity(0.6)]
+                : const [Color(0xFF1A1F2E), Color(0xFF0A0E1A)],
+          ),
         ),
         child: Center(
           child: Column(
@@ -593,7 +586,7 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
               const SizedBox(height: 16),
               const Text('Message vocal',
                   style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800)),
-              if (text.isNotEmpty) ...[
+              if (hasText) ...[
                 const SizedBox(height: 24),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -614,35 +607,79 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
       );
     }
 
-    // ── Texte seul (avec fond coloré ou dégradé) ──
+    // ── CAS 2 : IMAGE (avec ou sans texte) ──
+    if (url.isNotEmpty) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          // Fond coloré en dessous (visible si image transparente / chargement)
+          Container(color: bgColor ?? const Color(0xFF0B1B3D)),
+          // Image par-dessus
+          Image.network(
+            url,
+            fit: BoxFit.contain,
+            loadingBuilder: (_, child, progress) {
+              if (progress == null) return child;
+              return const Center(
+                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2));
+            },
+            errorBuilder: (_, __, ___) => _textFallback(text, bgColor),
+          ),
+          // Texte overlay en bas
+          if (hasText)
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: 110,
+              child: Text(
+                text,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  shadows: [Shadow(color: Colors.black54, blurRadius: 8)],
+                ),
+              ),
+            ),
+        ],
+      );
+    }
+
+    // ── CAS 3 : TEXTE SEUL — fond coloré OU dégradé ──
     return _textFallback(text, bgColor);
   }
 
   Widget _textFallback(String text, Color? bgColor) {
+    final hasText = text.isNotEmpty;
     return Container(
-      decoration: BoxDecoration(
-        color: bgColor,
-        gradient: bgColor == null
-            ? const LinearGradient(
+      // ✅ Fond coloré en priorité, sinon dégradé
+      color: bgColor,
+      decoration: bgColor == null
+          ? const BoxDecoration(
+              gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [Color(0xFF1B3B7A), Color(0xFF0B1B3D)],
-              )
-            : null,
-      ),
-      child: text.isNotEmpty
+              ),
+            )
+          : null,
+      child: hasText
           ? Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 28),
                 child: Text(
                   text,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
                     fontSize: 26,
                     fontWeight: FontWeight.w700,
                     height: 1.3,
-                    shadows: [Shadow(blurRadius: 8, color: Colors.black, offset: Offset(0, 2))],
+                    // Ombre plus forte sur fond clair (jaune, or) pour lisibilité
+                    shadows: [
+                      Shadow(blurRadius: 10, color: Colors.black.withOpacity(0.7), offset: const Offset(0, 2)),
+                    ],
                   ),
                 ),
               ),
@@ -652,7 +689,6 @@ class _StoryViewerState extends State<StoryViewer> with TickerProviderStateMixin
             ),
     );
   }
-}
 
 // ============================================================================
 // BOTTOM BAR (Like + Répondre)
