@@ -283,38 +283,44 @@ class AudioSpaceManager {
   Future<void> endSpace() async {
     if (!_state.isActive || !_state.isHost) return;
     final spaceId = _state.spaceId;
-    if (spaceId == null) return;
+    final channelName = _state.space?.channelName;
+    
+    if (spaceId == null || channelName == null) {
+      debugPrint('[AudioSpaceManager] ⚠️ endSpace: spaceId or channelName null');
+      await _cleanup();
+      return;
+    }
 
     _state = _state.copyWith(status: ManagerStatus.ending);
     _emit();
 
     try {
-      await _service.endSpace(spaceId);
+      // ✅ APPEL RPC SQL POUR FERMER LE SALON CÔTE SERVEUR
+      // Cela garantit que le statut passe à 'ended' et ended_at est défini
+      await Supabase.instance.client.rpc(
+        'end_audio_space', 
+        params: {'p_channel_name': channelName},
+      ).timeout(const Duration(seconds: 10));
+      
+      debugPrint('[AudioSpaceManager] ✓ Salon fermé via RPC: $channelName');
+      
+      // Broadcast pour notifier tous les participants connectés
       await _broadcast('ended', {});
+      
     } catch (e) {
-      debugPrint('[AudioSpaceManager] endSpace error: $e');
+      debugPrint('[AudioSpaceManager] ❌ end_audio_space RPC failed: $e');
+      // Fallback : tentative via le service standard si le RPC échoue
+      try {
+        await _service.endSpace(spaceId);
+        debugPrint('[AudioSpaceManager] ✓ Fallback endSpace service OK');
+      } catch (fallbackErr) {
+        debugPrint('[AudioSpaceManager] ❌ Fallback also failed: $fallbackErr');
+      }
+    } finally {
+      // Toujours nettoyer localement même si le serveur a échoué
+      await _cleanup();
     }
-    await _cleanup();
   }
-
-  Future<void> _cleanup() async {
-    _rosterTick?.cancel();
-    _rosterTick = null;
-    _elapsedTick?.cancel();
-    _elapsedTick = null;
-
-    try { await _rtChannel?.unsubscribe(); } catch (_) {}
-    try { await _pgChannel?.unsubscribe(); } catch (_) {}
-    _rtChannel = null;
-    _pgChannel = null;
-
-    await _backgroundService.stopAgora();
-    _backgroundService.exitBackgroundMode();
-
-    _state = AudioSpaceManagerState.initial;
-    _emit();
-  }
-
   // ─────────────────────────────────────────────────────────────
   // ROSTER
   // ─────────────────────────────────────────────────────────────
