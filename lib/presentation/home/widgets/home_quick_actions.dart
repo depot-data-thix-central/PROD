@@ -153,7 +153,7 @@ class HomeQuickActions extends StatelessWidget {
 
     for (final section in sections) {
       try {
-        notificationService!.markSectionSeen(
+        notificationService!.markSectionRead(
           userId,
           section: section,
         );
