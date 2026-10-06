@@ -485,7 +485,7 @@ class _CleanFieldState extends State<_CleanField> {
             maxLength: widget.maxLength,
             inputFormatters: widget.inputFormatters,
             autofillHints: widget.autofillHint != null
-                ? [widget.autofillHint!]
+                ? [widget.autofillHint
                 : null,
             style: ThixPolicy.bodyStyle.copyWith(
               fontWeight: ThixPolicy.medium,
