@@ -1,6 +1,7 @@
 // lib/presentation/home/widgets/home_quick_actions.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/services/notification_counters_service.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
@@ -39,7 +40,7 @@ class _ActionConfig {
     required this.sections,
     this.pulseBadge = false,
     this.isDanger = false,
-    this.autoMarkRead = true, // ✅ Par défaut, on marque comme lu à l'ouverture
+    this.autoMarkRead = true,
   });
 
   int count(SectionBadgeCounts c) {
@@ -84,7 +85,7 @@ const _kSosAction = _ActionConfig(
   sections: [ThixSection.health],
   pulseBadge: true,
   isDanger: true,
-  autoMarkRead: false, // ❌ SOS ne se "lit" pas, on garde le badge
+  autoMarkRead: false,
 );
 
 const List<_ActionConfig> _kActions = [
@@ -104,9 +105,6 @@ class HomeQuickActions extends StatelessWidget {
   final VoidCallback onSecurityTap;
 
   final Stream<SectionBadgeCounts>? badgeCountsStream;
-
-  /// ✅ Service injecté pour marquer les sections comme lues à l'ouverture.
-  /// Si null, le reset automatique est désactivé (compatibilité ascendante).
   final NotificationCountersService? notificationService;
 
   const HomeQuickActions({
@@ -116,16 +114,13 @@ class HomeQuickActions extends StatelessWidget {
     required this.onChatTap,
     required this.onSecurityTap,
     this.badgeCountsStream,
-    this.notificationService, // ✅ Nouveau paramètre
+    this.notificationService,
   });
 
-  /// Dispatch central avec reset automatique des badges
   void _dispatch(int index) {
     HapticFeedback.selectionClick();
     final config = _kActions[index];
 
-    // ✅ Marquer les sections comme lues AVANT d'appeler le callback
-    // pour que le stream émette 0 immédiatement → le badge disparaît
     if (config.autoMarkRead && notificationService != null) {
       _markSectionsRead(config.sections);
     }
@@ -151,17 +146,17 @@ class HomeQuickActions extends StatelessWidget {
     }
   }
 
-  /// ✅ Marque toutes les sections associées comme lues (compteur → 0)
   void _markSectionsRead(List<ThixSection> sections) {
     if (notificationService == null) return;
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+
     for (final section in sections) {
       try {
         notificationService!.markSectionSeen(
-  Supabase.instance.client.auth.currentUser?.id
-// ID de l'utilisateur connecté
-  section: section, // Instance de ThixSection
-);
-
+          userId,
+          section: section,
+        );
         debugPrint('[QuickActions] ✓ Section marquée comme lue: ${section.name}');
       } catch (e) {
         debugPrint('[QuickActions] ⚠️ Erreur markSectionRead($section): $e');
