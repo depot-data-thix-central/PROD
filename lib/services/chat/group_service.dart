@@ -3,40 +3,8 @@
 // ============================================================================
 // GROUP SERVICE — Production Enterprise++ (Dépasse WhatsApp)
 // ============================================================================
-//
-// Service de gestion avancée des groupes de discussion.
-//
-// Architecture :
-//   - SupabaseClient injecté via Riverpod (testable)
-//   - currentUserId dynamique (getter, pas capturé au constructor)
-//   - Validation UUID stricte sur tous les IDs
-//   - Batch queries pour éviter N+1
-//   - Ownership checks sur toutes les actions admin
-//   - Invite codes via Random.secure() (imprédictibles)
-//
-// Fonctionnalités :
-//   ✅ P0 : 8 rôles (owner, admin, moderator, editor, member, muted, observer, bot)
-//   ✅ P0 : Permissions granulaires (qui peut envoyer, éditer, supprimer)
-//   ✅ P1 : Notes internes (agents/support uniquement)
-//   ✅ P1 : Export CSV membres (admin)
-//   ✅ P1 : Statistiques avancées (nouveaux membres, mutés, etc.)
-//   ✅ P2 : Paramètres groupe (disappearing messages, etc.)
-//   ✅ P2 : Gestion des permissions globales du groupe
-//
-// Sécurité :
-//   ✅ Validation UUID v4 sur groupId, userId, inviteCode
-//   ✅ Sanitization XSS sur name et description
-//   ✅ Ownership verification (admin check) sur actions destructives
-//   ✅ Validation membership avant leave/delete
-//   ✅ Max group size 100 membres
-//   ✅ Invite code entropy 48 bits (8 chars alphanum uppercase)
-//   ✅ Permissions checks avant chaque action
-//
-// Performance :
-//   ✅ Batch presence lookup (1 query pour N membres)
-//   ✅ Batch group lookup (1 query avec IN filter)
-//   ✅ Batch insert participants (1 query au lieu de N)
-//   ✅ Timeouts sur toutes les requêtes (15s DB, 20s RPC)
+// ✅ Zéro syntaxe Dart 3 (pas de records / patterns / switch-expression)
+// ✅ Compatible analyzer 3.4.0
 // ============================================================================
 
 import 'dart:async';
@@ -124,12 +92,6 @@ class _GroupValidators {
     if (s == null || s.length <= 8) return '***';
     return '${s.substring(0, 4)}...${s.substring(s.length - 4)}';
   }
-
-  static bool isValidRole(String? role) {
-    if (role == null) return false;
-    const validRoles = ['owner', 'admin', 'moderator', 'editor', 'member', 'muted', 'observer', 'bot'];
-    return validRoles.contains(role.toLowerCase());
-  }
 }
 
 // ============================================================================
@@ -167,10 +129,6 @@ class GroupService {
   }
 
   String get _currentUserId => _supabase.auth.currentUser?.id ?? '';
-
-  // ============================================================
-  // HELPERS
-  // ============================================================
 
   String _generateInviteCode() {
     final buffer = StringBuffer();
@@ -222,7 +180,8 @@ class GroupService {
       throw const GroupPermissionException('Vous n\'êtes pas membre de ce groupe');
     }
     final role = participant['role']?.toString() ?? 'member';
-    if (!['owner', 'admin', 'moderator'].contains(role)) {
+    final validRoles = <String>['owner', 'admin', 'moderator'];
+    if (!validRoles.contains(role)) {
       throw const GroupPermissionException('Réservé aux modérateurs et administrateurs');
     }
   }
@@ -267,19 +226,7 @@ class GroupService {
     }
   }
 
-  List<List<String>> _chunkIds(List<String> ids) {
-    final chunks = <List<String>>[];
-    for (var i = 0; i < ids.length; i += _kMaxInFilterSize) {
-      chunks.add(ids.skip(i).take(_kMaxInFilterSize).toList());
-    }
-    return chunks;
-  }
-
-  // ============================================================
-  // CRÉATION DE GROUPE
-  // ============================================================
-
-  Future<GroupInfo> createGroup(...) async {
+  Future<GroupInfo> createGroup({
     required String name,
     String? description,
     String? avatarUrl,
@@ -305,14 +252,14 @@ class GroupService {
       throw const GroupValidationException('Trop de membres (max $_kMaxGroupSize)');
     }
 
-    final allMemberIds = {...uniqueMembers, uid}.toList();
+    final allMemberIds = <String>{...uniqueMembers, uid}.toList();
     final conversationId = const Uuid().v4();
     final sanitizedDescription = description != null ? _GroupValidators.sanitizeDescription(description) : null;
     final now = DateTime.now().toUtc().toIso8601String();
     final effectiveSettings = settings ?? const GroupSettings();
 
     try {
-      await _supabase.from('conversations').insert({
+      await _supabase.from('conversations').insert(<String, dynamic>{
         'id': conversationId,
         'is_group': true,
         'group_name': sanitizedName,
@@ -321,16 +268,18 @@ class GroupService {
         'is_pinned': false,
       }).timeout(_kDbTimeout);
 
-      await _supabase.from('conversation_participants').insert(
-        allMemberIds.map((memberId) => {
+      final participantRows = allMemberIds.map((memberId) {
+        return <String, dynamic>{
           'conversation_id': conversationId,
           'user_id': memberId,
           'role': memberId == uid ? 'owner' : 'member',
           'last_read_at': now,
-        }).toList(),
-      ).timeout(_kDbTimeout);
+        };
+      }).toList();
 
-      await _supabase.from('group_info').upsert({
+      await _supabase.from('conversation_participants').insert(participantRows).timeout(_kDbTimeout);
+
+      await _supabase.from('group_info').upsert(<String, dynamic>{
         'group_id': conversationId,
         'name': sanitizedName,
         'description': sanitizedDescription,
@@ -350,10 +299,6 @@ class GroupService {
       throw GroupException('Échec de création du groupe', e);
     }
   }
-
-  // ============================================================
-  // LECTURE DES INFORMATIONS DU GROUPE
-  // ============================================================
 
   Future<GroupInfo> getGroupInfo(String groupId) async {
     if (_isDisposed) throw StateError('GroupService disposed');
@@ -433,8 +378,9 @@ class GroupService {
             : DateTime.now().toUtc();
 
         final role = GroupRoleX.fromString(map['role']?.toString());
-        final permissions = map['permissions'] != null
-            ? GroupPermissions.fromJson(Map<String, dynamic>.from(map['permissions'] as Map))
+        final permissionsMap = map['permissions'];
+        final permissions = permissionsMap != null
+            ? GroupPermissions.fromJson(Map<String, dynamic>.from(permissionsMap as Map))
             : null;
 
         members.add(GroupMember(
@@ -469,8 +415,9 @@ class GroupService {
           ? (DateTime.tryParse(createdAtRaw) ?? DateTime.now().toUtc())
           : DateTime.now().toUtc();
 
-      final settings = groupInfoData?['settings'] != null
-          ? GroupSettings.fromJson(Map<String, dynamic>.from(groupInfoData!['settings'] as Map))
+      final settingsMap = groupInfoData?['settings'];
+      final settings = settingsMap != null
+          ? GroupSettings.fromJson(Map<String, dynamic>.from(settingsMap as Map))
           : const GroupSettings();
 
       return GroupInfo(
@@ -495,10 +442,6 @@ class GroupService {
     }
   }
 
-  // ============================================================
-  // GESTION DES MEMBRES
-  // ============================================================
-
   Future<void> addMember(String groupId, String userId, {String? addedBy}) async {
     if (_isDisposed) return;
     if (!_GroupValidators.isValidUuid(groupId) || !_GroupValidators.isValidUuid(userId)) {
@@ -512,7 +455,7 @@ class GroupService {
     }
 
     try {
-      await _supabase.from('conversation_participants').insert({
+      await _supabase.from('conversation_participants').insert(<String, dynamic>{
         'conversation_id': groupId,
         'user_id': userId,
         'role': 'member',
@@ -555,10 +498,8 @@ class GroupService {
       throw const GroupValidationException('ID invalide');
     }
 
-    // Seuls les admins peuvent changer les rôles
     await _assertAdmin(groupId);
 
-    // Vérifier qu'il reste au moins 1 owner si on rétrograde un owner
     if (newRole != GroupRole.owner) {
       final ownerCount = await _supabase
           .from('conversation_participants')
@@ -585,7 +526,7 @@ class GroupService {
     try {
       await _supabase
           .from('conversation_participants')
-          .update({'role': newRole.name})
+          .update(<String, dynamic>{'role': newRole.name})
           .eq('conversation_id', groupId)
           .eq('user_id', userId)
           .timeout(_kDbTimeout);
@@ -609,7 +550,7 @@ class GroupService {
     try {
       await _supabase
           .from('conversation_participants')
-          .update({'role': 'muted', 'muted_until': mutedUntil})
+          .update(<String, dynamic>{'role': 'muted', 'muted_until': mutedUntil})
           .eq('conversation_id', groupId)
           .eq('user_id', userId)
           .timeout(_kDbTimeout);
@@ -631,7 +572,7 @@ class GroupService {
     try {
       await _supabase
           .from('conversation_participants')
-          .update({'role': 'member', 'muted_until': null})
+          .update(<String, dynamic>{'role': 'member', 'muted_until': null})
           .eq('conversation_id', groupId)
           .eq('user_id', userId)
           .timeout(_kDbTimeout);
@@ -642,10 +583,6 @@ class GroupService {
       throw GroupException('Échec de la réactivation', e);
     }
   }
-
-  // ============================================================
-  // NOTES INTERNES (agents/support uniquement)
-  // ============================================================
 
   Future<void> addInternalNote(String groupId, String userId, String note) async {
     if (_isDisposed) return;
@@ -661,7 +598,7 @@ class GroupService {
     try {
       await _supabase
           .from('conversation_participants')
-          .update({'internal_note': sanitizedNote})
+          .update(<String, dynamic>{'internal_note': sanitizedNote})
           .eq('conversation_id', groupId)
           .eq('user_id', userId)
           .timeout(_kDbTimeout);
@@ -673,10 +610,6 @@ class GroupService {
     }
   }
 
-  // ============================================================
-  // PERMISSIONS GRANULAIRES
-  // ============================================================
-
   Future<void> updateMemberPermissions(String groupId, String userId, GroupPermissions permissions) async {
     if (_isDisposed) return;
     if (!_GroupValidators.isValidUuid(groupId) || !_GroupValidators.isValidUuid(userId)) {
@@ -687,7 +620,7 @@ class GroupService {
     try {
       await _supabase
           .from('conversation_participants')
-          .update({'permissions': permissions.toJson()})
+          .update(<String, dynamic>{'permissions': permissions.toJson()})
           .eq('conversation_id', groupId)
           .eq('user_id', userId)
           .timeout(_kDbTimeout);
@@ -698,10 +631,6 @@ class GroupService {
       throw GroupException('Échec de la mise à jour des permissions', e);
     }
   }
-
-  // ============================================================
-  // PARAMÈTRES DU GROUPE
-  // ============================================================
 
   Future<void> updateGroupInfo({
     required String groupId,
@@ -752,7 +681,7 @@ class GroupService {
       if (sanitizedName != null) {
         await _supabase
             .from('conversations')
-            .update({
+            .update(<String, dynamic>{
               'group_name': sanitizedName,
               'updated_at': DateTime.now().toUtc().toIso8601String(),
             })
@@ -766,10 +695,6 @@ class GroupService {
       throw GroupException('Échec de la mise à jour', e);
     }
   }
-
-  // ============================================================
-  // EXPORT CSV (admin)
-  // ============================================================
 
   Future<String> exportMembersToCSV(String groupId) async {
     if (_isDisposed) throw StateError('GroupService disposed');
@@ -790,10 +715,6 @@ class GroupService {
     return sb.toString();
   }
 
-  // ============================================================
-  // STATISTIQUES
-  // ============================================================
-
   Future<Map<String, dynamic>> getGroupStatistics(String groupId) async {
     if (_isDisposed) throw StateError('GroupService disposed');
     if (!_GroupValidators.isValidUuid(groupId)) {
@@ -808,7 +729,7 @@ class GroupService {
     final mutedMembers = groupInfo.members.where((m) => m.isMuted).length;
     final onlineMembers = groupInfo.onlineCount;
 
-    return {
+    return <String, dynamic>{
       'total_members': groupInfo.memberCount,
       'online_members': onlineMembers,
       'new_members_this_week': newMembersThisWeek,
@@ -817,10 +738,6 @@ class GroupService {
       'age_in_days': groupInfo.ageInDays,
     };
   }
-
-  // ============================================================
-  // CODE D'INVITATION
-  // ============================================================
 
   Future<String> regenerateInviteCode(String groupId) async {
     if (_isDisposed) throw StateError('GroupService disposed');
@@ -833,7 +750,7 @@ class GroupService {
     try {
       await _supabase
           .from('group_info')
-          .update({'invite_code': newCode})
+          .update(<String, dynamic>{'invite_code': newCode})
           .eq('group_id', groupId)
           .timeout(_kDbTimeout);
 
@@ -880,7 +797,7 @@ class GroupService {
         return;
       }
 
-      await _supabase.from('conversation_participants').insert({
+      await _supabase.from('conversation_participants').insert(<String, dynamic>{
         'conversation_id': groupId,
         'user_id': uid,
         'role': 'member',
@@ -895,10 +812,6 @@ class GroupService {
       throw GroupException('Échec pour rejoindre le groupe', e);
     }
   }
-
-  // ============================================================
-  // QUITTER / SUPPRIMER
-  // ============================================================
 
   Future<void> leaveGroup(String groupId) async {
     if (_isDisposed) return;
@@ -965,10 +878,6 @@ class GroupService {
     }
   }
 
-  // ============================================================
-  // LISTE DES GROUPES
-  // ============================================================
-
   Future<List<String>> getUserGroupIds() async {
     if (_isDisposed) return [];
 
@@ -1015,10 +924,6 @@ class GroupService {
     }
     return groups;
   }
-
-  // ============================================================
-  // DISPOSE
-  // ============================================================
 
   void dispose() {
     if (_isDisposed) return;
