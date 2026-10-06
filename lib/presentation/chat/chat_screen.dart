@@ -1,28 +1,19 @@
+
 // lib/presentation/chat/chat_screen.dart
 // ============================================================================
-// THIX CHAT — ÉCRAN DE CONVERSATION (PRODUCTION ENTREPRISE)
+// THIX CHAT — ÉCRAN DE CONVERSATION (PRODUCTION ENTREPRISE) — v2
 // ----------------------------------------------------------------------------
-// SÉCURITÉ :
-//  ✅ Zéro appel Supabase direct : 100% via ChatService (couche d'accès données).
-//  ✅ Zéro syntaxe Dart 3 (records/patterns/switch-expr) → analyzer 3.4.0 OK.
-//  ✅ Sanitisation HTML/JS/control-chars de TOUT contenu entrant & sortant.
-//  ✅ Sanitisation URLs (schémas http/https uniquement) → anti-injection/phishing.
-//  ✅ Limites strictes : taille fichiers, durée audio, longueur message,
-//     fenêtre d'édition (15 min), fenêtre suppression pour tous (60 min),
-//     max 5 transferts, max 3 épinglés, throttle anti-spam envoi.
-//  ✅ Permissions avec divulgation préalable (micro/caméra) + refus gracieux.
-//  ✅ Logs obfusqués / désactivés en release (kDebugMode uniquement).
-//  ✅ Cache offline : exclusion des médias View-Once (pas de ré-ouverture locale).
-//  ✅ Export CSV réservé aux rôles agent/admin/support/enterprise.
-//  ✅ Timeouts + retry bornés sur chaque opération réseau (pas de freeze UI).
-//  ✅ Mot de passe chiffré : score >= 3 exigé + confirmation.
-//  ✅ Auto-destruction : purge silencieuse côté client (aucune confirmation).
-// ----------------------------------------------------------------------------
-// FONCTIONNALITÉS : swipe-reply (reçus + envoyés), swipe-gauche menu extra,
-//  édition + badge, suppression moi/tous, forward, pin + barre, favoris ⭐,
-//  recherche in-chat + serveur, jump first unread, View-Once, mentions @,
-//  rappels 🔔, éphémère visuel, audio (pause/préécoute/fix web), caméra,
-//  galerie, pager photos ◀▶, stickers + création perso, appels in/out/manqués.
+// NOUVEAUTÉS v2 :
+//  ✅ Swipe DROITE = répondre, sur TOUS les messages (moi + autres) — widget unique
+//  ✅ Swipe GAUCHE = menu (répondre, rappel, transférer, copier, favori, épingler,
+//     modifier, infos, supprimer)
+//  ✅ Suppression : feuille à 2 options (pour moi / pour tous)
+//  ✅ Auto-destruction : purge locale silencieuse chez les deux participants,
+//     sans aucune confirmation (purge à la seconde + realtime)
+//  ✅ Brouillons par conversation (sauvegarde auto, restauration, nettoyage à l'envoi)
+//  ✅ Fenêtre d'édition 15 min réellement appliquée côté client
+//  ✅ Sanitisation durcie : bidi/contrôles, URLs strictes, extensions dangereuses
+//  ✅ Retour fiable vers un message hors écran (jump / recherche / favoris)
 // ============================================================================
 import 'dart:async';
 import 'dart:convert';
@@ -71,7 +62,7 @@ import 'package:thix_id/services/chat/connection_service.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
 
 // ============================================================================
-// CONSTANTES (politique de sécurité & limites)
+// CONSTANTES
 // ============================================================================
 const Duration _kRequestTimeout = Duration(seconds: 15);
 const Duration _kUploadTimeout = Duration(seconds: 60);
@@ -81,8 +72,8 @@ const int _kPageSize = 30;
 const int _kLoadMoreThresholdPx = 200;
 const int _kLoadMoreThrottleMs = 500;
 const int _kMaxMessageLength = 5000;
-const int _kMaxFileSizeBytes = 25 * 1024 * 1024; // 25 Mo
-const int _kMaxStickerBytes = 512 * 1024; // 512 Ko
+const int _kMaxFileSizeBytes = 25 * 1024 * 1024;
+const int _kMaxStickerBytes = 512 * 1024;
 const int _kMaxAudioDurationSeconds = 300;
 const int _kTypingDebounceMs = 2000;
 const int _kMarkReadDebounceMs = 1000;
@@ -91,9 +82,13 @@ const int _kMaxForward = 5;
 const int _kSearchDebounceMs = 350;
 const int _kEditWindowMinutes = 15;
 const int _kDeleteForAllWindowMinutes = 60;
-const int _kSendThrottleMs = 600; // anti-spam
-const int _kExpirySweepSeconds = 15; // purge auto-destruct
+const int _kSendThrottleMs = 600;
+const int _kExpirySweepSeconds = 1; // purge auto-destruction à la seconde
+const int _kDraftSaveDebounceMs = 500;
+const double _kSwipeTrigger = 60;
+const double _kSwipeMax = 84;
 const String _kCustomStickersPrefKey = 'thix_custom_stickers_v1';
+const String _kDraftPrefix = 'thix_chat_draft_v1_';
 
 // ============================================================================
 // VALIDATEURS (sanitisation centralisée)
@@ -101,24 +96,47 @@ const String _kCustomStickersPrefKey = 'thix_custom_stickers_v1';
 class _ChatValidators {
   _ChatValidators._();
 
+  // Caractères de contrôle (on garde \n et \t pour les messages multi-lignes)
+  static final RegExp _ctrlKeepNl = RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]');
+  static final RegExp _ctrlAll = RegExp(r'[\x00-\x1F\x7F]');
+  // Contrôles bidirectionnels (spoofing RTL) + BOM / zero-width space.
+  // ⚠️ U+200D (ZWJ) volontairement conservé : indispensable aux emojis composés.
+  static final RegExp _bidi = RegExp(r'[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]');
+  static final RegExp _tags = RegExp(r'<[a-zA-Z/!?][^>]*>');
+  static final RegExp _jsScheme = RegExp(r'(javascript|vbscript)\s*:', caseSensitive: false);
+
   static String sanitize(String? input, {int maxLength = _kMaxMessageLength}) {
     if (input == null || input.trim().isEmpty) return '';
-    final doc = html_parser.parse(input);
-    var s = doc.body?.text ?? input;
+    var s = input;
+    if (s.contains('<')) {
+      final doc = html_parser.parse(s);
+      s = doc.body?.text ?? s;
+    }
     s = s
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
-        .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .replaceAll('\r\n', '\n')
+        .replaceAll(_tags, '')
+        .replaceAll(_jsScheme, '')
+        .replaceAll(_ctrlKeepNl, '')
+        .replaceAll(_bidi, '')
         .trim();
-    return s.length > maxLength ? s.substring(0, maxLength) : s;
+    if (s.length > maxLength) {
+      var end = maxLength;
+      // ne jamais couper une paire de surrogates (emoji)
+      final unit = s.codeUnitAt(end - 1);
+      if (unit >= 0xD800 && unit <= 0xDBFF) end--;
+      s = s.substring(0, end);
+    }
+    return s;
   }
 
   static String? sanitizeUrl(String? url) {
-    if (url == null || url.trim().isEmpty) return null;
-    final t = url.trim();
-    if (!t.startsWith('http://') && !t.startsWith('https://')) return null;
-    return t.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
+    if (url == null) return null;
+    final t = url.trim().replaceAll(_ctrlAll, '');
+    if (t.isEmpty || t.length > 2048) return null;
+    final u = Uri.tryParse(t);
+    if (u == null || !u.hasAuthority || u.host.isEmpty) return null;
+    if (u.scheme != 'http' && u.scheme != 'https') return null;
+    return t;
   }
 
   static String friendlyError(dynamic e) {
@@ -135,6 +153,12 @@ class _ChatValidators {
 
   static bool isValidFileSize(int bytes) => bytes > 0 && bytes <= _kMaxFileSizeBytes;
 
+  /// 🔒 Extensions exécutables / scripts refusées à l'envoi.
+  static const Set<String> _blockedExt = {
+    'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'sh', 'ps1', 'vbs', 'js', 'jar', 'apk', 'dll', 'lnk',
+  };
+  static bool isAllowedExtension(String? ext) => !_blockedExt.contains((ext ?? '').toLowerCase());
+
   static String getMediaType(String ext) {
     const img = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
     const vid = {'mp4', 'mov', 'avi', 'mkv'};
@@ -146,7 +170,6 @@ class _ChatValidators {
     return 'file';
   }
 
-  /// Score de robustesse mot de passe : 0..5 (>= 3 exigé en production)
   static int passwordScore(String pwd) {
     int score = 0;
     if (pwd.length >= 8) score++;
@@ -164,13 +187,12 @@ class _ChatValidators {
   }
 }
 
-/// l10n avec repli FR si la clé n'existe pas encore dans app_localizations.
+/// l10n avec repli FR si la clé n'existe pas encore.
 String _tr(AppLocalizations l10n, String key, String fallback) {
   final s = l10n.t(key);
   return s == key ? fallback : s;
 }
 
-/// Logs uniquement en debug (release = silencieux, zéro fuite de données).
 void _log(String message) {
   if (kDebugMode) debugPrint(message);
 }
@@ -199,8 +221,17 @@ Future<T> _chatRetry<T>(
   }
 }
 
+/// Lance une opération sans bloquer l'UI, en absorbant proprement l'erreur.
+Future<void> _fireAndForget(Future<dynamic> Function() fn) async {
+  try {
+    await fn();
+  } catch (e) {
+    _log('[Chat] ⚠️ background op: $e');
+  }
+}
+
 // ============================================================================
-// PROVIDER MESSAGES (cache offline sécurisé : exclusion View-Once)
+// PROVIDER MESSAGES
 // ============================================================================
 final chatMessagesProvider =
     StateNotifierProvider.family<ChatMsgNotifier, List<ChatMessage>, String>((ref, conversationId) {
@@ -219,11 +250,9 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
     loadInitial();
   }
 
-  /// 🔒 Sécurité : ne jamais persister localement les médias View-Once.
-  List<Map<String, dynamic>> _cacheable(List<ChatMessage> msgs) => msgs
-      .where((m) => !m.isViewOnce)
-      .map((m) => m.toJson())
-      .toList();
+  /// 🔒 Jamais de View-Once ni de message expiré dans le cache local.
+  List<Map<String, dynamic>> _cacheable(List<ChatMessage> msgs) =>
+      msgs.where((m) => !m.isViewOnce && !m.isExpired).map((m) => m.toJson()).toList();
 
   Future<void> _persist() async {
     final uid = svc.currentUserId;
@@ -239,20 +268,22 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
         () => svc.getMessages(convId, limit: pageSize, offset: 0),
         label: 'loadInitial',
       );
+      if (!mounted) return;
       hasMore = msgs.length >= pageSize;
-      msgs.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      state = msgs;
+      final live = msgs.where((m) => !m.isExpired).toList()..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      state = live;
       if (uid.isNotEmpty) {
-        unawaited(ChatOfflineCache.instance.saveMessages(uid, convId, _cacheable(msgs)));
+        unawaited(ChatOfflineCache.instance.saveMessages(uid, convId, _cacheable(live)));
       }
     } catch (e) {
       _log('[ChatMsg] ❌ Load initial error: $e');
+      if (!mounted) return;
       if (uid.isNotEmpty) {
         final cached = ChatOfflineCache.instance.readMessages(uid, convId);
         if (cached.isNotEmpty) {
           state = cached
               .map(ChatMessage.fromJson)
-              .where((m) => m.id.isNotEmpty && !m.isViewOnce)
+              .where((m) => m.id.isNotEmpty && !m.isViewOnce && !m.isExpired)
               .toList()
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
           hasMore = false;
@@ -272,8 +303,9 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
         () => svc.getMessages(convId, limit: pageSize, offset: page * pageSize),
         label: 'loadMore',
       );
+      if (!mounted) return;
       hasMore = msgs.length >= pageSize;
-      var current = [...state, ...msgs];
+      var current = [...state, ...msgs.where((m) => !m.isExpired)];
       final seen = <String>{};
       current = current.where((m) => seen.add(m.id)).toList();
       current.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -285,7 +317,6 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
     }
   }
 
-  /// Cherche un message en paginant (recherche serveur / jump) — borné.
   Future<bool> ensureLoaded(String messageId, {int maxPages = 6}) async {
     int guard = 0;
     while (guard < maxPages) {
@@ -298,11 +329,20 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
   }
 
   void upsertRealtime(List<ChatMessage> updated) {
-    if (updated.isEmpty) return;
+    if (updated.isEmpty || !mounted) return;
     var current = [...state];
     var changed = false;
     for (final msg in updated) {
       final idx = current.indexWhere((m) => m.id == msg.id);
+      // 💣 Auto-destruction : expiré ou soft-supprimé par le serveur → disparaît, sans trace.
+      final gone = msg.isExpired || (msg.isEphemeral && msg.isDeleted);
+      if (gone) {
+        if (idx != -1) {
+          current.removeAt(idx);
+          changed = true;
+        }
+        continue;
+      }
       if (idx != -1) {
         current[idx] = msg;
         changed = true;
@@ -320,14 +360,25 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
     }
   }
 
+  /// Purge silencieuse des messages auto-destructibles expirés.
+  void purgeExpired() {
+    if (!mounted) return;
+    final keep = state.where((m) => !m.isExpired).toList();
+    if (keep.length != state.length) {
+      state = keep;
+      unawaited(_persist());
+    }
+  }
+
   void removeLocal(String id) {
+    if (!mounted) return;
     state = state.where((m) => m.id != id).toList();
     unawaited(_persist());
   }
 }
 
 // ============================================================================
-// GROUPEMENT D'IMAGES (galeries ◀▶)
+// GROUPEMENT D'IMAGES
 // ============================================================================
 class _ChatListItem {
   final List<ChatMessage> messages;
@@ -366,6 +417,95 @@ List<_ChatListItem> _buildChatDisplayItems(List<ChatMessage> messages) {
     i++;
   }
   return items;
+}
+
+// ============================================================================
+// SWIPE UNIQUE : droite = répondre, gauche = menu
+// ============================================================================
+class _SwipeActions extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onReply;
+  final VoidCallback onMore;
+  const _SwipeActions({super.key, required this.child, required this.onReply, required this.onMore});
+
+  @override
+  State<_SwipeActions> createState() => _SwipeActionsState();
+}
+
+class _SwipeActionsState extends State<_SwipeActions> {
+  double _dx = 0;
+  bool _dragging = false;
+  bool _armed = false;
+
+  void _onUpdate(DragUpdateDetails d) {
+    final next = (_dx + d.delta.dx * 0.8).clamp(-_kSwipeMax, _kSwipeMax).toDouble();
+    final nowArmed = next.abs() >= _kSwipeTrigger;
+    if (nowArmed && !_armed) HapticFeedback.selectionClick();
+    _armed = nowArmed;
+    setState(() {
+      _dx = next;
+      _dragging = true;
+    });
+  }
+
+  void _onEnd([DragEndDetails? _]) {
+    final dx = _dx;
+    setState(() {
+      _dx = 0;
+      _dragging = false;
+    });
+    _armed = false;
+    if (dx >= _kSwipeTrigger) {
+      widget.onReply();
+    } else if (dx <= -_kSwipeTrigger) {
+      widget.onMore();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = (_dx.abs() / _kSwipeTrigger).clamp(0.0, 1.0).toDouble();
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragUpdate: _onUpdate,
+      onHorizontalDragEnd: _onEnd,
+      onHorizontalDragCancel: _onEnd,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: Align(
+              alignment: _dx >= 0 ? Alignment.centerLeft : Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: Opacity(
+                  opacity: progress,
+                  child: Transform.scale(
+                    scale: 0.7 + 0.3 * progress,
+                    child: _dx >= 0
+                        ? const Icon(Icons.reply_rounded, color: ThixPolicy.primary, size: 24)
+                        : const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.notifications_active_outlined, color: ThixPolicy.gold, size: 20),
+                              SizedBox(width: 6),
+                              Icon(Icons.info_outline_rounded, color: ThixPolicy.primary, size: 20),
+                            ],
+                          ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          AnimatedContainer(
+            duration: _dragging ? Duration.zero : const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            transform: Matrix4.translationValues(_dx, 0, 0),
+            child: widget.child,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ============================================================================
@@ -418,6 +558,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   Timer? _markReadTimer;
   Timer? _searchDebounce;
   Timer? _expiryTimer;
+  Timer? _draftTimer;
   DateTime? _lastConnCheck;
   DateTime? _lastLoadMore;
   bool _isAgent = false;
@@ -429,6 +570,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   // ── Édition ──
   String _editingMessageId = '';
+  // ── Brouillon ──
+  String _draftBeforeEdit = '';
+  bool _restoringDraft = false;
   // ── Recherche ──
   bool _searchActive = false;
   List<String> _searchMatches = <String>[];
@@ -456,221 +600,133 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   final List<Uint8List> _customStickers = <Uint8List>[];
   // ── Ancres de scroll ──
   final Map<String, GlobalKey> _msgKeys = <String, GlobalKey>{};
+  List<String> _displayIds = <String>[];
 
-  static const List<String> _emojis = [
-  '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇',
-  '🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚',
-  '😋','😛','😜','😝','🤑','🤗','🤭','🤫','🤔','🤐',
-  '😐','😑','😶','😏','😒','🙄','😬','😮‍💨','😔','😪',
-  '🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴',
-  '😵','😵‍💫','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕',
-  '😟','🙁','☹️','😮','😯','😲','😳','🥺','😦','😧',
-  '😨','😰','😥','😢','😭','😱','😖','😣','😞','😓',
-  '😩','😫','🥱','😤','😡','😠','🤬','🤡','👹','👺',
-  '👻','💀','☠️','👽','👾','🤖','💩','😺','😸','😹',
-  '😻','😼','😽','🙀','😿','😾','🫠','🫡','🫢','🫣',
-  '🫤','🫥','🫨','🫩','🥹','🥲','🫶','🤩','😈','👿',
-  '😺','😸','😹','😻','😼','😽','🙀','😿','😾','🙈',
-  '🙉','🙊','💯','✨','🔥','⭐','🌟','💫','💥','💢',
-];
+  static List<String> _uniq(List<String> l) => l.toSet().toList();
 
-static const List<String> _reactions = [
-  // Gestes
-  '👍','👎','👌','🤌','🤏','✌️','🤞','🫰','🤟','🤘',
-  '🤙','👈','👉','👆','👇','☝️','🖕','👋','🤚','🖐️',
-  '✋','🖖','👏','🙌','👐','🤲','🤝','🙏','💪','🦾',
-  '✍️','💅','🤳','👊','✊','🤛','🤜','🫶','🫂','🫳',
-  '🫴','🫵','🫱','🫲','🫸','🫷',
+  static final List<String> _emojis = _uniq(const [
+    '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇',
+    '🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚',
+    '😋','😛','😜','😝','🤑','🤗','🤭','🤫','🤔','🤐',
+    '😐','😑','😶','😏','😒','🙄','😬','😮‍💨','😔','😪',
+    '🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴',
+    '😵','😵‍💫','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕',
+    '😟','🙁','☹️','😮','😯','😲','😳','🥺','😦','😧',
+    '😨','😰','😥','😢','😭','😱','😖','😣','😞','😓',
+    '😩','😫','🥱','😤','😡','😠','🤬','🤡','👹','👺',
+    '👻','💀','☠️','👽','👾','🤖','💩','😺','😸','😹',
+    '😻','😼','😽','🙀','😿','😾','🫠','🫡','🫢','🫣',
+    '🫤','🫥','🫨','🥹','🥲','🫶','🤩','😈','👿','🙈',
+    '🙉','🙊','💯','✨','🔥','⭐','🌟','💫','💥','💢',
+  ]);
 
-  // Amour
-  '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','🩷',
-  '🩵','🩶','💔','❤️‍🔥','❤️‍🩹','❣️','💕','💞','💓','💗',
-  '💖','💘','💝','💟','♥️','💌','💋',
+  static final List<String> _reactions = _uniq(const [
+    // Gestes
+    '👍','👎','👌','🤌','🤏','✌️','🤞','🫰','🤟','🤘',
+    '🤙','👈','👉','👆','👇','☝️','👋','🤚','🖐️','✋',
+    '🖖','👏','🙌','👐','🤲','🤝','🙏','💪','🦾','✍️',
+    '💅','🤳','👊','✊','🤛','🤜','🫂','🫳','🫴','🫵',
+    // Amour
+    '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','🩷',
+    '🩵','🩶','💔','❤️‍🔥','❤️‍🩹','❣️','💕','💞','💓','💗',
+    '💖','💘','💝','💟','♥️','💌','💋',
+    // Joie / rire / surprise / tristesse / colère
+    '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇',
+    '🙂','😉','🥰','😍','😘','🤩','🥳','😎','🤗','🤪',
+    '😮','😯','😲','😳','🤯','😱','😵','🤨','🧐',
+    '😔','😟','🙁','😞','😓','😩','😫','🥺','😢','😭',
+    '😤','😡','😠','🤬','😈',
+    // Approbation / désaccord
+    '✅','☑️','✔️','🏆','🥇','🥈','🥉','🎯','💡',
+    '❌','🚫','⛔','⚠️','🙅','🤦','❗','❓','‼️','⁉️',
+    // Encouragement / célébration
+    '⚡','🚀','🏅','🎖️','👑','💎','🎉','🎊','🎈','🎁',
+    '🎂','🍰','🍾','🥂','🎆','🎇','🪩','🪅',
+    // Réflexion / fatigue / symboles
+    '💭','🧠','😮‍💨','😴','🥱','😌','☀️','🌈',
+  ]);
 
-  // Joie
-  '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇',
-  '🙂','😉','🥰','😍','😘','🤩','🥳','😎','🤗','😺',
-  '😸','😹','😻','😼','😽',
+  static final List<String> _objects = _uniq(const [
+    '📱','💻','🖥️','⌨️','🖱️','🖨️','💾','💿','📀','📷',
+    '📸','📹','📼','🎥','📽️','📡','🛰️','📟','🔌','🔋',
+    '🔦','🔍','🔎','🕹️','🎮','💽',
+    '📝','📄','📃','📑','📊','📈','📉','📋','📌','📍',
+    '📎','🖇️','📐','📏','✏️','✒️','🖊️','🖋️','🗂️','📁',
+    '📂','🗄️','🗃️','🗑️','📦','📬','📭','📮','📫','📚',
+    '📖','📕','📗','📘','📙','📒','📓','📔','📇','🗒️',
+    '📅','📆','🗓️','⏰','⌚','⏳','⌛',
+    '💼','🧰','🔧','🔨','⚙️','🪛','🪚','🪓','⛏️','🔩',
+    '🧲','🪜','🧱','🛠️','🧯','🪣','🧹','🧺','🧴','🧼',
+    '🪥','🪒','🔑','🗝️','🔒','🔓','🔐','🔏','🪢',
+    '💰','💵','💴','💶','💷','💳','🪙','🏧','🧾',
+    '🏷️','🛒','🛍️','💸','💲','💹','🏪','🏬','🏭','🏦',
+    '🏠','🏡','🏢','🚪','🪟','🛋️','🪑','🛏️','🚿','🛁',
+    '🚽','🪞','🕯️','🪴','🍽️','🥄','🍴','🔪','☕','🫖','🍳',
+    '💊','💉','🩺','🩹','🧬','🔬','🔭','🧪','🧫','🧮',
+    '🦷','🩻','🩼','🦽','🦯','⚕️',
+    '🚗','🚕','🚙','🚌','🚎','🚓','🚑','🚒','🚚','🚛',
+    '🚜','🏍️','🛵','🚲','🛴','🛹','🚆','🚇','🚉','🚂',
+    '🚃','🚋','🚝','🚄','🚅','🚈','🚞','🚊','✈️','🛫',
+    '🛬','🚁','🛸','🚀','⛵','🚤','🛥️','🚢','🛳️','⚓',
+    '🛟','🗺️','🧭','🛣️','🛤️','⛽','🚦','🚧','🅿️',
+    '🍎','🍏','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐',
+    '🍒','🍑','🥭','🍍','🥥','🥝','🍅','🥑','🥦','🥕',
+    '🌽','🥔','🍠','🧅','🧄','🍞','🥐','🥖','🥨','🧀',
+    '🥚','🍗','🍖','🍔','🍟','🍕','🌭','🌮','🌯',
+    '🥪','🥗','🍝','🍜','🍲','🍛','🍣','🍤','🍚','🍙',
+    '🍱','🥟','🧁','🍩','🍪','🍫','🍬','🍭',
+    '🍿','🍯','🥜','🍵','🧃','🥤','🧋',
+    '🎧','🎤','🎙️','🎸','🎹','🥁','🎺','🎻','🎷','🪕',
+    '🎼','🎵','🎶','🎬','🎞️','🎭','🎨','🖌️','🖍️','🧩',
+    '🎲','♟️','🎪','🎡','🎢','🎠','🎫','🎟️',
+    '🎀','🧨','💐',
+    '⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱',
+    '🏓','🏸','🏒','🏑','🥍','🏏','🥊','🥋','⛳','🏹',
+    '🎣','🤿','🏋️','🤸','⛹️','🤾','🏊','🚴','🏃','🧗','🎽',
+    '🌱','🌿','☘️','🍀','🌳','🌲','🌴','🌵','🌾','🌻',
+    '🌹','🌷','🌺','🌸','🌼','🪻','🪷','🍁','🍂','🍃',
+    '🌍','🌎','🌏','🌙','🌞','🌝','🌚',
+    '☁️','⛅','🌤️','🌧️','⛈️','🌩️','🌨️','❄️','🌪️',
+    '🌊','💧','💦','🌋','🏔️','🗻','🏝️','🏜️','🏕️','🏞️','🏖️',
+    '🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯',
+    '🦁','🐮','🐷','🐸','🐵','🐔','🐧',
+    '🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄',
+    '🐝','🦋','🐌','🐞','🐜','🕷️','🐢','🐍','🦎','🐙',
+    '🦑','🦀','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🦓',
+    '🦒','🐘','🦏','🦛','🐪','🐫','🦘','🦥','🦦','🦫',
+    '🏥','🏨','🏫','⛪','🕌','🕍','⛩️','🛕','🏛️',
+    '🗼','🗽','🗿','🏰','🏯','⛺','🏟️',
+  ]);
 
-  // Rire
-  '🤣','😂','😆','😅','😹','🤭','🤪','😜','😝','😛',
-  '😏','🙈','🙉','🙊',
-
-  // Surprise
-  '😮','😯','😲','😳','🤯','😱','🫨','😵','😵‍💫','🤨',
-  '🧐','😦','😧','😨','😰',
-
-  // Tristesse
-  '😔','😟','🙁','☹️','😞','😓','😩','😫','🥺','😢',
-  '😭','😥','😪','😿','🥹',
-
-  // Colère
-  '😐','😑','😶','😒','🙄','😤','😡','😠','🤬','👿',
-  '😈','💢','💥',
-
-  // Approbation
-  '✅','☑️','✔️','👍','👌','👏','🙌','💯','⭐','🌟',
-  '🏆','🥇','🎯','💡','🔥',
-
-  // Désaccord
-  '❌','🚫','⛔','⚠️','👎','🙅','🤦','😒','🙄','❗',
-  '❓','‼️','⁉️',
-
-  // Encouragement
-  '💪','🔥','⚡','🚀','🌟','⭐','✨','💫','💯','🏆',
-  '🥇','🥈','🥉','🏅','🎖️','👑','💎','🎯',
-
-  // Célébration
-  '🎉','🎊','🥳','🎈','🎁','🎂','🍰','🍾','🥂','🏆',
-  '🥇','🥈','🥉','🎖️','👑','🎆','🎇','🪩','🪅',
-
-  // Réflexion
-  '🤔','🧐','🤨','🤓','😐','😑','😶','🫤','🫥','💭',
-  '💡','❓','❔','⁉️','🧠',
-
-  // Soutien
-  '🤝','🫂','🙏','🫶','❤️','💪','👏','🙌','👍','❤️‍🩹',
-  '💚','💙','🤍',
-
-  // Admiration
-  '😍','🥰','🤩','🤯','👏','🙌','❤️','🔥','💎','👑',
-  '🌟','✨','💯',
-
-  // Fatigue / soulagement
-  '😮‍💨','😪','😴','🥱','😌','🫠','😵‍💫',
-
-  // Symboles rapides
-  '💯','🔥','✨','⭐','🌟','💫','⚡','💥','💢','☀️',
-  '🌈','🎯','🚀','💎','👑',
-];
-
-static const List<String> _objects = [
-  // Technologie
-  '📱','💻','🖥️','⌨️','🖱️','🖨️','💾','💿','📀','📷',
-  '📸','📹','📼','🎥','📽️','📡','🛰️','📟','🔌','🔋',
-  '🔦','💡','🔍','🔎','🕹️','🎮','💽',
-
-  // Bureau
-  '📝','📄','📃','📑','📊','📈','📉','📋','📌','📍',
-  '📎','🖇️','📐','📏','✏️','✒️','🖊️','🖋️','🗂️','📁',
-  '📂','🗄️','🗃️','🗑️','📦','📬','📭','📮','📫','📚',
-  '📖','📕','📗','📘','📙','📒','📓','📔','📇','🗒️',
-  '📅','📆','🗓️','⏰','⌚','⏳','⌛',
-
-  // Travail et outils
-  '💼','🧰','🔧','🔨','⚙️','🪛','🪚','🪓','⛏️','🔩',
-  '🧲','🪜','🧱','🛠️','🧯','🪣','🧹','🧺','🧴','🧼',
-  '🪥','🪒','🔑','🗝️','🔒','🔓','🔐','🔏','🪢',
-
-  // Argent et commerce
-  '💰','💵','💴','💶','💷','💳','🪙','💎','🏧','🧾',
-  '🏷️','🛒','🛍️','💸','💲','💹','🏪','🏬','🏭','🏦',
-
-  // Maison
-  '🏠','🏡','🏢','🚪','🪟','🛋️','🪑','🛏️','🚿','🛁',
-  '🚽','🪞','🕯️','🪴','🍽️','🥄','🍴','🔪','☕','🫖',
-  '🍳',
-
-  // Santé et sciences
-  '💊','💉','🩺','🩹','🧬','🔬','🔭','🧪','🧫','🧮',
-  '🧠','🦷','🩻','🩼','🦽','🦯','⚕️',
-
-  // Transport
-  '🚗','🚕','🚙','🚌','🚎','🚓','🚑','🚒','🚚','🚛',
-  '🚜','🏍️','🛵','🚲','🛴','🛹','🚆','🚇','🚉','🚂',
-  '🚃','🚋','🚝','🚄','🚅','🚈','🚞','🚊','✈️','🛫',
-  '🛬','🚁','🛸','🚀','⛵','🚤','🛥️','🚢','🛳️','⚓',
-  '🛟','🗺️','🧭','🛣️','🛤️','⛽','🚦','🚧','🅿️',
-
-  // Nourriture
-  '🍎','🍏','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐',
-  '🍒','🍑','🥭','🍍','🥥','🥝','🍅','🥑','🥦','🥕',
-  '🌽','🥔','🍠','🧅','🧄','🍞','🥐','🥖','🥨','🧀',
-  '🥚','🍳','🍗','🍖','🍔','🍟','🍕','🌭','🌮','🌯',
-  '🥪','🥗','🍝','🍜','🍲','🍛','🍣','🍤','🍚','🍙',
-  '🍱','🥟','🍰','🎂','🧁','🍩','🍪','🍫','🍬','🍭',
-  '🍿','🍯','🥜','☕','🍵','🧃','🥤','🧋','🫖',
-
-  // Musique et divertissement
-  '🎧','🎤','🎙️','🎸','🎹','🥁','🎺','🎻','🎷','🪕',
-  '🎼','🎵','🎶','🎬','🎞️','🎭','🎨','🖌️','🖍️','🧩',
-  '🎮','🕹️','🎲','♟️','🎯','🎪','🎡','🎢','🎠','🎫',
-  '🎟️',
-
-  // Fête et anniversaire
-  '🎈','🎀','🎂','🍰','🧁','🎁','🎊','🎉','🥳','🪅',
-  '🪩','🎆','🎇','🧨','💐','💝','🏆','🥇','🥈','🥉',
-  '🏅','🎖️','👑',
-
-  // Sport
-  '⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱',
-  '🏓','🏸','🏒','🏑','🥍','🏏','🥊','🥋','⛳','🏹',
-  '🎣','🤿','🏋️','🤸','⛹️','🤾','🏊','🚴','🏃','🧗',
-  '🎽',
-
-  // Nature
-  '🌱','🌿','☘️','🍀','🌳','🌲','🌴','🌵','🌾','🌻',
-  '🌹','🌷','🌺','🌸','🌼','🪻','🪷','🍁','🍂','🍃',
-  '🌍','🌎','🌏','🌙','☀️','🌞','🌝','🌚','⭐','🌈',
-  '☁️','⛅','🌤️','🌧️','⛈️','🌩️','🌨️','❄️','🌪️',
-  '🌊','💧','💦','🔥','🌋','🏔️','🗻','🏝️','🏜️','🏕️',
-  '🏞️','🏖️',
-
-  // Animaux
-  '🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯',
-  '🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧',
-  '🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄',
-  '🐝','🦋','🐌','🐞','🐜','🕷️','🐢','🐍','🦎','🐙',
-  '🦑','🦀','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🦓',
-  '🦒','🐘','🦏','🦛','🐪','🐫','🦘','🦥','🦦','🦫',
-
-  // Lieux
-  '🏥','🏦','🏨','🏫','⛪','🕌','🕍','⛩️','🛕','🏛️',
-  '🗼','🗽','🗿','🏰','🏯','⛺','🏟️',
-];
-
-static const List<String> _flags = [
-  // Europe
-  '🇦🇱','🇦🇩','🇦🇹','🇧🇾','🇧🇪','🇧🇦','🇧🇬','🇭🇷','🇨🇾','🇨🇿',
-  '🇩🇰','🇪🇪','🇫🇮','🇫🇷','🇩🇪','🇬🇷','🇭🇺','🇮🇸','🇮🇪','🇮🇹',
-  '🇽🇰','🇱🇻','🇱🇮','🇱🇹','🇱🇺','🇲🇹','🇲🇩','🇲🇨','🇲🇪','🇳🇱',
-  '🇲🇰','🇳🇴','🇵🇱','🇵🇹','🇷🇴','🇷🇺','🇸🇲','🇷🇸','🇸🇰','🇸🇮',
-  '🇪🇸','🇸🇪','🇨🇭','🇺🇦','🇬🇧','🇻🇦',
-
-  // Afrique
-  '🇩🇿','🇦🇴','🇧🇯','🇧🇼','🇧🇫','🇧🇮','🇨🇻','🇨🇲','🇨🇫','🇹🇩',
-  '🇰🇲','🇨🇬','🇨🇩','🇨🇮','🇩🇯','🇪🇬','🇬🇶','🇪🇷','🇸🇿','🇪🇹',
-  '🇬🇦','🇬🇲','🇬🇭','🇬🇳','🇬🇼','🇰🇪','🇱🇸','🇱🇷','🇱🇾','🇲🇬',
-  '🇲🇼','🇲🇱','🇲🇷','🇲🇺','🇲🇦','🇲🇿','🇳🇦','🇳🇪','🇳🇬','🇷🇼',
-  '🇸🇹','🇸🇳','🇸🇨','🇸🇱','🇸🇴','🇿🇦','🇸🇸','🇸🇩','🇹🇿','🇹🇬',
-  '🇹🇳','🇺🇬','🇿🇲','🇿🇼',
-
-  // Amérique du Nord et Caraïbes
-  '🇦🇬','🇧🇸','🇧🇧','🇧🇿','🇨🇦','🇨🇷','🇨🇺','🇩🇲','🇩🇴','🇸🇻',
-  '🇬🇩','🇬🇹','🇭🇹','🇭🇳','🇯🇲','🇲🇽','🇳🇮','🇵🇦','🇰🇳','🇱🇨',
-  '🇻🇨','🇹🇹','🇺🇸',
-
-  // Amérique du Sud
-  '🇦🇷','🇧🇴','🇧🇷','🇨🇱','🇨🇴','🇪🇨','🇬🇾','🇵🇾','🇵🇪','🇸🇷',
-  '🇺🇾','🇻🇪',
-
-  // Asie
-  '🇦🇫','🇦🇲','🇦🇿','🇧🇭','🇧🇩','🇧🇹','🇧🇳','🇰🇭','🇨🇳','🇬🇪',
-  '🇮🇳','🇮🇩','🇮🇷','🇮🇶','🇮🇱','🇯🇵','🇯🇴','🇰🇿','🇰🇼','🇰🇬',
-  '🇱🇦','🇱🇧','🇲🇾','🇲🇻','🇲🇳','🇲🇲','🇳🇵','🇰🇵','🇴🇲','🇵🇰',
-  '🇵🇸','🇵🇭','🇶🇦','🇸🇦','🇸🇬','🇰🇷','🇱🇰','🇸🇾','🇹🇯','🇹🇭',
-  '🇹🇱','🇹🇷','🇹🇲','🇦🇪','🇺🇿','🇻🇳','🇾🇪',
-
-  // Océanie
-  '🇦🇺','🇫🇯','🇰🇮','🇲🇭','🇫🇲','🇳🇷','🇳🇿','🇵🇼','🇵🇬','🇼🇸',
-  '🇸🇧','🇹🇴','🇹🇻','🇻🇺',
-
-  // Territoires / régions fréquemment utilisés
-  '🇦🇽','🇦🇸','🇦🇼','🇧🇲','🇧🇶','🇨🇽','🇨🇨','🇨🇰','🇨🇼','🇫🇴',
-  '🇬🇮','🇬🇱','🇬🇵','🇬🇺','🇭🇰','🇮🇲','🇯🇪','🇯🇲','🇰🇾','🇲🇴',
-  '🇲🇶','🇲🇸','🇳🇨','🇳🇫','🇵🇫','🇵🇷','🇷🇪','🇸🇽','🇹🇨','🇻🇬',
-  '🇻🇮'
-];
+  static final List<String> _flags = _uniq(const [
+    '🇦🇱','🇦🇩','🇦🇹','🇧🇾','🇧🇪','🇧🇦','🇧🇬','🇭🇷','🇨🇾','🇨🇿',
+    '🇩🇰','🇪🇪','🇫🇮','🇫🇷','🇩🇪','🇬🇷','🇭🇺','🇮🇸','🇮🇪','🇮🇹',
+    '🇽🇰','🇱🇻','🇱🇮','🇱🇹','🇱🇺','🇲🇹','🇲🇩','🇲🇨','🇲🇪','🇳🇱',
+    '🇲🇰','🇳🇴','🇵🇱','🇵🇹','🇷🇴','🇷🇺','🇸🇲','🇷🇸','🇸🇰','🇸🇮',
+    '🇪🇸','🇸🇪','🇨🇭','🇺🇦','🇬🇧','🇻🇦',
+    '🇩🇿','🇦🇴','🇧🇯','🇧🇼','🇧🇫','🇧🇮','🇨🇻','🇨🇲','🇨🇫','🇹🇩',
+    '🇰🇲','🇨🇬','🇨🇩','🇨🇮','🇩🇯','🇪🇬','🇬🇶','🇪🇷','🇸🇿','🇪🇹',
+    '🇬🇦','🇬🇲','🇬🇭','🇬🇳','🇬🇼','🇰🇪','🇱🇸','🇱🇷','🇱🇾','🇲🇬',
+    '🇲🇼','🇲🇱','🇲🇷','🇲🇺','🇲🇦','🇲🇿','🇳🇦','🇳🇪','🇳🇬','🇷🇼',
+    '🇸🇹','🇸🇳','🇸🇨','🇸🇱','🇸🇴','🇿🇦','🇸🇸','🇸🇩','🇹🇿','🇹🇬',
+    '🇹🇳','🇺🇬','🇿🇲','🇿🇼',
+    '🇦🇬','🇧🇸','🇧🇧','🇧🇿','🇨🇦','🇨🇷','🇨🇺','🇩🇲','🇩🇴','🇸🇻',
+    '🇬🇩','🇬🇹','🇭🇹','🇭🇳','🇯🇲','🇲🇽','🇳🇮','🇵🇦','🇰🇳','🇱🇨',
+    '🇻🇨','🇹🇹','🇺🇸',
+    '🇦🇷','🇧🇴','🇧🇷','🇨🇱','🇨🇴','🇪🇨','🇬🇾','🇵🇾','🇵🇪','🇸🇷',
+    '🇺🇾','🇻🇪',
+    '🇦🇫','🇦🇲','🇦🇿','🇧🇭','🇧🇩','🇧🇹','🇧🇳','🇰🇭','🇨🇳','🇬🇪',
+    '🇮🇳','🇮🇩','🇮🇷','🇮🇶','🇮🇱','🇯🇵','🇯🇴','🇰🇿','🇰🇼','🇰🇬',
+    '🇱🇦','🇱🇧','🇲🇾','🇲🇻','🇲🇳','🇲🇲','🇳🇵','🇰🇵','🇴🇲','🇵🇰',
+    '🇵🇸','🇵🇭','🇶🇦','🇸🇦','🇸🇬','🇰🇷','🇱🇰','🇸🇾','🇹🇯','🇹🇭',
+    '🇹🇱','🇹🇷','🇹🇲','🇦🇪','🇺🇿','🇻🇳','🇾🇪',
+    '🇦🇺','🇫🇯','🇰🇮','🇲🇭','🇫🇲','🇳🇷','🇳🇿','🇵🇼','🇵🇬','🇼🇸',
+    '🇸🇧','🇹🇴','🇹🇻','🇻🇺',
+    '🇦🇽','🇦🇸','🇦🇼','🇧🇲','🇧🇶','🇨🇽','🇨🇨','🇨🇰','🇨🇼','🇫🇴',
+    '🇬🇮','🇬🇱','🇬🇵','🇬🇺','🇭🇰','🇮🇲','🇯🇪','🇰🇾','🇲🇴',
+    '🇲🇶','🇲🇸','🇳🇨','🇳🇫','🇵🇫','🇵🇷','🇷🇪','🇸🇽','🇹🇨','🇻🇬',
+    '🇻🇮',
+  ]);
 
   @override
   void initState() {
@@ -680,7 +736,6 @@ static const List<String> _flags = [
     _connectionService = ConnectionService();
     _chatService.startPresenceHeartbeat();
 
-    // Capturer le nombre de non-lus AVANT markAsRead (jump-to-unread)
     try {
       final convs = ref.read(chatListProvider).all;
       for (final c in convs) {
@@ -694,8 +749,13 @@ static const List<String> _flags = [
     }
 
     _inputController.addListener(() {
+      if (!mounted) return;
       setState(() {});
-      _onTypingChanged(_inputController.text);
+      if (_restoringDraft) return;
+      if (_editingMessageId.isEmpty) {
+        _onTypingChanged(_inputController.text);
+        _scheduleDraftSave();
+      }
       _onMentionQueryChanged(_inputController.text);
     });
     _searchCtrl.addListener(_onSearchChanged);
@@ -707,6 +767,7 @@ static const List<String> _flags = [
     _loadPinned();
     _loadStarred();
     _loadCustomStickers();
+    _restoreDraft();
     _markAsRead();
 
     try {
@@ -717,11 +778,11 @@ static const List<String> _flags = [
       _log('[Chat] ⚠️ realtime subscribe: $e');
     }
 
-    // ✅ Purge périodique des messages auto-destruct expirés (silencieux)
+    // 💣 Purge silencieuse des messages auto-destructibles (chez moi ET chez l'autre :
+    // chaque client applique la même règle d'expiration, sans aucune confirmation).
     _expiryTimer = Timer.periodic(const Duration(seconds: _kExpirySweepSeconds), (_) {
       if (!mounted) return;
-      final msgs = ref.read(chatMessagesProvider(widget.conversationId));
-      if (msgs.any((m) => m.isExpired)) setState(() {});
+      ref.read(chatMessagesProvider(widget.conversationId).notifier).purgeExpired();
     });
 
     _scrollController.addListener(_onScroll);
@@ -729,6 +790,7 @@ static const List<String> _flags = [
 
   @override
   void dispose() {
+    _flushDraft();
     _chatService.stopPresenceHeartbeat();
     try {
       _chatService.stopTypingListener(widget.conversationId);
@@ -744,6 +806,7 @@ static const List<String> _flags = [
     _markReadTimer?.cancel();
     _searchDebounce?.cancel();
     _expiryTimer?.cancel();
+    _draftTimer?.cancel();
     _messageSub?.cancel();
     _presenceSub?.cancel();
     for (final t in _reminderTimers.values) {
@@ -753,6 +816,58 @@ static const List<String> _flags = [
     _recordTimer?.cancel();
     _audioRecorder.dispose();
     super.dispose();
+  }
+
+  // ==========================================================================
+  // BROUILLONS ✍️
+  // ==========================================================================
+  String get _draftKey => '$_kDraftPrefix${_chatService.currentUserId}_${widget.conversationId}';
+
+  Future<void> _restoreDraft() async {
+    if (_chatService.currentUserId.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final d = _ChatValidators.sanitize(prefs.getString(_draftKey));
+      if (!mounted || d.isEmpty || _inputController.text.isNotEmpty || _editingMessageId.isNotEmpty) return;
+      _restoringDraft = true;
+      _inputController.text = d;
+      _inputController.selection = TextSelection.fromPosition(TextPosition(offset: d.length));
+      _restoringDraft = false;
+    } catch (e) {
+      _restoringDraft = false;
+      _log('[Chat] ⚠️ restoreDraft: $e');
+    }
+  }
+
+  void _scheduleDraftSave() {
+    _draftTimer?.cancel();
+    final text = _inputController.text;
+    _draftTimer = Timer(const Duration(milliseconds: _kDraftSaveDebounceMs), () {
+      unawaited(_persistDraft(text));
+    });
+  }
+
+  /// Sauvegarde immédiate (pause de l'app / fermeture de l'écran).
+  void _flushDraft() {
+    _draftTimer?.cancel();
+    final pending = _editingMessageId.isNotEmpty ? _draftBeforeEdit : _inputController.text;
+    unawaited(_persistDraft(pending));
+  }
+
+  Future<void> _persistDraft(String raw) async {
+    if (_chatService.currentUserId.isEmpty) return;
+    final key = _draftKey;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final clean = _ChatValidators.sanitize(raw);
+      if (clean.isEmpty) {
+        await prefs.remove(key);
+      } else {
+        await prefs.setString(key, clean);
+      }
+    } catch (e) {
+      _log('[Chat] ⚠️ persistDraft: $e');
+    }
   }
 
   // ==========================================================================
@@ -783,11 +898,13 @@ static const List<String> _flags = [
       case AppLifecycleState.resumed:
         _chatService.startPresenceHeartbeat();
         _checkConnectionSecurity();
+        ref.read(chatMessagesProvider(widget.conversationId).notifier).purgeExpired();
         break;
       case AppLifecycleState.inactive:
       case AppLifecycleState.paused:
       case AppLifecycleState.detached:
       case AppLifecycleState.hidden:
+        _flushDraft();
         _chatService.stopPresenceHeartbeat();
         break;
     }
@@ -874,7 +991,7 @@ static const List<String> _flags = [
             .map((m) => m.id)
             .toList();
         if (idsToDeliver.isNotEmpty) {
-          unawaited(_chatService.markMessagesDelivered(idsToDeliver));
+          unawaited(_fireAndForget(() => _chatService.markMessagesDelivered(idsToDeliver)));
         }
         for (final m in updated) {
           if (m.isPinned && !_pinnedMessages.any((p) => p.id == m.id)) {
@@ -912,7 +1029,7 @@ static const List<String> _flags = [
   void _sendTypingStatus(bool t) {
     if (!_isConnectionValid) return;
     if (_chatService.currentUserId.isEmpty) return;
-    unawaited(_chatService.sendTypingStatus(widget.conversationId, isTyping: t));
+    unawaited(_fireAndForget(() => _chatService.sendTypingStatus(widget.conversationId, isTyping: t)));
   }
 
   void _onTypingChanged(String t) {
@@ -933,7 +1050,7 @@ static const List<String> _flags = [
   }
 
   // ==========================================================================
-  // HELPERS GÉNÉRIQUES
+  // HELPERS
   // ==========================================================================
   ChatMessage _overrideMsg(ChatMessage m, Map<String, dynamic> patch) {
     try {
@@ -956,11 +1073,22 @@ static const List<String> _flags = [
     return k;
   }
 
-  void _scrollToMessage(String id) {
+  /// Aller à un message, même s'il n'est pas encore construit à l'écran.
+  void _scrollToMessage(String id, {bool retry = true}) {
     final ctx = _msgKeys[id]?.currentContext;
     if (ctx != null) {
       Scrollable.ensureVisible(ctx, alignment: 0.3, duration: const Duration(milliseconds: 300));
+      return;
     }
+    if (!retry || !_scrollController.hasClients) return;
+    final idx = _displayIds.indexOf(id);
+    if (idx < 0) return;
+    final target = (idx * 88.0).clamp(0.0, _scrollController.position.maxScrollExtent).toDouble();
+    _scrollController
+        .animateTo(target, duration: const Duration(milliseconds: 300), curve: Curves.easeOut)
+        .then((_) {
+      if (mounted) WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToMessage(id, retry: false));
+    });
   }
 
   void _markAsRead() {
@@ -996,6 +1124,25 @@ static const List<String> _flags = [
     }
     final show = _scrollController.position.pixels > 240;
     if (show != _showScrollDown) setState(() => _showScrollDown = show);
+  }
+
+  /// Répondre à un message (swipe droite / menu).
+  void _setReply(ChatMessage msg) {
+    if (msg.isDeleted || msg.isDeletedForAll) return;
+    HapticFeedback.selectionClick();
+    if (_editingMessageId.isNotEmpty) _cancelEdit();
+    setState(() {
+      _replyToId = msg.id;
+      _showStickers = false;
+    });
+    _inputFocus.requestFocus();
+  }
+
+  bool _canEdit(ChatMessage m) {
+    if (m.senderId != _chatService.currentUserId) return false;
+    if (m.isDeleted || m.isDeletedForAll || m.isViewOnce || m.hasMedia) return false;
+    if ('${m.mediaType}'.startsWith('call_')) return false;
+    return DateTime.now().difference(m.createdAt.toLocal()).inMinutes < _kEditWindowMinutes;
   }
 
   // ==========================================================================
@@ -1068,24 +1215,37 @@ static const List<String> _flags = [
   // ÉDITION (fenêtre 15 min) + badge "Modifié"
   // ==========================================================================
   void _startEdit(ChatMessage msg) {
+    final l10n = AppLocalizations.of(context);
+    if (!_canEdit(msg)) {
+      _showWarning(_tr(l10n, 'chat_edit_window', 'Modification possible pendant $_kEditWindowMinutes min, texte uniquement.'));
+      return;
+    }
     HapticFeedback.selectionClick();
+    if (_editingMessageId.isEmpty) _draftBeforeEdit = _inputController.text;
+    _restoringDraft = true;
+    _inputController.text = msg.content;
+    _inputController.selection = TextSelection.fromPosition(TextPosition(offset: msg.content.length));
+    _restoringDraft = false;
     setState(() {
       _editingMessageId = msg.id;
       _replyToId = '';
       _showStickers = false;
-      _inputController.text = msg.content;
-      _inputController.selection = TextSelection.fromPosition(TextPosition(offset: msg.content.length));
     });
     _inputFocus.requestFocus();
   }
 
   Future<void> _applyEdit(ChatMessage msg, String newContent) async {
+    final l10n = AppLocalizations.of(context);
+    if (!_canEdit(msg)) {
+      _showWarning(_tr(l10n, 'chat_edit_window', 'Modification possible pendant $_kEditWindowMinutes min, texte uniquement.'));
+      if (_editingMessageId.isNotEmpty) _cancelEdit();
+      return;
+    }
     final clean = _ChatValidators.sanitize(newContent, maxLength: _kMaxMessageLength);
     if (clean.isEmpty || clean == msg.content) {
       _cancelEdit();
       return;
     }
-    final l10n = AppLocalizations.of(context);
     try {
       final updated = await _chatRetry(() => _chatService.editMessage(msg.id, clean), label: 'editMessage');
       if (updated != null) {
@@ -1103,33 +1263,85 @@ static const List<String> _flags = [
     } catch (e) {
       _showError(_ChatValidators.friendlyError(e));
     } finally {
-      _cancelEdit();
+      if (mounted && _editingMessageId.isNotEmpty) _cancelEdit();
     }
   }
 
+  /// Annule l'édition et RESTAURE le brouillon qui était en cours de saisie.
   void _cancelEdit() {
-    setState(() {
-      _editingMessageId = '';
-      _inputController.clear();
-    });
+    final restore = _draftBeforeEdit;
+    _draftBeforeEdit = '';
+    _restoringDraft = true;
+    _inputController.text = restore;
+    _inputController.selection = TextSelection.fromPosition(TextPosition(offset: restore.length));
+    _restoringDraft = false;
+    if (mounted) setState(() => _editingMessageId = '');
   }
 
   // ==========================================================================
-  // SUPPRESSIONS (moi / tous < 60 min / auto-destruct silencieuse)
+  // SUPPRESSIONS : feuille à 2 options (moi / tous)
   // ==========================================================================
-  Future<void> _deleteForMe(ChatMessage msg) async {
-    // ✅ Auto-destruct expiré : suppression immédiate, SANS confirmation
+  void _showDeleteOptions(ChatMessage msg) {
+    // 💣 Message auto-destructible expiré : disparition immédiate, SANS demande.
     if (msg.isExpired) {
       ref.read(chatMessagesProvider(widget.conversationId).notifier).removeLocal(msg.id);
       return;
     }
     final l10n = AppLocalizations.of(context);
-    final ok = await _confirmDialog(
-      title: _tr(l10n, 'chat_delete_title', 'Supprimer le message ?'),
-      body: _tr(l10n, 'chat_delete_for_me_body', 'Suppression uniquement pour vous.'),
-      danger: true,
+    final canAll = msg.canBeDeletedForAll(_chatService.currentUserId);
+    HapticFeedback.selectionClick();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: ThixPolicy.card,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 10),
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
+            const SizedBox(height: 12),
+            Text(_tr(l10n, 'chat_delete_title', 'Supprimer le message ?'),
+                style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16)),
+            const SizedBox(height: 6),
+            ListTile(
+              leading: const Icon(Icons.person_outline_rounded, color: ThixPolicy.textMain),
+              title: Text(_tr(l10n, 'chat_delete_for_me', 'Supprimer pour moi')),
+              subtitle: Text(_tr(l10n, 'chat_delete_for_me_body', 'Les autres participants le verront toujours.')),
+              onTap: () {
+                Navigator.pop(ctx);
+                _deleteForMe(msg);
+              },
+            ),
+            ListTile(
+              enabled: canAll,
+              leading: Icon(Icons.delete_forever_rounded, color: canAll ? ThixPolicy.danger : ThixPolicy.textMuted),
+              title: Text(_tr(l10n, 'chat_delete_for_all', 'Supprimer pour tous'),
+                  style: TextStyle(color: canAll ? ThixPolicy.danger : ThixPolicy.textMuted, fontWeight: FontWeight.w600)),
+              subtitle: Text(canAll
+                  ? _tr(l10n, 'chat_delete_for_all_body', 'Le message sera remplacé par « Message supprimé » chez tous.')
+                  : _tr(l10n, 'chat_delete_for_all_unavailable', 'Réservé à vos messages, pendant $_kDeleteForAllWindowMinutes min après envoi.')),
+              onTap: canAll
+                  ? () {
+                      Navigator.pop(ctx);
+                      _deleteForAll(msg);
+                    }
+                  : null,
+            ),
+            ListTile(
+              leading: const Icon(Icons.close_rounded, color: ThixPolicy.textSecondary),
+              title: Text(_tr(l10n, 'common_cancel', 'Annuler')),
+              onTap: () => Navigator.pop(ctx),
+            ),
+            const SizedBox(height: 6),
+          ],
+        ),
+      ),
     );
-    if (ok != true) return;
+  }
+
+  Future<void> _deleteForMe(ChatMessage msg) async {
+    final l10n = AppLocalizations.of(context);
     try {
       await _chatRetry(() => _chatService.deleteMessage(msg.id), label: 'deleteMessage');
       ref.read(chatMessagesProvider(widget.conversationId).notifier).removeLocal(msg.id);
@@ -1141,17 +1353,10 @@ static const List<String> _flags = [
 
   Future<void> _deleteForAll(ChatMessage msg) async {
     final l10n = AppLocalizations.of(context);
-    // 🔒 Fenêtre serveur : 60 min (double contrôle client)
     if (!msg.canBeDeletedForAll(_chatService.currentUserId)) {
       _showWarning(_tr(l10n, 'chat_delete_window', 'Suppression pour tous possible pendant $_kDeleteForAllWindowMinutes min après envoi.'));
       return;
     }
-    final ok = await _confirmDialog(
-      title: _tr(l10n, 'chat_delete_for_all_title', 'Supprimer pour tous ?'),
-      body: _tr(l10n, 'chat_delete_for_all_body', 'Le message sera remplacé par « Message supprimé » chez tous les participants.'),
-      danger: true,
-    );
-    if (ok != true) return;
     try {
       await _chatRetry(() => _chatService.deleteMessageForAll(msg.id), label: 'deleteMessageForAll');
       ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([
@@ -1161,30 +1366,6 @@ static const List<String> _flags = [
     } catch (e) {
       _showError(_ChatValidators.friendlyError(e));
     }
-  }
-
-  Future<bool?> _confirmDialog({required String title, required String body, bool danger = false}) {
-    final l10n = AppLocalizations.of(context);
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: ThixPolicy.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
-        title: Text(title, style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16)),
-        content: Text(body, style: ThixPolicy.bodyStyle),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(_tr(l10n, 'common_cancel', 'Annuler'))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: danger ? ThixPolicy.danger : ThixPolicy.primary,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(_tr(l10n, 'common_confirm', 'Confirmer')),
-          ),
-        ],
-      ),
-    );
   }
 
   // ==========================================================================
@@ -1316,8 +1497,24 @@ static const List<String> _flags = [
         _starredIds.remove(msg.id);
       }
     });
-    ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([_overrideMsg(msg, {'is_starred': nowStarred})]);
-    unawaited(_chatService.toggleStarMessage(msg.id));
+    final notifier = ref.read(chatMessagesProvider(widget.conversationId).notifier);
+    notifier.upsertRealtime([_overrideMsg(msg, {'is_starred': nowStarred})]);
+    try {
+      await _chatService.toggleStarMessage(msg.id);
+    } catch (e) {
+      // rollback optimiste si le serveur refuse
+      _log('[Chat] ⚠️ toggleStar: $e');
+      if (!mounted) return;
+      setState(() {
+        if (nowStarred) {
+          _starredIds.remove(msg.id);
+        } else {
+          _starredIds.add(msg.id);
+        }
+      });
+      notifier.upsertRealtime([_overrideMsg(msg, {'is_starred': !nowStarred})]);
+      _showError(_ChatValidators.friendlyError(e));
+    }
   }
 
   void _showStarredSheet() {
@@ -1409,55 +1606,59 @@ static const List<String> _flags = [
     final q = _searchCtrl.text.trim();
     if (q.length < 3) return;
     final l10n = AppLocalizations.of(context);
-    final results = await _chatRetry(
-      () => _chatService.searchInConversation(widget.conversationId, q, limit: 30),
-      label: 'searchInConversation',
-    );
-    if (!mounted) return;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Container(
-        height: MediaQuery.of(ctx).size.height * 0.6,
-        decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: const BorderRadius.vertical(top: Radius.circular(22))),
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        child: Column(
-          children: [
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
-            const SizedBox(height: 12),
-            Text('${_tr(l10n, 'chat_search_results', 'Résultats')} : ${results.length}',
-                style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
-            const SizedBox(height: 8),
-            Expanded(
-              child: ListView.builder(
-                itemCount: results.length,
-                itemBuilder: (ctx, i) {
-                  final m = results[i];
-                  return ListTile(
-                    title: Text(m.previewText, maxLines: 2, overflow: TextOverflow.ellipsis),
-                    subtitle: Text(DateFormat('dd/MM/yyyy HH:mm').format(m.createdAt.toLocal()),
-                        style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted)),
-                    onTap: () async {
-                      Navigator.pop(ctx);
-                      setState(() => _searchActive = false);
-                      final notifier = ref.read(chatMessagesProvider(widget.conversationId).notifier);
-                      final found = await notifier.ensureLoaded(m.id);
-                      if (mounted && found) {
-                        setState(() {});
-                        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToMessage(m.id));
-                      } else if (mounted) {
-                        _showInfo(_tr(l10n, 'chat_search_notfound', 'Message hors de portée'));
-                      }
-                    },
-                  );
-                },
+    try {
+      final results = await _chatRetry(
+        () => _chatService.searchInConversation(widget.conversationId, q, limit: 30),
+        label: 'searchInConversation',
+      );
+      if (!mounted) return;
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (ctx) => Container(
+          height: MediaQuery.of(ctx).size.height * 0.6,
+          decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: const BorderRadius.vertical(top: Radius.circular(22))),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            children: [
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
+              const SizedBox(height: 12),
+              Text('${_tr(l10n, 'chat_search_results', 'Résultats')} : ${results.length}',
+                  style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
+              const SizedBox(height: 8),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: results.length,
+                  itemBuilder: (ctx, i) {
+                    final m = results[i];
+                    return ListTile(
+                      title: Text(m.previewText, maxLines: 2, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(DateFormat('dd/MM/yyyy HH:mm').format(m.createdAt.toLocal()),
+                          style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted)),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        setState(() => _searchActive = false);
+                        final notifier = ref.read(chatMessagesProvider(widget.conversationId).notifier);
+                        final found = await notifier.ensureLoaded(m.id);
+                        if (mounted && found) {
+                          setState(() {});
+                          WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToMessage(m.id));
+                        } else if (mounted) {
+                          _showInfo(_tr(l10n, 'chat_search_notfound', 'Message hors de portée'));
+                        }
+                      },
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      _showError(_ChatValidators.friendlyError(e));
+    }
   }
 
   void _anchorFirstUnread(List<ChatMessage> messages) {
@@ -1493,19 +1694,19 @@ static const List<String> _flags = [
     final match = RegExp(r'@([A-Za-zÀ-ÖØ-öø-ÿ0-9_.]{0,20})$').firstMatch(text);
     if (match == null) return;
     final prefix = text.substring(0, match.start);
-    _inputController.text = prefix + '@${member.displayName} ';
+    _inputController.text = '$prefix@${member.displayName} ';
     _inputController.selection = TextSelection.fromPosition(TextPosition(offset: _inputController.text.length));
     if (!_mentionedUserIds.contains(member.userId)) _mentionedUserIds.add(member.userId);
     setState(() => _mentionSuggestions = <GroupMember>[]);
   }
 
   // ==========================================================================
-  // VIEW ONCE (aucune persistance locale)
+  // VIEW ONCE
   // ==========================================================================
   void _onViewOnceOpened(ChatMessage msg) {
     if (_viewedOnceIds.contains(msg.id)) return;
     setState(() => _viewedOnceIds.add(msg.id));
-    unawaited(_chatService.markViewOnceAsSeen(msg.id));
+    unawaited(_fireAndForget(() => _chatService.markViewOnceAsSeen(msg.id)));
     ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([_overrideMsg(msg, const {'has_been_viewed': true})]);
   }
 
@@ -1525,13 +1726,13 @@ static const List<String> _flags = [
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _infoRow(_tr(l10n, 'chat_info_sender', 'Expéditeur'), msg.senderName),
+            _infoRow(_tr(l10n, 'chat_info_sender', 'Expéditeur'), _ChatValidators.sanitize(msg.senderName, maxLength: 60)),
             _infoRow(_tr(l10n, 'chat_info_date', 'Date'), DateFormat('dd/MM/yyyy HH:mm:ss').format(msg.createdAt.toLocal())),
             if (msg.senderId == _chatService.currentUserId)
               _infoRow(_tr(l10n, 'chat_info_status', 'Statut'),
                   msg.isRead ? _tr(l10n, 'chat_info_read', 'Lu') : (msg.isDelivered ? _tr(l10n, 'chat_info_delivered', 'Distribué') : _tr(l10n, 'chat_info_sent', 'Envoyé'))),
             if (msg.hasMedia) _infoRow(_tr(l10n, 'chat_info_media', 'Média'), '${_ChatValidators.sanitize(msg.mediaName, maxLength: 40)} (${(msg.mediaSize ?? 0) ~/ 1024} Ko)'),
-            if (msg.isForwarded) _infoRow(_tr(l10n, 'chat_info_forwarded', 'Transféré depuis'), msg.forwardedFromSenderName ?? '-'),
+            if (msg.isForwarded) _infoRow(_tr(l10n, 'chat_info_forwarded', 'Transféré depuis'), _ChatValidators.sanitize(msg.forwardedFromSenderName, maxLength: 60).isEmpty ? '-' : _ChatValidators.sanitize(msg.forwardedFromSenderName, maxLength: 60)),
             if (msg.isEphemeral) _infoRow(_tr(l10n, 'chat_info_ephemeral', 'Éphémère'), '${msg.ephemeralDuration ?? 0}s'),
             if (msg.isViewOnce) _infoRow('View once', msg.hasBeenViewed ? _tr(l10n, 'chat_info_opened', 'Ouvert') : _tr(l10n, 'chat_info_pending', 'En attente')),
             if (msg.reminderAt != null) _infoRow(_tr(l10n, 'chat_info_reminder', 'Rappel'), DateFormat('dd/MM HH:mm').format(msg.reminderAt!.toLocal())),
@@ -1554,23 +1755,30 @@ static const List<String> _flags = [
         ),
       );
 
+  /// 🔒 Anti-injection CSV (formules Excel) : préfixe les cellules dangereuses.
+  String _csvCell(String raw) {
+    var s = raw.replaceAll(';', ',').replaceAll('\n', ' ').replaceAll('\r', ' ');
+    if (s.isNotEmpty && '=+-@'.contains(s[0])) s = "'$s";
+    return s;
+  }
+
   Future<void> _exportConversation() async {
-    if (!_isAgent) return; // 🔒 contrôle rôle côté client (serveur fait foi)
+    if (!_isAgent) return;
     final l10n = AppLocalizations.of(context);
     final msgs = ref.read(chatMessagesProvider(widget.conversationId));
     final sb = StringBuffer('date;expediteur;contenu\n');
     for (final m in msgs.reversed) {
-      if (m.isViewOnce) continue; // 🔒 jamais exporter les view-once
+      if (m.isViewOnce || m.isExpired) continue;
       sb.writeln('${DateFormat('yyyy-MM-dd HH:mm').format(m.createdAt.toLocal())};'
-          '${m.senderName.replaceAll(';', ',')};'
-          '${m.content.replaceAll(';', ',').replaceAll('\n', ' ')}');
+          '${_csvCell(m.senderName)};'
+          '${_csvCell(m.content)}');
     }
     await Clipboard.setData(ClipboardData(text: sb.toString()));
     _showSuccess(_tr(l10n, 'chat_export_done', 'Conversation copiée (CSV)'));
   }
 
   // ==========================================================================
-  // APPELS / PERMISSIONS (divulgation préalable)
+  // APPELS / PERMISSIONS
   // ==========================================================================
   Future<bool> _checkPermissionWithDisclosure(Permission permission, String explanation) async {
     if (kIsWeb) return true;
@@ -1621,6 +1829,7 @@ static const List<String> _flags = [
       final hasCam = await _checkPermissionWithDisclosure(Permission.camera, _tr(l10n, 'chat_cam_call_disclosure', 'La caméra est nécessaire pour les appels vidéo.'));
       if (!hasCam) return;
     }
+    if (!mounted) return;
     final myId = _chatService.currentUserId;
     final otherId = widget.conversation.participantIds.firstWhere((id) => id != myId, orElse: () => '');
     if (otherId.isEmpty) return;
@@ -1635,7 +1844,7 @@ static const List<String> _flags = [
   }
 
   // ==========================================================================
-  // AUDIO : FIX WEB + PAUSE + PRÉÉCOUTE + DESIGN
+  // AUDIO
   // ==========================================================================
   Future<void> _startRecording() async {
     final l10n = AppLocalizations.of(context);
@@ -1645,7 +1854,6 @@ static const List<String> _flags = [
     if (!hasPerm) return;
     try {
       final ts = DateTime.now().millisecondsSinceEpoch;
-      // ✅ CORRECTION : mp3 non supporté → wav/opus/aacLc uniquement
       final configs = kIsWeb
           ? <Map<String, dynamic>>[
               {'cfg': const RecordConfig(encoder: AudioEncoder.opus, bitRate: 128000), 'ext': 'webm', 'path': 'audio_$ts.webm'},
@@ -1738,7 +1946,6 @@ static const List<String> _flags = [
     }
   }
 
-  /// 🔒 Bytes audio : http (blob:) sur web, File sur mobile — jamais dart:io sur web.
   Future<Uint8List> _fetchAudioBytes(String path) async {
     if (kIsWeb) {
       final r = await http.get(Uri.parse(path)).timeout(_kRequestTimeout);
@@ -1795,7 +2002,7 @@ static const List<String> _flags = [
   }
 
   // ==========================================================================
-  // CAPTURE PHOTOS (caméra / galerie)
+  // CAPTURE PHOTOS / FICHIERS
   // ==========================================================================
   Future<void> _pickFromCamera() async {
     HapticFeedback.selectionClick();
@@ -1804,7 +2011,7 @@ static const List<String> _flags = [
       if (x == null) return;
       final bytes = await x.readAsBytes();
       if (!_ChatValidators.isValidFileSize(bytes.length)) {
-        _showWarning(_tr(AppLocalizations.of(context), 'chat_file_too_big', 'Fichier trop volumineux'));
+        if (mounted) _showWarning(_tr(AppLocalizations.of(context), 'chat_file_too_big', 'Fichier trop volumineux'));
         return;
       }
       if (mounted) setState(() => _selectedFiles.add(PlatformFile(name: x.name, size: bytes.length, bytes: bytes)));
@@ -1836,9 +2043,11 @@ static const List<String> _flags = [
     try {
       final result = await FilePicker.platform.pickFiles(allowMultiple: true, withData: true);
       if (result != null && result.files.isNotEmpty) {
-        final validFiles = result.files.where((f) => _ChatValidators.isValidFileSize(f.size)).toList();
-        if (validFiles.length < result.files.length) {
-          _showWarning('${_tr(AppLocalizations.of(context), 'chat_file_too_big', 'Fichier trop volumineux :')} ${result.files.length - validFiles.length} ignoré(s)');
+        final validFiles = result.files
+            .where((f) => _ChatValidators.isValidFileSize(f.size) && _ChatValidators.isAllowedExtension(f.extension))
+            .toList();
+        if (validFiles.length < result.files.length && mounted) {
+          _showWarning('${_tr(AppLocalizations.of(context), 'chat_file_rejected', 'Fichier refusé (taille ou type) :')} ${result.files.length - validFiles.length}');
         }
         if (validFiles.isNotEmpty && mounted) setState(() => _selectedFiles.addAll(validFiles));
       }
@@ -1853,7 +2062,7 @@ static const List<String> _flags = [
   }
 
   // ==========================================================================
-  // STICKERS PERSO (création + persistance locale chiffrable)
+  // STICKERS PERSO
   // ==========================================================================
   Future<void> _loadCustomStickers() async {
     try {
@@ -1940,7 +2149,7 @@ static const List<String> _flags = [
   }
 
   // ==========================================================================
-  // PAGER PHOTOS ◀▶
+  // PAGER PHOTOS
   // ==========================================================================
   void _showPhotoPager(List<ChatMessage> imgs, int start) {
     Navigator.of(context).push(MaterialPageRoute(
@@ -1950,7 +2159,7 @@ static const List<String> _flags = [
   }
 
   // ==========================================================================
-  // ENVOI (throttle anti-spam + limites)
+  // ENVOI
   // ==========================================================================
   Future<void> _sendMessage() async {
     final l10n = AppLocalizations.of(context);
@@ -1970,7 +2179,6 @@ static const List<String> _flags = [
     final text = _ChatValidators.sanitize(_inputController.text.trim(), maxLength: _kMaxMessageLength);
     if (text.isEmpty && _selectedFiles.isEmpty && _audioBytes == null) return;
     if (_isSending) return;
-    // 🔒 Throttle anti-spam
     final now = DateTime.now();
     if (_lastSendAt != null && now.difference(_lastSendAt!).inMilliseconds < _kSendThrottleMs) return;
     _lastSendAt = now;
@@ -2029,8 +2237,8 @@ static const List<String> _flags = [
         final imageFiles = <PlatformFile>[];
         final otherFiles = <PlatformFile>[];
         for (final f in filesToSend) {
-          if (!_ChatValidators.isValidFileSize(f.size)) {
-            _showError('${_tr(l10n, 'chat_file_too_big', 'Fichier trop volumineux :')} ${_ChatValidators.sanitize(f.name, maxLength: 40)}');
+          if (!_ChatValidators.isValidFileSize(f.size) || !_ChatValidators.isAllowedExtension(f.extension)) {
+            _showError('${_tr(l10n, 'chat_file_rejected', 'Fichier refusé (taille ou type) :')} ${_ChatValidators.sanitize(f.name, maxLength: 40)}');
             continue;
           }
           final ext = (f.extension ?? '').toLowerCase();
@@ -2118,8 +2326,13 @@ static const List<String> _flags = [
         ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([msg]);
       }
       if (mounted) {
+        // ✍️ Envoi réussi : le brouillon est supprimé
+        _draftTimer?.cancel();
+        _restoringDraft = true;
+        _inputController.clear();
+        _restoringDraft = false;
+        unawaited(_persistDraft(''));
         setState(() {
-          _inputController.clear();
           _replyToId = '';
           _audioBytes = null;
           _localAudioPath = null;
@@ -2217,7 +2430,7 @@ static const List<String> _flags = [
     ));
   }
 
-  // ==========================================================================
+// ==========================================================================
   // PRÉSENCE
   // ==========================================================================
   Future<void> _getParticipantInfo() async {
@@ -2262,6 +2475,12 @@ static const List<String> _flags = [
     return '${_tr(l10n, 'chat_on', 'le')} ${DateFormat('dd/MM/yyyy').format(localDate)}';
   }
 
+  String _replyPreview(List<ChatMessage> messages) {
+    final found = messages.where((m) => m.id == _replyToId).toList();
+    if (found.isEmpty) return '';
+    return _ChatValidators.sanitize(found.first.previewText, maxLength: 100);
+  }
+
   // ==========================================================================
   // BUILD
   // ==========================================================================
@@ -2270,9 +2489,9 @@ static const List<String> _flags = [
     final l10n = AppLocalizations.of(context);
     final messages = ref.watch(chatMessagesProvider(widget.conversationId));
     final msgNotifier = ref.watch(chatMessagesProvider(widget.conversationId).notifier);
-    // ✅ Purge visuelle : les messages expirés disparaissent sans confirmation
     final visible = messages.where((m) => !m.isExpired).toList();
     final displayItems = _buildChatDisplayItems(visible);
+    _displayIds = displayItems.map((e) => e.messages.first.id).toList();
     final currentUid = _chatService.currentUserId;
 
     if (!_unreadAnchorDone && messages.isNotEmpty) {
@@ -2368,43 +2587,12 @@ static const List<String> _flags = [
                             );
                           }
 
-                          // ✅ Swipe-to-reply : reçus (bubble) + envoyés (ici)
-                          content = Dismissible(
-                            key: ValueKey('swipe_reply_${firstMsg.id}'),
-                            direction: DismissDirection.startToEnd,
-                            confirmDismiss: (_) async {
-                              HapticFeedback.selectionClick();
-                              setState(() => _replyToId = firstMsg.id);
-                              return false;
-                            },
-                            background: Container(
-                              alignment: Alignment.centerLeft,
-                              padding: const EdgeInsets.only(left: 24),
-                              child: const Icon(Icons.reply_rounded, color: ThixPolicy.primary),
-                            ),
-                            child: content,
-                          );
-
-                          // ✅ Swipe gauche = menu extra (rappel, info, copier, transférer)
-                          content = Dismissible(
-                            key: ValueKey('swipe_extra_${firstMsg.id}'),
-                            direction: DismissDirection.endToStart,
-                            confirmDismiss: (_) async {
-                              _showExtraSheet(firstMsg);
-                              return false;
-                            },
-                            background: Container(
-                              alignment: Alignment.centerRight,
-                              padding: const EdgeInsets.only(right: 24),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.notifications_active_outlined, color: ThixPolicy.gold, size: 18),
-                                  SizedBox(width: 6),
-                                  Icon(Icons.info_outline_rounded, color: ThixPolicy.primary, size: 18),
-                                ],
-                              ),
-                            ),
+                          // ✅ Swipe UNIQUE pour TOUS les messages (moi + autres) :
+                          //    droite = répondre · gauche = menu (rappel, infos, ...)
+                          content = _SwipeActions(
+                            key: ValueKey('swipe_${firstMsg.id}'),
+                            onReply: () => _setReply(firstMsg),
+                            onMore: () => _showExtraSheet(firstMsg),
                             child: content,
                           );
 
@@ -2474,12 +2662,7 @@ static const List<String> _flags = [
               if (_editingMessageId.isNotEmpty) _buildEditBanner(l10n),
               if (_replyToId.isNotEmpty)
                 _ReplyBanner(
-                  text: _ChatValidators.sanitize(
-                    messages.where((m) => m.id == _replyToId).isEmpty
-                        ? ''
-                        : messages.firstWhere((m) => m.id == _replyToId).content,
-                    maxLength: 100,
-                  ),
+                  text: _replyPreview(messages),
                   onClose: () {
                     HapticFeedback.selectionClick();
                     setState(() => _replyToId = '');
@@ -2496,7 +2679,7 @@ static const List<String> _flags = [
   }
 
   // ==========================================================================
-  // BUBBLE + CALLBACKS
+  // BUBBLE + MENU SWIPE GAUCHE
   // ==========================================================================
   Widget _buildSingleBubble(ChatMessage msg, bool isOwn, List<ChatMessage> messages) {
     final idx = messages.indexWhere((m) => m.id == msg.id);
@@ -2512,16 +2695,14 @@ static const List<String> _flags = [
     return ChatMessageBubble(
       message: msg,
       isOwn: isOwn,
-      onReply: () {
-        HapticFeedback.selectionClick();
-        setState(() => _replyToId = msg.id);
-      },
+      onReply: () => _setReply(msg),
       onReaction: (r) {
         HapticFeedback.lightImpact();
-        unawaited(_chatService.toggleReaction(msg.id, r));
+        unawaited(_fireAndForget(() => _chatService.toggleReaction(msg.id, r)));
       },
-      onDelete: () => _deleteForMe(msg),
-      onDeleteForAll: () => _deleteForAll(msg),
+      // 🗑️ Les deux callbacks ouvrent la même feuille : « pour moi » / « pour tous »
+      onDelete: () => _showDeleteOptions(msg),
+      onDeleteForAll: () => _showDeleteOptions(msg),
       onEdit: (newContent) => _applyEdit(msg, newContent),
       onForward: () => _showForwardSheet(msg),
       onPin: () => _togglePin(msg),
@@ -2539,51 +2720,54 @@ static const List<String> _flags = [
   void _showExtraSheet(ChatMessage msg) {
     final l10n = AppLocalizations.of(context);
     HapticFeedback.selectionClick();
+    final starred = _starredIds.contains(msg.id) || msg.isStarred;
+    final canEdit = _canEdit(msg);
+    final hasText = msg.content.trim().isNotEmpty;
+
+    Widget tile(IconData icon, Color color, String label, VoidCallback action, BuildContext ctx) => ListTile(
+          dense: true,
+          leading: Icon(icon, color: color),
+          title: Text(label, style: color == ThixPolicy.danger ? TextStyle(color: color, fontWeight: FontWeight.w600) : null),
+          onTap: () {
+            Navigator.pop(ctx);
+            action();
+          },
+        );
+
     showModalBottomSheet(
       context: context,
       backgroundColor: ThixPolicy.card,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 10),
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
-            ListTile(
-              leading: const Icon(Icons.notifications_active_outlined, color: ThixPolicy.gold),
-              title: Text(_tr(l10n, 'chat_remind', 'Me rappeler')),
-              onTap: () {
-                Navigator.pop(ctx);
-                _showRemindSheet(msg);
-              },
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.8),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 10),
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
+                const SizedBox(height: 6),
+                tile(Icons.reply_rounded, ThixPolicy.primary, _tr(l10n, 'chat_reply', 'Répondre'), () => _setReply(msg), ctx),
+                tile(Icons.notifications_active_outlined, ThixPolicy.gold, _tr(l10n, 'chat_remind', 'Me rappeler'), () => _showRemindSheet(msg), ctx),
+                tile(Icons.forward_rounded, ThixPolicy.textMain, _tr(l10n, 'chat_forward', 'Transférer'), () => _showForwardSheet(msg), ctx),
+                if (hasText)
+                  tile(Icons.copy_rounded, ThixPolicy.textMuted, _tr(l10n, 'chat_copy', 'Copier'), () {
+                    Clipboard.setData(ClipboardData(text: _ChatValidators.sanitize(msg.content, maxLength: _kMaxMessageLength)));
+                    _showSuccess(_tr(l10n, 'chat_copied', 'Copié'));
+                  }, ctx),
+                tile(starred ? Icons.star_rounded : Icons.star_outline_rounded, ThixPolicy.gold,
+                    starred ? _tr(l10n, 'chat_unstar', 'Retirer des favoris') : _tr(l10n, 'chat_star', 'Ajouter aux favoris'), () => _toggleStar(msg), ctx),
+                tile(msg.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined, ThixPolicy.gold,
+                    msg.isPinned ? _tr(l10n, 'chat_unpin', 'Désépingler') : _tr(l10n, 'chat_pin', 'Épingler'), () => _togglePin(msg), ctx),
+                if (canEdit) tile(Icons.edit_rounded, ThixPolicy.primary, _tr(l10n, 'chat_edit', 'Modifier'), () => _startEdit(msg), ctx),
+                tile(Icons.info_outline_rounded, ThixPolicy.primary, _tr(l10n, 'chat_info', 'Informations du message'), () => _showMessageInfo(msg), ctx),
+                tile(Icons.delete_outline_rounded, ThixPolicy.danger, _tr(l10n, 'chat_delete', 'Supprimer'), () => _showDeleteOptions(msg), ctx),
+                const SizedBox(height: 8),
+              ],
             ),
-            ListTile(
-              leading: const Icon(Icons.forward_rounded, color: ThixPolicy.textMain),
-              title: Text(_tr(l10n, 'chat_forward', 'Transférer')),
-              onTap: () {
-                Navigator.pop(ctx);
-                _showForwardSheet(msg);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.copy_rounded, color: ThixPolicy.textMuted),
-              title: Text(_tr(l10n, 'chat_copy', 'Copier')),
-              onTap: () {
-                Navigator.pop(ctx);
-                Clipboard.setData(ClipboardData(text: _ChatValidators.sanitize(msg.content, maxLength: _kMaxMessageLength)));
-                _showSuccess(_tr(l10n, 'chat_copied', 'Copié'));
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.info_outline_rounded, color: ThixPolicy.primary),
-              title: Text(_tr(l10n, 'chat_info', 'Informations du message')),
-              onTap: () {
-                Navigator.pop(ctx);
-                _showMessageInfo(msg);
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
+          ),
         ),
       ),
     );
@@ -2611,7 +2795,7 @@ static const List<String> _flags = [
                 setState(() => _pinnedCursor = (_pinnedCursor + 1) % _pinnedMessages.length);
                 _scrollToMessage(msg.id);
               },
-              child: Text('${msg.senderName}: ${msg.previewText}',
+              child: Text('${_ChatValidators.sanitize(msg.senderName, maxLength: 40)}: ${msg.previewText}',
                   maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMain, fontWeight: FontWeight.w600)),
             ),
@@ -2716,8 +2900,8 @@ static const List<String> _flags = [
                   leading: CircleAvatar(
                     radius: 14,
                     backgroundColor: ThixPolicy.tint,
-                    backgroundImage: m.avatarUrl != null ? CachedNetworkImageProvider(m.avatarUrl!) : null,
-                    child: m.avatarUrl == null ? const Icon(Icons.person, size: 14, color: ThixPolicy.textSecondary) : null,
+                    backgroundImage: _ChatValidators.sanitizeUrl(m.avatarUrl) != null ? CachedNetworkImageProvider(_ChatValidators.sanitizeUrl(m.avatarUrl)!) : null,
+                    child: _ChatValidators.sanitizeUrl(m.avatarUrl) == null ? const Icon(Icons.person, size: 14, color: ThixPolicy.textSecondary) : null,
                   ),
                   title: Text('@${_ChatValidators.sanitize(m.displayName, maxLength: 40)}',
                       style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 13)),
@@ -2760,6 +2944,7 @@ static const List<String> _flags = [
           icon: Icon(Icons.arrow_back_rounded, color: ThixPolicy.textMain),
           onPressed: () {
             HapticFeedback.selectionClick();
+            _flushDraft();
             _markAsRead();
             context.pop();
           },
@@ -3085,7 +3270,7 @@ static const List<String> _flags = [
   }
 
   // ==========================================================================
-  // DIALOGUES ÉPHÉMÈRE + MOT DE PASSE ROBUSTE
+  // DIALOGUES ÉPHÉMÈRE + MOT DE PASSE
   // ==========================================================================
   void _showEphemeralTimerDialog() {
     final l10n = AppLocalizations.of(context);
@@ -3270,7 +3455,7 @@ static const List<String> _flags = [
   }
 
   // ==========================================================================
-  // STICKERS (4 catégories + Mes stickers)
+  // STICKERS
   // ==========================================================================
   Widget _buildStickerPicker(AppLocalizations l10n) {
     return SizedBox(
@@ -3770,6 +3955,7 @@ class _ChatWaveformAudioPlayer extends StatefulWidget {
 
 class _ChatWaveformAudioPlayerState extends State<_ChatWaveformAudioPlayer> {
   final AudioPlayer _audioPlayer = AudioPlayer();
+  final List<StreamSubscription<dynamic>> _subs = [];
   bool _isPlaying = false;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
@@ -3783,19 +3969,22 @@ class _ChatWaveformAudioPlayerState extends State<_ChatWaveformAudioPlayer> {
     } else {
       _audioPlayer.setSourceUrl(widget.audioUrl);
     }
-    _audioPlayer.onPlayerStateChanged.listen((state) {
+    _subs.add(_audioPlayer.onPlayerStateChanged.listen((state) {
       if (mounted) setState(() => _isPlaying = state == PlayerState.playing);
-    });
-    _audioPlayer.onDurationChanged.listen((d) {
+    }));
+    _subs.add(_audioPlayer.onDurationChanged.listen((d) {
       if (mounted) setState(() => _duration = d);
-    });
-    _audioPlayer.onPositionChanged.listen((p) {
+    }));
+    _subs.add(_audioPlayer.onPositionChanged.listen((p) {
       if (mounted) setState(() => _position = p);
-    });
+    }));
   }
 
   @override
   void dispose() {
+    for (final s in _subs) {
+      s.cancel();
+    }
     _audioPlayer.stop();
     _audioPlayer.dispose();
     super.dispose();
@@ -3809,7 +3998,6 @@ class _ChatWaveformAudioPlayerState extends State<_ChatWaveformAudioPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final progress = _duration.inMilliseconds > 0 ? _position.inMilliseconds / _duration.inMilliseconds : 0.0;
     return Row(
       children: [
