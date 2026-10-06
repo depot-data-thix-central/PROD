@@ -2173,10 +2173,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
             Text('${(_pinnedCursor % _pinnedMessages.length) + 1}/${_pinnedMessages.length}',
                 style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted)),
           IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.push_pin_off_outlined, size: 16, color: ThixPolicy.textSecondary),
-            onPressed: () => _togglePin(msg),
-            tooltip: _tr(l10n, 'chat_unpin', 'Désépingler'),
+  visualDensity: VisualDensity.compact,
+  icon: const Icon(Icons.push_pin_outlined, size: 16, color: ThixPolicy.textSecondary),
+  onPressed: () => _togglePin(msg),
+  tooltip: _tr(l10n, 'chat_unpin', 'Désépingler'),
+),
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
