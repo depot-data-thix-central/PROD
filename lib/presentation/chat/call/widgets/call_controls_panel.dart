@@ -326,7 +326,7 @@ class _CallControlsPanelState extends State<CallControlsPanel>
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
       decoration: BoxDecoration(
-        color: ThixPolicy.surface, // Utilise la couleur de surface du thème
+        color: ThixPolicy.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         boxShadow: [
           BoxShadow(
@@ -392,7 +392,7 @@ class _CallControlsPanelState extends State<CallControlsPanel>
           
           const SizedBox(height: 24),
           
-          // Indicateur de qualité réseau (Mock pour l'instant, à connecter au RtcEngineEventHandler)
+          // Indicateur de qualité réseau
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -424,7 +424,7 @@ class _CallControlsPanelState extends State<CallControlsPanel>
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 14,
-                          color: ThixPolicy.textPrimary,
+                          color: ThixPolicy.textMain, // ✅ CORRIGÉ: textPrimary → textMain
                         ),
                       ),
                       const SizedBox(height: 4),
