@@ -84,7 +84,6 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
   @override
   void initState() {
     super.initState();
-    // Rejoindre uniquement si aucun space n'est actif (singleton)
     Future.microtask(_ensureJoined);
     _listenInvites();
   }
@@ -100,16 +99,23 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
       return;
     }
     final user = ref.read(authControllerProvider).value;
+
+    // ✅ FIX : lecture sûre de isVerified (champ peut ne pas exister sur AppUser)
+    final bool isVerified;
+    try {
+      isVerified = (user as dynamic)?.isVerified ?? false;
+    } catch (_) {
+      isVerified = false;
+    }
+
     await ref.read(audioSpaceControllerProvider.notifier).join(
           space: widget.space,
           displayName: user?.displayName ?? 'Membre THIX',
           avatarUrl: user?.photoUrl,
-          isVerified: user?.isVerified ?? false,
+          isVerified: isVerified,
         );
   }
 
-  /// Écoute les invitations entrantes (si l'utilisateur reçoit une invite
-  /// pour CE space, on peut afficher un toast)
   void _listenInvites() {
     final userId = ref.read(authControllerProvider).value?.id;
     if (userId == null) return;
@@ -239,6 +245,7 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
             children: [
               const _LiveDot(),
               const SizedBox(width: 6),
+              // ✅ elapsedFormatted est maintenant défini dans AudioSpaceManagerState
               Text(
                 state.elapsedFormatted,
                 style: const TextStyle(
@@ -258,19 +265,16 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
         ],
       ),
       actions: [
-        // Bouton inviter
         IconButton(
           icon: const Icon(Icons.person_add_alt_rounded),
           tooltip: 'Inviter',
           onPressed: () => _showInviteSheet(l10n, ctrl),
         ),
-        // Bouton partager
         IconButton(
           icon: const Icon(Icons.share_rounded),
           tooltip: _tx(l10n, 'audio_space_share', 'Partager'),
           onPressed: () => _shareSpace(l10n, ctrl),
         ),
-        // Bouton terminer (hôte uniquement)
         if (ctrl.isHost)
           TextButton(
             onPressed: () => _confirmEnd(l10n, ctrl),
@@ -301,7 +305,6 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
           Icons.hourglass_top_rounded,
         );
       case ManagerStatus.error:
-        // Si l'erreur est "salon terminé", on pop automatiquement
         if (state.errorMessage?.contains('terminé') == true ||
             state.errorMessage?.contains('exclu') == true) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -334,7 +337,6 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
       children: [
         Column(
           children: [
-            // ─── BANNIÈRE MODE BACKGROUND ───
             if (state.isInBackground)
               Container(
                 width: double.infinity,
@@ -355,7 +357,6 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
                 ),
               ),
 
-            // ─── BANNIÈRE ENREGISTREMENT ───
             if (widget.space.recordingEnabled)
               Container(
                 width: double.infinity,
@@ -378,7 +379,6 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
                 ),
               ),
 
-            // ─── BARRE DEMANDES DE PAROLE (hôte) ───
             if (ctrl.isHost && raised > 0)
               Material(
                 color: ThixPolicy.domainMedia.withValues(alpha: 0.1),
@@ -410,27 +410,15 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
                 ),
               ),
 
-            // ─── GRILLE INTERVENANTS ───
             Expanded(child: _speakersGrid(l10n, state, ctrl)),
-
-            // ─── LIGNE AUDITEURS ───
             _listenersRow(l10n, state),
-
-            // ─── CHAT ───
             _chatList(l10n, state),
-
-            // ─── RÉACTIONS ───
             _reactionsBar(l10n, ctrl),
-
-            // ─── COMPOSER ───
             _composer(l10n, ctrl),
-
-            // ─── CONTRÔLES ───
             _controls(l10n, state, ctrl),
           ],
         ),
 
-        // ─── BURST DE RÉACTION (animation) ───
         if (_reactionBurst > 0)
           Positioned(
             right: 24,
@@ -730,7 +718,7 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // RÉACTIONS (via sendReaction, PAS sendChat)
+  // RÉACTIONS
   // ════════════════════════════════════════════════════════════════════
   Widget _reactionsBar(AppLocalizations l10n, AudioSpaceController ctrl) {
     return Padding(
@@ -782,7 +770,6 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            // ─── MUTE / UNMUTE ───
             _roundBtn(
               icon: isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
               color: isMuted
@@ -800,7 +787,6 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
                   : null,
             ),
 
-            // ─── ACTIONS HÔTE ───
             if (ctrl.isHost) ...[
               _roundBtn(
                 icon: Icons.volume_off_rounded,
@@ -822,7 +808,6 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
               ),
             ],
 
-            // ─── DEMANDE DE PAROLE (auditeur) ───
             if (!ctrl.isHost && me?.role == AudioSpaceRole.listener)
               _roundBtn(
                 icon: handRaised
@@ -837,12 +822,12 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
                 },
               ),
 
-            // ─── QUITTER ───
+            // ✅ FIX : _confirmLeave ne prend qu'un seul argument (ctrl)
             _roundBtn(
               icon: Icons.logout_rounded,
               color: ThixPolicy.danger,
               label: _tx(l10n, 'audio_space_leave', 'Quitter'),
-              onTap: () => _confirmLeave(l10n, ctrl),
+              onTap: () => _confirmLeave(ctrl),
             ),
           ],
         ),
@@ -1019,7 +1004,7 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // PARTAGE (nouvelle version complète)
+  // PARTAGE
   // ════════════════════════════════════════════════════════════════════
   Future<void> _shareSpace(
     AppLocalizations l10n,
@@ -1041,7 +1026,6 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
     );
   }
 
-  /// Feuille d'invitation des contacts THIX
   Future<void> _showInviteSheet(
     AppLocalizations l10n,
     AudioSpaceController ctrl,
@@ -1098,9 +1082,6 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
     }
   }
 
-  /// Gestion du retour :
-  /// - Si hôte → propose de mettre en arrière-plan (space continue)
-  /// - Si participant → quitte vraiment le space
   Future<void> _handleBack(
     AppLocalizations l10n,
     AudioSpaceController ctrl,
@@ -1108,14 +1089,12 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
   ) async {
     if (!_throttleAction()) return;
 
-    // Participant : quitter directement
     if (!ctrl.isHost) {
       await ctrl.leave();
       if (mounted) Navigator.pop(context);
       return;
     }
 
-    // Hôte : demander s'il veut minimiser (space continue) ou terminer
     final action = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1142,7 +1121,6 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
     );
 
     if (action == 'minimize') {
-      // Minimiser : pop de la page, le space continue en background
       if (mounted) Navigator.pop(context);
     } else if (action == 'end') {
       await ctrl.endSpace();
@@ -1150,6 +1128,8 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
     }
   }
 
+  // ✅ FIX : _confirmLeave ne prend qu'un seul argument (ctrl)
+  // Il récupère l10n à l'intérieur via AppLocalizations.of(context)
   Future<void> _confirmLeave(AudioSpaceController ctrl) async {
     if (ctrl.isHost) {
       final l10n = AppLocalizations.of(context);
@@ -1163,7 +1143,7 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// LIVE DOT (indicateur temps réel)
+// LIVE DOT
 // ════════════════════════════════════════════════════════════════════════
 class _LiveDot extends StatefulWidget {
   const _LiveDot();
@@ -1213,7 +1193,7 @@ class _LiveDotState extends State<_LiveDot>
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// SPEAKING BADGE (animation quand quelqu'un parle)
+// SPEAKING BADGE
 // ════════════════════════════════════════════════════════════════════════
 class _SpeakingBadge extends StatefulWidget {
   const _SpeakingBadge();
@@ -1257,7 +1237,7 @@ class _SpeakingBadgeState extends State<_SpeakingBadge>
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// REACTION BURST (animation d'envoi)
+// REACTION BURST
 // ════════════════════════════════════════════════════════════════════════
 class _ReactionBurst extends StatefulWidget {
   final String emoji;
@@ -1300,7 +1280,7 @@ class _ReactionBurstState extends State<_ReactionBurst>
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// FEUILLE D'INVITATION DES CONTACTS THIX
+// INVITE CONTACTS SHEET
 // ════════════════════════════════════════════════════════════════════════
 class _InviteContactsSheet extends StatefulWidget {
   final AudioSpace space;
