@@ -16,6 +16,7 @@
 //    si l'app a déjà démarré — évite le double arbre de widgets / blocage UI
 //    quand une erreur réseau (ex. AuthRetryableFetchException lors du refresh
 //    token en mode offline) remonte hors des try/catch internes.
+//  MODE JOUR FORCÉ : themeMode = ThemeMode.light (ignore le mode sombre du téléphone)
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -220,6 +221,8 @@ Future<void> main() async {
       // Seulement si l'app n'a JAMAIS réussi à démarrer
       if (!_appLaunched) {
         runApp(MaterialApp(
+          theme: ThixPolicy.lightTheme(),
+          themeMode: ThemeMode.light,
           home: Scaffold(
             body: Center(
               child: Padding(
@@ -259,10 +262,10 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     _auth = AuthController.instance;
-    
+
     // ✅ Observer les changements de locale système
     WidgetsBinding.instance.addObserver(this);
-    
+
     _init();
   }
 
@@ -296,7 +299,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
     try {
       // ✅ LIRE le LocaleController depuis le provider (pas de ref.read dans initState)
       final localeController = ref.read(localeControllerProvider);
-      
+
       _router = AppRouter.create(
         _auth,
         extraRefreshListenable: Listenable.merge([_auth, localeController]),
@@ -354,7 +357,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
         debugShowCheckedModeBanner: false,
         theme: ThixPolicy.lightTheme(),
         darkTheme: ThixPolicy.darkTheme(),
-        themeMode: ThemeMode.system,
+        themeMode: ThemeMode.light, // mode jour forcé
         home: const Scaffold(
           body: Center(child: CircularProgressIndicator()),
         ),
@@ -380,7 +383,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
         debugShowCheckedModeBanner: false,
         theme: ThixPolicy.lightTheme(),
         darkTheme: ThixPolicy.darkTheme(),
-        themeMode: ThemeMode.system,
+        themeMode: ThemeMode.light, // mode jour forcé, ignore le sombre système
         routerConfig: _router!,
         // ✅ Utilise la locale du controller écouté
         locale: localeController.locale,
@@ -424,5 +427,3 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
     );
   }
 }
-
-
