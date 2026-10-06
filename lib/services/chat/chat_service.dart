@@ -1605,7 +1605,7 @@ class ChatService {
           userId: userId,
           displayName: _resolveDisplayName(profile),
           avatarUrl: profile?['avatar_url']?.toString(),
-          role: map['role']?.toString() ?? 'member',
+          role: GroupRoleX.fromString(map['role']?.toString()),
           isOnline: false,
           joinedAt: DateTime.now().toUtc(),
         );
