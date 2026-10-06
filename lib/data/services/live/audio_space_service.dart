@@ -278,35 +278,39 @@ class AudioSpaceService {
   }
 
   Future<List<AudioSpace>> listActiveSpaces({
-    int limit = 12,
-    String? topic,
-    String? enterpriseId,
-  }) async {
-    try {
-      var query = _client
-          .from('audio_spaces')
-          .select()
-          .eq('status', 'live')
-          .order('started_at', ascending: false)
-          .limit(limit);
+  int limit = 12,
+  String? topic,
+  String? enterpriseId,
+}) async {
+  try {
+    // ✅ Construction progressive de la requête AVANT .select()
+    var query = _client.from('audio_spaces');
 
-      if (topic != null && topic.isNotEmpty) {
-        query = query.eq('topic', topic);
-      }
-      if (enterpriseId != null && enterpriseId.isNotEmpty) {
-        query = query.eq('enterprise_id', enterpriseId);
-      }
+    // Appliquer les filtres avant de sélectionner
+    PostgrestFilterBuilder<List<Map<String, dynamic>>> filteredQuery =
+        query.select().eq('status', 'live');
 
-      final rows = await query.timeout(_kDbTimeout);
-      return (rows as List)
-          .map((e) => AudioSpace.fromMap(Map<String, dynamic>.from(e as Map)))
-          .where((s) => s.isLive && s.id.isNotEmpty)
-          .toList();
-    } catch (e) {
-      debugPrint('[AudioSpace] listActiveSpaces error: $e');
-      return [];
+    if (topic != null && topic.isNotEmpty) {
+      filteredQuery = filteredQuery.eq('topic', topic);
     }
+    if (enterpriseId != null && enterpriseId.isNotEmpty) {
+      filteredQuery = filteredQuery.eq('enterprise_id', enterpriseId);
+    }
+
+    final rows = await filteredQuery
+        .order('started_at', ascending: false)
+        .limit(limit)
+        .timeout(_kDbTimeout);
+
+    return (rows as List)
+        .map((e) => AudioSpace.fromMap(Map<String, dynamic>.from(e as Map)))
+        .where((s) => s.isLive && s.id.isNotEmpty)
+        .toList();
+  } catch (e) {
+    debugPrint('[AudioSpace] listActiveSpaces error: ' + e.toString());
+    return [];
   }
+}
 
   Future<void> updateSpaceMetadata({
     required String spaceId,
