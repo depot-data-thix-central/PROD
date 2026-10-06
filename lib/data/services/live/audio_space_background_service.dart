@@ -443,13 +443,13 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
         const AndroidNotificationAction(
           'leave',
           'Quitter',
-          icon: '@drawable/ic_close',
+          icon: const DrawableResourceAndroidBitmap('@drawable/ic_close'),
           cancelNotification: true,
         ),
         const AndroidNotificationAction(
           'mute',
           'Mute',
-          icon: '@drawable/ic_mic_off',
+          icon: const DrawableResourceAndroidBitmap('@drawable/ic_mic_off'),
         ),
       ],
     );
