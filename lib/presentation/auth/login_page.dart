@@ -1,13 +1,14 @@
 // lib/presentation/auth/login_page.dart
 //
 // ============================================================================
-// 🔐 LOGIN PAGE — THIX HUB (Enterprise hardened · Design épuré)
+// 🔐 LOGIN PAGE — THIX HUB (Enterprise · Design épuré · UX-friendly)
 // ============================================================================
 // ✅ Design unifié avec personal_registration_page.dart
-// ✅ Anti-bot : honeypot hors écran + timing + rate limiting UI persisté
-// ✅ Rate limiting serveur (check_login_allowed) + lockout UI persistant
+// ✅ Anti-bot : honeypot hors écran + timing tolérant + rate limit silencieux
+// ✅ Rate limiting serveur (check_login_allowed) = source de vérité
+// ✅ Throttle local léger : garde-fou anti-burst uniquement (pas de double lock)
 // ✅ Sécurité : liste noire, MFA, statuts de compte, journalisation
-// ✅ Enterprise : throttle persisté, gestion fine des erreurs, SSO-ready
+// ✅ Fail-open sur erreurs réseau (ne bloque jamais l'utilisateur légitime)
 // ============================================================================
 
 import 'dart:async';
@@ -30,28 +31,32 @@ import 'package:thix_id/features/auth/presentation/providers/auth_controller.dar
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/nav.dart';
-import 'package:thix_id/presentation/settings/policy_viewer_page.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
-// CONSTANTS
+// CONSTANTS — UX-first (les protections serveur restent strictes)
 // ════════════════════════════════════════════════════════════════════════════
-const int _kResetCooldownDuration = 45;
+const int _kResetCooldownDuration = 30;   // 45 → 30 s
 const int _kMaxEmailLength = 254;
 const int _kMinPasswordLength = 8;
 const int _kMaxPasswordLength = 128;
 const int _kMaxOtpLength = 8;
 const int _kMaxIdentifierLength = 100;
 
-// Anti-bot (logique identique au registration)
-const int _kMinFormFillSeconds = 2;
-const int _kMaxSubmissionsPerMinute = 5;
-const int _kMaxLoginAttempts = 8;      // par fenêtre
-const int _kLoginLockSeconds = 900;    // 15 min
-const int _kResetMaxAttempts = 3;      // demandes reset
-const int _kResetLockSeconds = 600;    // 10 min
+// Anti-bot — tolérant, silencieux
+const int _kMinFormFillSeconds = 1;       // 2 → 1 s (bots headless collent instantanément)
+const int _kMaxSubmissionsPerMinute = 15; // 5 → 15 (tolère les fautes de frappe)
+
+// Garde-fou UI local (en plus du serveur, mais léger)
+const int _kUiBurstMaxAttempts = 5;       // 5 tentatives
+const int _kUiBurstWindowSeconds = 60;    // en 60 s
+const int _kUiBurstPauseSeconds = 10;     // → pause 10 s (pas 15 min !)
+
+// Reset — allégé
+const int _kResetMaxAttempts = 5;         // 3 → 5
+const int _kResetLockSeconds = 300;       // 10 min → 5 min
 
 // ════════════════════════════════════════════════════════════════════════════
-// i18n FALLBACK (même mécanisme que registration)
+// i18n FALLBACK (défauts [EN, FR])
 // ════════════════════════════════════════════════════════════════════════════
 const Map<String, List<String>> _kLoginFb = {
   'login_error_too_many_attempts': [
@@ -79,6 +84,22 @@ const Map<String, List<String>> _kLoginFb = {
     'Access temporarily locked for security reasons.',
     'Accès temporairement verrouillé pour raison de sécurité.',
   ],
+  'login_error_invalid_credentials': [
+    'Incorrect identifier or password.',
+    'Identifiant ou mot de passe incorrect.',
+  ],
+  'login_welcome_back': [
+    'Sign in to your account',
+    'Connectez-vous à votre compte',
+  ],
+  'auth_error_password_invalid_chars': [
+    'Password contains invalid characters.',
+    'Le mot de passe contient des caractères invalides.',
+  ],
+  'login_error_empty_otp': [
+    'Enter the 8-digit code you received by email.',
+    'Entrez le code à 8 chiffres reçu par email.',
+  ],
 };
 
 String _tx(BuildContext ctx, String key, {List<String>? args}) {
@@ -98,12 +119,14 @@ String _tx(BuildContext ctx, String key, {List<String>? args}) {
 }
 
 String _fmtWait(BuildContext ctx, int seconds) {
-  if (seconds >= 60) return '${(seconds / 60).ceil()} ${_tx(ctx, 'login_minutes_short')}';
-  return '${seconds}${AppLocalizations.of(ctx).t('login_seconds_suffix')}';
+  if (seconds >= 60) {
+    return '${(seconds / 60).ceil()} ${_tx(ctx, 'login_minutes_short')}';
+  }
+  return '$seconds${AppLocalizations.of(ctx).t('login_seconds_suffix')}';
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// THROTTLE PERSISTÉ (identique à registration)
+// THROTTLE LOCAL — garde-fou UI uniquement (le serveur décide du vrai lockout)
 // ════════════════════════════════════════════════════════════════════════════
 class _Throttle {
   _Throttle._();
@@ -187,7 +210,7 @@ class _LoginValidators {
     return s;
   }
 
-  /// Ne pas toucher au mot de passe (sinon ≠ celui enregistré).
+  /// Ne jamais modifier le mot de passe (sinon ≠ celui enregistré).
   static bool isSafePassword(String p) =>
       p.length <= _kMaxPasswordLength &&
       !_ctrlKeepTab.hasMatch(p) &&
@@ -196,8 +219,9 @@ class _LoginValidators {
   static bool looksLikePhone(String s) =>
       RegExp(r'^\+?[0-9][0-9\s\-]{7,}$').hasMatch(sanitize(s, maxLength: 50));
 
-  static bool looksLikeEmail(String s) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-      .hasMatch(sanitize(s, maxLength: _kMaxEmailLength));
+  static bool looksLikeEmail(String s) =>
+      RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+          .hasMatch(sanitize(s, maxLength: _kMaxEmailLength));
 
   static bool looksLikeThixId(String s) =>
       RegExp(r'^THIX-[A-Z0-9\-]{6,}$', caseSensitive: false)
@@ -205,7 +229,7 @@ class _LoginValidators {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// ANTI-BOT ENGINE
+// ANTI-BOT ENGINE — silencieux (jamais de snackbar, jamais de double lock)
 // ════════════════════════════════════════════════════════════════════════════
 class _AntiBotEngine {
   _AntiBotEngine() : _formOpenedAt = DateTime.now();
@@ -216,34 +240,38 @@ class _AntiBotEngine {
 
   void setHoneypot(String v) => _honeypot = v;
 
-  String? check(AppLocalizations l10n) {
+  /// true = humain probable. Pas de message, pas de lockout local.
+  bool isLikelyHuman() {
+    // 1. Honeypot rempli → robot
     if (_honeypot.trim().isNotEmpty) {
-      debugPrint('[AntiBot] 🤖 Honeypot filled');
-      return l10n.t('auth_error_technical');
+      debugPrint('[AntiBot] 🤖 honeypot filled');
+      return false;
     }
 
-    final elapsed = DateTime.now().difference(_formOpenedAt).inSeconds;
-    if (elapsed < _kMinFormFillSeconds) {
-      debugPrint('[AntiBot] 🤖 Too fast ($elapsed s)');
-      return l10n.t('auth_error_technical');
+    // 2. Timing : uniquement sur web (bots headless y sont majoritaires)
+    if (kIsWeb) {
+      final elapsed = DateTime.now().difference(_formOpenedAt).inSeconds;
+      if (elapsed < _kMinFormFillSeconds) {
+        debugPrint('[AntiBot] 🤖 too fast ($elapsed s)');
+        return false;
+      }
     }
 
+    // 3. Burst rate : tolérant (15/min)
     _submissionAttempts.add(DateTime.now());
     _submissionAttempts.removeWhere(
       (t) => DateTime.now().difference(t).inSeconds > 60,
     );
     if (_submissionAttempts.length > _kMaxSubmissionsPerMinute) {
-      debugPrint('[AntiBot] 🤖 Rate limit hit');
-      return l10n.t('auth_error_rate_limit');
+      debugPrint('[AntiBot] 🤖 burst rate hit');
+      return false;
     }
-    return null;
+    return true;
   }
 
+  /// +1 uniquement (jamais +5 comme avant : c'était un bug).
   void registerFailure() {
-    final now = DateTime.now();
-    for (int i = 0; i < _kMaxSubmissionsPerMinute; i++) {
-      _submissionAttempts.add(now.subtract(Duration(seconds: i)));
-    }
+    _submissionAttempts.add(DateTime.now());
   }
 }
 
@@ -285,23 +313,23 @@ String _translateAuthError(Object e, AppLocalizations l10n) {
 
   final msg = e.toString().toLowerCase();
   if (msg.contains('account_suspended') || msg.contains('suspended')) {
-    return _tx(_ctxFallback(l10n), 'login_error_suspended');
+    return l10n.t('login_error_suspended');
   }
   if (msg.contains('account_not_active') || msg.contains('not active')) {
-    return _tx(_ctxFallback(l10n), 'login_error_not_active');
+    return l10n.t('login_error_not_active');
   }
   if (msg.contains('aucun compte trouvé') ||
       msg.contains('phone_resolution_failed')) {
-    return _tx(_ctxFallback(l10n), 'login_error_no_account');
+    return l10n.t('login_error_no_account');
   }
   if (msg.contains('mfa_required') || msg.contains('two_fa')) {
-    return _tx(_ctxFallback(l10n), 'login_error_mfa_required');
+    return l10n.t('login_error_mfa_required');
   }
   if (msg.contains('user_not_found_after_login')) {
     return l10n.t('auth_error_sign_in_failed');
   }
   if (msg.contains('login_locked')) {
-    return _tx(_ctxFallback(l10n), 'login_error_locked');
+    return l10n.t('login_error_locked');
   }
   if (msg.contains('invalid login') || msg.contains('invalid credentials')) {
     return l10n.t('login_error_invalid_credentials');
@@ -311,18 +339,8 @@ String _translateAuthError(Object e, AppLocalizations l10n) {
   return l10n.t('auth_error_technical');
 }
 
-// Petit hack : le translator n'a pas de BuildContext ; on tolère le fallback
-// via un cache de Locale. Voir _ctxFallback ci-dessous.
-BuildContext? _gLoginCtx;
-BuildContext _ctxFallback(AppLocalizations _) => _gLoginCtx ?? _NullCtx();
-
-class _NullCtx implements BuildContext {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => null;
-}
-
 // ════════════════════════════════════════════════════════════════════════════
-// DESIGN — PREMIUM FIELD (aligné sur personal_registration_page)
+// DESIGN — PREMIUM FIELD
 // ════════════════════════════════════════════════════════════════════════════
 class _PremiumField extends StatefulWidget {
   final String label;
@@ -518,7 +536,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     super.dispose();
   }
 
-  // ── FEEDBACK (aligné sur registration) ──────────────────────────
+  // ── FEEDBACK ─────────────────────────────────────────────────────
   void _snack(String message, Color bg, IconData icon, {int seconds = 4}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -542,14 +560,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
-  void _showSuccess(String m) => _snack(m, ThixPolicy.success, Icons.check_circle_rounded);
-  void _showInfo(String m) => _snack(m, ThixPolicy.primary, Icons.info_outline_rounded);
+  void _showSuccess(String m) =>
+      _snack(m, ThixPolicy.success, Icons.check_circle_rounded);
+  void _showInfo(String m) =>
+      _snack(m, ThixPolicy.primary, Icons.info_outline_rounded);
   void _showError(String m) {
     HapticFeedback.lightImpact();
     _snack(m, ThixPolicy.danger, Icons.error_outline_rounded);
   }
 
-  // ── LOCKOUT ─────────────────────────────────────────────────────
+  // ── LOCKOUT ──────────────────────────────────────────────────────
   void _startLockoutTimer(int seconds) {
     _lockoutTimer?.cancel();
     setState(() => _lockoutSecondsLeft = seconds);
@@ -587,7 +607,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     });
   }
 
-  // ── LOGGING ─────────────────────────────────────────────────────
+  // ── LOGGING ──────────────────────────────────────────────────────
   Future<void> _logLoginAttempt({
     required String identifier,
     required bool success,
@@ -616,7 +636,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
-  // ── RATE LIMITING SERVEUR ───────────────────────────────────────
+  // ── RATE LIMITING SERVEUR (source de vérité) ─────────────────────
   Future<bool> _checkLoginAllowed(String identifier) async {
     try {
       final result = await Supabase.instance.client.rpc(
@@ -660,28 +680,24 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
-  // ── SIGN IN ─────────────────────────────────────────────────────
+  // ── SIGN IN ──────────────────────────────────────────────────────
   Future<void> _signIn() async {
     final l10n = AppLocalizations.of(context);
-    _gLoginCtx = context;
     FocusScope.of(context).unfocus();
 
     _antiBot.setHoneypot(_honeyC.text);
 
-    // 🤖 Anti-bot
-    final botError = _antiBot.check(l10n);
-    if (botError != null) {
-      _showError(botError);
-      _antiBot.registerFailure();
+    // 🤖 Anti-bot silencieux : aucun message, aucun lockout local.
+    if (!_antiBot.isLikelyHuman()) {
+      debugPrint('[Login] 🤖 dropped (anti-bot)');
       return;
     }
 
-    // 🔒 Throttle persisté (en plus du serveur)
-    final localLock = await _Throttle.blockedSeconds('login_attempt');
-    if (localLock > 0) {
-      _startLockoutTimer(localLock);
+    // 🔒 Garde-fou UI léger : 5 échecs en 60 s → pause 10 s (le serveur décide du vrai lockout).
+    final uiPause = await _Throttle.blockedSeconds('login_ui_burst');
+    if (uiPause > 0) {
       _showError(_tx(context, 'login_error_too_many_attempts',
-          args: [_fmtWait(context, localLock)]));
+          args: [_fmtWait(context, uiPause)]));
       return;
     }
 
@@ -700,24 +716,24 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       _identifierC.text.trim(),
       maxLength: _kMaxIdentifierLength,
     );
-    final password = _passwordC.text; // ne pas sanitiser
+    final password = _passwordC.text; // ne jamais sanitiser
 
     // Validation inline (UX pro)
     if (identifier.isEmpty) {
       setState(() => _identifierError = l10n.t('login_error_empty_fields'));
-      _antiBot.registerFailure();
       return;
     }
     if (password.isEmpty) {
       setState(() => _passwordError = l10n.t('login_error_empty_fields'));
-      _antiBot.registerFailure();
       return;
     }
     if (!_LoginValidators.isSafePassword(password)) {
-      setState(() => _passwordError = l10n.t('auth_error_password_invalid_chars'));
+      setState(
+          () => _passwordError = l10n.t('auth_error_password_invalid_chars'));
       return;
     }
 
+    // 🌐 Rate limiting serveur (source de vérité)
     final allowed = await _checkLoginAllowed(identifier.toLowerCase());
     if (!allowed) {
       _showError(
@@ -770,7 +786,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           reason: 'identifiant en liste noire',
         );
         _showError(l10n.t('login_error_suspended'));
-        _antiBot.registerFailure();
         return;
       }
 
@@ -831,7 +846,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         success: true,
       );
       await _clearLoginAttempts(finalIdentifier.toLowerCase());
-      await _Throttle.clear('login_attempt');
+      await _Throttle.clear('login_ui_burst');
 
       final target = user.accountType == AccountType.enterprise
           ? AppRoutes.enterpriseDashboard
@@ -856,31 +871,33 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         reason: reason,
       );
 
+      // Serveur : enregistre l'échec pour le vrai lockout
       await _recordFailedLogin(loginIdentifier.toLowerCase());
-      await _Throttle.hit('login_attempt', _kMaxLoginAttempts, _kLoginLockSeconds);
 
-      _showError(_translateAuthError(e, l10n));
+      // UI : simple garde-fou anti-burst (5 échecs / 60 s → 10 s de pause)
+      await _Throttle.hit(
+        'login_ui_burst',
+        _kUiBurstMaxAttempts,
+        _kUiBurstPauseSeconds,
+      );
+
       _antiBot.registerFailure();
+      _showError(_translateAuthError(e, l10n));
     }
   }
 
-  // ── PASSWORD RESET ──────────────────────────────────────────────
+  // ── PASSWORD RESET ───────────────────────────────────────────────
   Future<bool> _sendPasswordReset(String email) async {
     final l10n = AppLocalizations.of(context);
-    _gLoginCtx = context;
 
-    // 🤖 Anti-bot
-    final botError = _antiBot.check(l10n);
-    if (botError != null) {
-      _showError(botError);
-      _antiBot.registerFailure();
+    // 🤖 Anti-bot silencieux
+    if (!_antiBot.isLikelyHuman()) {
+      debugPrint('[Login] 🤖 reset dropped (anti-bot)');
       return false;
     }
 
-    // 🔒 Throttle local
-    if (!await _notBlocked('reset_send')) {
-      return false;
-    }
+    // 🔒 Garde-fou UI léger
+    if (!await _notBlocked('reset_send')) return false;
     await _Throttle.hit('reset_send', _kResetMaxAttempts, _kResetLockSeconds);
 
     try {
@@ -894,7 +911,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     } catch (e) {
       debugPrint('[Login] ❌ Password reset failed: $e');
       _showError(_translateAuthError(e, l10n));
-      _antiBot.registerFailure();
     }
     _startResetCooldown();
     return true;
@@ -932,18 +948,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     _showInfo(l10n.t('login_biometric_not_supported'));
   }
 
-  void _openPolicy(String slug) {
-    HapticFeedback.selectionClick();
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PolicyViewerPage(slug: slug)),
-    );
-  }
-
-  // ── BUILD ───────────────────────────────────────────────────────
+  // ── BUILD ────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    _gLoginCtx = context;
     final authState = ref.watch(authControllerProvider);
     final isLoading = authState.isLoading || _isInitialVerifying;
 
@@ -952,7 +960,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       body: SafeArea(
         child: Stack(
           children: [
-            // 🍯 Honeypot hors écran (exclu des lecteurs d'écran + du focus)
+            // 🍯 Honeypot hors écran
             Positioned(
               left: -3000,
               top: 0,
@@ -1085,7 +1093,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         ),
         const SizedBox(height: ThixPolicy.s6),
         Text(
-          l10n.t('login_welcome_back'),
+          _tx(context, 'login_welcome_back'),
           style: ThixPolicy.bodySmallStyle,
         ),
         const SizedBox(height: ThixPolicy.s24),
@@ -1199,7 +1207,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           child: SizedBox(
             height: 54,
             child: ElevatedButton(
-              onPressed: (isLoading || _lockoutSecondsLeft > 0) ? null : _signIn,
+              onPressed:
+                  (isLoading || _lockoutSecondsLeft > 0) ? null : _signIn,
               style: ElevatedButton.styleFrom(
                 backgroundColor: ThixPolicy.primary,
                 foregroundColor: ThixPolicy.onBrand,
@@ -1568,7 +1577,6 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    _gLoginCtx = context;
     final canSend = !_isSending && widget.resetCooldown == 0;
 
     return Dialog(
@@ -1670,8 +1678,9 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                 children: [
                   Expanded(
                     child: TextButton(
-                      onPressed:
-                          _isSending ? null : () => Navigator.of(context).pop(),
+                      onPressed: _isSending
+                          ? null
+                          : () => Navigator.of(context).pop(),
                       style: TextButton.styleFrom(
                         foregroundColor: ThixPolicy.textSecondary,
                         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1694,8 +1703,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         elevation: 0,
                         shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(ThixPolicy.rMd),
+                          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
                         ),
                       ),
                       child: Text(
@@ -1754,7 +1762,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
     final newPass = _newPasswordC.text;
 
     if (!RegExp(r'^\d{8}$').hasMatch(otp)) {
-      _showDialogError(l10n.t('login_error_empty_otp'));
+      _showDialogError(_tx(context, 'login_error_empty_otp'));
       return;
     }
     if (newPass.length < _kMinPasswordLength) {
@@ -1764,7 +1772,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
       return;
     }
     if (!_LoginValidators.isSafePassword(newPass)) {
-      setState(() => _passwordError = l10n.t('auth_error_password_invalid_chars'));
+      setState(
+          () => _passwordError = l10n.t('auth_error_password_invalid_chars'));
       return;
     }
 
