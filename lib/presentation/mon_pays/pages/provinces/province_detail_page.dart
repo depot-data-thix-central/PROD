@@ -3011,7 +3011,8 @@ class _CitiesSection extends StatelessWidget {
                 color: const Color(0xFF1565C0),
                 children: [
                   if (c.population != null)
-                    sheetRow(Icons.groups_rounded, 'Population', '${fmtNum(c.population!.toInt())} hab'),
+                    sheetRow(Icons.groups_rounded, 'Population', '${fmtNum(int.tryParse(c.population ?? '0') ?? 0)} hab'),
+
                   if ((c.mayor ?? '').isNotEmpty) sheetRow(Icons.person_rounded, 'Maire', c.mayor!),
                 ],
               ),
@@ -3071,7 +3072,8 @@ class _CitiesSection extends StatelessWidget {
                         ),
                         if (c.population != null)
                           Text(
-                            '${fmtNum(c.population!.toInt())} hab',
+                            '${fmtNum(int.tryParse(c.population ?? '0') ?? 0)} hab',
+
                             style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textSecondary),
                           ),
                       ],
