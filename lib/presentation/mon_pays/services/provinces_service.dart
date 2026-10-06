@@ -1203,10 +1203,10 @@ class ProvincesService {
       try {
         final res = await _client
             .from(table)
-            .select('id', const FetchOptions(head: true, count: CountOption.exact))
-
-            .eq('province_id', provinceId);
-        counts[table] = res.count ?? 0;
+            .select('id')
+            .eq('province_id', provinceId)
+            .count(CountOption.exact);
+        counts[table] = res.count;
       } catch (e) {
         counts[table] = 0;
         debugPrint('[ProvincesService] count $table: $e');
