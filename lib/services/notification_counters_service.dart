@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
 import 'package:thix_id/services/notifications/app_badge_sync_service.dart';
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
@@ -23,8 +24,6 @@ const int _kMaxTypeLength = 50;
 // ENUMS & MODELS
 // ============================================================================
 
-/// Sections de la constellation d'accueil pouvant recevoir des badges
-/// de notifications non lues.
 enum ThixSection {
   media,
   info,
@@ -111,7 +110,6 @@ class _Validators {
     return RegExp(r'^[A-Za-z0-9_\-]+$').hasMatch(uid);
   }
 
-  /// Masque un UID pour les logs (RGPD) — FIX : interpolation propre
   static String maskUid(String uid) {
     if (uid.length <= 8) return '***';
     return '${uid.substring(0, 4)}...${uid.substring(uid.length - 3)}';
@@ -128,11 +126,6 @@ class _Validators {
 // SERVICE
 // ============================================================================
 
-/// Calcule et diffuse en temps réel les compteurs de notifications non
-/// lues par section, pour alimenter les badges de HomeServicesConstellation
-/// et de la cloche de notifications du header.
-/// Met également à jour le badge numérique sur l'icône de l'application
-/// (comportement type WhatsApp).
 class NotificationCountersService {
   final SupabaseClient _client;
 
@@ -141,10 +134,7 @@ class NotificationCountersService {
 
   static const String _table = 'notifications';
 
-  /// Mapping type → section. Étendu pour couvrir tous les triggers SQL.
-  /// ⚠️ L'ordre importe peu car on compte chaque LIGNE, pas chaque TYPE.
   static const Map<String, ThixSection> _typeToSection = {
-    // Contenu & Médias
     'media': ThixSection.media,
     'tdia': ThixSection.media,
     'thix_media': ThixSection.media,
@@ -158,8 +148,6 @@ class NotificationCountersService {
     'live_invite': ThixSection.media,
     'live': ThixSection.media,
     'live_request': ThixSection.network,
-
-    // Économie & Transactions
     'money': ThixSection.money,
     'payment': ThixSection.money,
     'thix_money': ThixSection.money,
@@ -174,8 +162,6 @@ class NotificationCountersService {
     'shop': ThixSection.market,
     'reservation': ThixSection.reservation,
     'booking': ThixSection.reservation,
-
-    // Carrière, Éducation & Réseau
     'job': ThixSection.jobs,
     'emploi': ThixSection.jobs,
     'application_received': ThixSection.jobs,
@@ -184,8 +170,6 @@ class NotificationCountersService {
     'course': ThixSection.formations,
     'certificate': ThixSection.formations,
     'opportunity': ThixSection.opportunities,
-
-    // THIX PRO (réseau social complet)
     'like': ThixSection.network,
     'comment': ThixSection.network,
     'comment_like': ThixSection.network,
@@ -200,15 +184,11 @@ class NotificationCountersService {
     'mention': ThixSection.network,
     'tag': ThixSection.network,
     'profile_visit': ThixSection.network,
-
-    // Messages & Appels
     'chat': ThixSection.messages,
     'message': ThixSection.messages,
     'call': ThixSection.messages,
     'call_missed': ThixSection.messages,
     'voice_note': ThixSection.messages,
-
-    // Vie pratique, Santé & Gouvernement
     'health': ThixSection.health,
     'thix_sante': ThixSection.health,
     'sos': ThixSection.health,
@@ -217,8 +197,6 @@ class NotificationCountersService {
     'country': ThixSection.monPays,
     'mon_pays': ThixSection.monPays,
     'civic': ThixSection.monPays,
-
-    // Système
     'system': ThixSection.info,
     'security': ThixSection.info,
     'generic': ThixSection.info,
@@ -234,7 +212,6 @@ class NotificationCountersService {
   // PUBLIC API
   // ========================================================================
 
-  /// Flux réactif des compteurs par section pour l'utilisateur donné.
   Stream<SectionBadgeCounts> streamCounts(String uid) {
     if (!_Validators.isValidUid(uid)) {
       debugPrint('[NotifCounters] ⚠️ Invalid UID, returning zero stream');
@@ -249,7 +226,6 @@ class NotificationCountersService {
     });
   }
 
-  /// Récupération ponctuelle (non réactive) — utile pour pull-to-refresh.
   Future<SectionBadgeCounts> fetchCounts(String uid) async {
     if (!_Validators.isValidUid(uid)) {
       debugPrint('[NotifCounters] ⚠️ Invalid UID for fetchCounts');
@@ -258,7 +234,6 @@ class NotificationCountersService {
     }
 
     try {
-      // ✅ FIX : on compte par LIGNE, pas par type dédupliqué
       final rows = await _client
           .from(_table)
           .select('type')
@@ -268,7 +243,7 @@ class NotificationCountersService {
 
       final types = rows
           .map((r) => _Validators.sanitizeType(r['type'] as String?))
-          .toList(); // ← PLUS de .toSet() !
+          .toList();
 
       final counts = _buildCounts(types);
       await _updateAppIconBadge(counts.total);
@@ -284,7 +259,6 @@ class NotificationCountersService {
     }
   }
 
-  /// Marque comme lues toutes les notifications non lues d'une section.
   Future<bool> markSectionSeen({
     required String uid,
     required ThixSection section,
@@ -319,7 +293,6 @@ class NotificationCountersService {
       debugPrint('[NotifCounters] ✓ Marked ${types.length} types as read '
           'for section ${section.name} (${_Validators.maskUid(uid)})');
 
-      // fetchCounts met déjà à jour le badge de l'icône
       await fetchCounts(uid);
       return true;
     } on TimeoutException {
@@ -330,9 +303,38 @@ class NotificationCountersService {
       return false;
     }
   }
-  
 
-  /// Force la mise à jour du badge de l'icône avec un total donné.
+  /// ✅ CORRECTEMENT PLACÉ : Alias/wrapper pour markSectionSeen
+  /// Accepte ThixSection ou String, utilise l'UID courant si non fourni
+  Future<bool> markSectionRead(dynamic section, {String? uid}) async {
+    final currentUid = uid ?? _client.auth.currentUser?.id;
+    if (currentUid == null) {
+      debugPrint('[NotifCounters] ⚠️ No UID available for markSectionRead');
+      return false;
+    }
+
+    ThixSection? targetSection;
+    if (section is ThixSection) {
+      targetSection = section;
+    } else if (section is String) {
+      try {
+        targetSection = ThixSection.values.firstWhere(
+          (e) => e.name.toLowerCase() == section.toLowerCase(),
+        );
+      } catch (_) {
+        debugPrint('[NotifCounters] ⚠️ Invalid section string: $section');
+        return false;
+      }
+    }
+
+    if (targetSection == null) {
+      debugPrint('[NotifCounters] ⚠️ Could not resolve section: $section');
+      return false;
+    }
+
+    return markSectionSeen(uid: currentUid, section: targetSection);
+  }
+
   Future<void> syncAppIconBadge(int total) => _updateAppIconBadge(total);
 
   // ========================================================================
@@ -340,7 +342,6 @@ class NotificationCountersService {
   // ========================================================================
 
   Future<void> _updateAppIconBadge(int count) async {
-    // Délègue au service global (iOS + Android launchers)
     await AppBadgeSyncService.sync(count);
   }
 
@@ -348,8 +349,6 @@ class NotificationCountersService {
   // PRIVATE : STREAM BAS NIVEAU
   // ========================================================================
 
-  /// ✅ FIX : retourne directement les SectionBadgeCounts au lieu
-  /// de List<String> dédupliqué — on compte chaque notification.
   Stream<SectionBadgeCounts> _streamUnreadCounts(String uid) {
     late final StreamController<SectionBadgeCounts> controller;
     RealtimeChannel? channel;
@@ -371,7 +370,7 @@ class NotificationCountersService {
 
         final types = rows
             .map((r) => _Validators.sanitizeType(r['type'] as String?))
-            .toList(); // pas de dédup
+            .toList();
 
         if (!isCancelled) controller.add(_buildCounts(types));
       } on TimeoutException {
@@ -402,28 +401,6 @@ class NotificationCountersService {
         }
       },
     );
-  /// Alias/Raccourci appelé par l'interface utilisateur pour marquer une section comme lue.
-  Future<bool> markSectionRead(dynamic section, {String? uid}) async {
-    final currentUid = uid ?? _client.auth.currentUser?.id;
-    if (currentUid == null) return false;
-
-    ThixSection? targetSection;
-    if (section is ThixSection) {
-      targetSection = section;
-    } else if (section is String) {
-      try {
-        targetSection = ThixSection.values.firstWhere(
-          (e) => e.name.toLowerCase() == section.toLowerCase(),
-        );
-      } catch (_) {
-        return false;
-      }
-    }
-
-    if (targetSection == null) return false;
-
-    return markSectionSeen(uid: currentUid, section: targetSection);
-  }
 
     Future<void> subscribeOrRetry() async {
       if (isCancelled || polling) return;
@@ -481,7 +458,7 @@ class NotificationCountersService {
     final tally = <ThixSection, int>{};
     for (final type in types) {
       final section = _typeToSection[type];
-      if (section == null) continue; // types inconnus ignorés silencieusement
+      if (section == null) continue;
       tally[section] = (tally[section] ?? 0) + 1;
     }
     return SectionBadgeCounts(
