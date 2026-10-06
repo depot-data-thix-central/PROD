@@ -3,16 +3,6 @@
 // ============================================================================
 // INCOMING CALL PAGE — Production Enterprise v2.0
 // ============================================================================
-//
-// Page d'appel entrant avec design moderne, états de chargement visuels 
-// et hiérarchie d'actions claire (Accepter, Refuser, Chambre de crise).
-//
-// Améliorations UX/UI :
-//   - Design "Glassmorphism" cohérent avec THIX Chat
-//   - États de chargement (spinner) sur les boutons pendant le traitement
-//   - Animation de sonnerie améliorée (pulse + glow)
-//   - Hiérarchie visuelle : Accepter (vert lumineux) > Refuser (rouge) > Crise (orange distinct)
-// ============================================================================
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -28,18 +18,12 @@ import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
 import 'package:thix_id/presentation/thix_sos/pages/chambre_crise_secours_page.dart';
 import 'package:thix_id/presentation/thix_sos/providers/sos_providers.dart';
 
-// ============================================================================
-// CONSTANTS
-// ============================================================================
 const double _kAvatarRadius = 64.0;
 const double _kButtonSize = 72.0;
 const double _kIconSize = 32.0;
 const Duration _kAnimationDuration = Duration(milliseconds: 1500);
 const Duration _kServiceTimeout = Duration(seconds: 10);
 
-// ============================================================================
-// VALIDATORS
-// ============================================================================
 class _CallValidators {
   _CallValidators._();
 
@@ -58,10 +42,6 @@ class _CallValidators {
     return name.trim();
   }
 }
-
-// ============================================================================
-// INCOMING CALL PAGE
-// ============================================================================
 
 class IncomingCallPage extends ConsumerStatefulWidget {
   final CallInvite invite;
@@ -86,14 +66,13 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
   late Animation<double> _glowAnimation;
   
   bool _isProcessing = false;
-  String? _processingAction; // 'accept', 'reject', 'crisis'
+  String? _processingAction;
 
   @override
   void initState() {
     super.initState();
     debugPrint('[IncomingCall] 📞 Page opened for invite: ${widget.invite.id}');
 
-    // Animation de sonnerie (scale)
     _ringController = AnimationController(
       duration: _kAnimationDuration,
       vsync: this,
@@ -103,12 +82,10 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
       CurvedAnimation(parent: _ringController, curve: Curves.easeInOut),
     );
 
-    // Animation de lueur (glow) pour le bouton accepter
     _glowAnimation = Tween<double>(begin: 0.3, end: 0.7).animate(
       CurvedAnimation(parent: _ringController, curve: Curves.easeInOut),
     );
 
-    // Vibration haptique pour simuler la sonnerie physique
     HapticFeedback.vibrate();
   }
 
@@ -118,8 +95,6 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     debugPrint('[IncomingCall] 👋 Page disposed');
     super.dispose();
   }
-
-  // ── FEEDBACK HELPERS ─────────────────────────────────────────────────
 
   void _showError(String message) {
     if (!mounted) return;
@@ -153,8 +128,6 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
       ),
     );
   }
-
-  // ── ACTIONS ──────────────────────────────────────────────────────────
 
   Future<void> _rejectCall() async {
     if (_isProcessing) return;
@@ -290,8 +263,6 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     }
   }
 
-  // ── BUILD ────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -299,7 +270,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
       widget.callerName ?? widget.invite.callerName,
       l10n,
     );
-    final isVideo = widget.invite.type == CallType.video; // Correction: utilisation de type
+    final isVideo = widget.invite.callType == CallType.video; // ✅ CORRIGÉ: type → callType
 
     return Scaffold(
       body: Container(
@@ -318,7 +289,6 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
         child: SafeArea(
           child: Stack(
             children: [
-              // Background subtil avec l'avatar en grand et flouté (si disponible)
               if (widget.callerAvatar != null)
                 Positioned.fill(
                   child: Opacity(
@@ -331,12 +301,10 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
                   ),
                 ),
               
-              // Contenu principal
               Column(
                 children: [
                   const Spacer(flex: 2),
 
-                  // ── Badge Type d'appel ──
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
@@ -368,7 +336,6 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
                   
                   const SizedBox(height: 32),
 
-                  // ── Avatar avec animation ringing ──
                   AnimatedBuilder(
                     animation: _ringAnimation,
                     builder: (context, child) {
@@ -407,7 +374,6 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
                   
                   const SizedBox(height: 32),
 
-                  // ── Nom de l'appelant ──
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 32),
                     child: Text(
@@ -428,7 +394,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
                   const SizedBox(height: 12),
                   
                   Text(
-                    l10n.t('call_incoming_subtitle'), // Assurez-vous que cette clé existe, sinon utilisez "Appel entrant..."
+                    l10n.t('call_incoming_subtitle'),
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.8),
                       fontSize: 16,
@@ -438,7 +404,6 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
 
                   const Spacer(flex: 3),
 
-                  // ── Actions ──
                   _buildActions(l10n, isVideo),
                   
                   const SizedBox(height: 32),
@@ -458,7 +423,6 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // 1. Refuser (Gauche)
           _CallActionButton(
             color: ThixPolicy.danger,
             icon: Icons.call_end_rounded,
@@ -468,18 +432,16 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
             enabled: !_isProcessing,
           ),
 
-          // 2. Chambre de crise (Centre, légèrement en retrait ou distinct)
           _CallActionButton(
-            color: Colors.orange, // Couleur d'avertissement distincte
+            color: Colors.orange,
             icon: Icons.shield_rounded,
             label: l10n.t('call_crisis_room'),
             isLoading: _isProcessing && _processingAction == 'crisis',
             onTap: _openCrisisRoom,
             enabled: !_isProcessing,
-            isOutlined: true, // Style distinct pour ne pas confondre avec accepter/refuser
+            isOutlined: true,
           ),
 
-          // 3. Accepter (Droite, mis en avant)
           _CallActionButton(
             color: ThixPolicy.success,
             icon: isVideo ? Icons.videocam_rounded : Icons.call_rounded,
@@ -494,10 +456,6 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     );
   }
 }
-
-// ============================================================================
-// CALL ACTION BUTTON
-// ============================================================================
 
 class _CallActionButton extends StatelessWidget {
   final Color color;
