@@ -224,8 +224,8 @@ class _CleanInput extends StatefulWidget {
   final TextInputAction textInputAction;
   final int? maxLength;
   final ValueChanged<String>? onSubmitted;
-  final AutofillHints? autofillHint;
-
+  final String? autofillHint
+      
   const _CleanInput({
      super.key,
     required this.label,
